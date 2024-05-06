@@ -55,6 +55,8 @@ module.exports = {
         },
       },
       colors: {
+        // new color
+
         'background': 'hsl(var(--background))',
         'foreground': 'hsl(var(--foreground))',
 

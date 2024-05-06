@@ -1,4 +1,4 @@
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 
 import { useSetAtom } from 'jotai'
 
@@ -9,14 +9,14 @@ const FactoryReset = () => {
   const setModalValidation = useSetAtom(modalValidationAtom)
 
   return (
-    <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-      <div className="w-4/5 flex-shrink-0 space-y-1.5">
+    <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+      <div className="space-y-1">
         <div className="flex gap-x-2">
           <h6 className="text-sm font-semibold capitalize">
             Reset to Factory Default
           </h6>
         </div>
-        <p className="whitespace-pre-wrap leading-relaxed">
+        <p className="whitespace-pre-wrap font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
           Reset the application to its original state, deleting all your usage
           data, including model customizations and conversation history. This
           action is irreversible and recommended only if the application is in a
@@ -24,8 +24,9 @@ const FactoryReset = () => {
         </p>
       </div>
       <Button
-        size="sm"
-        themes="secondaryDanger"
+        size="small"
+        theme="destructive"
+        variant="soft"
         onClick={() => setModalValidation(true)}
       >
         Reset

@@ -1,14 +1,6 @@
 import { Fragment } from 'react'
 
-import {
-  Progress,
-  Modal,
-  ModalContent,
-  Button,
-  ModalHeader,
-  ModalTitle,
-  ModalTrigger,
-} from '@janhq/uikit'
+import { Progress, Modal, Button } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
@@ -38,10 +30,11 @@ export default function DownloadingState() {
   return (
     <Fragment>
       {Object.values(downloadStates)?.length > 0 && (
-        <Modal>
-          <ModalTrigger asChild>
+        <Modal
+          title="Downloading model"
+          trigger={
             <div className="relative block">
-              <Button size="sm" themes="outline">
+              <Button size="small" theme="ghost" variant="outline">
                 <span>
                   {Object.values(downloadStates).length} Downloading model
                 </span>
@@ -53,45 +46,45 @@ export default function DownloadingState() {
                 }}
               />
             </div>
-          </ModalTrigger>
-          <ModalContent>
-            <ModalHeader>
-              <ModalTitle>Downloading model</ModalTitle>
-            </ModalHeader>
-            {Object.values(downloadStates).map((item, i) => (
-              <div className="pt-2" key={i}>
-                <Progress
-                  className="mb-2 h-2"
-                  value={
-                    formatDownloadPercentage(item?.percent, {
-                      hidePercentage: true,
-                    }) as number
-                  }
-                />
-                <div className="flex items-center justify-between gap-x-2">
-                  <div className="flex gap-x-2">
-                    <p className="line-clamp-1">{item?.modelId}</p>
-                    <span>{formatDownloadPercentage(item?.percent)}</span>
+          }
+          content={
+            <div>
+              {Object.values(downloadStates).map((item, i) => (
+                <div className="pt-2" key={i}>
+                  <Progress
+                    className="mb-2 h-2"
+                    value={
+                      formatDownloadPercentage(item?.percent, {
+                        hidePercentage: true,
+                      }) as number
+                    }
+                  />
+                  <div className="flex items-center justify-between gap-x-2">
+                    <div className="flex gap-x-2">
+                      <p className="line-clamp-1">{item?.modelId}</p>
+                      <span>{formatDownloadPercentage(item?.percent)}</span>
+                    </div>
+                    <Button
+                      theme="ghost"
+                      variant="outline"
+                      size="small"
+                      onClick={() => {
+                        if (item?.modelId) {
+                          const model = downloadingModels.find(
+                            (model) => model.id === item.modelId
+                          )
+                          if (model) abortModelDownload(model)
+                        }
+                      }}
+                    >
+                      Cancel
+                    </Button>
                   </div>
-                  <Button
-                    themes="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (item?.modelId) {
-                        const model = downloadingModels.find(
-                          (model) => model.id === item.modelId
-                        )
-                        if (model) abortModelDownload(model)
-                      }
-                    }}
-                  >
-                    Cancel
-                  </Button>
                 </div>
-              </div>
-            ))}
-          </ModalContent>
-        </Modal>
+              ))}
+            </div>
+          }
+        />
       )}
     </Fragment>
   )

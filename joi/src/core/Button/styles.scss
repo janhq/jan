@@ -1,0 +1,104 @@
+.btn {
+  @apply inline-flex items-center justify-center px-4 font-semibold transition-all;
+
+  &:focus,
+  &:focus-within {
+    @apply outline-2 outline-offset-4;
+  }
+  &:hover {
+    filter: brightness(95%);
+  }
+
+  // Primary
+  &--primary {
+    color: hsla(var(--primary-fg));
+    background-color: hsla(var(--primary-bg)) !important;
+    &:hover {
+      filter: brightness(65%);
+    }
+
+    // Variant soft primary
+    &.btn--soft {
+      background-color: hsla(var(--primary-bg-soft)) !important;
+      color: hsla(var(--primary-bg));
+    }
+
+    // Variant outline primary
+    &.btn--outline {
+      background-color: transparent !important;
+      border: 1px solid hsla(var(--primary-bg));
+      color: hsla(var(--primary-bg));
+    }
+  }
+
+  // Ghost
+  &--ghost {
+    background-color: transparent !important;
+    &:hover {
+      filter: brightness(65%);
+    }
+
+    &.btn--soft {
+      background-color: transparent !important;
+    }
+
+    // Variant outline ghost
+    &.btn--outline {
+      background-color: transparent !important;
+      border: 1px solid hsla(var(--ghost-border));
+    }
+  }
+
+  // Destructive
+  &--destructive {
+    color: hsla(var(--destructive-fg));
+    background-color: hsla(var(--destructive-bg)) !important;
+    &:hover {
+      filter: brightness(65%);
+    }
+
+    // Variant soft destructive
+    &.btn--soft {
+      background-color: hsla(var(--destructive-bg-soft)) !important;
+      color: hsla(var(--destructive-bg));
+    }
+
+    // Variant outline destructive
+    &.btn--outline {
+      background-color: transparent !important;
+      border: 1px solid hsla(var(--destructive-bg));
+      color: hsla(var(--destructive-bg));
+    }
+  }
+
+  // Disabled
+  &:disabled {
+    color: hsla(var(--app-disabled-fg));
+    background-color: hsla(var(--app-disabled-bg)) !important;
+    cursor: not-allowed;
+
+    &:hover {
+      filter: brightness(100%);
+    }
+  }
+
+  // Size
+  &--small {
+    @apply h-8 px-3;
+    border-radius: 4px;
+  }
+
+  &--medium {
+    @apply h-9;
+    border-radius: 6px;
+  }
+
+  &--large {
+    @apply h-11;
+    border-radius: 8px;
+  }
+
+  &--block {
+    @apply w-full;
+  }
+}

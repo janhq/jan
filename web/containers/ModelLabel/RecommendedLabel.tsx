@@ -1,11 +1,11 @@
-import React from 'react'
+import { memo } from 'react'
 
-import { Badge } from '@janhq/uikit'
+import { Badge } from '@janhq/joi'
 
-const RecommendedLabel: React.FC = () => (
-  <Badge className="space-x-1 rounded-md" themes="success">
+const RecommendedLabel = () => (
+  <Badge theme="success" variant="soft">
     <span>Recommended</span>
   </Badge>
 )
 
-export default React.memo(RecommendedLabel)
+export default memo(RecommendedLabel)

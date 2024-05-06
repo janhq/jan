@@ -3,11 +3,13 @@
     pointer-events: none;
   }
 
-  svg {
-    stroke-width: 1.5;
-  }
-
-  .title-bar {
+  .dragable-bar {
+    position: absolute;
+    left: 0px;
+    top: 0px;
+    width: 100%;
+    height: 32px;
+    user-select: none;
     -webkit-app-region: drag;
   }
 

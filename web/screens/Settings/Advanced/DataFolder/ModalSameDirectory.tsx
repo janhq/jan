@@ -1,15 +1,6 @@
 import React from 'react'
 
-import {
-  Modal,
-  ModalPortal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalFooter,
-  ModalClose,
-  Button,
-} from '@janhq/uikit'
+import { Modal, ModalClose, Button } from '@janhq/joi'
 
 import { atom, useAtom } from 'jotai'
 
@@ -23,23 +14,20 @@ const ModalSameDirectory = ({ onChangeFolderClick }: Props) => {
   const [show, setShow] = useAtom(showSamePathModalAtom)
 
   return (
-    <Modal open={show} onOpenChange={setShow}>
-      <ModalPortal />
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Unable to move files</ModalTitle>
-        </ModalHeader>
-        <p className="text-muted-foreground">
-          {`It seems like the folder you've chosen same with current directory`}
-        </p>
-        <ModalFooter>
-          <div className="flex gap-x-2">
+    <Modal
+      open={show}
+      onOpenChange={setShow}
+      title="Unable to move files"
+      content={
+        <div>
+          <p className="text-[hsla(var(--app-text-secondary))]">{`It seems like the folder you've chosen same with current directory`}</p>
+          <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={() => setShow(false)}>
-              <Button themes="ghost">Cancel</Button>
+              <Button theme="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
               <Button
-                themes="danger"
+                theme="destructive"
                 onClick={() => {
                   setShow(false)
                   onChangeFolderClick()
@@ -50,9 +38,9 @@ const ModalSameDirectory = ({ onChangeFolderClick }: Props) => {
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 

@@ -1,14 +1,6 @@
-import React from 'react'
+import { memo } from 'react'
 
-import {
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalFooter,
-  ModalClose,
-  Button,
-} from '@janhq/uikit'
+import { Modal, ModalClose, Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import {
@@ -29,33 +21,30 @@ const CancelModelImportModal: React.FC = () => {
   }
 
   return (
-    <Modal open={importModelStage === 'CONFIRM_CANCEL'}>
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Cancel Model Import?</ModalTitle>
-        </ModalHeader>
-
-        <p>
-          The model import process is not complete. Are you sure you want to
-          cancel all ongoing model imports? This action is irreversible and the
-          progress will be lost.
-        </p>
-
-        <ModalFooter>
-          <div className="flex gap-x-2">
+    <Modal
+      open={importModelStage === 'CONFIRM_CANCEL'}
+      title="Cancel Model Import?"
+      content={
+        <div>
+          <p className="text-[hsla(var(--app-text-secondary))]">
+            The model import process is not complete. Are you sure you want to
+            cancel all ongoing model imports? This action is irreversible and
+            the progress will be lost.
+          </p>
+          <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={onContinueClick}>
-              <Button themes="ghost">Continue</Button>
+              <Button theme="ghost">Continue</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button autoFocus themes="danger" onClick={onCancelAllClick}>
+              <Button autoFocus theme="destructive" onClick={onCancelAllClick}>
                 Cancel All
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 
-export default React.memo(CancelModelImportModal)
+export default memo(CancelModelImportModal)

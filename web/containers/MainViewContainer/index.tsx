@@ -3,7 +3,7 @@ import { useAtomValue } from 'jotai'
 import { MainViewState } from '@/constants/screens'
 
 import ChatScreen from '@/screens/Chat'
-import ExploreModelsScreen from '@/screens/ExploreModels'
+import HubScreen from '@/screens/Hub'
 import LocalServerScreen from '@/screens/LocalServer'
 import SettingsScreen from '@/screens/Settings'
 
@@ -15,7 +15,7 @@ const MainViewContainer: React.FC = () => {
   let children = null
   switch (mainViewState) {
     case MainViewState.Hub:
-      children = <ExploreModelsScreen />
+      children = <HubScreen />
       break
 
     case MainViewState.Settings:

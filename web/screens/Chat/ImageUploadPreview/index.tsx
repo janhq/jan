@@ -34,7 +34,7 @@ const ImageUploadPreview: React.FC<Props> = ({ file }) => {
   }
 
   return (
-    <div className="flex flex-col rounded-t-lg border border-b-0 border-border p-4">
+    <div className="flex flex-col rounded-t-lg border border-b-0 border-[hsla(var(--app-border))] p-4">
       <div className="relative w-60 rounded-lg bg-secondary p-4">
         <img src={base64} alt={file.name} className="object-cover" />
         <h6 className="mt-2 line-clamp-1 font-medium">

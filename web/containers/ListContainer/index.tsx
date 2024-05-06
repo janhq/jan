@@ -4,7 +4,7 @@ type Props = {
   children: ReactNode
 }
 
-const ListContainer: React.FC<Props> = ({ children }) => {
+const ListContainer = ({ children }: Props) => {
   const listRef = useRef<HTMLDivElement>(null)
   const prevScrollTop = useRef(0)
   const isUserManuallyScrollingUp = useRef(false)

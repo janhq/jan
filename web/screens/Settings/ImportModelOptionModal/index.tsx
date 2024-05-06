@@ -1,15 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react'
 
 import { ModelImportOption } from '@janhq/core'
-import {
-  Button,
-  Modal,
-  ModalClose,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@janhq/uikit'
+import { Button, Modal, ModalClose } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import useImportModel, {
@@ -64,30 +56,24 @@ const ImportModelOptionModal: React.FC = () => {
           onContinueClick()
         }
       }}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>How would you like Jan to handle your models?</ModalTitle>
-        </ModalHeader>
-
-        {importOptions.map((option) => (
-          <ImportModelOptionSelection
-            key={option.type}
-            option={option}
-            checked={importOption.type === option.type}
-            setSelectedOptionType={() => setImportOption(option)}
-          />
-        ))}
-
-        <ModalFooter>
-          <div className="flex gap-x-2">
+      title="How would you like Jan to handle your models?"
+      content={
+        <div>
+          {importOptions.map((option) => (
+            <ImportModelOptionSelection
+              key={option.type}
+              option={option}
+              checked={importOption.type === option.type}
+              setSelectedOptionType={() => setImportOption(option)}
+            />
+          ))}
+          <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={onCancelClick}>
-              <Button themes="ghost">Cancel</Button>
+              <Button theme="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
               <Button
                 autoFocus
-                themes="primary"
                 onClick={() => {
                   destinationModal.current = 'IMPORTING_MODEL'
                 }}
@@ -96,9 +82,9 @@ const ImportModelOptionModal: React.FC = () => {
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 

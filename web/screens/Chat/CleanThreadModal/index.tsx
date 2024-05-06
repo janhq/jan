@@ -1,16 +1,6 @@
-import React, { useCallback } from 'react'
+import { useCallback, memo } from 'react'
 
-import {
-  Button,
-  Modal,
-  ModalClose,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalPortal,
-  ModalTitle,
-  ModalTrigger,
-} from '@janhq/uikit'
+import { Button, Modal, ModalClose } from '@janhq/joi'
 import { Paintbrush } from 'lucide-react'
 
 import useDeleteThread from '@/hooks/useDeleteThread'
@@ -30,36 +20,42 @@ const CleanThreadModal: React.FC<Props> = ({ threadId }) => {
   )
 
   return (
-    <Modal>
-      <ModalTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <div className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-secondary">
-          <Paintbrush size={16} className="text-muted-foreground" />
-          <span className="text-bold text-black dark:text-muted-foreground">
+    <Modal
+      title="Clean Thread"
+      trigger={
+        <div
+          className="flex cursor-pointer items-center space-x-2 px-4 py-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Paintbrush size={16} className="text-[hsla(var(--app-icon))]" />
+          <span className="text-bold text-[hsla(var(--app-text-primary))]">
             Clean thread
           </span>
         </div>
-      </ModalTrigger>
-      <ModalPortal />
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Clean Thread</ModalTitle>
-        </ModalHeader>
-        <p>Are you sure you want to clean this thread?</p>
-        <ModalFooter>
-          <div className="flex gap-x-2">
+      }
+      content={
+        <div>
+          <p className="text-[hsla(var(--app-text-secondary))]">
+            Are you sure you want to clean this thread?
+          </p>
+          <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={(e) => e.stopPropagation()}>
-              <Button themes="ghost">No</Button>
+              <Button theme="ghost">No</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button themes="danger" onClick={onCleanThreadClick} autoFocus>
+              <Button
+                theme="destructive"
+                onClick={onCleanThreadClick}
+                autoFocus
+              >
                 Yes
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 
-export default React.memo(CleanThreadModal)
+export default memo(CleanThreadModal)

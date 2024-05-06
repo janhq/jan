@@ -7,17 +7,7 @@ import {
   joinPath,
   openFileExplorer,
 } from '@janhq/core'
-import {
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalFooter,
-  ModalClose,
-  Button,
-  Input,
-  Textarea,
-} from '@janhq/uikit'
+import { Modal, Button, Input, ModalClose, TextArea } from '@janhq/joi'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Paperclip } from 'lucide-react'
@@ -125,95 +115,91 @@ const EditModelInfoModal: React.FC = () => {
     <Modal
       open={importModelStage === 'EDIT_MODEL_INFO'}
       onOpenChange={onCancelClick}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Edit Model Information</ModalTitle>
-        </ModalHeader>
+      title="Edit Model Information"
+      content={
+        <div>
+          <div className="flex flex-row space-x-4 rounded-xl border border-[hsla(var(--app-border))] p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-400">
+              <Paperclip color="#fff" />
+            </div>
 
-        <div className="flex flex-row space-x-4 rounded-xl border border-border p-4">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-400">
-            <Paperclip color="#fff" />
-          </div>
-
-          <div className="flex flex-1 flex-col">
-            <p>{editingModel.name}</p>
-            <div className="flex flex-row">
-              <span className="mr-2 text-sm text-[#71717A]">
-                {toGibibytes(editingModel.size)}
-              </span>
-              <div className="flex flex-row space-x-1">
-                <span className="text-sm font-semibold text-[#71717A]">
-                  Format:
+            <div className="flex flex-1 flex-col">
+              <p>{editingModel.name}</p>
+              <div className="flex flex-row">
+                <span className="mr-2 text-sm text-[#71717A]">
+                  {toGibibytes(editingModel.size)}
                 </span>
-                <span className="text-sm font-normal text-[#71717A]">
-                  {editingModel.format.toUpperCase()}
+                <div className="flex flex-row space-x-1">
+                  <span className="text-sm font-semibold text-[#71717A]">
+                    Format:
+                  </span>
+                  <span className="text-sm font-normal text-[#71717A]">
+                    {editingModel.format.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-1 flex flex-row items-center space-x-2">
+                <span className="line-clamp-1 text-xs font-normal text-[#71717A]">
+                  {modelPath}
                 </span>
+                <Button theme="ghost" onClick={onShowInFinderClick}>
+                  {openFileTitle()}
+                </Button>
               </div>
             </div>
-            <div className="mt-1 flex flex-row items-center space-x-2">
-              <span className="line-clamp-1 text-xs font-normal text-[#71717A]">
-                {modelPath}
-              </span>
-              <Button themes="ghost" onClick={onShowInFinderClick}>
-                {openFileTitle()}
-              </Button>
+          </div>
+
+          <form className="flex flex-col space-y-4">
+            <div className="flex flex-col">
+              <label className="mb-1">Model Name</label>
+              <Input
+                value={modelName}
+                onChange={(e) => {
+                  e.preventDefault()
+                  setModelName(e.target.value)
+                }}
+              />
             </div>
-          </div>
-        </div>
+            <div className="flex flex-col">
+              <label className="mb-1">Model ID</label>
+              <Input
+                disabled
+                value={modelId}
+                onChange={(e) => {
+                  e.preventDefault()
+                  setModelId(e.target.value)
+                }}
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="mb-1">Description</label>
+              <TextArea
+                value={description}
+                onChange={(e) => {
+                  e.preventDefault()
+                  setDescription(e.target.value)
+                }}
+              />
+            </div>
+            <div className="flex flex-col">
+              <label className="mb-1">Tags</label>
+              <Input value={tags.join(',')} onChange={onTagsChange} />
+            </div>
+          </form>
 
-        <form className="flex flex-col space-y-4">
-          <div className="flex flex-col">
-            <label className="mb-1">Model Name</label>
-            <Input
-              value={modelName}
-              onChange={(e) => {
-                e.preventDefault()
-                setModelName(e.target.value)
-              }}
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="mb-1">Model ID</label>
-            <Input
-              disabled
-              value={modelId}
-              onChange={(e) => {
-                e.preventDefault()
-                setModelId(e.target.value)
-              }}
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="mb-1">Description</label>
-            <Textarea
-              value={description}
-              onChange={(e) => {
-                e.preventDefault()
-                setDescription(e.target.value)
-              }}
-            />
-          </div>
-          <div className="flex flex-col">
-            <label className="mb-1">Tags</label>
-            <Input value={tags.join(',')} onChange={onTagsChange} />
-          </div>
-        </form>
-
-        <ModalFooter>
           <div className="flex gap-x-2">
             <ModalClose asChild onClick={onCancelClick}>
-              <Button themes="ghost">Cancel</Button>
+              <Button theme="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button autoFocus themes="primary" onClick={onSaveClick}>
+              <Button autoFocus theme="primary" onClick={onSaveClick}>
                 Save
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 

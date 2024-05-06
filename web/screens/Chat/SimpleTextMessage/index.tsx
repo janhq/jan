@@ -7,13 +7,7 @@ import {
   ThreadMessage,
 } from '@janhq/core'
 
-import {
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Tooltip } from '@janhq/joi'
 import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
@@ -151,7 +145,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   }, [props.content])
 
   return (
-    <div className="group relative mx-auto rounded-xl px-8">
+    <div className="group relative mx-auto p-4">
       <div
         className={twMerge(
           'mb-2 flex items-center justify-start gap-x-2',
@@ -160,7 +154,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       >
         {!isUser && !isSystem && <LogoMark width={28} />}
         {isUser && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[hsla(var(--app-border))] last:border-none">
             <svg
               width="12"
               height="16"
@@ -178,7 +172,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
         <div
           className={twMerge(
-            'text-sm font-extrabold capitalize',
+            'font-extrabold capitalize',
             isUser && 'text-gray-500'
           )}
         >
@@ -193,15 +187,15 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           className={twMerge(
             'absolute right-0 cursor-pointer transition-all',
             messages[messages.length - 1]?.id === props.id && !isUser
-              ? 'absolute -bottom-10 right-8'
-              : 'hidden group-hover:absolute group-hover:-top-2 group-hover:right-8 group-hover:flex'
+              ? 'absolute -bottom-8 right-4'
+              : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
           <MessageToolbar message={props} />
         </div>
         {messages[messages.length - 1]?.id === props.id &&
           (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
-            <p className="absolute right-8 text-xs font-medium text-foreground">
+            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--app-text-secondary))]">
               Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
             </p>
           )}
@@ -211,7 +205,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         <>
           {props.content[0]?.type === ContentType.Image && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
-              <div className="left-0 top-0 z-20 h-full w-full bg-black/20 group-hover/image:inline-block">
+              <div className="left-0 top-0 z-20 h-full w-full group-hover/image:inline-block">
                 <RelativeImage
                   src={props.content[0]?.text.annotations[0]}
                   id={props.id}
@@ -220,22 +214,17 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                   }
                 />
               </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
+              <Tooltip
+                trigger={
                   <div
-                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/image:flex"
+                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--app-bg))] group-hover/image:flex"
                     onClick={onViewFileContainer}
                   >
                     <FolderOpenIcon size={20} />
                   </div>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>{openFileTitle()}</span>
-                    <TooltipArrow />
-                  </TooltipContent>
-                </TooltipPortal>
-              </Tooltip>
+                }
+                content={<span>{openFileTitle()}</span>}
+              />
             </div>
           )}
 
@@ -247,30 +236,23 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                   onViewFile(`${props.id}.${props.content[0]?.type}`)
                 }
               />
-              <Tooltip>
-                <TooltipTrigger asChild>
+              <Tooltip
+                trigger={
                   <div
-                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-background group-hover/file:flex"
+                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--app-bg))] group-hover/file:flex"
                     onClick={onViewFileContainer}
                   >
                     <FolderOpenIcon size={20} />
                   </div>
-                </TooltipTrigger>
-                <TooltipPortal>
-                  <TooltipContent side="top" className="max-w-[154px] px-3">
-                    <span>{openFileTitle()}</span>
-                    <TooltipArrow />
-                  </TooltipContent>
-                </TooltipPortal>
-              </Tooltip>
-
+                }
+                content={<span>{openFileTitle()}</span>}
+              />
               <Icon type={props.content[0].type} />
-
               <div className="w-full">
                 <h6 className="line-clamp-1 w-4/5 font-medium">
                   {props.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
                 </h6>
-                <p className="text-muted-foreground">
+                <p className="text-[hsla(var(--app-text-secondary)]">
                   {toGibibytes(Number(props.content[0].text.size))}
                 </p>
               </div>
@@ -286,7 +268,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               ) : (
                 <div
                   className={twMerge(
-                    'message flex flex-grow flex-col gap-y-2 text-[15px] font-normal leading-relaxed',
+                    'message flex flex-grow flex-col gap-y-2 text-base font-normal leading-relaxed',
                     isUser
                       ? 'whitespace-pre-wrap break-words'
                       : 'rounded-xl bg-secondary p-4'
@@ -299,10 +281,10 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-grow flex-col gap-y-2 overflow-auto text-[15px] font-normal leading-relaxed',
+                'message max-width-[100%] flex flex-grow flex-col gap-y-2 overflow-auto text-base font-normal leading-relaxed',
                 isUser
                   ? 'whitespace-pre-wrap break-words'
-                  : 'rounded-xl bg-secondary p-4'
+                  : 'rounded-xl bg-secondary'
               )}
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}

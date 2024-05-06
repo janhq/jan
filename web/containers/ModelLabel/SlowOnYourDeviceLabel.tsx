@@ -1,34 +1,16 @@
-import React from 'react'
+import { memo } from 'react'
 
-import {
-  Badge,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Badge, Tooltip } from '@janhq/joi'
 import { InfoIcon } from 'lucide-react'
 
-const SlowOnYourDeviceLabel: React.FC = () => (
-  <Badge className="space-x-1 rounded-md" themes="warning">
+const SlowOnYourDeviceLabel = () => (
+  <Badge theme="warning" variant="soft">
     <span>Slow on your device</span>
-    <Tooltip>
-      <TooltipTrigger>
-        <InfoIcon size={16} />
-      </TooltipTrigger>
-      <TooltipPortal>
-        <TooltipContent side="right" sideOffset={10} className="max-w-[300px]">
-          <span>
-            This tag indicates that your current RAM performance may affect
-            model speed. It can change based on other active apps. To improve,
-            consider closing unnecessary applications to free up RAM.
-          </span>
-          <TooltipArrow />
-        </TooltipContent>
-      </TooltipPortal>
-    </Tooltip>
+    <Tooltip
+      trigger={<InfoIcon size={14} className="ml-2" />}
+      content="This tag indicates that your current RAM performance may affect model speed. It can change based on other active apps. To improve, consider closing unnecessary applications to free up RAM."
+    />
   </Badge>
 )
 
-export default React.memo(SlowOnYourDeviceLabel)
+export default memo(SlowOnYourDeviceLabel)

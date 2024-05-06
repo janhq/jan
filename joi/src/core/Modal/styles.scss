@@ -1,0 +1,77 @@
+/* reset */
+button,
+fieldset,
+.modal {
+  &__overlay {
+    @apply backdrop-blur-lg;
+    background-color: hsla(var(--modal-overlay));
+    z-index: 200;
+    position: fixed;
+    inset: 0;
+    animation: overlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  &__content {
+    color: hsla(var(--modal-fg));
+    background-color: hsla(var(--modal-bg));
+    border-radius: 8px;
+    position: fixed;
+    z-index: 300;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40vw;
+    max-width: 560px;
+    max-height: 85vh;
+    padding: 16px;
+    animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    border: 1px solid hsla(var(--app-border));
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  &__title {
+    @apply line-clamp-1;
+    margin: 0 0 8px 0;
+    padding-right: 16px;
+    font-weight: 600;
+    color: hsla(var(--modal-fg));
+    font-size: 18px;
+  }
+
+  &__close-icon {
+    font-family: inherit;
+    border-radius: 100%;
+    height: 24px;
+    width: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: hsla(var(--modal-fg));
+    position: absolute;
+    top: 8px;
+    right: 16px;
+  }
+}
+
+@keyframes overlayShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes contentShow {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -48%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}

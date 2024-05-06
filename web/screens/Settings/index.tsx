@@ -2,16 +2,17 @@ import { useEffect } from 'react'
 
 import { useSetAtom } from 'jotai'
 
-import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
+import SettingDetail from '@/screens/Settings/SettingDetail'
+import SettingMenu from '@/screens/Settings/SettingMenu'
 
-import SettingDetail from './SettingDetail'
-import SettingMenu from './SettingMenu'
+import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 export const SettingScreenList = [
   'My Models',
-  'My Settings',
+  'Appearance',
+  'Hotkey & Shortcut',
   'Advanced Settings',
   'Extensions',
 ] as const
@@ -31,7 +32,7 @@ const SettingsScreen: React.FC = () => {
   return (
     <div
       data-testid="testid-setting-description"
-      className="flex h-full bg-background"
+      className="flex h-full bg-[hsla(var(--app-bg))]"
     >
       <SettingMenu />
       <SettingDetail />

@@ -4,15 +4,15 @@ import { Thread } from '@janhq/core/'
 
 import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { GalleryHorizontalEndIcon, MoreVerticalIcon } from 'lucide-react'
+import { GalleryHorizontalEndIcon, MoreHorizontalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
+
+import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
-
-import { displayDate } from '@/utils/datetime'
 
 import CleanThreadModal from '../CleanThreadModal'
 
@@ -29,6 +29,7 @@ import {
 
 export default function ThreadList() {
   const threadStates = useAtomValue(threadStatesAtom)
+  const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const { setActiveThread } = useSetActiveThread()
@@ -74,13 +75,15 @@ export default function ThreadList() {
     downloadedModels,
   ])
 
+  if (!showLeftSideBar) return
+
   return (
-    <div className="px-3 py-4">
+    <div className="flex h-full w-40 flex-shrink-0 flex-col border-r border-[hsla(var(--app-border))] px-2 py-3">
       {threads.length === 0 ? (
-        <div className="px-4 py-8 text-center">
+        <div className="p-2 text-center">
           <GalleryHorizontalEndIcon
-            size={26}
-            className="mx-auto mb-3 text-muted-foreground"
+            size={16}
+            className="text-[hsla(var(--app-text-secondary)] mx-auto mb-3"
           />
           <h2 className="font-semibold">No Thread History</h2>
         </div>
@@ -89,37 +92,36 @@ export default function ThreadList() {
           <div
             key={thread.id}
             className={twMerge(
-              `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-gray-100 hover:dark:bg-secondary/50`
+              `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg`
             )}
             onClick={() => {
               onThreadClick(thread)
             }}
           >
-            <div className="relative z-10 p-4 py-4">
-              <p className="line-clamp-1 text-xs leading-5 text-muted-foreground">
-                {thread.updated && displayDate(thread.updated)}
-              </p>
-              <h2 className="line-clamp-1 font-bold">{thread.title}</h2>
-              <p className="mt-1 line-clamp-1 text-xs text-gray-700 group-hover/message:max-w-[160px] dark:text-gray-300">
-                {threadStates[thread.id]?.lastMessage
-                  ? threadStates[thread.id]?.lastMessage
-                  : 'No new message'}
-              </p>
+            <div className="relative z-10 p-2">
+              <h1
+                className={twMerge(
+                  'line-clamp-1 group-hover/message:pr-6',
+                  activeThreadId && 'font-medium'
+                )}
+              >
+                {thread.title}
+              </h1>
             </div>
             <div
               className={twMerge(
-                `group/icon invisible absolute bottom-2 right-2 z-20 rounded-lg p-1 text-muted-foreground hover:bg-gray-200 group-hover/message:visible hover:dark:bg-secondary`
+                `group/icon text-[hsla(var(--app-text-secondary)] invisible absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-md px-0.5 hover:bg-[hsla(var(--app-secondary-bg))] group-hover/message:visible`
               )}
             >
-              <MoreVerticalIcon />
-              <div className="invisible absolute right-0 z-20 w-40 overflow-hidden rounded-lg border border-border bg-background shadow-lg group-hover/icon:visible">
+              <MoreHorizontalIcon className="text-[hsla(var(--app-text-primary))]" />
+              <div className="invisible absolute left-0 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg group-hover/icon:visible">
                 <CleanThreadModal threadId={thread.id} />
                 <DeleteThreadModal threadId={thread.id} />
               </div>
             </div>
             {activeThreadId === thread.id && (
               <m.div
-                className="absolute inset-0 left-0 h-full w-full rounded-lg bg-gray-100 p-4 dark:bg-secondary/50"
+                className="absolute inset-0 left-0 h-full w-full rounded-lg bg-[hsla(var(--left-panel-icon-active-bg))]"
                 layoutId="active-thread"
               />
             )}

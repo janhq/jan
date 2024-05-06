@@ -1,6 +1,6 @@
 import React, { Fragment, useCallback } from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 

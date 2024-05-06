@@ -1,0 +1,131 @@
+.badge {
+  @apply inline-flex items-center justify-center px-2 font-medium transition-all;
+
+  // Primary
+  &--primary {
+    color: hsla(var(--primary-fg));
+    background-color: hsla(var(--primary-bg));
+
+    // Variant soft primary
+    &.badge--soft {
+      background-color: hsla(var(--primary-bg-soft));
+      color: hsla(var(--primary-bg));
+    }
+
+    // Variant outline primary
+    &.badge--outline {
+      background-color: transparent;
+      border: 1px solid hsla(var(--primary-bg));
+      color: hsla(var(--primary-bg));
+    }
+  }
+
+  // Secondary
+  &--secondary {
+    background-color: hsla(var(--secondary-bg));
+    color: hsla(var(--secondary-fg));
+
+    &.badge--soft {
+      background-color: hsla(var(--secondary-bg-soft));
+      color: hsla(var(--secondary-bg));
+    }
+
+    // Variant outline secondary
+    &.badge--outline {
+      background-color: transparent;
+      border: 1px solid hsla(var(--secondary-bg));
+    }
+  }
+
+  // Destructive
+  &--destructive {
+    color: hsla(var(--destructive-fg));
+    background-color: hsla(var(--destructive-bg));
+
+    // Variant soft destructive
+    &.badge--soft {
+      background-color: hsla(var(--destructive-bg-soft));
+      color: hsla(var(--destructive-bg));
+    }
+
+    // Variant outline destructive
+    &.badge--outline {
+      background-color: transparent;
+      border: 1px solid hsla(var(--destructive-bg));
+      color: hsla(var(--destructive-bg));
+    }
+  }
+
+  // Success
+  &--success {
+    @apply text-white;
+    background-color: hsla(var(--success-bg));
+
+    // Variant soft success
+    &.badge--soft {
+      background-color: hsla(var(--success-bg-soft));
+      color: hsla(var(--success-bg));
+    }
+
+    // Variant outline success
+    &.badge--outline {
+      background-color: transparent;
+      border: 1px solid hsla(var(--success-bg));
+      color: hsla(var(--success-bg));
+    }
+  }
+
+  // Warning
+  &--warning {
+    @apply text-white;
+    background-color: hsla(var(--warning-bg));
+
+    // Variant soft warning
+    &.badge--soft {
+      background-color: hsla(var(--warning-bg-soft));
+      color: hsla(var(--warning-bg));
+    }
+
+    // Variant outline warning
+    &.badge--outline {
+      background-color: transparent;
+      border: 1px solid hsla(var(--warning-bg));
+      color: hsla(var(--warning-bg));
+    }
+  }
+
+  // Info
+  &--info {
+    @apply text-white;
+    background-color: hsla(var(--info-bg));
+
+    // Variant soft info
+    &.badge--soft {
+      background-color: hsla(var(--info-bg-soft));
+      color: hsla(var(--info-bg));
+    }
+
+    // Variant outline info
+    &.badge--outline {
+      background-color: transparent;
+      border: 1px solid hsla(var(--info-bg));
+      color: hsla(var(--info-bg));
+    }
+  }
+
+  // Size
+  &--small {
+    @apply h-5;
+    border-radius: 4px;
+  }
+
+  &--medium {
+    @apply h-6;
+    border-radius: 6px;
+  }
+
+  &--large {
+    @apply h-7;
+    border-radius: 8px;
+  }
+}

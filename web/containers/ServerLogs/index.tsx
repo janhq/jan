@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import React from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { CopyIcon, CheckIcon, FolderIcon } from 'lucide-react'
@@ -62,8 +62,8 @@ const ServerLogs = (props: ServerLogsProps) => {
       <div className="absolute -top-11 right-2">
         <div className="flex w-full flex-row gap-2">
           <Button
-            themes="outline"
-            className="bg-white dark:bg-secondary/50"
+            theme="ghost"
+            variant="outline"
             onClick={() => onRevealInFinder('Logs')}
           >
             <div className="flex items-center space-x-2">
@@ -74,8 +74,8 @@ const ServerLogs = (props: ServerLogsProps) => {
             </div>
           </Button>
           <Button
-            themes="outline"
-            className="bg-white dark:bg-secondary/50"
+            theme="ghost"
+            variant="outline"
             onClick={() => {
               clipboard.copy(logs.slice(-100).join('\n') ?? '')
             }}
@@ -240,7 +240,9 @@ const ServerLogs = (props: ServerLogsProps) => {
                 </linearGradient>
               </defs>
             </svg>
-            <p className="mt-4 text-muted-foreground">Empty logs</p>
+            <p className="text-[hsla(var(--app-text-secondary)] mt-4">
+              Empty logs
+            </p>
           </div>
         )}
       </div>

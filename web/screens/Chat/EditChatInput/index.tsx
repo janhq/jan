@@ -8,17 +8,7 @@ import {
   ThreadMessage,
 } from '@janhq/core'
 
-import {
-  Textarea,
-  Button,
-  Modal,
-  ModalClose,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalPortal,
-  ModalTitle,
-} from '@janhq/uikit'
+import { TextArea, Button, Modal, ModalClose } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -131,7 +121,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   return (
     <div className="mx-auto flex w-full flex-shrink-0 flex-col items-start justify-center space-y-4 pb-0 pt-1">
       <div className="relative flex w-full flex-col">
-        <Textarea
+        <TextArea
           className={twMerge('max-h-[400px] resize-none pr-20')}
           style={{ height: '40px' }}
           ref={textareaRef}
@@ -150,37 +140,39 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
             !activeThread ||
             editPrompt.trim().length === 0
           }
-          themes="primary"
           onClick={sendEditMessage}
         >
           Submit
         </Button>
-        <Button themes="outline" onClick={() => setEditMessage('')}>
+        <Button
+          theme="ghost"
+          variant="outline"
+          onClick={() => setEditMessage('')}
+        >
           Cancel
         </Button>
       </div>
 
-      <Modal open={showDialog} onOpenChange={() => setshowDialog(false)}>
-        <ModalPortal />
-        <ModalContent>
-          <ModalHeader>
-            <ModalTitle>Edit Message</ModalTitle>
-          </ModalHeader>
-          <p className="text-muted-foreground">
-            Do you want to discard the change
-          </p>
-          <ModalFooter>
-            <div className="flex gap-x-2">
+      <Modal
+        open={showDialog}
+        onOpenChange={() => setshowDialog(false)}
+        title="Edit Message"
+        content={
+          <div>
+            <p className="text-[hsla(var(--app-text-secondary)]">
+              Do you want to discard the change
+            </p>
+            <div className="mt-4 flex justify-end gap-x-2">
               <ModalClose asChild onClick={() => setshowDialog(false)}>
-                <Button themes="outline">Cancel</Button>
+                <Button theme="ghost">Cancel</Button>
               </ModalClose>
               <ModalClose asChild onClick={() => setEditMessage('')}>
                 <Button autoFocus>Yes</Button>
               </ModalClose>
             </div>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+          </div>
+        }
+      />
     </div>
   )
 }

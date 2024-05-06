@@ -6,7 +6,7 @@ import {
   Model,
   Quantization,
 } from '@janhq/core'
-import { Badge, Button, Progress } from '@janhq/uikit'
+import { Badge, Button, Progress } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -115,19 +115,19 @@ const ModelDownloadRow: React.FC<Props> = ({
   }
 
   return (
-    <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-border p-3">
+    <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
       <div className="flex">
         {quantization && <Badge className="mr-1">{quantization}</Badge>}
 
-        <h1 className="mr-5 line-clamp-1 text-sm font-medium text-zinc-500 dark:text-gray-300">
+        <h1 className="mr-5 line-clamp-1 text-sm font-medium text-[hsla(var(--app-text-secondary))]">
           {fileName}
         </h1>
-        <Badge themes="secondary">{toGibibytes(fileSize)}</Badge>
+        <Badge theme="secondary">{toGibibytes(fileSize)}</Badge>
       </div>
 
       {isDownloaded ? (
         <Button
-          themes="secondaryBlue"
+          variant="soft"
           className="min-w-[98px]"
           onClick={onUseModelClick}
           data-testid={`use-model-btn-${model.id}`}
@@ -135,13 +135,13 @@ const ModelDownloadRow: React.FC<Props> = ({
           Use
         </Button>
       ) : downloadState != null ? (
-        <Button themes="secondaryBlue">
+        <Button variant="soft">
           <div className="flex items-center space-x-2">
             <span className="inline-block" onClick={onAbortDownloadClick}>
               Cancel
             </span>
             <Progress
-              className="inline-block h-2 w-[80px] bg-blue-100"
+              className="inline-block h-2 w-[80px]"
               value={
                 formatDownloadPercentage(downloadState?.percent, {
                   hidePercentage: true,

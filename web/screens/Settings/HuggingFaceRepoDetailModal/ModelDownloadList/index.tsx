@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 
-import { ScrollArea } from '@janhq/uikit'
+import { ScrollArea } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import ModelDownloadRow from '../ModelDownloadRow'
 
 import { importingHuggingFaceRepoDataAtom } from '@/helpers/atoms/HuggingFace.atom'
 
-const ModelDownloadList: React.FC = () => {
+const ModelDownloadList = () => {
   const importingHuggingFaceRepoData = useAtomValue(
     importingHuggingFaceRepoDataAtom
   )

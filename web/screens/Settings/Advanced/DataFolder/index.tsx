@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useState } from 'react'
 
 import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
-import { Button, Input } from '@janhq/uikit'
+import { Button, Input } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
@@ -98,14 +98,14 @@ const DataFolder = () => {
 
   return (
     <Fragment>
-      <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
+      <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+        <div className="space-y-1">
           <div className="flex gap-x-2">
             <h6 className="text-sm font-semibold capitalize">
               Jan Data Folder
             </h6>
           </div>
-          <p className="leading-relaxed">
+          <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
             Where messages, model configurations, and other user data are
             placed.
           </p>
@@ -114,7 +114,7 @@ const DataFolder = () => {
           <div className="relative">
             <Input
               value={janDataFolderPath}
-              className="w-[240px] pr-8"
+              className="w-full pr-8 sm:w-[240px]"
               disabled
             />
             <FolderOpenIcon
@@ -124,9 +124,10 @@ const DataFolder = () => {
             />
           </div>
           <Button
-            size="sm"
-            themes="outline"
-            className="h-9 w-9 p-0"
+            size="small"
+            theme="ghost"
+            variant="outline"
+            className="h-9 w-9 flex-shrink-0 p-0"
             onClick={onChangeFolderClick}
           >
             <PencilIcon size={16} />

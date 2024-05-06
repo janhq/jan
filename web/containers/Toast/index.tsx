@@ -108,7 +108,7 @@ export function toaster(props: Props) {
       return (
         <div
           className={twMerge(
-            'unset-drag dark:bg-zinc-white relative flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white dark:border dark:border-border',
+            'unset-drag dark:bg-zinc-white relative flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white dark:border dark:border-[hsla(var(--app-border))]',
             t.visible ? 'animate-enter' : 'animate-leave'
           )}
         >
@@ -138,7 +138,7 @@ export function snackbar(props: Props) {
       return (
         <div
           className={twMerge(
-            'unset-drag dark:bg-zinc-white relative bottom-2 flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white dark:border dark:border-border',
+            'unset-drag dark:bg-zinc-white relative bottom-2 flex animate-enter items-center gap-x-4 rounded-lg bg-foreground px-4 py-2 text-white dark:border dark:border-[hsla(var(--app-border))]',
             t.visible ? 'animate-enter' : 'animate-leave'
           )}
         >

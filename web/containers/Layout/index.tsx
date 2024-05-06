@@ -8,7 +8,7 @@ import { motion as m } from 'framer-motion'
 import { useAtom, useAtomValue } from 'jotai'
 
 import BottomBar from '@/containers/Layout/BottomBar'
-import RibbonNav from '@/containers/Layout/Ribbon'
+import Ribbon from '@/containers/Layout/Ribbon'
 
 import TopBar from '@/containers/Layout/TopBar'
 
@@ -49,38 +49,40 @@ const BaseLayout = () => {
   }, [setMainViewState])
 
   return (
-    <div className="flex h-screen w-screen flex-1 overflow-hidden">
-      <RibbonNav />
-      <div className=" relative top-12 flex h-[calc(100vh-96px)] w-full overflow-hidden bg-background">
-        <div className="w-full">
-          <TopBar />
-          <m.div
-            key={mainViewState}
-            initial={{ opacity: 0, y: -8 }}
-            className="h-full"
-            animate={{
-              opacity: 1,
-              y: 0,
-              transition: {
-                duration: 0.5,
-              },
-            }}
-          >
-            <MainViewContainer />
-          </m.div>
-          <BottomBar />
+    <>
+      <TopBar />
+      <div className="relative top-9 flex h-[calc(100vh-(36px+28px))] w-screen flex-1 overflow-hidden">
+        <Ribbon />
+        <div className="relative flex w-full overflow-hidden bg-[hsla(var(--app-bg))]">
+          <div className="w-full">
+            <m.div
+              key={mainViewState}
+              initial={{ opacity: 0, y: -8 }}
+              className="h-full"
+              animate={{
+                opacity: 1,
+                y: 0,
+                transition: {
+                  duration: 0.5,
+                },
+              }}
+            >
+              <MainViewContainer />
+            </m.div>
+          </div>
         </div>
+        <LoadingModal />
+        {importModelStage === 'SELECTING_MODEL' && <SelectingModelModal />}
+        {importModelStage === 'MODEL_SELECTED' && <ImportModelOptionModal />}
+        {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
+        {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
+        {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
+        <ChooseWhatToImportModal />
+        <InstallingExtensionModal />
+        <HuggingFaceRepoDetailModal />
       </div>
-      <LoadingModal />
-      {importModelStage === 'SELECTING_MODEL' && <SelectingModelModal />}
-      {importModelStage === 'MODEL_SELECTED' && <ImportModelOptionModal />}
-      {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
-      {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
-      {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
-      <ChooseWhatToImportModal />
-      <InstallingExtensionModal />
-      <HuggingFaceRepoDetailModal />
-    </div>
+      <BottomBar />
+    </>
   )
 }
 

@@ -1,6 +1,6 @@
-const DEFAULT_WIDTH = 1200
+const DEFAULT_WIDTH = 900
 const DEFAULT_MIN_WIDTH = 400
-const DEFAULT_HEIGHT = 800
+const DEFAULT_HEIGHT = 600
 
 export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   width: DEFAULT_WIDTH,
@@ -8,10 +8,6 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   height: DEFAULT_HEIGHT,
   skipTaskbar: false,
   show: true,
-  trafficLightPosition: {
-    x: 10,
-    y: 15,
-  },
   titleBarStyle: 'hiddenInset',
   vibrancy: 'sidebar',
 }

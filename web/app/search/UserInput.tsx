@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { Send } from 'lucide-react'
@@ -56,7 +56,7 @@ const UserInput: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col space-y-3 bg-white p-3 dark:bg-background">
+    <div className="flex flex-col space-y-3 bg-white p-3 dark:bg-[hsla(var(--app-bg))]">
       <form
         ref={formRef}
         className="flex h-full w-full items-center justify-center"

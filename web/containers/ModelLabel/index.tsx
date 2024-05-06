@@ -1,7 +1,7 @@
 import React from 'react'
 
 import { ModelMetadata } from '@janhq/core'
-import { Badge } from '@janhq/uikit'
+import { Badge } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -25,7 +25,7 @@ type Props = {
 }
 const UnsupportedModel = () => {
   return (
-    <Badge className="space-x-1 rounded-md" themes="warning">
+    <Badge className="space-x-1 rounded-md" theme="warning">
       <span>Coming Soon</span>
     </Badge>
   )

@@ -1,0 +1,6 @@
+.next/
+node_modules/
+dist/
+*.hbs
+*.mdx
+*.mjs

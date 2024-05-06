@@ -4,6 +4,7 @@
   "workspaces": {
     "packages": [
       "uikit",
+      "joi",
       "core",
       "electron",
       "web",
@@ -11,6 +12,7 @@
     ],
     "nohoist": [
       "uikit",
+      "joi",
       "core",
       "electron",
       "web",
@@ -41,7 +43,9 @@
     "build:extensions": "rimraf ./pre-install/*.tgz && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish && cd .. && yarn pre-install",
     "build:test": "yarn copy:assets && turbo run @janhq/web#build && cpx \"web/out/**\" \"electron/renderer/\" && turbo run build:test",
     "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish"
+    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
+    "dev:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi dev",
+    "build:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi build"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
