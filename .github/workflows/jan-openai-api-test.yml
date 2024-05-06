@@ -1,6 +1,12 @@
 name: Test - OpenAI API Pytest collection
 on:
   workflow_dispatch:
+    inputs:
+      endpoints:
+        description: 'comma-separated list (see available at endpoints_mapping.json e.g. GET /users,POST /transform)'
+        required: false
+        default: none
+        type: string
   push:
     branches:
       - main
@@ -19,7 +25,7 @@ on:
 
 jobs:
   openai-python-tests:
-    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    runs-on: [ubuntu-18-04-openai-api-collection-test, ubuntu-desktop]
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
@@ -38,11 +44,11 @@ jobs:
           rm -rf ~/jan
           make clean
 
-      - name: install dependencies
+      - name: Install dependencies
         run: |
           npm install -g @stoplight/prism-cli
 
-      - name: create python virtual environment and run test
+      - name: Create python virtual environment and run test
         run: |
           python3 -m venv /tmp/jan
           source /tmp/jan/bin/activate
@@ -67,8 +73,17 @@ jobs:
           cat ../docs/tests/conftest.py >> tests/conftest.py
 
           # start mock server and run test then stop mock server
-          prism mock ../docs/openapi/jan.yaml > prism.log & prism_pid=$! && pytest --reportportal --html=report.html && kill $prism_pid
+          IFS=',' read -ra endpoints <<< "$ENDPOINTS"
+          markers=""
+          for endpoint in "${endpoints[@]}"; do
+            markers+="endpoint($endpoint) or "
+          done
+          markers=${markers% or }
+          prism mock ../docs/openapi/jan.yaml > prism.log & prism_pid=$! &&
+          pytest -k "$markers" --reportportal --html=report.html && kill $prism_pid
           deactivate
+        env:
+          ENDPOINTS: ${{ github.event.inputs.endpoints }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v2
