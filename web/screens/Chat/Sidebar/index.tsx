@@ -118,6 +118,32 @@ const Sidebar: React.FC = () => {
       updateModelParameter(activeThread, {
         params: { [key]: value },
       })
+
+      if (
+        activeThread.assistants[0].model.parameters.max_tokens &&
+        activeThread.assistants[0].model.settings.ctx_len
+      ) {
+        if (
+          key === 'max_tokens' &&
+          Number(value) > activeThread.assistants[0].model.settings.ctx_len
+        ) {
+          updateModelParameter(activeThread, {
+            params: {
+              max_tokens: activeThread.assistants[0].model.settings.ctx_len,
+            },
+          })
+        }
+        if (
+          key === 'ctx_len' &&
+          Number(value) < activeThread.assistants[0].model.parameters.max_tokens
+        ) {
+          updateModelParameter(activeThread, {
+            params: {
+              max_tokens: activeThread.assistants[0].model.settings.ctx_len,
+            },
+          })
+        }
+      }
     },
     [activeThread, setEngineParamsUpdate, stopModel, updateModelParameter]
   )

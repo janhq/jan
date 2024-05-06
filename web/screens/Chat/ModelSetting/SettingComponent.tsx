@@ -5,9 +5,13 @@ import {
   SliderComponentProps,
 } from '@janhq/core'
 
+import { useAtomValue } from 'jotai/react'
+
 import Checkbox from '@/containers/Checkbox'
 import ModelConfigInput from '@/containers/ModelConfigInput'
 import SliderRightPanel from '@/containers/SliderRightPanel'
+
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   componentProps: SettingComponentProps[]
@@ -20,6 +24,7 @@ const SettingComponent: React.FC<Props> = ({
   disabled = false,
   onValueUpdated,
 }) => {
+  const activeThread = useAtomValue(activeThreadAtom)
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'slider': {
@@ -31,7 +36,14 @@ const SettingComponent: React.FC<Props> = ({
             title={data.title}
             description={data.description}
             min={min}
-            max={max}
+            max={
+              data.key === 'max_tokens'
+                ? Number(
+                    activeThread &&
+                      activeThread.assistants[0].model.settings.ctx_len
+                  )
+                : max
+            }
             step={step}
             value={value}
             name={data.key}
