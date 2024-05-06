@@ -22,8 +22,8 @@ const ChatBody: React.FC = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
 
-  if (downloadedModels.length === 0) return <EmptyModel />
-  if (messages.length === 0) return <EmptyThread />
+  if (!downloadedModels.length) return <EmptyModel />
+  if (!messages.length) return <EmptyThread />
 
   return (
     <ListContainer>
