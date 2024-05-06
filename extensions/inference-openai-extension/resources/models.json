@@ -7,9 +7,9 @@
     ],
     "id": "gpt-4-turbo",
     "object": "model",
-    "name": "OpenAI GPT 4",
-    "version": "1.1",
-    "description": "OpenAI GPT 4 model is extremely good",
+    "name": "OpenAI GPT 4 Turbo",
+    "version": "1.2",
+    "description": "OpenAI GPT 4 Turbo model is extremely good",
     "format": "api",
     "settings": {},
     "parameters": {
