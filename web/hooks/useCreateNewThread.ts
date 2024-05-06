@@ -99,6 +99,11 @@ export const useCreateNewThread = () => {
         ? { ctx_len: 2048 }
         : {}
 
+    const overriddenParameters =
+      defaultModel?.parameters.max_tokens && defaultModel.parameters.max_tokens
+        ? { max_tokens: 2048 }
+        : {}
+
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
@@ -107,7 +112,8 @@ export const useCreateNewThread = () => {
       model: {
         id: defaultModel?.id ?? '*',
         settings: { ...defaultModel?.settings, ...overriddenSettings } ?? {},
-        parameters: defaultModel?.parameters ?? {},
+        parameters:
+          { ...defaultModel?.parameters, ...overriddenParameters } ?? {},
         engine: defaultModel?.engine,
       },
       instructions: assistant.instructions,
