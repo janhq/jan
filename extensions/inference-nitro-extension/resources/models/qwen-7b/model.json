@@ -8,11 +8,11 @@
   "id": "qwen-7b",
   "object": "model",
   "name": "Qwen Chat 7B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Qwen is optimized at Chinese, ideal for everyday tasks.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 32768,
     "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
     "llama_model_path": "qwen1_5-7b-chat-q4_k_m.gguf"
   },
@@ -20,7 +20,7 @@
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 32768,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0
