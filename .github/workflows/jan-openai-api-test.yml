@@ -25,7 +25,7 @@ on:
 
 jobs:
   openai-python-tests:
-    runs-on: [ubuntu-18-04-openai-api-collection-test, ubuntu-desktop]
+    runs-on: [ubuntu-18-04-openai-api-collection-test, self-hosted, Linux, ubuntu-desktop]
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
