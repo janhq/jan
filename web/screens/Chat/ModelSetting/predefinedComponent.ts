@@ -33,7 +33,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       'The context length for model operations varies; the maximum depends on the specific model used.',
     controllerType: 'slider',
     controllerProps: {
-      min: 0,
+      min: 128,
       max: 4096,
       step: 128,
       value: 2048,

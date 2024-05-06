@@ -3,6 +3,7 @@ import {
   InputComponentProps,
   CheckboxComponentProps,
   SliderComponentProps,
+  InferenceEngine,
 } from '@janhq/core'
 
 import { useAtomValue } from 'jotai/react'
@@ -25,6 +26,8 @@ const SettingComponent: React.FC<Props> = ({
   onValueUpdated,
 }) => {
   const activeThread = useAtomValue(activeThreadAtom)
+
+  console.log(activeThread)
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'slider': {
@@ -37,7 +40,9 @@ const SettingComponent: React.FC<Props> = ({
             description={data.description}
             min={min}
             max={
-              data.key === 'max_tokens'
+              data.key === 'max_tokens' &&
+              activeThread &&
+              activeThread.assistants[0].model.engine === InferenceEngine.nitro
                 ? Number(
                     activeThread &&
                       activeThread.assistants[0].model.settings.ctx_len
