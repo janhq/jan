@@ -45,14 +45,14 @@ export default function CardSidebar({
   return (
     <div
       className={twMerge(
-        'flex w-full flex-col border-t border-border bg-zinc-100 dark:bg-zinc-900',
+        'flex w-full flex-col border-t border-[hsla(var(--app-border))] bg-zinc-100 dark:bg-zinc-900',
         asChild ? 'rounded-lg border' : 'border-t'
       )}
     >
       <div
         className={twMerge(
           'relative flex items-center justify-between pl-4',
-          show && children && 'border-b border-border'
+          show && children && 'border-b border-[hsla(var(--app-border))]'
         )}
       >
         <div className="flex items-center ">
@@ -91,7 +91,7 @@ export default function CardSidebar({
 
         {more && (
           <div
-            className="absolute right-4 top-8 z-50 w-72 rounded-lg border border-border bg-background shadow-lg"
+            className="absolute right-4 top-8 z-50 w-72 rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
             ref={setMenu}
           >
             <div
@@ -107,22 +107,22 @@ export default function CardSidebar({
               <FolderOpenIcon
                 size={16}
                 className={twMerge(
-                  'flex-shrink-0 text-muted-foreground',
+                  'text-[hsla(var(--app-text-secondary)] flex-shrink-0',
                   title === 'Model' && 'mt-1'
                 )}
               />
               <>
                 {title === 'Model' ? (
                   <div className="flex flex-col">
-                    <span className="font-medium text-black dark:text-muted-foreground">
+                    <span className="text-[hsla(var(--app-text-secondary)] font-medium text-black">
                       {openFileTitle()}
                     </span>
-                    <span className="mt-1 text-muted-foreground">
+                    <span className="text-[hsla(var(--app-text-secondary)] mt-1">
                       Opens thread.json. Changes affect this thread only.
                     </span>
                   </div>
                 ) : (
-                  <span className="text-bold text-black dark:text-muted-foreground">
+                  <span className="text-bold text-[hsla(var(--app-text-secondary)] text-black">
                     {openFileTitle()}
                   </span>
                 )}
@@ -137,11 +137,11 @@ export default function CardSidebar({
             >
               <PencilIcon
                 size={16}
-                className="mt-0.5 flex-shrink-0 text-muted-foreground"
+                className="text-[hsla(var(--app-text-secondary)] mt-0.5 flex-shrink-0"
               />
               <>
                 <div className="flex flex-col">
-                  <span className="line-clamp-1 font-medium text-black dark:text-muted-foreground">
+                  <span className="text-[hsla(var(--app-text-secondary)] line-clamp-1 font-medium text-black">
                     Edit Global Defaults for{' '}
                     <span
                       className="font-bold"
@@ -150,7 +150,7 @@ export default function CardSidebar({
                       {activeThread?.assistants[0].model.id}
                     </span>
                   </span>
-                  <span className="mt-1 text-muted-foreground">
+                  <span className="text-[hsla(var(--app-text-secondary)] mt-1">
                     {title === 'Model' ? (
                       <>
                         Opens <span className="lowercase">{title}.json.</span>
@@ -175,7 +175,7 @@ export default function CardSidebar({
       {show && (
         <div
           className={twMerge(
-            'flex flex-col gap-2 bg-white px-2 dark:bg-background',
+            'flex flex-col gap-2 bg-white px-2 dark:bg-[hsla(var(--app-bg))]',
             asChild && 'rounded-b-lg'
           )}
         >

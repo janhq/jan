@@ -1,13 +1,13 @@
-import React, { useMemo } from 'react'
+import { ReactNode, useMemo, memo } from 'react'
 
-import { Badge } from '@janhq/uikit'
+import { Badge } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { Download } from 'lucide-react'
 
 import { importingHuggingFaceRepoDataAtom } from '@/helpers/atoms/HuggingFace.atom'
 
-const ModelSegmentInfo: React.FC = () => {
+const ModelSegmentInfo = () => {
   const importingHuggingFaceRepoData = useAtomValue(
     importingHuggingFaceRepoDataAtom
   )
@@ -77,12 +77,7 @@ const ModelSegmentInfo: React.FC = () => {
       <HeaderInfo title="Tags">
         <div className="mt-2 flex flex-wrap gap-x-1 gap-y-1">
           {importingHuggingFaceRepoData.tags.map((tag) => (
-            <Badge
-              key={tag}
-              themes="primary"
-              className="line-clamp-1"
-              title={tag}
-            >
+            <Badge key={tag} title={tag}>
               {tag}
             </Badge>
           ))}
@@ -94,10 +89,10 @@ const ModelSegmentInfo: React.FC = () => {
 
 type HeaderInfoProps = {
   title: string
-  children: React.ReactNode
+  children: ReactNode
 }
 
-const HeaderInfo: React.FC<HeaderInfoProps> = ({ title, children }) => {
+const HeaderInfo = ({ title, children }: HeaderInfoProps) => {
   return (
     <div className="flex flex-col space-y-2">
       <h1 className="text-sm font-semibold">{title}</h1>
@@ -106,4 +101,4 @@ const HeaderInfo: React.FC<HeaderInfoProps> = ({ title, children }) => {
   )
 }
 
-export default React.memo(ModelSegmentInfo)
+export default memo(ModelSegmentInfo)

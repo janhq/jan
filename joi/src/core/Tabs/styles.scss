@@ -1,0 +1,36 @@
+.tabs {
+  display: flex;
+  flex-direction: column;
+
+  &__list {
+    flex-shrink: 0;
+    display: flex;
+    border-bottom: 1px solid hsla(var(--app-border));
+  }
+
+  &__trigger {
+    font-family: inherit;
+    padding: 0 12px;
+    flex: 1;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    user-select: none;
+    &:focus {
+      position: relative;
+    }
+  }
+
+  &__content {
+    flex-grow: 1;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    outline: none;
+  }
+}
+
+.tabs__trigger[data-state='active'] {
+  border-bottom: 1px solid hsla(var(--primary-bg));
+}

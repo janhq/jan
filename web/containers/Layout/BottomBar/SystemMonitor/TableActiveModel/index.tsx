@@ -1,14 +1,6 @@
 import { Fragment } from 'react'
 
-import {
-  Tooltip,
-  TooltipTrigger,
-  Button,
-  TooltipPortal,
-  Badge,
-  TooltipContent,
-  TooltipArrow,
-} from '@janhq/uikit'
+import { Tooltip, Button, Badge } from '@janhq/joi'
 
 import { useAtom } from 'jotai'
 
@@ -25,10 +17,10 @@ const TableActiveModel = () => {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   return (
-    <div className="m-4 mr-0 w-2/3 flex-shrink-0">
-      <div className="overflow-hidden rounded-lg border border-border shadow-sm">
+    <div className="m-4 mr-0 w-full">
+      <div className="overflow-hidden rounded-lg border border-[hsla(var(--app-border))] shadow-sm">
         <table className="w-full px-8">
-          <thead className="w-full border-b border-border bg-secondary">
+          <thead className="w-full border-b border-[hsla(var(--app-border))] bg-secondary">
             <tr>
               {Column.map((col, i) => {
                 return (
@@ -59,23 +51,24 @@ const TableActiveModel = () => {
                     <p className="line-clamp-2">{activeModel.id}</p>
                   </td>
                   <td className="px-4 py-2">
-                    <Badge themes="secondary">
+                    <Badge theme="secondary">
                       {toGibibytes(activeModel.metadata.size)}
                     </Badge>
                   </td>
                   <td className="px-4 py-2">
-                    <Badge themes="secondary">v{activeModel.version}</Badge>
+                    <Badge theme="secondary">v{activeModel.version}</Badge>
                   </td>
                   <td className="px-4 py-2 text-center">
-                    <Tooltip>
-                      <TooltipTrigger className="w-full">
+                    <Tooltip
+                      trigger={
                         <Button
                           block
-                          themes={
-                            stateModel.state === 'stop' ? 'danger' : 'primary'
+                          theme={
+                            stateModel.state === 'stop'
+                              ? 'destructive'
+                              : 'primary'
                           }
                           className="w-16"
-                          loading={stateModel.loading}
                           onClick={() => {
                             stopModel()
                             window.core?.api?.stopServer()
@@ -84,19 +77,11 @@ const TableActiveModel = () => {
                         >
                           Stop
                         </Button>
-                      </TooltipTrigger>
-                      {serverEnabled && (
-                        <TooltipPortal>
-                          <TooltipContent side="top">
-                            <span>
-                              The API server is running, stop the model will
-                              also stop the server
-                            </span>
-                            <TooltipArrow />
-                          </TooltipContent>
-                        </TooltipPortal>
-                      )}
-                    </Tooltip>
+                      }
+                      content="The API server is running, stop the model will
+                      also stop the server"
+                      disabled={!serverEnabled}
+                    />
                   </td>
                 </tr>
               </tbody>

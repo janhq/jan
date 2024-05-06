@@ -1,6 +1,6 @@
 import { Fragment, useCallback } from 'react'
 
-import { Progress } from '@janhq/uikit'
+import { Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
@@ -38,7 +38,7 @@ const ImportingModelState: React.FC = () => {
           className="flex cursor-pointer flex-row items-center space-x-2"
           onClick={onClick}
         >
-          <p className="text-xs font-semibold text-muted-foreground">
+          <p className="text-[hsla(var(--app-text-secondary)] text-xs font-semibold">
             Importing model ({finishedImportModelCount}/{importingModels.length}
             )
           </p>
@@ -48,7 +48,7 @@ const ImportingModelState: React.FC = () => {
               className="h-2 w-24"
               value={transferredSize / totalSize}
             />
-            <span className="text-xs font-bold text-muted-foreground">
+            <span className="text-[hsla(var(--app-text-secondary)] text-xs font-bold">
               {progress.toFixed(2)}%
             </span>
           </div>

@@ -1,14 +1,6 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 
-import {
-  Slider,
-  Input,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Slider, Input, Tooltip } from '@janhq/joi'
 
 import { InfoIcon } from 'lucide-react'
 
@@ -26,7 +18,7 @@ type Props = {
   onValueChanged: (e: string | number | boolean) => void
 }
 
-const SliderRightPanel: React.FC<Props> = ({
+const SliderRightPanel = ({
   title,
   disabled,
   min,
@@ -35,27 +27,23 @@ const SliderRightPanel: React.FC<Props> = ({
   description,
   value,
   onValueChanged,
-}) => {
+}: Props) => {
   const [showTooltip, setShowTooltip] = useState({ max: false, min: false })
 
   useClickOutside(() => setShowTooltip({ max: false, min: false }), null, [])
   return (
     <div className="flex flex-col">
       <div className="mb-3 flex items-center gap-x-2">
-        <p className="text-sm font-semibold text-zinc-500 dark:text-gray-300">
-          {title}
-        </p>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <InfoIcon size={16} className="flex-shrink-0 dark:text-gray-500" />
-          </TooltipTrigger>
-          <TooltipPortal>
-            <TooltipContent side="top" className="max-w-[240px]">
-              <span>{description}</span>
-              <TooltipArrow />
-            </TooltipContent>
-          </TooltipPortal>
-        </Tooltip>
+        <p className="text-sm font-medium">{title}</p>
+        <Tooltip
+          trigger={
+            <InfoIcon
+              size={16}
+              className="flex-shrink-0 text-[hsl(var(--app-icon))]"
+            />
+          }
+          content={description}
+        />
       </div>
       <div className="flex items-center gap-x-4">
         <div className="relative w-full">
@@ -67,16 +55,17 @@ const SliderRightPanel: React.FC<Props> = ({
             step={step}
             disabled={disabled}
           />
-          <div className="relative mt-2 flex items-center justify-between text-gray-400">
-            <p className="text-sm">{min}</p>
-            <p className="text-sm">{max}</p>
+          <div className="relative mt-1 flex items-center justify-between text-[hsla(var(--app-text-secondary))]">
+            <p className="text-xs">{min}</p>
+            <p className="text-xs">{max}</p>
           </div>
         </div>
-        <Tooltip open={showTooltip.max || showTooltip.min}>
-          <TooltipTrigger asChild>
+        <Tooltip
+          open={showTooltip.max || showTooltip.min}
+          trigger={
             <Input
               type="number"
-              className="-mt-4 h-8 w-20"
+              className="-mt-4 h-8 w-14"
               min={min}
               max={max}
               value={String(value)}
@@ -95,19 +84,18 @@ const SliderRightPanel: React.FC<Props> = ({
                 onValueChanged?.(Number(e.target.value))
               }}
             />
-          </TooltipTrigger>
-          <TooltipPortal>
-            <TooltipContent className="max-w-[240px]" side="top">
+          }
+          content={
+            <>
               {showTooltip.max && (
                 <span>Automatically set to the maximum allowed tokens</span>
               )}
               {showTooltip.min && (
                 <span>Automatically set to the minimum allowed tokens</span>
               )}
-              <TooltipArrow />
-            </TooltipContent>
-          </TooltipPortal>
-        </Tooltip>
+            </>
+          }
+        />
       </div>
     </div>
   )

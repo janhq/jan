@@ -1,14 +1,7 @@
 import { useCallback, useEffect } from 'react'
 
 import { abortDownload } from '@janhq/core'
-import {
-  Button,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  Progress,
-} from '@janhq/uikit'
+import { Button, Modal, Progress } from '@janhq/joi'
 import { atom, useAtom, useAtomValue } from 'jotai'
 
 import {
@@ -45,42 +38,41 @@ const InstallingExtensionModal: React.FC = () => {
 
   return (
     <Modal
+      title="Installing Extension"
       open={showInstallingExtensionModal}
       onOpenChange={() => setShowInstallingExtensionModal(false)}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Installing Extension</ModalTitle>
-        </ModalHeader>
-        {Object.values(installingExtensions).map((item) => (
-          <div className="pt-2" key={item.extensionId}>
-            <Progress
-              className="mb-2 h-2"
-              value={
-                formatDownloadPercentage(item.percentage, {
-                  hidePercentage: true,
-                }) as number
-              }
-            />
-            <div className="flex items-center justify-between gap-x-2">
-              <div className="flex gap-x-2">
-                <p className="line-clamp-1">
-                  {formatExtensionsName(item.extensionId)}
-                </p>
-                <span>{formatDownloadPercentage(item.percentage)}</span>
+      content={
+        <div>
+          {Object.values(installingExtensions).map((item) => (
+            <div className="pt-2" key={item.extensionId}>
+              <Progress
+                className="mb-2 h-2"
+                value={
+                  formatDownloadPercentage(item.percentage, {
+                    hidePercentage: true,
+                  }) as number
+                }
+              />
+              <div className="flex items-center justify-between gap-x-2">
+                <div className="flex gap-x-2">
+                  <p className="line-clamp-1">
+                    {formatExtensionsName(item.extensionId)}
+                  </p>
+                  <span>{formatDownloadPercentage(item.percentage)}</span>
+                </div>
+                <Button
+                  theme="ghost"
+                  size="small"
+                  onClick={() => onAbortInstallingExtensionClick(item)}
+                >
+                  Cancel
+                </Button>
               </div>
-              <Button
-                themes="outline"
-                size="sm"
-                onClick={() => onAbortInstallingExtensionClick(item)}
-              >
-                Cancel
-              </Button>
             </div>
-          </div>
-        ))}
-      </ModalContent>
-    </Modal>
+          ))}
+        </div>
+      }
+    />
   )
 }
 

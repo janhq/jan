@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
+import { ScrollArea } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
@@ -27,7 +28,7 @@ import ThreadList from '@/screens/Chat/ThreadList'
 
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
-import Sidebar from './Sidebar'
+import ThreadRightBar from './ThreadRightBar'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
@@ -54,7 +55,7 @@ const renderError = (code: string) => {
 
 const ChatScreen: React.FC = () => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const showLeftSideBar = useAtomValue(showLeftSideBarAtom)
+
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
   const [dragOver, setDragOver] = useState(false)
 
@@ -150,19 +151,14 @@ const ChatScreen: React.FC = () => {
 
   return (
     <div className="flex h-full w-full">
-      {/* Left side bar */}
-      {showLeftSideBar ? (
-        <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
-          <ThreadList />
-        </div>
-      ) : null}
+      <ThreadList />
 
       <div
-        className="relative flex h-full w-full flex-col overflow-auto bg-background outline-none"
+        className="relative flex h-full w-full flex-col overflow-auto bg-[hsla(var(--app-bg))] outline-none"
         {...getRootProps()}
       >
         {dragOver && (
-          <div className="absolute z-50 mx-auto h-full w-full bg-background/50 p-8 backdrop-blur-lg">
+          <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">
             <div
               className={twMerge(
                 'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-blue-500',
@@ -198,7 +194,7 @@ const ChatScreen: React.FC = () => {
         )}
         <div className="flex h-full w-full flex-col justify-between">
           {activeThread ? (
-            <div className="flex h-full w-full overflow-y-auto overflow-x-hidden">
+            <div className="flex h-full w-full overflow-x-hidden">
               <ChatBody />
             </div>
           ) : (
@@ -211,7 +207,7 @@ const ChatScreen: React.FC = () => {
             <>
               <ModelReload />
               <div className="mb-2 text-center">
-                <span className="text-muted-foreground">
+                <span className="text-[hsla(var(--app-text-secondary)]">
                   Model is reloading to apply new changes.
                 </span>
               </div>
@@ -220,7 +216,7 @@ const ChatScreen: React.FC = () => {
 
           {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
-              <span className="text-muted-foreground">
+              <span className="text-[hsla(var(--app-text-secondary)]">
                 Message will be sent once the model has started
               </span>
             </div>
@@ -232,7 +228,7 @@ const ChatScreen: React.FC = () => {
       </div>
 
       {/* Right side bar */}
-      {activeThread && <Sidebar />}
+      {activeThread && <ThreadRightBar />}
     </div>
   )
 }

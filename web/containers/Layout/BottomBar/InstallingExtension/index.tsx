@@ -1,6 +1,6 @@
 import { Fragment, useCallback } from 'react'
 
-import { Progress } from '@janhq/uikit'
+import { Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { showInstallingExtensionModalAtom } from './InstallingExtensionModal'
@@ -33,13 +33,13 @@ const InstallingExtension: React.FC = () => {
           className="flex cursor-pointer flex-row items-center space-x-2"
           onClick={onClick}
         >
-          <p className="text-xs font-semibold text-muted-foreground">
+          <p className="text-[hsla(var(--app-text-secondary)] text-xs font-semibold">
             Installing Additional Dependencies
           </p>
 
           <div className="flex flex-row items-center justify-center space-x-2 rounded-md bg-secondary px-2 py-[2px]">
             <Progress className="h-2 w-24" value={progress} />
-            <span className="text-xs font-bold text-muted-foreground">
+            <span className="text-[hsla(var(--app-text-secondary)] text-xs font-bold">
               {progress.toFixed(2)}%
             </span>
           </div>

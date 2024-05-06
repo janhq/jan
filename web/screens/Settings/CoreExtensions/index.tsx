@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect, useRef } from 'react'
 
-import { Button, ScrollArea } from '@janhq/uikit'
+import { Button, ScrollArea, Badge } from '@janhq/joi'
 import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
@@ -79,17 +79,20 @@ const ExtensionCatalog = () => {
             return (
               <div
                 key={i}
-                className="flex w-full items-start justify-between border-b border-border py-4 first:pt-4 last:border-none"
+                className="flex w-full flex-col items-start justify-between border-b border-[hsla(var(--app-border))] py-4 first:pt-4 last:border-none sm:flex-row"
               >
-                <div className="w-4/5 flex-shrink-0 space-y-1.5">
+                <div className="w-full flex-shrink-0 space-y-1.5 sm:w-4/5">
                   <div className="flex items-center gap-x-2">
-                    <h6 className="text-sm font-semibold">
-                      {item.productName ?? formatExtensionsName(item.name)} v
-                      {item.version}
+                    <h6 className="line-clamp-1 font-semibold">
+                      {item.productName ?? formatExtensionsName(item.name)}
                     </h6>
+                    <Badge variant="outline" theme="secondary">
+                      v{item.version}
+                    </Badge>
                   </div>
                   {
                     <div
+                      className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]"
                       dangerouslySetInnerHTML={{
                         // eslint-disable-next-line @typescript-eslint/naming-convention
                         __html: marked.parse(item.description ?? '', {
@@ -103,27 +106,27 @@ const ExtensionCatalog = () => {
             )
           })}
           {/* Manual Installation */}
-          <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="flex w-full flex-col items-start justify-between gap-y-2 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="w-4/5 flex-shrink-0 space-y-1.5">
               <div className="flex gap-x-2">
                 <h6 className="text-sm font-semibold capitalize">
                   Manual Installation
                 </h6>
               </div>
-              <p className="whitespace-pre-wrap leading-relaxed ">
+              <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
                 Select an extension file to install (.tgz)
               </p>
             </div>
             <div>
               <input
                 type="file"
-                style={{ display: 'none' }}
+                hidden
                 ref={fileInputRef}
                 onChange={handleFileChange}
               />
               <Button
-                themes="secondaryBlue"
-                size="sm"
+                variant="soft"
+                size="small"
                 onClick={() => fileInputRef.current?.click()}
               >
                 Select
@@ -142,7 +145,10 @@ const marked: Marked = new Marked({
     link: (href, title, text) => {
       return Renderer.prototype.link
         ?.apply(this, [href, title, text])
-        .replace('<a', "<a class='text-blue-500' target='_blank'")
+        .replace(
+          '<a',
+          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
+        )
     },
   },
 })

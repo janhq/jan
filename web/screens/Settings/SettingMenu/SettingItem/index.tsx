@@ -12,7 +12,7 @@ type Props = {
   setting: string
 }
 
-const SettingItem: React.FC<Props> = ({ name, setting }) => {
+const SettingItem = ({ name, setting }: Props) => {
   const [selectedSetting, setSelectedSetting] = useAtom(selectedSettingAtom)
   const isActive = selectedSetting === setting
 
@@ -22,16 +22,20 @@ const SettingItem: React.FC<Props> = ({ name, setting }) => {
 
   return (
     <div
-      className="relative block cursor-pointer py-1.5"
+      className="relative block cursor-pointer px-1 py-1.5"
       onClick={onSettingItemClick}
     >
-      <span className={twMerge(isActive && 'relative z-10', 'capitalize')}>
+      <span
+        className={twMerge(
+          'font-medium capitalize text-[hsla(var(--left-panel-menu))]',
+          isActive && 'relative z-10 text-[hsla(var(--left-panel-menu-active))]'
+        )}
+      >
         {name}
       </span>
-
       {isActive && (
         <m.div
-          className="absolute inset-0 -left-3 h-full w-[calc(100%+24px)] rounded-md bg-primary/50"
+          className="absolute inset-0 -left-0.5 h-full w-[calc(100%+4px)] rounded-lg bg-[hsla(var(--left-panel-icon-active-bg))]"
           layoutId="active-static-menu"
         />
       )}

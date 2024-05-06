@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { joinPath, openFileExplorer } from '@janhq/core'
-import {
-  Button,
-  Modal,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@janhq/uikit'
+import { Button, Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
@@ -53,40 +46,35 @@ const ImportingModelModal: React.FC = () => {
     <Modal
       open={importModelStage === 'IMPORTING_MODEL'}
       onOpenChange={() => setImportModelStage('NONE')}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>
-            Importing model ({finishedImportModel}/{importingModels.length})
-          </ModalTitle>
+      title={`Importing model (${finishedImportModel}/${importingModels.length})`}
+      content={
+        <div>
           <div className="flex flex-row items-center space-x-2">
-            <label className="text-xs text-muted-foreground">
+            <label className="text-[hsla(var(--app-text-secondary)] text-xs">
               {modelFolder}
             </label>
-            <Button
-              themes="ghost"
-              className="text-blue-500"
-              onClick={onOpenModelFolderClick}
-            >
+            <Button theme="ghost" onClick={onOpenModelFolderClick}>
               {openFileTitle()}
             </Button>
           </div>
-        </ModalHeader>
 
-        <div className="space-y-3">
-          {importingModels.map((model) => (
-            <ImportingModelItem key={model.importId} model={model} />
-          ))}
+          <div className="space-y-3">
+            {importingModels.map((model) => (
+              <ImportingModelItem key={model.importId} model={model} />
+            ))}
+          </div>
+
+          <div className="mx-[-16px] mb-[-16px] flex flex-row rounded-b-lg bg-[#F4F4F5] px-2 py-2 dark:bg-secondary	">
+            <AlertCircle size={20} />
+            <p className="text-[hsla(var(--app-text-secondary)] text-sm font-semibold">
+              Own your model configurations, use at your own risk.
+              Misconfigurations may result in lower quality or unexpected
+              outputs.{' '}
+            </p>
+          </div>
         </div>
-        <ModalFooter className="mx-[-16px] mb-[-16px] flex flex-row rounded-b-lg bg-[#F4F4F5] px-2 py-2 dark:bg-secondary	">
-          <AlertCircle size={20} />
-          <p className="text-sm font-semibold text-muted-foreground">
-            Own your model configurations, use at your own risk.
-            Misconfigurations may result in lower quality or unexpected outputs.{' '}
-          </p>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+      }
+    />
   )
 }
 

@@ -10,11 +10,11 @@ type Props = {
   disabled?: boolean
 }
 
-const ModelSetting: React.FC<Props> = ({
+const ModelSetting = ({
   componentProps,
   onValueChanged,
   disabled = false,
-}) => (
+}: Props) => (
   <SettingComponentBuilder
     disabled={disabled}
     componentProps={componentProps}

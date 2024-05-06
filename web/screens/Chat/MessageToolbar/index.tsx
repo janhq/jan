@@ -15,8 +15,6 @@ import {
   PencilIcon,
 } from 'lucide-react'
 
-import { twMerge } from 'tailwind-merge'
-
 import { useClipboard } from '@/hooks/useClipboard'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
@@ -62,15 +60,15 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   if (message.status === MessageStatus.Pending) return null
 
   return (
-    <div className={twMerge('flex flex-row items-center')}>
-      <div className="flex overflow-hidden rounded-md border border-border bg-background/20">
+    <div className="flex flex-row items-center">
+      <div className="flex gap-1 bg-[hsla(var(--app-bg))]">
         {message.role === ChatCompletionRole.User &&
           message.content[0]?.type === ContentType.Text && (
             <div
-              className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+              className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onEditClick}
             >
-              <PencilIcon size={14} />
+              <PencilIcon size={14} className="text-[hsla(var(--app-icon))]" />
             </div>
           )}
 
@@ -79,29 +77,30 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           messages[messages.length - 1].content[0]?.type !==
             ContentType.Pdf && (
             <div
-              className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+              className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onRegenerateClick}
             >
-              <RefreshCcw size={14} />
+              <RefreshCcw size={14} className="text-[hsla(var(--app-icon))]" />
             </div>
           )}
+
         <div
-          className="cursor-pointer border-r border-border px-2 py-2 hover:bg-background/80"
+          className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
           onClick={() => {
             clipboard.copy(message.content[0]?.text?.value ?? '')
           }}
         >
           {clipboard.copied ? (
-            <CheckIcon size={14} className="text-green-600" />
+            <CheckIcon size={14} className="text-[hsla(var(--success-bg))]" />
           ) : (
-            <CopyIcon size={14} />
+            <CopyIcon size={14} className="text-[hsla(var(--app-icon))]" />
           )}
         </div>
         <div
-          className="cursor-pointer px-2 py-2 hover:bg-background/80"
+          className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
           onClick={onDeleteClick}
         >
-          <Trash2Icon size={14} />
+          <Trash2Icon size={14} className="text-[hsla(var(--app-icon))]" />
         </div>
       </div>
     </div>

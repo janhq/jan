@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { Fragment, useEffect, useState } from 'react'
 
 import {
   BaseExtension,
@@ -63,7 +63,7 @@ const ExtensionSetting: React.FC = () => {
   }
 
   return (
-    <>
+    <Fragment>
       {settings.length > 0 && (
         <SettingDetailItem
           componentProps={settings}
@@ -73,7 +73,7 @@ const ExtensionSetting: React.FC = () => {
       {baseExtension && installationState !== 'NotRequired' && (
         <ExtensionItem item={baseExtension} />
       )}
-    </>
+    </Fragment>
   )
 }
 

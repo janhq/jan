@@ -1,4 +1,5 @@
 import { MessageStatus } from '@janhq/core'
+
 import { useAtomValue } from 'jotai'
 
 import ListContainer from '@/containers/ListContainer'
@@ -17,7 +18,7 @@ import EmptyThread from './EmptyThread'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
-const ChatBody: React.FC = () => {
+const ChatBody = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
@@ -28,7 +29,10 @@ const ChatBody: React.FC = () => {
   return (
     <ListContainer>
       {messages.map((message, index) => (
-        <div key={message.id}>
+        <div
+          key={message.id}
+          className="border-b border-[hsla(var(--app-border))] last:border-none"
+        >
           {message.status !== MessageStatus.Error &&
             message.content.length > 0 && (
               <ChatItem {...message} key={message.id} />

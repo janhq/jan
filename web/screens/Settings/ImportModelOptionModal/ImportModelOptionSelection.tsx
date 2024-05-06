@@ -6,22 +6,25 @@ type Props = {
   setSelectedOptionType: (type: OptionType) => void
 }
 
-const ImportModelOptionSelection: React.FC<Props> = ({
+const ImportModelOptionSelection = ({
   option,
   checked,
   setSelectedOptionType,
-}) => (
+}: Props) => (
   <div
     className="flex cursor-pointer flex-row"
     onClick={() => setSelectedOptionType(option.type)}
   >
-    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[#2563EB]">
-      {checked && <div className="h-2 w-2 rounded-full bg-primary" />}
+    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[hsla(var(--primary-bg))]">
+      {checked && (
+        <div className="h-2 w-2 rounded-full bg-[hsla(var(--primary-bg))]" />
+      )}
     </div>
-
     <div className="ml-2 flex-1">
-      <p className="mb-2 text-sm font-medium">{option.title}</p>
-      <p className="text-sm font-normal text-[#71717A]">{option.description}</p>
+      <p className="mb-2 font-medium">{option.title}</p>
+      <p className="font-normal text-[hasla(var(--app-text-secondary))]">
+        {option.description}
+      </p>
     </div>
   </div>
 )

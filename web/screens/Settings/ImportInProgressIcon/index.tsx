@@ -48,7 +48,7 @@ const DeleteIcon: React.FC<Partial<Props>> = React.memo(
 
     return (
       <div
-        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-gray-100"
+        className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-[hsla(var(--app-secondary-bg))]"
         onClick={onClick}
       >
         <X />

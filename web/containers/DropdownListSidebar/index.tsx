@@ -223,7 +223,7 @@ const DropdownListSidebar = ({
                       className={twMerge(
                         'relative my-1 flex w-full cursor-pointer items-center justify-center space-x-2 px-2 py-2',
                         isTabActive === i &&
-                          'rounded-md bg-background dark:bg-white'
+                          'rounded-md bg-[hsla(var(--app-bg))] dark:bg-white'
                       )}
                       key={i}
                       onClick={() => setIsTabActive(i)}
@@ -231,17 +231,17 @@ const DropdownListSidebar = ({
                       {i === 0 ? (
                         <MonitorIcon
                           size={20}
-                          className="z-50 text-muted-foreground"
+                          className="text-[hsla(var(--app-text-secondary)] z-50"
                         />
                       ) : (
                         <GlobeIcon
                           size={20}
-                          className="z-50 text-muted-foreground"
+                          className="text-[hsla(var(--app-text-secondary)] z-50"
                         />
                       )}
                       <span
                         className={twMerge(
-                          'relative z-50 font-medium text-muted-foreground',
+                          'text-[hsla(var(--app-text-secondary)] relative z-50 font-medium',
                           isTabActive === i &&
                             'font-bold text-foreground dark:text-black'
                         )}
@@ -254,7 +254,7 @@ const DropdownListSidebar = ({
               </ul>
             </div>
 
-            <div className="border-b border-border" />
+            <div className="border-b border-[hsla(var(--app-border))]" />
 
             <SelectGroup className="py-2">
               <>
@@ -283,14 +283,14 @@ const DropdownListSidebar = ({
                             <p className="line-clamp-2">{x.name}</p>
                             <div
                               className={twMerge(
-                                'mt-2 inline-flex items-center space-x-2 text-muted-foreground'
+                                'text-[hsla(var(--app-text-secondary)] mt-2 inline-flex items-center space-x-2'
                               )}
                             >
                               <p className="line-clamp-2 text-xs">{x.id}</p>
                             </div>
                           </div>
                           <div className="flex-shrink-0 space-x-2">
-                            <span className="font-bold text-muted-foreground">
+                            <span className="text-[hsla(var(--app-text-secondary)] font-bold">
                               {toGibibytes(x.metadata.size)}
                             </span>
                             {x.metadata.size && (
@@ -301,7 +301,7 @@ const DropdownListSidebar = ({
                       </SelectItem>
                       <div
                         className={twMerge(
-                          'absolute -mt-6 ml-4 flex max-w-[200px] items-center space-x-2 text-muted-foreground'
+                          'text-[hsla(var(--app-text-secondary)] absolute -mt-6 ml-4 flex max-w-[200px] items-center space-x-2'
                         )}
                       >
                         <p className="line-clamp-1 flex-1 text-xs text-transparent">
@@ -325,7 +325,7 @@ const DropdownListSidebar = ({
                 )}
               </>
             </SelectGroup>
-            <div className="border-b border-border" />
+            <div className="border-b border-[hsla(var(--app-border))]" />
             <div className="flex w-full space-x-2 px-4 py-2">
               <Button
                 block

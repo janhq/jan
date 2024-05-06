@@ -1,0 +1,75 @@
+.accordion {
+  background-color: hsla(var(--accirdion-bg));
+  border-top: 1px solid hsla(var(--app-border));
+
+  &__item {
+    overflow: hidden;
+    margin-top: 1px;
+    border-bottom: 1px solid hsla(var(--app-border));
+
+    :focus-within {
+      position: relative;
+      z-index: 1;
+    }
+  }
+
+  &__header {
+    display: flex;
+  }
+
+  &__trigger {
+    font-family: inherit;
+    background-color: transparent;
+    padding: 0 16px;
+    height: 40px;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 500;
+  }
+
+  &__content {
+    overflow: hidden;
+    background-color: hsla(var(--accirdion-bg));
+
+    &--wrapper {
+      padding: 4px 16px 16px 16px;
+    }
+  }
+
+  &__chevron {
+    color: hsla(var(--app-icon));
+    transition: transform 300ms cubic-bezier(0.87, 0, 0.13, 1);
+  }
+}
+
+.accordion__content[data-state='open'] {
+  animation: slideDown 300ms cubic-bezier(0.87, 0, 0.13, 1);
+}
+
+.accordion__content[data-state='closed'] {
+  animation: slideUp 300ms cubic-bezier(0.87, 0, 0.13, 1);
+}
+
+.accordion__trigger[data-state='open'] > .accordion__chevron {
+  transform: rotate(180deg);
+}
+
+@keyframes slideDown {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}

@@ -2,17 +2,7 @@ import { useCallback } from 'react'
 
 import { Model } from '@janhq/core'
 
-import {
-  Modal,
-  ModalTrigger,
-  ModalClose,
-  ModalFooter,
-  ModalContent,
-  ModalHeader,
-  Button,
-  ModalTitle,
-  Progress,
-} from '@janhq/uikit'
+import { Modal, Button, Progress, ModalClose } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
@@ -47,18 +37,19 @@ const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
   }, [downloadState, downloadingModels, abortModelDownload])
 
   return (
-    <Modal>
-      <ModalTrigger asChild>
-        {isFromList ? (
-          <Button themes="outline" size="sm">
+    <Modal
+      title="Cancel Download"
+      trigger={
+        isFromList ? (
+          <Button variant="outline" size="small">
             {cancelText}
           </Button>
         ) : (
-          <Button themes="secondaryBlue">
+          <Button variant="soft">
             <div className="flex items-center space-x-2">
               <span className="inline-block">Cancel</span>
               <Progress
-                className="inline-block h-2 w-[80px] bg-blue-100"
+                className="w-[80px]"
                 value={
                   formatDownloadPercentage(downloadState?.percent, {
                     hidePercentage: true,
@@ -70,30 +61,27 @@ const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
               </span>
             </div>
           </Button>
-        )}
-      </ModalTrigger>
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Cancel Download</ModalTitle>
-        </ModalHeader>
-        <p>
-          Are you sure you want to cancel the download of&nbsp;
-          {downloadState?.modelId}?
-        </p>
-        <ModalFooter>
-          <div className="flex gap-x-2">
+        )
+      }
+      content={
+        <div>
+          <p className="text-[hsla(var(--app-text-secondary))]">
+            Are you sure you want to cancel the download of&nbsp;
+            {downloadState?.modelId}?
+          </p>
+          <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild>
-              <Button themes="ghost">No</Button>
+              <Button theme="ghost">No</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button themes="danger" onClick={onAbortDownloadClick}>
+              <Button theme="destructive" onClick={onAbortDownloadClick}>
                 Yes
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 

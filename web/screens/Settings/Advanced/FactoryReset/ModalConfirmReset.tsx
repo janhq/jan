@@ -1,16 +1,7 @@
 import React, { useCallback, useState } from 'react'
 
-import {
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-  ModalFooter,
-  ModalClose,
-  Button,
-  Checkbox,
-  Input,
-} from '@janhq/uikit'
+import { Modal, ModalClose, Button, Input, Checkbox } from '@janhq/joi'
+
 import { atom, useAtom, useAtomValue } from 'jotai'
 
 import useFactoryReset from '@/hooks/useFactoryReset'
@@ -35,53 +26,45 @@ const ModalConfirmReset = () => {
     <Modal
       open={modalValidation}
       onOpenChange={() => setModalValidation(false)}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>
-            Are you sure you want to reset to default settings?
-          </ModalTitle>
-        </ModalHeader>
-        <p className="text-muted-foreground">
-          It will reset the application to its original state, deleting all your
-          usage data, including model customizations and conversation history.
-          This action is irreversible.
-        </p>
+      title="Are you sure you want to reset to default settings?"
+      content={
         <div>
-          <p className="mb-2 mt-1 text-muted-foreground">{`To confirm, please enter the word "RESET" below:`}</p>
-          <Input
-            placeholder='Enter "RESET"'
-            onChange={(e) => setInputValue(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-shrink-0 items-start space-x-2">
-          <Checkbox
-            id="currentDirectory"
-            checked={currentDirectoryChecked}
-            onCheckedChange={(e) => setCurrentDirectoryChecked(Boolean(e))}
-          />
-          <div className="mt-0.5 flex flex-col">
-            <label
-              htmlFor="currentDirectory"
-              className="cursor-pointer text-sm font-medium leading-none"
-            >
-              Keep the current app data location
-            </label>
-            <p className="mt-2 leading-relaxed">
-              Otherwise it will reset back to its original location at:{' '}
-              <span className="font-medium">{defaultJanDataFolder}</span>
-            </p>
+          <p className="text-[hsla(var(--app-text-secondary))]">
+            It will reset the application to its original state, deleting all
+            your usage data, including model customizations and conversation
+            history. This action is irreversible.
+          </p>
+
+          <div className="my-4">
+            <p className="text-[hsla(var(--app-text-secondary)] mb-2 mt-1">{`To confirm, please enter the word "RESET" below:`}</p>
+            <Input
+              placeholder='Enter "RESET"'
+              onChange={(e) => setInputValue(e.target.value)}
+            />
           </div>
-        </div>
-        <ModalFooter>
-          <div className="flex gap-x-2">
+          <div className="flex flex-shrink-0 items-start space-x-1">
+            <Checkbox
+              id="currentDirectory"
+              checked={currentDirectoryChecked}
+              onChange={(e) => setCurrentDirectoryChecked(e.target.checked)}
+              label="Keep the current app data location"
+              helperDescription={
+                <p className="mt-1 leading-relaxed">
+                  Otherwise it will reset back to its original location at:{' '}
+                  <span className="font-medium">{defaultJanDataFolder}</span>
+                </p>
+              }
+            />
+          </div>
+
+          <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={() => setModalValidation(false)}>
-              <Button themes="outline">Cancel</Button>
+              <Button theme="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
               <Button
                 autoFocus
-                themes="danger"
+                theme="destructive"
                 disabled={inputValue !== 'RESET'}
                 onClick={onFactoryResetClick}
               >
@@ -89,9 +72,9 @@ const ModalConfirmReset = () => {
               </Button>
             </ModalClose>
           </div>
-        </ModalFooter>
-      </ModalContent>
-    </Modal>
+        </div>
+      }
+    />
   )
 }
 

@@ -4,7 +4,7 @@ import {
   MessageStatus,
   ThreadMessage,
 } from '@janhq/core'
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
@@ -78,12 +78,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     <div className="mt-10">
       {message.status === MessageStatus.Stopped && (
         <div key={message.id} className="flex flex-col items-center">
-          <span className="mb-3 text-center text-sm font-medium text-gray-500">
+          <span className="mb-3 text-center text-sm font-medium text-[hsla(var(--app-text-secondary))]">
             Oops! The generation was interrupted. Let&apos;s give it another go!
           </span>
           <Button
             className="w-min"
-            themes="outline"
+            theme="ghost"
+            variant="outline"
             onClick={regenerateMessage}
           >
             <RefreshCcw size={14} className="" />
@@ -95,13 +96,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       {message.status === MessageStatus.Error && (
         <div
           key={message.id}
-          className="mx-6 flex flex-col items-center space-y-2 text-center text-sm font-medium text-gray-500"
+          className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--app-text-secondary))]"
         >
           {getErrorTitle()}
           <p>
             Jan’s in beta. Access&nbsp;
             <span
-              className="cursor-pointer text-primary dark:text-blue-400"
+              className="cursor-pointer text-[hsla(var(--app-primary-bg))]"
               onClick={() => setModalTroubleShooting(true)}
             >
               troubleshooting assistance

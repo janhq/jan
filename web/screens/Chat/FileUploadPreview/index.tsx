@@ -20,7 +20,7 @@ const FileUploadPreview: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col rounded-t-lg border border-b-0 border-border p-4">
+    <div className="flex flex-col rounded-t-lg border border-b-0 border-[hsla(var(--app-border))] p-4">
       <div className="relative inline-flex w-60 space-x-3 rounded-lg bg-secondary p-4">
         <Icon type={fileUpload[0].type} />
 
@@ -28,7 +28,7 @@ const FileUploadPreview: React.FC = () => {
           <h6 className="line-clamp-1 w-3/4 truncate font-medium">
             {fileUpload[0].file.name.replaceAll(/[-._]/g, ' ')}
           </h6>
-          <p className="text-muted-foreground">
+          <p className="text-[hsla(var(--app-text-secondary)]">
             {toGibibytes(fileUpload[0].file.size)}
           </p>
         </div>

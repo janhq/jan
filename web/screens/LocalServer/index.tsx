@@ -5,20 +5,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import ScrollToBottom from 'react-scroll-to-bottom'
 
 import {
+  ScrollArea,
   Button,
-  Switch,
   Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
   Select,
-  SelectContent,
-  SelectItem,
   Input,
-  SelectTrigger,
-  SelectValue,
-} from '@janhq/uikit'
+  Checkbox,
+} from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -50,7 +43,7 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 import EngineSetting from '../Chat/EngineSetting'
 
 import ModelSetting from '../Chat/ModelSetting'
-import { showRightSideBarAtom } from '../Chat/Sidebar'
+import { showRightSideBarAtom } from '../Chat/ThreadRightBar'
 
 import {
   apiServerCorsEnabledAtom,
@@ -198,18 +191,19 @@ const LocalServerScreen = () => {
   return (
     <div className="flex h-full w-full" data-testid="local-server-testid">
       {/* Left SideBar */}
-      <div className="flex h-full w-60 flex-shrink-0 flex-col overflow-y-auto border-r border-border">
+      <ScrollArea className="flex h-full w-40 flex-shrink-0 flex-col overflow-y-auto border-r border-[hsla(var(--app-border))]">
         <div className="p-4">
           <h2 className="font-bold">Server Options</h2>
-          <p className="mt-2 leading-relaxed">
+          <p className="mt-2 leading-relaxed text-[hsla(var(--app-text-secondary))]">
             Start an OpenAI-compatible local HTTP server.
           </p>
         </div>
-        <div className="border-b border-border pb-8">
-          <div className="space-y-3 px-4">
+        <div className="w-full border-b border-[hsla(var(--app-border))] pb-4">
+          <div className="flex w-full flex-shrink px-4">
             <Button
+              size="small"
               block
-              themes={serverEnabled ? 'danger' : 'primary'}
+              theme={serverEnabled ? 'destructive' : 'primary'}
               disabled={
                 stateModel.loading ||
                 errorRangePort ||
@@ -221,7 +215,7 @@ const LocalServerScreen = () => {
               {serverEnabled ? 'Stop' : 'Start'} Server
             </Button>
             {serverEnabled && (
-              <Button block themes="secondaryBlue" asChild>
+              <Button variant="soft" asChild>
                 <a href={`http://localhost:${port}`} target="_blank">
                   API Reference <ExternalLinkIcon size={20} className="ml-2" />
                 </a>
@@ -230,43 +224,25 @@ const LocalServerScreen = () => {
           </div>
         </div>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <Tooltip
+          trigger={
             <div className="space-y-4 p-4">
               <div>
-                <p className="mb-2 block text-sm font-semibold text-zinc-500 dark:text-gray-300">
-                  Server Options
-                </p>
-                <div className="flex w-full flex-shrink-0 items-center gap-x-2">
+                <p className="mb-2 block font-semibold">Server Options</p>
+                <div className="flex w-full">
                   <Select
                     value={host}
                     onValueChange={(e) => setHost(e)}
                     disabled={serverEnabled}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {hostOptions.map((option, i) => {
-                        return (
-                          <SelectItem
-                            key={i}
-                            value={option}
-                            className={twMerge(
-                              host === option && 'bg-secondary'
-                            )}
-                          >
-                            {option}
-                          </SelectItem>
-                        )
-                      })}
-                    </SelectContent>
-                  </Select>
+                    options={hostOptions}
+                    block
+                  />
+                </div>
 
+                <div className="mt-2 flex w-full">
                   <Input
                     className={twMerge(
-                      'w-[70px] flex-shrink-0',
-                      errorRangePort && 'border-danger'
+                      errorRangePort && 'border-[hsla(var(--destructive-bg))]'
                     )}
                     type="number"
                     value={port}
@@ -277,14 +253,15 @@ const LocalServerScreen = () => {
                     disabled={serverEnabled}
                   />
                 </div>
+
                 {errorRangePort && (
-                  <p className="mt-2 text-xs text-danger">{`The port range should be from 0 to 65536`}</p>
+                  <p className="mt-2 text-xs text-[hsla(var(--destructive-bg))]">{`The port range should be from 0 to 65536`}</p>
                 )}
               </div>
               <div>
                 <label
                   id="prefix"
-                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
+                  className="mb-2 inline-flex items-start gap-x-2 font-bold "
                 >
                   API Prefix
                 </label>
@@ -292,7 +269,7 @@ const LocalServerScreen = () => {
                   <Input
                     className={twMerge(
                       'w-full flex-shrink-0',
-                      errorPrefix && 'border-danger'
+                      errorPrefix && 'border-[hsla(var(--destructive-bg))]'
                     )}
                     type="text"
                     value={prefix}
@@ -303,112 +280,85 @@ const LocalServerScreen = () => {
                   />
                 </div>
                 {errorPrefix && (
-                  <p className="mt-2 text-xs text-danger">{`Prefix should start with /`}</p>
+                  <p className="mt-2 text-xs text-[hsla(var(--destructive-bg))]">{`Prefix should start with /`}</p>
                 )}
               </div>
               <div>
-                <label
-                  id="cors"
-                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
-                >
-                  Cross-Origin-Resource-Sharing (CORS)
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <InfoIcon
-                        size={16}
-                        className="mt-0.5 flex-shrink-0 dark:text-gray-500"
-                      />
-                    </TooltipTrigger>
-                    <TooltipPortal>
-                      <TooltipContent side="top" className="max-w-[240px]">
-                        <span>
-                          CORS (Cross-Origin Resource Sharing) manages resource
-                          access on this server from external domains. Enable
-                          for secure inter-website communication, regulating
-                          data sharing to bolster overall security.
-                        </span>
-                        <TooltipArrow />
-                      </TooltipContent>
-                    </TooltipPortal>
-                  </Tooltip>
-                </label>
                 <div className="flex items-center justify-between">
-                  <Switch
+                  <Checkbox
+                    id="cors"
+                    label={
+                      <>
+                        <span>Cross-Origin-Resource-Sharing (CORS)</span>
+                        <Tooltip
+                          side="right"
+                          trigger={
+                            <InfoIcon
+                              size={16}
+                              className="text-[hsla(var(--app-text-secondary))]"
+                            />
+                          }
+                          content="CORS (Cross-Origin Resource Sharing) manages resource access on this server from external domains. Enable for secure inter-website communication, regulating data sharing to bolster overall security."
+                        />
+                      </>
+                    }
                     checked={isCorsEnabled}
-                    onCheckedChange={(e) => setIsCorsEnabled(e)}
+                    onChange={(e) => setIsCorsEnabled(e.target.checked)}
                     name="cors"
                     disabled={serverEnabled}
                   />
                 </div>
               </div>
               <div>
-                <label
-                  id="verbose"
-                  className="mb-2 inline-flex items-start gap-x-2 font-bold text-zinc-500 dark:text-gray-300"
-                >
-                  Verbose Server Logs
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <InfoIcon
-                        size={16}
-                        className="mt-0.5 flex-shrink-0 dark:text-gray-500"
-                      />
-                    </TooltipTrigger>
-                    <TooltipPortal>
-                      <TooltipContent side="top" className="max-w-[240px]">
-                        <span>
-                          Verbose Server Logs provide extensive details about
-                          server activities. Enable to capture thorough records,
-                          aiding in troubleshooting and monitoring server
-                          performance effectively.
-                        </span>
-                        <TooltipArrow />
-                      </TooltipContent>
-                    </TooltipPortal>
-                  </Tooltip>
-                </label>
                 <div className="flex items-center justify-between">
-                  <Switch
+                  <Checkbox
+                    label={
+                      <>
+                        <span>Verbose Server Logs</span>
+                        <Tooltip
+                          side="right"
+                          trigger={
+                            <InfoIcon
+                              size={16}
+                              className="text-[hsla(var(--app-text-secondary))]"
+                            />
+                          }
+                          content="Verbose Server Logs provide extensive details about server activities. Enable to capture thorough records, aiding in troubleshooting and monitoring server performance effectively."
+                        />
+                      </>
+                    }
                     checked={isVerboseEnabled}
-                    onCheckedChange={(e) => setIsVerboseEnabled(e)}
+                    onChange={(e) => setIsVerboseEnabled(e.target.checked)}
                     name="verbose"
                     disabled={serverEnabled}
                   />
                 </div>
               </div>
             </div>
-          </TooltipTrigger>
-          <TooltipPortal>
-            {serverEnabled && (
-              <TooltipContent side="bottom" className="max-w-[200px]">
-                <span>
-                  Settings cannot be modified while the server is running
-                </span>
-                <TooltipArrow />
-              </TooltipContent>
-            )}
-          </TooltipPortal>
-        </Tooltip>
-      </div>
+          }
+          disabled={!serverEnabled}
+          content="Settings cannot be modified while the server is running"
+        />
+      </ScrollArea>
 
       {/* Middle Bar */}
-      <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-background">
-        <div className="sticky top-0 flex  items-center justify-between bg-zinc-100 px-4 py-2 dark:bg-zinc-600">
+      <ScrollToBottom className="relative flex h-full w-full flex-col overflow-auto bg-[hsla(var(--app-bg))]">
+        <div className="sticky top-0 flex  items-center justify-between border-b border-[hsla(var(--app-border))] px-4 py-2">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button
-              size="sm"
-              themes="outline"
-              className="bg-white dark:bg-secondary"
+              size="small"
+              theme="ghost"
+              variant="outline"
               onClick={() => openServerLog()}
             >
               <CodeIcon size={16} className="mr-2" />
               Open Logs
             </Button>
             <Button
-              size="sm"
-              themes="outline"
-              className="bg-white dark:bg-secondary"
+              size="small"
+              theme="ghost"
+              variant="outline"
               onClick={() => clearServerLog()}
             >
               <Paintbrush size={16} className="mr-2" />
@@ -464,9 +414,9 @@ const LocalServerScreen = () => {
       {/* Right bar */}
       <div
         className={twMerge(
-          'h-full flex-shrink-0 overflow-x-hidden border-l border-border bg-background transition-all duration-100 dark:bg-background/20',
+          'h-full flex-shrink-0 overflow-x-hidden border-l border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] transition-all duration-100 dark:bg-[hsla(var(--app-bg))]/20',
           showRightSideBar
-            ? 'w-80 translate-x-0 opacity-100'
+            ? 'w-[220px] translate-x-0 opacity-100'
             : 'w-0 translate-x-full opacity-0'
         )}
       >
@@ -496,7 +446,10 @@ const LocalServerScreen = () => {
           <DropdownListSidebar strictedThread={false} />
           {loadModelError && serverEnabled && (
             <div className="mt-3 flex space-x-2 text-xs">
-              <AlertTriangleIcon size={16} className="text-danger" />
+              <AlertTriangleIcon
+                size={16}
+                className="text-[hsla(var(--destructive-bg))]"
+              />
               <span>
                 Model failed to start. Access{' '}
                 <span

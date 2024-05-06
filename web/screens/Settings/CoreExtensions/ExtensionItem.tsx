@@ -6,15 +6,7 @@ import {
   InstallationState,
   abortDownload,
 } from '@janhq/core'
-import {
-  Button,
-  Progress,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Button, Progress, Tooltip } from '@janhq/joi'
 
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
@@ -83,15 +75,16 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
   const description = marked.parse(item.description ?? '', { async: false })
 
   return (
-    <div className="mx-6 flex w-full items-start justify-between border-b border-border py-6 first:pt-4 last:border-none">
-      <div className="flex-1 flex-shrink-0 space-y-1.5">
+    <div className="mx-4 flex w-full items-start justify-between border-b border-[hsla(var(--app-border))] py-6 first:pt-4 last:border-none">
+      <div className="flex-1 flex-shrink-0 space-y-1">
         <div className="flex items-center gap-x-2">
-          <h6 className="text-base font-bold">Additional Dependencies</h6>
+          <h6 className="font-semibold">Additional Dependencies</h6>
         </div>
-        {
+        <div
           // eslint-disable-next-line @typescript-eslint/naming-convention
-          <div dangerouslySetInnerHTML={{ __html: description }} />
-        }
+          dangerouslySetInnerHTML={{ __html: description }}
+          className='className="font-medium text-[hsla(var(--app-text-secondary))]" leading-relaxed'
+        />
       </div>
 
       <div className="flex min-w-[150px] flex-row justify-end">
@@ -142,50 +135,45 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   switch (installState) {
     case 'Installed':
       return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
+        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-[hsla(var(--app-text-secondary))]">
           Installed
         </div>
       )
     case 'NotCompatible':
       return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
+        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-[hsla(var(--app-text-secondary))]">
           <div className="flex flex-row items-center justify-center gap-1">
-            Incompatible{' '}
-            <Tooltip>
-              <TooltipTrigger className="w-full">
-                <InfoCircledIcon />
-              </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent side="top">
-                  {compatibility &&
-                  !compatibility['platform']?.includes(PLATFORM) ? (
-                    <span>
-                      Only available on{' '}
-                      {compatibility?.platform
-                        ?.map((e: string) =>
-                          e === 'win32'
-                            ? 'Windows'
-                            : e === 'linux'
-                              ? 'Linux'
-                              : 'MacOS'
-                        )
-                        .join(', ')}
-                    </span>
-                  ) : (
-                    <span>
-                      Your GPUs are not compatible with this extension
-                    </span>
-                  )}
-                  <TooltipArrow />
-                </TooltipContent>
-              </TooltipPortal>
-            </Tooltip>
+            Incompatible
+            <Tooltip
+              trigger={
+                <InfoCircledIcon className="cursor-pointer text-[hsla(var(--app-icon))]" />
+              }
+              content={
+                compatibility &&
+                !compatibility['platform']?.includes(PLATFORM) ? (
+                  <span>
+                    Only available on&nbsp;
+                    {compatibility?.platform
+                      ?.map((e: string) =>
+                        e === 'win32'
+                          ? 'Windows'
+                          : e === 'linux'
+                            ? 'Linux'
+                            : 'MacOS'
+                      )
+                      .join(', ')}
+                  </span>
+                ) : (
+                  <span>Your GPUs are not compatible with this extension</span>
+                )
+              }
+            />
           </div>
         </div>
       )
     case 'NotInstalled':
       return (
-        <Button themes="secondaryBlue" size="sm" onClick={onInstallClick}>
+        <Button size="small" variant="soft" onClick={onInstallClick}>
           Install
         </Button>
       )
@@ -199,7 +187,10 @@ const marked: Marked = new Marked({
     link: (href, title, text) => {
       return Renderer.prototype.link
         ?.apply(this, [href, title, text])
-        .replace('<a', "<a class='text-blue-500' target='_blank'")
+        .replace(
+          '<a',
+          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
+        )
     },
   },
 })
