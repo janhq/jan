@@ -11,14 +11,11 @@
 
   a {
     @apply text-blue-600 dark:text-blue-300;
+
     &:hover {
       @apply underline;
     }
   }
-}
-
-button[class*='react-scroll-to-bottom--'] {
-  display: none;
 }
 
 .code-block {

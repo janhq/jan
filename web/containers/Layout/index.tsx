@@ -27,6 +27,8 @@ import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
 import MainViewContainer from '../MainViewContainer'
 
+import ModalTroubleShooting from '../ModalTroubleShoot'
+
 import InstallingExtensionModal from './BottomBar/InstallingExtension/InstallingExtensionModal'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -77,6 +79,7 @@ const BaseLayout = () => {
       <ChooseWhatToImportModal />
       <InstallingExtensionModal />
       <HuggingFaceRepoDetailModal />
+      <ModalTroubleShooting />
     </div>
   )
 }

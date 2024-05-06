@@ -1,9 +1,7 @@
 import { EngineManager } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import ModalTroubleShooting, {
-  modalTroubleShootingAtom,
-} from '@/containers/ModalTroubleShoot'
+import { modalTroubleShootingAtom } from '@/containers/ModalTroubleShoot'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -132,7 +130,6 @@ const LoadModelError = () => {
         <p className="w-[90%]">
           <ErrorMessage />
         </p>
-        <ModalTroubleShooting />
       </div>
     </div>
   )

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/naming-convention */
 import { useCallback, useEffect, useState } from 'react'
 
 import React from 'react'
@@ -15,10 +14,11 @@ import { usePath } from '@/hooks/usePath'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-type ServerLogsProps = { limit?: number; withCopy?: boolean }
+type Props = {
+  limit?: number
+}
 
-const ServerLogs = (props: ServerLogsProps) => {
-  const { limit = 0 } = props
+const ServerLogs: React.FC<Props> = ({ limit = 0 }) => {
   const { getLogs } = useLogs()
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const [logs, setLogs] = useState<string[]>([])
@@ -35,8 +35,7 @@ const ServerLogs = (props: ServerLogsProps) => {
           )
         }
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [getLogs]
   )
 
   useEffect(() => {

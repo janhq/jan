@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import ScrollToBottom from 'react-scroll-to-bottom'
 
 import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
 import { motion as m } from 'framer-motion'
 import { atom, useAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
+
+import ListContainer from '@/containers/ListContainer'
 
 import ServerLogs from '../ServerLogs'
 
@@ -106,11 +107,13 @@ const ModalTroubleShooting: React.FC = () => {
                 })}
               </ul>
             </div>
-            <ScrollToBottom className={twMerge('relative h-[140px] px-4 py-2')}>
-              {isTabActive === 0 && <AppLogs />}
-              {isTabActive === 1 && <ServerLogs limit={50} withCopy />}
-              {isTabActive === 2 && <DeviceSpecs />}
-            </ScrollToBottom>
+            <div className="h-[140px]">
+              <ListContainer className="px-4 py-2">
+                {isTabActive === 0 && <AppLogs />}
+                {isTabActive === 1 && <ServerLogs limit={50} />}
+                {isTabActive === 2 && <DeviceSpecs />}
+              </ListContainer>
+            </div>
           </div>
         </div>
       </ModalContent>

@@ -9,9 +9,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { RefreshCcw } from 'lucide-react'
 
 import AutoLink from '@/containers/AutoLink'
-import ModalTroubleShooting, {
-  modalTroubleShootingAtom,
-} from '@/containers/ModalTroubleShoot'
+import { modalTroubleShootingAtom } from '@/containers/ModalTroubleShoot'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -108,7 +106,6 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             </span>
             &nbsp;now.
           </p>
-          <ModalTroubleShooting />
         </div>
       )}
     </div>
