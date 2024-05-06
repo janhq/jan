@@ -72,5 +72,5 @@ export default class JanInferenceOpenRouterExtension extends RemoteOAIEngine {
     }
   }
 
-  transformPayload = (payload: PayloadType)=>({...payload,model:"openai/gpt-3.5-turbo"})
+  transformPayload = (payload: PayloadType)=>({...payload,model:"openrouter/auto"})
 }
