@@ -13,7 +13,7 @@
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 128000,
+      "max_tokens": 1024,
       "temperature": 0.7,
       "top_p": 0.95,
       "frequency_penalty": 0,
