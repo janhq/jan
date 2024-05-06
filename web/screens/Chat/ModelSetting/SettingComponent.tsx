@@ -26,8 +26,6 @@ const SettingComponent: React.FC<Props> = ({
   onValueUpdated,
 }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-
-  console.log(activeThread)
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'slider': {
