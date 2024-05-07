@@ -39,10 +39,10 @@ COPY --from=builder /app/docs/openapi ./docs/openapi/
 COPY --from=builder /app/pre-install ./pre-install/
 
 # Copy the package.json, yarn.lock, and output of web yarn space to leverage Docker cache
-COPY --from=builder /app/uikit ./uikit/
+COPY --from=builder /app/joi ./joi/
 COPY --from=builder /app/web ./web/
 
-RUN yarn workspace @janhq/uikit install && yarn workspace @janhq/uikit build
+RUN yarn workspace @janhq/joi install && yarn workspace @janhq/joi build
 RUN yarn workspace @janhq/web install
 
 RUN npm install -g serve@latest

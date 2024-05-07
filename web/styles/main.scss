@@ -5,7 +5,6 @@
 @import 'tailwindcss/utilities';
 
 @import '@janhq/joi/dist/main.css';
-// @import '../../node_modules/@janhq/uikit/dist/index.css';
 
 @import './base/global.scss';
 
@@ -16,16 +15,13 @@
 :root {
   // App global
   --app-bg: 0, 0%, 100%, 1;
+
   --app-secondary-bg: 0, 0%, 0%, 0.02;
   --app-border: 0, 0%, 0%, 0.1;
-  --app-icon: 0, 0%, 0%, 0.5;
-  --app-text-primary: 0, 0%, 0%, 1;
-  --app-text-secondary: 0, 0%, 0%, 0.5;
-  --app-link: 221, 83%, 53%, 1;
-
   --app-disabled-bg: 0, 0%, 0%, 0.05;
   --app-disabled-fg: 0, 0%, 0%, 0.2;
 
+  // Color brand
   --secondary-bg: 0, 0%, 0%, 0.1;
   --secondary-fg: 0, 0%, 0%, 1;
 
@@ -51,22 +47,27 @@
 
   --ghost-border: 0, 0%, 0%, 0.1;
 
+  // Text Typography
+  --text-primary: 0, 0%, 0%, 1;
+  --text-secondary: 0, 0%, 0%, 0.6;
+  --text-tertiary: 0, 0%, 0%, 0.4;
+  --text-quaternary: 0, 0%, 0%, 0.2;
+  --text-link: 221, 83%, 53%, 1;
+
   // Top bar
-  --top-bar-bg: 0, 0%, 100%, 1;
-  --top-bar-border-b: 0, 0%, 0%, 0.1;
-  --top-bar-icon: 0, 0%, 0%, 0.5;
+  --top-panel-bg: 0, 0%, 100%, 1;
+  --top-panel-border: 0, 0%, 0%, 0.1;
 
   // Bottom bar
-  --bottom-bar-bg: 0, 0%, 100%, 1;
-  --bottom-bar-border-b: 0, 0%, 0%, 0.1;
-  --bottom-bar-icon: 0, 0%, 0%, 0.5;
+  --bottom-panel-bg: 0, 0%, 100%, 1;
+  --bottom-panel-border: 0, 0%, 0%, 0.1;
 
   // Ribbon bar
-  --ribbon-nav-bg: 0, 0%, 100%, 1;
-  --ribbon-nav-border: 0, 0%, 0%, 0.1;
-  --ribbon-nav-icon: 0, 0%, 0%, 0.5;
-  --ribbon-nav-icon-active: 0, 0%, 0%, 1;
-  --ribbon-nav-icon-active-bg: 0, 0%, 0%, 0.05;
+  --ribbon-panel-bg: 0, 0%, 100%, 1;
+  --ribbon-panel-border: 0, 0%, 0%, 0.1;
+  --ribbon-panel-icon: 0, 0%, 0%, 0.5;
+  --ribbon-panel-icon-active: 0, 0%, 0%, 1;
+  --ribbon-panel-icon-active-bg: 0, 0%, 0%, 0.05;
 
   // Left Panel
   --left-panel-bg: 0, 0%, 100%, 1;
@@ -80,7 +81,7 @@
   --tooltip-fg: 0, 0%, 100%, 1;
 
   // Scroll Bar
-  --scrollbar-tracker: 0, 0%, 95%, 1;
+  --scrollbar-tracker: 0, 0%, 95%, 0.1;
   --scrollbar-thumb: 0, 0%, 0%, 0.1;
 
   // Input
@@ -120,4 +121,10 @@
 
   // Accordion
   --accirdion-bg: 0, 0%, 100%, 1;
+
+  // Toaster
+  --toaster-bg: 240, 6%, 10%, 1;
+  --toaster-text-title: 0, 0%, 100%, 1;
+  --toaster-close-icon: 0, 0%, 100%, 0.5;
+  --toaster-text-desc: 0, 0%, 100%, 0.8;
 }

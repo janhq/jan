@@ -22,7 +22,7 @@ const ImportModelOptionSelection = ({
     </div>
     <div className="ml-2 flex-1">
       <p className="mb-2 font-medium">{option.title}</p>
-      <p className="font-normal text-[hasla(var(--app-text-secondary))]">
+      <p className="font-normal text-[hasla(var(--text-secondary))]">
         {option.description}
       </p>
     </div>

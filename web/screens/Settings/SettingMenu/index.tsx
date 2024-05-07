@@ -44,7 +44,7 @@ const SettingMenu: React.FC = () => {
       <ScrollArea className="h-full w-full">
         <div className="flex-shrink-0 p-3">
           <div className="mb-1 ">
-            <label className="text-xs font-medium text-[hsla(var(--app-text-secondary))]">
+            <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
               Data folder
             </label>
           </div>
@@ -59,7 +59,7 @@ const SettingMenu: React.FC = () => {
 
           {extensionHasSettings.length > 0 && (
             <div className="mb-1 mt-4">
-              <label className="text-xs font-medium text-[hsla(var(--app-text-secondary))]">
+              <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
                 Extensions
               </label>
             </div>

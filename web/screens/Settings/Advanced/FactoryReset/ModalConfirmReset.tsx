@@ -29,14 +29,14 @@ const ModalConfirmReset = () => {
       title="Are you sure you want to reset to default settings?"
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             It will reset the application to its original state, deleting all
             your usage data, including model customizations and conversation
             history. This action is irreversible.
           </p>
 
           <div className="my-4">
-            <p className="text-[hsla(var(--app-text-secondary)] mb-2 mt-1">{`To confirm, please enter the word "RESET" below:`}</p>
+            <p className="text-[hsla(var(--text-secondary)] mb-2 mt-1">{`To confirm, please enter the word "RESET" below:`}</p>
             <Input
               placeholder='Enter "RESET"'
               onChange={(e) => setInputValue(e.target.value)}

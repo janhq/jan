@@ -8,7 +8,7 @@ button {
   background-color: hsla(var(--select-bg)) !important;
   border: 1px solid hsla(var(--select-border));
   @apply inline-flex h-9 items-center justify-between gap-8 rounded-lg px-3 transition-colors;
-  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1;
+  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-1;
 
   &[data-placeholder] {
     color: hsla(var(--select-placeholder));
@@ -57,15 +57,6 @@ button {
     &[data-highlighted] {
       outline: none;
     }
-  }
-
-  &__lebel {
-    padding: 0 8px;
-  }
-
-  &__separator {
-    height: 1px;
-    margin: 5px;
   }
 
   &__item-indicator {

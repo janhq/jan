@@ -11,13 +11,16 @@ import './styles.scss'
 import { twMerge } from 'tailwind-merge'
 
 type Props = {
-  options: { name: string; value: string }[]
+  options?: { name: string; value: string }[]
   open?: boolean
   block?: boolean
   value?: string
   placeholder?: string
   disabled?: boolean
+  containerPortal?: HTMLDivElement | undefined | null
+  className?: string
   onValueChange?: (value: string) => void
+  onOpenChange?: (open: boolean) => void
 }
 
 const Select = ({
@@ -25,14 +28,23 @@ const Select = ({
   options,
   value,
   disabled,
+  containerPortal,
   block,
+  className,
   open,
   onValueChange,
+  onOpenChange,
 }: Props) => (
-  <SelectPrimitive.Root open={open} onValueChange={onValueChange} value={value}>
+  <SelectPrimitive.Root
+    open={open}
+    onValueChange={onValueChange}
+    value={value}
+    onOpenChange={onOpenChange}
+  >
     <SelectPrimitive.Trigger
       className={twMerge(
         'select',
+        className,
         disabled && 'select__disabled',
         block && 'w-full'
       )}
@@ -43,7 +55,7 @@ const Select = ({
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
 
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={containerPortal}>
       <SelectPrimitive.Content className="select__content">
         <SelectPrimitive.ScrollUpButton className="select__scroll-botom">
           <ChevronUpIcon />

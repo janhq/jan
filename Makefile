@@ -11,15 +11,15 @@ all:
 	@echo "Specify a target to run"
 
 # Builds the UI kit
-build-uikit:
+build-joi:
 ifeq ($(OS),Windows_NT)
-	cd uikit && yarn config set network-timeout 300000 && yarn install && yarn build
+	cd joi && yarn config set network-timeout 300000 && yarn install && yarn build
 else
-	cd uikit && yarn install && yarn build
+	cd joi && yarn install && yarn build
 endif
 
 # Installs yarn dependencies and builds core and extensions
-install-and-build: build-uikit
+install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif

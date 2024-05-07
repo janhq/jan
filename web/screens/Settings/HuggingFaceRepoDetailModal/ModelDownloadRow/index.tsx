@@ -119,7 +119,7 @@ const ModelDownloadRow: React.FC<Props> = ({
       <div className="flex">
         {quantization && <Badge className="mr-1">{quantization}</Badge>}
 
-        <h1 className="mr-5 line-clamp-1 text-sm font-medium text-[hsla(var(--app-text-secondary))]">
+        <h1 className="mr-5 line-clamp-1 text-sm font-medium text-[hsla(var(--text-secondary))]">
           {fileName}
         </h1>
         <Badge theme="secondary">{toGibibytes(fileSize)}</Badge>

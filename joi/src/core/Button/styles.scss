@@ -84,18 +84,19 @@
 
   // Size
   &--small {
-    @apply h-8 px-3;
-    border-radius: 4px;
+    @apply h-6 px-2;
+    font-size: 12px;
+    border-radius: 6px;
   }
 
   &--medium {
     @apply h-9;
-    border-radius: 6px;
+    border-radius: 8px;
   }
 
   &--large {
     @apply h-11;
-    border-radius: 8px;
+    border-radius: 10px;
   }
 
   &--block {

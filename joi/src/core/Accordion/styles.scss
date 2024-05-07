@@ -39,7 +39,7 @@
   }
 
   &__chevron {
-    color: hsla(var(--app-icon));
+    color: hsla(var(--text-secondary));
     transition: transform 300ms cubic-bezier(0.87, 0, 0.13, 1);
   }
 }

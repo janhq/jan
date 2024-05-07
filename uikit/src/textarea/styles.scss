@@ -1,6 +1,0 @@
-.textarea-input {
-  @apply border-border placeholder:text-muted-foreground flex w-full rounded-md border bg-transparent px-3 py-2 transition-colors;
-  @apply disabled:cursor-not-allowed disabled:opacity-50;
-  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1;
-  @apply file:border-0 file:bg-transparent file:font-medium;
-}

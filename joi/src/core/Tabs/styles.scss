@@ -1,6 +1,7 @@
 .tabs {
   display: flex;
   flex-direction: column;
+  width: 100%;
 
   &__list {
     flex-shrink: 0;
@@ -9,7 +10,6 @@
   }
 
   &__trigger {
-    font-family: inherit;
     padding: 0 12px;
     flex: 1;
     height: 38px;
@@ -33,4 +33,5 @@
 
 .tabs__trigger[data-state='active'] {
   border-bottom: 1px solid hsla(var(--primary-bg));
+  font-weight: 600;
 }

@@ -105,7 +105,7 @@ const DataFolder = () => {
               Jan Data Folder
             </h6>
           </div>
-          <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+          <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
             Where messages, model configurations, and other user data are
             placed.
           </p>

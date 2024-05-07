@@ -26,7 +26,7 @@ const CancelModelImportModal: React.FC = () => {
       title="Cancel Model Import?"
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             The model import process is not complete. Are you sure you want to
             cancel all ongoing model imports? This action is irreversible and
             the progress will be lost.

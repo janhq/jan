@@ -1,4 +1,7 @@
 .scroll-area {
+  position: relative;
+  z-index: 999;
+
   &__root {
     width: 200px;
     height: 225px;
@@ -48,37 +51,3 @@
   flex-direction: column;
   height: 6px;
 }
-
-// ::-webkit-scrollbar {
-//   width: 6px;
-// }
-
-// ::-webkit-scrollbar-thumb {
-//   background: hsla(var(--scrollbar-thumb));
-//   border-radius: 20px;
-// }
-
-// ::-webkit-scrollbar-track {
-//   background-color: hsl(var(--scrollbar-tracker));
-// }
-
-// ::-webkit-scrollbar-corner {
-//   background-color: hsl(var(--scrollbar-tracker));
-// }
-
-// ::-moz-scrollbar {
-//   width: 6px;
-// }
-
-// ::-moz-scrollbar-thumb {
-//   background-color: hsl(var(--scroll-bar));
-//   border-radius: 20px;
-// }
-
-// ::-moz-scrollbar-track {
-//   background-color: hsl(var(--scrollbar-tracker));
-// }
-
-// ::-moz-scrollbar-corner {
-//   background-color: hsl(var(--scrollbar-tracker));
-// }

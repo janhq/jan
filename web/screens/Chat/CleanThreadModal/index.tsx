@@ -27,7 +27,10 @@ const CleanThreadModal: React.FC<Props> = ({ threadId }) => {
           className="flex cursor-pointer items-center space-x-2 px-4 py-2"
           onClick={(e) => e.stopPropagation()}
         >
-          <Paintbrush size={16} className="text-[hsla(var(--app-icon))]" />
+          <Paintbrush
+            size={16}
+            className="text-[hsla(var(--text-secondary))]"
+          />
           <span className="text-bold text-[hsla(var(--app-text-primary))]">
             Clean thread
           </span>
@@ -35,7 +38,7 @@ const CleanThreadModal: React.FC<Props> = ({ threadId }) => {
       }
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             Are you sure you want to clean this thread?
           </p>
           <div className="mt-4 flex justify-end gap-x-2">

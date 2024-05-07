@@ -2,9 +2,19 @@ import { memo } from 'react'
 
 import { Badge } from '@janhq/joi'
 
-const RecommendedLabel = () => (
-  <Badge theme="success" variant="soft">
-    <span>Recommended</span>
+import { twMerge } from 'tailwind-merge'
+
+type Props = {
+  compact?: boolean
+}
+
+const RecommendedLabel = ({ compact }: Props) => (
+  <Badge
+    theme="success"
+    variant="soft"
+    className={twMerge(compact && 'h-5 p-2')}
+  >
+    {!compact && <span>Recommended</span>}
   </Badge>
 )
 

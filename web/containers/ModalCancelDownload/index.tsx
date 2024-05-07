@@ -19,7 +19,7 @@ type Props = {
   isFromList?: boolean
 }
 
-const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
+const ModalCancelDownload = ({ model, isFromList }: Props) => {
   const { abortModelDownload } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
@@ -65,9 +65,11 @@ const ModalCancelDownload: React.FC<Props> = ({ model, isFromList }) => {
       }
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             Are you sure you want to cancel the download of&nbsp;
-            {downloadState?.modelId}?
+            <span className="font-medium text-[hsla(var(--text-primary))]">
+              {downloadState?.modelId}?
+            </span>
           </p>
           <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild>

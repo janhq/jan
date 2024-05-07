@@ -20,7 +20,7 @@ const ModalSameDirectory = ({ onChangeFolderClick }: Props) => {
       title="Unable to move files"
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">{`It seems like the folder you've chosen same with current directory`}</p>
+          <p className="text-[hsla(var(--text-secondary))]">{`It seems like the folder you've chosen same with current directory`}</p>
           <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={() => setShow(false)}>
               <Button theme="ghost">Cancel</Button>

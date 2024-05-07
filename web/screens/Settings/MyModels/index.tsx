@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
@@ -6,56 +6,27 @@ import { InferenceEngine } from '@janhq/core'
 
 import { Button, ScrollArea } from '@janhq/joi'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { PlusIcon, UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import ModelSearch from '@/containers/ModelSearch'
 
+import SetupRemoteModel from '@/containers/SetupRemoteModel'
+
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import MyModelList from './MyModelList'
 
-import { extensionManager } from '@/extension'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const MyModels = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
   const [searchText, setSearchText] = useState('')
-
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string }[]
-  >([])
-
-  console.log(extensionHasSettings)
-
-  useEffect(() => {
-    const getAllSettings = async () => {
-      const extensionsMenu: { name?: string; setting: string }[] = []
-      const extensions = extensionManager.getAll()
-      for (const extension of extensions) {
-        if (typeof extension.getSettings === 'function') {
-          const settings = await extension.getSettings()
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            extensionsMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-            })
-          }
-        }
-      }
-      setExtensionHasSettings(extensionsMenu)
-    }
-    getAllSettings()
-  }, [])
 
   const filteredDownloadedModels = useMemo(
     () =>
@@ -66,8 +37,6 @@ const MyModels = () => {
         .sort((a, b) => a.name.localeCompare(b.name)),
     [downloadedModels, searchText]
   )
-
-  const setSelectedSetting = useSetAtom(selectedSettingAtom)
 
   const { getRootProps, isDragActive } = useDropzone({
     noClick: true,
@@ -83,19 +52,9 @@ const MyModels = () => {
     setSearchText(input)
   }, [])
 
-  const onSetupItemClick = (setting: InferenceEngine) => {
-    console.log(setting)
-    setSelectedSetting(
-      extensionHasSettings.filter((x) =>
-        x.setting.toLowerCase().includes(setting)
-      )[0]?.setting
-    )
-  }
-
   return (
     <div {...getRootProps()} className="w-full">
       <ScrollArea className="h-full w-full">
-        {/* TODO: @faisal make sure this feature */}
         {isDragActive && (
           <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">
             <div
@@ -124,7 +83,6 @@ const MyModels = () => {
             <Button
               variant="outline"
               theme="ghost"
-              size="small"
               onClick={onImportModelClick}
             >
               <UploadIcon size={16} className="mr-2" />
@@ -155,17 +113,7 @@ const MyModels = () => {
             <div className="my-6">
               <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h6 className="text-base font-semibold">Cohere</h6>
-                <Button
-                  size="small"
-                  variant="soft"
-                  onClick={() => onSetupItemClick(InferenceEngine.cohere)}
-                >
-                  <PlusIcon
-                    size={16}
-                    className="text-hsla(var(--app-text-sencondary)) mr-1.5"
-                  />
-                  <span>Set Up</span>
-                </Button>
+                <SetupRemoteModel engine={InferenceEngine.cohere} />
               </div>
               <div className="mt-2">
                 {filteredDownloadedModels
@@ -184,17 +132,7 @@ const MyModels = () => {
               <div className="my-6">
                 <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h6 className="text-base font-semibold">Groq</h6>
-                  <Button
-                    size="small"
-                    variant="soft"
-                    onClick={() => onSetupItemClick(InferenceEngine.groq)}
-                  >
-                    <PlusIcon
-                      size={16}
-                      className="text-hsla(var(--app-text-sencondary)) mr-1.5"
-                    />
-                    <span>Set Up</span>
-                  </Button>
+                  <SetupRemoteModel engine={InferenceEngine.groq} />
                 </div>
                 <div className="mt-2">
                   {filteredDownloadedModels
@@ -214,17 +152,7 @@ const MyModels = () => {
               <div className="my-6">
                 <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h6 className="text-base font-semibold">Open AI</h6>
-                  <Button
-                    size="small"
-                    variant="soft"
-                    onClick={() => onSetupItemClick(InferenceEngine.openai)}
-                  >
-                    <PlusIcon
-                      size={16}
-                      className="text-hsla(var(--app-text-sencondary)) mr-1.5"
-                    />
-                    <span>Set Up</span>
-                  </Button>
+                  <SetupRemoteModel engine={InferenceEngine.openai} />
                 </div>
                 <div className="mt-2">
                   {filteredDownloadedModels
@@ -244,19 +172,7 @@ const MyModels = () => {
               <div className="my-6">
                 <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <h6 className="text-base font-semibold">Triton trtllm</h6>
-                  <Button
-                    size="small"
-                    variant="soft"
-                    onClick={() =>
-                      onSetupItemClick(InferenceEngine.triton_trtllm)
-                    }
-                  >
-                    <PlusIcon
-                      size={16}
-                      className="text-hsla(var(--app-text-sencondary)) mr-1.5"
-                    />
-                    <span>Set Up</span>
-                  </Button>
+                  <SetupRemoteModel engine={InferenceEngine.triton_trtllm} />
                 </div>
                 <div className="mt-2">
                   {filteredDownloadedModels
@@ -280,19 +196,6 @@ const MyModels = () => {
                   <h6 className="text-base font-semibold">
                     Nitro Tensorrt llm
                   </h6>
-                  <Button
-                    size="small"
-                    variant="soft"
-                    onClick={() =>
-                      onSetupItemClick(InferenceEngine.nitro_tensorrt_llm)
-                    }
-                  >
-                    <PlusIcon
-                      size={16}
-                      className="text-hsla(var(--app-text-sencondary)) mr-1.5"
-                    />
-                    <span>Set Up</span>
-                  </Button>
                 </div>
                 <div className="mt-2">
                   {filteredDownloadedModels
@@ -308,28 +211,6 @@ const MyModels = () => {
               </div>
             )}
           </div>
-
-          {/* <table className="relative w-full px-8">
-          <thead className="w-full border-b border-[hsla(var(--app-border))] bg-secondary">
-            <tr>
-              {Column.map((col) => (
-                <th
-                  key={col}
-                  className="px-6 py-2 text-left font-normal last:text-center"
-                >
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredDownloadedModels
-              ? filteredDownloadedModels.map((x) => (
-                  <RowModel key={x.id} data={x} />
-                ))
-              : null}
-          </tbody>
-        </table> */}
         </div>
       </ScrollArea>
     </div>

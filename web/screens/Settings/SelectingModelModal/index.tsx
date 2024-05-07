@@ -47,7 +47,7 @@ const SelectingModelModal: React.FC = () => {
     : 'border-[hsla(var(--app-border))]'
   const textColor = isDragActive
     ? 'text-[hsla(var(--primary-bg)]'
-    : 'text-[hsla(var(--app-text-secondary))]'
+    : 'text-[hsla(var(--text-secondary))]'
   const dragAndDropBgColor = isDragActive
     ? 'bg-[hsla(var(--primary-bg))]'
     : 'bg-[hsla(var(--app-bg))]'
@@ -61,7 +61,7 @@ const SelectingModelModal: React.FC = () => {
       title="Import Model"
       content={
         <div>
-          <p className="text-sm font-medium text-[hsla(var(--app-text-secondary))]">
+          <p className="text-sm font-medium text-[hsla(var(--text-secondary))]">
             Import any model file (GGUF) or folder. Your imported model will be
             private to you.
           </p>
@@ -75,7 +75,7 @@ const SelectingModelModal: React.FC = () => {
                 <UploadCloudIcon size={24} className="text-blue-600" />
               </div>
               <div className="mt-4">
-                <span className="text-sm font-bold text-primary">
+                <span className="text-primary text-sm font-bold">
                   Click to upload &nbsp;
                 </span>
                 <span className={`text-sm ${textColor} font-medium`}>

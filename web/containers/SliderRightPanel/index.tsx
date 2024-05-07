@@ -2,9 +2,8 @@ import { useState } from 'react'
 
 import { Slider, Input, Tooltip } from '@janhq/joi'
 
+import { useClickOutside } from '@janhq/joi'
 import { InfoIcon } from 'lucide-react'
-
-import { useClickOutside } from '@/hooks/useClickOutside'
 
 type Props = {
   name: string
@@ -39,7 +38,7 @@ const SliderRightPanel = ({
           trigger={
             <InfoIcon
               size={16}
-              className="flex-shrink-0 text-[hsl(var(--app-icon))]"
+              className="flex-shrink-0 text-[hsl(var(--text-secondary))]"
             />
           }
           content={description}
@@ -55,7 +54,7 @@ const SliderRightPanel = ({
             step={step}
             disabled={disabled}
           />
-          <div className="relative mt-1 flex items-center justify-between text-[hsla(var(--app-text-secondary))]">
+          <div className="relative mt-1 flex items-center justify-between text-[hsla(var(--text-secondary))]">
             <p className="text-xs">{min}</p>
             <p className="text-xs">{max}</p>
           </div>
@@ -65,7 +64,7 @@ const SliderRightPanel = ({
           trigger={
             <Input
               type="number"
-              className="-mt-4 h-8 w-14"
+              className="-mt-4 h-8 w-[60px]"
               min={min}
               max={max}
               value={String(value)}

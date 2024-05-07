@@ -159,7 +159,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
         title="Edit Message"
         content={
           <div>
-            <p className="text-[hsla(var(--app-text-secondary)]">
+            <p className="text-[hsla(var(--text-secondary)]">
               Do you want to discard the change
             </p>
             <div className="mt-4 flex justify-end gap-x-2">

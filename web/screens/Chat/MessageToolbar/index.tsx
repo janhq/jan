@@ -68,7 +68,10 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onEditClick}
             >
-              <PencilIcon size={14} className="text-[hsla(var(--app-icon))]" />
+              <PencilIcon
+                size={14}
+                className="text-[hsla(var(--text-secondary))]"
+              />
             </div>
           )}
 
@@ -80,7 +83,10 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onRegenerateClick}
             >
-              <RefreshCcw size={14} className="text-[hsla(var(--app-icon))]" />
+              <RefreshCcw
+                size={14}
+                className="text-[hsla(var(--text-secondary))]"
+              />
             </div>
           )}
 
@@ -93,14 +99,20 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           {clipboard.copied ? (
             <CheckIcon size={14} className="text-[hsla(var(--success-bg))]" />
           ) : (
-            <CopyIcon size={14} className="text-[hsla(var(--app-icon))]" />
+            <CopyIcon
+              size={14}
+              className="text-[hsla(var(--text-secondary))]"
+            />
           )}
         </div>
         <div
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
           onClick={onDeleteClick}
         >
-          <Trash2Icon size={14} className="text-[hsla(var(--app-icon))]" />
+          <Trash2Icon
+            size={14}
+            className="text-[hsla(var(--text-secondary))]"
+          />
         </div>
       </div>
     </div>

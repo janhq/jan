@@ -22,6 +22,7 @@ import {
 
 type Props = {
   metadata: ModelMetadata
+  compact?: boolean
 }
 const UnsupportedModel = () => {
   return (
@@ -31,7 +32,7 @@ const UnsupportedModel = () => {
   )
 }
 
-const ModelLabel: React.FC<Props> = ({ metadata }) => {
+const ModelLabel = ({ metadata, compact }: Props) => {
   const { activeModel } = useActiveModel()
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
@@ -48,14 +49,15 @@ const ModelLabel: React.FC<Props> = ({ metadata }) => {
       return (
         <NotEnoughMemoryLabel
           unit={settings?.run_mode === 'gpu' ? 'VRAM' : 'RAM'}
+          compact={compact}
         />
       )
     }
-    if (minimumRamModel < availableRam) {
+    if (minimumRamModel < availableRam && !compact) {
       return <RecommendedLabel />
     }
     if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
-      return <SlowOnYourDeviceLabel />
+      return <SlowOnYourDeviceLabel compact={compact} />
     }
 
     return null
