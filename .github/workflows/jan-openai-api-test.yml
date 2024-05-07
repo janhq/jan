@@ -72,7 +72,7 @@ jobs:
           
           # Append to conftest.py
           cat ../docs/tests/conftest.py >> tests/conftest.py
-          cat ../docs/tests/endpoints_mapping.json.py >> tests/endpoints_mapping.json.py
+          cat ../docs/tests/endpoints_mapping.json >> tests/endpoints_mapping.json
           
           # start mock server and run test then stop mock server
           IFS=',' read -ra endpoints <<< "$ENDPOINTS"
