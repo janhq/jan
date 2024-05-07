@@ -75,7 +75,7 @@
   position: relative;
   margin-top: 8px;
   height: 32px;
-  @apply bg-secondary;
+  background-color: hsla(var(--app-secondary-bg));
   border-radius: 20px;
   width: 56px;
   display: inline-flex;
@@ -95,15 +95,15 @@
 }
 
 .bubble-loader span:nth-child(1) {
-  @apply bg-secondary-foreground/50;
+  background-color: hsla(var(--app-secondary-bg));
   animation: DotLeft 1.5s infinite linear;
 }
 .bubble-loader span:nth-child(2) {
-  @apply bg-secondary-foreground/50;
+  background-color: hsla(var(--app-secondary-bg));
   z-index: 100;
 }
 .bubble-loader span:nth-child(3) {
-  @apply bg-secondary-foreground/50;
+  background-color: hsla(var(--app-secondary-bg));
   animation: DotRight 1.5s infinite linear;
 }
 

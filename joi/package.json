@@ -39,6 +39,7 @@
     "@radix-ui/react-tabs": "^1.0.4",
     "@radix-ui/react-tooltip": "^1.0.7",
     "tailwind-merge": "^2.2.0",
+    "autoprefixer": "10.4.16",
     "tailwindcss": "^3.4.1"
   },
   "devDependencies": {

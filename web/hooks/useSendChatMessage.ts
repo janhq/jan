@@ -13,7 +13,6 @@ import {
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import {
   currentPromptAtom,
   editPromptAtom,
@@ -34,6 +33,7 @@ import {
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
   engineParamsUpdateAtom,

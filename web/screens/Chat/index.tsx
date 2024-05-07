@@ -3,7 +3,6 @@ import React, { useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
-import { ScrollArea } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
@@ -15,7 +14,6 @@ import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
-import { showLeftSideBarAtom } from '@/containers/Providers/KeyListener'
 
 import { snackbar } from '@/containers/Toast'
 
@@ -28,7 +26,7 @@ import ThreadList from '@/screens/Chat/ThreadList'
 
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
-import ThreadRightBar from './ThreadRightBar'
+import ThreadRightBar from './ThreadRightPanel'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
@@ -161,15 +159,18 @@ const ChatScreen: React.FC = () => {
           <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">
             <div
               className={twMerge(
-                'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-blue-500',
-                isDragReject && 'border-red-500'
+                'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[hsla(var(--primary-bg))]',
+                isDragReject && 'border-[hsla(var(--destructive-bg))]'
               )}
             >
               <div className="mx-auto w-1/2 text-center">
                 <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-200">
-                  <UploadCloudIcon size={24} className="text-blue-600" />
+                  <UploadCloudIcon
+                    size={24}
+                    className="text-[hsla(var(--primary-bg))]"
+                  />
                 </div>
-                <div className="mt-4 text-blue-600">
+                <div className="mt-4 text-[hsla(var(--primary-bg))]">
                   <h6 className="font-bold">
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
@@ -207,7 +208,7 @@ const ChatScreen: React.FC = () => {
             <>
               <ModelReload />
               <div className="mb-2 text-center">
-                <span className="text-[hsla(var(--app-text-secondary)]">
+                <span className="text-[hsla(var(--text-secondary)]">
                   Model is reloading to apply new changes.
                 </span>
               </div>
@@ -216,7 +217,7 @@ const ChatScreen: React.FC = () => {
 
           {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
-              <span className="text-[hsla(var(--app-text-secondary)]">
+              <span className="text-[hsla(var(--text-secondary)]">
                 Message will be sent once the model has started
               </span>
             </div>

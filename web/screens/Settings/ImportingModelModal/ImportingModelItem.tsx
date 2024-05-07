@@ -38,10 +38,10 @@ const ImportingModelItem = ({ model }: Props) => {
 
   return (
     <div className="flex w-full flex-row items-center space-x-3 rounded-lg border border-[hsla(var(--app-border))] px-4 py-3">
-      <p className="line-clamp-1 flex-1 font-semibold text-[hsla(var(--app-text-secondary))]">
+      <p className="line-clamp-1 flex-1 font-semibold text-[hsla(var(--text-secondary))]">
         {model.name}
       </p>
-      <p className="text-[hsla(var(--app-text-secondary))]">{displayStatus}</p>
+      <p className="text-[hsla(var(--text-secondary))]">{displayStatus}</p>
 
       {model.status === 'IMPORTED' && (
         <ImportSuccessIcon onEditModelClick={onEditModelInfoClick} />

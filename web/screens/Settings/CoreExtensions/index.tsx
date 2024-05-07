@@ -92,7 +92,7 @@ const ExtensionCatalog = () => {
                   </div>
                   {
                     <div
-                      className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]"
+                      className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
                       dangerouslySetInnerHTML={{
                         // eslint-disable-next-line @typescript-eslint/naming-convention
                         __html: marked.parse(item.description ?? '', {
@@ -113,7 +113,7 @@ const ExtensionCatalog = () => {
                   Manual Installation
                 </h6>
               </div>
-              <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Select an extension file to install (.tgz)
               </p>
             </div>
@@ -147,7 +147,7 @@ const marked: Marked = new Marked({
         ?.apply(this, [href, title, text])
         .replace(
           '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
+          "<a class='text-[hsla(var(--text-link))]' target='_blank'"
         )
     },
   },

@@ -17,7 +17,6 @@
     "@heroicons/react": "^2.0.18",
     "@hookform/resolvers": "^3.3.2",
     "@janhq/core": "link:./core",
-    "@janhq/uikit": "link:./uikit",
     "@janhq/joi": "link:./joi",
     "autoprefixer": "10.4.16",
     "class-variance-authority": "^0.7.0",

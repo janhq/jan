@@ -20,7 +20,7 @@ const ModalChangeDestNotEmpty = ({ onUserConfirmed }: Props) => {
       onOpenChange={setShow}
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             You may accidentally delete your other personal data when
             uninstalling the app in the future. Are you sure you want to proceed
             with this folder? Please review your selection carefully.

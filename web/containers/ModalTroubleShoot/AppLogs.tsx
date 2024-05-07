@@ -208,9 +208,7 @@ const AppLogs = () => {
                 </linearGradient>
               </defs>
             </svg>
-            <p className="text-[hsla(var(--app-text-secondary)] mt-4">
-              Empty logs
-            </p>
+            <p className="text-[hsla(var(--text-secondary)] mt-4">Empty logs</p>
           </div>
         )}
       </div>

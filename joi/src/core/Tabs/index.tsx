@@ -7,7 +7,9 @@ import './styles.scss'
 type TabsProps = {
   options: { name: string; value: string }[]
   children: ReactNode
-  defaultValue: string
+  defaultValue?: string
+  value: string
+  onValueChange?: (value: string) => void
 }
 
 type TabsContentProps = {
@@ -23,8 +25,19 @@ const TabsContent = ({ value, children }: TabsContentProps) => {
   )
 }
 
-const Tabs = ({ options, children, defaultValue }: TabsProps) => (
-  <TabsPrimitive.Root className="tabs" defaultValue={defaultValue}>
+const Tabs = ({
+  options,
+  children,
+  defaultValue,
+  value,
+  onValueChange,
+}: TabsProps) => (
+  <TabsPrimitive.Root
+    className="tabs"
+    value={value}
+    defaultValue={defaultValue}
+    onValueChange={onValueChange}
+  >
     <TabsPrimitive.List className="tabs__list">
       {options.map((option, i) => {
         return (

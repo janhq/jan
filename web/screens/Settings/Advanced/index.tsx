@@ -11,17 +11,8 @@ import {
   Input,
   Tooltip,
   Checkbox,
-} from '@janhq/joi'
-
-import {
   Select,
-  SelectContent,
-  SelectGroup,
-  SelectPortal,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from '@janhq/uikit'
+} from '@janhq/joi'
 
 import { useAtom, useAtomValue } from 'jotai'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
@@ -184,7 +175,7 @@ const Advanced = () => {
             <div className="flex gap-x-2">
               <h6 className="font-semibold capitalize">Experimental Mode</h6>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Enable experimental features that may be untested and unstable.
             </p>
           </div>
@@ -195,7 +186,7 @@ const Advanced = () => {
         </div>
 
         {/* CPU / GPU switching */}
-        {!isMac && (
+        {isMac && (
           <div className="flex w-full flex-col items-start justify-between border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">
             <div className="flex w-full items-start justify-between">
               <div className="space-y-1">
@@ -272,13 +263,15 @@ const Advanced = () => {
                 />
               </div>
             </div>
-            <div className="mt-2 w-full rounded-lg bg-secondary p-4">
+            <div className="bg-secondary mt-2 w-full rounded-lg p-4">
               <label className="mb-1 mr-2 inline-block font-medium">
                 Choose device(s)
               </label>
-              <Select
+              {/* TODO @Faisal fix this */}
+              {/* <Select
                 disabled={gpuList.length === 0 || !gpuEnabled}
                 value={selectedGpu.join()}
+                placeholder=''
               >
                 <SelectTrigger className="w-[340px] bg-white dark:bg-gray-500">
                   <SelectValue placeholder={gpuSelectionPlaceHolder}>
@@ -326,7 +319,6 @@ const Advanced = () => {
                               </div>
                             ))}
                         </div>
-                        {/* Warning message */}
                         {gpuEnabled && gpusInUse.length > 1 && (
                           <div className="mt-2 flex items-start space-x-2 text-yellow-500">
                             <AlertTriangleIcon
@@ -341,11 +333,9 @@ const Advanced = () => {
                         )}
                       </div>
                     </SelectGroup>
-
-                    {/* TODO enable this when we support AMD */}
                   </SelectContent>
                 </SelectPortal>
-              </Select>
+              </Select> */}
             </div>
           </div>
         )}
@@ -357,7 +347,7 @@ const Advanced = () => {
               <div className="flex gap-x-2">
                 <h6 className="font-semibold capitalize">Vulkan Support</h6>
               </div>
-              <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better
                 model performance (reload needed).
               </p>
@@ -378,7 +368,7 @@ const Advanced = () => {
             <div className="flex w-full justify-between gap-x-2">
               <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Specify the HTTPS proxy or leave blank (proxy auto-configuration
               and SOCKS not supported).
             </p>
@@ -407,7 +397,7 @@ const Advanced = () => {
                 Ignore SSL certificates
               </h6>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Allow self-signed or unverified certificates - may be required for
               certain proxies.
             </p>
@@ -424,9 +414,9 @@ const Advanced = () => {
               <div className="flex gap-x-2">
                 <h6 className="font-semibold capitalize">Jan Quick Ask</h6>
               </div>
-              <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Enable Quick Ask to be triggered via the default hotkey{' '}
-                <div className="text-[hsla(var(--app-text-secondary)] inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold">
+                <div className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
                   <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
                 </div>{' '}
                 (reload needed).
@@ -452,7 +442,7 @@ const Advanced = () => {
             <div className="flex gap-x-2">
               <h6 className="font-semibold capitalize">Clear logs</h6>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Clear all logs from Jan app.
             </p>
           </div>

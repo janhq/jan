@@ -83,7 +83,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
         <div
           // eslint-disable-next-line @typescript-eslint/naming-convention
           dangerouslySetInnerHTML={{ __html: description }}
-          className='className="font-medium text-[hsla(var(--app-text-secondary))]" leading-relaxed'
+          className='className="font-medium text-[hsla(var(--text-secondary))]" leading-relaxed'
         />
       </div>
 
@@ -118,13 +118,13 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   if (installProgress !== -1) {
     const progress = installProgress * 100
     return (
-      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4 text-primary dark:bg-secondary">
-        <button onClick={onCancelClick} className="font-semibold text-primary">
+      <div className="text-primary dark:bg-secondary flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4">
+        <button onClick={onCancelClick} className="text-primary font-semibold">
           Cancel
         </button>
         <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px] dark:bg-black/50">
           <Progress className="h-1 w-[69px]" value={progress} />
-          <span className="text-xs font-bold text-primary">
+          <span className="text-primary text-xs font-bold">
             {progress.toFixed(0)}%
           </span>
         </div>
@@ -135,18 +135,18 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   switch (installState) {
     case 'Installed':
       return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-[hsla(var(--app-text-secondary))]">
+        <div className="bg-secondary rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
           Installed
         </div>
       )
     case 'NotCompatible':
       return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-[hsla(var(--app-text-secondary))]">
+        <div className="bg-secondary rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
           <div className="flex flex-row items-center justify-center gap-1">
             Incompatible
             <Tooltip
               trigger={
-                <InfoCircledIcon className="cursor-pointer text-[hsla(var(--app-icon))]" />
+                <InfoCircledIcon className="cursor-pointer text-[hsla(var(--text-secondary))]" />
               }
               content={
                 compatibility &&
@@ -189,7 +189,7 @@ const marked: Marked = new Marked({
         ?.apply(this, [href, title, text])
         .replace(
           '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
+          "<a class='text-[hsla(var(--text-link))]' target='_blank'"
         )
     },
   },

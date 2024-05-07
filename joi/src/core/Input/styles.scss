@@ -2,7 +2,7 @@
   background-color: hsla(var(--input-bg));
   border: 1px solid hsla(var(--input-border));
   @apply inline-flex h-9 w-full items-center rounded-lg border px-3 transition-colors;
-  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1;
+  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-1;
   @apply file:border-0 file:bg-transparent file:font-medium;
 
   &__wrapper {
@@ -23,10 +23,18 @@
   }
 
   &__prefix-icon {
-    @apply absolute left-2 top-1/2 -translate-y-1/2;
+    @apply absolute left-3 top-1/2 -translate-y-1/2;
     color: hsla(var(--input-icon));
     + .input {
       padding-left: 32px;
+    }
+  }
+
+  &__suffix-icon {
+    @apply absolute right-3 top-1/2 -translate-y-1/2;
+    color: hsla(var(--input-icon));
+    + .input {
+      padding-right: 32px;
     }
   }
 }

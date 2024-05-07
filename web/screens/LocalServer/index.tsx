@@ -21,11 +21,7 @@ import { ExternalLinkIcon, InfoIcon } from 'lucide-react'
 import { AlertTriangleIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import CardSidebar from '@/containers/CardSidebar'
-
-import DropdownListSidebar, {
-  selectedModelAtom,
-} from '@/containers/DropdownListSidebar'
+// import CardSidebar from '@/containers/CardSidebar'
 
 import ModalTroubleShooting, {
   modalTroubleShootingAtom,
@@ -43,7 +39,6 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 import EngineSetting from '../Chat/EngineSetting'
 
 import ModelSetting from '../Chat/ModelSetting'
-import { showRightSideBarAtom } from '../Chat/ThreadRightBar'
 
 import {
   apiServerCorsEnabledAtom,
@@ -54,12 +49,14 @@ import {
   hostOptions,
 } from '@/helpers/atoms/ApiServer.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import { showRightSidePanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const LocalServerScreen = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [errorPrefix, setErrorPrefix] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const showRightSideBar = useAtomValue(showRightSideBarAtom)
+  const showRightSideBar = useAtomValue(showRightSidePanelAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const { openServerLog, clearServerLog } = useLogs()
@@ -194,7 +191,7 @@ const LocalServerScreen = () => {
       <ScrollArea className="flex h-full w-40 flex-shrink-0 flex-col overflow-y-auto border-r border-[hsla(var(--app-border))]">
         <div className="p-4">
           <h2 className="font-bold">Server Options</h2>
-          <p className="mt-2 leading-relaxed text-[hsla(var(--app-text-secondary))]">
+          <p className="mt-2 leading-relaxed text-[hsla(var(--text-secondary))]">
             Start an OpenAI-compatible local HTTP server.
           </p>
         </div>
@@ -295,7 +292,7 @@ const LocalServerScreen = () => {
                           trigger={
                             <InfoIcon
                               size={16}
-                              className="text-[hsla(var(--app-text-secondary))]"
+                              className="text-[hsla(var(--text-secondary))]"
                             />
                           }
                           content="CORS (Cross-Origin Resource Sharing) manages resource access on this server from external domains. Enable for secure inter-website communication, regulating data sharing to bolster overall security."
@@ -312,6 +309,7 @@ const LocalServerScreen = () => {
               <div>
                 <div className="flex items-center justify-between">
                   <Checkbox
+                    id="verbose"
                     label={
                       <>
                         <span>Verbose Server Logs</span>
@@ -320,7 +318,7 @@ const LocalServerScreen = () => {
                           trigger={
                             <InfoIcon
                               size={16}
-                              className="text-[hsla(var(--app-text-secondary))]"
+                              className="text-[hsla(var(--text-secondary))]"
                             />
                           }
                           content="Verbose Server Logs provide extensive details about server activities. Enable to capture thorough records, aiding in troubleshooting and monitoring server performance effectively."
@@ -443,8 +441,8 @@ const LocalServerScreen = () => {
               multiple remote models.
             </p>
           </div>
-          <DropdownListSidebar strictedThread={false} />
-          {loadModelError && serverEnabled && (
+          {/* <DropdownListSidebar strictedThread={false} /> */}
+          {/* {loadModelError && serverEnabled && (
             <div className="mt-3 flex space-x-2 text-xs">
               <AlertTriangleIcon
                 size={16}
@@ -453,7 +451,7 @@ const LocalServerScreen = () => {
               <span>
                 Model failed to start. Access{' '}
                 <span
-                  className="cursor-pointer text-primary dark:text-blue-400"
+                  className="text-primary cursor-pointer dark:text-blue-400"
                   onClick={() => setModalTroubleShooting(true)}
                 >
                   troubleshooting assistance
@@ -488,7 +486,7 @@ const LocalServerScreen = () => {
                 </div>
               </CardSidebar>
             </div>
-          )}
+          )} */}
         </div>
       </div>
       <ModalTroubleShooting />

@@ -27,7 +27,7 @@ const ModelConfigInput = ({
         trigger={
           <InfoIcon
             size={16}
-            className="flex-shrink-0 text-[hsla(var(--app-icon))]"
+            className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
           />
         }
         content={description}

@@ -16,7 +16,7 @@ const marked: Marked = new Marked({
         ?.apply(this, [href, title, text])
         .replace(
           '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
+          "<a class='text-[hsla(var(--text-link))]' target='_blank'"
         )
     },
   },
@@ -40,7 +40,7 @@ const SettingDetailToggleItem: React.FC<Props> = ({
           <div
             // eslint-disable-next-line @typescript-eslint/naming-convention
             dangerouslySetInnerHTML={{ __html: description }}
-            className="font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]"
+            className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
           />
         }
       </div>

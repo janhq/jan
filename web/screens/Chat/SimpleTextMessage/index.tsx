@@ -195,7 +195,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         </div>
         {messages[messages.length - 1]?.id === props.id &&
           (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
-            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--app-text-secondary))]">
+            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
               Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
             </p>
           )}
@@ -229,7 +229,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           )}
 
           {props.content[0]?.type === ContentType.Pdf && (
-            <div className="group/file relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-secondary p-4">
+            <div className="group/file bg-secondary relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg p-4">
               <div
                 className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block"
                 onClick={() =>
@@ -252,7 +252,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 <h6 className="line-clamp-1 w-4/5 font-medium">
                   {props.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
                 </h6>
-                <p className="text-[hsla(var(--app-text-secondary)]">
+                <p className="text-[hsla(var(--text-secondary)]">
                   {toGibibytes(Number(props.content[0].text.size))}
                 </p>
               </div>
@@ -268,10 +268,10 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               ) : (
                 <div
                   className={twMerge(
-                    'message flex flex-grow flex-col gap-y-2 text-base font-normal leading-relaxed',
+                    'message flex flex-grow flex-col gap-y-2 font-normal leading-relaxed',
                     isUser
                       ? 'whitespace-pre-wrap break-words'
-                      : 'rounded-xl bg-secondary p-4'
+                      : 'bg-secondary rounded-xl p-4'
                   )}
                 >
                   {text}
@@ -281,10 +281,10 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-grow flex-col gap-y-2 overflow-auto text-base font-normal leading-relaxed',
+                'message max-width-[100%] flex flex-grow flex-col gap-y-2 overflow-auto font-normal leading-relaxed',
                 isUser
                   ? 'whitespace-pre-wrap break-words'
-                  : 'rounded-xl bg-secondary'
+                  : 'bg-secondary rounded-xl'
               )}
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}

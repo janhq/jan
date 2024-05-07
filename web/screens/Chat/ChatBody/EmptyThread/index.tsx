@@ -19,18 +19,20 @@ const EmptyThread = () => {
       .length === 0
 
   return (
-    <div className="mx-auto flex h-full w-3/4 flex-col items-center justify-center text-center">
+    <div className="mx-auto flex h-full flex-col items-center justify-center text-center">
       <LogoMark className="mx-auto mb-2 animate-wave" width={32} height={32} />
       {showOnboardingStep ? (
         <>
           <p className="mt-1 font-medium">
             {`You don't have a local model yet.`}
           </p>
-          <div className="w-auto px-4 py-2">
-            <Button onClick={() => setMainViewState(MainViewState.Hub)}>
-              Explore The Hub
-            </Button>
-          </div>
+          <Button
+            onClick={() => setMainViewState(MainViewState.Hub)}
+            variant="soft"
+            className="mt-3"
+          >
+            Explore The Hub
+          </Button>
         </>
       ) : (
         <p className="mt-1 font-medium">How can I help you?</p>

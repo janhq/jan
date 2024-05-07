@@ -16,7 +16,7 @@ const FactoryReset = () => {
             Reset to Factory Default
           </h6>
         </div>
-        <p className="whitespace-pre-wrap font-medium leading-relaxed text-[hsla(var(--app-text-secondary))]">
+        <p className="whitespace-pre-wrap font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
           Reset the application to its original state, deleting all your usage
           data, including model customizations and conversation history. This
           action is irreversible and recommended only if the application is in a

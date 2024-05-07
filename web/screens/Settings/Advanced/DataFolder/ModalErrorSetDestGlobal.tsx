@@ -15,7 +15,7 @@ const ModalErrorSetDestGlobal = () => {
       title="An Error Occurred"
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             Oops! Something went wrong. Jan data folder remains the same. Please
             try again.
           </p>

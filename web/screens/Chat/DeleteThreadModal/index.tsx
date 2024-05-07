@@ -38,7 +38,7 @@ const DeleteThreadModal: React.FC<Props> = ({ threadId }) => {
       }
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary))]">
+          <p className="text-[hsla(var(--text-secondary))]">
             Are you sure you want to delete this thread? This action cannot be
             undone.
           </p>

@@ -51,7 +51,7 @@ const MyModelList = ({ model }: Props) => {
           className={twMerge(
             'line-clamp-1 font-medium',
             model.engine !== InferenceEngine.nitro &&
-              'text-[hsla(var(--app-text-secondary))]'
+              'text-[hsla(var(--text-secondary))]'
           )}
         >
           {model.name}
@@ -59,7 +59,7 @@ const MyModelList = ({ model }: Props) => {
 
         {model.engine === InferenceEngine.nitro && (
           <>
-            <p className="line-clamp-1 text-[hsla(var(--app-text-secondary))]">
+            <p className="line-clamp-1 text-[hsla(var(--text-secondary))]">
               {model.id}
             </p>
             <Badge theme="secondary">{toGibibytes(model.metadata.size)}</Badge>
@@ -112,7 +112,7 @@ const MyModelList = ({ model }: Props) => {
                       trigger={
                         <div
                           className={twMerge(
-                            'flex items-center space-x-2 px-4 py-2 hover:bg-secondary',
+                            'hover:bg-secondary flex items-center space-x-2 px-4 py-2',
                             serverEnabled &&
                               activeModel &&
                               activeModel.id !== model.id &&
@@ -126,12 +126,12 @@ const MyModelList = ({ model }: Props) => {
                           {activeModel && activeModel.id === model.id ? (
                             <StopCircleIcon
                               size={16}
-                              className="text-[hsla(var(--app-icon))]"
+                              className="text-[hsla(var(--text-secondary))]"
                             />
                           ) : (
                             <PlayIcon
                               size={16}
-                              className="text-[hsla(var(--app-icon))]"
+                              className="text-[hsla(var(--text-secondary))]"
                             />
                           )}
                           <span className="text-bold capitalize">

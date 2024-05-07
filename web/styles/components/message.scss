@@ -1,5 +1,4 @@
 .message {
-  @apply text-black dark:text-gray-300;
   white-space: pre-line;
 
   ul,
@@ -10,7 +9,7 @@
   }
 
   a {
-    @apply text-blue-600 dark:text-blue-300;
+    color: hsla(var(--text-link));
     &:hover {
       @apply underline;
     }

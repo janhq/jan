@@ -30,15 +30,15 @@ const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
   return shouldShowSelectedText ? (
     <div
       ref={containerRef}
-      className="relative rounded-lg border border-[hsla(var(--app-border))] bg-secondary p-[10px]"
+      className="bg-secondary relative rounded-lg border border-[hsla(var(--app-border))] p-[10px]"
     >
       <div
         className="absolute right-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[hsla(var(--app-border))] bg-white shadow dark:bg-black/80"
         onClick={onClearClicked}
       >
-        <X size={14} className="text-[hsla(var(--app-text-secondary)]" />
+        <X size={14} className="text-[hsla(var(--text-secondary)]" />
       </div>
-      <p className="text-[hsla(var(--app-text-secondary)] pr-8 font-medium">
+      <p className="text-[hsla(var(--text-secondary)] pr-8 font-medium">
         {text}
       </p>
     </div>

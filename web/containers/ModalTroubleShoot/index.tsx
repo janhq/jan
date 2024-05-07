@@ -27,14 +27,14 @@ const ModalTroubleShooting: React.FC = () => {
       title="Troubleshooting Assistance"
       content={
         <div>
-          <p className="text-[hsla(var(--app-text-secondary)] -mt-2 pr-3 leading-relaxed">
+          <p className="text-[hsla(var(--text-secondary)] -mt-2 pr-3 leading-relaxed">
             {`We're here to help! Your report is crucial for debugging and shaping
           the next version. Here’s how you can report & get further support:`}
           </p>
 
           <div className="rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
             <h2 className="font-semibold">Step 1</h2>
-            <p className="text-[hsla(var(--app-text-secondary)] mt-1">
+            <p className="text-[hsla(var(--text-secondary)] mt-1">
               Follow our&nbsp;
               <a
                 href="https://jan.ai/guides/troubleshooting"
@@ -50,7 +50,7 @@ const ModalTroubleShooting: React.FC = () => {
           <div className="block overflow-hidden rounded-lg border border-[hsla(var(--app-border))] pb-2 pt-4 shadow">
             <div className="px-4">
               <h2 className="font-semibold">Step 2</h2>
-              <p className="text-[hsla(var(--app-text-secondary)] mt-1">
+              <p className="text-[hsla(var(--text-secondary)] mt-1">
                 {`If you can't find what you need in our troubleshooting guide, feel
             free reach out to us for extra help:`}
               </p>
@@ -79,8 +79,8 @@ const ModalTroubleShooting: React.FC = () => {
 
             <div className="flex flex-col pt-4">
               {/* TODO @faisal replace this once we have better tabs component UI */}
-              <div className="relative bg-zinc-100 px-4 py-2 dark:bg-secondary/50">
-                <ul className="inline-flex space-x-2 rounded-lg bg-zinc-200 px-1 dark:bg-secondary">
+              <div className="dark:bg-secondary/50 relative bg-zinc-100 px-4 py-2">
+                <ul className="dark:bg-secondary inline-flex space-x-2 rounded-lg bg-zinc-200 px-1">
                   {logOption.map((name, i) => {
                     return (
                       <li
@@ -90,9 +90,9 @@ const ModalTroubleShooting: React.FC = () => {
                       >
                         <span
                           className={twMerge(
-                            'text-[hsla(var(--app-text-secondary)] relative z-50 font-medium',
+                            'text-[hsla(var(--text-secondary)] relative z-50 font-medium',
                             isTabActive === i &&
-                              'font-bold text-foreground dark:text-black'
+                              'text-foreground font-bold dark:text-black'
                           )}
                         >
                           {name}

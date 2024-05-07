@@ -40,7 +40,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
             </div>
             <div className="mb-6 flex flex-col gap-1">
               <span className="font-semibold">About</span>
-              <p className="text-[hsla(var(--app-text-secondary))]">
+              <p className="text-[hsla(var(--text-secondary))]">
                 {model.description || '-'}
               </p>
             </div>
@@ -48,7 +48,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
               <div>
                 <span className="font-semibold ">Author</span>
                 <p
-                  className="mt-2 line-clamp-1 font-medium text-[hsla(var(--app-text-secondary))]"
+                  className="mt-2 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]"
                   title={model.metadata.author}
                 >
                   {model.metadata.author}
@@ -57,7 +57,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
               <div>
                 <span className="mb-1 font-semibold ">Model ID</span>
                 <p
-                  className="mt-2 line-clamp-1 font-medium text-[hsla(var(--app-text-secondary))]"
+                  className="mt-2 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]"
                   title={model.id}
                 >
                   {model.id}
