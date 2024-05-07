@@ -72,7 +72,8 @@ jobs:
           
           # Append to conftest.py
           cat ../docs/tests/conftest.py >> tests/conftest.py
-
+          cat ../docs/tests/endpoints_mapping.json.py >> tests/endpoints_mapping.json.py
+          
           # start mock server and run test then stop mock server
           IFS=',' read -ra endpoints <<< "$ENDPOINTS"
           markers=""
@@ -95,7 +96,7 @@ jobs:
             openai-python/assets
             openai-python/prism.log
 
-      - name: clean up
+      - name: Clean up
         if: always()
         run: |
           rm -rf /tmp/jan
