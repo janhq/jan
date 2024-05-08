@@ -15,7 +15,7 @@
       "ctx_len": 8192,
       "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
       "llama_model_path": "Hermes-2-Pro-Llama-3-8B-Q4_K_M.gguf",
-      "ngl": 100
+      "ngl": 32
     },
     "parameters": {
       "temperature": 0.7,
