@@ -14,7 +14,8 @@
   "settings": {
     "ctx_len": 32768,
     "prompt_template": "[INST] {prompt} [/INST]",
-    "llama_model_path": "mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+    "llama_model_path": "mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+    "ngl": 32
   },
   "parameters": {
     "temperature": 0.7,
