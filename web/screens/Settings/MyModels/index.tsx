@@ -7,7 +7,7 @@ import { InferenceEngine } from '@janhq/core'
 import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { PlusIcon, UploadCloudIcon, UploadIcon } from 'lucide-react'
+import { UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
