@@ -29,7 +29,7 @@ const ImportSuccessIcon: React.FC<Props> = ({ onEditModelClick }) => {
 }
 
 const SuccessIcon: React.FC = React.memo(() => (
-  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-white">
+  <div className="bg-primary flex h-8 w-8 items-center justify-center rounded-full text-white">
     <Check size={20} />
   </div>
 ))
@@ -41,7 +41,7 @@ const EditIcon: React.FC<Props> = React.memo(({ onEditModelClick }) => {
 
   return (
     <div
-      className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg bg-secondary"
+      className="bg-secondary flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg"
       onClick={onClick}
     >
       <Pencil size={20} />

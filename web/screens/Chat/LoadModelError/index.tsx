@@ -32,7 +32,7 @@ const LoadModelError = () => {
           Port 3928 is currently unavailable. Check for conflicting apps, or
           access&nbsp;
           <span
-            className="cursor-pointer text-primary dark:text-blue-400"
+            className="text-primary cursor-pointer dark:text-blue-400"
             onClick={() => setModalTroubleShooting(true)}
           >
             troubleshooting assistance
@@ -48,7 +48,7 @@ const LoadModelError = () => {
           Model is currently unavailable. Please switch to a different model or
           install the{' '}
           <span
-            className="cursor-pointer font-medium text-primary dark:text-blue-400"
+            className="text-primary cursor-pointer font-medium dark:text-blue-400"
             onClick={() => {
               setMainState(MainViewState.Settings)
               if (activeThread?.assistants[0]?.model.engine) {
@@ -76,7 +76,7 @@ const LoadModelError = () => {
             <p>
               The CUDA toolkit may be unavailable. Please use the{' '}
               <span
-                className="cursor-pointer font-medium text-primary dark:text-blue-400"
+                className="text-primary cursor-pointer font-medium dark:text-blue-400"
                 onClick={() => {
                   setMainState(MainViewState.Settings)
                   if (activeThread?.assistants[0]?.model.engine) {
@@ -95,7 +95,7 @@ const LoadModelError = () => {
             <div>
               Problem with Nvidia drivers. Please follow the{' '}
               <a
-                className="font-medium text-primary dark:text-blue-400"
+                className="text-primary font-medium dark:text-blue-400"
                 href="https://www.nvidia.com/Download/index.aspx"
                 target="_blank"
               >
@@ -114,7 +114,7 @@ const LoadModelError = () => {
           <p>
             Jan’s in beta. Access&nbsp;
             <span
-              className="cursor-pointer text-primary dark:text-blue-400"
+              className="text-primary cursor-pointer dark:text-blue-400"
               onClick={() => setModalTroubleShooting(true)}
             >
               troubleshooting assistance
