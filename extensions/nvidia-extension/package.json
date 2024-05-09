@@ -1,6 +1,6 @@
 {
   "name": "@janhq/nvidia-extension",
-  "productName": "NVIDIA Inference Engine",
+  "productName": "NVIDIA NIM Inference Engine",
   "version": "1.0.1",
   "description": "This extension enables NVIDIA chat completion API calls",
   "main": "dist/index.js",
