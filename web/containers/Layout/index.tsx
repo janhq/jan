@@ -25,6 +25,8 @@ import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
+import LoadingModal from '../LoadingModal'
+
 import MainViewContainer from '../MainViewContainer'
 
 import InstallingExtensionModal from './BottomBar/InstallingExtension/InstallingExtensionModal'
@@ -69,6 +71,7 @@ const BaseLayout = () => {
           <BottomBar />
         </div>
       </div>
+      <LoadingModal />
       {importModelStage === 'SELECTING_MODEL' && <SelectingModelModal />}
       {importModelStage === 'MODEL_SELECTED' && <ImportModelOptionModal />}
       {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
