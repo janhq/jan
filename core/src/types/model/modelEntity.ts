@@ -134,6 +134,8 @@ export type ModelRuntimeParams = {
   frequency_penalty?: number
   presence_penalty?: number
   engine?: string
+  seed?: number
+  messages?: string | object
 }
 
 export type ModelInitFailed = Model & {
