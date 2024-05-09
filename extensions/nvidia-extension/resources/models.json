@@ -1,0 +1,95 @@
+[
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "Mistral-7b-instruct",
+    "object": "model",
+    "name": "Mistral-7b-instruct",
+    "version": "1.1",
+    "description": "Mistral-7B-Instruct is a language model that can follow instructions, complete requests, and generate creative text formats. It is an instruct version of the Mistral-7B-v0.2 generative text model fine-tuned using a variety of publicly available conversation datasets.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "model": "mistralai/mistral-7b-instruct-v0.2",
+      "max_tokens": 1024,
+      "stream": false,
+      "temperature": 0.3,
+      "top_p": 1,
+      "stop": null,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "seed": null,
+      "messages": "string"
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "dbrx-instruct",
+    "object": "model",
+    "name": "dbrx-instruct",
+    "version": "1.1",
+    "description": "DBRX is a transformer-based decoder-only large language model (LLM) that was trained using next-token prediction. It uses a fine-grained mixture-of-experts (MoE) architecture with 132B total parameters of which 36B parameters are active on any input. ",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "model": "databricks/dbrx-instruct",
+      "max_tokens": 1024,
+      "stream": false,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stop": null,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "seed": 0,
+      "messages": "string"
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "open-mixtral-8x22b",
+    "object": "model",
+    "name": "Mixtral 8x22B",
+    "version": "1.1",
+    "description": "Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 32000,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "nvidia"
+  }
+]
