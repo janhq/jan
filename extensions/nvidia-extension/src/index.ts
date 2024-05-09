@@ -24,12 +24,6 @@ export default class JanInferenceNVIDIAExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
   provider: string = 'nvidia'
 
-  // How to add these
-  // --header 'accept: application/json' \
-  // --header 'authorization: Bearer api_key' \
-  // --header 'content-type: application/json' \
-  // assume paramter is data
-
   override async onLoad(): Promise<void> {
     super.onLoad()
 
@@ -39,8 +33,6 @@ export default class JanInferenceNVIDIAExtension extends RemoteOAIEngine {
 
     // Asks for API key
     this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
-    // adds bearer before api key
-    let authorization = `Bearer ${this.apiKey}`
     this.inferenceUrl = await this.getSetting<string>(
       Settings.chatCompletionsEndPoint,
       ''
