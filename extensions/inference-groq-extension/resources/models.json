@@ -23,7 +23,10 @@
     },
     "metadata": {
       "author": "Meta",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   },
@@ -51,7 +54,10 @@
     },
     "metadata": {
       "author": "Meta",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   },
@@ -79,7 +85,9 @@
     },
     "metadata": {
       "author": "Google",
-      "tags": ["General"]
+      "tags": [
+        "General"
+      ]
     },
     "engine": "groq"
   },
@@ -107,7 +115,10 @@
     },
     "metadata": {
       "author": "Mistral",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   }

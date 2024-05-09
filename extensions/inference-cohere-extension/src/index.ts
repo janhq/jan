@@ -3,7 +3,7 @@
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  * @version 1.0.0
- * @module inference-openai-extension/src/index
+ * @module inference-cohere-extension/src/index
  */
 
 import { RemoteOAIEngine } from '@janhq/core'
@@ -82,7 +82,7 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     if (payload.messages.length === 0) {
       return {}
     }
-    const convertedData:CoherePayloadType = {
+    const convertedData: CoherePayloadType = {
       chat_history: [],
       message: '',
     }
@@ -93,7 +93,7 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
         return
       }
       if (item.role === ChatCompletionRole.User) {
-        convertedData.chat_history.push({ role: RoleType.user, message: item.content as string})
+        convertedData.chat_history.push({ role: RoleType.user, message: item.content as string })
       } else if (item.role === ChatCompletionRole.Assistant) {
         convertedData.chat_history.push({
           role: RoleType.chatbot,

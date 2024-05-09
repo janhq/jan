@@ -23,7 +23,9 @@
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General"]
+      "tags": [
+        "General"
+      ]
     },
     "engine": "openai"
   },
@@ -51,7 +53,10 @@
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General", "Vision"]
+      "tags": [
+        "General",
+        "Vision"
+      ]
     },
     "engine": "openai"
   },
@@ -79,7 +84,9 @@
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General"]
+      "tags": [
+        "General"
+      ]
     },
     "engine": "openai"
   }
