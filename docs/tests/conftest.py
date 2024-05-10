@@ -7,10 +7,10 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "endpoint(endpoint): this mark select the test based on endpoint")
 
 def pytest_runtest_setup(item):
-    getoption = item.config.getoption("--endpoint")
-    if getoption != "all":
+    getoption = item.config.getoption("--endpoint").split(',')
+    if getoption != ["all"]:
         endpoint_names = [mark.args[0] for mark in item.iter_markers(name="endpoint")]
-        if not endpoint_names or getoption not in endpoint_names:
+        if not endpoint_names or not set(getoption).intersection(set(endpoint_names)):
             pytest.skip("Test skipped because endpoint is {!r}".format(endpoint_names))
 
 def pytest_collection_modifyitems(items):
