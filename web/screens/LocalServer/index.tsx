@@ -8,7 +8,10 @@ import LocalServerRightPanel from './LocalServerRightPanel'
 
 const LocalServerScreen = () => {
   return (
-    <div className="flex h-full w-full" data-testid="local-server-testid">
+    <div
+      className="relative flex h-full w-full overflow-hidden"
+      data-testid="local-server-testid"
+    >
       <LocalServerLeftPanel />
       <LocalServerCenterPanel />
       <LocalServerRightPanel />

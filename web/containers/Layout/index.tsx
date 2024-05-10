@@ -52,7 +52,7 @@ const BaseLayout = () => {
   return (
     <Fragment>
       <TopPanel />
-      <div className="relative top-9 flex h-[calc(100vh-(36px+28px))] w-screen">
+      <div className="relative top-9 flex h-[calc(100vh-(36px+28px))] w-screen overflow-hidden">
         <RibbonPanel />
         <div className="relative flex w-full bg-[hsla(var(--app-bg))]">
           <div className="w-full">
