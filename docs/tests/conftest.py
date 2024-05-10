@@ -1,5 +1,17 @@
 import json
 
+def pytest_addoption(parser):
+    parser.addoption("--endpoint", action="store", default="all", help="my option: endpoints")
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "endpoint(endpoint): this mark select the test based on endpoint")
+
+def pytest_runtest_setup(item):
+    getoption = item.config.getoption("--endpoint")
+    if getoption != "all":
+        endpoint_names = [mark.args[0] for mark in item.iter_markers(name="endpoint")]
+        if not endpoint_names or getoption not in endpoint_names:
+            pytest.skip("Test skipped because endpoint is {!r}".format(endpoint_names))
 
 def pytest_collection_modifyitems(items):
     # load the JSON file
