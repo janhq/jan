@@ -16,10 +16,14 @@
   }
 }
 
-button[class*='react-scroll-to-bottom--'] {
-  display: none;
-}
+// button[class*='react-scroll-to-bottom--'] {
+//   display: none;
+// }
 
 .code-block {
   white-space: normal;
+}
+
+pre {
+  max-width: 95vw;
 }

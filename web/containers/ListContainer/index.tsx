@@ -43,7 +43,7 @@ const ListContainer = ({ children }: Props) => {
 
   return (
     <ScrollArea
-      className="flex h-full w-full flex-col"
+      className="flex h-full w-full flex-col overflow-x-hidden"
       ref={listRef}
       onScroll={handleScroll}
     >
