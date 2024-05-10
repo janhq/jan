@@ -5,7 +5,7 @@ on:
       endpoints:
         description: 'comma-separated list (see available at endpoints_mapping.json e.g. GET /users,POST /transform)'
         required: false
-        default: none
+        default: All
         type: string
 
   push:
@@ -75,14 +75,8 @@ jobs:
           cat ../docs/tests/endpoints_mapping.json >> tests/endpoints_mapping.json
           
           # start mock server and run test then stop mock server
-          IFS=',' read -ra endpoints <<< "$ENDPOINTS"
-          markers=""
-          for endpoint in "${endpoints[@]}"; do
-            markers+="endpoint($endpoint) or "
-          done
-          markers=${markers% or }
           prism mock ../docs/openapi/jan.yaml > prism.log & prism_pid=$! &&
-          pytest -k "$markers" --reportportal --html=report.html && kill $prism_pid
+          pytest --endpoint "$ENDPOINTS" --reportportal --html=report.html && kill $prism_pid
           deactivate
         env:
           ENDPOINTS: ${{ github.event.inputs.endpoints }}
