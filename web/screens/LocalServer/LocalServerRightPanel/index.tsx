@@ -18,7 +18,6 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
-import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const LocalServerRightPanel = () => {
   const loadModelError = useAtomValue(loadModelErrorAtom)
@@ -26,26 +25,34 @@ const LocalServerRightPanel = () => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const selectedModel = useAtomValue(selectedModelAtom)
-  const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
 
   const [currentModelSettingParams, setCurrentModelSettingParams] = useState(
     toSettingParams(selectedModel?.settings)
   )
 
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
 
-  const modelEngineParams = toSettingParams(activeModelParams)
+  const componentDataEngineSetting = getConfigurationsData(
+    currentModelSettingParams
+  )
+  const componentDataRuntimeSetting = getConfigurationsData(
+    modelRuntimeParams,
+    selectedModel
+  )
+
+  const engineSettings = useMemo(
+    () =>
+      componentDataEngineSetting.filter(
+        (x) => x.key !== 'prompt_template' && x.key !== 'embedding'
+      ),
+    [componentDataEngineSetting]
+  )
 
   const modelSettings = useMemo(() => {
-    const componentDataRuntimeSetting = getConfigurationsData(
-      modelRuntimeParams,
-      selectedModel
-    )
-
     return componentDataRuntimeSetting.filter(
       (x) => x.key !== 'prompt_template'
     )
-  }, [modelRuntimeParams, selectedModel])
+  }, [componentDataRuntimeSetting])
 
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
@@ -56,16 +63,6 @@ const LocalServerRightPanel = () => {
     },
     [currentModelSettingParams]
   )
-
-  const engineSettings = useMemo(() => {
-    const componentDataEngineSetting = getConfigurationsData(
-      modelEngineParams,
-      selectedModel
-    )
-    return componentDataEngineSetting.filter(
-      (x) => x.key !== 'prompt_template' && x.key !== 'embedding'
-    )
-  }, [modelEngineParams, selectedModel])
 
   return (
     <RightPanelContainer>
