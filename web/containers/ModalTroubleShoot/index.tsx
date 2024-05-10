@@ -6,7 +6,7 @@ import { motion as m } from 'framer-motion'
 import { atom, useAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
-import ServerLogs from '../ServerLogs'
+import ServerLogs from '@/containers/ServerLogs'
 
 import AppLogs from './AppLogs'
 import DeviceSpecs from './DeviceSpecs'

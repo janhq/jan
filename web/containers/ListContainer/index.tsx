@@ -1,5 +1,7 @@
 import { ReactNode, useCallback, useEffect, useRef } from 'react'
 
+import { ScrollArea } from '@janhq/joi'
+
 type Props = {
   children: ReactNode
 }
@@ -40,13 +42,13 @@ const ListContainer = ({ children }: Props) => {
   }, [listRef.current?.scrollHeight, isUserManuallyScrollingUp])
 
   return (
-    <div
+    <ScrollArea
+      className="flex h-full w-full flex-col"
       ref={listRef}
-      className="flex h-full w-full flex-col overflow-y-scroll"
       onScroll={handleScroll}
     >
       {children}
-    </div>
+    </ScrollArea>
   )
 }
 

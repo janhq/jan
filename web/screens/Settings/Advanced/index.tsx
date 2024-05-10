@@ -186,7 +186,7 @@ const Advanced = () => {
         </div>
 
         {/* CPU / GPU switching */}
-        {isMac && (
+        {!isMac && (
           <div className="flex w-full flex-col items-start justify-between border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">
             <div className="flex w-full items-start justify-between">
               <div className="space-y-1">

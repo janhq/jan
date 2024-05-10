@@ -24,9 +24,10 @@ import {
 
 type Props = {
   chatInputMode?: boolean
+  strictedThread?: boolean
 }
 
-const ModelDropdown = ({ chatInputMode }: Props) => {
+const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
   const [searchFilter, setSearchFilter] = useState('all')
   const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
@@ -125,6 +126,10 @@ const ModelDropdown = ({ chatInputMode }: Props) => {
       updateModelParameter,
     ]
   )
+
+  if (strictedThread && !activeThread) {
+    return null
+  }
 
   return (
     <>

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import React from 'react'
 
-import { Button } from '@janhq/joi'
+import { Button, ScrollArea } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { CopyIcon, CheckIcon, FolderIcon } from 'lucide-react'
@@ -58,7 +58,7 @@ const ServerLogs = (props: ServerLogsProps) => {
   }, [updateLogs])
 
   return (
-    <>
+    <ScrollArea className="h-full w-full">
       <div className="absolute -top-11 right-2">
         <div className="flex w-full flex-row gap-2">
           <Button
@@ -244,7 +244,7 @@ const ServerLogs = (props: ServerLogsProps) => {
           </div>
         )}
       </div>
-    </>
+    </ScrollArea>
   )
 }
 

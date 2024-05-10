@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { useTheme } from 'next-themes'
 
@@ -50,11 +50,11 @@ const BaseLayout = () => {
   }, [setMainViewState])
 
   return (
-    <>
+    <Fragment>
       <TopPanel />
-      <div className="relative top-9 flex h-[calc(100vh-(36px+28px))] w-screen flex-1 overflow-hidden">
+      <div className="relative top-9 flex h-[calc(100vh-(36px+28px))] w-screen">
         <RibbonPanel />
-        <div className="relative flex w-full overflow-hidden bg-[hsla(var(--app-bg))]">
+        <div className="relative flex w-full bg-[hsla(var(--app-bg))]">
           <div className="w-full">
             <m.div
               key={mainViewState}
@@ -83,7 +83,7 @@ const BaseLayout = () => {
         <HuggingFaceRepoDetailModal />
       </div>
       <BottomPanel />
-    </>
+    </Fragment>
   )
 }
 

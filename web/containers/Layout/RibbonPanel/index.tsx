@@ -65,6 +65,7 @@ export default function RibbonPanel() {
           >
             <Tooltip
               side="right"
+              disabled={mainViewState === menu.state}
               trigger={
                 <div>
                   <div
