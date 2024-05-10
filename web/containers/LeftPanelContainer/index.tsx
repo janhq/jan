@@ -43,7 +43,7 @@ const LeftPanelContainer = ({ children }: Props) => {
           if (
             mouseMoveEvent.clientX -
               leftPanelRef?.current.getBoundingClientRect().left <
-            195
+            170
           ) {
             setIsResizing(false)
             setLeftPanelWidth(DEFAULT_LEFT_PANEL_WIDTH)

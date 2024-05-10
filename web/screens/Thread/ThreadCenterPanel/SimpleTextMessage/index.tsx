@@ -76,7 +76,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         },
         code(code, lang) {
           return `
-          <div class="relative code-block group/item">
+          <div class="relative code-block group/item overflow-auto">
             <button class='text-xs copy-action hidden group-hover/item:block bg-gray-950 hover:bg-gray-950/90 text-gray-200 p-2 rounded-lg absolute top-6 right-2' >
               ${
                 clipboard.copied
@@ -268,7 +268,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               ) : (
                 <div
                   className={twMerge(
-                    'message flex flex-grow flex-col gap-y-2 font-normal leading-relaxed',
+                    'message flex flex-col gap-y-2 font-normal leading-relaxed',
                     isUser
                       ? 'whitespace-pre-wrap break-words'
                       : 'bg-secondary rounded-xl p-4'
@@ -281,7 +281,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-grow flex-col gap-y-2 overflow-auto font-normal leading-relaxed',
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto font-normal leading-relaxed',
                 isUser
                   ? 'whitespace-pre-wrap break-words'
                   : 'bg-secondary rounded-xl'
