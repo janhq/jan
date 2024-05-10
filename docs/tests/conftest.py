@@ -3,7 +3,7 @@ import json
 
 def pytest_collection_modifyitems(items):
     # load the JSON file
-    with open("endpoints_mapping.json", "r") as json_file:
+    with open("tests/endpoints_mapping.json", "r") as json_file:
         endpoints_file_mapping = json.load(json_file)
 
     # create a dictionary to map filenames to endpoints
