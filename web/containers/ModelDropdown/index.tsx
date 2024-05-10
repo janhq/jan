@@ -208,7 +208,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                 <div className="relative w-full">
                   <div className="mt-2 px-4">
                     <h6 className="my-3 font-medium text-[hsla(var(--text-secondary))]">
-                      cortex.cpp
+                      Cortex
                     </h6>
                     <ul>
                       {filteredDownloadedModels

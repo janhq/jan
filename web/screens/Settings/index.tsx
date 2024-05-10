@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { useSetAtom } from 'jotai'
 
 import SettingDetail from '@/screens/Settings/SettingDetail'
-import SettingMenu from '@/screens/Settings/SettingMenu'
+import SettingMenu from '@/screens/Settings/SettingLeftPanel'
 
 import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
 

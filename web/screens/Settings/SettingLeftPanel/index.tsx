@@ -4,12 +4,14 @@ import { ScrollArea } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
+import LeftPanelContainer from '@/containers/LeftPanelContainer'
+
 import SettingItem from './SettingItem'
 
 import { extensionManager } from '@/extension'
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
-const SettingMenu: React.FC = () => {
+const SettingLeftPanel = () => {
   const settingScreens = useAtomValue(janSettingScreenAtom)
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<
@@ -40,7 +42,7 @@ const SettingMenu: React.FC = () => {
   }, [])
 
   return (
-    <div className="flex h-full w-40 flex-shrink-0 flex-col border-r border-[hsla(var(--left-panel-border,var(--app-border)))]">
+    <LeftPanelContainer>
       <ScrollArea className="h-full w-full">
         <div className="flex-shrink-0 p-3">
           <div className="mb-1 ">
@@ -74,8 +76,8 @@ const SettingMenu: React.FC = () => {
           ))}
         </div>
       </ScrollArea>
-    </div>
+    </LeftPanelContainer>
   )
 }
 
-export default memo(SettingMenu)
+export default memo(SettingLeftPanel)

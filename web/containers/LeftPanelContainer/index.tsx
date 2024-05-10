@@ -88,7 +88,7 @@ const LeftPanelContainer = ({ children }: Props) => {
         matches && 'absolute left-0 z-[999]'
       )}
       style={{ width: showLeftPanel ? threadLeftPanelWidth : 0 }}
-      onMouseDown={(e) => isResizing && e.preventDefault()}
+      onMouseDown={(e) => isResizing && e.stopPropagation()}
     >
       <ScrollArea className="h-full w-full">
         {children}

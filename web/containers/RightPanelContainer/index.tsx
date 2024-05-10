@@ -43,7 +43,7 @@ const RightPanelContainer = ({ children }: Props) => {
           if (
             rightPanelRef?.current.getBoundingClientRect().right -
               mouseMoveEvent.clientX <
-            260
+            200
           ) {
             setRightPanelWidth(DEFAULT_RIGTH_PANEL_WIDTH)
             setIsResizing(false)
