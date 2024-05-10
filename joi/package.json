@@ -20,7 +20,7 @@
   },
   "bugs": "https://github.com/codecentrum/piksel/issues",
   "scripts": {
-    "dev": "rimraf ./dist && rollup -c -w",
+    "dev": "rollup -c -w",
     "build": "rimraf ./dist && rollup -c"
   },
   "peerDependencies": {

@@ -4,14 +4,14 @@ import { twMerge } from 'tailwind-merge'
 
 import './styles.scss'
 
-type Props = {
-  className?: string
-} & PropsWithChildren
-
-const ScrollArea = ({ className, children }: Props) => (
+const ScrollArea = React.forwardRef<
+  React.ElementRef<typeof ScrollAreaPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
+>(({ className, children, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     type="scroll"
     className={twMerge('scroll-area__root', className)}
+    {...props}
   >
     <ScrollAreaPrimitive.Viewport className="scroll-area__viewport">
       {children}
@@ -30,6 +30,6 @@ const ScrollArea = ({ className, children }: Props) => (
     </ScrollAreaPrimitive.Scrollbar>
     <ScrollAreaPrimitive.Corner className="scroll-area__corner" />
   </ScrollAreaPrimitive.Root>
-)
+))
 
 export { ScrollArea }

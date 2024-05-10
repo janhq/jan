@@ -1,6 +1,10 @@
-import { useAtom, useSetAtom } from 'jotai'
+import { Fragment } from 'react'
+
+import { useAtom, useAtomValue } from 'jotai'
 import {
   PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  PanelRightOpenIcon,
   PanelRightCloseIcon,
   PanelTopCloseIcon,
   PanelTopOpenIcon,
@@ -8,15 +12,19 @@ import {
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import { MainViewState } from '@/constants/screens'
+
 import {
+  mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,
   showSystemMonitorPanelAtom,
 } from '@/helpers/atoms/App.atom'
 
 const TopPanel = () => {
-  const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
-  const setShowRightPanel = useSetAtom(showRightPanelAtom)
+  const mainViewState = useAtomValue(mainViewStateAtom)
+  const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
+  const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
     showSystemMonitorPanelAtom
   )
@@ -30,7 +38,21 @@ const TopPanel = () => {
     >
       <div className="flex w-full items-center justify-between text-[hsla(var(--text-secondary))]">
         <div className="unset-drag flex cursor-pointer gap-x-2">
-          <PanelLeftCloseIcon size={16} />
+          {mainViewState !== MainViewState.Hub && (
+            <Fragment>
+              {showLeftPanel ? (
+                <PanelLeftCloseIcon
+                  size={16}
+                  onClick={() => setShowLeftPanel(false)}
+                />
+              ) : (
+                <PanelLeftOpenIcon
+                  size={16}
+                  onClick={() => setShowLeftPanel(true)}
+                />
+              )}
+            </Fragment>
+          )}
           {showSystemMonitorPanel ? (
             <PanelTopOpenIcon
               size={16}
@@ -42,8 +64,22 @@ const TopPanel = () => {
               onClick={() => setShowSystemMonitorPanel(true)}
             />
           )}
-
-          <PanelRightCloseIcon size={16} />
+          {mainViewState !== MainViewState.Hub &&
+            mainViewState !== MainViewState.Settings && (
+              <Fragment>
+                {showRightPanel ? (
+                  <PanelRightOpenIcon
+                    size={16}
+                    onClick={() => setShowRightPanel(false)}
+                  />
+                ) : (
+                  <PanelRightCloseIcon
+                    size={16}
+                    onClick={() => setShowRightPanel(true)}
+                  />
+                )}
+              </Fragment>
+            )}
         </div>
         <div className="unset-drag">
           <SunIcon size={16} className="cursor-pointer" />

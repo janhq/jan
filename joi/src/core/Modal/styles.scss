@@ -26,6 +26,7 @@ fieldset,
     padding: 16px;
     animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
     border: 1px solid hsla(var(--app-border));
+    @apply w-full;
 
     &:focus {
       outline: none;
