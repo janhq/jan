@@ -10,7 +10,7 @@ import { toGibibytes } from '@/utils/converter'
 
 import Icon from './Icon'
 
-const FileUploadPreview: React.FC = () => {
+const FileUploadPreview = () => {
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
 

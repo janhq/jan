@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: 'Privacy',
 }
 
-const Page: React.FC = () => {
+const Page = () => {
   return (
     <div className="scroll relative flex h-screen flex-col items-center overflow-y-auto pt-2 text-black">
       <div className="absolute left-5 top-3">

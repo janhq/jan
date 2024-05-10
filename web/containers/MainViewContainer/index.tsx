@@ -9,7 +9,7 @@ import ThreadScreen from '@/screens/Thread'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
-const MainViewContainer: React.FC = () => {
+const MainViewContainer = () => {
   const mainViewState = useAtomValue(mainViewStateAtom)
 
   let children = null

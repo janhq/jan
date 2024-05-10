@@ -18,7 +18,7 @@ import ImportingModelItem from './ImportingModelItem'
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
-const ImportingModelModal: React.FC = () => {
+const ImportingModelModal = () => {
   const importingModels = useAtomValue(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)

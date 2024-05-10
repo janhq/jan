@@ -16,7 +16,7 @@ import {
 
 export const showInstallingExtensionModalAtom = atom(false)
 
-const InstallingExtensionModal: React.FC = () => {
+const InstallingExtensionModal = () => {
   const [showInstallingExtensionModal, setShowInstallingExtensionModal] =
     useAtom(showInstallingExtensionModalAtom)
   const installingExtensions = useAtomValue(installingExtensionAtom)

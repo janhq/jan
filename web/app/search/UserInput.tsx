@@ -11,7 +11,7 @@ import { selectedTextAtom } from '@/containers/Providers/Jotai'
 
 import SelectedText from './SelectedText'
 
-const UserInput: React.FC = () => {
+const UserInput = () => {
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)

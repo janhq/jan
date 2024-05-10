@@ -29,7 +29,7 @@ import {
 
 export const editingModelIdAtom = atom<string | undefined>(undefined)
 
-const EditModelInfoModal: React.FC = () => {
+const EditModelInfoModal = () => {
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const importingModels = useAtomValue(importingModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)

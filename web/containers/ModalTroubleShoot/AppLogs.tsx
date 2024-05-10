@@ -26,9 +26,9 @@ const AppLogs = () => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <>
+    <div className="max-w-[40vw] p-4">
       <div className="absolute -top-11 right-2">
-        <div className="flex w-full flex-row gap-2">
+        <div className="flex w-full flex-row items-center gap-2">
           <Button
             theme="ghost"
             variant="outline"
@@ -212,7 +212,7 @@ const AppLogs = () => {
           </div>
         )}
       </div>
-    </>
+    </div>
   )
 }
 

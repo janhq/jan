@@ -3,11 +3,14 @@ import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Cross2Icon } from '@radix-ui/react-icons'
 
 import './styles.scss'
+import { twMerge } from 'tailwind-merge'
 
 type Props = {
   trigger?: ReactNode
   content: ReactNode
   open?: boolean
+  className?: string
+  fullPage?: boolean
   hideClose?: boolean
   title?: ReactNode
   onOpenChange?: (open: boolean) => void
@@ -20,6 +23,8 @@ const Modal = ({
   content,
   open,
   title,
+  fullPage,
+  className,
   onOpenChange,
   hideClose,
 }: Props) => (
@@ -27,7 +32,13 @@ const Modal = ({
     <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="modal__overlay" />
-      <DialogPrimitive.Content className="modal__content">
+      <DialogPrimitive.Content
+        className={twMerge(
+          'modal__content',
+          fullPage && 'modal__content--fullpage',
+          className
+        )}
+      >
         <div className="modal__title">{title}</div>
         {content}
         {!hideClose && (

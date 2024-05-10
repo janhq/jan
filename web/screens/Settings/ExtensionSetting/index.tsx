@@ -14,7 +14,7 @@ import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 import { extensionManager } from '@/extension'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-const ExtensionSetting: React.FC = () => {
+const ExtensionSetting = () => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
   const [installationState, setInstallationState] =
