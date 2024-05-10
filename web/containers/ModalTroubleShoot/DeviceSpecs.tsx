@@ -26,7 +26,7 @@ const DeviceSpecs = () => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <>
+    <div className="p-4">
       <div className="absolute -top-11 right-2">
         <Button
           theme="ghost"
@@ -63,7 +63,7 @@ const DeviceSpecs = () => {
           </code>
         </div>
       </div>
-    </>
+    </div>
   )
 }
 

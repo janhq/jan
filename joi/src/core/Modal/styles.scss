@@ -13,6 +13,7 @@ fieldset,
 
   &__content {
     color: hsla(var(--modal-fg));
+    overflow: hidden;
     background-color: hsla(var(--modal-bg));
     border-radius: 8px;
     position: fixed;
@@ -27,6 +28,13 @@ fieldset,
     animation: contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1);
     border: 1px solid hsla(var(--app-border));
     @apply w-full;
+
+    &--fullpage {
+      max-width: none;
+      width: 90vw;
+      max-height: none;
+      height: 90vh;
+    }
 
     &:focus {
       outline: none;

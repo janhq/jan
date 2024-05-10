@@ -28,7 +28,7 @@ const importOptions: ModelImportOption[] = [
   },
 ]
 
-const ImportModelOptionModal: React.FC = () => {
+const ImportModelOptionModal = () => {
   const importingModels = useAtomValue(importingModelsAtom)
   const importStage = useAtomValue(getImportModelStageAtom)
   const setImportStage = useSetAtom(setImportModelStageAtom)

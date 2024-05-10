@@ -12,7 +12,7 @@ import {
   importingHuggingFaceRepoDataAtom,
 } from '@/helpers/atoms/HuggingFace.atom'
 
-const HuggingFaceRepoDetailModal: React.FC = () => {
+const HuggingFaceRepoDetailModal = () => {
   const [hfImportState, setHfImportState] = useAtom(
     importHuggingFaceModelStageAtom
   )

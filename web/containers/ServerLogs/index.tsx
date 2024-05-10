@@ -1,19 +1,23 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import { useCallback, useEffect, useState } from 'react'
 
-import React from 'react'
-
-import { ScrollArea } from '@janhq/joi'
+import { Button, useClipboard } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
+import { FolderIcon, CheckIcon, CopyIcon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
+
 import { useLogs } from '@/hooks/useLogs'
+
+import { usePath } from '@/hooks/usePath'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type ServerLogsProps = { limit?: number; withCopy?: boolean }
 
 const ServerLogs = (props: ServerLogsProps) => {
-  const { limit = 0 } = props
+  const { limit = 0, withCopy } = props
   const { getLogs } = useLogs()
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const [logs, setLogs] = useState<string[]>([])
@@ -49,8 +53,51 @@ const ServerLogs = (props: ServerLogsProps) => {
     return () => clearInterval(intervalId)
   }, [updateLogs])
 
+  const { onRevealInFinder } = usePath()
+
+  const clipboard = useClipboard({ timeout: 1000 })
+
   return (
-    <div className="max-w-[40vw] p-4">
+    <div className={twMerge(' p-4', !withCopy && 'max-w-[40vw]')}>
+      {withCopy && (
+        <div className="absolute -top-11 right-2">
+          <div className="flex w-full flex-row gap-2">
+            <Button
+              theme="ghost"
+              variant="outline"
+              onClick={() => onRevealInFinder('Logs')}
+            >
+              <div className="flex items-center space-x-2">
+                <>
+                  <FolderIcon size={14} />
+                  <span>Open</span>
+                </>
+              </div>
+            </Button>
+            <Button
+              theme="ghost"
+              variant="outline"
+              onClick={() => {
+                clipboard.copy(logs.slice(-100).join('\n') ?? '')
+              }}
+            >
+              <div className="flex items-center space-x-2">
+                {clipboard.copied ? (
+                  <>
+                    <CheckIcon size={14} className="text-green-600" />
+                    <span>Copying...</span>
+                  </>
+                ) : (
+                  <>
+                    <CopyIcon size={14} />
+                    <span>Copy All</span>
+                  </>
+                )}
+              </div>
+            </Button>
+          </div>
+        </div>
+      )}
       <div className="flex h-full">
         {logs.length > 0 ? (
           <code className="inline-block whitespace-pre-line text-xs">

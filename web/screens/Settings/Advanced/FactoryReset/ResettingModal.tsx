@@ -11,7 +11,7 @@ const resetModalVisibilityAtom = atom((get) => {
   return visible
 })
 
-const ResettingModal: React.FC = () => {
+const ResettingModal = () => {
   const visibility = useAtomValue(resetModalVisibilityAtom)
 
   return (

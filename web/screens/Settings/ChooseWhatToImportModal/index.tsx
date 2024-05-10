@@ -9,7 +9,7 @@ import useImportModel, {
   getImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-const ChooseWhatToImportModal: React.FC = () => {
+const ChooseWhatToImportModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { sanitizeFilePaths } = useImportModel()

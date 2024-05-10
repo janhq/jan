@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import ScrollToBottom from 'react-scroll-to-bottom'
 
 import { Modal } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
@@ -14,7 +13,7 @@ import DeviceSpecs from './DeviceSpecs'
 export const modalTroubleShootingAtom = atom(false)
 const logOption = ['App Logs', 'Server Logs', 'Device Specs']
 
-const ModalTroubleShooting: React.FC = () => {
+const ModalTroubleShooting = () => {
   const [modalTroubleShooting, setModalTroubleShooting] = useAtom(
     modalTroubleShootingAtom
   )
@@ -23,16 +22,17 @@ const ModalTroubleShooting: React.FC = () => {
   return (
     <Modal
       open={modalTroubleShooting}
+      fullPage
       onOpenChange={setModalTroubleShooting}
       title="Troubleshooting Assistance"
       content={
         <div>
-          <p className="text-[hsla(var(--text-secondary)] -mt-2 pr-3 leading-relaxed">
+          <p className="text-[hsla(var(--text-secondary)] mt-2 pr-3 leading-relaxed">
             {`We're here to help! Your report is crucial for debugging and shaping
           the next version. Here’s how you can report & get further support:`}
           </p>
 
-          <div className="rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
+          <div className="my-3 rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
             <h2 className="font-semibold">Step 1</h2>
             <p className="text-[hsla(var(--text-secondary)] mt-1">
               Follow our&nbsp;
@@ -78,7 +78,6 @@ const ModalTroubleShooting: React.FC = () => {
             </div>
 
             <div className="flex flex-col pt-4">
-              {/* TODO @faisal replace this once we have better tabs component UI */}
               <div className="dark:bg-secondary/50 relative bg-zinc-100 px-4 py-2">
                 <ul className="dark:bg-secondary inline-flex space-x-2 rounded-lg bg-zinc-200 px-1">
                   {logOption.map((name, i) => {
@@ -108,13 +107,11 @@ const ModalTroubleShooting: React.FC = () => {
                   })}
                 </ul>
               </div>
-              <ScrollToBottom
-                className={twMerge('relative h-[140px] px-4 py-2')}
-              >
+              <div className="relative">
                 {isTabActive === 0 && <AppLogs />}
                 {isTabActive === 1 && <ServerLogs limit={50} withCopy />}
                 {isTabActive === 2 && <DeviceSpecs />}
-              </ScrollToBottom>
+              </div>
             </div>
           </div>
         </div>

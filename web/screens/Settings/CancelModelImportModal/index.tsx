@@ -8,7 +8,7 @@ import {
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-const CancelModelImportModal: React.FC = () => {
+const CancelModelImportModal = () => {
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 

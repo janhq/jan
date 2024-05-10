@@ -13,7 +13,7 @@ import useImportModel, {
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-const SelectingModelModal: React.FC = () => {
+const SelectingModelModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
