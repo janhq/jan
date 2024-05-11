@@ -3,7 +3,7 @@
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  * @version 1.0.0
- * @module inference-cohere-extension/src/index
+ * @module inference-anthropic-extension/src/index
  */
 
 import { RemoteOAIEngine } from '@janhq/core'
@@ -14,20 +14,14 @@ declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
 
 enum Settings {
-  apiKey = 'cohere-api-key',
+  apiKey = 'anthropic-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
 }
 
-enum RoleType {
-  user = 'USER',
-  chatbot = 'CHATBOT',
-  system = 'SYSTEM',
-}
-
-type CoherePayloadType = {
-  chat_history?: Array<{ role: RoleType; message: string }>
-  message?: string,
-  preamble?: string,
+type AnthropicPayloadType = {
+  model?: string
+  max_tokens?: number
+  messages?: Array<{ role: string; content: string }>
 }
 
 /**
@@ -35,9 +29,10 @@ type CoherePayloadType = {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceCohereExtension extends RemoteOAIEngine {
+export default class JanInferenceAnthropicExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'cohere'
+  provider: string = 'anthropic'
+  maxTokens: number = 4096
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -51,12 +46,22 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
       Settings.chatCompletionsEndPoint,
       ''
     )
+
     if (this.inferenceUrl.length === 0) {
       SETTINGS.forEach((setting) => {
         if (setting.key === Settings.chatCompletionsEndPoint) {
           this.inferenceUrl = setting.controllerProps.value as string
         }
       })
+    }
+  }
+
+  // Override the headers method to include the x-API-key in the request headers
+  override async headers(): Promise<HeadersInit> {
+    return {
+      'Content-Type': 'application/json',
+      'x-api-key': this.apiKey,
+      'anthropic-version': '2023-06-01',
     }
   }
 
@@ -78,33 +83,42 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
     }
   }
 
-  transformPayload = (payload: PayloadType): CoherePayloadType => {
-    if (payload.messages.length === 0) {
-      return {}
+  // Override the transformPayload method to convert the payload to the required format
+  transformPayload = (payload: PayloadType): AnthropicPayloadType => {
+    if (!payload.messages || payload.messages.length === 0) {
+      return { max_tokens: this.maxTokens, messages: [], model: payload.model }
     }
-    const convertedData: CoherePayloadType = {
-      chat_history: [],
-      message: '',
+
+    const convertedData: AnthropicPayloadType = {
+      max_tokens: this.maxTokens,
+      messages: [],
+      model: payload.model,
     }
+
     payload.messages.forEach((item, index) => {
-      // Assign the message of the last item to the `message` property
-      if (index === payload.messages.length - 1) {
-        convertedData.message = item.content as string
-        return
-      }
       if (item.role === ChatCompletionRole.User) {
-        convertedData.chat_history.push({ role: RoleType.user, message: item.content as string })
-      } else if (item.role === ChatCompletionRole.Assistant) {
-        convertedData.chat_history.push({
-          role: RoleType.chatbot,
-          message: item.content as string,
+        convertedData.messages.push({
+          role: 'user',
+          content: item.content as string,
         })
-      } else if (item.role === ChatCompletionRole.System) {
-        convertedData.preamble = item.content as string
+      } else if (item.role === ChatCompletionRole.Assistant) {
+        convertedData.messages.push({
+          role: 'assistant',
+          content: item.content as string,
+        })
       }
     })
+
     return convertedData
   }
 
-  transformResponse = (data: any) => data.text
+  // Override the transformResponse method to convert the response to the required format
+  transformResponse = (data: any): string => {
+    if (data.content && data.content.length > 0 && data.content[0].text) {
+      return data.content[0].text
+    } else {
+      console.error('Invalid response format:', data)
+      return ''
+    }
+  }
 }
