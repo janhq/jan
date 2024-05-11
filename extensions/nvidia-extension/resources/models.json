@@ -5,15 +5,14 @@
         "url": "https://integrate.api.nvidia.com/v1/chat/completions"
       }
     ],
-    "id": "Mistral-7b-instruct",
+    "id": "mistralai/mistral-7b-instruct-v0.2",
     "object": "model",
-    "name": "Mistral-7b-instruct",
+    "name": "mistralai/mistral-7b-instruct-v0.2",
     "version": "1.1",
     "description": "Mistral-7B-Instruct is a language model that can follow instructions, complete requests, and generate creative text formats. It is an instruct version of the Mistral-7B-v0.2 generative text model fine-tuned using a variety of publicly available conversation datasets.",
     "format": "api",
     "settings": {},
     "parameters": {
-      "model": "mistralai/mistral-7b-instruct-v0.2",
       "max_tokens": 1024,
       "stream": false,
       "temperature": 0.3,
@@ -38,9 +37,9 @@
         "url": "https://integrate.api.nvidia.com/v1/chat/completions"
       }
     ],
-    "id": "dbrx-instruct",
+    "id": "databricks/dbrx-instruct",
     "object": "model",
-    "name": "dbrx-instruct",
+    "name": "databricks/dbrx-instruct",
     "version": "1.1",
     "description": "DBRX is a transformer-based decoder-only large language model (LLM) that was trained using next-token prediction. It uses a fine-grained mixture-of-experts (MoE) architecture with 132B total parameters of which 36B parameters are active on any input. ",
     "format": "api",

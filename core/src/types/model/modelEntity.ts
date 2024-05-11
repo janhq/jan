@@ -136,6 +136,7 @@ export type ModelRuntimeParams = {
   engine?: string
   seed?: number
   messages?: string | object
+  model?: string
 }
 
 export type ModelInitFailed = Model & {

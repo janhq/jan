@@ -259,20 +259,20 @@ export const downloadModel = async (
 ) => {
   const strictSSL = !network?.ignoreSSL
   const proxy = network?.proxy?.startsWith('http') ? network.proxy : undefined
-  const model = await retrieveBuilder(JanApiRouteConfiguration.models, modelId)
+  let cleanModel = modelId.replace( '/', '' )
+  const model = await retrieveBuilder(JanApiRouteConfiguration.models, cleanModel)
   if (!model || model.object !== 'model') {
     return {
       message: 'Model not found',
     }
   }
-
-  const directoryPath = join(getJanDataFolderPath(), 'models', modelId)
+  const directoryPath = join(getJanDataFolderPath(), 'models', cleanModel)
   if (!existsSync(directoryPath)) {
     mkdirSync(directoryPath)
   }
 
   // path to model binary
-  const modelBinaryPath = join(directoryPath, modelId)
+  const modelBinaryPath = join(directoryPath, cleanModel)
 
   const request = require('request')
   const progress = require('request-progress')
@@ -293,13 +293,14 @@ export const downloadModel = async (
   }
 
   return {
-    message: `Starting download ${modelId}`,
+    message: `Starting download ${cleanModel}`,
   }
 }
 
 export const chatCompletions = async (request: any, reply: any) => {
   const modelList = await getBuilder(JanApiRouteConfiguration.models)
   const modelId = request.body.model
+  let cleanModel = modelId.replace( '/', '' ) // not needed maybe since no interaction with folder
 
   const matchedModels = modelList.filter((model: Model) => model.id === modelId)
   if (matchedModels.length === 0) {

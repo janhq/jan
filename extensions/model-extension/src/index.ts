@@ -84,7 +84,8 @@ export default class JanModelExtension extends ModelExtension {
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
     // create corresponding directory
-    const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
+    let cleanModel = model.id.replace( '/', '' ); //makes model folder no /
+    const modelDirPath = await joinPath([JanModelExtension._homeDir, cleanModel])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
     const modelJsonPath = await joinPath([modelDirPath, 'model.json'])
     if (!(await fs.existsSync(modelJsonPath))) {
