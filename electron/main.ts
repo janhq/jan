@@ -61,16 +61,20 @@ app
       app.quit()
       throw new Error('Another instance of the app is already running')
     } else {
-      if (process.platform === 'win32' || process.platform === 'linux') {
-        // this is for handling deeplink on windows and linux
-        // since those OS will emit second-instance instead of open-url
-        app.on('second-instance', (_event, commandLine, _workingDirectory) => {
-          const url = commandLine.pop()
-          if (url) {
-            windowManager.sendMainAppDeepLink(url)
+      app.on(
+        'second-instance',
+        (_event, commandLine, _workingDirectory): void => {
+          if (process.platform === 'win32' || process.platform === 'linux') {
+            // this is for handling deeplink on windows and linux
+            // since those OS will emit second-instance instead of open-url
+            const url = commandLine.pop()
+            if (url) {
+              windowManager.sendMainAppDeepLink(url)
+            }
           }
-        })
-      }
+          windowManager.showMainWindow()
+        }
+      )
     }
   })
   .then(setupCore)
@@ -103,10 +107,6 @@ app
 
 app.on('open-url', (_event, url) => {
   windowManager.sendMainAppDeepLink(url)
-})
-
-app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
-  windowManager.showMainWindow()
 })
 
 app.on('before-quit', function (_event) {

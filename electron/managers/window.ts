@@ -17,7 +17,6 @@ class WindowManager {
   private deeplink: string | undefined
   /**
    * Creates a new window instance.
-   * @param {Electron.BrowserWindowConstructorOptions} options - The options to create the window with.
    * @returns The created window instance.
    */
   createMainWindow(preloadPath: string, startUrl: string) {
@@ -29,6 +28,17 @@ class WindowManager {
         webSecurity: false,
       },
     })
+
+    if (process.platform === 'win32') {
+      /// This is work around for windows deeplink.
+      /// second-instance event is not fired when app is not open, so the app
+      /// does not received the deeplink.
+      const commandLine = process.argv.slice(1)
+      if (commandLine.length > 0) {
+        const url = commandLine[0]
+        this.sendMainAppDeepLink(url)
+      }
+    }
 
     /* Load frontend app to the window */
     this.mainWindow.loadURL(startUrl)
