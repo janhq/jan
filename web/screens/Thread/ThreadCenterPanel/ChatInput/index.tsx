@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 
-import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
+import {
+  TextArea,
+  Button,
+  Tooltip,
+  useClickOutside,
+  Badge,
+  ScrollArea,
+} from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   FileTextIcon,
@@ -92,11 +99,14 @@ const ChatInput = () => {
   }, [activeThreadId])
 
   useEffect(() => {
-    if (textareaRef.current) {
+    if (textareaRef.current?.clientHeight) {
+      console.log(textareaRef.current.clientHeight)
       textareaRef.current.style.height = activeSetting ? '100px' : '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current.style.overflow =
+        textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
-  }, [currentPrompt, activeSetting])
+  }, [textareaRef.current?.clientHeight, currentPrompt, activeSetting])
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -144,7 +154,7 @@ const ChatInput = () => {
         {renderPreview(fileUpload)}
         <TextArea
           className={twMerge(
-            'relative max-h-[400px] resize-none pr-16',
+            'relative max-h-[400px] resize-none  pr-16',
             fileUpload.length && 'rounded-t-none',
             experimentalFeature && 'pl-10',
             activeSetting && 'pb-14'

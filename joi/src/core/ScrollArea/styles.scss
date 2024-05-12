@@ -29,7 +29,7 @@
     border-radius: 20px;
     position: relative;
 
-    &::before {
+    ::before {
       content: '';
       position: absolute;
       top: 50%;
@@ -50,4 +50,20 @@
 .scroll-area__bar[data-orientation='horizontal'] {
   flex-direction: column;
   height: 6px;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-thumb {
+  background-clip: content-box;
+  border-radius: inherit;
+}
+::-webkit-scrollbar-track {
+  background: hsla(var(--scrollbar-tracker));
+}
+::-webkit-scrollbar-thumb {
+  background: hsla(var(--scrollbar-thumb));
 }

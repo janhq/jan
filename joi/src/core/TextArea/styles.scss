@@ -29,4 +29,23 @@
       padding-left: 32px;
     }
   }
+  & {
+    /* Arrow mouse cursor over the scrollbar */
+    cursor: auto;
+  }
+  &::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-thumb {
+    background-clip: content-box;
+    border-radius: inherit;
+  }
+  &::-webkit-scrollbar-track {
+    background: hsla(var(--scrollbar-tracker));
+  }
+  &::-webkit-scrollbar-thumb {
+    background: hsla(var(--scrollbar-thumb));
+  }
 }
