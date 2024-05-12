@@ -62,7 +62,7 @@ const ServerLogs = (props: ServerLogsProps) => {
     <div
       className={twMerge(
         'p-4 pb-0',
-        !withCopy && 'max-w-[55vw]',
+        !withCopy && 'max-w-[50vw]',
         logs.length === 0 && 'mx-auto'
       )}
     >

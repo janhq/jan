@@ -18,6 +18,10 @@
   &__arrow {
     fill: hsla(var(--tooltip-bg));
   }
+
+  &__trigger {
+    @apply cursor-pointer;
+  }
 }
 
 .tooltip__content[data-state='delayed-open'][data-side='top'] {

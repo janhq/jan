@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { ReactNode } from 'react'
 
 import * as SelectPrimitive from '@radix-ui/react-select'
 import {
@@ -61,20 +61,23 @@ const Select = ({
           <ChevronUpIcon />
         </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport className="select__viewport">
-          {options.map((item, i) => {
-            return (
-              <SelectPrimitive.Item
-                key={i}
-                className="select__item"
-                value={item.value}
-              >
-                <SelectPrimitive.ItemText>{item.name}</SelectPrimitive.ItemText>
-                <SelectPrimitive.ItemIndicator className="select__item-indicator">
-                  <CheckIcon />
-                </SelectPrimitive.ItemIndicator>
-              </SelectPrimitive.Item>
-            )
-          })}
+          {options &&
+            options.map((item, i) => {
+              return (
+                <SelectPrimitive.Item
+                  key={i}
+                  className="select__item"
+                  value={item.value}
+                >
+                  <SelectPrimitive.ItemText>
+                    {item.name}
+                  </SelectPrimitive.ItemText>
+                  <SelectPrimitive.ItemIndicator className="select__item-indicator">
+                    <CheckIcon />
+                  </SelectPrimitive.ItemIndicator>
+                </SelectPrimitive.Item>
+              )
+            })}
         </SelectPrimitive.Viewport>
         <SelectPrimitive.ScrollDownButton />
         <SelectPrimitive.Arrow />
