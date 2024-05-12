@@ -100,7 +100,6 @@ const ChatInput = () => {
 
   useEffect(() => {
     if (textareaRef.current?.clientHeight) {
-      console.log(textareaRef.current.clientHeight)
       textareaRef.current.style.height = activeSetting ? '100px' : '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
       textareaRef.current.style.overflow =
@@ -154,10 +153,10 @@ const ChatInput = () => {
         {renderPreview(fileUpload)}
         <TextArea
           className={twMerge(
-            'relative max-h-[400px] resize-none  pr-16',
+            'relative max-h-[400px] resize-none  pr-20',
             fileUpload.length && 'rounded-t-none',
             experimentalFeature && 'pl-10',
-            activeSetting && 'pb-14'
+            activeSetting && 'pb-14 pr-16'
           )}
           data-testid="txt-input-chat"
           style={{ height: activeSetting ? '100px' : '40px' }}
