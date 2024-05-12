@@ -2,6 +2,7 @@ import React, { ReactNode, forwardRef } from 'react'
 import { twMerge } from 'tailwind-merge'
 
 import './styles.scss'
+import { ScrollArea } from '../ScrollArea'
 
 export interface TextAreaProps
   extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
