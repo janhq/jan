@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai'
 
 import Advanced from '@/screens/Settings/Advanced'
-import AppearanceOptions from '@/screens/Settings/Appearance'
+// import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hotkeys from '@/screens/Settings/Hotkeys'
@@ -16,8 +16,9 @@ const SettingDetail = () => {
     case 'Extensions':
       return <ExtensionCatalog />
 
-    case 'Appearance':
-      return <AppearanceOptions />
+    // Temporary disable
+    // case 'Appearance':
+    //   return <AppearanceOptions />
 
     case 'Hotkey & Shortcut':
       return <Hotkeys />

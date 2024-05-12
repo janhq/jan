@@ -145,7 +145,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
             </Badge>
           ) : (
             <Input
-              value={selectedModel?.name}
+              value={selectedModel?.name || ''}
               className="cursor-pointer"
               readOnly
               suffixIcon={
@@ -154,7 +154,6 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                   className={twMerge(open && 'rotate-180')}
                 />
               }
-              onChange={() => console.log('change')}
               onClick={() => setOpen(!open)}
             />
           )}

@@ -9,7 +9,6 @@ export default function AppearanceOptions() {
           </div>
           <p className="leading-relaxed"></p>
         </div>
-        {/* <ShortcutModal /> */}
       </div>
     </div>
   )

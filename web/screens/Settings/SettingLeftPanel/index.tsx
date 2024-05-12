@@ -1,7 +1,5 @@
 import { memo, useEffect, useState } from 'react'
 
-import { ScrollArea } from '@janhq/joi'
-
 import { useAtomValue } from 'jotai'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
@@ -43,39 +41,37 @@ const SettingLeftPanel = () => {
 
   return (
     <LeftPanelContainer>
-      <ScrollArea className="h-full w-full">
-        <div className="flex-shrink-0 p-3">
-          <div className="mb-1 ">
+      <div className="flex-shrink-0 p-3">
+        <div className="mb-1 ">
+          <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
+            Data folder
+          </label>
+        </div>
+
+        {settingScreens.map((settingScreen) => (
+          <SettingItem
+            key={settingScreen}
+            name={settingScreen}
+            setting={settingScreen}
+          />
+        ))}
+
+        {extensionHasSettings.length > 0 && (
+          <div className="mb-1 mt-4">
             <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Data folder
+              Extensions
             </label>
           </div>
+        )}
 
-          {settingScreens.map((settingScreen) => (
-            <SettingItem
-              key={settingScreen}
-              name={settingScreen}
-              setting={settingScreen}
-            />
-          ))}
-
-          {extensionHasSettings.length > 0 && (
-            <div className="mb-1 mt-4">
-              <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-                Extensions
-              </label>
-            </div>
-          )}
-
-          {extensionHasSettings.map((item) => (
-            <SettingItem
-              key={item.name}
-              name={item.name?.replace('Inference Engine', '') ?? item.setting}
-              setting={item.setting}
-            />
-          ))}
-        </div>
-      </ScrollArea>
+        {extensionHasSettings.map((item) => (
+          <SettingItem
+            key={item.name}
+            name={item.name?.replace('Inference Engine', '') ?? item.setting}
+            setting={item.setting}
+          />
+        ))}
+      </div>
     </LeftPanelContainer>
   )
 }

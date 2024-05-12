@@ -26,7 +26,7 @@ const DeviceSpecs = () => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <div className="max-w-[55vw] p-4 pb-0">
+    <div className="max-w-[50vw] p-4 pb-0">
       <div className="absolute -top-11 right-2">
         <Button
           theme="ghost"
