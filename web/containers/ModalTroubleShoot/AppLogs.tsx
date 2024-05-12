@@ -26,7 +26,7 @@ const AppLogs = () => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <div className="max-w-[40vw] p-4">
+    <div className="max-w-[55vw] p-4 pb-0">
       <div className="absolute -top-11 right-2">
         <div className="flex w-full flex-row items-center gap-2">
           <Button
@@ -64,19 +64,17 @@ const AppLogs = () => {
           </Button>
         </div>
       </div>
-      <div className="overflow-hidden">
-        {logs.length > 1 ? (
-          <div className="h-full overflow-auto">
-            <code className="inline-block whitespace-pre-line text-xs">
-              {logs.slice(-100).map((log, i) => {
-                return (
-                  <p key={i} className="my-2 leading-relaxed">
-                    {log}
-                  </p>
-                )
-              })}
-            </code>
-          </div>
+      <div className="flex h-full w-full flex-col">
+        {logs.length > 0 ? (
+          <code className="inline-block whitespace-break-spaces text-[13px]">
+            {logs.slice(-100).map((log, i) => {
+              return (
+                <p key={i} className="my-2 leading-relaxed">
+                  {log}
+                </p>
+              )
+            })}
+          </code>
         ) : (
           <div className="mt-24 flex flex-col items-center justify-center">
             <svg
