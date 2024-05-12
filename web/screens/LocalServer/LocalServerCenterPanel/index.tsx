@@ -18,7 +18,7 @@ const LocalServerCenterPanel = () => {
     useState<boolean>(false)
 
   useEffect(() => {
-    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) == null) {
+    if (localStorage.getItem(FIRST_TIME_VISIT_API_SERVER) === null) {
       setFirstTimeVisitAPIServer(true)
     }
   }, [firstTimeVisitAPIServer])
@@ -70,7 +70,7 @@ const LocalServerCenterPanel = () => {
           </div>
         </div>
       ) : (
-        <ScrollArea className="flex h-full w-full">
+        <ScrollArea className="h-full w-full">
           <ServerLogs />
         </ScrollArea>
       )}

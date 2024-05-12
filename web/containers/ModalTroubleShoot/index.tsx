@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Modal } from '@janhq/joi'
+import { Modal, ScrollArea } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 import { atom, useAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
@@ -26,11 +26,13 @@ const ModalTroubleShooting = () => {
       onOpenChange={setModalTroubleShooting}
       title="Troubleshooting Assistance"
       content={
-        <div>
-          <p className="text-[hsla(var(--text-secondary)] mt-2 pr-3 leading-relaxed">
-            {`We're here to help! Your report is crucial for debugging and shaping
+        <div className="flex h-full w-full flex-col overflow-hidden ">
+          <div className="flex-shrink-0">
+            <p className="text-[hsla(var(--text-secondary)] mt-2 pr-3 leading-relaxed">
+              {`We're here to help! Your report is crucial for debugging and shaping
           the next version. Here’s how you can report & get further support:`}
-          </p>
+            </p>
+          </div>
 
           <div className="my-3 rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
             <h2 className="font-semibold">Step 1</h2>
@@ -39,7 +41,7 @@ const ModalTroubleShooting = () => {
               <a
                 href="https://jan.ai/guides/troubleshooting"
                 target="_blank"
-                className="text-blue-600 hover:underline dark:text-blue-300"
+                className="text-[hsla(var(--text-link))] hover:underline"
               >
                 troubleshooting guide
               </a>
@@ -47,7 +49,7 @@ const ModalTroubleShooting = () => {
             </p>
           </div>
 
-          <div className="block overflow-hidden rounded-lg border border-[hsla(var(--app-border))] pb-2 pt-4 shadow">
+          <div className="rounded-lg border border-[hsla(var(--app-border))]  pb-2 pt-4 shadow">
             <div className="px-4">
               <h2 className="font-semibold">Step 2</h2>
               <p className="text-[hsla(var(--text-secondary)] mt-1">
@@ -67,7 +69,7 @@ const ModalTroubleShooting = () => {
                     <a
                       href="https://discord.gg/AsJ8krTT3N"
                       target="_blank"
-                      className="text-blue-600 hover:underline dark:text-blue-300"
+                      className="text-[hsla(var(--text-link))] hover:underline"
                     >
                       Discord
                     </a>
@@ -76,10 +78,9 @@ const ModalTroubleShooting = () => {
                 </li>
               </ul>
             </div>
-
-            <div className="flex flex-col pt-4">
-              <div className="dark:bg-secondary/50 relative bg-zinc-100 px-4 py-2">
-                <ul className="dark:bg-secondary inline-flex space-x-2 rounded-lg bg-zinc-200 px-1">
+            <div className="flex h-full w-full flex-col pt-4">
+              <div className="relative border-y border-[hsla(var(--app-border))] px-4 py-2 ">
+                <ul className="inline-flex space-x-2 rounded-lg px-1">
                   {logOption.map((name, i) => {
                     return (
                       <li
@@ -91,14 +92,14 @@ const ModalTroubleShooting = () => {
                           className={twMerge(
                             'text-[hsla(var(--text-secondary)] relative z-50 font-medium',
                             isTabActive === i &&
-                              'text-foreground font-bold dark:text-black'
+                              'bg= font-bold text-[hsla(var(--primary-fg))]'
                           )}
                         >
                           {name}
                         </span>
                         {isTabActive === i && (
                           <m.div
-                            className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-[hsla(var(--app-bg))] dark:bg-white"
+                            className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-[hsla(var(--primary-bg))]"
                             layoutId="log-state-active"
                           />
                         )}
@@ -107,11 +108,11 @@ const ModalTroubleShooting = () => {
                   })}
                 </ul>
               </div>
-              <div className="relative">
+              <ScrollArea className="w-full">
                 {isTabActive === 0 && <AppLogs />}
                 {isTabActive === 1 && <ServerLogs limit={50} withCopy />}
                 {isTabActive === 2 && <DeviceSpecs />}
-              </div>
+              </ScrollArea>
             </div>
           </div>
         </div>

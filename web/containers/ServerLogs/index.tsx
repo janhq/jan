@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/naming-convention */
+
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button, useClipboard } from '@janhq/joi'
@@ -47,7 +48,7 @@ const ServerLogs = (props: ServerLogsProps) => {
     // Log polling interval
     const intervalId = setInterval(() => {
       updateLogs()
-    }, window.core?.api?.pollingInterval ?? 1000)
+    }, window.core?.api?.pollingInterval ?? 1200)
 
     // clean up interval
     return () => clearInterval(intervalId)
@@ -58,7 +59,13 @@ const ServerLogs = (props: ServerLogsProps) => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <div className={twMerge(' p-4', !withCopy && 'max-w-[40vw]')}>
+    <div
+      className={twMerge(
+        'p-4 pb-0',
+        !withCopy && 'max-w-[55vw]',
+        logs.length === 0 && 'mx-auto'
+      )}
+    >
       {withCopy && (
         <div className="absolute -top-11 right-2">
           <div className="flex w-full flex-row gap-2">
@@ -98,9 +105,9 @@ const ServerLogs = (props: ServerLogsProps) => {
           </div>
         </div>
       )}
-      <div className="flex h-full">
+      <div className="flex h-full w-full flex-col">
         {logs.length > 0 ? (
-          <code className="inline-block whitespace-pre-line text-xs">
+          <code className="inline-block whitespace-break-spaces text-[13px]">
             {logs.slice(-limit).map((log, i) => {
               return (
                 <p key={i} className="my-2 leading-relaxed">

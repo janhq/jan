@@ -13,7 +13,7 @@ const ScrollArea = React.forwardRef<
     className={twMerge('scroll-area__root', className)}
     {...props}
   >
-    <ScrollAreaPrimitive.Viewport className="scroll-area__viewport">
+    <ScrollAreaPrimitive.Viewport className="scroll-area__viewport" ref={ref}>
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollAreaPrimitive.Scrollbar
