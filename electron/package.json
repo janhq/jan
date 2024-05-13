@@ -61,6 +61,14 @@
       "include": "scripts/uninstaller.nsh",
       "deleteAppDataOnUninstall": true
     },
+    "protocols": [
+      {
+        "name": "Jan",
+        "schemes": [
+          "jan"
+        ]
+      }
+    ],
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
   "scripts": {

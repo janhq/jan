@@ -22,6 +22,7 @@ import Loader from '../Loader'
 
 import DataLoader from './DataLoader'
 
+import DeepLinkListener from './DeepLinkListener'
 import KeyListener from './KeyListener'
 
 import { extensionManager } from '@/extension'
@@ -78,7 +79,9 @@ const Providers = ({ children }: PropsWithChildren) => {
           <KeyListener>
             <EventListenerWrapper>
               <TooltipProvider delayDuration={0}>
-                <DataLoader>{children}</DataLoader>
+                <DataLoader>
+                  <DeepLinkListener>{children}</DeepLinkListener>
+                </DataLoader>
               </TooltipProvider>
             </EventListenerWrapper>
             <Toaster />

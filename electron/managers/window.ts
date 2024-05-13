@@ -14,9 +14,9 @@ class WindowManager {
   private _quickAskWindowVisible = false
   private _mainWindowVisible = false
 
+  private deeplink: string | undefined
   /**
    * Creates a new window instance.
-   * @param {Electron.BrowserWindowConstructorOptions} options - The options to create the window with.
    * @returns The created window instance.
    */
   createMainWindow(preloadPath: string, startUrl: string) {
@@ -28,6 +28,17 @@ class WindowManager {
         webSecurity: false,
       },
     })
+
+    if (process.platform === 'win32') {
+      /// This is work around for windows deeplink.
+      /// second-instance event is not fired when app is not open, so the app
+      /// does not received the deeplink.
+      const commandLine = process.argv.slice(1)
+      if (commandLine.length > 0) {
+        const url = commandLine[0]
+        this.sendMainAppDeepLink(url)
+      }
+    }
 
     /* Load frontend app to the window */
     this.mainWindow.loadURL(startUrl)
@@ -123,6 +134,22 @@ class WindowManager {
     )
   }
 
+  /**
+   * Try to send the deep link to the main app.
+   */
+  sendMainAppDeepLink(url: string): void {
+    this.deeplink = url
+    const interval = setInterval(() => {
+      if (!this.deeplink) clearInterval(interval)
+      const mainWindow = this.mainWindow
+      if (mainWindow) {
+        mainWindow.webContents.send(AppEvent.onDeepLink, this.deeplink)
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.focus()
+      }
+    }, 500)
+  }
+
   cleanUp(): void {
     if (!this.mainWindow?.isDestroyed()) {
       this.mainWindow?.close()
@@ -136,6 +163,13 @@ class WindowManager {
       this._quickAskWindow = undefined
       this._quickAskWindowVisible = false
     }
+  }
+
+  /**
+   * Acknowledges that the window has received a deep link. We can remove it.
+   */
+  ackDeepLink() {
+    this.deeplink = undefined
   }
 }
 

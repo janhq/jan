@@ -19,6 +19,7 @@ export enum NativeRoute {
   showMainWindow = 'showMainWindow',
 
   quickAskSizeUpdated = 'quickAskSizeUpdated',
+  ackDeepLink = 'ackDeepLink',
 }
 
 /**
@@ -45,6 +46,8 @@ export enum AppEvent {
 
   onUserSubmitQuickAsk = 'onUserSubmitQuickAsk',
   onSelectedText = 'onSelectedText',
+
+  onDeepLink = 'onDeepLink',
 }
 
 export enum DownloadRoute {
