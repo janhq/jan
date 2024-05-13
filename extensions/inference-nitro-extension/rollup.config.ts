@@ -14,7 +14,6 @@ const deepseekCoder13bJson = require('./resources/models/deepseek-coder-1.3b/mod
 const deepseekCoder34bJson = require('./resources/models/deepseek-coder-34b/model.json')
 const gemma2bJson = require('./resources/models/gemma-2b/model.json')
 const gemma7bJson = require('./resources/models/gemma-7b/model.json')
-const hermesPro7bJson = require('./resources/models/hermes-pro-7b/model.json')
 const llama2Chat70bJson = require('./resources/models/llama2-chat-70b/model.json')
 const llama2Chat7bJson = require('./resources/models/llama2-chat-7b/model.json')
 const llamacorn1bJson = require('./resources/models/llamacorn-1.1b/model.json')
@@ -57,7 +56,6 @@ export default [
           deepseekCoder34bJson,
           gemma2bJson,
           gemma7bJson,
-          hermesPro7bJson,
           llama2Chat70bJson,
           llama2Chat7bJson,
           llamacorn1bJson,
