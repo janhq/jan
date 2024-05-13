@@ -187,7 +187,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           className={twMerge(
             'absolute right-0 cursor-pointer transition-all',
             messages[messages.length - 1]?.id === props.id && !isUser
-              ? 'absolute -bottom-4 right-4'
+              ? 'absolute -bottom-8 right-4'
               : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
