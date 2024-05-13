@@ -8,6 +8,8 @@ import Loader from '@/containers/Loader'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 
+import ThemeWrapper from '@/containers/Providers/Theme'
+
 import { setupCoreServices } from '@/services/coreService'
 import {
   isCoreExtensionInstalled,
@@ -69,20 +71,22 @@ const Providers = ({ children }: PropsWithChildren) => {
 
   return (
     <JotaiWrapper>
-      <Umami />
-      {settingUp && <Loader description="Preparing Update..." />}
-      {setupCore && activated && (
-        <Responsive>
-          <KeyListener>
-            <EventListenerWrapper>
-              <DataLoader>
-                <DeepLinkListener>{children}</DeepLinkListener>
-              </DataLoader>
-            </EventListenerWrapper>
-            <Toaster />
-          </KeyListener>
-        </Responsive>
-      )}
+      <ThemeWrapper>
+        <Umami />
+        {settingUp && <Loader description="Preparing Update..." />}
+        {setupCore && activated && (
+          <Responsive>
+            <KeyListener>
+              <EventListenerWrapper>
+                <DataLoader>
+                  <DeepLinkListener>{children}</DeepLinkListener>
+                </DataLoader>
+              </EventListenerWrapper>
+              <Toaster />
+            </KeyListener>
+          </Responsive>
+        )}
+      </ThemeWrapper>
     </JotaiWrapper>
   )
 }

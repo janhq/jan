@@ -20,7 +20,7 @@ type Props = {
 
 const ModelSearch = ({ onSearchLocal }: Props) => {
   const [searchText, setSearchText] = useState('')
-  const { loading, getHfRepoData } = useGetHFRepoData()
+  const { getHfRepoData } = useGetHFRepoData()
 
   const setImportingHuggingFaceRepoData = useSetAtom(
     importingHuggingFaceRepoDataAtom
