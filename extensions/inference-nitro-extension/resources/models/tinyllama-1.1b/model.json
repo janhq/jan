@@ -14,7 +14,8 @@
   "settings": {
     "ctx_len": 4096,
     "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>",
-    "llama_model_path": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    "llama_model_path": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+    "ngl": 22
   },
   "parameters": {
     "temperature": 0.7,
