@@ -44,7 +44,7 @@ const ModelSegmentInfo = () => {
         <a
           href={modelUrl}
           target="_blank"
-          className="line-clamp-1 text-sm font-medium text-blue-600 hover:underline dark:text-blue-300"
+          className="line-clamp-1 text-sm font-medium text-[hsla(var(--text-link))] hover:underline"
         >
           {modelUrl}
         </a>
@@ -53,7 +53,7 @@ const ModelSegmentInfo = () => {
       <div className="flex justify-between space-x-4">
         <div className="flex-1">
           <HeaderInfo title="Author">
-            <h1 className="text-secondary-foreground text-sm font-medium">
+            <h1 className="text-[hsla(var(--text-secondary))] text-sm font-medium">
               {author}
             </h1>
           </HeaderInfo>

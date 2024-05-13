@@ -41,7 +41,7 @@ const ImageUploadPreview: React.FC<Props> = ({ file }) => {
           {file.name.replaceAll(/[-._]/g, ' ')}
         </h6>
         <div
-          className="bg-foreground absolute -right-2 -top-2 cursor-pointer rounded-full p-0.5"
+          className="absolute -right-2 -top-2 cursor-pointer rounded-full p-0.5"
           onClick={onDeleteClick}
         >
           <XIcon size={14} className="text-background" />

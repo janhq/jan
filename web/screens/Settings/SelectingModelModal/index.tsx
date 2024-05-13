@@ -72,7 +72,7 @@ const SelectingModelModal = () => {
           >
             <div className="flex flex-col items-center justify-center">
               <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-200">
-                <UploadCloudIcon size={24} className="text-blue-600" />
+                <UploadCloudIcon size={24} />
               </div>
               <div className="mt-4">
                 <span className="text-primary text-sm font-bold">

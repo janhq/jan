@@ -48,7 +48,7 @@ export default function Error({
             Something went wrong. Try to{' '}
             <button
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
+              className="text-[hsla(var(--text-link))] hover:underline"
               onClick={() => window.location.reload()}
             >
               refresh this page
@@ -56,7 +56,7 @@ export default function Error({
             or <br /> feel free to{' '}
             <a
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
+              className="text-[hsla(var(--text-link))] hover:underline"
               href="https://discord.gg/FTk2MvZwJH"
               target="_blank_"
             >
