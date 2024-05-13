@@ -64,9 +64,9 @@ const MyModels = () => {
             >
               <div className="mx-auto w-1/2 text-center">
                 <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-200">
-                  <UploadCloudIcon size={24} className="text-blue-600" />
+                  <UploadCloudIcon size={24} className="" />
                 </div>
-                <div className="mt-4 text-blue-600">
+                <div className="mt-4 ">
                   <h6 className="font-bold">Drop file here</h6>
                   <p className="mt-2">File (GGUF) or folder</p>
                 </div>

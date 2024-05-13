@@ -19,7 +19,7 @@ const AutoLink = ({ text }: Props) => {
               key={url}
               target="blank"
               href={url.startsWith('http') ? url : `http://${url}`}
-              className="text-primary dark:text-blue-400"
+              className="text-[hsla(var(--text-link))]"
             >
               {url}
             </a>
