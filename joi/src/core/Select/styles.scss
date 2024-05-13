@@ -3,7 +3,7 @@
   background-color: hsla(var(--select-bg)) !important;
   border: 1px solid hsla(var(--select-border));
   @apply inline-flex h-9 items-center justify-between gap-8 rounded-lg px-3 transition-colors;
-  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-1;
+  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0;
 
   &[data-placeholder] {
     color: hsla(var(--select-placeholder));
@@ -17,6 +17,7 @@
     overflow: hidden;
     background-color: hsla(var(--select-bg));
     z-index: 999;
+    border: 1px solid hsla(var(--select-border));
     border-radius: 8px;
     box-shadow:
       0px 10px 38px -10px rgba(22, 23, 24, 0.35),
@@ -28,7 +29,6 @@
 
   &__disabled {
     cursor: not-allowed;
-    pointer-events: none;
     background-color: hsla(var(--app-disabled-bg)) !important;
     color: hsla(var(--app-disabled-fg));
     border: none;

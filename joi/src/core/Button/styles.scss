@@ -34,9 +34,6 @@
   // Ghost
   &--ghost {
     background-color: transparent !important;
-    &:hover {
-      filter: brightness(65%);
-    }
 
     &.btn--soft {
       background-color: transparent !important;
