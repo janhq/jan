@@ -136,3 +136,128 @@
   --loader-bg: 221, 83%, 53%, 0.1;
   --loader-fg: 221, 83%, 53%, 1;
 }
+
+html.dark {
+  // App global
+  --app-bg: 0, 0%, 0%, 1;
+
+  --app-secondary-bg: 0, 0%, 0%, 0.02;
+  --app-border: 0, 0%, 0%, 0.1;
+  --app-disabled-bg: 0, 0%, 0%, 0.05;
+  --app-disabled-fg: 0, 0%, 0%, 0.2;
+
+  // Color brand
+  --secondary-bg: 0, 0%, 0%, 0.1;
+  --secondary-fg: 0, 0%, 0%, 1;
+
+  --primary-bg: 221, 83%, 53%, 1;
+  --primary-bg-soft: 221, 83%, 53%, 0.1;
+  --primary-fg: 0, 0%, 100%, 1;
+
+  --warning-bg: 41, 96%, 40%, 1;
+  --warning-bg-soft: 41, 96%, 40%, 0.1;
+  --warning-fg: 0, 0%, 100%, 1;
+
+  --success-bg: 161, 94%, 30%, 1;
+  --success-bg-soft: 161, 94%, 30%, 0.1;
+  --success-fg: 0, 0%, 100%, 1;
+
+  --destructive-bg: 0, 72%, 51%, 1;
+  --destructive-bg-soft: 0, 72%, 51%, 0.1;
+  --destructive-fg: 0, 0%, 100%, 1;
+
+  --info-bg: 217, 91%, 60%, 1;
+  --info-bg-soft: 217, 91%, 60%, 0.1;
+  --info-fg: 0, 0%, 100%, 1;
+
+  --ghost-border: 0, 0%, 0%, 0.1;
+
+  // Text Typography
+  --text-primary: 0, 0%, 0%, 1;
+  --text-secondary: 0, 0%, 0%, 0.6;
+  --text-tertiary: 0, 0%, 0%, 0.4;
+  --text-quaternary: 0, 0%, 0%, 0.2;
+  --text-link: 221, 83%, 53%, 1;
+
+  // Top bar
+  --top-panel-bg: 0, 0%, 100%, 1;
+  --top-panel-border: 0, 0%, 0%, 0.1;
+
+  // Bottom bar
+  --bottom-panel-bg: 0, 0%, 100%, 1;
+  --bottom-panel-border: 0, 0%, 0%, 0.1;
+
+  // Ribbon bar
+  --ribbon-panel-bg: 0, 0%, 100%, 1;
+  --ribbon-panel-border: 0, 0%, 0%, 0.1;
+  --ribbon-panel-icon: 0, 0%, 0%, 0.5;
+  --ribbon-panel-icon-active: 0, 0%, 0%, 1;
+  --ribbon-panel-icon-active-bg: 0, 0%, 0%, 0.05;
+
+  // Left Panel
+  --left-panel-bg: 0, 0%, 100%, 1;
+  --left-panel-border: 0, 0%, 0%, 0.1;
+  --left-panel-menu: 0, 0%, 0%, 0.8;
+  --left-panel-menu-active: 0, 0%, 0%, 1;
+  --left-panel-icon-active-bg: 0, 0%, 0%, 0.05;
+
+  // Tooltip
+  --tooltip-bg: 0, 0%, 0%, 1;
+  --tooltip-fg: 0, 0%, 100%, 1;
+
+  // Scroll Bar
+  --scrollbar-tracker: 0, 0%, 95%, 0.1;
+  --scrollbar-thumb: 0, 0%, 0%, 0.1;
+
+  // Input
+  --input-bg: 0, 0%, 100%, 1;
+  --input-placeholder: 0, 0%, 0%, 0.5;
+  --input-icon: 0, 0%, 0%, 0.5;
+  --input-border: 0, 0%, 0%, 0.1;
+
+  // Textarea
+  --textarea-bg: 0, 0%, 100%, 1;
+  --textarea-placeholder: 0, 0%, 0%, 0.5;
+  --textarea-icon: 0, 0%, 0%, 0.5;
+  --textarea-border: 0, 0%, 0%, 0.1;
+
+  // Select
+  --select-bg: 0, 0%, 100%, 1;
+  --select-placeholder: 0, 0%, 0%, 0.5;
+  --select-icon: 0, 0%, 0%, 0.5;
+  --select-options-active-bg: 0, 0%, 0%, 0.05;
+  --select-border: 0, 0%, 0%, 0.1;
+
+  // Switch
+  --switch-bg: 0, 0%, 0%, 0.1;
+  --switch-fg: 0, 0%, 100%, 1;
+
+  // Modal
+  --modal-overlay: 0, 0%, 0%, 0.1;
+  --modal-bg: 0, 0%, 100%, 1;
+  --modal-fg: 0, 0%, 0%, 1;
+
+  // Progress Bar
+  --progress-track-bg: 0, 0%, 0%, 0.1;
+
+  // Slider
+  --slider-track-bg: 0, 0%, 0%, 0.1;
+  --slider-thumb-bg: 0, 0%, 100%, 1;
+
+  // Accordion
+  --accirdion-bg: 0, 0%, 100%, 1;
+
+  // Toaster
+  --toaster-bg: 240, 6%, 10%, 1;
+  --toaster-text-title: 0, 0%, 100%, 1;
+  --toaster-close-icon: 0, 0%, 100%, 0.5;
+  --toaster-text-desc: 0, 0%, 100%, 0.8;
+
+  // Resizeable
+  --resize-bg: 0, 0%, 0%, 0.1;
+
+  // Loader
+  --loader-active-bg: 221, 83%, 53%, 0.2;
+  --loader-bg: 221, 83%, 53%, 0.1;
+  --loader-fg: 221, 83%, 53%, 1;
+}

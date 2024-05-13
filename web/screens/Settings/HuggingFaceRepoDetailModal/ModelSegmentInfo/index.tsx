@@ -53,7 +53,7 @@ const ModelSegmentInfo = () => {
       <div className="flex justify-between space-x-4">
         <div className="flex-1">
           <HeaderInfo title="Author">
-            <h1 className="text-[hsla(var(--text-secondary))] text-sm font-medium">
+            <h1 className="text-sm font-medium text-[hsla(var(--text-secondary))]">
               {author}
             </h1>
           </HeaderInfo>

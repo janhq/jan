@@ -3,14 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 
-import {
-  TextArea,
-  Button,
-  Tooltip,
-  useClickOutside,
-  Badge,
-  ScrollArea,
-} from '@janhq/joi'
+import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   FileTextIcon,

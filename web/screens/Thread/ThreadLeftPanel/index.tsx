@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { Thread } from '@janhq/core'
 

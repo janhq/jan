@@ -26,9 +26,7 @@ const ModalChangeDirectory: React.FC<Props> = ({
         <div>
           <p className="text-[hsla(var(--text-secondary))]">
             Are you sure you want to relocate Jan data folder to{' '}
-            <span className="font-medium">
-              {destinationPath}
-            </span>
+            <span className="font-medium">{destinationPath}</span>
             ? <br /> A restart is required afterward, and the original folder
             remains intact.
             <br />

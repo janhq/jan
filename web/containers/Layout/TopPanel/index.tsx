@@ -1,5 +1,7 @@
 import { Fragment } from 'react'
 
+import { useTheme } from 'next-themes'
+
 import { useAtom, useAtomValue } from 'jotai'
 import {
   PanelLeftCloseIcon,
@@ -9,6 +11,7 @@ import {
   PanelTopCloseIcon,
   PanelTopOpenIcon,
   SunIcon,
+  MoonIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
@@ -28,6 +31,12 @@ const TopPanel = () => {
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
     showSystemMonitorPanelAtom
   )
+
+  const { theme: currentTheme, setTheme } = useTheme()
+
+  const handleClickTheme = (theme: string) => {
+    setTheme(theme)
+  }
 
   return (
     <div
@@ -82,7 +91,19 @@ const TopPanel = () => {
             )}
         </div>
         <div className="unset-drag">
-          <SunIcon size={16} className="cursor-pointer" />
+          {currentTheme === 'light' ? (
+            <MoonIcon
+              size={16}
+              className="cursor-pointer"
+              onClick={() => handleClickTheme('dark')}
+            />
+          ) : (
+            <SunIcon
+              size={16}
+              className="cursor-pointer"
+              onClick={() => handleClickTheme('light')}
+            />
+          )}
         </div>
       </div>
     </div>
