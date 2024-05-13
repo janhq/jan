@@ -6,12 +6,10 @@ export type LoadingInfo = {
   message: string
 }
 
-export const loadingModalVisibilityAtom = atom<LoadingInfo | undefined>(
-  undefined
-)
+export const loadingModalInfoAtom = atom<LoadingInfo | undefined>(undefined)
 
 const ResettingModal: React.FC = () => {
-  const loadingInfo = useAtomValue(loadingModalVisibilityAtom)
+  const loadingInfo = useAtomValue(loadingModalInfoAtom)
 
   return (
     <Modal open={loadingInfo != null}>

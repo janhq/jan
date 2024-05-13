@@ -29,7 +29,7 @@ class WindowManager {
       },
     })
 
-    if (process.platform === 'win32') {
+    if (process.platform === 'win32' || process.platform === 'linux') {
       /// This is work around for windows deeplink.
       /// second-instance event is not fired when app is not open, so the app
       /// does not received the deeplink.
