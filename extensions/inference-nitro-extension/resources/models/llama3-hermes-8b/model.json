@@ -9,7 +9,7 @@
     "object": "model",
     "name": "Hermes Pro Llama 3 8B Q4",
     "version": "1.1",
-    "description": "Hermes Pro is well-designed for Function Calling and JSON Mode.",
+    "description": "Hermes Pro is well-designed for General chat and JSON output.",
     "format": "gguf",
     "settings": {
       "ctx_len": 8192,
