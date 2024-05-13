@@ -119,27 +119,25 @@ const EditModelInfoModal = () => {
       content={
         <div>
           <div className="flex flex-row space-x-4 rounded-xl border border-[hsla(var(--app-border))] p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full">
               <Paperclip color="#fff" />
             </div>
 
             <div className="flex flex-1 flex-col">
               <p>{editingModel.name}</p>
               <div className="flex flex-row">
-                <span className="mr-2 text-sm text-[#71717A]">
+                <span className="mr-2 text-sm">
                   {toGibibytes(editingModel.size)}
                 </span>
                 <div className="flex flex-row space-x-1">
-                  <span className="text-sm font-semibold text-[#71717A]">
-                    Format:
-                  </span>
-                  <span className="text-sm font-normal text-[#71717A]">
+                  <span className="text-sm font-semibold">Format:</span>
+                  <span className="text-sm font-normal">
                     {editingModel.format.toUpperCase()}
                   </span>
                 </div>
               </div>
               <div className="mt-1 flex flex-row items-center space-x-2">
-                <span className="line-clamp-1 text-xs font-normal text-[#71717A]">
+                <span className="line-clamp-1 text-xs font-normal">
                   {modelPath}
                 </span>
                 <Button theme="ghost" onClick={onShowInFinderClick}>
