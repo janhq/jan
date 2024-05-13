@@ -4,7 +4,6 @@ import { Fragment, useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
-import { ScrollArea } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
