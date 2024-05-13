@@ -346,7 +346,7 @@ const Advanced = () => {
                           ))}
                       </div>
                       {gpuEnabled && gpusInUse.length > 1 && (
-                        <div className="mt-2 flex items-start space-x-2 text-yellow-500">
+                        <div className="mt-2 flex items-start space-x-2 text-[hsla(var(--warning-bg))]">
                           <AlertTriangleIcon
                             size={16}
                             className="flex-shrink-0"

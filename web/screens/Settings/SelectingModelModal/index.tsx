@@ -71,8 +71,11 @@ const SelectingModelModal = () => {
             onClick={onSelectFileClick}
           >
             <div className="flex flex-col items-center justify-center">
-              <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-200">
-                <UploadCloudIcon size={24} />
+              <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
+                <UploadCloudIcon
+                  size={24}
+                  className="text-[hsla(var(--primary-bg))]"
+                />
               </div>
               <div className="mt-4">
                 <span className="text-primary text-sm font-bold">
