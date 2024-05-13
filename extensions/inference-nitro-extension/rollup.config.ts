@@ -12,7 +12,6 @@ const codeninja7bJson = require('./resources/models/codeninja-1.0-7b/model.json'
 const commandr34bJson = require('./resources/models/command-r-34b/model.json')
 const deepseekCoder13bJson = require('./resources/models/deepseek-coder-1.3b/model.json')
 const deepseekCoder34bJson = require('./resources/models/deepseek-coder-34b/model.json')
-const dolphinPhi2Json = require('./resources/models/dolphin-phi-2/model.json')
 const gemma2bJson = require('./resources/models/gemma-2b/model.json')
 const gemma7bJson = require('./resources/models/gemma-7b/model.json')
 const hermesPro7bJson = require('./resources/models/hermes-pro-7b/model.json')
@@ -56,7 +55,6 @@ export default [
           commandr34bJson,
           deepseekCoder13bJson,
           deepseekCoder34bJson,
-          dolphinPhi2Json,
           gemma2bJson,
           gemma7bJson,
           hermesPro7bJson,
