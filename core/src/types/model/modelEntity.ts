@@ -15,6 +15,10 @@ export type ModelInfo = {
  */
 
 export enum InferenceEngine {
+  anthropic = 'anthropic',
+  mistral = 'mistral',
+  martian = 'martian',
+  openrouter = 'openrouter',
   nitro = 'nitro',
   openai = 'openai',
   groq = 'groq',

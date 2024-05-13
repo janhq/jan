@@ -52,6 +52,12 @@ const MyModels = () => {
     setSearchText(input)
   }, [])
 
+  const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  const groupByEngine = findByEngine.filter(function (item, index) {
+    if (findByEngine.indexOf(item) === index)
+      return item !== InferenceEngine.nitro
+  })
+
   return (
     <div {...getRootProps()} className="w-full">
       <ScrollArea className="h-full w-full">
@@ -59,12 +65,12 @@ const MyModels = () => {
           <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">
             <div
               className={twMerge(
-                'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-blue-500'
+                'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[hsla(var(--app-border))]'
               )}
             >
               <div className="mx-auto w-1/2 text-center">
-                <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-200">
-                  <UploadCloudIcon size={24} className="" />
+                <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
+                  <UploadCloudIcon size={24} />
                 </div>
                 <div className="mt-4 ">
                   <h6 className="font-bold">Drop file here</h6>
@@ -96,7 +102,7 @@ const MyModels = () => {
             ).length !== 0 && (
               <div className="my-6">
                 <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h6 className="text-base font-semibold">cortex.cpp</h6>
+                  <h6 className="text-base font-semibold">Cortex</h6>
                 </div>
                 <div className="mt-2">
                   {filteredDownloadedModels
@@ -110,106 +116,27 @@ const MyModels = () => {
               </div>
             )}
 
-            <div className="my-6">
-              <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h6 className="text-base font-semibold">Cohere</h6>
-                <SetupRemoteModel engine={InferenceEngine.cohere} />
-              </div>
-              <div className="mt-2">
-                {filteredDownloadedModels
-                  ? filteredDownloadedModels
-                      .filter((x) => x.engine === InferenceEngine.cohere)
-                      .map((model) => {
-                        return <MyModelList key={model.id} model={model} />
-                      })
-                  : null}
-              </div>
-            </div>
-
-            {filteredDownloadedModels.filter(
-              (x) => x.engine === InferenceEngine.groq
-            ).length !== 0 && (
-              <div className="my-6">
-                <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h6 className="text-base font-semibold">Groq</h6>
-                  <SetupRemoteModel engine={InferenceEngine.groq} />
+            {groupByEngine.map((engine, i) => {
+              return (
+                <div className="my-6" key={i}>
+                  <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <h6 className="text-base font-semibold capitalize">
+                      {engine}
+                    </h6>
+                    <SetupRemoteModel engine={engine} />
+                  </div>
+                  <div className="mt-2">
+                    {filteredDownloadedModels
+                      ? filteredDownloadedModels
+                          .filter((x) => x.engine === engine)
+                          .map((model) => {
+                            return <MyModelList key={model.id} model={model} />
+                          })
+                      : null}
+                  </div>
                 </div>
-                <div className="mt-2">
-                  {filteredDownloadedModels
-                    ? filteredDownloadedModels
-                        .filter((x) => x.engine === InferenceEngine.groq)
-                        .map((model) => {
-                          return <MyModelList key={model.id} model={model} />
-                        })
-                    : null}
-                </div>
-              </div>
-            )}
-
-            {filteredDownloadedModels.filter(
-              (x) => x.engine === InferenceEngine.openai
-            ).length !== 0 && (
-              <div className="my-6">
-                <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h6 className="text-base font-semibold">Open AI</h6>
-                  <SetupRemoteModel engine={InferenceEngine.openai} />
-                </div>
-                <div className="mt-2">
-                  {filteredDownloadedModels
-                    ? filteredDownloadedModels
-                        .filter((x) => x.engine === InferenceEngine.openai)
-                        .map((model) => {
-                          return <MyModelList key={model.id} model={model} />
-                        })
-                    : null}
-                </div>
-              </div>
-            )}
-
-            {filteredDownloadedModels.filter(
-              (x) => x.engine === InferenceEngine.triton_trtllm
-            ).length !== 0 && (
-              <div className="my-6">
-                <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h6 className="text-base font-semibold">Triton trtllm</h6>
-                  <SetupRemoteModel engine={InferenceEngine.triton_trtllm} />
-                </div>
-                <div className="mt-2">
-                  {filteredDownloadedModels
-                    ? filteredDownloadedModels
-                        .filter(
-                          (x) => x.engine === InferenceEngine.triton_trtllm
-                        )
-                        .map((model) => {
-                          return <MyModelList key={model.id} model={model} />
-                        })
-                    : null}
-                </div>
-              </div>
-            )}
-
-            {filteredDownloadedModels.filter(
-              (x) => x.engine === InferenceEngine.nitro_tensorrt_llm
-            ).length !== 0 && (
-              <div className="my-6">
-                <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h6 className="text-base font-semibold">
-                    Nitro Tensorrt llm
-                  </h6>
-                </div>
-                <div className="mt-2">
-                  {filteredDownloadedModels
-                    ? filteredDownloadedModels
-                        .filter(
-                          (x) => x.engine === InferenceEngine.nitro_tensorrt_llm
-                        )
-                        .map((model) => {
-                          return <MyModelList key={model.id} model={model} />
-                        })
-                    : null}
-                </div>
-              </div>
-            )}
+              )
+            })}
           </div>
         </div>
       </ScrollArea>
