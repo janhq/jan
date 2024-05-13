@@ -295,48 +295,52 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                 </div>
               </div>
             ) : (
-              <div className="relative w-full">
-                <div className="mt-2 px-4">
-                  <h6 className="my-3 font-medium text-[hsla(var(--text-secondary))]">
-                    Cortex
-                  </h6>
-                  <ul>
-                    {featuredModel.map((model) => {
-                      const isDownloading = downloadingModels.some(
-                        (md) => md.id === model.id
-                      )
-                      return (
-                        <li
-                          key={model.id}
-                          className="flex items-center justify-between gap-4 pb-3"
-                        >
-                          <div className="flex items-center gap-2">
-                            <p
-                              className="line-clamp-1 text-[hsla(var(--text-tertiary))]"
-                              title={model.name}
+              <>
+                {searchFilter !== 'remote' && (
+                  <div className="relative w-full">
+                    <div className="mt-2 px-4">
+                      <h6 className="my-3 font-medium text-[hsla(var(--text-secondary))]">
+                        Cortex
+                      </h6>
+                      <ul>
+                        {featuredModel.map((model) => {
+                          const isDownloading = downloadingModels.some(
+                            (md) => md.id === model.id
+                          )
+                          return (
+                            <li
+                              key={model.id}
+                              className="flex items-center justify-between gap-4 pb-3"
                             >
-                              {model.name}
-                            </p>
-                            <ModelLabel metadata={model.metadata} compact />
-                          </div>
-                          <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                            <span className="font-medium">
-                              {toGibibytes(model.metadata.size)}
-                            </span>
-                            {!isDownloading && (
-                              <DownloadCloudIcon
-                                size={18}
-                                className="cursor-pointer text-[hsla(var(--text-link))]"
-                                onClick={() => downloadModel(model)}
-                              />
-                            )}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </div>
-              </div>
+                              <div className="flex items-center gap-2">
+                                <p
+                                  className="line-clamp-1 text-[hsla(var(--text-tertiary))]"
+                                  title={model.name}
+                                >
+                                  {model.name}
+                                </p>
+                                <ModelLabel metadata={model.metadata} compact />
+                              </div>
+                              <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                <span className="font-medium">
+                                  {toGibibytes(model.metadata.size)}
+                                </span>
+                                {!isDownloading && (
+                                  <DownloadCloudIcon
+                                    size={18}
+                                    className="cursor-pointer text-[hsla(var(--text-link))]"
+                                    onClick={() => downloadModel(model)}
+                                  />
+                                )}
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
 
             {groupByEngine.map((engine, i) => {

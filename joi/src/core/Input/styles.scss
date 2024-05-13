@@ -2,12 +2,11 @@
   background-color: hsla(var(--input-bg));
   border: 1px solid hsla(var(--input-border));
   @apply inline-flex h-9 w-full items-center rounded-lg border px-3 transition-colors;
-  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-2 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-1;
+  @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0;
   @apply file:border-0 file:bg-transparent file:font-medium;
 
   &__wrapper {
     position: relative;
-    width: 100%;
   }
 
   &.text-right {
@@ -21,6 +20,8 @@
   &:disabled {
     color: hsla(var(--app-disabled-fg));
     background-color: hsla(var(--app-disabled-bg));
+    cursor: not-allowed;
+    border: none;
   }
 
   &__prefix-icon {

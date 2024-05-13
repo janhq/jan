@@ -27,11 +27,11 @@ const ModelItem: React.FC<Props> = ({ model }) => {
   }
 
   return (
-    <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-[hsla(--app-border)]">
+    <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-[hsla(var(--app-border))]">
       <ModelItemHeader model={model} onClick={handleToggle} open={open} />
       {open === model.id && (
         <div className="flex">
-          <div className="flex w-full flex-col border-t border-[hsla(--app-border)] p-4 ">
+          <div className="flex w-full flex-col border-t border-[hsla(var(--app-border))] p-4 ">
             <div className="my-2 inline-flex items-center sm:hidden">
               <span className="mr-4 font-semibold">
                 {toGibibytes(model.metadata.size)}
@@ -76,7 +76,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
             </div>
           </div>
 
-          <div className="hidden w-48 flex-shrink-0 border-l border-t border-[hsla(--app-border)] p-4">
+          <div className="hidden w-48 flex-shrink-0 border-l border-t border-[hsla(var(--app-border))] p-4">
             <div>
               <span className="font-semibold ">Format</span>
               <p

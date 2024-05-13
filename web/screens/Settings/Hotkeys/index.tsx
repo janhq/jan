@@ -6,16 +6,16 @@ const availableHotkeys = [
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
     description: 'Create a new thread',
   },
-  {
-    combination: 'E',
-    modifierKeys: [isMac ? '⌘' : 'Ctrl'],
-    description: 'Show list your models',
-  },
-  {
-    combination: 'K',
-    modifierKeys: [isMac ? '⌘' : 'Ctrl'],
-    description: 'Show list navigation pages',
-  },
+  // {
+  //   combination: 'E',
+  //   modifierKeys: [isMac ? '⌘' : 'Ctrl'],
+  //   description: 'Show list your models',
+  // },
+  // {
+  //   combination: 'K',
+  //   modifierKeys: [isMac ? '⌘' : 'Ctrl'],
+  //   description: 'Show list navigation pages',
+  // },
   {
     combination: 'B',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],

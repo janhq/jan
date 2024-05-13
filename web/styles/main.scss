@@ -76,6 +76,10 @@
   --left-panel-menu-active: 0, 0%, 0%, 1;
   --left-panel-icon-active-bg: 0, 0%, 0%, 0.05;
 
+  // right Panel
+  --right-panel-bg: 0, 0%, 100%, 1;
+  --right-panel-border: 0, 0%, 0%, 0.1;
+
   // Tooltip
   --tooltip-bg: 0, 0%, 0%, 1;
   --tooltip-fg: 0, 0%, 100%, 1;
@@ -139,16 +143,16 @@
 
 html.dark {
   // App global
-  --app-bg: 0, 0%, 0%, 1;
+  --app-bg: 0, 0%, 20%, 1;
 
   --app-secondary-bg: 0, 0%, 0%, 0.02;
-  --app-border: 0, 0%, 0%, 0.1;
-  --app-disabled-bg: 0, 0%, 0%, 0.05;
-  --app-disabled-fg: 0, 0%, 0%, 0.2;
+  --app-border: 0, 0%, 28%, 1;
+  --app-disabled-bg: 0, 0%, 0%, 0.2;
+  --app-disabled-fg: 0, 0%, 100%, 0.2;
 
   // Color brand
-  --secondary-bg: 0, 0%, 0%, 0.1;
-  --secondary-fg: 0, 0%, 0%, 1;
+  --secondary-bg: 0, 0%, 100%, 0.2;
+  --secondary-fg: 0, 0%, 100%, 1;
 
   --primary-bg: 221, 83%, 53%, 1;
   --primary-bg-soft: 221, 83%, 53%, 0.1;
@@ -170,82 +174,86 @@ html.dark {
   --info-bg-soft: 217, 91%, 60%, 0.1;
   --info-fg: 0, 0%, 100%, 1;
 
-  --ghost-border: 0, 0%, 0%, 0.1;
+  --ghost-border: 0, 0%, 28%, 1;
 
   // Text Typography
-  --text-primary: 0, 0%, 0%, 1;
-  --text-secondary: 0, 0%, 0%, 0.6;
-  --text-tertiary: 0, 0%, 0%, 0.4;
-  --text-quaternary: 0, 0%, 0%, 0.2;
+  --text-primary: 0, 0%, 100%, 1;
+  --text-secondary: 0, 0%, 68%, 1;
+  --text-tertiary: 0, 0%, 68%, 0.4;
+  --text-quaternary: 0, 0%, 68%, 0.2;
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 100%, 1;
-  --top-panel-border: 0, 0%, 0%, 0.1;
+  --top-panel-bg: 0, 0%, 20%, 1;
+  --top-panel-border: 0, 0%, 28%, 1;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 100%, 1;
-  --bottom-panel-border: 0, 0%, 0%, 0.1;
+  --bottom-panel-bg: 0, 0%, 20%, 1;
+  --bottom-panel-border: 0, 0%, 28%, 1;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 100%, 1;
-  --ribbon-panel-border: 0, 0%, 0%, 0.1;
-  --ribbon-panel-icon: 0, 0%, 0%, 0.5;
-  --ribbon-panel-icon-active: 0, 0%, 0%, 1;
-  --ribbon-panel-icon-active-bg: 0, 0%, 0%, 0.05;
+  --ribbon-panel-bg: 0, 0%, 20%, 1;
+  --ribbon-panel-border: 0, 0%, 28%, 1;
+  --ribbon-panel-icon: 0, 0%, 68%, 1;
+  --ribbon-panel-icon-active: 0, 0%, 100%, 1;
+  --ribbon-panel-icon-active-bg: 0, 0%, 28%, 1;
 
   // Left Panel
-  --left-panel-bg: 0, 0%, 100%, 1;
-  --left-panel-border: 0, 0%, 0%, 0.1;
-  --left-panel-menu: 0, 0%, 0%, 0.8;
-  --left-panel-menu-active: 0, 0%, 0%, 1;
-  --left-panel-icon-active-bg: 0, 0%, 0%, 0.05;
+  --left-panel-bg: 0, 0%, 20%, 1;
+  --left-panel-border: 0, 0%, 28%, 1;
+  --left-panel-menu: 0, 0%, 60%, 1;
+  --left-panel-menu-active: 0, 0%, 100%, 1;
+  --left-panel-icon-active-bg: 0, 0%, 28%, 1;
+
+  // right Panel
+  --right-panel-bg: 0, 0%, 20%, 1;
+  --right-panel-border: 0, 0%, 28%, 1;
 
   // Tooltip
   --tooltip-bg: 0, 0%, 0%, 1;
   --tooltip-fg: 0, 0%, 100%, 1;
 
   // Scroll Bar
-  --scrollbar-tracker: 0, 0%, 95%, 0.1;
-  --scrollbar-thumb: 0, 0%, 0%, 0.1;
+  --scrollbar-tracker: 0, 0%, 50%, 0.1;
+  --scrollbar-thumb: 0, 0%, 50%, 1;
 
   // Input
-  --input-bg: 0, 0%, 100%, 1;
-  --input-placeholder: 0, 0%, 0%, 0.5;
-  --input-icon: 0, 0%, 0%, 0.5;
-  --input-border: 0, 0%, 0%, 0.1;
+  --input-bg: 0, 0%, 20%, 1;
+  --input-placeholder: 0, 0%, 70%, 0.5;
+  --input-icon: 0, 0%, 68%, 1;
+  --input-border: 0, 0%, 28%, 1;
 
   // Textarea
-  --textarea-bg: 0, 0%, 100%, 1;
-  --textarea-placeholder: 0, 0%, 0%, 0.5;
-  --textarea-icon: 0, 0%, 0%, 0.5;
-  --textarea-border: 0, 0%, 0%, 0.1;
+  --textarea-bg: 0, 0%, 20%, 1;
+  --textarea-placeholder: 0, 0%, 70%, 0.5;
+  --textarea-icon: 0, 0%, 68%, 1;
+  --textarea-border: 0, 0%, 28%, 1;
 
   // Select
-  --select-bg: 0, 0%, 100%, 1;
-  --select-placeholder: 0, 0%, 0%, 0.5;
-  --select-icon: 0, 0%, 0%, 0.5;
+  --select-bg: 0, 0%, 20%, 1;
+  --select-placeholder: 0, 0%, 70%, 0.5;
+  --select-icon: 0, 0%, 68%, 1;
   --select-options-active-bg: 0, 0%, 0%, 0.05;
-  --select-border: 0, 0%, 0%, 0.1;
+  --select-border: 0, 0%, 28%, 1;
 
   // Switch
-  --switch-bg: 0, 0%, 0%, 0.1;
+  --switch-bg: 0, 0%, 0%, 0.3;
   --switch-fg: 0, 0%, 100%, 1;
 
   // Modal
   --modal-overlay: 0, 0%, 0%, 0.1;
-  --modal-bg: 0, 0%, 100%, 1;
-  --modal-fg: 0, 0%, 0%, 1;
+  --modal-bg: 0, 0%, 16%, 1;
+  --modal-fg: 0, 0%, 100%, 1;
 
   // Progress Bar
   --progress-track-bg: 0, 0%, 0%, 0.1;
 
   // Slider
-  --slider-track-bg: 0, 0%, 0%, 0.1;
+  --slider-track-bg: 0, 0%, 0%, 0.5;
   --slider-thumb-bg: 0, 0%, 100%, 1;
 
   // Accordion
-  --accirdion-bg: 0, 0%, 100%, 1;
+  --accirdion-bg: 0, 0%, 20%, 1;
 
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;

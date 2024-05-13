@@ -52,7 +52,7 @@ export default function RibbonPanel() {
   ]
 
   return (
-    <div className="flex w-9 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border,var(--app-border)))] bg-[hsla(var(--ribbon-panel-bg,var(--app-bg)))] py-2">
+    <div className="flex w-9 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2">
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {
         const isActive = mainViewState === menu.state
         return (
@@ -71,9 +71,9 @@ export default function RibbonPanel() {
                   <div
                     data-testid={menu.name}
                     className={twMerge(
-                      ' flex w-full flex-shrink-0 cursor-pointer items-center justify-center text-[hsla(var(--ribbon-panel-icon,var(--text-secondary)))]',
+                      'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center text-[hsla(var(--ribbon-panel-icon))]',
                       isActive &&
-                        'z-10 text-[hsla(var(--ribbon-panel-icon-active,var(--app-text-primary)))]'
+                        'z-10 text-[hsla(var(--ribbon-panel-icon-active))]'
                     )}
                     onClick={() => onMenuClick(menu.state)}
                   >
