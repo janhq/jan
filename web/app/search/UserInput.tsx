@@ -56,7 +56,7 @@ const UserInput = () => {
   }
 
   return (
-    <div className="flex flex-col space-y-3 bg-white p-3 dark:bg-[hsla(var(--app-bg))]">
+    <div className="flex flex-col space-y-3 bg-[hsla(var(--app-bg))] p-3">
       <form
         ref={formRef}
         className="flex h-full w-full items-center justify-center"
