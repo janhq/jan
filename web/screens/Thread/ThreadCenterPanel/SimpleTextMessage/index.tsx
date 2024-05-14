@@ -268,10 +268,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               ) : (
                 <div
                   className={twMerge(
-                    'message flex flex-col gap-y-2 font-normal leading-relaxed',
-                    isUser
-                      ? 'whitespace-pre-wrap break-words'
-                      : 'bg-secondary rounded-xl p-4'
+                    'message flex flex-col gap-y-2 font-medium leading-relaxed',
+                    isUser ? 'whitespace-pre-wrap break-words' : 'p-4'
                   )}
                 >
                   {text}
@@ -281,10 +279,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto font-normal leading-relaxed',
-                isUser
-                  ? 'whitespace-pre-wrap break-words'
-                  : 'bg-secondary rounded-xl'
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto font-medium leading-relaxed',
+                isUser && 'whitespace-pre-wrap break-words'
               )}
               // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}

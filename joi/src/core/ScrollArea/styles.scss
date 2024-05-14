@@ -44,17 +44,17 @@
 }
 
 .scroll-area__bar[data-orientation='vertical'] {
-  width: 6px;
+  width: 8px;
 }
 
 .scroll-area__bar[data-orientation='horizontal'] {
   flex-direction: column;
-  height: 6px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track,
 ::-webkit-scrollbar-thumb {

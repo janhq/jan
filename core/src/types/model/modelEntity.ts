@@ -22,7 +22,7 @@ export enum InferenceEngine {
   nitro = 'nitro',
   openai = 'openai',
   groq = 'groq',
-  triton_trtllm = 'triton-trtllm',
+  triton_trtllm = 'triton_trtllm',
   nitro_tensorrt_llm = 'nitro-tensorrt-llm',
   cohere = 'cohere',
 }

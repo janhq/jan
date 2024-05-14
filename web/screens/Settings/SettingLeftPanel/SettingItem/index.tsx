@@ -22,7 +22,7 @@ const SettingItem = ({ name, setting }: Props) => {
 
   return (
     <div
-      className="relative block cursor-pointer px-1 py-1.5"
+      className="relative my-0.5 block cursor-pointer rounded-lg px-2 py-1.5 hover:bg-[hsla(var(--left-panel-menu-hover))]"
       onClick={onSettingItemClick}
     >
       <span

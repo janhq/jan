@@ -18,7 +18,7 @@
     }
 
     &:disabled {
-      background-color: hsla(var(--disabled-bg));
+      background-color: hsla(var(----disabled-bg));
       color: hsla(var(--disabled-fg));
 
       &:checked {
@@ -45,7 +45,7 @@
   }
 
   &:disabled {
-    background-color: hsla(var(--disabled-bg));
+    background-color: hsla(var(----disabled-bg));
     color: hsla(var(--disabled-fg));
   }
 }

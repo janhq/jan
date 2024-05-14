@@ -31,34 +31,34 @@ export default function RibbonPanel() {
   const RibbonNavMenus = [
     {
       name: 'Thread',
-      icon: <MessageCircleIcon size={16} className="flex-shrink-0" />,
+      icon: <MessageCircleIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.Thread,
     },
     {
       name: 'Hub',
-      icon: <LayoutGridIcon size={16} className="flex-shrink-0" />,
+      icon: <LayoutGridIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.Hub,
     },
     {
       name: 'Local API Server',
-      icon: <SquareCodeIcon size={16} className="flex-shrink-0" />,
+      icon: <SquareCodeIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.LocalServer,
     },
     {
       name: 'Settings',
-      icon: <SettingsIcon size={16} className="flex-shrink-0" />,
+      icon: <SettingsIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.Settings,
     },
   ]
 
   return (
-    <div className="flex w-9 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2">
+    <div className="flex w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2">
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {
         const isActive = mainViewState === menu.state
         return (
           <div
             className={twMerge(
-              'relative my-0.5 flex p-1',
+              'relative my-0.5 flex h-8 w-8 items-center justify-center',
               i === 1 && 'mb-auto'
             )}
             key={i}
@@ -71,7 +71,7 @@ export default function RibbonPanel() {
                   <div
                     data-testid={menu.name}
                     className={twMerge(
-                      'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center text-[hsla(var(--ribbon-panel-icon))]',
+                      'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center text-[hsla(var(--ribbon-panel-icon))] ',
                       isActive &&
                         'z-10 text-[hsla(var(--ribbon-panel-icon-active))]'
                     )}

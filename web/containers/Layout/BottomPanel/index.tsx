@@ -14,7 +14,7 @@ const BottomPanel = () => {
   const progress = useAtomValue(appDownloadProgressAtom)
 
   return (
-    <div className="fixed bottom-0 left-0 z-50 flex h-[28px] w-full items-center justify-between border-t border-[hsla(var(--bottom-panel-border))] bg-[hsla(var(--bottom-panel-bg))] px-3 text-xs">
+    <div className="fixed bottom-0 left-0 z-50 flex h-9 w-full items-center justify-between border-t border-[hsla(var(--bottom-panel-border))] bg-[hsla(var(--bottom-panel-bg))] px-3 text-xs">
       <div className="flex flex-shrink-0 items-center gap-x-2">
         <div className="flex items-center space-x-2">
           {progress && progress > 0 ? (

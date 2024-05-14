@@ -82,7 +82,6 @@ const Tools = () => {
                 <div className="flex items-center justify-between">
                   <Switch
                     name="retrieval"
-                    className="mr-2"
                     checked={activeThread?.assistants[0].tools[0].enabled}
                     onChange={(e) => onRetrievalSwitchUpdate(e.target.checked)}
                   />

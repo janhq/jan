@@ -135,7 +135,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
       )} */}
       <div className="flex items-center justify-between px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className="line-clamp-1 text-sm font-bold sm:text-base">
+          <span className="line-clamp-1 text-base font-semibold">
             {model.name}
           </span>
           <EngineBadge engine={model.engine} />

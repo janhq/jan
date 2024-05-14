@@ -28,10 +28,7 @@ const ChatBody = () => {
   return (
     <ListContainer>
       {messages.map((message, index) => (
-        <div
-          key={message.id}
-          className="border-b border-[hsla(var(--app-border))] last:border-none"
-        >
+        <div key={message.id}>
           {message.status !== MessageStatus.Error &&
             message.content.length > 0 && (
               <ChatItem {...message} key={message.id} />

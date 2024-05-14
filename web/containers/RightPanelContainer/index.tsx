@@ -3,11 +3,10 @@ import {
   PropsWithChildren,
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from 'react'
 
-import { ScrollArea, useMediaQuery } from '@janhq/joi'
+import { ScrollArea, useClickOutside, useMediaQuery } from '@janhq/joi'
 import { useAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -20,13 +19,22 @@ const DEFAULT_RIGTH_PANEL_WIDTH = 280
 const RIGHT_PANEL_WIDTH = 'rightPanelWidth'
 
 const RightPanelContainer = ({ children }: Props) => {
-  const rightPanelRef = useRef<HTMLDivElement>(null)
   const [isResizing, setIsResizing] = useState(false)
   const [threadRightPanelWidth, setRightPanelWidth] = useState(
     Number(localStorage.getItem(RIGHT_PANEL_WIDTH)) || DEFAULT_RIGTH_PANEL_WIDTH
   )
+  const [rightPanelRef, setRightPanelRef] = useState<HTMLDivElement | null>(
+    null
+  )
+
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
+
+  useClickOutside(
+    () => matches && showRightPanel && setShowRightPanel(false),
+    null,
+    [rightPanelRef]
+  )
 
   const startResizing = useCallback(() => {
     setIsResizing(true)
@@ -39,9 +47,9 @@ const RightPanelContainer = ({ children }: Props) => {
   const resize = useCallback(
     (mouseMoveEvent: { clientX: number }) => {
       if (isResizing) {
-        if (rightPanelRef.current !== null) {
+        if (rightPanelRef !== null) {
           if (
-            rightPanelRef?.current.getBoundingClientRect().right -
+            rightPanelRef?.getBoundingClientRect().right -
               mouseMoveEvent.clientX <
             200
           ) {
@@ -54,7 +62,7 @@ const RightPanelContainer = ({ children }: Props) => {
             setShowRightPanel(false)
           } else {
             const resized =
-              rightPanelRef?.current.getBoundingClientRect().right -
+              rightPanelRef?.getBoundingClientRect().right -
               mouseMoveEvent.clientX
             localStorage.setItem(RIGHT_PANEL_WIDTH, String(resized))
             setRightPanelWidth(resized)
@@ -62,7 +70,7 @@ const RightPanelContainer = ({ children }: Props) => {
         }
       }
     },
-    [isResizing, setShowRightPanel]
+    [isResizing, rightPanelRef, setShowRightPanel]
   )
 
   useEffect(() => {
@@ -80,7 +88,7 @@ const RightPanelContainer = ({ children }: Props) => {
 
   return (
     <div
-      ref={rightPanelRef}
+      ref={setRightPanelRef}
       className={twMerge(
         'relative flex h-full flex-shrink-0 flex-col border-l border-[hsla(var(--right-panel-border))] bg-[hsla(var(--right-panel-bg))] transition-all duration-100',
         showRightPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',

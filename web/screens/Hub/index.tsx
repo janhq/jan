@@ -89,7 +89,7 @@ const HubScreen = () => {
           </div>
         </div>
       </div>
-      <div className="p-4 py-0">
+      <div className="p-4 py-0 sm:px-16">
         <div className="mb-4 flex w-full justify-end">
           <Select
             value={sortSelected}

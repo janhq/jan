@@ -58,7 +58,7 @@ const Hotkeys = () => {
             >
               <div className="flex w-full py-2 sm:w-1/2">
                 <div className="bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
-                  <Badge variant="soft">{`${shortcut.modifierKeys?.[0] ?? ''} ${
+                  <Badge theme="secondary">{`${shortcut.modifierKeys?.[0] ?? ''} ${
                     shortcut.combination
                   }`}</Badge>
                 </div>

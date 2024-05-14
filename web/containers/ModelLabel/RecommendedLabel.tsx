@@ -12,7 +12,7 @@ const RecommendedLabel = ({ compact }: Props) => (
   <Badge
     theme="success"
     variant="soft"
-    className={twMerge(compact && 'h-5 p-2')}
+    className={twMerge(compact && 'h-5 w-5 p-1')}
   >
     {!compact && <span>Recommended</span>}
   </Badge>

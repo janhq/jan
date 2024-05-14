@@ -34,7 +34,6 @@
   // Ghost
   &--ghost {
     background-color: transparent !important;
-
     &.btn--soft {
       background-color: transparent !important;
     }
@@ -70,8 +69,8 @@
 
   // Disabled
   &:disabled {
-    color: hsla(var(--app-disabled-fg));
-    background-color: hsla(var(--app-disabled-bg)) !important;
+    color: hsla(var(--disabled-fg));
+    background-color: hsla(var(--disabled-bg)) !important;
     cursor: not-allowed;
 
     &:hover {
@@ -79,21 +78,54 @@
     }
   }
 
+  // Icon
+  &--icon {
+    width: 24px;
+    height: 24px;
+    padding: 2px;
+    &:hover {
+      background-color: hsla(var(--icon-bg)) !important;
+    }
+
+    &.btn--outline {
+      background-color: transparent !important;
+      border: 1px solid hsla(var(--icon-border));
+      &:hover {
+        background-color: hsla(var(--icon-bg)) !important;
+      }
+    }
+  }
+
   // Size
   &--small {
     @apply h-6 px-2;
     font-size: 12px;
-    border-radius: 6px;
+    border-radius: 4px;
+    &.btn--icon {
+      width: 24px;
+      height: 24px;
+      padding: 2px;
+    }
   }
 
   &--medium {
-    @apply h-9;
-    border-radius: 8px;
+    @apply h-8;
+    border-radius: 6px;
+    &.btn--icon {
+      width: 24px;
+      height: 24px;
+      padding: 2px;
+    }
   }
 
   &--large {
-    @apply h-11;
-    border-radius: 10px;
+    @apply h-9;
+    border-radius: 8px;
+    &.btn--icon {
+      width: 24px;
+      height: 24px;
+      padding: 2px;
+    }
   }
 
   &--block {

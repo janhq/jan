@@ -1,7 +1,7 @@
 import { memo, useState } from 'react'
 
 import { InferenceEngine, Model } from '@janhq/core'
-import { Badge, Tooltip, useClickOutside } from '@janhq/joi'
+import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import {
   MoreVerticalIcon,
@@ -45,7 +45,7 @@ const MyModelList = ({ model }: Props) => {
   }
 
   return (
-    <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--app-secondary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
+    <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h6
           className={twMerge(
@@ -59,7 +59,10 @@ const MyModelList = ({ model }: Props) => {
 
         {model.engine === InferenceEngine.nitro && (
           <>
-            <p className="line-clamp-1 text-[hsla(var(--text-secondary))]">
+            <p
+              className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
+              title={model.id}
+            >
               {model.id}
             </p>
             <Badge theme="secondary">{toGibibytes(model.metadata.size)}</Badge>
@@ -96,13 +99,15 @@ const MyModelList = ({ model }: Props) => {
                 </Badge>
               )}
               <div
-                className="cursor-pointer"
+                className="inline-flex cursor-pointer"
                 ref={setToggle}
                 onClick={() => {
                   setMore(!more)
                 }}
               >
-                <MoreVerticalIcon className="h-5 w-5" />
+                <Button theme="icon">
+                  <MoreVerticalIcon />
+                </Button>
                 {more && (
                   <div
                     className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-2 shadow-lg"

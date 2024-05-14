@@ -48,11 +48,11 @@ const LocalServerCenterPanel = () => {
       </div>
       {firstTimeVisitAPIServer ? (
         <div className="flex h-full items-center justify-center">
-          <div className="w-[335px] rounded-lg border p-6">
+          <div className="w-[335px] rounded-lg border border-[hsla(var(--app-border))] p-6">
             <div className="item-start flex gap-x-4">
               <InfoIcon className="flex-shrink-0 text-[hsla(var(--info-bg))]" />
               <div>
-                <h6 className="font-medium text-black">
+                <h6 className="font-medium">
                   Once you start the server, you cannot chat with your
                   assistant.
                 </h6>

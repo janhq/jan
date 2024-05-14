@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 
 import { useTheme } from 'next-themes'
 
+import { Button } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   PanelLeftCloseIcon,
@@ -46,63 +47,59 @@ const TopPanel = () => {
       )}
     >
       <div className="flex w-full items-center justify-between text-[hsla(var(--text-secondary))]">
-        <div className="unset-drag flex cursor-pointer gap-x-2">
+        <div className="unset-drag flex cursor-pointer gap-x-0.5">
           {mainViewState !== MainViewState.Hub && (
             <Fragment>
               {showLeftPanel ? (
-                <PanelLeftCloseIcon
-                  size={16}
-                  onClick={() => setShowLeftPanel(false)}
-                />
+                <Button theme="icon" onClick={() => setShowLeftPanel(false)}>
+                  <PanelLeftCloseIcon size={16} />
+                </Button>
               ) : (
-                <PanelLeftOpenIcon
-                  size={16}
-                  onClick={() => setShowLeftPanel(true)}
-                />
+                <Button theme="icon" onClick={() => setShowLeftPanel(true)}>
+                  <PanelLeftOpenIcon size={16} />
+                </Button>
               )}
             </Fragment>
           )}
           {showSystemMonitorPanel ? (
-            <PanelTopOpenIcon
-              size={16}
+            <Button
+              theme="icon"
               onClick={() => setShowSystemMonitorPanel(false)}
-            />
+            >
+              <PanelTopOpenIcon size={16} />
+            </Button>
           ) : (
-            <PanelTopCloseIcon
-              size={16}
+            <Button
+              theme="icon"
               onClick={() => setShowSystemMonitorPanel(true)}
-            />
+            >
+              <PanelTopCloseIcon size={16} />
+            </Button>
           )}
           {mainViewState !== MainViewState.Hub &&
             mainViewState !== MainViewState.Settings && (
               <Fragment>
                 {showRightPanel ? (
-                  <PanelRightOpenIcon
-                    size={16}
-                    onClick={() => setShowRightPanel(false)}
-                  />
+                  <Button theme="icon" onClick={() => setShowRightPanel(false)}>
+                    <PanelRightOpenIcon size={16} />
+                  </Button>
                 ) : (
-                  <PanelRightCloseIcon
-                    size={16}
-                    onClick={() => setShowRightPanel(true)}
-                  />
+                  <Button theme="icon" onClick={() => setShowRightPanel(true)}>
+                    <PanelRightCloseIcon size={16} />
+                  </Button>
                 )}
               </Fragment>
             )}
         </div>
         <div className="unset-drag">
           {currentTheme === 'light' ? (
-            <MoonIcon
-              size={16}
-              className="cursor-pointer"
-              onClick={() => handleClickTheme('dark')}
-            />
+            <Button theme="icon" onClick={() => handleClickTheme('dark')}>
+              <MoonIcon size={16} className="cursor-pointer" />
+            </Button>
           ) : (
-            <SunIcon
-              size={16}
-              className="cursor-pointer"
-              onClick={() => handleClickTheme('light')}
-            />
+            <Button theme="icon" onClick={() => handleClickTheme('light')}>
+              <SunIcon size={16} className="cursor-pointer" />
+            </Button>
           )}
         </div>
       </div>

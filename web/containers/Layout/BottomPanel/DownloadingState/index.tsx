@@ -74,8 +74,6 @@ export default function DownloadingState() {
                     </div>
                     <Button
                       theme="destructive"
-                      variant="outline"
-                      size="small"
                       onClick={() => {
                         if (item?.modelId) {
                           const model = downloadingModels.find(

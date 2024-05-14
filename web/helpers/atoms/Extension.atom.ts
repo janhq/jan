@@ -38,3 +38,5 @@ export const removeInstallingExtensionAtom = atom(
     set(installingExtensionAtom, newCurrent)
   }
 )
+
+export const inActiveEngineProviderAtom = atom<string[]>([])

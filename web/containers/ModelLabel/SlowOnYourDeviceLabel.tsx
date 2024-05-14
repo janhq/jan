@@ -13,13 +13,13 @@ const SlowOnYourDeviceLabel = ({ compact }: Props) => (
   <Badge
     theme="warning"
     variant="soft"
-    className={twMerge(compact && 'h-5 p-2')}
+    className={twMerge(compact && 'h-5 w-5 p-1')}
   >
     {!compact && <span>Slow on your device</span>}
     <Tooltip
       trigger={
         compact ? (
-          <div className="h-2 w-2 cursor-pointer rounded-full bg-[hsla(var(--warning-bg))]" />
+          <div className="h-2 w-2 cursor-pointer rounded-full bg-[hsla(var(--warning-bg))] p-0" />
         ) : (
           <InfoIcon size={14} className="ml-2 cursor-pointer" />
         )
