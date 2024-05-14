@@ -378,7 +378,7 @@ const ChatInput = () => {
                 onClick={() => {
                   setActiveTabThreadRightPanel('model')
                   if (matches) {
-                    setShowRightPanel(true)
+                    setShowRightPanel(!showRightPanel)
                   }
                 }}
               />
@@ -388,7 +388,7 @@ const ChatInput = () => {
                 onClick={() => {
                   setActiveTabThreadRightPanel('tools')
                   if (matches) {
-                    setShowRightPanel(true)
+                    setShowRightPanel(!showRightPanel)
                   }
                 }}
               >

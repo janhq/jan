@@ -1,4 +1,4 @@
-import { app, BrowserWindow, nativeTheme } from 'electron'
+import { app, BrowserWindow } from 'electron'
 
 import { join, resolve } from 'path'
 /**

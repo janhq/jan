@@ -36,6 +36,11 @@ const TopPanel = () => {
   const { theme: currentTheme, setTheme } = useTheme()
 
   const handleClickTheme = (theme: string) => {
+    if (theme === 'dark') {
+      window?.electronAPI.setNativeThemeDark()
+    } else {
+      window?.electronAPI.setNativeThemeLight()
+    }
     setTheme(theme)
   }
 
@@ -93,11 +98,21 @@ const TopPanel = () => {
         </div>
         <div className="unset-drag">
           {currentTheme === 'light' ? (
-            <Button theme="icon" onClick={() => handleClickTheme('dark')}>
+            <Button
+              theme="icon"
+              onClick={() => {
+                handleClickTheme('dark')
+              }}
+            >
               <MoonIcon size={16} className="cursor-pointer" />
             </Button>
           ) : (
-            <Button theme="icon" onClick={() => handleClickTheme('light')}>
+            <Button
+              theme="icon"
+              onClick={() => {
+                handleClickTheme('light')
+              }}
+            >
               <SunIcon size={16} className="cursor-pointer" />
             </Button>
           )}

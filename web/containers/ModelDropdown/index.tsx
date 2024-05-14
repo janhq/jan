@@ -207,7 +207,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
         {chatInputMode ? (
           <Badge
             theme="secondary"
-            className="cursor-pointer"
+            className="line-clamp-1 cursor-pointer leading-normal"
             onClick={() => setOpen(!open)}
           >
             {selectedModel?.name}
