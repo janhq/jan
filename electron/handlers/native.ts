@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, shell } from 'electron'
+import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
@@ -20,6 +20,22 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(NativeRoute.openAppDirectory, async (_event) => {
     shell.openPath(getJanDataFolderPath())
+  })
+
+  /**
+   * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
+   * This will change the appearance of the app to the light theme.
+   */
+  ipcMain.handle(NativeRoute.setNativeThemeLight, () => {
+    nativeTheme.themeSource = 'light'
+  })
+
+  /**
+   * Handles the "setNativeThemeDark" IPC message by setting the native theme source to "dark".
+   * This will change the appearance of the app to the dark theme.
+   */
+  ipcMain.handle(NativeRoute.setNativeThemeDark, () => {
+    nativeTheme.themeSource = 'dark'
   })
 
   /**
