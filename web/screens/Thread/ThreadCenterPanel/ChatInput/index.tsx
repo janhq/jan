@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 
-import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
+import {
+  TextArea,
+  Button,
+  Tooltip,
+  useClickOutside,
+  Badge,
+  useMediaQuery,
+} from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   FileTextIcon,
@@ -28,6 +35,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
+import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
@@ -71,6 +79,9 @@ const ChatInput = () => {
   }
 
   const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
+  const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
+
+  const matches = useMediaQuery('(max-width: 880px)')
 
   useEffect(() => {
     if (isWaitingToSend && activeThreadId) {
@@ -302,7 +313,9 @@ const ChatInput = () => {
                 <SettingsIcon
                   size={18}
                   className="cursor-pointer text-[hsla(var(--text-secondary))]"
-                  onClick={() => setActiveSetting(!activeSetting)}
+                  onClick={() => {
+                    setActiveSetting(!activeSetting)
+                  }}
                 />
               </div>
             )}
@@ -362,12 +375,22 @@ const ChatInput = () => {
               <Settings2Icon
                 size={16}
                 className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
-                onClick={() => setActiveTabThreadRightPanel('model')}
+                onClick={() => {
+                  setActiveTabThreadRightPanel('model')
+                  if (matches) {
+                    setShowRightPanel(true)
+                  }
+                }}
               />
               <Badge
                 className="flex cursor-pointer items-center gap-x-1"
                 theme="secondary"
-                onClick={() => setActiveTabThreadRightPanel('tools')}
+                onClick={() => {
+                  setActiveTabThreadRightPanel('tools')
+                  if (matches) {
+                    setShowRightPanel(true)
+                  }
+                }}
               >
                 <ShapesIcon
                   size={16}

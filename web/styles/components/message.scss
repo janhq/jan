@@ -1,6 +1,6 @@
 .message {
   white-space: pre-line;
-
+  font-size: 16px;
   ul,
   ol {
     list-style: auto;
@@ -15,10 +15,6 @@
     }
   }
 }
-
-// button[class*='react-scroll-to-bottom--'] {
-//   display: none;
-// }
 
 .code-block {
   white-space: normal;

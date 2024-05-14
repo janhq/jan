@@ -78,7 +78,6 @@ const ModelDownloadRow: React.FC<Props> = ({
         size: fileSize,
       },
     }
-    console.log('NamH model: ', JSON.stringify(model))
     return model
   }, [fileName, fileSize, repoData, downloadUrl, defaultModel])
 

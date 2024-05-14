@@ -12,6 +12,7 @@ const buttonVariants = cva('btn', {
     theme: {
       primary: 'btn--primary',
       ghost: 'btn--ghost',
+      icon: 'btn--icon',
       destructive: 'btn--destructive',
     },
     variant: {

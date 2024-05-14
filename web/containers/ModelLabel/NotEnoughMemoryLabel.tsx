@@ -13,7 +13,7 @@ const NotEnoughMemoryLabel = ({ unit, compact }: Props) => (
   <Badge
     theme="destructive"
     variant="soft"
-    className={twMerge(compact && 'h-5 p-2')}
+    className={twMerge(compact && 'h-5 w-5 p-1')}
   >
     {!compact && <span>Not enough {unit}</span>}
     <Tooltip

@@ -16,14 +16,14 @@
   // App global
   --app-bg: 0, 0%, 100%, 1;
 
-  --app-secondary-bg: 0, 0%, 0%, 0.02;
   --app-border: 0, 0%, 0%, 0.1;
-  --app-disabled-bg: 0, 0%, 0%, 0.05;
-  --app-disabled-fg: 0, 0%, 0%, 0.2;
+  --disabled-bg: 0, 0%, 0%, 0.05;
+  --disabled-fg: 0, 0%, 0%, 0.2;
 
   // Color brand
   --secondary-bg: 0, 0%, 0%, 0.1;
   --secondary-fg: 0, 0%, 0%, 1;
+  --tertiary-bg: 0, 0%, 0%, 0.02;
 
   --primary-bg: 221, 83%, 53%, 1;
   --primary-bg-soft: 221, 83%, 53%, 0.1;
@@ -33,13 +33,16 @@
   --warning-bg-soft: 41, 96%, 40%, 0.1;
   --warning-fg: 0, 0%, 100%, 1;
 
-  --success-bg: 161, 94%, 30%, 1;
-  --success-bg-soft: 161, 94%, 30%, 0.1;
+  --success-bg: 142, 76%, 36%, 1;
+  --success-bg-soft: 142, 76%, 36%, 0.1;
   --success-fg: 0, 0%, 100%, 1;
 
   --destructive-bg: 0, 72%, 51%, 1;
   --destructive-bg-soft: 0, 72%, 51%, 0.1;
   --destructive-fg: 0, 0%, 100%, 1;
+
+  --icon-bg: 0, 0%, 0%, 0.1;
+  --icon-border: 0, 0%, 0%, 0.1;
 
   --info-bg: 217, 91%, 60%, 1;
   --info-bg-soft: 217, 91%, 60%, 0.1;
@@ -73,6 +76,7 @@
   --left-panel-bg: 0, 0%, 100%, 1;
   --left-panel-border: 0, 0%, 0%, 0.1;
   --left-panel-menu: 0, 0%, 0%, 0.8;
+  --left-panel-menu-hover: 0, 0%, 0%, 0.03;
   --left-panel-menu-active: 0, 0%, 0%, 1;
   --left-panel-icon-active-bg: 0, 0%, 0%, 0.05;
 
@@ -143,35 +147,37 @@
 
 html.dark {
   // App global
-  --app-bg: 0, 0%, 20%, 1;
-
-  --app-secondary-bg: 0, 0%, 0%, 0.02;
+  --app-bg: 0, 0%, 13%, 1;
   --app-border: 0, 0%, 28%, 1;
-  --app-disabled-bg: 0, 0%, 0%, 0.2;
-  --app-disabled-fg: 0, 0%, 100%, 0.2;
+  --disabled-bg: 0, 0%, 0%, 0.2;
+  --disabled-fg: 0, 0%, 100%, 0.2;
 
   // Color brand
+  --tertiary-bg: 0, 0%, 0%, 0.02;
   --secondary-bg: 0, 0%, 100%, 0.2;
-  --secondary-fg: 0, 0%, 100%, 1;
+  --secondary-fg: 0, 0%, 80%, 1;
 
-  --primary-bg: 221, 83%, 53%, 1;
-  --primary-bg-soft: 221, 83%, 53%, 0.1;
+  --primary-bg: 221, 79%, 59%, 1;
+  --primary-bg-soft: 221, 79%, 59%, 0.2;
   --primary-fg: 0, 0%, 100%, 1;
 
-  --warning-bg: 41, 96%, 40%, 1;
-  --warning-bg-soft: 41, 96%, 40%, 0.1;
+  --warning-bg: 45, 93%, 47%, 1;
+  --warning-bg-soft: 45, 93%, 47%, 0.2;
   --warning-fg: 0, 0%, 100%, 1;
 
-  --success-bg: 161, 94%, 30%, 1;
-  --success-bg-soft: 161, 94%, 30%, 0.1;
+  --success-bg: 142, 71%, 45%, 1;
+  --success-bg-soft: 142, 71%, 45%, 0.2;
   --success-fg: 0, 0%, 100%, 1;
 
-  --destructive-bg: 0, 72%, 51%, 1;
-  --destructive-bg-soft: 0, 72%, 51%, 0.1;
+  --destructive-bg: 0, 84%, 60%, 1;
+  --destructive-bg-soft: 0, 84%, 60%, 0.2;
   --destructive-fg: 0, 0%, 100%, 1;
 
+  --icon-bg: 0, 0%, 80%, 0.1;
+  --icon-border: 0, 0%, 28%, 1;
+
   --info-bg: 217, 91%, 60%, 1;
-  --info-bg-soft: 217, 91%, 60%, 0.1;
+  --info-bg-soft: 217, 91%, 60%, 0.2;
   --info-fg: 0, 0%, 100%, 1;
 
   --ghost-border: 0, 0%, 28%, 1;
@@ -184,76 +190,77 @@ html.dark {
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 20%, 1;
+  --top-panel-bg: 0, 0%, 13%, 1;
   --top-panel-border: 0, 0%, 28%, 1;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 20%, 1;
+  --bottom-panel-bg: 0, 0%, 13%, 1;
   --bottom-panel-border: 0, 0%, 28%, 1;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 20%, 1;
+  --ribbon-panel-bg: 0, 0%, 13%, 1;
   --ribbon-panel-border: 0, 0%, 28%, 1;
   --ribbon-panel-icon: 0, 0%, 68%, 1;
   --ribbon-panel-icon-active: 0, 0%, 100%, 1;
   --ribbon-panel-icon-active-bg: 0, 0%, 28%, 1;
 
   // Left Panel
-  --left-panel-bg: 0, 0%, 20%, 1;
+  --left-panel-bg: 0, 0%, 13%, 1;
   --left-panel-border: 0, 0%, 28%, 1;
-  --left-panel-menu: 0, 0%, 60%, 1;
+  --left-panel-menu: 0, 0%, 95%, 1;
+  --left-panel-menu-hover: 0, 0%, 28%, 0.2;
   --left-panel-menu-active: 0, 0%, 100%, 1;
-  --left-panel-icon-active-bg: 0, 0%, 28%, 1;
+  --left-panel-icon-active-bg: 0, 0%, 28%, 0.5;
 
   // right Panel
-  --right-panel-bg: 0, 0%, 20%, 1;
+  --right-panel-bg: 0, 0%, 13%, 1;
   --right-panel-border: 0, 0%, 28%, 1;
 
   // Tooltip
-  --tooltip-bg: 0, 0%, 0%, 1;
-  --tooltip-fg: 0, 0%, 100%, 1;
+  --tooltip-bg: 0, 0%, 100%, 1;
+  --tooltip-fg: 0, 0%, 0%, 1;
 
   // Scroll Bar
   --scrollbar-tracker: 0, 0%, 50%, 0.1;
   --scrollbar-thumb: 0, 0%, 50%, 1;
 
   // Input
-  --input-bg: 0, 0%, 20%, 1;
+  --input-bg: 0, 0%, 13%, 1;
   --input-placeholder: 0, 0%, 70%, 0.5;
   --input-icon: 0, 0%, 68%, 1;
   --input-border: 0, 0%, 28%, 1;
 
   // Textarea
-  --textarea-bg: 0, 0%, 20%, 1;
+  --textarea-bg: 0, 0%, 13%, 1;
   --textarea-placeholder: 0, 0%, 70%, 0.5;
   --textarea-icon: 0, 0%, 68%, 1;
   --textarea-border: 0, 0%, 28%, 1;
 
   // Select
-  --select-bg: 0, 0%, 20%, 1;
+  --select-bg: 0, 0%, 13%, 1;
   --select-placeholder: 0, 0%, 70%, 0.5;
   --select-icon: 0, 0%, 68%, 1;
   --select-options-active-bg: 0, 0%, 0%, 0.05;
   --select-border: 0, 0%, 28%, 1;
 
   // Switch
-  --switch-bg: 0, 0%, 0%, 0.3;
+  --switch-bg: 0, 0%, 80%, 0.1;
   --switch-fg: 0, 0%, 100%, 1;
 
   // Modal
   --modal-overlay: 0, 0%, 0%, 0.1;
-  --modal-bg: 0, 0%, 16%, 1;
+  --modal-bg: 0, 0%, 13%, 1;
   --modal-fg: 0, 0%, 100%, 1;
 
   // Progress Bar
-  --progress-track-bg: 0, 0%, 0%, 0.1;
+  --progress-track-bg: 0, 0%, 100%, 0.1;
 
   // Slider
-  --slider-track-bg: 0, 0%, 0%, 0.5;
+  --slider-track-bg: 0, 0%, 100%, 0.1;
   --slider-thumb-bg: 0, 0%, 100%, 1;
 
   // Accordion
-  --accirdion-bg: 0, 0%, 20%, 1;
+  --accirdion-bg: 0, 0%, 13%, 1;
 
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;
@@ -267,5 +274,5 @@ html.dark {
   // Loader
   --loader-active-bg: 221, 83%, 53%, 0.2;
   --loader-bg: 221, 83%, 53%, 0.1;
-  --loader-fg: 221, 83%, 53%, 1;
+  --loader-fg: 0, 0%, 80%, 1;
 }

@@ -1,7 +1,7 @@
 .textarea {
   background-color: hsla(var(--textarea-bg));
   border: 1px solid hsla(var(--textarea-border));
-  @apply inline-flex w-full items-center rounded-lg border p-3 transition-colors;
+  @apply inline-flex w-full items-center rounded-md border p-3 transition-colors;
   @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0;
   @apply file:border-0 file:bg-transparent file:font-medium;
 
@@ -18,8 +18,8 @@
   }
 
   &:disabled {
-    color: hsla(var(--app-disabled-fg));
-    background-color: hsla(var(--app-disabled-bg));
+    color: hsla(var(--disabled-fg));
+    background-color: hsla(var(--disabled-bg));
     cursor: not-allowed;
     border: none;
   }
@@ -36,8 +36,8 @@
     cursor: auto;
   }
   &::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
+    width: 6px;
+    height: 6px;
   }
   &::-webkit-scrollbar-track,
   &::-webkit-scrollbar-thumb {

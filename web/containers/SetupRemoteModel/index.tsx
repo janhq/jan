@@ -67,17 +67,18 @@ const SetupRemoteModel = ({ engine }: Props) => {
     setMainViewState(MainViewState.Settings)
     setSelectedSetting(
       extensionHasSettings.filter((x) =>
-        x.setting.toLowerCase().includes(setting)
+        x.provider.toLowerCase().includes(setting)
       )[0]?.setting
     )
   }
 
   return (
     <Button
-      size="small"
-      theme="ghost"
+      theme="icon"
       variant="outline"
-      onClick={() => onSetupItemClick(engine)}
+      onClick={() => {
+        onSetupItemClick(engine)
+      }}
     >
       {extensionHasSettings.filter((x) => x.provider === engine)[0]?.apiKey
         .length > 1 ? (

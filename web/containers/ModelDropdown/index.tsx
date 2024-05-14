@@ -21,6 +21,7 @@ import { toGibibytes } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 
+import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
@@ -146,6 +147,8 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
     { name?: string; setting: string; apiKey: string; provider: string }[]
   >([])
 
+  const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
+
   useEffect(() => {
     const getAllSettings = async () => {
       const extensionsMenu: {
@@ -185,7 +188,10 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
     getAllSettings()
   }, [])
 
-  const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  const findByEngine = filteredDownloadedModels
+    .filter((x) => !inActiveEngineProvider.includes(x.engine))
+    .map((x) => x.engine)
+
   const groupByEngine = findByEngine.filter(function (item, index) {
     if (findByEngine.indexOf(item) === index)
       return item !== InferenceEngine.nitro
@@ -357,7 +363,9 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                       <h6 className="my-3 font-medium capitalize text-[hsla(var(--text-secondary))]">
                         {engine}
                       </h6>
-                      <SetupRemoteModel engine={engine} />
+                      <div className="-mr-2">
+                        <SetupRemoteModel engine={engine} />
+                      </div>
                     </div>
                     <ul>
                       {filteredDownloadedModels

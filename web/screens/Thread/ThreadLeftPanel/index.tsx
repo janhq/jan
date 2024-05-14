@@ -2,6 +2,7 @@ import { useCallback, useEffect } from 'react'
 
 import { Thread } from '@janhq/core'
 
+import { Button } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
@@ -97,7 +98,7 @@ const ThreadLeftPanel = () => {
             size={16}
             className="text-[hsla(var(--text-secondary)] mx-auto mb-3"
           />
-          <h2 className="font-semibold">No Thread History</h2>
+          <h2 className="font-medium">No Thread History</h2>
         </div>
       ) : (
         <div className="p-3">
@@ -116,7 +117,7 @@ const ThreadLeftPanel = () => {
             <div
               key={thread.id}
               className={twMerge(
-                `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-[hsla(var(--app-secondary-bg))]`
+                `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-[hsla(var(--left-panel-menu-hover))]`
               )}
               onClick={() => {
                 onThreadClick(thread)
@@ -125,7 +126,7 @@ const ThreadLeftPanel = () => {
               <div className="relative z-10 p-2">
                 <h1
                   className={twMerge(
-                    'line-clamp-1 group-hover/message:pr-6',
+                    'line-clamp-1 font-medium group-hover/message:pr-6',
                     activeThreadId && 'font-medium'
                   )}
                 >
@@ -134,10 +135,12 @@ const ThreadLeftPanel = () => {
               </div>
               <div
                 className={twMerge(
-                  `group/icon text-[hsla(var(--text-secondary)] invisible absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-md px-0.5 hover:bg-[hsla(var(--app-secondary-bg))] group-hover/message:visible`
+                  `group/icon text-[hsla(var(--text-secondary)] invisible absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-md px-0.5 group-hover/message:visible`
                 )}
               >
-                <MoreHorizontalIcon className="text-[hsla(var(--app-text-primary))]" />
+                <Button theme="icon" className="mt-2">
+                  <MoreHorizontalIcon />
+                </Button>
                 <div className="invisible absolute -right-1 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg group-hover/icon:visible">
                   <ModalCleanThread threadId={thread.id} />
                   <ModalDeleteThread threadId={thread.id} />

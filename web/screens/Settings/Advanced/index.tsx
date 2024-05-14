@@ -471,12 +471,7 @@ const Advanced = () => {
               Clear all logs from Jan app.
             </p>
           </div>
-          <Button
-            size="small"
-            theme="destructive"
-            variant="soft"
-            onClick={clearLogs}
-          >
+          <Button theme="destructive" onClick={clearLogs}>
             Clear
           </Button>
         </div>
