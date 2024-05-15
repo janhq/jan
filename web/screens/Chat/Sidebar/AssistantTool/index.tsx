@@ -50,6 +50,37 @@ const AssistantTool: React.FC = () => {
               {
                 type: 'retrieval',
                 enabled: enabled,
+                useTimeWeightedRetriever:
+                (activeThread.assistants[0].tools &&
+                  activeThread.assistants[0].tools[0]
+                    ?.useTimeWeightedRetriever) ||
+                false,
+              settings:
+                (activeThread.assistants[0].tools &&
+                  activeThread.assistants[0].tools[0]?.settings) ??
+                {},
+            },
+          ],
+        },
+      ],
+    })
+  },
+  [activeThread, updateThreadMetadata]
+)
+
+const onTimeWeightedRetrieverSwitchUpdate = useCallback(
+  (enabled: boolean) => {
+    if (!activeThread) return
+    updateThreadMetadata({
+      ...activeThread,
+      assistants: [
+        {
+          ...activeThread.assistants[0],
+          tools: [
+            {
+              type: 'retrieval',
+              enabled: true,
+              useTimeWeightedRetriever: enabled,
                 settings:
                   (activeThread.assistants[0].tools &&
                     activeThread.assistants[0].tools[0]?.settings) ??
@@ -179,6 +210,51 @@ const AssistantTool: React.FC = () => {
 
                     <div className="flex items-center justify-between">
                       <Input value="HNSWLib" disabled />
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <div className="flex items-center">
+                      <label
+                        id="use-time-weighted-retriever"
+                        className="inline-flex items-center font-bold text-zinc-500 dark:text-gray-300"
+                      >
+                        Time-Weighted Retrieval?
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <InfoIcon
+                              size={16}
+                              className="ml-2 flex-shrink-0 dark:text-gray-500"
+                            />
+                          </TooltipTrigger>
+                          <TooltipPortal>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-[240px]"
+                            >
+                              <span>
+                                Time-Weighted Retriever looks at how similar
+                                they are and how new they are. It compares
+                                documents based on their meaning like usual, but
+                                also considers when they were added to give
+                                newer ones more importance.
+                              </span>
+                              <TooltipArrow />
+                            </TooltipContent>
+                          </TooltipPortal>
+                        </Tooltip>
+                      </label>
+
+                      <div className="ml-auto flex items-center justify-between">
+                        <Switch
+                          name="use-time-weighted-retriever"
+                          className="mr-2"
+                          checked={
+                            activeThread?.assistants[0].tools[0]
+                              .useTimeWeightedRetriever
+                          }
+                          onCheckedChange={onTimeWeightedRetrieverSwitchUpdate}
+                        />
+                      </div>
                     </div>
                   </div>
                   <AssistantSetting
