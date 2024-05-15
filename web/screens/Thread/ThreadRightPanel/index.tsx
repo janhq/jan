@@ -27,6 +27,7 @@ import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 import PromptTemplateSetting from './PromptTemplateSetting'
 import Tools from './Tools'
 
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
@@ -44,6 +45,7 @@ const ThreadRightPanel = () => {
     activeTabThreadRightPanelAtom
   )
   const { updateThreadMetadata } = useCreateNewThread()
+  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()
@@ -149,7 +151,7 @@ const ThreadRightPanel = () => {
         options={[
           { name: 'Assistant', value: 'assistant' },
           { name: 'Model', value: 'model' },
-          { name: 'Tools', value: 'tools' },
+          ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
         ]}
         value={activeTabThreadRightPanel}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}

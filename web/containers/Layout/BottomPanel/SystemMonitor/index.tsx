@@ -62,8 +62,8 @@ const SystemMonitor = () => {
       <div
         ref={setControl}
         className={twMerge(
-          'flex cursor-pointer items-center gap-x-1 rounded-md px-1 py-0.5',
-          showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))]'
+          'flex cursor-pointer items-center gap-x-1 rounded-md px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
+          showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))] '
         )}
         onClick={() => {
           setShowSystemMonitorPanel(!showSystemMonitorPanel)

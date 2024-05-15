@@ -102,16 +102,17 @@ const ThreadLeftPanel = () => {
         </div>
       ) : (
         <div className="p-3">
-          <div
+          <Button
             className="mb-2"
             data-testid="btn-create-thread"
             onClick={onCreateConversationClick}
+            theme="icon"
           >
             <PenSquareIcon
               size={16}
               className="cursor-pointer text-[hsla(var(--text-secondary))]"
             />
-          </div>
+          </Button>
 
           {threads.map((thread) => (
             <div
@@ -126,7 +127,7 @@ const ThreadLeftPanel = () => {
               <div className="relative z-10 p-2">
                 <h1
                   className={twMerge(
-                    'line-clamp-1 font-medium group-hover/message:pr-6',
+                    'line-clamp-1 pr-2 font-medium group-hover/message:pr-6',
                     activeThreadId && 'font-medium'
                   )}
                 >

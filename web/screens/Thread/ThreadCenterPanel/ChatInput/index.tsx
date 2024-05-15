@@ -379,6 +379,8 @@ const ChatInput = () => {
                   setActiveTabThreadRightPanel('model')
                   if (matches) {
                     setShowRightPanel(!showRightPanel)
+                  } else if (!showRightPanel) {
+                    setShowRightPanel(true)
                   }
                 }}
               />
@@ -389,6 +391,8 @@ const ChatInput = () => {
                   setActiveTabThreadRightPanel('tools')
                   if (matches) {
                     setShowRightPanel(!showRightPanel)
+                  } else if (!showRightPanel) {
+                    setShowRightPanel(true)
                   }
                 }}
               >

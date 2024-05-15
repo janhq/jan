@@ -58,7 +58,7 @@ export default function RibbonPanel() {
         return (
           <div
             className={twMerge(
-              'relative my-0.5 flex h-8 w-8 items-center justify-center',
+              'relative my-0.5 flex h-8 w-8 items-center justify-center rounded-md hover:bg-[hsla(var(--ribbon-panel-icon-hover))]',
               i === 1 && 'mb-auto'
             )}
             key={i}

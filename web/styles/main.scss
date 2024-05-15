@@ -15,8 +15,8 @@
 :root {
   // App global
   --app-bg: 0, 0%, 100%, 1;
-
   --app-border: 0, 0%, 0%, 0.1;
+
   --disabled-bg: 0, 0%, 0%, 0.05;
   --disabled-fg: 0, 0%, 0%, 0.2;
 
@@ -69,6 +69,7 @@
   --ribbon-panel-bg: 0, 0%, 100%, 1;
   --ribbon-panel-border: 0, 0%, 0%, 0.1;
   --ribbon-panel-icon: 0, 0%, 0%, 0.5;
+  --ribbon-panel-icon-hover: 0, 0%, 0%, 0.03;
   --ribbon-panel-icon-active: 0, 0%, 0%, 1;
   --ribbon-panel-icon-active-bg: 0, 0%, 0%, 0.05;
 
@@ -79,6 +80,8 @@
   --left-panel-menu-hover: 0, 0%, 0%, 0.03;
   --left-panel-menu-active: 0, 0%, 0%, 1;
   --left-panel-icon-active-bg: 0, 0%, 0%, 0.05;
+
+  --dropdown-menu-hover-bg: 0, 0%, 0%, 0.03;
 
   // right Panel
   --right-panel-bg: 0, 0%, 100%, 1;
@@ -149,6 +152,7 @@ html.dark {
   // App global
   --app-bg: 0, 0%, 13%, 1;
   --app-border: 0, 0%, 28%, 1;
+
   --disabled-bg: 0, 0%, 0%, 0.2;
   --disabled-fg: 0, 0%, 100%, 0.2;
 
@@ -201,6 +205,7 @@ html.dark {
   --ribbon-panel-bg: 0, 0%, 13%, 1;
   --ribbon-panel-border: 0, 0%, 28%, 1;
   --ribbon-panel-icon: 0, 0%, 68%, 1;
+  --ribbon-panel-icon-hover: 0, 0%, 28%, 0.2;
   --ribbon-panel-icon-active: 0, 0%, 100%, 1;
   --ribbon-panel-icon-active-bg: 0, 0%, 28%, 1;
 
@@ -211,6 +216,8 @@ html.dark {
   --left-panel-menu-hover: 0, 0%, 28%, 0.2;
   --left-panel-menu-active: 0, 0%, 100%, 1;
   --left-panel-icon-active-bg: 0, 0%, 28%, 0.5;
+
+  --dropdown-menu-hover-bg: 0, 0%, 28%, 0.2;
 
   // right Panel
   --right-panel-bg: 0, 0%, 13%, 1;

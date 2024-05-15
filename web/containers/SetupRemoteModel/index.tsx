@@ -80,15 +80,10 @@ const SetupRemoteModel = ({ engine }: Props) => {
         onSetupItemClick(engine)
       }}
     >
-      {extensionHasSettings.filter((x) => x.provider === engine)[0]?.apiKey
-        .length > 1 ? (
-        <SettingsIcon
-          size={14}
-          className="text-hsla(var(--app-text-sencondary))"
-        />
-      ) : (
-        <PlusIcon size={14} className="text-hsla(var(--app-text-sencondary))" />
-      )}
+      <SettingsIcon
+        size={14}
+        className="text-hsla(var(--app-text-sencondary))"
+      />
     </Button>
   )
 }
