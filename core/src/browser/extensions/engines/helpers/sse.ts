@@ -68,14 +68,19 @@ export function requestInference(
             let cachedLines = ''
             for (const line of lines) {
               try {
-                const toParse = cachedLines + line
-                if (!line.includes('data: [DONE]')) {
-                  const data = JSON.parse(toParse.replace('data: ', ''))
-                  content += data.choices[0]?.delta?.content ?? ''
-                  if (content.startsWith('assistant: ')) {
-                    content = content.replace('assistant: ', '')
+                if (transformResponse) {
+                  content += transformResponse(line)
+                  subscriber.next(content ?? '')
+                } else {
+                  const toParse = cachedLines + line
+                  if (!line.includes('data: [DONE]')) {
+                    const data = JSON.parse(toParse.replace('data: ', ''))
+                    content += data.choices[0]?.delta?.content ?? ''
+                    if (content.startsWith('assistant: ')) {
+                      content = content.replace('assistant: ', '')
+                    }
+                    if (content !== '') subscriber.next(content)
                   }
-                  if (content !== '') subscriber.next(content)
                 }
               } catch {
                 cachedLines = line
