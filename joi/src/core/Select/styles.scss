@@ -2,8 +2,9 @@
   padding: 0 16px;
   background-color: hsla(var(--select-bg)) !important;
   border: 1px solid hsla(var(--select-border));
-  @apply inline-flex h-7 items-center justify-between gap-8 rounded-md px-3 transition-colors;
+  @apply inline-flex h-8 items-center justify-between gap-8 rounded-md px-3 transition-colors;
   @apply focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0;
+  @apply hover:border-[hsla(var(--primary-bg))];
 
   &[data-placeholder] {
     color: hsla(var(--select-placeholder));

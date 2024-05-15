@@ -78,6 +78,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
     if (textareaRef.current) {
       textareaRef.current.style.height = '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current.style.overflow =
+        textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
   }, [editPrompt])
 

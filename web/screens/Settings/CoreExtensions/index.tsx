@@ -179,7 +179,7 @@ const ExtensionCatalog = () => {
           {engineActiveExtensions.length !== 0 && (
             <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
               <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Inference Engines
+                Model Provider
               </h6>
             </div>
           )}

@@ -56,16 +56,22 @@ const MyModelList = ({ model }: Props) => {
         >
           {model.name}
         </h6>
-
         {model.engine === InferenceEngine.nitro && (
-          <>
+          <div className="flex gap-x-8">
             <p
               className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
               title={model.id}
             >
               {model.id}
             </p>
-            <Badge theme="secondary">{toGibibytes(model.metadata.size)}</Badge>
+          </div>
+        )}
+
+        {model.engine === InferenceEngine.nitro && (
+          <div className="flex gap-x-4">
+            <Badge theme="secondary" className="sm:mr-16">
+              {toGibibytes(model.metadata.size)}
+            </Badge>
 
             <div className="flex items-center gap-x-4">
               {stateModel.loading && stateModel.model?.id === model.id ? (
@@ -110,14 +116,14 @@ const MyModelList = ({ model }: Props) => {
                 </Button>
                 {more && (
                   <div
-                    className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-2 shadow-lg"
+                    className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
                     ref={setMenu}
                   >
                     <Tooltip
                       trigger={
                         <div
                           className={twMerge(
-                            'hover:bg-secondary flex items-center space-x-2 px-4 py-2',
+                            'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                             serverEnabled &&
                               activeModel &&
                               activeModel.id !== model.id &&
@@ -156,7 +162,7 @@ const MyModelList = ({ model }: Props) => {
                     />
                     <div
                       className={twMerge(
-                        'flex cursor-pointer items-center space-x-2 px-4 py-2',
+                        'flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                         serverEnabled &&
                           'pointer-events-none cursor-not-allowed opacity-40'
                       )}
@@ -182,7 +188,7 @@ const MyModelList = ({ model }: Props) => {
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
