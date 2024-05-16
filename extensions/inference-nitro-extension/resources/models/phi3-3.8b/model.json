@@ -13,7 +13,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
-      "prompt_template": "<|system|>\n{system_message}<|end|>\n<|user|>\n{prompt}<|end|>\n<|assistant|>\n",
+      "prompt_template": "<|user|>\n{prompt}<|end|>\n<|assistant|>\n",
       "llama_model_path": "Phi-3-mini-4k-instruct-q4.gguf"
     },
     "parameters": {
