@@ -36,6 +36,7 @@ export class RetrievalTool extends InferenceTool {
           NODE,
           'toolRetrievalIngestNewDocument',
           docFile,
+          data.model?.id,
           data.model?.engine
         )
       } else {

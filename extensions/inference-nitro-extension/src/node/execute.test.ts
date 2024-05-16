@@ -33,9 +33,22 @@ describe('test executable nitro file', () => {
     Object.defineProperty(process, 'platform', {
       value: 'darwin',
     })
+    Object.defineProperty(process, 'arch', {
+      value: 'arm64',
+    })
     expect(executableNitroFile(testSettings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`mac-universal${sep}nitro`),
+        executablePath: expect.stringContaining(`mac-arm64${sep}cortex-cpp`),
+        cudaVisibleDevices: '',
+        vkVisibleDevices: '',
+      })
+    )
+    Object.defineProperty(process, 'arch', {
+      value: 'amd64',
+    })
+    expect(executableNitroFile(testSettings)).toEqual(
+      expect.objectContaining({
+        executablePath: expect.stringContaining(`mac-amd64${sep}cortex-cpp`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
@@ -56,7 +69,7 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`win-cpu${sep}nitro.exe`),
+        executablePath: expect.stringContaining(`win-cpu${sep}cortex-cpp.exe`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
@@ -89,7 +102,7 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`win-cuda-11-7${sep}nitro.exe`),
+        executablePath: expect.stringContaining(`win-cuda-11-7${sep}cortex-cpp.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
@@ -122,7 +135,7 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`win-cuda-12-0${sep}nitro.exe`),
+        executablePath: expect.stringContaining(`win-cuda-12-0${sep}cortex-cpp.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
@@ -139,7 +152,7 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`linux-cpu${sep}nitro`),
+        executablePath: expect.stringContaining(`linux-cpu${sep}cortex-cpp`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
@@ -172,7 +185,7 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`linux-cuda-11-7${sep}nitro`),
+        executablePath: expect.stringContaining(`linux-cuda-11-7${sep}cortex-cpp`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
@@ -205,7 +218,7 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`linux-cuda-12-0${sep}nitro`),
+        executablePath: expect.stringContaining(`linux-cuda-12-0${sep}cortex-cpp`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
