@@ -1,4 +1,4 @@
-import { GpuSetting, SystemInformation } from '@janhq/core'
+import { GpuSetting } from '@janhq/core'
 import * as path from 'path'
 
 export interface NitroExecutableOptions {
@@ -24,7 +24,7 @@ const os = (): string => {
   return process.platform === 'win32'
     ? 'win'
     : process.platform === 'darwin'
-      ? 'mac-universal'
+      ? process.arch === 'arm64' ? 'mac-arm64' : 'mac-amd64'
       : 'linux'
 }
 
@@ -52,7 +52,7 @@ export const executableNitroFile = (
     .join('-')
   let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
-  let binaryName = `nitro${extension()}`
+  let binaryName = `cortex-cpp${extension()}`
 
   return {
     executablePath: path.join(__dirname, '..', 'bin', binaryFolder, binaryName),

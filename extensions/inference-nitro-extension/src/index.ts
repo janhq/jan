@@ -130,7 +130,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     const executableFolderPath = await joinPath([
       janDataFolderPath,
       'engines',
-      this.name ?? 'nitro',
+      this.name ?? 'cortex-cpp',
       this.version ?? '1.0.0',
     ])
 
@@ -179,7 +179,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
       const executableFolderPath = await joinPath([
         janDataFolderPath,
         'engines',
-        this.name ?? 'nitro',
+        this.name ?? 'cortex-cpp',
         this.version ?? '1.0.0',
       ])
 

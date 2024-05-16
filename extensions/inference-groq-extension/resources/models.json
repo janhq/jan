@@ -8,22 +8,25 @@
     "id": "llama3-70b-8192",
     "object": "model",
     "name": "Groq Llama 3 70b",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Groq Llama 3 70b with supercharged speed!",
     "format": "api",
-    "settings": {
-      "text_model": false
-    },
+    "settings": {},
     "parameters": {
       "max_tokens": 8192,
       "temperature": 0.7,
-      "top_p": 1,
-      "stop": null,
-      "stream": true
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Meta",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   },
@@ -36,22 +39,25 @@
     "id": "llama3-8b-8192",
     "object": "model",
     "name": "Groq Llama 3 8b",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Groq Llama 3 8b with supercharged speed!",
     "format": "api",
-    "settings": {
-      "text_model": false
-    },
+    "settings": {},
     "parameters": {
       "max_tokens": 8192,
       "temperature": 0.7,
-      "top_p": 1,
-      "stop": null,
-      "stream": true
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Meta",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   },
@@ -64,50 +70,24 @@
     "id": "gemma-7b-it",
     "object": "model",
     "name": "Groq Gemma 7b Instruct",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Groq Gemma 7b Instruct with supercharged speed!",
     "format": "api",
-    "settings": {
-      "text_model": false
-    },
+    "settings": {},
     "parameters": {
-      "max_tokens": 4096,
+      "max_tokens": 8192,
       "temperature": 0.7,
-      "top_p": 1,
-      "stop": null,
-      "stream": true
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Google",
-      "tags": ["General"]
-    },
-    "engine": "groq"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://groq.com"
-      }
-    ],
-    "id": "llama2-70b-4096",
-    "object": "model",
-    "name": "Groq Llama 2 70b",
-    "version": "1.0",
-    "description": "Groq Llama 2 70b with supercharged speed!",
-    "format": "api",
-    "settings": {
-      "text_model": false
-    },
-    "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7,
-      "top_p": 1,
-      "stop": null,
-      "stream": true
-    },
-    "metadata": {
-      "author": "Meta",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General"
+      ]
     },
     "engine": "groq"
   },
@@ -120,22 +100,25 @@
     "id": "mixtral-8x7b-32768",
     "object": "model",
     "name": "Groq Mixtral 8x7b Instruct",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Groq Mixtral 8x7b Instruct is Mixtral with supercharged speed!",
     "format": "api",
-    "settings": {
-      "text_model": false
-    },
+    "settings": {},
     "parameters": {
-      "max_tokens": 4096,
+      "max_tokens": 32768,
       "temperature": 0.7,
-      "top_p": 1,
-      "stop": null,
-      "stream": true
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "Mistral",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   }

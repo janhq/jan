@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron'
 
-import { join } from 'path'
+import { join, resolve } from 'path'
 /**
  * Managers
  **/
@@ -39,15 +39,44 @@ const quickAskUrl = `${mainUrl}/search`
 
 const gotTheLock = app.requestSingleInstanceLock()
 
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('jan', process.execPath, [
+      resolve(process.argv[1]),
+    ])
+  }
+} else {
+  app.setAsDefaultProtocolClient('jan')
+}
+
+const createMainWindow = () => {
+  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
+  windowManager.createMainWindow(preloadPath, startUrl)
+}
+
 app
   .whenReady()
   .then(() => {
     if (!gotTheLock) {
       app.quit()
       throw new Error('Another instance of the app is already running')
+    } else {
+      app.on(
+        'second-instance',
+        (_event, commandLine, _workingDirectory): void => {
+          if (process.platform === 'win32' || process.platform === 'linux') {
+            // this is for handling deeplink on windows and linux
+            // since those OS will emit second-instance instead of open-url
+            const url = commandLine.pop()
+            if (url) {
+              windowManager.sendMainAppDeepLink(url)
+            }
+          }
+          windowManager.showMainWindow()
+        }
+      )
     }
   })
-  .then(setupReactDevTool)
   .then(setupCore)
   .then(createUserSpace)
   .then(migrateExtensions)
@@ -60,6 +89,7 @@ app
   .then(registerGlobalShortcuts)
   .then(() => {
     if (!app.isPackaged) {
+      setupReactDevTool()
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
@@ -75,11 +105,11 @@ app
     })
   })
 
-app.on('second-instance', (_event, _commandLine, _workingDirectory) => {
-  windowManager.showMainWindow()
+app.on('open-url', (_event, url) => {
+  windowManager.sendMainAppDeepLink(url)
 })
 
-app.on('before-quit', function (evt) {
+app.on('before-quit', function (_event) {
   trayManager.destroyCurrentTray()
 })
 
@@ -102,11 +132,6 @@ function createQuickAskWindow() {
   if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
   windowManager.createQuickAskWindow(preloadPath, startUrl)
-}
-
-function createMainWindow() {
-  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
-  windowManager.createMainWindow(preloadPath, startUrl)
 }
 
 /**

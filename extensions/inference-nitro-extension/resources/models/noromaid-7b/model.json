@@ -8,19 +8,20 @@
   "id": "noromaid-7b",
   "object": "model",
   "name": "Noromaid 7B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 32768,
     "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
-    "llama_model_path": "Noromaid-7B-0.4-DPO.q4_k_m.gguf"
+    "llama_model_path": "Noromaid-7B-0.4-DPO.q4_k_m.gguf",
+    "ngl": 32
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 32768,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0

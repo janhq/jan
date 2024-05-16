@@ -1,5 +1,5 @@
 import { clipboard, globalShortcut } from 'electron'
-import { keyboard, Key } from '@nut-tree/nut-js'
+import { keyboard, Key } from "@kirillvakalov/nut-tree__nut-js"
 
 /**
  * Gets selected text by synthesizing the keyboard shortcut

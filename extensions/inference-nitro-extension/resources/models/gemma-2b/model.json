@@ -8,19 +8,20 @@
   "id": "gemma-2b",
   "object": "model",
   "name": "Gemma 2B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Gemma is built from the same technology with Google's Gemini.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 8192,
     "prompt_template": "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model",
-    "llama_model_path": "gemma-2b-it-q4_k_m.gguf"
+    "llama_model_path": "gemma-2b-it-q4_k_m.gguf",
+    "ngl": 18
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 8192,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0

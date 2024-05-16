@@ -8,19 +8,20 @@
   "id": "mixtral-8x7b-instruct",
   "object": "model",
   "name": "Mixtral 8x7B Instruct Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "The Mixtral-8x7B is a pretrained generative Sparse Mixture of Experts. The Mixtral-8x7B outperforms 70B models on most benchmarks.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 32768,
     "prompt_template": "[INST] {prompt} [/INST]",
-    "llama_model_path": "mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf"
+    "llama_model_path": "mixtral-8x7b-instruct-v0.1.Q4_K_M.gguf",
+    "ngl": 100
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 32768,
     "frequency_penalty": 0,
     "presence_penalty": 0
   },

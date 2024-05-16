@@ -5,20 +5,27 @@
         "url": "https://openai.com"
       }
     ],
-    "id": "gpt-4",
+    "id": "gpt-4-turbo",
     "object": "model",
-    "name": "OpenAI GPT 4",
-    "version": "1.0",
-    "description": "OpenAI GPT 4 model is extremely good",
+    "name": "OpenAI GPT 4 Turbo",
+    "version": "1.2",
+    "description": "OpenAI GPT 4 Turbo model is extremely good",
     "format": "api",
     "settings": {},
     "parameters": {
       "max_tokens": 4096,
-      "temperature": 0.7
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General"
+      ]
     },
     "engine": "openai"
   },
@@ -31,8 +38,8 @@
     "id": "gpt-4-vision-preview",
     "object": "model",
     "name": "OpenAI GPT 4 with Vision (Preview)",
-    "version": "1.0",
-    "description": "OpenAI GPT 4 with Vision model is extremely good in preview",
+    "version": "1.1",
+    "description": "OpenAI GPT-4 Vision model features vision understanding capabilities",
     "format": "api",
     "settings": {
       "vision_model": true,
@@ -40,34 +47,16 @@
     },
     "parameters": {
       "max_tokens": 4096,
-      "temperature": 0.7
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General", "Big Context Length", "Vision"]
-    },
-    "engine": "openai"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://openai.com"
-      }
-    ],
-    "id": "gpt-3.5-turbo-16k-0613",
-    "object": "model",
-    "name": "OpenAI GPT 3.5 Turbo 16k 0613",
-    "version": "1.0",
-    "description": "OpenAI GPT 3.5 Turbo 16k 0613 model is extremely good",
-    "format": "api",
-    "settings": {},
-    "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7
-    },
-    "metadata": {
-      "author": "OpenAI",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General",
+        "Vision"
+      ]
     },
     "engine": "openai"
   },
@@ -80,17 +69,54 @@
     "id": "gpt-3.5-turbo",
     "object": "model",
     "name": "OpenAI GPT 3.5 Turbo",
-    "version": "1.0",
-    "description": "OpenAI GPT 3.5 Turbo model is extremely good",
+    "version": "1.1",
+    "description": "OpenAI GPT 3.5 Turbo model is extremely fast",
     "format": "api",
     "settings": {},
     "parameters": {
       "max_tokens": 4096,
-      "temperature": 0.7
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
     },
     "metadata": {
       "author": "OpenAI",
-      "tags": ["General", "Big Context Length"]
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "openai"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://openai.com"
+      }
+    ],
+    "id": "gpt-4o",
+    "object": "model",
+    "name": "OpenAI GPT 4o",
+    "version": "1.1",
+    "description": "OpenAI GPT 4o is a new flagship model with fast speed and high quality",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "OpenAI",
+      "tags": [
+        "General"
+      ]
     },
     "engine": "openai"
   }

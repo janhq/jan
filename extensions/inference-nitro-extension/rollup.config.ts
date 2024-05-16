@@ -12,21 +12,17 @@ const codeninja7bJson = require('./resources/models/codeninja-1.0-7b/model.json'
 const commandr34bJson = require('./resources/models/command-r-34b/model.json')
 const deepseekCoder13bJson = require('./resources/models/deepseek-coder-1.3b/model.json')
 const deepseekCoder34bJson = require('./resources/models/deepseek-coder-34b/model.json')
-const dolphinPhi2Json = require('./resources/models/dolphin-phi-2/model.json')
 const gemma2bJson = require('./resources/models/gemma-2b/model.json')
 const gemma7bJson = require('./resources/models/gemma-7b/model.json')
-const hermesPro7bJson = require('./resources/models/hermes-pro-7b/model.json')
 const llama2Chat70bJson = require('./resources/models/llama2-chat-70b/model.json')
 const llama2Chat7bJson = require('./resources/models/llama2-chat-7b/model.json')
 const llamacorn1bJson = require('./resources/models/llamacorn-1.1b/model.json')
 const llava13bJson = require('./resources/models/llava-13b/model.json')
 const llava7bJson = require('./resources/models/llava-7b/model.json')
-const miqu70bJson = require('./resources/models/miqu-70b/model.json')
 const mistralIns7bq4Json = require('./resources/models/mistral-ins-7b-q4/model.json')
 const mixtral8x7bInstructJson = require('./resources/models/mixtral-8x7b-instruct/model.json')
 const noromaid7bJson = require('./resources/models/noromaid-7b/model.json')
 const openchat357bJson = require('./resources/models/openchat-3.5-7b/model.json')
-const openhermesNeural7bJson = require('./resources/models/openhermes-neural-7b/model.json')
 const phind34bJson = require('./resources/models/phind-34b/model.json')
 const qwen7bJson = require('./resources/models/qwen-7b/model.json')
 const stableZephyr3bJson = require('./resources/models/stable-zephyr-3b/model.json')
@@ -37,6 +33,7 @@ const vistral7bJson = require('./resources/models/vistral-7b/model.json')
 const wizardcoder13bJson = require('./resources/models/wizardcoder-13b/model.json')
 const yi34bJson = require('./resources/models/yi-34b/model.json')
 const llama3Json = require('./resources/models/llama3-8b-instruct/model.json')
+const llama3Hermes8bJson = require('./resources/models/llama3-hermes-8b/model.json')
 
 export default [
   {
@@ -56,21 +53,17 @@ export default [
           commandr34bJson,
           deepseekCoder13bJson,
           deepseekCoder34bJson,
-          dolphinPhi2Json,
           gemma2bJson,
           gemma7bJson,
-          hermesPro7bJson,
           llama2Chat70bJson,
           llama2Chat7bJson,
           llamacorn1bJson,
           llava13bJson,
           llava7bJson,
-          miqu70bJson,
           mistralIns7bq4Json,
           mixtral8x7bInstructJson,
           noromaid7bJson,
           openchat357bJson,
-          openhermesNeural7bJson,
           phind34bJson,
           qwen7bJson,
           stableZephyr3bJson,
@@ -80,13 +73,14 @@ export default [
           vistral7bJson,
           wizardcoder13bJson,
           yi34bJson,
-          llama3Json
+          llama3Json,
+          llama3Hermes8bJson
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
         INFERENCE_URL: JSON.stringify(
           process.env.INFERENCE_URL ||
-            'http://127.0.0.1:3928/inferences/llamacpp/chat_completion'
+            'http://127.0.0.1:3928/inferences/server/chat_completion'
         ),
         TROUBLESHOOTING_URL: JSON.stringify(
           'https://jan.ai/guides/troubleshooting'

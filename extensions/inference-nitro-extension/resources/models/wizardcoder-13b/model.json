@@ -12,15 +12,16 @@
   "description": "WizardCoder 13B is a Python coding model. This model demonstrate high proficiency in specific domains like coding and mathematics.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 16384,
     "prompt_template": "### Instruction:\n{prompt}\n### Response:",
-    "llama_model_path": "wizardcoder-python-13b-v1.0.Q4_K_M.gguf"
+    "llama_model_path": "wizardcoder-python-13b-v1.0.Q4_K_M.gguf",
+    "ngl": 40
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 16384,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0

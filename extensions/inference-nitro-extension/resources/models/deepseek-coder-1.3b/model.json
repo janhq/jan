@@ -8,19 +8,20 @@
   "id": "deepseek-coder-1.3b",
   "object": "model",
   "name": "Deepseek Coder 1.3B Q8",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Deepseek Coder excelled in project-level code completion with advanced capabilities across multiple programming languages.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 16384,
     "prompt_template": "### Instruction:\n{prompt}\n### Response:",
-    "llama_model_path": "deepseek-coder-1.3b-instruct.Q8_0.gguf"
+    "llama_model_path": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
+    "ngl": 24
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 16384,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0

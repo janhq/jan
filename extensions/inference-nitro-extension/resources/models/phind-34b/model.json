@@ -8,19 +8,20 @@
   "id": "phind-34b",
   "object": "model",
   "name": "Phind 34B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Phind 34B is the best Open-source coding model.",
   "format": "gguf",
   "settings": {
-    "ctx_len": 4096,
+    "ctx_len": 16384,
     "prompt_template": "### System Prompt\n{system_message}\n### User Message\n{prompt}\n### Assistant",
-    "llama_model_path": "phind-codellama-34b-v2.Q4_K_M.gguf"
+    "llama_model_path": "phind-codellama-34b-v2.Q4_K_M.gguf",
+    "ngl": 48
   },
   "parameters": {
     "temperature": 0.7,
     "top_p": 0.95,
     "stream": true,
-    "max_tokens": 4096,
+    "max_tokens": 16384,
     "stop": [],
     "frequency_penalty": 0,
     "presence_penalty": 0

@@ -151,4 +151,8 @@ export function handleAppIPCs() {
     async (_event, heightOffset: number): Promise<void> =>
       windowManager.expandQuickAskWindow(heightOffset)
   )
+
+  ipcMain.handle(NativeRoute.ackDeepLink, async (_event): Promise<void> => {
+    windowManager.ackDeepLink()
+  })
 }

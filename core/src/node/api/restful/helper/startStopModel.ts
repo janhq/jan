@@ -144,12 +144,12 @@ const runNitroAndLoadModel = async (modelId: string, modelSettings: NitroModelSe
 }
 
 const spawnNitroProcess = async (): Promise<void> => {
-  log(`[SERVER]::Debug: Spawning Nitro subprocess...`)
+  log(`[SERVER]::Debug: Spawning cortex subprocess...`)
 
   let binaryFolder = join(
     getJanExtensionsPath(),
     '@janhq',
-    'inference-nitro-extension',
+    'inference-cortex-extension',
     'dist',
     'bin'
   )
@@ -160,7 +160,7 @@ const spawnNitroProcess = async (): Promise<void> => {
   const args: string[] = ['1', LOCAL_HOST, NITRO_DEFAULT_PORT.toString()]
   // Execute the binary
   log(
-    `[SERVER]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
+    `[SERVER]::Debug: Spawn cortex at path: ${executableOptions.executablePath}, and args: ${args}`
   )
   subprocess = spawn(
     executableOptions.executablePath,
@@ -184,12 +184,12 @@ const spawnNitroProcess = async (): Promise<void> => {
   })
 
   subprocess.on('close', (code: any) => {
-    log(`[SERVER]::Debug: Nitro exited with code: ${code}`)
+    log(`[SERVER]::Debug: cortex exited with code: ${code}`)
     subprocess = undefined
   })
 
   tcpPortUsed.waitUntilUsed(NITRO_DEFAULT_PORT, 300, 30000).then(() => {
-    log(`[SERVER]::Debug: Nitro is ready`)
+    log(`[SERVER]::Debug: cortex is ready`)
   })
 }
 
@@ -203,13 +203,13 @@ const executableNitroFile = (): NitroExecutableOptions => {
   let binaryFolder = join(
     getJanExtensionsPath(),
     '@janhq',
-    'inference-nitro-extension',
+    'inference-cortex-extension',
     'dist',
     'bin'
   )
 
   let cudaVisibleDevices = ''
-  let binaryName = 'nitro'
+  let binaryName = 'cortex-cpp'
   /**
    * The binary folder is different for each platform.
    */
@@ -228,12 +228,16 @@ const executableNitroFile = (): NitroExecutableOptions => {
       }
       cudaVisibleDevices = nvidiaInfo['gpu_highest_vram']
     }
-    binaryName = 'nitro.exe'
+    binaryName = 'cortex-cpp.exe'
   } else if (process.platform === 'darwin') {
     /**
      *  For MacOS: mac-universal both Silicon and InteL
      */
-    binaryFolder = join(binaryFolder, 'mac-universal')
+    if(process.arch === 'arm64') {
+    binaryFolder = join(binaryFolder, 'mac-arm64')
+    } else {
+      binaryFolder = join(binaryFolder, 'mac-amd64')
+    }
   } else {
     /**
      *  For Linux: linux-cpu, linux-cuda-11-7, linux-cuda-12-0
@@ -300,7 +304,7 @@ const loadLLMModel = async (settings: NitroModelSettings): Promise<Response> => 
     retryDelay: 500,
   })
     .then((res: any) => {
-      log(`[SERVER]::Debug: Load model success with response ${JSON.stringify(res)}`)
+      log(`[SERVER]::Debug: Load model request with response ${JSON.stringify(res)}`)
       return Promise.resolve(res)
     })
     .catch((err: any) => {
@@ -327,7 +331,7 @@ export const stopModel = async (_modelId: string) => {
       })
     }, 5000)
     const tcpPortUsed = require('tcp-port-used')
-    log(`[SERVER]::Debug: Request to kill Nitro`)
+    log(`[SERVER]::Debug: Request to kill cortex`)
 
     fetch(NITRO_HTTP_KILL_URL, {
       method: 'DELETE',

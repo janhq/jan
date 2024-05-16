@@ -61,6 +61,14 @@
       "include": "scripts/uninstaller.nsh",
       "deleteAppDataOnUninstall": true
     },
+    "protocols": [
+      {
+        "name": "Jan",
+        "schemes": [
+          "jan"
+        ]
+      }
+    ],
     "artifactName": "jan-${os}-${arch}-${version}.${ext}"
   },
   "scripts": {
@@ -96,7 +104,7 @@
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
     "ulidx": "^2.3.0",
-    "@nut-tree/nut-js": "^4.0.0"
+    "@kirillvakalov/nut-tree__nut-js": "4.2.1-2"
   },
   "devDependencies": {
     "@electron/notarize": "^2.1.0",
