@@ -159,4 +159,3 @@ jobs:
         with:
           name: latest-mac-x64
           path: ./electron/dist/latest-mac.yml
-
