@@ -174,9 +174,9 @@ const ChatInput = () => {
         {experimentalFeature && (
           <Tooltip
             trigger={
-              <PaperclipIcon
-                size={18}
-                className="absolute left-3 top-3.5 cursor-pointer text-[hsla(var(--text-secondary))]"
+              <Button
+                theme="icon"
+                className="absolute left-3 top-2.5"
                 onClick={(e) => {
                   if (
                     fileUpload.length > 0 ||
@@ -189,7 +189,12 @@ const ChatInput = () => {
                     setShowAttacmentMenus(!showAttacmentMenus)
                   }
                 }}
-              />
+              >
+                <PaperclipIcon
+                  size={18}
+                  className="text-[hsla(var(--text-secondary))]"
+                />
+              </Button>
             }
             disabled={
               activeThread?.assistants[0].tools &&
@@ -234,7 +239,7 @@ const ChatInput = () => {
                 trigger={
                   <li
                     className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2',
+                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                       activeThread?.assistants[0].model.settings.vision_model
                         ? 'cursor-pointer'
                         : 'cursor-not-allowed opacity-50'
@@ -261,7 +266,7 @@ const ChatInput = () => {
                 trigger={
                   <li
                     className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2',
+                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                       activeThread?.assistants[0].model.settings.text_model ===
                         false
                         ? 'cursor-not-allowed opacity-50'
@@ -310,13 +315,17 @@ const ChatInput = () => {
           <div className="flex items-center gap-x-4">
             {!activeSetting && (
               <div className="flex h-8 items-center">
-                <SettingsIcon
-                  size={18}
-                  className="cursor-pointer text-[hsla(var(--text-secondary))]"
+                <Button
+                  theme="icon"
                   onClick={() => {
                     setActiveSetting(!activeSetting)
                   }}
-                />
+                >
+                  <SettingsIcon
+                    size={18}
+                    className="text-[hsla(var(--text-secondary))]"
+                  />
+                </Button>
               </div>
             )}
             {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
@@ -372,9 +381,8 @@ const ChatInput = () => {
           >
             <div className="flex items-center gap-x-3">
               <ModelDropdown chatInputMode />
-              <Settings2Icon
-                size={16}
-                className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
+              <Button
+                theme="icon"
                 onClick={() => {
                   setActiveTabThreadRightPanel('model')
                   if (matches) {
@@ -383,7 +391,12 @@ const ChatInput = () => {
                     setShowRightPanel(true)
                   }
                 }}
-              />
+              >
+                <Settings2Icon
+                  size={16}
+                  className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
+                />
+              </Button>
               <Badge
                 className="flex cursor-pointer items-center gap-x-1"
                 theme="secondary"
@@ -403,11 +416,12 @@ const ChatInput = () => {
                 <span>Tools</span>
               </Badge>
             </div>
-            <ChevronUpIcon
-              size={16}
-              className="cursor-pointer text-[hsla(var(--text-secondary))]"
-              onClick={() => setActiveSetting(false)}
-            />
+            <Button theme="icon" onClick={() => setActiveSetting(false)}>
+              <ChevronUpIcon
+                size={16}
+                className="cursor-pointer text-[hsla(var(--text-secondary))]"
+              />
+            </Button>
           </div>
         )}
       </div>
