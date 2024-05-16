@@ -240,7 +240,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
             <Input
               placeholder="Search"
               value={searchText}
-              className="rounded-none border-x-0 border-t-0 focus-within:ring-0"
+              className="rounded-none border-x-0 border-t-0 focus-within:ring-0 hover:border-b-[hsla(var(--app-border))]"
               onChange={(e) => setSearchText(e.target.value)}
               suffixIcon={
                 <XIcon
@@ -274,11 +274,11 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
               (x) => x.engine === InferenceEngine.nitro
             ).length !== 0 ? (
               <div className="relative w-full">
-                <div className="mt-2 px-4">
-                  <h6 className="my-3 font-medium text-[hsla(var(--text-secondary))]">
+                <div className="mt-2">
+                  <h6 className="mb-1 mt-3 px-3 font-medium text-[hsla(var(--text-secondary))]">
                     Cortex
                   </h6>
-                  <ul>
+                  <ul className="pb-2">
                     {filteredDownloadedModels
                       ? filteredDownloadedModels
                           .filter((x) => x.engine === InferenceEngine.nitro)
@@ -286,7 +286,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                             return (
                               <li
                                 key={model.id}
-                                className="flex cursor-pointer items-center gap-2 pb-3"
+                                className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
                                 onClick={() => onClickModelItem(model.id)}
                               >
                                 <p className="line-clamp-1" title={model.name}>
@@ -304,11 +304,11 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
               <>
                 {searchFilter !== 'remote' && (
                   <div className="relative w-full">
-                    <div className="mt-2 px-4">
-                      <h6 className="my-3 font-medium text-[hsla(var(--text-secondary))]">
+                    <div className="mt-2">
+                      <h6 className="mb-1 mt-3 px-3 font-medium text-[hsla(var(--text-secondary))]">
                         Cortex
                       </h6>
-                      <ul>
+                      <ul className="pb-2">
                         {featuredModel.map((model) => {
                           const isDownloading = downloadingModels.some(
                             (md) => md.id === model.id
@@ -316,11 +316,11 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                           return (
                             <li
                               key={model.id}
-                              className="flex items-center justify-between gap-4 pb-3"
+                              className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
                             >
                               <div className="flex items-center gap-2">
                                 <p
-                                  className="line-clamp-1 text-[hsla(var(--text-tertiary))]"
+                                  className="line-clamp-1 text-[hsla(var(--text-secondary))]"
                                   title={model.name}
                                 >
                                   {model.name}
@@ -358,16 +358,16 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                   className="relative w-full border-t border-[hsla(var(--app-border))] first:border-t-0"
                   key={i}
                 >
-                  <div className="mt-2 px-4">
-                    <div className="flex items-center justify-between">
-                      <h6 className="my-3 font-medium capitalize text-[hsla(var(--text-secondary))]">
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between px-3">
+                      <h6 className="mb-1 mt-3 font-medium capitalize text-[hsla(var(--text-secondary))]">
                         {engine}
                       </h6>
                       <div className="-mr-2">
                         <SetupRemoteModel engine={engine} />
                       </div>
                     </div>
-                    <ul>
+                    <ul className="pb-2">
                       {filteredDownloadedModels
                         .filter((x) => x.engine === engine)
                         .map((model) => {
@@ -375,7 +375,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                             <li
                               key={model.id}
                               className={twMerge(
-                                'cursor-pointer pb-3',
+                                'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey &&
                                   'cursor-default text-[hsla(var(--text-tertiary))]'
                               )}
