@@ -44,18 +44,43 @@ const MyModelList = ({ model }: Props) => {
     }
   }
 
+  const engineHasLogo = [
+    InferenceEngine.anthropic,
+    InferenceEngine.cohere,
+    InferenceEngine.martian,
+    InferenceEngine.mistral,
+    InferenceEngine.openai,
+  ]
+
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h6
-          className={twMerge(
-            'line-clamp-1 font-medium',
-            model.engine !== InferenceEngine.nitro &&
-              'text-[hsla(var(--text-secondary))]'
-          )}
-        >
-          {model.name}
-        </h6>
+        <div className="flex gap-x-2">
+          {engineHasLogo.map((x) => {
+            if (x === model.engine) {
+              return (
+                <div className="relative overflow-hidden rounded-full" key={x}>
+                  <img
+                    src={`images/ModelProvider/${x}.svg`}
+                    alt="Model Provider"
+                    width={24}
+                    height={24}
+                    className="object-cover"
+                  />
+                </div>
+              )
+            }
+          })}
+          <h6
+            className={twMerge(
+              'line-clamp-1 font-medium',
+              model.engine !== InferenceEngine.nitro &&
+                'text-[hsla(var(--text-secondary))]'
+            )}
+          >
+            {model.name}
+          </h6>
+        </div>
         {model.engine === InferenceEngine.nitro && (
           <div className="flex gap-x-8">
             <p

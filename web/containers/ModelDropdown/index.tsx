@@ -37,6 +37,14 @@ type Props = {
   strictedThread?: boolean
 }
 
+const engineHasLogo = [
+  InferenceEngine.anthropic,
+  InferenceEngine.cohere,
+  InferenceEngine.martian,
+  InferenceEngine.mistral,
+  InferenceEngine.openai,
+]
+
 const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
   const { downloadModel } = useDownloadModel()
   const [searchFilter, setSearchFilter] = useState('all')
@@ -383,9 +391,29 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                                 apiKey && onClickModelItem(model.id)
                               }
                             >
-                              <p className="line-clamp-1" title={model.name}>
-                                {model.name}
-                              </p>
+                              <div className="flex flex-shrink-0 gap-x-2">
+                                {engineHasLogo.map((x) => {
+                                  if (x === model.engine) {
+                                    return (
+                                      <div
+                                        className="relative flex-shrink-0 overflow-hidden rounded-full"
+                                        key={x}
+                                      >
+                                        <img
+                                          src={`images/ModelProvider/${x}.svg`}
+                                          alt="Model Provider"
+                                          width={20}
+                                          height={20}
+                                          className="object-cover"
+                                        />
+                                      </div>
+                                    )
+                                  }
+                                })}
+                                <p className="line-clamp-1" title={model.name}>
+                                  {model.name}
+                                </p>
+                              </div>
                             </li>
                           )
                         })}
