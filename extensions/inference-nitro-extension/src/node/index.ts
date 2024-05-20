@@ -50,7 +50,8 @@ const SUPPORTED_MODEL_FORMAT = '.gguf'
 let subprocess: ChildProcessWithoutNullStreams | undefined = undefined
 
 // The current model settings
-let currentSettings: ModelSettingParams & { model?: string } | undefined = undefined
+let currentSettings: (ModelSettingParams & { model?: string }) | undefined =
+  undefined
 
 /**
  * Stops a Nitro subprocess.
@@ -153,7 +154,10 @@ async function loadModel(
  * 3. Validate model status
  * @returns
  */
-async function runNitroAndLoadModel(modelId: string, systemInfo?: SystemInformation) {
+async function runNitroAndLoadModel(
+  modelId: string,
+  systemInfo?: SystemInformation
+) {
   // Gather system information for CPU physical cores and memory
   return killSubprocess()
     .then(() =>
@@ -320,19 +324,23 @@ async function killSubprocess(): Promise<void> {
       })
   }
 
-  if (subprocess?.pid) {
+  if (subprocess?.pid && process.platform !== 'darwin') {
     log(`[CORTEX]::Debug: Killing PID ${subprocess.pid}`)
     const pid = subprocess.pid
     return new Promise((resolve, reject) => {
       terminate(pid, function (err) {
         if (err) {
+          log('[CORTEX]::Failed to kill PID - sending request to kill')
           killRequest().then(resolve).catch(reject)
         } else {
           tcpPortUsed
             .waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
-            .then(() => resolve())
             .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
+            .then(() => resolve())
             .catch(() => {
+              log(
+                '[CORTEX]::Failed to kill PID (Port check timeout) - sending request to kill'
+              )
               killRequest().then(resolve).catch(reject)
             })
         }
@@ -358,9 +366,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
     log(
       `[CORTEX]::Debug: Spawn cortex at path: ${executableOptions.executablePath}, and args: ${args}`
     )
-    log(
-      path.parse(executableOptions.executablePath).dir
-    )
+    log(path.parse(executableOptions.executablePath).dir)
     subprocess = spawn(
       executableOptions.executablePath,
       ['1', LOCAL_HOST, PORT.toString()],
