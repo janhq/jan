@@ -10,6 +10,7 @@ import { UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import GenerateResponse from '@/containers/Loader/GenerateResponse'
 import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
@@ -145,81 +146,84 @@ const ThreadCenterPanel = () => {
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
   return (
-    <div
-      className="relative flex h-full w-full flex-col bg-[hsla(var(--app-bg))] outline-none"
-      {...getRootProps()}
-    >
-      {dragOver && (
-        <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">
-          <div
-            className={twMerge(
-              'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[hsla(var(--primary-bg))]',
-              isDragReject && 'border-[hsla(var(--destructive-bg))]'
-            )}
-          >
-            <div className="mx-auto w-1/2 text-center">
-              <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
-                <UploadCloudIcon
-                  size={24}
-                  className="text-[hsla(var(--primary-bg))]"
-                />
-              </div>
-              <div className="mt-4 text-[hsla(var(--primary-bg))]">
-                <h6 className="font-bold">
-                  {isDragReject
-                    ? `Currently, we only support 1 attachment at the same time with ${
-                        activeThread?.assistants[0].model.settings.vision_model
-                          ? 'PDF, JPEG, JPG, PNG'
-                          : 'PDF'
-                      } format`
-                    : 'Drop file here'}
-                </h6>
-                {!isDragReject && (
-                  <p className="mt-2">
-                    {activeThread?.assistants[0].model.settings.vision_model
-                      ? 'PDF, JPEG, JPG, PNG'
-                      : 'PDF'}
-                  </p>
-                )}
+    <CenterPanelContainer>
+      <div
+        className="relative flex h-full w-full flex-col outline-none"
+        {...getRootProps()}
+      >
+        {dragOver && (
+          <div className="absolute z-50 mx-auto h-full w-full p-8 backdrop-blur-lg">
+            <div
+              className={twMerge(
+                'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[hsla(var(--primary-bg))]',
+                isDragReject && 'border-[hsla(var(--destructive-bg))]'
+              )}
+            >
+              <div className="mx-auto w-1/2 text-center">
+                <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
+                  <UploadCloudIcon
+                    size={24}
+                    className="text-[hsla(var(--primary-bg))]"
+                  />
+                </div>
+                <div className="mt-4 text-[hsla(var(--primary-bg))]">
+                  <h6 className="font-bold">
+                    {isDragReject
+                      ? `Currently, we only support 1 attachment at the same time with ${
+                          activeThread?.assistants[0].model.settings
+                            .vision_model
+                            ? 'PDF, JPEG, JPG, PNG'
+                            : 'PDF'
+                        } format`
+                      : 'Drop file here'}
+                  </h6>
+                  {!isDragReject && (
+                    <p className="mt-2">
+                      {activeThread?.assistants[0].model.settings.vision_model
+                        ? 'PDF, JPEG, JPG, PNG'
+                        : 'PDF'}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-      <div className="flex h-full w-full flex-col justify-between">
-        {activeThread ? (
-          <div className="flex h-full w-full overflow-x-hidden">
-            <ChatBody />
-          </div>
-        ) : (
-          <RequestDownloadModel />
         )}
+        <div className="flex h-full w-full flex-col justify-between">
+          {activeThread ? (
+            <div className="flex h-full w-full overflow-x-hidden">
+              <ChatBody />
+            </div>
+          ) : (
+            <RequestDownloadModel />
+          )}
 
-        {!engineParamsUpdate && <ModelStart />}
+          {!engineParamsUpdate && <ModelStart />}
 
-        {reloadModel && (
-          <Fragment>
-            <ModelReload />
+          {reloadModel && (
+            <Fragment>
+              <ModelReload />
+              <div className="mb-2 text-center">
+                <span className="text-[hsla(var(--text-secondary)]">
+                  Model is reloading to apply new changes.
+                </span>
+              </div>
+            </Fragment>
+          )}
+
+          {queuedMessage && !reloadModel && (
             <div className="mb-2 text-center">
               <span className="text-[hsla(var(--text-secondary)]">
-                Model is reloading to apply new changes.
+                Message will be sent once the model has started
               </span>
             </div>
-          </Fragment>
-        )}
+          )}
 
-        {queuedMessage && !reloadModel && (
-          <div className="mb-2 text-center">
-            <span className="text-[hsla(var(--text-secondary)]">
-              Message will be sent once the model has started
-            </span>
-          </div>
-        )}
-
-        {activeModel && isGeneratingResponse && <GenerateResponse />}
-        <ChatInput />
+          {activeModel && isGeneratingResponse && <GenerateResponse />}
+          <ChatInput />
+        </div>
       </div>
-    </div>
+    </CenterPanelContainer>
   )
 }
 

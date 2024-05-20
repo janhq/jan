@@ -47,7 +47,7 @@ const TopPanel = () => {
   return (
     <div
       className={twMerge(
-        'fixed z-50 flex h-9 w-full items-center border-y border-[hsla(var(--top-panel-border))] bg-[hsla(var(--top-panel-bg))] px-4 backdrop-blur-md',
+        'fixed z-50 flex h-9 w-full items-center border-y border-[hsla(var(--top-panel-border))] bg-[hsla(var(--top-panel-bg))] px-4 backdrop-blur-lg',
         isMac && 'border-t-0 pl-20'
       )}
     >

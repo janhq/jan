@@ -52,14 +52,14 @@ const BaseLayout = () => {
   return (
     <Fragment>
       <TopPanel />
-      <div className="relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen overflow-hidden">
+      <div className="relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen">
         <RibbonPanel />
-        <div className="relative flex w-full bg-[hsla(var(--app-bg))]">
+        <div className="relative flex w-full bg-[hsla(var(--app-bg-transparent))] pr-2">
           <div className="w-full">
             <m.div
               key={mainViewState}
               initial={{ opacity: 0, y: -8 }}
-              className="h-full"
+              className="h-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] shadow"
               animate={{
                 opacity: 1,
                 y: 0,

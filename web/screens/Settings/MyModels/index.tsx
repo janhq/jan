@@ -11,6 +11,7 @@ import { UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import ModelSearch from '@/containers/ModelSearch'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
@@ -59,7 +60,7 @@ const MyModels = () => {
   })
 
   return (
-    <div {...getRootProps()} className="w-full">
+    <div {...getRootProps()} className="h-full w-full">
       <ScrollArea className="h-full w-full">
         {isDragActive && (
           <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">

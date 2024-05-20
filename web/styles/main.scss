@@ -15,6 +15,7 @@
 :root {
   // App global
   --app-bg: 0, 0%, 100%, 1;
+  --app-bg-transparent: 0, 0%, 100%, 0.5;
   --app-border: 0, 0%, 0%, 0.1;
 
   --disabled-bg: 0, 0%, 0%, 0.05;
@@ -58,16 +59,16 @@
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 100%, 1;
-  --top-panel-border: 0, 0%, 0%, 0.1;
+  --top-panel-bg: 0, 0%, 100%, 0.5;
+  --top-panel-border: 0, 0%, 0%, 0;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 100%, 1;
-  --bottom-panel-border: 0, 0%, 0%, 0.1;
+  --bottom-panel-bg: 0, 0%, 100%, 0.5;
+  --bottom-panel-border: 0, 0%, 0%, 0;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 100%, 1;
-  --ribbon-panel-border: 0, 0%, 0%, 0.1;
+  --ribbon-panel-bg: 0, 0%, 100%, 0.5;
+  --ribbon-panel-border: 0, 0%, 0%, 0;
   --ribbon-panel-icon: 0, 0%, 0%, 0.5;
   --ribbon-panel-icon-hover: 0, 0%, 0%, 0.03;
   --ribbon-panel-icon-active: 0, 0%, 0%, 1;
@@ -82,6 +83,9 @@
   --left-panel-icon-active-bg: 0, 0%, 0%, 0.05;
 
   --dropdown-menu-hover-bg: 0, 0%, 0%, 0.03;
+
+  // center panel
+  --center-panel-bg: 0, 0%, 100%, 1;
 
   // right Panel
   --right-panel-bg: 0, 0%, 100%, 1;
@@ -151,6 +155,7 @@
 html.dark {
   // App global
   --app-bg: 0, 0%, 13%, 1;
+  --app-bg-transparent: 0, 0%, 13%, 0.5;
   --app-border: 0, 0%, 28%, 1;
 
   --disabled-bg: 0, 0%, 0%, 0.2;
@@ -194,20 +199,20 @@ html.dark {
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 13%, 1;
-  --top-panel-border: 0, 0%, 28%, 1;
+  --top-panel-bg: 0, 0%, 13%, 0.5;
+  --top-panel-border: 0, 0%, 28%, 0;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 13%, 1;
-  --bottom-panel-border: 0, 0%, 28%, 1;
+  --bottom-panel-bg: 0, 0%, 13%, 0.5;
+  --bottom-panel-border: 0, 0%, 28%, 0;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 13%, 1;
-  --ribbon-panel-border: 0, 0%, 28%, 1;
+  --ribbon-panel-bg: 0, 0%, 13%, 0.5;
+  --ribbon-panel-border: 0, 0%, 28%, 0;
   --ribbon-panel-icon: 0, 0%, 68%, 1;
   --ribbon-panel-icon-hover: 0, 0%, 28%, 0.2;
   --ribbon-panel-icon-active: 0, 0%, 100%, 1;
-  --ribbon-panel-icon-active-bg: 0, 0%, 28%, 1;
+  --ribbon-panel-icon-active-bg: 0, 0%, 100%, 0.1;
 
   // Left Panel
   --left-panel-bg: 0, 0%, 13%, 1;
@@ -222,6 +227,9 @@ html.dark {
   // right Panel
   --right-panel-bg: 0, 0%, 13%, 1;
   --right-panel-border: 0, 0%, 28%, 1;
+
+  // center panel
+  --center-panel-bg: 0, 0%, 13%, 1;
 
   // Tooltip
   --tooltip-bg: 0, 0%, 100%, 1;

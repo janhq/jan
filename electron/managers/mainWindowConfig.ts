@@ -5,5 +5,7 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   minWidth: DEFAULT_MIN_WIDTH,
   show: true,
   titleBarStyle: 'hiddenInset',
-  vibrancy: 'sidebar',
+  transparent: true,
+  vibrancy: 'fullscreen-ui',
+  visualEffectState: 'active',
 }
