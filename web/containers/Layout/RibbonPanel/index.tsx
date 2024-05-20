@@ -52,7 +52,7 @@ export default function RibbonPanel() {
   ]
 
   return (
-    <div className="flex w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2">
+    <div className="relative flex h-[calc(100%+36px)] w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2">
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {
         const isActive = mainViewState === menu.state
         return (

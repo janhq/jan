@@ -231,7 +231,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
         className={twMerge(
           'w=80 absolute right-0 z-20 mt-2 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
           open ? 'flex' : 'hidden',
-          chatInputMode && 'bottom-8 left-0 w-80'
+          chatInputMode && 'bottom-8 left-0 w-72'
         )}
         ref={setDropdownOptions}
       >

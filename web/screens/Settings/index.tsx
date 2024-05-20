@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 
 import { useSetAtom } from 'jotai'
 
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
+
 import SettingDetail from '@/screens/Settings/SettingDetail'
 import SettingLeftPanel from '@/screens/Settings/SettingLeftPanel'
 
@@ -35,7 +37,9 @@ const SettingsScreen = () => {
       className="flex h-full bg-[hsla(var(--app-bg))]"
     >
       <SettingLeftPanel />
-      <SettingDetail />
+      <CenterPanelContainer>
+        <SettingDetail />
+      </CenterPanelContainer>
     </div>
   )
 }

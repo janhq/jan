@@ -77,11 +77,11 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed bottom-9 left-12 z-50 flex w-[calc(100%-48px)] flex-shrink-0 flex-col border-t border-[hsla(var(--bottom-panel-border))] bg-[hsla(var(--app-bg))]',
+            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-10px)] flex-shrink-0 flex-col rounded-b-lg border-t border-[hsla(var(--app-border))]  bg-[hsla(var(--app-bg))]',
             showFullScreen && 'h-[calc(100%-63px)]'
           )}
         >
-          <div className="flex h-8 flex-shrink-0 items-center justify-between border-b border-[hsla(var(--bottom-panel-border))] px-4">
+          <div className="flex h-8 flex-shrink-0 items-center justify-between border-b border-[hsla(var(--app-border))] px-4">
             <h6 className="font-medium text-[hsla(var(--text-primary))]">
               Running Models
             </h6>
@@ -113,15 +113,15 @@ const SystemMonitor = () => {
           <div className="flex h-full gap-4">
             <TableActiveModel />
 
-            <div className="w-1/2 border-l border-[hsla(var(--bottom-panel-border))] p-4">
-              <div className="mb-4 border-b border-[hsla(var(--bottom-panel-border))] pb-4">
+            <div className="w-1/2 border-l border-[hsla(var(--app-border))] p-4">
+              <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4">
                 <h6 className="font-bold">CPU</h6>
                 <div className="flex items-center gap-x-4">
                   <Progress value={cpuUsage} className="w-full" size="small" />
                   <span className="flex-shrink-0 ">{cpuUsage}%</span>
                 </div>
               </div>
-              <div className="mb-4 border-b border-[hsla(var(--bottom-panel-border))] pb-4">
+              <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4">
                 <div className="flex items-center justify-between gap-2">
                   <h6 className="font-bold">Memory</h6>
                   <span className="text-sm ">
@@ -140,7 +140,7 @@ const SystemMonitor = () => {
               </div>
 
               {gpus.length > 0 && (
-                <div className="mb-4 border-b border-[hsla(var(--bottom-panel-border))] pb-4 last:border-none">
+                <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4 last:border-none">
                   {gpus.map((gpu, index) => (
                     <div key={index} className="mt-4 flex flex-col gap-x-2">
                       <div className="flex w-full items-start justify-between">

@@ -7,6 +7,7 @@ import { ScrollArea, Button, Select } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { UploadIcon } from 'lucide-react'
 
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import ModelSearch from '@/containers/ModelSearch'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
@@ -66,42 +67,44 @@ const HubScreen = () => {
   }, [])
 
   return (
-    <ScrollArea data-testid="hub-container-test-id" className="h-full w-full">
-      <div className="relative h-40 p-4 sm:h-auto">
-        <Image
-          src="./images/hub-banner.png"
-          alt="Hub Banner"
-          width={800}
-          height={800}
-          className="h-full w-full rounded-lg object-cover"
-        />
-        <div className="absolute left-1/2 top-1/2 mx-auto w-4/5 -translate-x-1/2 -translate-y-1/2 sm:w-1/2">
-          <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
-            <div className="w-full">
-              <ModelSearch onSearchLocal={onSearchUpdate} />
-            </div>
-            <div className="flex-shrink-0">
-              <Button onClick={onImportModelClick}>
-                <UploadIcon size={16} className="mr-2" />
-                <span>Import Model</span>
-              </Button>
+    <CenterPanelContainer>
+      <ScrollArea data-testid="hub-container-test-id" className="h-full w-full">
+        <div className="relative h-40 p-4 sm:h-auto">
+          <Image
+            src="./images/hub-banner.png"
+            alt="Hub Banner"
+            width={800}
+            height={800}
+            className="h-full w-full rounded-lg object-cover"
+          />
+          <div className="absolute left-1/2 top-1/2 mx-auto w-4/5 -translate-x-1/2 -translate-y-1/2 sm:w-1/2">
+            <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
+              <div className="w-full">
+                <ModelSearch onSearchLocal={onSearchUpdate} />
+              </div>
+              <div className="flex-shrink-0">
+                <Button onClick={onImportModelClick}>
+                  <UploadIcon size={16} className="mr-2" />
+                  <span>Import Model</span>
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      <div className="p-4 py-0 sm:px-16">
-        <div className="mb-4 flex w-full justify-end">
-          <Select
-            value={sortSelected}
-            onValueChange={(value) => {
-              setSortSelected(value)
-            }}
-            options={sortMenus}
-          />
+        <div className="p-4 py-0 sm:px-16">
+          <div className="mb-4 flex w-full justify-end">
+            <Select
+              value={sortSelected}
+              onValueChange={(value) => {
+                setSortSelected(value)
+              }}
+              options={sortMenus}
+            />
+          </div>
+          <ModelList models={filteredModels} />
         </div>
-        <ModelList models={filteredModels} />
-      </div>
-    </ScrollArea>
+      </ScrollArea>
+    </CenterPanelContainer>
   )
 }
 
