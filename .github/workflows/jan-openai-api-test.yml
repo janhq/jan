@@ -5,7 +5,7 @@ on:
       endpoints:
         description: 'comma-separated list (see available at endpoints_mapping.json e.g. GET /users,POST /transform)'
         required: false
-        default: All
+        default: all
         type: string
 
   push:
