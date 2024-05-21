@@ -8,4 +8,5 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   transparent: true,
   vibrancy: 'fullscreen-ui',
   visualEffectState: 'active',
+  backgroundMaterial: 'acrylic',
 }
