@@ -1,0 +1,38 @@
+{
+    "sources": [
+      {
+        "url": "",
+        "filename": ""
+      }
+    ],
+    "id": "phi3-small",
+    "object": "model",
+    "name": "Phi-3 Mini",
+    "version": "1.1",
+    "description": "Phi-3 Mini is Microsoft's newest, compact model designed for mobile use.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 128000,
+      "prompt_template": "<|user|>\n{prompt}<|end|>\n<|assistant|>\n",
+      "llama_model_path": "",
+      "ngl": 32
+    },
+    "parameters": {
+      "max_tokens": 128000,
+      "stop": ["<|end|>"],
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Microsoft",
+      "tags": [
+        "7B",
+        "Finetuned"
+      ],
+      "size": 123
+    },
+    "engine": "nitro"
+  }
