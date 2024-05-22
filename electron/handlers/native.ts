@@ -1,6 +1,7 @@
 import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { windowManager } from '../managers/window'
+import { getBounds, saveBounds } from '../utils/setup'
 import {
   ModuleManager,
   getJanDataFolderPath,
@@ -28,6 +29,24 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(NativeRoute.setNativeThemeLight, () => {
     nativeTheme.themeSource = 'light'
+  })
+
+  ipcMain.handle(NativeRoute.setCloseApp, () => {
+    windowManager.mainWindow?.hide()
+  })
+
+  ipcMain.handle(NativeRoute.setMinimizeApp, () => {
+    windowManager.mainWindow?.minimize()
+  })
+
+  ipcMain.handle(NativeRoute.setMaximizeApp, async () => {
+    if (windowManager.mainWindow?.isMaximized()) {
+      const bounds = await getBounds()
+      windowManager.mainWindow?.setSize(bounds.width, bounds.height)
+      windowManager.mainWindow?.setPosition(Number(bounds.x), Number(bounds.y))
+    } else {
+      windowManager.mainWindow?.maximize()
+    }
   })
 
   /**

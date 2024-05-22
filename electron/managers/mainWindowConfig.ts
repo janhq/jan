@@ -4,9 +4,10 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   skipTaskbar: false,
   minWidth: DEFAULT_MIN_WIDTH,
   show: true,
-  titleBarStyle: 'hiddenInset',
+  titleBarStyle: 'hidden',
   transparent: true,
   vibrancy: 'fullscreen-ui',
   visualEffectState: 'active',
   backgroundMaterial: 'acrylic',
+  autoHideMenuBar: true,
 }

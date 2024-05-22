@@ -14,6 +14,10 @@ export enum NativeRoute {
   setNativeThemeLight = 'setNativeThemeLight',
   setNativeThemeDark = 'setNativeThemeDark',
 
+  setMinimizeApp = 'setMinimizeApp',
+  setCloseApp = 'setCloseApp',
+  setMaximizeApp = 'setMaximizeApp',
+
   hideQuickAskWindow = 'hideQuickAskWindow',
   sendQuickAskInput = 'sendQuickAskInput',
 
