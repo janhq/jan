@@ -50,14 +50,14 @@ export class Retrieval {
     })
   }
 
-  public updateEmbeddingEngine(engine: string): void {
+  public updateEmbeddingEngine(model: string, engine: string): void {
     // Engine settings are not compatible with the current embedding model params
     // Switch case manually for now
     if (engine === 'nitro') {
       this.embeddingModel = new OpenAIEmbeddings(
-        { openAIApiKey: 'nitro-embedding' },
+        { openAIApiKey: 'nitro-embedding', model },
         // TODO: Raw settings
-        { basePath: 'http://127.0.0.1:3928/v1' }
+        { basePath: 'http://127.0.0.1:3928/v1' },
       )
     } else {
       // Fallback to OpenAI Settings

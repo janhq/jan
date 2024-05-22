@@ -10,12 +10,13 @@ export function toolRetrievalUpdateTextSplitter(
 }
 export async function toolRetrievalIngestNewDocument(
   file: string,
-  engine: string,
-  useTimeWeighted: boolean
+  useTimeWeighted: boolean,
+  model: string,
+  engine: string
 ) {
   const filePath = path.join(getJanDataFolderPath(), normalizeFilePath(file))
   const threadPath = path.dirname(filePath.replace('files', ''))
-  retrieval.updateEmbeddingEngine(engine)
+  retrieval.updateEmbeddingEngine(model, engine)
   return retrieval
     .ingestAgentKnowledge(filePath, `${threadPath}/memory`, useTimeWeighted)
     .catch((err) => {

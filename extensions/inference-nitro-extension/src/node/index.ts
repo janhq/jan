@@ -34,9 +34,9 @@ const LOCAL_HOST = '127.0.0.1'
 // The URL for the Nitro subprocess
 const NITRO_HTTP_SERVER_URL = `http://${LOCAL_HOST}:${PORT}`
 // The URL for the Nitro subprocess to load a model
-const NITRO_HTTP_LOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/loadmodel`
+const NITRO_HTTP_LOAD_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/server/loadmodel`
 // The URL for the Nitro subprocess to validate a model
-const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/llamacpp/modelstatus`
+const NITRO_HTTP_VALIDATE_MODEL_URL = `${NITRO_HTTP_SERVER_URL}/inferences/server/modelstatus`
 // The URL for the Nitro subprocess to kill itself
 const NITRO_HTTP_KILL_URL = `${NITRO_HTTP_SERVER_URL}/processmanager/destroy`
 
@@ -50,7 +50,8 @@ const SUPPORTED_MODEL_FORMAT = '.gguf'
 let subprocess: ChildProcessWithoutNullStreams | undefined = undefined
 
 // The current model settings
-let currentSettings: ModelSettingParams | undefined = undefined
+let currentSettings: (ModelSettingParams & { model?: string }) | undefined =
+  undefined
 
 /**
  * Stops a Nitro subprocess.
@@ -77,7 +78,7 @@ async function loadModel(
   }
 
   if (params.model.engine !== InferenceEngine.nitro) {
-    return Promise.reject('Not a nitro model')
+    return Promise.reject('Not a cortex model')
   } else {
     const nitroResourceProbe = await getSystemResourceInfo()
     // Convert settings.prompt_template to system_prompt, user_prompt, ai_prompt
@@ -135,6 +136,7 @@ async function loadModel(
       // model.settings can override the default settings
       ...params.model.settings,
       llama_model_path,
+      model: params.model.id,
       // This is critical and requires real CPU physical core count (or performance core)
       ...(params.model.settings.mmproj && {
         mmproj: path.isAbsolute(params.model.settings.mmproj)
@@ -142,7 +144,7 @@ async function loadModel(
           : path.join(modelFolder, params.model.settings.mmproj),
       }),
     }
-    return runNitroAndLoadModel(systemInfo)
+    return runNitroAndLoadModel(params.model.id, systemInfo)
   }
 }
 
@@ -152,7 +154,10 @@ async function loadModel(
  * 3. Validate model status
  * @returns
  */
-async function runNitroAndLoadModel(systemInfo?: SystemInformation) {
+async function runNitroAndLoadModel(
+  modelId: string,
+  systemInfo?: SystemInformation
+) {
   // Gather system information for CPU physical cores and memory
   return killSubprocess()
     .then(() =>
@@ -160,10 +165,10 @@ async function runNitroAndLoadModel(systemInfo?: SystemInformation) {
     )
     .then(() => spawnNitroProcess(systemInfo))
     .then(() => loadLLMModel(currentSettings))
-    .then(validateModelStatus)
+    .then(() => validateModelStatus(modelId))
     .catch((err) => {
       // TODO: Broadcast error so app could display proper error message
-      log(`[NITRO]::Error: ${err}`)
+      log(`[CORTEX]::Error: ${err}`)
       return { error: err }
     })
 }
@@ -222,7 +227,7 @@ function loadLLMModel(settings: any): Promise<Response> {
   if (!settings?.ngl) {
     settings.ngl = 100
   }
-  log(`[NITRO]::Debug: Loading model with params ${JSON.stringify(settings)}`)
+  log(`[CORTEX]::Debug: Loading model with params ${JSON.stringify(settings)}`)
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: 'POST',
     headers: {
@@ -234,14 +239,14 @@ function loadLLMModel(settings: any): Promise<Response> {
   })
     .then((res) => {
       log(
-        `[NITRO]::Debug: Load model success with response ${JSON.stringify(
+        `[CORTEX]::Debug: Load model success with response ${JSON.stringify(
           res
         )}`
       )
       return Promise.resolve(res)
     })
     .catch((err) => {
-      log(`[NITRO]::Error: Load model failed with error ${err}`)
+      log(`[CORTEX]::Error: Load model failed with error ${err}`)
       return Promise.reject(err)
     })
 }
@@ -252,11 +257,12 @@ function loadLLMModel(settings: any): Promise<Response> {
  * If the model is loaded successfully, the object is empty.
  * If the model is not loaded successfully, the object contains an error message.
  */
-async function validateModelStatus(): Promise<void> {
+async function validateModelStatus(modelId: string): Promise<void> {
   // Send a GET request to the validation URL.
   // Retry the request up to 3 times if it fails, with a delay of 500 milliseconds between retries.
   return fetchRetry(NITRO_HTTP_VALIDATE_MODEL_URL, {
-    method: 'GET',
+    method: 'POST',
+    body: JSON.stringify({ model: modelId }),
     headers: {
       'Content-Type': 'application/json',
     },
@@ -264,7 +270,7 @@ async function validateModelStatus(): Promise<void> {
     retryDelay: 300,
   }).then(async (res: Response) => {
     log(
-      `[NITRO]::Debug: Validate model state with response ${JSON.stringify(
+      `[CORTEX]::Debug: Validate model state with response ${JSON.stringify(
         res.status
       )}`
     )
@@ -275,7 +281,7 @@ async function validateModelStatus(): Promise<void> {
       // Otherwise, return an object with an error message.
       if (body.model_loaded) {
         log(
-          `[NITRO]::Debug: Validate model state success with response ${JSON.stringify(
+          `[CORTEX]::Debug: Validate model state success with response ${JSON.stringify(
             body
           )}`
         )
@@ -283,7 +289,7 @@ async function validateModelStatus(): Promise<void> {
       }
     }
     log(
-      `[NITRO]::Debug: Validate model state failed with response ${JSON.stringify(
+      `[CORTEX]::Debug: Validate model state failed with response ${JSON.stringify(
         res.statusText
       )}`
     )
@@ -298,7 +304,7 @@ async function validateModelStatus(): Promise<void> {
 async function killSubprocess(): Promise<void> {
   const controller = new AbortController()
   setTimeout(() => controller.abort(), 5000)
-  log(`[NITRO]::Debug: Request to kill Nitro`)
+  log(`[CORTEX]::Debug: Request to kill cortex`)
 
   const killRequest = () => {
     return fetch(NITRO_HTTP_KILL_URL, {
@@ -309,28 +315,32 @@ async function killSubprocess(): Promise<void> {
       .then(() =>
         tcpPortUsed.waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
       )
-      .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
+      .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
       .catch((err) => {
         log(
-          `[NITRO]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+          `[CORTEX]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
         )
         throw 'PORT_NOT_AVAILABLE'
       })
   }
 
-  if (subprocess?.pid) {
-    log(`[NITRO]::Debug: Killing PID ${subprocess.pid}`)
+  if (subprocess?.pid && process.platform !== 'darwin') {
+    log(`[CORTEX]::Debug: Killing PID ${subprocess.pid}`)
     const pid = subprocess.pid
     return new Promise((resolve, reject) => {
       terminate(pid, function (err) {
         if (err) {
+          log('[CORTEX]::Failed to kill PID - sending request to kill')
           killRequest().then(resolve).catch(reject)
         } else {
           tcpPortUsed
             .waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
+            .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
             .then(() => resolve())
-            .then(() => log(`[NITRO]::Debug: Nitro process is terminated`))
             .catch(() => {
+              log(
+                '[CORTEX]::Failed to kill PID (Port check timeout) - sending request to kill'
+              )
               killRequest().then(resolve).catch(reject)
             })
         }
@@ -346,22 +356,22 @@ async function killSubprocess(): Promise<void> {
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
 function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
-  log(`[NITRO]::Debug: Spawning Nitro subprocess...`)
+  log(`[CORTEX]::Debug: Spawning cortex subprocess...`)
 
   return new Promise<void>(async (resolve, reject) => {
-    let binaryFolder = path.join(__dirname, '..', 'bin') // Current directory by default
     let executableOptions = executableNitroFile(systemInfo?.gpuSetting)
 
     const args: string[] = ['1', LOCAL_HOST, PORT.toString()]
     // Execute the binary
     log(
-      `[NITRO]::Debug: Spawn nitro at path: ${executableOptions.executablePath}, and args: ${args}`
+      `[CORTEX]::Debug: Spawn cortex at path: ${executableOptions.executablePath}, and args: ${args}`
     )
+    log(path.parse(executableOptions.executablePath).dir)
     subprocess = spawn(
       executableOptions.executablePath,
       ['1', LOCAL_HOST, PORT.toString()],
       {
-        cwd: binaryFolder,
+        cwd: path.join(path.parse(executableOptions.executablePath).dir),
         env: {
           ...process.env,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
@@ -375,15 +385,15 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
 
     // Handle subprocess output
     subprocess.stdout.on('data', (data: any) => {
-      log(`[NITRO]::Debug: ${data}`)
+      log(`[CORTEX]::Debug: ${data}`)
     })
 
     subprocess.stderr.on('data', (data: any) => {
-      log(`[NITRO]::Error: ${data}`)
+      log(`[CORTEX]::Error: ${data}`)
     })
 
     subprocess.on('close', (code: any) => {
-      log(`[NITRO]::Debug: Nitro exited with code: ${code}`)
+      log(`[CORTEX]::Debug: cortex exited with code: ${code}`)
       subprocess = undefined
       reject(`child process exited with code ${code}`)
     })
@@ -391,7 +401,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
     tcpPortUsed
       .waitUntilUsed(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 30000)
       .then(() => {
-        log(`[NITRO]::Debug: Nitro is ready`)
+        log(`[CORTEX]::Debug: cortex is ready`)
         resolve()
       })
   })

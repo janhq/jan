@@ -36,8 +36,9 @@ export class RetrievalTool extends InferenceTool {
           NODE,
           'toolRetrievalIngestNewDocument',
           docFile,
-          data.model?.engine,
-          tool?.useTimeWeightedRetriever ?? false
+          tool?.useTimeWeightedRetriever ?? false,
+          data.model?.id,
+          data.model?.engine
         )
       } else {
         return Promise.resolve(data)

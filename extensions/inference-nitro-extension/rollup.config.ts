@@ -23,6 +23,7 @@ const mistralIns7bq4Json = require('./resources/models/mistral-ins-7b-q4/model.j
 const mixtral8x7bInstructJson = require('./resources/models/mixtral-8x7b-instruct/model.json')
 const noromaid7bJson = require('./resources/models/noromaid-7b/model.json')
 const openchat357bJson = require('./resources/models/openchat-3.5-7b/model.json')
+const phi3bJson = require('./resources/models/phi3-3.8b/model.json')
 const phind34bJson = require('./resources/models/phind-34b/model.json')
 const qwen7bJson = require('./resources/models/qwen-7b/model.json')
 const stableZephyr3bJson = require('./resources/models/stable-zephyr-3b/model.json')
@@ -64,6 +65,7 @@ export default [
           mixtral8x7bInstructJson,
           noromaid7bJson,
           openchat357bJson,
+          phi3bJson,
           phind34bJson,
           qwen7bJson,
           stableZephyr3bJson,
@@ -80,7 +82,7 @@ export default [
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
         INFERENCE_URL: JSON.stringify(
           process.env.INFERENCE_URL ||
-            'http://127.0.0.1:3928/inferences/llamacpp/chat_completion'
+            'http://127.0.0.1:3928/inferences/server/chat_completion'
         ),
         TROUBLESHOOTING_URL: JSON.stringify(
           'https://jan.ai/guides/troubleshooting'
