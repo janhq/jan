@@ -29,9 +29,10 @@ export class Retrieval {
 
     // declare time-weighted retriever and storage
     this.timeWeightedVectorStore = new MemoryVectorStore(
-      new OpenAIEmbeddings({
-        openAIApiKey: 'nitro-embedding',
-      })
+      new OpenAIEmbeddings(
+        { openAIApiKey: 'nitro-embedding' },
+        { basePath: 'http://127.0.0.1:3928/v1' }
+      )
     )
     this.timeWeightedretriever = new TimeWeightedVectorStoreRetriever({
       vectorStore: this.timeWeightedVectorStore,
