@@ -68,15 +68,15 @@
 
   // Ribbon bar
   --ribbon-panel-bg: 0, 0%, 100%, 0.5;
-  --ribbon-panel-border: 0, 0%, 0%, 0;
+  --ribbon-panel-border: 0, 0%, 0%, 0.1;
   --ribbon-panel-icon: 0, 0%, 0%, 0.5;
   --ribbon-panel-icon-hover: 0, 0%, 0%, 0.03;
   --ribbon-panel-icon-active: 0, 0%, 0%, 1;
   --ribbon-panel-icon-active-bg: 0, 0%, 0%, 0.05;
 
   // Left Panel
-  --left-panel-bg: 0, 0%, 100%, 1;
-  --left-panel-border: 0, 0%, 0%, 0.1;
+  --left-panel-bg: 0, 0%, 100%, 0;
+  --left-panel-border: 0, 0%, 0%, 0;
   --left-panel-menu: 0, 0%, 0%, 0.8;
   --left-panel-menu-hover: 0, 0%, 0%, 0.03;
   --left-panel-menu-active: 0, 0%, 0%, 1;
@@ -88,8 +88,8 @@
   --center-panel-bg: 0, 0%, 100%, 1;
 
   // right Panel
-  --right-panel-bg: 0, 0%, 100%, 1;
-  --right-panel-border: 0, 0%, 0%, 0.1;
+  --right-panel-bg: 0, 0%, 100%, 0;
+  --right-panel-border: 0, 0%, 0%, 0;
 
   // Tooltip
   --tooltip-bg: 0, 0%, 0%, 1;
@@ -100,18 +100,19 @@
   --scrollbar-thumb: 0, 0%, 0%, 0.1;
 
   // Input
-  --input-bg: 0, 0%, 100%, 1;
+  --input-bg: 0, 0%, 100%, 0;
   --input-placeholder: 0, 0%, 0%, 0.5;
   --input-icon: 0, 0%, 0%, 0.5;
   --input-border: 0, 0%, 0%, 0.1;
 
   // Textarea
-  --textarea-bg: 0, 0%, 100%, 1;
+  --textarea-bg: 0, 0%, 100%, 0;
   --textarea-placeholder: 0, 0%, 0%, 0.5;
   --textarea-icon: 0, 0%, 0%, 0.5;
   --textarea-border: 0, 0%, 0%, 0.1;
 
   // Select
+  --select-input-bg: 0, 0%, 100%, 0;
   --select-bg: 0, 0%, 100%, 1;
   --select-placeholder: 0, 0%, 0%, 0.5;
   --select-icon: 0, 0%, 0%, 0.5;
@@ -135,7 +136,7 @@
   --slider-thumb-bg: 0, 0%, 100%, 1;
 
   // Accordion
-  --accirdion-bg: 0, 0%, 100%, 1;
+  --accirdion-bg: 0, 0%, 100%, 0;
 
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;
@@ -156,7 +157,7 @@ html.dark {
   // App global
   --app-bg: 0, 0%, 13%, 1;
   --app-bg-transparent: 0, 0%, 13%, 0.5;
-  --app-border: 0, 0%, 28%, 1;
+  --app-border: 0, 0%, 34%, 1;
 
   --disabled-bg: 0, 0%, 0%, 0.2;
   --disabled-fg: 0, 0%, 100%, 0.2;
@@ -183,13 +184,13 @@ html.dark {
   --destructive-fg: 0, 0%, 100%, 1;
 
   --icon-bg: 0, 0%, 80%, 0.1;
-  --icon-border: 0, 0%, 28%, 1;
+  --icon-border: 0, 0%, 34%, 1;
 
   --info-bg: 217, 91%, 60%, 1;
   --info-bg-soft: 217, 91%, 60%, 0.2;
   --info-fg: 0, 0%, 100%, 1;
 
-  --ghost-border: 0, 0%, 28%, 1;
+  --ghost-border: 0, 0%, 34%, 1;
 
   // Text Typography
   --text-primary: 0, 0%, 100%, 1;
@@ -208,15 +209,15 @@ html.dark {
 
   // Ribbon bar
   --ribbon-panel-bg: 0, 0%, 13%, 0.5;
-  --ribbon-panel-border: 0, 0%, 28%, 0;
+  --ribbon-panel-border: 0, 0%, 34%, 1;
   --ribbon-panel-icon: 0, 0%, 68%, 1;
   --ribbon-panel-icon-hover: 0, 0%, 28%, 0.2;
   --ribbon-panel-icon-active: 0, 0%, 100%, 1;
   --ribbon-panel-icon-active-bg: 0, 0%, 100%, 0.1;
 
   // Left Panel
-  --left-panel-bg: 0, 0%, 13%, 1;
-  --left-panel-border: 0, 0%, 28%, 1;
+  --left-panel-bg: 0, 0%, 13%, 0;
+  --left-panel-border: 0, 0%, 28%, 0;
   --left-panel-menu: 0, 0%, 95%, 1;
   --left-panel-menu-hover: 0, 0%, 28%, 0.2;
   --left-panel-menu-active: 0, 0%, 100%, 1;
@@ -225,8 +226,8 @@ html.dark {
   --dropdown-menu-hover-bg: 0, 0%, 28%, 0.2;
 
   // right Panel
-  --right-panel-bg: 0, 0%, 13%, 1;
-  --right-panel-border: 0, 0%, 28%, 1;
+  --right-panel-bg: 0, 0%, 13%, 0;
+  --right-panel-border: 0, 0%, 28%, 0;
 
   // center panel
   --center-panel-bg: 0, 0%, 13%, 1;
@@ -240,23 +241,24 @@ html.dark {
   --scrollbar-thumb: 0, 0%, 50%, 1;
 
   // Input
-  --input-bg: 0, 0%, 13%, 1;
+  --input-bg: 0, 0%, 13%, 0;
   --input-placeholder: 0, 0%, 70%, 0.5;
   --input-icon: 0, 0%, 68%, 1;
-  --input-border: 0, 0%, 28%, 1;
+  --input-border: 0, 0%, 34%, 1;
 
   // Textarea
-  --textarea-bg: 0, 0%, 13%, 1;
+  --textarea-bg: 0, 0%, 13%, 0;
   --textarea-placeholder: 0, 0%, 70%, 0.5;
   --textarea-icon: 0, 0%, 68%, 1;
-  --textarea-border: 0, 0%, 28%, 1;
+  --textarea-border: 0, 0%, 34%, 1;
 
   // Select
+  --select-input: 0, 0%, 13%, 0;
   --select-bg: 0, 0%, 13%, 1;
   --select-placeholder: 0, 0%, 70%, 0.5;
   --select-icon: 0, 0%, 68%, 1;
   --select-options-active-bg: 0, 0%, 28%, 0.2;
-  --select-border: 0, 0%, 28%, 1;
+  --select-border: 0, 0%, 34%, 1;
 
   // Switch
   --switch-bg: 0, 0%, 80%, 0.1;
@@ -275,7 +277,7 @@ html.dark {
   --slider-thumb-bg: 0, 0%, 100%, 1;
 
   // Accordion
-  --accirdion-bg: 0, 0%, 13%, 1;
+  --accirdion-bg: 0, 0%, 13%, 0;
 
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;

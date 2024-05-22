@@ -251,11 +251,13 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
               className="rounded-none border-x-0 border-t-0 focus-within:ring-0 hover:border-b-[hsla(var(--app-border))]"
               onChange={(e) => setSearchText(e.target.value)}
               suffixIcon={
-                <XIcon
-                  size={16}
-                  className="cursor-pointer"
-                  onClick={() => setSearchText('')}
-                />
+                searchText.length > 0 && (
+                  <XIcon
+                    size={16}
+                    className="cursor-pointer"
+                    onClick={() => setSearchText('')}
+                  />
+                )
               }
             />
             <div

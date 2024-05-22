@@ -1,6 +1,6 @@
 import { Tooltip } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
   SettingsIcon,
@@ -12,7 +12,7 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { mainViewStateAtom, showLeftPanelAtom } from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
@@ -20,6 +20,7 @@ export default function RibbonPanel() {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
+  const showLeftPanel = useAtomValue(showLeftPanelAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -52,7 +53,13 @@ export default function RibbonPanel() {
   ]
 
   return (
-    <div className="relative flex h-[calc(100%+36px)] w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2">
+    <div
+      className={twMerge(
+        'relative top-0 flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2',
+        mainViewState === MainViewState.Hub && 'border-none',
+        !showLeftPanel && 'border-none'
+      )}
+    >
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {
         const isActive = mainViewState === menu.state
         return (

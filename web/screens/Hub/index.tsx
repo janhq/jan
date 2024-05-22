@@ -77,7 +77,7 @@ const HubScreen = () => {
             height={800}
             className="h-full w-full rounded-lg object-cover"
           />
-          <div className="absolute left-1/2 top-1/2 mx-auto w-4/5 -translate-x-1/2 -translate-y-1/2 sm:w-1/2">
+          <div className="absolute left-1/2 top-1/2 mx-auto w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-xl bg-[hsla(var(--app-bg))] p-4 sm:w-1/2">
             <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
               <div className="w-full">
                 <ModelSearch onSearchLocal={onSearchUpdate} />

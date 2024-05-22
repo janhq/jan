@@ -32,10 +32,7 @@ const SettingsScreen = () => {
   }, [setSelectedSettingScreen])
 
   return (
-    <div
-      data-testid="testid-setting-description"
-      className="flex h-full bg-[hsla(var(--app-bg))]"
-    >
+    <div data-testid="testid-setting-description" className="flex h-full">
       <SettingLeftPanel />
       <CenterPanelContainer>
         <SettingDetail />
