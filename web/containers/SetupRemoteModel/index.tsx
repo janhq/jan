@@ -4,7 +4,7 @@ import { InferenceEngine } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
-import { PlusIcon, SettingsIcon } from 'lucide-react'
+import { SettingsIcon } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
