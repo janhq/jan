@@ -9,8 +9,6 @@ import {
   PanelLeftOpenIcon,
   PanelRightOpenIcon,
   PanelRightCloseIcon,
-  PanelTopCloseIcon,
-  PanelTopOpenIcon,
   SunIcon,
   MoonIcon,
 } from 'lucide-react'
@@ -22,16 +20,12 @@ import {
   mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,
-  showSystemMonitorPanelAtom,
 } from '@/helpers/atoms/App.atom'
 
 const TopPanel = () => {
   const mainViewState = useAtomValue(mainViewStateAtom)
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
-  const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
-    showSystemMonitorPanelAtom
-  )
 
   const { theme: currentTheme, setTheme } = useTheme()
 
@@ -66,21 +60,8 @@ const TopPanel = () => {
               )}
             </Fragment>
           )}
-          {showSystemMonitorPanel ? (
-            <Button
-              theme="icon"
-              onClick={() => setShowSystemMonitorPanel(false)}
-            >
-              <PanelTopOpenIcon size={16} />
-            </Button>
-          ) : (
-            <Button
-              theme="icon"
-              onClick={() => setShowSystemMonitorPanel(true)}
-            >
-              <PanelTopCloseIcon size={16} />
-            </Button>
-          )}
+        </div>
+        <div className="unset-drag flex gap-x-2">
           {mainViewState !== MainViewState.Hub &&
             mainViewState !== MainViewState.Settings && (
               <Fragment>
@@ -95,8 +76,6 @@ const TopPanel = () => {
                 )}
               </Fragment>
             )}
-        </div>
-        <div className="unset-drag">
           {currentTheme === 'light' ? (
             <Button
               theme="icon"

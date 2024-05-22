@@ -8,6 +8,8 @@ import { motion as m } from 'framer-motion'
 
 import { useAtom, useAtomValue } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import BottomPanel from '@/containers/Layout/BottomPanel'
 import RibbonPanel from '@/containers/Layout/RibbonPanel'
 
@@ -54,12 +56,16 @@ const BaseLayout = () => {
       <TopPanel />
       <div className="relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen">
         <RibbonPanel />
-        <div className="relative flex w-full bg-[hsla(var(--app-bg-transparent))] pr-2">
+        <div
+          className={twMerge(
+            'relative flex w-full bg-[hsla(var(--app-bg-transparent))]'
+          )}
+        >
           <div className="w-full">
             <m.div
               key={mainViewState}
               initial={{ opacity: 0, y: -8 }}
-              className="h-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] shadow"
+              className="h-full"
               animate={{
                 opacity: 1,
                 y: 0,

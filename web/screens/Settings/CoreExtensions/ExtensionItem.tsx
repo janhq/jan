@@ -75,7 +75,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
   const description = marked.parse(item.description ?? '', { async: false })
 
   return (
-    <div className="mx-4 flex w-full items-start justify-between border-b border-[hsla(var(--app-border))] py-6 first:pt-4 last:border-none">
+    <div className="mx-4 flex items-start justify-between border-b border-[hsla(var(--app-border))] py-6 first:pt-4 last:border-none">
       <div className="flex-1 flex-shrink-0 space-y-1">
         <div className="flex items-center gap-x-2">
           <h6 className="font-semibold">Additional Dependencies</h6>
@@ -118,13 +118,13 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   if (installProgress !== -1) {
     const progress = installProgress * 100
     return (
-      <div className="text-primary dark:bg-secondary flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4">
-        <button onClick={onCancelClick} className="text-primary font-semibold">
+      <div className="dark flex h-10 flex-row items-center justify-center space-x-2 rounded-lg px-4 text-primary">
+        <button onClick={onCancelClick} className="font-semibold text-primary">
           Cancel
         </button>
-        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px] dark:bg-black/50">
+        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md px-2 py-[2px]">
           <Progress className="h-1 w-[69px]" value={progress} />
-          <span className="text-primary text-xs font-bold">
+          <span className="text-xs font-bold text-primary">
             {progress.toFixed(0)}%
           </span>
         </div>
@@ -135,13 +135,13 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   switch (installState) {
     case 'Installed':
       return (
-        <div className="bg-secondary rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
+        <div className="rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
           Installed
         </div>
       )
     case 'NotCompatible':
       return (
-        <div className="bg-secondary rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
+        <div className="rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
           <div className="flex flex-row items-center justify-center gap-1">
             Incompatible
             <Tooltip
