@@ -1,8 +1,8 @@
 {
     "sources": [
       {
-        "url": "",
-        "filename": ""
+        "url": "https://huggingface.co/bartowski/Phi-3-medium-128k-instruct-GGUF/resolve/main/Phi-3-medium-128k-instruct-Q4_K_M.gguf",
+        "filename": "Phi-3-medium-128k-instruct-Q4_K_M.gguf"
       }
     ],
     "id": "phi3-medium",
@@ -14,7 +14,7 @@
     "settings": {
       "ctx_len": 128000,
       "prompt_template": "<|user|>\n{prompt}<|end|>\n<|assistant|>\n",
-      "llama_model_path": "",
+      "llama_model_path": "Phi-3-medium-128k-instruct-Q4_K_M.gguf",
       "ngl": 32
     },
     "parameters": {
