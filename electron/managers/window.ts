@@ -2,12 +2,7 @@ import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
 import { getAppConfigurations, AppEvent } from '@janhq/core/node'
-import {
-  getBounds,
-  saveBounds,
-  // getWindowPosition,
-  // saveWindowPosition,
-} from '../utils/setup'
+import { getBounds, saveBounds } from '../utils/setup'
 
 /**
  * Manages the current window instance.
@@ -35,7 +30,6 @@ class WindowManager {
       height: bounds.height,
       x: bounds.x,
       y: bounds.y,
-      autoHideMenuBar: true,
       webPreferences: {
         nodeIntegration: true,
         preload: preloadPath,

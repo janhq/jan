@@ -95,6 +95,20 @@ const TopPanel = () => {
               <SunIcon size={16} className="cursor-pointer" />
             </Button>
           )}
+
+          {!isMac && (
+            <>
+              <span onClick={() => window?.electronAPI.setMinimizeApp()}>
+                minimize
+              </span>
+              <span onClick={() => window?.electronAPI.setMaximizeApp()}>
+                maximize
+              </span>
+              <span onClick={() => window?.electronAPI.setCloseApp()}>
+                close
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>
