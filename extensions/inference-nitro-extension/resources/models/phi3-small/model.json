@@ -8,7 +8,7 @@
     "id": "phi3-small",
     "object": "model",
     "name": "Phi-3 Mini",
-    "version": "1.1",
+    "version": "1.0",
     "description": "Phi-3 Mini is Microsoft's newest, compact model designed for mobile use.",
     "format": "gguf",
     "settings": {
