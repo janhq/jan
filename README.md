@@ -19,7 +19,8 @@
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
-> ⚠️ **Jan is currently in Development**: Expect breaking changes and bugs!
+>[!Warning]
+>**Jan is currently in Development**: Expect breaking changes and bugs!
 
 Jan is an open-source ChatGPT alternative that runs 100% offline on your computer.
 
