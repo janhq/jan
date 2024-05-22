@@ -11,7 +11,6 @@ import { UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import ModelSearch from '@/containers/ModelSearch'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'

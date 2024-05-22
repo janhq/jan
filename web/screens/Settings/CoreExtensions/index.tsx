@@ -128,6 +128,7 @@ const ExtensionCatalog = () => {
         JSON.parse(String(localStorage.getItem(INACTIVE_ENGINE_PROVIDER)))
       )
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const onSwitchChange = useCallback(

@@ -118,13 +118,13 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   if (installProgress !== -1) {
     const progress = installProgress * 100
     return (
-      <div className="dark flex h-10 flex-row items-center justify-center space-x-2 rounded-lg px-4 text-primary">
-        <button onClick={onCancelClick} className="font-semibold text-primary">
+      <div className="text-primary dark flex h-10 flex-row items-center justify-center space-x-2 rounded-lg px-4">
+        <button onClick={onCancelClick} className="text-primary font-semibold">
           Cancel
         </button>
         <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md px-2 py-[2px]">
           <Progress className="h-1 w-[69px]" value={progress} />
-          <span className="text-xs font-bold text-primary">
+          <span className="text-primary text-xs font-bold">
             {progress.toFixed(0)}%
           </span>
         </div>
