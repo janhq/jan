@@ -7,7 +7,7 @@ import {
   useState,
 } from 'react'
 
-import { ScrollArea, useMediaQuery } from '@janhq/joi'
+import { ScrollArea, useClickOutside, useMediaQuery } from '@janhq/joi'
 import { useAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
@@ -20,13 +20,19 @@ const DEFAULT_LEFT_PANEL_WIDTH = 200
 const LEFT_PANEL_WIDTH = 'leftPanelWidth'
 
 const LeftPanelContainer = ({ children }: Props) => {
-  const leftPanelRef = useRef<HTMLDivElement>(null)
+  const [leftPanelRef, setLeftPanelRef] = useState<HTMLDivElement | null>(null)
   const [isResizing, setIsResizing] = useState(false)
   const [threadLeftPanelWidth, setLeftPanelWidth] = useState(
     Number(localStorage.getItem(LEFT_PANEL_WIDTH)) || DEFAULT_LEFT_PANEL_WIDTH
   )
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
+
+  useClickOutside(
+    () => matches && showLeftPanel && setShowLeftPanel(false),
+    null,
+    [leftPanelRef]
+  )
 
   const startResizing = useCallback(() => {
     setIsResizing(true)
@@ -39,10 +45,10 @@ const LeftPanelContainer = ({ children }: Props) => {
   const resize = useCallback(
     (mouseMoveEvent: { clientX: number }) => {
       if (isResizing) {
-        if (leftPanelRef.current !== null) {
+        if (leftPanelRef !== null) {
           if (
             mouseMoveEvent.clientX -
-              leftPanelRef?.current.getBoundingClientRect().left <
+              leftPanelRef?.getBoundingClientRect().left <
             170
           ) {
             setIsResizing(false)
@@ -55,14 +61,14 @@ const LeftPanelContainer = ({ children }: Props) => {
           } else {
             const resized =
               mouseMoveEvent.clientX -
-              leftPanelRef?.current.getBoundingClientRect().left
+              leftPanelRef?.getBoundingClientRect().left
             localStorage.setItem(LEFT_PANEL_WIDTH, String(resized))
             setLeftPanelWidth(resized)
           }
         }
       }
     },
-    [isResizing, setShowLeftPanel]
+    [isResizing, leftPanelRef, setShowLeftPanel]
   )
 
   useEffect(() => {
@@ -80,7 +86,7 @@ const LeftPanelContainer = ({ children }: Props) => {
 
   return (
     <div
-      ref={leftPanelRef}
+      ref={setLeftPanelRef}
       className={twMerge(
         'flex h-full flex-shrink-0 flex-col bg-[hsla(var(--left-panel-bg))] transition-all duration-100',
         showLeftPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',
