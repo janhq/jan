@@ -10,6 +10,9 @@ import {
   PanelRightOpenIcon,
   PanelRightCloseIcon,
   SunIcon,
+  MinusIcon,
+  SquareIcon,
+  XIcon,
   MoonIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
@@ -61,7 +64,7 @@ const TopPanel = () => {
             </Fragment>
           )}
         </div>
-        <div className="unset-drag flex gap-x-2">
+        <div className="unset-drag flex items-center gap-x-2">
           {mainViewState !== MainViewState.Hub &&
             mainViewState !== MainViewState.Settings && (
               <Fragment>
@@ -97,17 +100,26 @@ const TopPanel = () => {
           )}
 
           {!isMac && (
-            <>
-              <span onClick={() => window?.electronAPI.setMinimizeApp()}>
-                minimize
-              </span>
-              <span onClick={() => window?.electronAPI.setMaximizeApp()}>
-                maximize
-              </span>
-              <span onClick={() => window?.electronAPI.setCloseApp()}>
-                close
-              </span>
-            </>
+            <div className="flex items-center gap-x-2">
+              <Button
+                theme="icon"
+                onClick={() => window?.electronAPI.setMinimizeApp()}
+              >
+                <MinusIcon size={16} />
+              </Button>
+              <Button
+                theme="icon"
+                onClick={() => window?.electronAPI.setMaximizeApp()}
+              >
+                <SquareIcon size={14} />
+              </Button>
+              <Button
+                theme="icon"
+                onClick={() => window?.electronAPI.setCloseApp()}
+              >
+                <XIcon size={16} />
+              </Button>
+            </div>
           )}
         </div>
       </div>
