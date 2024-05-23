@@ -11,11 +11,13 @@ import {
   PanelRightCloseIcon,
   SunIcon,
   MinusIcon,
-  SquareIcon,
+  // SquareIcon,
   XIcon,
   MoonIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
+
+import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -48,6 +50,7 @@ const TopPanel = () => {
         isMac && 'border-t-0 pl-20'
       )}
     >
+      {!isMac && <LogoMark width={24} height={24} className="-ml-1 mr-2" />}
       <div className="flex w-full items-center justify-between text-[hsla(var(--text-secondary))]">
         <div className="unset-drag flex cursor-pointer gap-x-0.5">
           {mainViewState !== MainViewState.Hub && (
@@ -107,12 +110,12 @@ const TopPanel = () => {
               >
                 <MinusIcon size={16} />
               </Button>
-              <Button
+              {/* <Button
                 theme="icon"
                 onClick={() => window?.electronAPI.setMaximizeApp()}
               >
                 <SquareIcon size={14} />
-              </Button>
+              </Button> */}
               <Button
                 theme="icon"
                 onClick={() => window?.electronAPI.setCloseApp()}
