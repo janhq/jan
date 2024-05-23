@@ -82,10 +82,11 @@ const LeftPanelContainer = ({ children }: Props) => {
     <div
       ref={leftPanelRef}
       className={twMerge(
-        'flex h-full flex-shrink-0 flex-col border-r border-[hsla(var(--left-panel-border))] bg-[hsla(var(--left-panel-bg))] transition-all duration-100',
+        'flex h-full flex-shrink-0 flex-col bg-[hsla(var(--left-panel-bg))] transition-all duration-100',
         showLeftPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',
         isResizing && 'cursor-col-resize',
-        matches && 'absolute left-0 z-[999]'
+        matches &&
+          'absolute left-2 z-[999] rounded-s-lg border-r border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]'
       )}
       style={{ width: showLeftPanel ? threadLeftPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.stopPropagation()}

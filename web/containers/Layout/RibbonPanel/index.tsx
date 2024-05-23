@@ -1,4 +1,4 @@
-import { Tooltip } from '@janhq/joi'
+import { Tooltip, useMediaQuery } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
@@ -21,6 +21,7 @@ export default function RibbonPanel() {
   const [serverEnabled] = useAtom(serverEnabledAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
   const showLeftPanel = useAtomValue(showLeftPanelAtom)
+  const matches = useMediaQuery('(max-width: 880px)')
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -57,7 +58,8 @@ export default function RibbonPanel() {
       className={twMerge(
         'relative top-0 flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2',
         mainViewState === MainViewState.Hub && 'border-none',
-        !showLeftPanel && 'border-none'
+        !showLeftPanel && 'border-none',
+        matches && 'border-none'
       )}
     >
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {

@@ -93,7 +93,8 @@ const RightPanelContainer = ({ children }: Props) => {
         'relative flex h-full flex-shrink-0 flex-col border-l border-[hsla(var(--right-panel-border))] bg-[hsla(var(--right-panel-bg))] transition-all duration-100',
         showRightPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',
         isResizing && 'cursor-col-resize',
-        matches && 'absolute right-0 z-50'
+        matches &&
+          'absolute right-2 z-50 rounded-e-lg border-l border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]'
       )}
       style={{ width: showRightPanel ? threadRightPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.preventDefault()}

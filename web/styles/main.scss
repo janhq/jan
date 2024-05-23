@@ -15,7 +15,7 @@
 :root {
   // App global
   --app-bg: 0, 0%, 100%, 1;
-  --app-bg-transparent: 0, 0%, 100%, 0.5;
+  --app-bg-transparent: 0, 0%, 100%, 0.3;
   --app-border: 0, 0%, 0%, 0.1;
 
   --disabled-bg: 0, 0%, 0%, 0.05;
@@ -59,15 +59,15 @@
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 100%, 0.5;
+  --top-panel-bg: 0, 0%, 100%, 0.3;
   --top-panel-border: 0, 0%, 0%, 0;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 100%, 0.5;
+  --bottom-panel-bg: 0, 0%, 100%, 0.3;
   --bottom-panel-border: 0, 0%, 0%, 0;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 100%, 0.5;
+  --ribbon-panel-bg: 0, 0%, 100%, 0.3;
   --ribbon-panel-border: 0, 0%, 0%, 0.1;
   --ribbon-panel-icon: 0, 0%, 0%, 0.5;
   --ribbon-panel-icon-hover: 0, 0%, 0%, 0.03;
@@ -141,7 +141,7 @@
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;
   --toaster-text-title: 0, 0%, 100%, 1;
-  --toaster-close-icon: 0, 0%, 100%, 0.5;
+  --toaster-close-icon: 0, 0%, 100%, 0.3;
   --toaster-text-desc: 0, 0%, 100%, 0.8;
 
   // Resizeable
@@ -156,8 +156,8 @@
 html.dark {
   // App global
   --app-bg: 0, 0%, 13%, 1;
-  --app-bg-transparent: 0, 0%, 13%, 0.5;
-  --app-border: 0, 0%, 34%, 1;
+  --app-bg-transparent: 0, 0%, 13%, 0.3;
+  --app-border: 0, 0%, 100%, 0.1;
 
   --disabled-bg: 0, 0%, 0%, 0.2;
   --disabled-fg: 0, 0%, 100%, 0.2;
@@ -184,13 +184,13 @@ html.dark {
   --destructive-fg: 0, 0%, 100%, 1;
 
   --icon-bg: 0, 0%, 80%, 0.1;
-  --icon-border: 0, 0%, 34%, 1;
+  --icon-border: 0, 0%, 100%, 0.1;
 
   --info-bg: 217, 91%, 60%, 1;
   --info-bg-soft: 217, 91%, 60%, 0.2;
   --info-fg: 0, 0%, 100%, 1;
 
-  --ghost-border: 0, 0%, 34%, 1;
+  --ghost-border: 0, 0%, 100%, 0.1;
 
   // Text Typography
   --text-primary: 0, 0%, 100%, 1;
@@ -200,16 +200,16 @@ html.dark {
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 13%, 0.5;
+  --top-panel-bg: 0, 0%, 13%, 0.3;
   --top-panel-border: 0, 0%, 28%, 0;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 13%, 0.5;
+  --bottom-panel-bg: 0, 0%, 13%, 0.3;
   --bottom-panel-border: 0, 0%, 28%, 0;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 13%, 0.5;
-  --ribbon-panel-border: 0, 0%, 34%, 1;
+  --ribbon-panel-bg: 0, 0%, 13%, 0.3;
+  --ribbon-panel-border: 0, 0%, 100%, 0.1;
   --ribbon-panel-icon: 0, 0%, 68%, 1;
   --ribbon-panel-icon-hover: 0, 0%, 28%, 0.2;
   --ribbon-panel-icon-active: 0, 0%, 100%, 1;
@@ -244,13 +244,13 @@ html.dark {
   --input-bg: 0, 0%, 13%, 0;
   --input-placeholder: 0, 0%, 70%, 0.5;
   --input-icon: 0, 0%, 68%, 1;
-  --input-border: 0, 0%, 34%, 1;
+  --input-border: 0, 0%, 100%, 0.1;
 
   // Textarea
   --textarea-bg: 0, 0%, 13%, 0;
   --textarea-placeholder: 0, 0%, 70%, 0.5;
   --textarea-icon: 0, 0%, 68%, 1;
-  --textarea-border: 0, 0%, 34%, 1;
+  --textarea-border: 0, 0%, 100%, 0.1;
 
   // Select
   --select-input: 0, 0%, 13%, 0;
@@ -258,7 +258,7 @@ html.dark {
   --select-placeholder: 0, 0%, 70%, 0.5;
   --select-icon: 0, 0%, 68%, 1;
   --select-options-active-bg: 0, 0%, 28%, 0.2;
-  --select-border: 0, 0%, 34%, 1;
+  --select-border: 0, 0%, 100%, 0.1;
 
   // Switch
   --switch-bg: 0, 0%, 80%, 0.1;
@@ -282,7 +282,7 @@ html.dark {
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;
   --toaster-text-title: 0, 0%, 100%, 1;
-  --toaster-close-icon: 0, 0%, 100%, 0.5;
+  --toaster-close-icon: 0, 0%, 100%, 0.3;
   --toaster-text-desc: 0, 0%, 100%, 0.8;
 
   // Resizeable

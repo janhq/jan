@@ -9,4 +9,8 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   visualEffectState: 'active',
   backgroundMaterial: 'acrylic',
   autoHideMenuBar: true,
+  trafficLightPosition: {
+    x: 16,
+    y: 10,
+  },
 }
