@@ -28,8 +28,8 @@ const ModelDownloadList = () => {
 
   return (
     <div className="flex h-[500px] flex-1 flex-col">
-      <h1 className="mb-3 text-sm font-semibold">Available Versions</h1>
-      <ScrollArea className="flex-1">
+      <h1 className="mb-3 font-semibold">Available Versions</h1>
+      <ScrollArea className="w-full flex-1">
         {ggufModels.map((model, index) => {
           if (!model.downloadUrl) return null
           return (

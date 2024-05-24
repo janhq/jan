@@ -397,24 +397,26 @@ const ChatInput = () => {
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
               </Button>
-              <Badge
-                className="flex cursor-pointer items-center gap-x-1"
-                theme="secondary"
-                onClick={() => {
-                  setActiveTabThreadRightPanel('tools')
-                  if (matches) {
-                    setShowRightPanel(!showRightPanel)
-                  } else if (!showRightPanel) {
-                    setShowRightPanel(true)
-                  }
-                }}
-              >
-                <ShapesIcon
-                  size={16}
-                  className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
-                />
-                <span>Tools</span>
-              </Badge>
+              {experimentalFeature && (
+                <Badge
+                  className="flex cursor-pointer items-center gap-x-1"
+                  theme="secondary"
+                  onClick={() => {
+                    setActiveTabThreadRightPanel('tools')
+                    if (matches) {
+                      setShowRightPanel(!showRightPanel)
+                    } else if (!showRightPanel) {
+                      setShowRightPanel(true)
+                    }
+                  }}
+                >
+                  <ShapesIcon
+                    size={16}
+                    className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
+                  />
+                  <span>Tools</span>
+                </Badge>
+              )}
             </div>
             <Button theme="icon" onClick={() => setActiveSetting(false)}>
               <ChevronUpIcon

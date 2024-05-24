@@ -49,7 +49,7 @@ const SelectingModelModal = () => {
     ? 'text-[hsla(var(--primary-bg)]'
     : 'text-[hsla(var(--text-secondary))]'
   const dragAndDropBgColor = isDragActive
-    ? 'bg-[hsla(var(--primary-bg))]'
+    ? 'bg-[hsla(var(--primary-bg-soft))]'
     : 'bg-[hsla(var(--app-bg))]'
 
   return (

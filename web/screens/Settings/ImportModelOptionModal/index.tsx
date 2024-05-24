@@ -58,7 +58,7 @@ const ImportModelOptionModal = () => {
       }}
       title="How would you like Jan to handle your models?"
       content={
-        <div>
+        <div className="mt-4">
           {importOptions.map((option) => (
             <ImportModelOptionSelection
               key={option.type}
