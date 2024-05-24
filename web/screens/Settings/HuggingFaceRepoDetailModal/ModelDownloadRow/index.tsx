@@ -116,8 +116,11 @@ const ModelDownloadRow: React.FC<Props> = ({
   return (
     <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
       <div className="flex">
-        {quantization && <Badge className="mr-1">{quantization}</Badge>}
-
+        {quantization && (
+          <Badge variant="soft" className="mr-1">
+            {quantization}
+          </Badge>
+        )}
         <h1 className="mr-5 line-clamp-1 text-sm font-medium text-[hsla(var(--text-secondary))]">
           {fileName}
         </h1>

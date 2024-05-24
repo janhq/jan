@@ -62,10 +62,7 @@ const ModelSegmentInfo = () => {
         <div className="flex-1">
           <HeaderInfo title="Downloads">
             <div className="flex flex-row items-center space-x-1.5">
-              <Download
-                className="text-zinc-500 dark:text-gray-300"
-                size={16}
-              />
+              <Download size={16} />
               <span className="text-sm font-medium text-zinc-500 dark:text-gray-300">
                 {downloads}
               </span>
@@ -77,8 +74,8 @@ const ModelSegmentInfo = () => {
       <HeaderInfo title="Tags">
         <div className="mt-2 flex flex-wrap gap-x-1 gap-y-1">
           {importingHuggingFaceRepoData.tags.map((tag) => (
-            <Badge key={tag} title={tag}>
-              {tag}
+            <Badge variant="soft" key={tag} title={tag} className="mt-1">
+              <span className="line-clamp-1">{tag}</span>
             </Badge>
           ))}
         </div>

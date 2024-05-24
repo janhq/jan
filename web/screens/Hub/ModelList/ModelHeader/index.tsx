@@ -105,6 +105,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
             disabled={serverEnabled}
             data-testid={`use-model-btn-${model.id}`}
             variant="soft"
+            className="min-w-[98px]"
           >
             Use
           </Button>

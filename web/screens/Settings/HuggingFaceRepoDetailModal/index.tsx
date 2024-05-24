@@ -37,6 +37,7 @@ const HuggingFaceRepoDetailModal = () => {
       open={open}
       onOpenChange={onOpenChange}
       title={importingHuggingFaceRepoData.id}
+      fullPage
       content={
         <div className="flex h-full w-full flex-col">
           <div className="flex">

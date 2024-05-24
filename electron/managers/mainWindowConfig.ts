@@ -8,6 +8,7 @@ export const mainWindowConfig: Electron.BrowserWindowConstructorOptions = {
   vibrancy: 'fullscreen-ui',
   visualEffectState: 'active',
   backgroundMaterial: 'acrylic',
+  maximizable: false,
   autoHideMenuBar: true,
   trafficLightPosition: {
     x: 16,

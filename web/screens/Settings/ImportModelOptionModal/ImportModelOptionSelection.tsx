@@ -12,7 +12,7 @@ const ImportModelOptionSelection = ({
   setSelectedOptionType,
 }: Props) => (
   <div
-    className="flex cursor-pointer flex-row"
+    className="mt-6 flex cursor-pointer flex-row"
     onClick={() => setSelectedOptionType(option.type)}
   >
     <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[hsla(var(--primary-bg))]">
