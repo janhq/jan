@@ -23,7 +23,8 @@
       "stream": true,
       "max_tokens": 8192,
       "frequency_penalty": 0,
-      "presence_penalty": 0
+      "presence_penalty": 0,
+      "stop": ["<|END_OF_TURN_TOKEN|>"]
     },
     "metadata": {
       "author": "CohereForAI",
