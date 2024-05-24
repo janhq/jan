@@ -15,7 +15,7 @@
 :root {
   // App global
   --app-bg: 0, 0%, 100%, 1;
-  --app-bg-transparent: 0, 0%, 100%, 0.3;
+  --app-bg-transparent: 0, 0%, 100%, 0.8;
   --app-border: 0, 0%, 0%, 0.1;
 
   --disabled-bg: 0, 0%, 0%, 0.05;
@@ -59,15 +59,15 @@
   --text-link: 221, 83%, 53%, 1;
 
   // Top bar
-  --top-panel-bg: 0, 0%, 100%, 0.3;
+  --top-panel-bg: 0, 0%, 100%, 0.8;
   --top-panel-border: 0, 0%, 0%, 0;
 
   // Bottom bar
-  --bottom-panel-bg: 0, 0%, 100%, 0.3;
+  --bottom-panel-bg: 0, 0%, 100%, 0.8;
   --bottom-panel-border: 0, 0%, 0%, 0;
 
   // Ribbon bar
-  --ribbon-panel-bg: 0, 0%, 100%, 0.3;
+  --ribbon-panel-bg: 0, 0%, 100%, 0.8;
   --ribbon-panel-border: 0, 0%, 0%, 0.1;
   --ribbon-panel-icon: 0, 0%, 0%, 0.5;
   --ribbon-panel-icon-hover: 0, 0%, 0%, 0.03;
@@ -141,7 +141,7 @@
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;
   --toaster-text-title: 0, 0%, 100%, 1;
-  --toaster-close-icon: 0, 0%, 100%, 0.3;
+  --toaster-close-icon: 0, 0%, 100%, 0.8;
   --toaster-text-desc: 0, 0%, 100%, 0.8;
 
   // Resizeable
@@ -282,7 +282,7 @@ html.dark {
   // Toaster
   --toaster-bg: 240, 6%, 10%, 1;
   --toaster-text-title: 0, 0%, 100%, 1;
-  --toaster-close-icon: 0, 0%, 100%, 0.3;
+  --toaster-close-icon: 0, 0%, 100%, 0.8;
   --toaster-text-desc: 0, 0%, 100%, 0.8;
 
   // Resizeable
