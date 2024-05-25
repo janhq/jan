@@ -57,9 +57,6 @@ const Select = ({
 
     <SelectPrimitive.Portal container={containerPortal}>
       <SelectPrimitive.Content className="select__content">
-        <SelectPrimitive.ScrollUpButton className="select__scroll-botom">
-          <ChevronUpIcon />
-        </SelectPrimitive.ScrollUpButton>
         <SelectPrimitive.Viewport className="select__viewport">
           {options &&
             options.map((item, i) => {
@@ -79,7 +76,6 @@ const Select = ({
               )
             })}
         </SelectPrimitive.Viewport>
-        <SelectPrimitive.ScrollDownButton />
         <SelectPrimitive.Arrow />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>

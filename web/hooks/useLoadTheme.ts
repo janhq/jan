@@ -34,7 +34,6 @@ export const useLoadTheme = async () => {
     Promise.all(a).then((results) => {
       setThemeOptions(results)
     })
-    // console.log(a)
   }, [janDataFolderPath, setThemeOptions, setThemePath])
 
   useEffect(() => {
