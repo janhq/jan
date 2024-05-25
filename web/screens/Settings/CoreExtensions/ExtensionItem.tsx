@@ -83,7 +83,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
         <div
           // eslint-disable-next-line @typescript-eslint/naming-convention
           dangerouslySetInnerHTML={{ __html: description }}
-          className='className="font-medium text-[hsla(var(--text-secondary))]" leading-relaxed'
+          className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
         />
       </div>
 
@@ -135,13 +135,13 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   switch (installState) {
     case 'Installed':
       return (
-        <div className="rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
+        <div className="rounded-md px-3 py-1.5 font-semibold text-[hsla(var(--text-secondary))]">
           Installed
         </div>
       )
     case 'NotCompatible':
       return (
-        <div className="rounded-md px-3 py-1.5 text-sm font-semibold text-[hsla(var(--text-secondary))]">
+        <div className="rounded-md px-3 py-1.5 font-semibold text-[hsla(var(--text-secondary))]">
           <div className="flex flex-row items-center justify-center gap-1">
             Incompatible
             <Tooltip
@@ -189,7 +189,7 @@ const marked: Marked = new Marked({
         ?.apply(this, [href, title, text])
         .replace(
           '<a',
-          "<a class='text-[hsla(var(--text-link))]' target='_blank'"
+          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
         )
     },
   },

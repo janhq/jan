@@ -22,7 +22,7 @@ const ModelConfigInput = ({
 }: Props) => (
   <div className="flex flex-col">
     <div className="mb-2 flex items-center gap-x-2">
-      <p className="text-sm font-medium">{title}</p>
+      <p className="font-medium">{title}</p>
       <Tooltip
         trigger={
           <InfoIcon

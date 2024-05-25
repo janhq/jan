@@ -344,7 +344,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                                 {!isDownloading && (
                                   <DownloadCloudIcon
                                     size={18}
-                                    className="cursor-pointer text-[hsla(var(--text-link))]"
+                                    className="cursor-pointer text-[hsla(var(--app-link))]"
                                     onClick={() => downloadModel(model)}
                                   />
                                 )}

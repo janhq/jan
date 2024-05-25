@@ -7,11 +7,12 @@ import {
 } from 'react'
 
 import { ScrollArea, useClickOutside, useMediaQuery } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
 import { showLeftPanelAtom } from '@/helpers/atoms/App.atom'
+import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = PropsWithChildren
 
@@ -26,6 +27,7 @@ const LeftPanelContainer = ({ children }: Props) => {
   )
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
 
   useClickOutside(
     () => matches && showLeftPanel && setShowLeftPanel(false),
@@ -87,11 +89,13 @@ const LeftPanelContainer = ({ children }: Props) => {
     <div
       ref={setLeftPanelRef}
       className={twMerge(
-        'flex h-full flex-shrink-0 flex-col bg-[hsla(var(--left-panel-bg))] transition-all duration-100',
+        'flex h-full flex-shrink-0 flex-col transition-all duration-100',
         showLeftPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',
         isResizing && 'cursor-col-resize',
         matches &&
-          'absolute left-2 z-[999] rounded-s-lg border-r border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]'
+          'absolute left-2 z-50 rounded-s-lg border-r border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+        reduceTransparent &&
+          'border-r border-[hsla(var(--app-border))] bg-[hsla(var(--left-panel-bg))]'
       )}
       style={{ width: showLeftPanel ? threadLeftPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.stopPropagation()}
@@ -102,8 +106,9 @@ const LeftPanelContainer = ({ children }: Props) => {
           <Fragment>
             <div
               className={twMerge(
-                'group/resize absolute right-0 top-0 h-full w-1 flex-shrink-0 flex-grow-0 resize-x shadow-sm blur-sm hover:cursor-col-resize hover:bg-[hsla(var(--resize-bg))]',
-                isResizing && 'cursor-col-resize bg-[hsla(var(--resize-bg))]'
+                'group/resize absolute right-0 top-0 h-full w-1 flex-shrink-0 flex-grow-0 resize-x blur-sm hover:cursor-col-resize hover:bg-[hsla(var(--resize-bg))]',
+                isResizing && 'cursor-col-resize bg-[hsla(var(--resize-bg))]',
+                !reduceTransparent && 'shadow-sm'
               )}
               onMouseDown={startResizing}
             />

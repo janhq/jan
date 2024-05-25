@@ -13,7 +13,7 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 export const SettingScreenList = [
   'My Models',
-  // 'Appearance',
+  'Appearance',
   'Hotkey & Shortcut',
   'Advanced Settings',
   'Extensions',

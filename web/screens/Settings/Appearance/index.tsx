@@ -1,15 +1,84 @@
+import { useCallback } from 'react'
+
+import { useTheme } from 'next-themes'
+
+import { fs, joinPath } from '@janhq/core'
+import { Select, Switch } from '@janhq/joi'
+import { useAtom, useAtomValue } from 'jotai'
+
+import {
+  janThemesPathAtom,
+  reduceTransparentAtom,
+  selectedThemeIdAtom,
+  themeDataAtom,
+  themesOptionsAtom,
+} from '@/helpers/atoms/Setting.atom'
+
 export default function AppearanceOptions() {
+  const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
+  const themeOptions = useAtomValue(themesOptionsAtom)
+  const { setTheme } = useTheme()
+  const janThemesPath = useAtomValue(janThemesPathAtom)
+  const [themeData, setThemeData] = useAtom(themeDataAtom)
+  const [reduceTransparent, setReduceTransparent] = useAtom(
+    reduceTransparentAtom
+  )
+
+  const handleClickTheme = useCallback(
+    async (e: string) => {
+      setSelectedIdTheme(e)
+      const filePath = await joinPath([`${janThemesPath}/${e}`, `theme.json`])
+      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+      setThemeData(theme)
+      setTheme(String(theme?.nativeTheme))
+      if (theme?.reduceTransparent) {
+        setReduceTransparent(false)
+      } else {
+        setReduceTransparent(true)
+      }
+    },
+    [
+      janThemesPath,
+      setReduceTransparent,
+      setSelectedIdTheme,
+      setTheme,
+      setThemeData,
+    ]
+  )
+
   return (
-    <div className="m-4 block w-full">
-      {/* Keyboard shortcut  */}
-      <div className="flex w-full items-start justify-between border-b border-[hsla(var(--app-border))] py-3 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
+    <div className="m-4 block">
+      <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+        <div className="flex-shrink-0 space-y-1">
           <div className="flex gap-x-2">
-            <h6 className="font-semibold capitalize">Theme</h6>
+            <h6 className="font-semibold capitalize">Appearance</h6>
           </div>
-          <p className="leading-relaxed"></p>
+          <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+            Select of customize your interface color scheme
+          </p>
         </div>
+        <Select
+          value={selectedIdTheme}
+          options={themeOptions}
+          onValueChange={(e) => handleClickTheme(e)}
+        />
       </div>
+      {themeData?.reduceTransparent && (
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="flex-shrink-0 space-y-1">
+            <div className="flex gap-x-2">
+              <h6 className="font-semibold capitalize">Reduce Transparent</h6>
+            </div>
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+              Reduces the transparency and blurs on some backgrounds
+            </p>
+          </div>
+          <Switch
+            checked={reduceTransparent}
+            onChange={(e) => setReduceTransparent(e.target.checked)}
+          />
+        </div>
+      )}
     </div>
   )
 }

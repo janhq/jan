@@ -15,6 +15,10 @@ import { MainViewState } from '@/constants/screens'
 import { mainViewStateAtom, showLeftPanelAtom } from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import {
+  reduceTransparentAtom,
+  selectedSettingAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 export default function RibbonPanel() {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
@@ -22,10 +26,13 @@ export default function RibbonPanel() {
   const setEditMessage = useSetAtom(editMessageAtom)
   const showLeftPanel = useAtomValue(showLeftPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const setSelectedSetting = useSetAtom(selectedSettingAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
     if (serverEnabled && state === MainViewState.Thread) return
+    if (state === MainViewState.Settings) setSelectedSetting('My Models')
     setMainViewState(state)
     setEditMessage('')
   }
@@ -56,10 +63,13 @@ export default function RibbonPanel() {
   return (
     <div
       className={twMerge(
-        'relative top-0 flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--ribbon-panel-border))] bg-[hsla(var(--ribbon-panel-bg))] py-2',
-        mainViewState === MainViewState.Hub && 'border-none',
-        !showLeftPanel && 'border-none',
-        matches && 'border-none'
+        'relative top-0 flex h-full w-12 flex-shrink-0 flex-col items-center border-r border-[hsla(var(--app-border))] py-2',
+        mainViewState === MainViewState.Hub &&
+          !reduceTransparent &&
+          'border-none',
+        !showLeftPanel && !reduceTransparent && 'border-none',
+        matches && !reduceTransparent && 'border-none',
+        reduceTransparent && ' bg-[hsla(var(--ribbon-panel-bg))]'
       )}
     >
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {

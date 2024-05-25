@@ -75,7 +75,7 @@ const ImportingModelModal = () => {
                 size={16}
                 className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
               />
-              <p className="text-[hsla(var(--text-secondary)] text-sm font-semibold">
+              <p className="text-[hsla(var(--text-secondary)] font-semibold">
                 Own your model configurations, use at your own risk.
                 Misconfigurations may result in lower quality or unexpected
                 outputs.

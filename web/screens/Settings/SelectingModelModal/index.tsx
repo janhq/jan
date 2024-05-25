@@ -48,9 +48,7 @@ const SelectingModelModal = () => {
   const textColor = isDragActive
     ? 'text-[hsla(var(--primary-bg)]'
     : 'text-[hsla(var(--text-secondary))]'
-  const dragAndDropBgColor = isDragActive
-    ? 'bg-[hsla(var(--primary-bg-soft))]'
-    : 'bg-[hsla(var(--app-bg))]'
+  const dragAndDropBgColor = isDragActive && 'bg-[hsla(var(--primary-bg-soft))]'
 
   return (
     <Modal
@@ -61,7 +59,7 @@ const SelectingModelModal = () => {
       title="Import Model"
       content={
         <div>
-          <p className="text-sm font-medium text-[hsla(var(--text-secondary))]">
+          <p className="font-medium text-[hsla(var(--text-secondary))]">
             Import any model file (GGUF) or folder. Your imported model will be
             private to you.
           </p>
@@ -78,10 +76,10 @@ const SelectingModelModal = () => {
                 />
               </div>
               <div className="mt-4">
-                <span className="text-primary text-sm font-bold">
+                <span className="text-primary font-bold">
                   Click to upload &nbsp;
                 </span>
-                <span className={`text-sm ${textColor} font-medium`}>
+                <span className={`${textColor} font-medium`}>
                   or drag and drop (GGUF)
                 </span>
               </div>

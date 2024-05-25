@@ -126,12 +126,10 @@ const EditModelInfoModal = () => {
             <div className="flex flex-1 flex-col">
               <p>{editingModel.name}</p>
               <div className="flex flex-row">
-                <span className="mr-2 text-sm">
-                  {toGibibytes(editingModel.size)}
-                </span>
+                <span className="mr-2">{toGibibytes(editingModel.size)}</span>
                 <div className="flex flex-row space-x-1">
-                  <span className="text-sm font-semibold">Format:</span>
-                  <span className="text-sm font-normal">
+                  <span className="font-semibold">Format:</span>
+                  <span className="font-normal">
                     {editingModel.format.toUpperCase()}
                   </span>
                 </div>

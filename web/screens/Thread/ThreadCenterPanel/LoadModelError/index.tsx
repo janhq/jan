@@ -32,7 +32,7 @@ const LoadModelError = () => {
           Port 3928 is currently unavailable. Check for conflicting apps, or
           access&nbsp;
           <span
-            className="cursor-pointer text-[hsla(var(--text-link))]"
+            className="cursor-pointer text-[hsla(var(--app-link))]"
             onClick={() => setModalTroubleShooting(true)}
           >
             troubleshooting assistance
@@ -48,7 +48,7 @@ const LoadModelError = () => {
           Model is currently unavailable. Please switch to a different model or
           install the{' '}
           <span
-            className="cursor-pointer font-medium text-[hsla(var(--text-link))]"
+            className="cursor-pointer font-medium text-[hsla(var(--app-link))]"
             onClick={() => {
               setMainState(MainViewState.Settings)
               if (activeThread?.assistants[0]?.model.engine) {
@@ -76,7 +76,7 @@ const LoadModelError = () => {
             <p>
               The CUDA toolkit may be unavailable. Please use the{' '}
               <span
-                className="cursor-pointer font-medium text-[hsla(var(--text-link))]"
+                className="cursor-pointer font-medium text-[hsla(var(--app-link))]"
                 onClick={() => {
                   setMainState(MainViewState.Settings)
                   if (activeThread?.assistants[0]?.model.engine) {
@@ -95,7 +95,7 @@ const LoadModelError = () => {
             <div>
               Problem with Nvidia drivers. Please follow the{' '}
               <a
-                className="font-medium text-[hsla(var(--text-link))]"
+                className="font-medium text-[hsla(var(--app-link))]"
                 href="https://www.nvidia.com/Download/index.aspx"
                 target="_blank"
               >
@@ -114,7 +114,7 @@ const LoadModelError = () => {
           <p>
             Jan’s in beta. Access&nbsp;
             <span
-              className="cursor-pointer text-[hsla(var(--text-link))]"
+              className="cursor-pointer text-[hsla(var(--app-link))]"
               onClick={() => setModalTroubleShooting(true)}
             >
               troubleshooting assistance
@@ -128,7 +128,7 @@ const LoadModelError = () => {
 
   return (
     <div className="mt-10">
-      <div className="flex w-full flex-col items-center text-center text-sm font-medium text-gray-500">
+      <div className="flex w-full flex-col items-center text-center font-medium">
         <p className="w-[90%]">
           <ErrorMessage />
         </p>

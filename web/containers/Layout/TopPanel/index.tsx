@@ -1,19 +1,15 @@
 import { Fragment } from 'react'
 
-import { useTheme } from 'next-themes'
-
 import { Button } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PanelRightOpenIcon,
   PanelRightCloseIcon,
-  SunIcon,
   MinusIcon,
-  // SquareIcon,
+  PaletteIcon,
   XIcon,
-  MoonIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
@@ -26,28 +22,25 @@ import {
   showLeftPanelAtom,
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
+import {
+  reduceTransparentAtom,
+  selectedSettingAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 const TopPanel = () => {
-  const mainViewState = useAtomValue(mainViewStateAtom)
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
-
-  const { theme: currentTheme, setTheme } = useTheme()
-
-  const handleClickTheme = (theme: string) => {
-    if (theme === 'dark') {
-      window?.electronAPI.setNativeThemeDark()
-    } else {
-      window?.electronAPI.setNativeThemeLight()
-    }
-    setTheme(theme)
-  }
+  const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
+  const setSelectedSetting = useSetAtom(selectedSettingAtom)
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
 
   return (
     <div
       className={twMerge(
-        'fixed z-50 flex h-9 w-full items-center border-y border-[hsla(var(--top-panel-border))] bg-[hsla(var(--top-panel-bg))] px-4 backdrop-blur-lg',
-        isMac && 'border-t-0 pl-20'
+        'fixed z-50 flex h-9 w-full items-center px-4',
+        isMac && 'border-t-0 pl-20',
+        reduceTransparent &&
+          'border-b border-[hsla(var(--app-border))] bg-[hsla(var(--top-panel-bg))]'
       )}
     >
       {!isMac && <LogoMark width={24} height={24} className="-ml-1 mr-2" />}
@@ -82,25 +75,15 @@ const TopPanel = () => {
                 )}
               </Fragment>
             )}
-          {currentTheme === 'light' ? (
-            <Button
-              theme="icon"
-              onClick={() => {
-                handleClickTheme('dark')
-              }}
-            >
-              <MoonIcon size={16} className="cursor-pointer" />
-            </Button>
-          ) : (
-            <Button
-              theme="icon"
-              onClick={() => {
-                handleClickTheme('light')
-              }}
-            >
-              <SunIcon size={16} className="cursor-pointer" />
-            </Button>
-          )}
+          <Button
+            theme="icon"
+            onClick={() => {
+              setMainViewState(MainViewState.Settings)
+              setSelectedSetting('Appearance')
+            }}
+          >
+            <PaletteIcon size={16} className="cursor-pointer" />
+          </Button>
 
           {!isMac && (
             <div className="flex items-center gap-x-2">
@@ -110,12 +93,6 @@ const TopPanel = () => {
               >
                 <MinusIcon size={16} />
               </Button>
-              {/* <Button
-                theme="icon"
-                onClick={() => window?.electronAPI.setMaximizeApp()}
-              >
-                <SquareIcon size={14} />
-              </Button> */}
               <Button
                 theme="icon"
                 onClick={() => window?.electronAPI.setCloseApp()}

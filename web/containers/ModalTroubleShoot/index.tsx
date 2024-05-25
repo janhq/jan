@@ -41,7 +41,7 @@ const ModalTroubleShooting = () => {
               <a
                 href="https://jan.ai/guides/troubleshooting"
                 target="_blank"
-                className="text-[hsla(var(--text-link))] hover:underline"
+                className="text-[hsla(var(--app-link))] hover:underline"
               >
                 troubleshooting guide
               </a>
@@ -69,7 +69,7 @@ const ModalTroubleShooting = () => {
                     <a
                       href="https://discord.gg/AsJ8krTT3N"
                       target="_blank"
-                      className="text-[hsla(var(--text-link))] hover:underline"
+                      className="text-[hsla(var(--app-link))] hover:underline"
                     >
                       Discord
                     </a>
