@@ -6,6 +6,7 @@ import {
   ConversationalExtension,
   fs,
   joinPath,
+  Thread,
 } from '@janhq/core'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -27,6 +28,7 @@ import {
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
   updateThreadStateLastMessageAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
@@ -41,6 +43,7 @@ export default function useDeleteThread() {
 
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
   const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   const cleanThread = useCallback(
     async (threadId: string) => {
@@ -73,19 +76,27 @@ export default function useDeleteThread() {
 
       thread.metadata = {
         ...thread.metadata,
-        lastMessage: undefined,
       }
+
+      const updatedThread: Thread = {
+        ...thread,
+        title: 'New Thread',
+        metadata: { ...thread.metadata, lastMessage: undefined },
+      }
+
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(thread)
+        ?.saveThread(updatedThread)
       updateThreadLastMessage(threadId, undefined)
+      updateThread(updatedThread)
     },
     [
-      janDataFolderPath,
+      cleanMessages,
       threads,
       messages,
-      cleanMessages,
       updateThreadLastMessage,
+      updateThread,
+      janDataFolderPath,
     ]
   )
 

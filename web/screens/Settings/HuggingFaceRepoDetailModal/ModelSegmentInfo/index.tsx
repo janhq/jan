@@ -13,11 +13,12 @@ const ModelSegmentInfo: React.FC = () => {
   )
 
   const { author, modelName, downloads, modelUrl } = useMemo(() => {
-    const author =
-      (importingHuggingFaceRepoData?.cardData['model_creator'] as string) ??
-      'N/A'
-    const modelName =
-      (importingHuggingFaceRepoData?.cardData['model_name'] as string) ?? 'N/A'
+    const cardData = importingHuggingFaceRepoData?.cardData
+    const author = (cardData?.['model_creator'] ?? 'N/A') as string
+    const modelName = (cardData?.['model_name'] ??
+      importingHuggingFaceRepoData?.id ??
+      'N/A') as string
+
     const modelUrl = importingHuggingFaceRepoData?.modelUrl ?? 'N/A'
     const downloads = importingHuggingFaceRepoData?.downloads ?? 0
 
