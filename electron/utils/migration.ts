@@ -22,15 +22,21 @@ export async function migrate() {
 
     if (existsSync(getJanExtensionsPath()))
       rmdirSync(getJanExtensionsPath(), { recursive: true })
-    if (existsSync(join(getJanDataFolderPath(), 'themes')))
-      rmdirSync(join(getJanDataFolderPath(), 'themes'), { recursive: true })
-    cpSync(
-      join(await appResourcePath(), 'themes'),
-      join(getJanDataFolderPath(), 'themes'),
-      { recursive: true }
-    )
+    await migrateThemes()
 
     store.set('migrated_version', app.getVersion())
     console.debug('migrate extensions done')
+  } else if (!existsSync(join(getJanDataFolderPath(), 'themes'))) {
+    await migrateThemes()
   }
+}
+
+async function migrateThemes() {
+  if (existsSync(join(getJanDataFolderPath(), 'themes')))
+    rmdirSync(join(getJanDataFolderPath(), 'themes'), { recursive: true })
+  cpSync(
+    join(await appResourcePath(), 'themes'),
+    join(getJanDataFolderPath(), 'themes'),
+    { recursive: true }
+  )
 }
