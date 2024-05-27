@@ -23,7 +23,7 @@ const UpdatedFailedModal = () => {
             <a
               href="https://github.com/janhq/jan#download"
               target="_blank"
-              className="font-medium text-[hsla(var(--text-link))]"
+              className="font-medium text-[hsla(var(--app-link))]"
             >
               manual downloading and installation.
             </a>

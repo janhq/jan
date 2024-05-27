@@ -14,6 +14,7 @@ import { toGibibytes } from '@/utils/converter'
 import TableActiveModel from './TableActiveModel'
 
 import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
+import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import {
   cpuUsageAtom,
   gpusAtom,
@@ -36,6 +37,7 @@ const SystemMonitor = () => {
   const [elementExpand, setElementExpand] = useState<HTMLDivElement | null>(
     null
   )
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
 
   const { watch, stopWatching } = useGetSystemResources()
   useClickOutside(
@@ -62,8 +64,8 @@ const SystemMonitor = () => {
       <div
         ref={setControl}
         className={twMerge(
-          'flex cursor-pointer items-center gap-x-1 rounded-md px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
-          showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))] '
+          'flex cursor-pointer items-center gap-x-1 rounded-l px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
+          showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))]'
         )}
         onClick={() => {
           setShowSystemMonitorPanel(!showSystemMonitorPanel)
@@ -77,8 +79,9 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-10px)] flex-shrink-0 flex-col rounded-lg rounded-b-lg border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
-            showFullScreen && 'h-[calc(100%-63px)]'
+            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-8px)] flex-shrink-0 flex-col rounded-lg rounded-b-none border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+            showFullScreen && 'h-[calc(100%-63px)]',
+            reduceTransparent && 'w-[calc(100%-48px)] rounded-none'
           )}
         >
           <div className="flex h-8 flex-shrink-0 items-center justify-between border-b border-[hsla(var(--app-border))] px-4">
@@ -124,7 +127,7 @@ const SystemMonitor = () => {
               <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4">
                 <div className="flex items-center justify-between gap-2">
                   <h6 className="font-bold">Memory</h6>
-                  <span className="text-sm ">
+                  <span>
                     {toGibibytes(usedRam, { hideUnit: true })}/
                     {toGibibytes(totalRam, { hideUnit: true })} GB
                   </span>

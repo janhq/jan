@@ -14,15 +14,19 @@
       "renderer/**/*",
       "build/**/*.{js,map}",
       "pre-install",
+      "themes",
       "docs/**/*",
       "scripts/**/*",
-      "icons/**/*"
+      "icons/**/*",
+      "themes"
     ],
     "asarUnpack": [
       "pre-install",
+      "themes",
       "docs",
       "scripts",
-      "icons"
+      "icons",
+      "themes"
     ],
     "publish": [
       {

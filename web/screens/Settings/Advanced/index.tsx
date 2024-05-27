@@ -223,7 +223,7 @@ const Advanced = () => {
                   <span>
                     {' '}
                     <span
-                      className="cursor-pointer text-[var(--text-link)]"
+                      className="cursor-pointer text-[var(--app-link)]"
                       onClick={() =>
                         openExternalUrl(
                           'https://jan.ai/guides/troubleshooting/gpu-not-used/'
@@ -441,9 +441,9 @@ const Advanced = () => {
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Enable Quick Ask to be triggered via the default hotkey{' '}
-                <div className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
+                <span className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
                   <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
-                </div>{' '}
+                </span>{' '}
                 (reload needed).
               </p>
             </div>

@@ -46,7 +46,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           <span data-testid="invalid-API-key-error">
             Invalid API key. Please check your API key from{' '}
             <button
-              className="font-medium text-[hsla(var(--text-link))]"
+              className="font-medium text-[hsla(var(--app-link))]"
               onClick={() => {
                 setMainState(MainViewState.Settings)
 
@@ -78,7 +78,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     <div className="mt-10">
       {message.status === MessageStatus.Stopped && (
         <div key={message.id} className="flex flex-col items-center">
-          <span className="mb-3 text-center text-sm font-medium text-[hsla(var(--text-secondary))]">
+          <span className="mb-3 text-center font-medium text-[hsla(var(--text-secondary))]">
             Oops! The generation was interrupted. Let&apos;s give it another go!
           </span>
           <Button
@@ -102,7 +102,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           <p>
             Jan’s in beta. Access&nbsp;
             <span
-              className="cursor-pointer text-[hsla(var(--text-link))]"
+              className="cursor-pointer text-[hsla(var(--app-link))]"
               onClick={() => setModalTroubleShooting(true)}
             >
               troubleshooting assistance

@@ -48,7 +48,7 @@ export default function Error({
             Something went wrong. Try to{' '}
             <button
               rel="noopener noreferrer"
-              className="text-[hsla(var(--text-link))] hover:underline"
+              className="text-[hsla(var(--app-link))] hover:underline"
               onClick={() => window.location.reload()}
             >
               refresh this page
@@ -56,7 +56,7 @@ export default function Error({
             or <br /> feel free to{' '}
             <a
               rel="noopener noreferrer"
-              className="text-[hsla(var(--text-link))] hover:underline"
+              className="text-[hsla(var(--app-link))] hover:underline"
               href="https://discord.gg/FTk2MvZwJH"
               target="_blank_"
             >
@@ -71,12 +71,12 @@ export default function Error({
             <strong className="font-bold">Error: </strong>
             <span className="block sm:inline">{error.message}</span>
             <div className="mt-2 h-full w-full">
-              <pre className="mt-2 w-full whitespace-pre-wrap rounded bg-red-200 p-4 text-left text-sm text-red-600">
+              <pre className="mt-2 w-full whitespace-pre-wrap rounded bg-red-200 p-4 text-left text-red-600">
                 {showFull ? error.stack : error.stack?.slice(0, 200)}
               </pre>
               <button
                 onClick={() => setShowFull(!showFull)}
-                className="mt-1 text-sm text-red-700 underline focus:outline-none"
+                className="mt-1 text-red-700 underline focus:outline-none"
               >
                 {showFull ? 'Show less' : 'Show more'}
               </button>

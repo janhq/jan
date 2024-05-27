@@ -1,8 +1,6 @@
 'use client'
 
-import { Fragment, useEffect } from 'react'
-
-import { useTheme } from 'next-themes'
+import { useEffect } from 'react'
 
 import { motion as m } from 'framer-motion'
 
@@ -35,15 +33,12 @@ import MainViewContainer from '../MainViewContainer'
 import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
 const BaseLayout = () => {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
-  const { theme, setTheme } = useTheme()
-
-  useEffect(() => {
-    setTheme(theme as string)
-  }, [setTheme, theme])
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
 
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
@@ -52,15 +47,18 @@ const BaseLayout = () => {
   }, [setMainViewState])
 
   return (
-    <Fragment>
+    <div
+      className={twMerge(
+        'h-screen text-sm',
+        reduceTransparent
+          ? 'bg-[hsla(var(--app-bg))]'
+          : 'bg-[hsla(var(--app-transparent))]'
+      )}
+    >
       <TopPanel />
       <div className="relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen">
         <RibbonPanel />
-        <div
-          className={twMerge(
-            'relative flex w-full bg-[hsla(var(--app-bg-transparent))]'
-          )}
-        >
+        <div className={twMerge('relative flex w-full')}>
           <div className="w-full">
             <m.div
               key={mainViewState}
@@ -89,7 +87,7 @@ const BaseLayout = () => {
         <HuggingFaceRepoDetailModal />
       </div>
       <BottomPanel />
-    </Fragment>
+    </div>
   )
 }
 

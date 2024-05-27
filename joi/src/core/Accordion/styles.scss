@@ -1,5 +1,4 @@
 .accordion {
-  background-color: hsla(var(--accirdion-bg));
   border-top: 1px solid hsla(var(--app-border));
 
   &__item {
@@ -31,7 +30,6 @@
 
   &__content {
     overflow: hidden;
-    background-color: hsla(var(--accirdion-bg));
 
     &--wrapper {
       padding: 4px 16px 16px 16px;

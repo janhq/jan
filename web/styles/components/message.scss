@@ -9,7 +9,7 @@
   }
 
   a {
-    color: hsla(var(--text-link));
+    color: hsla(var(--app-link));
     &:hover {
       @apply underline;
     }

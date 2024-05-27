@@ -71,22 +71,22 @@ const Providers = ({ children }: PropsWithChildren) => {
 
   return (
     <JotaiWrapper>
-      <ThemeWrapper>
-        <Umami />
-        {settingUp && <Loader description="Preparing Update..." />}
-        {setupCore && activated && (
-          <Responsive>
-            <KeyListener>
-              <EventListenerWrapper>
-                <DataLoader>
+      <Umami />
+      {settingUp && <Loader description="Preparing Update..." />}
+      {setupCore && activated && (
+        <Responsive>
+          <KeyListener>
+            <EventListenerWrapper>
+              <DataLoader>
+                <ThemeWrapper>
                   <DeepLinkListener>{children}</DeepLinkListener>
-                </DataLoader>
-              </EventListenerWrapper>
-              <Toaster />
-            </KeyListener>
-          </Responsive>
-        )}
-      </ThemeWrapper>
+                </ThemeWrapper>
+              </DataLoader>
+            </EventListenerWrapper>
+            <Toaster />
+          </KeyListener>
+        </Responsive>
+      )}
     </JotaiWrapper>
   )
 }

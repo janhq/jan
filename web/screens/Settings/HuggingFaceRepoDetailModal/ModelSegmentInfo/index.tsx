@@ -35,7 +35,7 @@ const ModelSegmentInfo = () => {
   return (
     <div className="flex w-full flex-col space-y-4">
       <HeaderInfo title={'Model ID'}>
-        <h1 className="text-sm font-medium text-zinc-500 dark:text-gray-300">
+        <h1 className="font-medium text-zinc-500 dark:text-gray-300">
           {modelName}
         </h1>
       </HeaderInfo>
@@ -44,7 +44,7 @@ const ModelSegmentInfo = () => {
         <a
           href={modelUrl}
           target="_blank"
-          className="line-clamp-1 text-sm font-medium text-[hsla(var(--text-link))] hover:underline"
+          className="line-clamp-1 font-medium text-[hsla(var(--app-link))] hover:underline"
         >
           {modelUrl}
         </a>
@@ -53,7 +53,7 @@ const ModelSegmentInfo = () => {
       <div className="flex justify-between space-x-4">
         <div className="flex-1">
           <HeaderInfo title="Author">
-            <h1 className="text-sm font-medium text-[hsla(var(--text-secondary))]">
+            <h1 className="font-medium text-[hsla(var(--text-secondary))]">
               {author}
             </h1>
           </HeaderInfo>
@@ -63,7 +63,7 @@ const ModelSegmentInfo = () => {
           <HeaderInfo title="Downloads">
             <div className="flex flex-row items-center space-x-1.5">
               <Download size={16} />
-              <span className="text-sm font-medium text-zinc-500 dark:text-gray-300">
+              <span className="font-medium text-zinc-500 dark:text-gray-300">
                 {downloads}
               </span>
             </div>
@@ -92,7 +92,7 @@ type HeaderInfoProps = {
 const HeaderInfo = ({ title, children }: HeaderInfoProps) => {
   return (
     <div className="flex flex-col space-y-2">
-      <h1 className="text-sm font-semibold">{title}</h1>
+      <h1 className="font-semibold">{title}</h1>
       {children}
     </div>
   )

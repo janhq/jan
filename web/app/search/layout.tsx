@@ -18,7 +18,7 @@ export default function RootLayout() {
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-[hsla(var(--app-bg))] font-sans text-sm antialiased">
+      <body className="bg-[hsla(var(--app-bg))] font-sans antialiased">
         <JotaiWrapper>
           <ThemeWrapper>
             <ClipboardListener>
