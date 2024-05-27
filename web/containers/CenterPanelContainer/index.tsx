@@ -10,7 +10,7 @@ const CenterPanelContainer = ({ children }: PropsWithChildren) => {
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   return (
     <div
-      className={twMerge('flex h-full w-full', !reduceTransparent && 'px-1')}
+      className={twMerge('flex h-full w-full', !reduceTransparent && 'px-2')}
     >
       <div
         className={twMerge(
