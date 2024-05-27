@@ -1,7 +1,7 @@
 import { app } from 'electron'
 
 import { join } from 'path'
-import { rmdirSync, cpSync } from 'fs'
+import { rmdirSync, cpSync, existsSync } from 'fs'
 import Store from 'electron-store'
 import {
   getJanExtensionsPath,
@@ -20,8 +20,10 @@ export async function migrate() {
   if (store.get('migrated_version') !== app.getVersion()) {
     console.debug('start migration:', store.get('migrated_version'))
 
-    rmdirSync(getJanExtensionsPath(), { recursive: true })
-    rmdirSync(join(getJanDataFolderPath()), { recursive: true })
+    if (existsSync(getJanExtensionsPath()))
+      rmdirSync(getJanExtensionsPath(), { recursive: true })
+    if (existsSync(join(getJanDataFolderPath())))
+      rmdirSync(join(getJanDataFolderPath()), { recursive: true })
     cpSync(
       join(await appResourcePath(), 'themes'),
       join(getJanDataFolderPath(), 'themes')
