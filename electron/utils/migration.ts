@@ -22,11 +22,12 @@ export async function migrate() {
 
     if (existsSync(getJanExtensionsPath()))
       rmdirSync(getJanExtensionsPath(), { recursive: true })
-    if (existsSync(join(getJanDataFolderPath())))
-      rmdirSync(join(getJanDataFolderPath()), { recursive: true })
+    if (existsSync(join(getJanDataFolderPath(), 'themes')))
+      rmdirSync(join(getJanDataFolderPath(), 'themes'), { recursive: true })
     cpSync(
       join(await appResourcePath(), 'themes'),
-      join(getJanDataFolderPath(), 'themes')
+      join(getJanDataFolderPath(), 'themes'),
+      { recursive: true }
     )
 
     store.set('migrated_version', app.getVersion())
