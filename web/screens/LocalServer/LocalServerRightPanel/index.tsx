@@ -31,10 +31,10 @@ const LocalServerRightPanel = () => {
   )
 
   useEffect(() => {
-    if (Object.keys(currentModelSettingParams).length === 0) {
+    if (selectedModel) {
       setCurrentModelSettingParams(toSettingParams(selectedModel?.settings))
     }
-  }, [currentModelSettingParams, selectedModel?.settings])
+  }, [selectedModel])
 
   const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
 
