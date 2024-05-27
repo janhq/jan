@@ -113,23 +113,9 @@ const ExtensionCatalog = () => {
     }
   }
 
-  const INACTIVE_ENGINE_PROVIDER = 'inActiveEngineProvider'
-
   const [inActiveEngineProvider, setInActiveEngineProvider] = useAtom(
     inActiveEngineProviderAtom
   )
-
-  useEffect(() => {
-    if (localStorage.getItem(INACTIVE_ENGINE_PROVIDER) === null) {
-      localStorage.setItem(INACTIVE_ENGINE_PROVIDER, '[]')
-      setInActiveEngineProvider([])
-    } else {
-      setInActiveEngineProvider(
-        JSON.parse(String(localStorage.getItem(INACTIVE_ENGINE_PROVIDER)))
-      )
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const onSwitchChange = useCallback(
     (name: string) => {
@@ -137,16 +123,8 @@ const ExtensionCatalog = () => {
         setInActiveEngineProvider(
           [...inActiveEngineProvider].filter((x) => x !== name)
         )
-        localStorage.setItem(
-          INACTIVE_ENGINE_PROVIDER,
-          JSON.stringify([...inActiveEngineProvider].filter((x) => x !== name))
-        )
       } else {
         setInActiveEngineProvider([...inActiveEngineProvider, name])
-        localStorage.setItem(
-          INACTIVE_ENGINE_PROVIDER,
-          JSON.stringify([...inActiveEngineProvider, name])
-        )
       }
     },
     [inActiveEngineProvider, setInActiveEngineProvider]

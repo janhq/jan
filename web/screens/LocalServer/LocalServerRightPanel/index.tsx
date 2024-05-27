@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Accordion, AccordionItem } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -30,14 +30,21 @@ const LocalServerRightPanel = () => {
     toSettingParams(selectedModel?.settings)
   )
 
+  useEffect(() => {
+    if (Object.keys(currentModelSettingParams).length === 0) {
+      setCurrentModelSettingParams(toSettingParams(selectedModel?.settings))
+    }
+  }, [currentModelSettingParams, selectedModel?.settings])
+
   const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
 
-  const componentDataEngineSetting = getConfigurationsData(
-    currentModelSettingParams
-  )
   const componentDataRuntimeSetting = getConfigurationsData(
     modelRuntimeParams,
     selectedModel
+  )
+
+  const componentDataEngineSetting = getConfigurationsData(
+    currentModelSettingParams
   )
 
   const engineSettings = useMemo(

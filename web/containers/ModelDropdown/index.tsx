@@ -157,6 +157,8 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
 
   const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
 
+  console.log(inActiveEngineProvider)
+
   useEffect(() => {
     const getAllSettings = async () => {
       const extensionsMenu: {

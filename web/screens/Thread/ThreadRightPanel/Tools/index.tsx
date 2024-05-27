@@ -1,11 +1,13 @@
-import { Fragment, useCallback } from 'react'
+import { Fragment, useCallback, useEffect } from 'react'
 
 import { Tooltip, Switch, Input } from '@janhq/joi'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { InfoIcon } from 'lucide-react'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+
+import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import AssistantSetting from '@/screens/Thread/ThreadCenterPanel/AssistantSetting'
 
@@ -18,14 +20,26 @@ import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 const Tools = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const { updateThreadMetadata } = useCreateNewThread()
+  const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const componentDataAssistantSetting = getConfigurationsData(
     (activeThread?.assistants[0]?.tools &&
       activeThread?.assistants[0]?.tools[0]?.settings) ??
       {}
   )
+
+  useEffect(() => {
+    if (!activeThread) return
+    let model = downloadedModels.find(
+      (model) => model.id === activeThread.assistants[0].model.id
+    )
+    if (!model) {
+      model = recommendedModel
+    }
+    setSelectedModel(model)
+  }, [recommendedModel, activeThread, downloadedModels, setSelectedModel])
 
   const onRetrievalSwitchUpdate = useCallback(
     (enabled: boolean) => {
@@ -115,7 +129,11 @@ const Tools = () => {
                     />
                   </div>
                   <div className="w-full">
-                    <Input value={selectedModel?.name} disabled />
+                    <Input
+                      value={selectedModel?.name || ''}
+                      disabled
+                      readOnly
+                    />
                   </div>
                 </div>
                 <div className="mb-4">
@@ -142,7 +160,7 @@ const Tools = () => {
                   </div>
 
                   <div className="w-full">
-                    <Input value="HNSWLib" disabled />
+                    <Input value="HNSWLib" disabled readOnly />
                   </div>
                 </div>
                 <AssistantSetting
