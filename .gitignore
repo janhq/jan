@@ -16,6 +16,7 @@ electron/renderer
 electron/models
 electron/docs
 electron/engines
+electron/themes
 electron/playwright-report
 server/pre-install
 package-lock.json
