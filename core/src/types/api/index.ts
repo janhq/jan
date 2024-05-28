@@ -17,6 +17,7 @@ export enum NativeRoute {
   setMinimizeApp = 'setMinimizeApp',
   setCloseApp = 'setCloseApp',
   setMaximizeApp = 'setMaximizeApp',
+  showOpenMenu = 'showOpenMenu',
 
   hideQuickAskWindow = 'hideQuickAskWindow',
   sendQuickAskInput = 'sendQuickAskInput',

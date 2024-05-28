@@ -1,7 +1,6 @@
 import { app, ipcMain, dialog, shell, nativeTheme, screen } from 'electron'
 import { join } from 'path'
 import { windowManager } from '../managers/window'
-import { getBounds, saveBounds } from '../utils/setup'
 import {
   ModuleManager,
   getJanDataFolderPath,
@@ -11,7 +10,10 @@ import {
   NativeRoute,
   SelectFileProp,
 } from '@janhq/core/node'
-import { SelectFileOption } from '@janhq/core/.'
+import { SelectFileOption } from '@janhq/core'
+import { menu } from '../utils/menu'
+
+const isMac = process.platform === 'darwin'
 
 export function handleAppIPCs() {
   /**
@@ -171,6 +173,16 @@ export function handleAppIPCs() {
       )
     }
   )
+
+  ipcMain.handle(NativeRoute.showOpenMenu, function (e, args) {
+    if (!isMac && windowManager.mainWindow) {
+      menu.popup({
+        window: windowManager.mainWindow,
+        x: args.x,
+        y: args.y,
+      })
+    }
+  })
 
   ipcMain.handle(
     NativeRoute.hideMainWindow,

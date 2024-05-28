@@ -8,6 +8,7 @@ import {
   PanelRightOpenIcon,
   PanelRightCloseIcon,
   MinusIcon,
+  MenuIcon,
   PaletteIcon,
   XIcon,
 } from 'lucide-react'
@@ -46,6 +47,16 @@ const TopPanel = () => {
       {!isMac && <LogoMark width={24} height={24} className="-ml-1 mr-2" />}
       <div className="flex w-full items-center justify-between text-[hsla(var(--text-secondary))]">
         <div className="unset-drag flex cursor-pointer gap-x-0.5">
+          {!isMac && (
+            <Button
+              theme="icon"
+              onClick={() => {
+                window?.electronAPI.showOpenMenu(100, 100)
+              }}
+            >
+              <MenuIcon size={16} />
+            </Button>
+          )}
           {mainViewState !== MainViewState.Hub && (
             <Fragment>
               {showLeftPanel ? (

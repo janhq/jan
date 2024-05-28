@@ -104,7 +104,8 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
             onClick={onUseModelClick}
             disabled={serverEnabled}
             data-testid={`use-model-btn-${model.id}`}
-            variant="soft"
+            variant="outline"
+            theme="ghost"
             className="min-w-[98px]"
           >
             Use
