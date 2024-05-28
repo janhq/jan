@@ -78,6 +78,7 @@ const ChatScreen: React.FC = () => {
       }
     : {
         'application/pdf': ['.pdf'],
+        'plain/text': ['.txt', ".md"],
       }
 
   const { getRootProps, isDragReject } = useDropzone({
@@ -118,7 +119,7 @@ const ChatScreen: React.FC = () => {
       )
         return
       const imageType = files[0]?.type.includes('image')
-      setFileUpload([{ file: files[0], type: imageType ? 'image' : 'pdf' }])
+      setFileUpload([{ file: files[0], type: imageType ? 'image' : 'pdf' }]) // TODO: Fix for plain text
       setDragOver(false)
     },
     onDropRejected: (e) => {

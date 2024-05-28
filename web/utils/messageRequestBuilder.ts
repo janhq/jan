@@ -46,10 +46,12 @@ export class MessageRequestBuilder {
     base64Blob: string | undefined,
     fileContentType: FileType
   ) {
-    if (base64Blob && fileContentType === 'pdf')
+    if (base64Blob && fileContentType === 'pdf'){
       return this.addDocMessage(message)
-    else if (base64Blob && fileContentType === 'image') {
+    } else if (base64Blob && fileContentType === 'image') {
       return this.addImageMessage(message, base64Blob)
+    } else if (base64Blob && fileContentType === 'plain/text') {
+        return this.addTextDocMessage(message)
     }
     this.messages = [
       ...this.messages,
@@ -87,6 +89,26 @@ export class MessageRequestBuilder {
           type: ChatCompletionMessageContentType.Doc,
           doc_url: {
             url: `threads/${this.thread.id}/files/${this.msgId}.pdf`,
+          },
+        },
+      ] as ChatCompletionMessageContent,
+    }
+    this.messages = [...this.messages, message]
+    return this
+  }
+  // Chainable
+  addTextDocMessage(prompt: string) {
+    const message: ChatCompletionMessage = {
+      role: ChatCompletionRole.User,
+      content: [
+        {
+          type: ChatCompletionMessageContentType.Text,
+          text: prompt,
+        } as ChatCompletionMessageContentText,
+        {
+          type: ChatCompletionMessageContentType.TextDoc,
+          doc_url: {
+            url: `threads/${this.thread.id}/files/${this.msgId}.txt`,
           },
         },
       ] as ChatCompletionMessageContent,

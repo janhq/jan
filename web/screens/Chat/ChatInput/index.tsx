@@ -116,10 +116,15 @@ const ChatInput: React.FC = () => {
    * Its to be used to display the extension file name of the selected file.
    * @param event - The change event object.
    */
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePDFFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
     setFileUpload([{ file: file, type: 'pdf' }])
+  }
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setFileUpload([{ file: file, type: 'plain/text' }])
   }
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -262,7 +267,53 @@ const ChatInput: React.FC = () => {
                     }}
                   >
                     <FileTextIcon size={16} />
-                    <span className="font-medium">Document</span>
+                    <span className="font-medium">PDF Document</span>
+                  </li>
+                </TooltipTrigger>
+                <TooltipPortal>
+                  {(!activeThread?.assistants[0].tools ||
+                    !activeThread?.assistants[0].tools[0]?.enabled ||
+                    activeThread?.assistants[0].model.settings.text_model ===
+                      false) && (
+                    <TooltipContent side="top" className="max-w-[154px] px-3">
+                      {activeThread?.assistants[0].model.settings.text_model ===
+                      false ? (
+                        <span>
+                          This model does not support text-based retrieval.
+                        </span>
+                      ) : (
+                        <span>
+                          Turn on Retrieval in Assistant Settings to use this
+                          feature.
+                        </span>
+                      )}
+                      <TooltipArrow />
+                    </TooltipContent>
+                  )}
+                </TooltipPortal>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <li
+                    className={twMerge(
+                      'flex w-full cursor-pointer items-center space-x-2 px-4 py-2 text-muted-foreground hover:bg-secondary',
+                      activeThread?.assistants[0].model.settings.text_model ===
+                        false
+                        ? 'cursor-not-allowed opacity-50'
+                        : 'cursor-pointer'
+                    )}
+                    onClick={() => {
+                      if (
+                        activeThread?.assistants[0].model.settings
+                          .text_model !== false
+                      ) {
+                        fileInputRef.current?.click()
+                        setShowAttacmentMenus(false)
+                      }
+                    }}
+                  >
+                    <FileTextIcon size={16} />
+                    <span className="font-medium">Plain Text Document</span>
                   </li>
                 </TooltipTrigger>
                 <TooltipPortal>
@@ -305,8 +356,16 @@ const ChatInput: React.FC = () => {
         className="hidden"
         ref={fileInputRef}
         value=""
-        onChange={handleFileChange}
+        onChange={handlePDFFileChange}
         accept="application/pdf"
+      />
+      <input
+        type="file"
+        className="hidden"
+        ref={fileInputRef}
+        value=""
+        onChange={handleFileChange}
+        accept="plain/text"
       />
 
       {messages[messages.length - 1]?.status !== MessageStatus.Pending &&

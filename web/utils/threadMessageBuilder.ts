@@ -60,6 +60,18 @@ export class ThreadMessageBuilder {
       })
     }
 
+    if (base64 && fileUpload[0]?.type === 'plain/text') {
+      this.content.push({
+        type: ContentType.PlainText,
+        text: {
+          value: prompt,
+          annotations: [base64],
+          name: fileUpload[0].file.name,
+          size: fileUpload[0].file.size,
+        },
+      })
+    }
+
     if (prompt && !base64) {
       this.content.push({
         type: ContentType.Text,
