@@ -94,15 +94,16 @@ export const useCreateNewThread = () => {
       settings: assistant.tools && assistant.tools[0].settings,
     }
 
-    const overriddenSettings =
-      defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
-        ? { ctx_len: 2048 }
-        : {}
+    const defaultCtxLen = 2048;
+    const defaultMaxTokens = 2048;
 
-    const overriddenParameters =
-      defaultModel?.parameters.max_tokens && defaultModel.parameters.max_tokens
-        ? { max_tokens: 2048 }
-        : {}
+    const overriddenSettings = {
+      ctx_len: defaultModel?.settings.ctx_len || defaultCtxLen
+    }
+
+    const overriddenParameters = {
+      max_tokens: defaultModel?.parameters.max_tokens || defaultMaxTokens
+    }
 
     const createdAt = Date.now()
     const assistantInfo: ThreadAssistantInfo = {
