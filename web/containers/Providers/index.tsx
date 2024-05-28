@@ -73,9 +73,7 @@ const Providers = ({ children }: PropsWithChildren) => {
     <ThemeWrapper>
       <JotaiWrapper>
         <Umami />
-        {settingUp && !setupCore && !activated && (
-          <Loader description="Preparing Update..." />
-        )}
+        {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
           <>
             <Responsive>
