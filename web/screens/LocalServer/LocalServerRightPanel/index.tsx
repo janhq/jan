@@ -77,7 +77,7 @@ const LocalServerRightPanel = () => {
         <div className="mb-4 flex items-start space-x-2">
           <InfoIcon
             size={16}
-            className="mt-1 flex-shrink-0 text-[hsla(var(--info-bg))]"
+            className="mt-1 flex-shrink-0 text-[hsla(var(--text-secondary))]"
           />
           <p>
             You can concurrently send requests to one active local model and

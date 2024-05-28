@@ -263,6 +263,7 @@ const ChatInput = () => {
                 }
               />
               <Tooltip
+                side="bottom"
                 trigger={
                   <li
                     className={twMerge(

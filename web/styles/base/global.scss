@@ -3,6 +3,10 @@
     pointer-events: none;
   }
 
+  a {
+    text-decoration: underline;
+  }
+
   .dragable-bar {
     position: absolute;
     left: 0px;

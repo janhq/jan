@@ -30,6 +30,7 @@
 
   &__disabled {
     cursor: not-allowed;
+    pointer-events: none;
     background-color: hsla(var(--disabled-bg)) !important;
     color: hsla(var(--disabled-fg));
     border: none;

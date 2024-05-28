@@ -55,7 +55,7 @@ const MyModelList = ({ model }: Props) => {
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex gap-x-2">
+        <div className="flex w-1/2 gap-x-8">
           {engineHasLogo.map((x) => {
             if (x === model.engine) {
               return (
@@ -71,26 +71,29 @@ const MyModelList = ({ model }: Props) => {
               )
             }
           })}
-          <h6
-            className={twMerge(
-              'line-clamp-1 font-medium',
-              model.engine !== InferenceEngine.nitro &&
-                'text-[hsla(var(--text-secondary))]'
-            )}
-          >
-            {model.name}
-          </h6>
-        </div>
-        {model.engine === InferenceEngine.nitro && (
-          <div className="flex gap-x-8">
-            <p
-              className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
-              title={model.id}
+          <div className="flex w-full items-center justify-between">
+            <h6
+              className={twMerge(
+                'line-clamp-1 max-w-[200px] font-medium',
+                model.engine !== InferenceEngine.nitro &&
+                  'max-w-none text-[hsla(var(--text-secondary))]'
+              )}
+              title={model.name}
             >
-              {model.id}
-            </p>
+              {model.name}
+            </h6>
+            {model.engine === InferenceEngine.nitro && (
+              <div className="flex gap-x-8">
+                <p
+                  className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
+                  title={model.id}
+                >
+                  {model.id}
+                </p>
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {model.engine === InferenceEngine.nitro && (
           <div className="flex gap-x-4">
