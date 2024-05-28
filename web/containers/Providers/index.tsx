@@ -70,11 +70,11 @@ const Providers = ({ children }: PropsWithChildren) => {
   }, [setupCore, setupExtensions])
 
   return (
-    <JotaiWrapper>
-      <Umami />
-      {settingUp && <Loader description="Preparing Update..." />}
-      {setupCore && activated && (
-        <ThemeWrapper>
+    <ThemeWrapper>
+      <JotaiWrapper>
+        <Umami />
+        {settingUp && <Loader description="Preparing Update..." />}
+        {setupCore && activated && (
           <Responsive>
             <KeyListener>
               <EventListenerWrapper>
@@ -85,9 +85,9 @@ const Providers = ({ children }: PropsWithChildren) => {
               <Toaster />
             </KeyListener>
           </Responsive>
-        </ThemeWrapper>
-      )}
-    </JotaiWrapper>
+        )}
+      </JotaiWrapper>
+    </ThemeWrapper>
   )
 }
 
