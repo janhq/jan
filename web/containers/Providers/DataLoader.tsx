@@ -7,6 +7,7 @@ import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
+import { useLoadTheme } from '@/hooks/useLoadTheme'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
@@ -33,6 +34,7 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   useThreads()
   useAssistants()
   useGetSystemResources()
+  useLoadTheme()
 
   useEffect(() => {
     window.core?.api

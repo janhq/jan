@@ -4,7 +4,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 export default function ModelReload() {
   const { stateModel } = useActiveModel()
-  const [loader, setLoader] = useState(0)
+  const [loader, setLoader] = useState(50)
 
   // This is fake loader please fix this when we have realtime percentage when load model
   useEffect(() => {
@@ -35,9 +35,9 @@ export default function ModelReload() {
 
   return (
     <div className=" mb-1 mt-2 py-2 text-center">
-      <div className="relative inline-block overflow-hidden rounded-lg border border-neutral-50 bg-blue-50 px-4 py-2 font-semibold text-blue-600 shadow-lg">
+      <div className="relative inline-block overflow-hidden rounded-lg bg-[hsla(var(--loader-bg))] px-4 py-2 font-semibold text-[hsla(var(--loader-fg))] shadow-lg">
         <div
-          className="absolute left-0 top-0 h-full bg-blue-200"
+          className="absolute left-0 top-0 h-full bg-[hsla(var(--loader-active-bg))]"
           style={{ width: `${loader}%` }}
         />
         <span className="relative z-10">

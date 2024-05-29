@@ -5,26 +5,20 @@ import { useEffect, useState, useCallback, ChangeEvent } from 'react'
 import { openExternalUrl, fs, AppConfiguration } from '@janhq/core'
 
 import {
-  Switch,
-  Button,
-  Input,
-  Select,
-  Checkbox,
-  SelectContent,
-  SelectGroup,
-  SelectPortal,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipTrigger,
   ScrollArea,
-} from '@janhq/uikit'
+  Button,
+  Switch,
+  Input,
+  Tooltip,
+  Checkbox,
+  useClickOutside,
+} from '@janhq/joi'
 
 import { useAtom, useAtomValue } from 'jotai'
+import { ChevronDownIcon } from 'lucide-react'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import { snackbar, toaster } from '@/containers/Toast'
 
@@ -49,6 +43,19 @@ type GPU = {
   name: string
 }
 
+const test = [
+  {
+    id: 'test a',
+    vram: 2,
+    name: 'nvidia A',
+  },
+  {
+    id: 'test',
+    vram: 2,
+    name: 'nvidia B',
+  },
+]
+
 const Advanced = () => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
     experimentalFeatureEnabledAtom
@@ -62,11 +69,17 @@ const Advanced = () => {
 
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [gpuList, setGpuList] = useState<GPU[]>([])
+  const [gpuList, setGpuList] = useState<GPU[]>(test)
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
+  const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
+    null
+  )
+
+  const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
 
   const { readSettings, saveSettings } = useSettings()
   const { stopModel } = useActiveModel()
+  const [open, setOpen] = useState(false)
 
   const selectedGpu = gpuList
     .filter((x) => gpusInUse.includes(x.id))
@@ -110,8 +123,10 @@ const Advanced = () => {
     if (relaunch) window.location.reload()
   }
 
-  const updateExperimentalEnabled = async (e: boolean) => {
-    setExperimentalEnabled(e)
+  const updateExperimentalEnabled = async (
+    e: ChangeEvent<HTMLInputElement>
+  ) => {
+    setExperimentalEnabled(e.target.checked)
     if (e) return
 
     // It affects other settings, so we need to reset them
@@ -173,36 +188,34 @@ const Advanced = () => {
   const gpuSelectionPlaceHolder =
     gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
 
+  useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
+
   return (
-    <ScrollArea className="px-4">
+    <ScrollArea className="h-full w-full px-4">
       <div className="block w-full py-4">
         {/* Experimental */}
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="flex-shrink-0 space-y-1">
             <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
-                Experimental Mode
-              </h6>
+              <h6 className="font-semibold capitalize">Experimental Mode</h6>
             </div>
-            <p className="leading-relaxed">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Enable experimental features that may be untested and unstable.
             </p>
           </div>
           <Switch
             checked={experimentalEnabled}
-            onCheckedChange={updateExperimentalEnabled}
+            onChange={updateExperimentalEnabled}
           />
         </div>
 
         {/* CPU / GPU switching */}
         {!isMac && (
-          <div className="flex w-full flex-col items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
+          <div className="flex w-full flex-col items-start justify-between border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">
             <div className="flex w-full items-start justify-between">
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <div className="flex gap-x-2">
-                  <h6 className="text-sm font-semibold capitalize">
-                    GPU Acceleration
-                  </h6>
+                  <h6 className="font-semibold capitalize">GPU Acceleration</h6>
                 </div>
                 <p className="pr-8 leading-relaxed">
                   Enable to enhance model performance by utilizing your GPU
@@ -210,7 +223,7 @@ const Advanced = () => {
                   <span>
                     {' '}
                     <span
-                      className="cursor-pointer text-blue-600"
+                      className="cursor-pointer text-[var(--app-link)]"
                       onClick={() =>
                         openExternalUrl(
                           'https://jan.ai/guides/troubleshooting/gpu-not-used/'
@@ -224,37 +237,27 @@ const Advanced = () => {
                 </p>
               </div>
 
-              <div>
+              <div className="flex items-center">
                 {gpuList.length > 0 && !gpuEnabled && (
-                  <Tooltip>
-                    <TooltipTrigger>
+                  <Tooltip
+                    trigger={
                       <AlertCircleIcon
-                        size={20}
-                        className="mr-2 text-yellow-600"
+                        size={16}
+                        className="mr-2 text-[hsla(var(--warning-bg))]"
                       />
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="right"
-                      sideOffset={10}
-                      className="max-w-[240px]"
-                    >
-                      <span>
-                        Disabling NVIDIA GPU Acceleration may result in reduced
-                        performance. It is recommended to keep this enabled for
-                        optimal user experience.
-                      </span>
-                      <TooltipArrow />
-                    </TooltipContent>
-                  </Tooltip>
+                    }
+                    content="Disabling NVIDIA GPU Acceleration may result in reduced
+                    performance. It is recommended to keep this enabled for
+                    optimal user experience."
+                  />
                 )}
-
-                <Tooltip>
-                  <TooltipTrigger>
+                <Tooltip
+                  trigger={
                     <Switch
                       disabled={gpuList.length === 0 || vulkanEnabled}
                       checked={gpuEnabled}
-                      onCheckedChange={(e) => {
-                        if (e === true) {
+                      onChange={(e) => {
+                        if (e.target.checked === true) {
                           saveSettings({ runMode: 'gpu' })
                           setGpuEnabled(true)
                           snackbar({
@@ -272,118 +275,104 @@ const Advanced = () => {
                           })
                         }
                         // Stop any running model to apply the changes
-                        if (e !== gpuEnabled) stopModel()
+                        if (e.target.checked !== gpuEnabled) stopModel()
                       }}
                     />
-                  </TooltipTrigger>
-                  {gpuList.length === 0 && (
-                    <TooltipContent
-                      side="right"
-                      sideOffset={10}
-                      className="max-w-[240px]"
-                    >
-                      <span>
-                        Your current device does not have a compatible GPU for
-                        monitoring. To enable GPU monitoring, please ensure your
-                        device has a supported Nvidia or AMD GPU with updated
-                        drivers.
-                      </span>
-                      <TooltipArrow />
-                    </TooltipContent>
-                  )}
-                </Tooltip>
+                  }
+                  content="Your current device does not have a compatible GPU for
+                  monitoring. To enable GPU monitoring, please ensure your
+                  device has a supported Nvidia or AMD GPU with updated
+                  drivers."
+                  disabled={gpuList.length > 0}
+                />
               </div>
             </div>
-            <div className="mt-2 w-full rounded-lg bg-secondary p-4">
-              <label className="mb-1 inline-block font-medium">
+            <div className="mt-2 flex w-full flex-col rounded-lg px-2 py-4">
+              <label className="mb-2 mr-2 inline-block font-medium">
                 Choose device(s)
               </label>
-              <Select
-                disabled={gpuList.length === 0 || !gpuEnabled}
-                value={selectedGpu.join()}
-              >
-                <SelectTrigger className="w-[340px] bg-white dark:bg-gray-500">
-                  <SelectValue placeholder={gpuSelectionPlaceHolder}>
-                    <span className="line-clamp-1 w-full pr-8">
-                      {selectedGpu.join()}
-                    </span>
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPortal>
-                  <SelectContent className="w-[400px] px-1 pb-2">
-                    <SelectGroup>
-                      <SelectLabel>
-                        {vulkanEnabled ? 'Vulkan Supported GPUs' : 'Nvidia'}
-                      </SelectLabel>
-                      <div className="px-4 pb-2">
-                        <div className="rounded-lg bg-secondary p-3">
-                          {gpuList
-                            .filter((gpu) =>
-                              vulkanEnabled
-                                ? gpu.name
-                                : gpu.name?.toLowerCase().includes('nvidia')
-                            )
-                            .map((gpu) => (
-                              <div
-                                key={gpu.id}
-                                className="my-1 flex items-center space-x-2"
-                              >
-                                <Checkbox
-                                  id={`gpu-${gpu.id}`}
-                                  name="gpu-nvidia"
-                                  className="bg-white"
-                                  value={gpu.id}
-                                  checked={gpusInUse.includes(gpu.id)}
-                                  onCheckedChange={() =>
-                                    handleGPUChange(gpu.id)
-                                  }
-                                />
-                                <label
-                                  className="flex w-full items-center justify-between"
-                                  htmlFor={`gpu-${gpu.id}`}
-                                >
-                                  <span>{gpu.name}</span>
-                                  {!vulkanEnabled && (
-                                    <span>{gpu.vram}MB VRAM</span>
-                                  )}
-                                </label>
-                              </div>
-                            ))}
-                        </div>
-                        {/* Warning message */}
-                        {gpuEnabled && gpusInUse.length > 1 && (
-                          <div className="mt-2 flex items-start space-x-2 text-yellow-500">
-                            <AlertTriangleIcon
-                              size={16}
-                              className="flex-shrink-0"
-                            />
-                            <p className="text-xs leading-relaxed">
-                              If multi-GPU is enabled with different GPU models
-                              or without NVLink, it could impact token speed.
-                            </p>
-                          </div>
-                        )}
+              <div className="relative flex w-full md:w-1/2" ref={setToggle}>
+                <Input
+                  value={selectedGpu.join() || ''}
+                  className="w-full cursor-pointer"
+                  readOnly
+                  placeholder={gpuSelectionPlaceHolder}
+                  suffixIcon={
+                    <ChevronDownIcon
+                      size={14}
+                      className={twMerge(open && 'rotate-180')}
+                    />
+                  }
+                  onClick={() => setOpen(!open)}
+                />
+                <div
+                  className={twMerge(
+                    'absolute right-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+                    open ? 'flex' : 'hidden'
+                  )}
+                  ref={setDropdownOptions}
+                >
+                  <div className="w-full p-4">
+                    <p>{vulkanEnabled ? 'Vulkan Supported GPUs' : 'Nvidia'}</p>
+                    <div className="py-2">
+                      <div className="rounded-lg">
+                        {gpuList
+                          .filter((gpu) =>
+                            vulkanEnabled
+                              ? gpu.name
+                              : gpu.name?.toLowerCase().includes('nvidia')
+                          )
+                          .map((gpu) => (
+                            <div
+                              key={gpu.id}
+                              className="mt-2 flex items-center space-x-2"
+                            >
+                              <Checkbox
+                                id={`gpu-${gpu.id}`}
+                                name="gpu-nvidia"
+                                value={gpu.id}
+                                checked={gpusInUse.includes(gpu.id)}
+                                onChange={() => handleGPUChange(gpu.id)}
+                                label={
+                                  <span>
+                                    <span>{gpu.name}</span>
+                                    {!vulkanEnabled && (
+                                      <span>{gpu.vram}MB VRAM</span>
+                                    )}
+                                  </span>
+                                }
+                              />
+                            </div>
+                          ))}
                       </div>
-                    </SelectGroup>
-
-                    {/* TODO enable this when we support AMD */}
-                  </SelectContent>
-                </SelectPortal>
-              </Select>
+                      {gpuEnabled && gpusInUse.length > 1 && (
+                        <div className="mt-2 flex items-start space-x-2 text-[hsla(var(--warning-bg))]">
+                          <AlertTriangleIcon
+                            size={16}
+                            className="flex-shrink-0"
+                          />
+                          <p className="text-xs leading-relaxed">
+                            If multi-GPU is enabled with different GPU models or
+                            without NVLink, it could impact token speed.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
         {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
         {!isMac && experimentalEnabled && (
-          <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-            <div className="flex-shrink-0 space-y-1.5">
+          <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+            <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
-                <h6 className="text-sm font-semibold capitalize">
-                  Vulkan Support
-                </h6>
+                <h6 className="font-semibold capitalize">Vulkan Support</h6>
               </div>
-              <p className="leading-relaxed">
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Enable Vulkan with AMD GPU/APU and Intel Arc GPU for better
                 model performance (reload needed).
               </p>
@@ -391,73 +380,76 @@ const Advanced = () => {
 
             <Switch
               checked={vulkanEnabled}
-              onCheckedChange={(e) => updateVulkanEnabled(e)}
+              onChange={(e) => updateVulkanEnabled(e.target.checked)}
             />
           </div>
         )}
 
         <DataFolder />
+
         {/* Proxy */}
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="w-full flex-shrink-0 space-y-1.5">
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="w-full space-y-1">
             <div className="flex w-full justify-between gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">HTTPS Proxy</h6>
-              <Switch
-                checked={proxyEnabled}
-                onCheckedChange={() => setProxyEnabled(!proxyEnabled)}
-              />
+              <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
             </div>
-            <p className="leading-relaxed">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Specify the HTTPS proxy or leave blank (proxy auto-configuration
               and SOCKS not supported).
             </p>
-            <Input
-              placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
-              value={partialProxy}
-              onChange={onProxyChange}
-              className="w-2/3"
+          </div>
+
+          <div className="flex w-full flex-shrink-0 flex-col items-end gap-2 pr-1 sm:w-1/2">
+            <Switch
+              checked={proxyEnabled}
+              onChange={() => setProxyEnabled(!proxyEnabled)}
             />
+            <div className="w-full">
+              <Input
+                placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
+                value={partialProxy}
+                onChange={onProxyChange}
+              />
+            </div>
           </div>
         </div>
 
         {/* Ignore SSL certificates */}
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="flex-shrink-0 space-y-1">
             <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">
+              <h6 className="font-semibold capitalize">
                 Ignore SSL certificates
               </h6>
             </div>
-            <p className="leading-relaxed">
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               Allow self-signed or unverified certificates - may be required for
               certain proxies.
             </p>
           </div>
           <Switch
             checked={ignoreSSL}
-            onCheckedChange={(e) => setIgnoreSSL(e)}
+            onChange={(e) => setIgnoreSSL(e.target.checked)}
           />
         </div>
 
         {experimentalEnabled && (
-          <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-            <div className="flex-shrink-0 space-y-1.5">
+          <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+            <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
-                <h6 className="text-sm font-semibold capitalize">
-                  Jan Quick Ask
-                </h6>
+                <h6 className="font-semibold capitalize">Jan Quick Ask</h6>
               </div>
-              <p className="leading-relaxed">
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Enable Quick Ask to be triggered via the default hotkey{' '}
-                <div className="inline-flex items-center justify-center rounded-full bg-secondary px-1 py-0.5 text-xs font-bold text-muted-foreground">
+                <span className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
                   <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
-                </div>{' '}
+                </span>{' '}
                 (reload needed).
               </p>
             </div>
             <Switch
               checked={quickAskEnabled}
-              onCheckedChange={() => {
+              onChange={() => {
                 toaster({
                   title: 'Reload',
                   description:
@@ -470,14 +462,16 @@ const Advanced = () => {
         )}
 
         {/* Clear log */}
-        <div className="flex w-full items-start justify-between border-b border-border py-4 first:pt-0 last:border-none">
-          <div className="flex-shrink-0 space-y-1.5">
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="flex-shrink-0 space-y-1">
             <div className="flex gap-x-2">
-              <h6 className="text-sm font-semibold capitalize">Clear logs</h6>
+              <h6 className="font-semibold capitalize">Clear logs</h6>
             </div>
-            <p className="leading-relaxed">Clear all logs from Jan app.</p>
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+              Clear all logs from Jan app.
+            </p>
           </div>
-          <Button size="sm" themes="secondaryDanger" onClick={clearLogs}>
+          <Button theme="destructive" onClick={clearLogs}>
             Clear
           </Button>
         </div>

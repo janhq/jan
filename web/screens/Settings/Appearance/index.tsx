@@ -1,45 +1,100 @@
-import ShortcutModal from '@/containers/ShortcutModal'
+import { useCallback } from 'react'
 
-import ToggleAccent from '@/screens/Settings/Appearance/TogglePrimary'
-import ToggleTheme from '@/screens/Settings/Appearance/ToggleTheme'
+import { useTheme } from 'next-themes'
+
+import { fs, joinPath } from '@janhq/core'
+import { Button, Select, Switch } from '@janhq/joi'
+import { useAtom, useAtomValue } from 'jotai'
+
+import {
+  janThemesPathAtom,
+  reduceTransparentAtom,
+  selectedThemeIdAtom,
+  themeDataAtom,
+  themesOptionsAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 export default function AppearanceOptions() {
+  const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
+  const themeOptions = useAtomValue(themesOptionsAtom)
+  const { setTheme } = useTheme()
+  const janThemesPath = useAtomValue(janThemesPathAtom)
+  const [themeData, setThemeData] = useAtom(themeDataAtom)
+  const [reduceTransparent, setReduceTransparent] = useAtom(
+    reduceTransparentAtom
+  )
+
+  const handleClickTheme = useCallback(
+    async (e: string) => {
+      setSelectedIdTheme(e)
+      const filePath = await joinPath([`${janThemesPath}/${e}`, `theme.json`])
+      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+      setThemeData(theme)
+      setTheme(String(theme?.nativeTheme))
+      if (theme?.reduceTransparent) {
+        setReduceTransparent(false)
+      } else {
+        setReduceTransparent(true)
+      }
+    },
+    [
+      janThemesPath,
+      setReduceTransparent,
+      setSelectedIdTheme,
+      setTheme,
+      setThemeData,
+    ]
+  )
+
   return (
-    <div className="m-4 block w-full">
-      <div className="flex w-full items-center justify-between border-b border-border py-3 first:pt-0 last:border-none">
+    <div className="m-4 block">
+      <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
         <div className="flex-shrink-0 space-y-1">
-          <h6 className="text-sm font-semibold capitalize">
-            Base color scheme
-          </h6>
-          <p className="leading-relaxed ">
-            Choose between light and dark modes.
-          </p>
-        </div>
-        <ToggleTheme />
-      </div>
-      <div className="flex w-full items-center justify-between border-b border-border py-3 first:pt-0 last:border-none">
-        <div className="flex-shrink-0 space-y-1">
-          <h6 className="text-sm font-semibold capitalize">Accent Color</h6>
-          <p className="leading-relaxed ">
-            Choose the primary accent color used throughout the app.
-          </p>
-        </div>
-        <ToggleAccent />
-      </div>
-      {/* Keyboard shortcut  */}
-      <div className="flex w-full items-start justify-between border-b border-border py-3 first:pt-4 last:border-none">
-        <div className="flex-shrink-0 space-y-1.5">
           <div className="flex gap-x-2">
-            <h6 className="text-sm font-semibold capitalize">
-              Keyboard Shortcuts
-            </h6>
+            <h6 className="font-semibold capitalize">Appearance</h6>
           </div>
-          <p className="leading-relaxed">
-            Shortcuts that you might find useful in Jan app.
+          <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+            Select of customize your interface color scheme
           </p>
         </div>
-        <ShortcutModal />
+        <Select
+          value={selectedIdTheme}
+          options={themeOptions}
+          onValueChange={(e) => handleClickTheme(e)}
+        />
       </div>
+      {themeData?.reduceTransparent && (
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="flex-shrink-0 space-y-1">
+            <div className="flex gap-x-2">
+              <h6 className="font-semibold capitalize">Interface theme</h6>
+            </div>
+            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+              Choose the type of the interface
+            </p>
+          </div>
+          <div className="flex items-center gap-x-2">
+            <Button
+              theme={reduceTransparent ? 'primary' : 'ghost'}
+              variant={reduceTransparent ? 'solid' : 'outline'}
+              onClick={() => setReduceTransparent(true)}
+            >
+              Solid
+            </Button>
+            <Button
+              theme={reduceTransparent ? 'ghost' : 'primary'}
+              variant={reduceTransparent ? 'outline' : 'solid'}
+              onClick={() => setReduceTransparent(false)}
+            >
+              Transparent
+            </Button>
+          </div>
+          {/* <Switch
+            checked={reduceTransparent}
+            onChange={(e) => setReduceTransparent(e.target.checked)}
+          /> */}
+        </div>
+      )}
     </div>
   )
 }

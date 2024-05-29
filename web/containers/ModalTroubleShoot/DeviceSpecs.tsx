@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 
 import { CopyIcon, CheckIcon } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
 import { useLogs } from '@/hooks/useLogs'
 
-// TODO @Louis help add missing information device specs
 const DeviceSpecs = () => {
   const { getLogs } = useLogs()
   const [logs, setLogs] = useState<string[]>([])
@@ -23,14 +22,15 @@ const DeviceSpecs = () => {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <>
+    <div className="max-w-[50vw] p-4 pb-0">
       <div className="absolute -top-11 right-2">
         <Button
-          themes="outline"
-          className="bg-white dark:bg-secondary/50"
+          theme="ghost"
+          variant="outline"
           onClick={() => {
             clipboard.copy(logs.join('\n') ?? '')
           }}
@@ -50,20 +50,18 @@ const DeviceSpecs = () => {
           </div>
         </Button>
       </div>
-      <div>
-        <div className="h-full overflow-auto">
-          <code className="inline-block whitespace-pre-line text-xs">
-            {logs.map((log, i) => {
-              return (
-                <p key={i} className="my-2 leading-relaxed">
-                  {log}
-                </p>
-              )
-            })}
-          </code>
-        </div>
+      <div className="flex h-full w-full flex-col">
+        <code className="inline-block whitespace-break-spaces text-[13px]">
+          {logs.map((log, i) => {
+            return (
+              <p key={i} className="my-2 leading-relaxed">
+                {log}
+              </p>
+            )
+          })}
+        </code>
       </div>
-    </>
+    </div>
   )
 }
 

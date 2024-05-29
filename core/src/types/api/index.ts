@@ -11,6 +11,13 @@ export enum NativeRoute {
   selectDirectory = 'selectDirectory',
   selectFiles = 'selectFiles',
   relaunch = 'relaunch',
+  setNativeThemeLight = 'setNativeThemeLight',
+  setNativeThemeDark = 'setNativeThemeDark',
+
+  setMinimizeApp = 'setMinimizeApp',
+  setCloseApp = 'setCloseApp',
+  setMaximizeApp = 'setMaximizeApp',
+  showOpenMenu = 'showOpenMenu',
 
   hideQuickAskWindow = 'hideQuickAskWindow',
   sendQuickAskInput = 'sendQuickAskInput',

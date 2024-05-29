@@ -15,11 +15,16 @@ export type ModelInfo = {
  */
 
 export enum InferenceEngine {
+  anthropic = 'anthropic',
+  mistral = 'mistral',
+  martian = 'martian',
+  openrouter = 'openrouter',
   nitro = 'nitro',
   openai = 'openai',
   groq = 'groq',
   triton_trtllm = 'triton_trtllm',
   nitro_tensorrt_llm = 'nitro-tensorrt-llm',
+  cohere = 'cohere',
 }
 
 export type ModelArtifact = {

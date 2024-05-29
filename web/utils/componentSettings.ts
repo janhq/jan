@@ -1,6 +1,6 @@
 import { Model, SettingComponentProps } from '@janhq/core'
 
-import { presetConfiguration } from '@/screens/Chat/ModelSetting/predefinedComponent'
+import { presetConfiguration } from './predefinedComponent'
 
 export const getConfigurationsData = (
   settings: object,

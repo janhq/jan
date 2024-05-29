@@ -1,34 +1,32 @@
-import React from 'react'
+import { memo } from 'react'
 
-import {
-  Badge,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Badge, Tooltip } from '@janhq/joi'
+
 import { InfoIcon } from 'lucide-react'
+import { twMerge } from 'tailwind-merge'
 
-const SlowOnYourDeviceLabel: React.FC = () => (
-  <Badge className="space-x-1 rounded-md" themes="warning">
-    <span>Slow on your device</span>
-    <Tooltip>
-      <TooltipTrigger>
-        <InfoIcon size={16} />
-      </TooltipTrigger>
-      <TooltipPortal>
-        <TooltipContent side="right" sideOffset={10} className="max-w-[300px]">
-          <span>
-            This tag indicates that your current RAM performance may affect
-            model speed. It can change based on other active apps. To improve,
-            consider closing unnecessary applications to free up RAM.
-          </span>
-          <TooltipArrow />
-        </TooltipContent>
-      </TooltipPortal>
-    </Tooltip>
+type Props = {
+  compact?: boolean
+}
+
+const SlowOnYourDeviceLabel = ({ compact }: Props) => (
+  <Badge
+    theme="warning"
+    variant="soft"
+    className={twMerge(compact && 'h-5 w-5 p-1')}
+  >
+    {!compact && <span className="line-clamp-1">Slow on your device</span>}
+    <Tooltip
+      trigger={
+        compact ? (
+          <div className="h-2 w-2 cursor-pointer rounded-full bg-[hsla(var(--warning-bg))] p-0" />
+        ) : (
+          <InfoIcon size={14} className="ml-2 flex-shrink-0 cursor-pointer" />
+        )
+      }
+      content="This tag indicates that your current RAM performance may affect model speed. It can change based on other active apps. To improve, consider closing unnecessary applications to free up RAM."
+    />
   </Badge>
 )
 
-export default React.memo(SlowOnYourDeviceLabel)
+export default memo(SlowOnYourDeviceLabel)

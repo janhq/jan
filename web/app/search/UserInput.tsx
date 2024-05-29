@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { Send } from 'lucide-react'
@@ -11,7 +11,7 @@ import { selectedTextAtom } from '@/containers/Providers/Jotai'
 
 import SelectedText from './SelectedText'
 
-const UserInput: React.FC = () => {
+const UserInput = () => {
   const [inputValue, setInputValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -56,7 +56,7 @@ const UserInput: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col space-y-3 bg-white p-3 dark:bg-background">
+    <div className="flex flex-col space-y-3 bg-[hsla(var(--app-bg))] p-3">
       <form
         ref={formRef}
         className="flex h-full w-full items-center justify-center"

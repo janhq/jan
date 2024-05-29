@@ -6,15 +6,7 @@ import {
   InstallationState,
   abortDownload,
 } from '@janhq/core'
-import {
-  Button,
-  Progress,
-  Tooltip,
-  TooltipArrow,
-  TooltipContent,
-  TooltipPortal,
-  TooltipTrigger,
-} from '@janhq/uikit'
+import { Button, Progress, Tooltip } from '@janhq/joi'
 
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
@@ -83,15 +75,16 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
   const description = marked.parse(item.description ?? '', { async: false })
 
   return (
-    <div className="mx-6 flex w-full items-start justify-between border-b border-border py-6 first:pt-4 last:border-none">
-      <div className="flex-1 flex-shrink-0 space-y-1.5">
+    <div className="mx-4 flex items-start justify-between border-b border-[hsla(var(--app-border))] py-6 first:pt-4 last:border-none">
+      <div className="flex-1 flex-shrink-0 space-y-1">
         <div className="flex items-center gap-x-2">
-          <h6 className="text-base font-bold">Additional Dependencies</h6>
+          <h6 className="font-semibold">Additional Dependencies</h6>
         </div>
-        {
+        <div
           // eslint-disable-next-line @typescript-eslint/naming-convention
-          <div dangerouslySetInnerHTML={{ __html: description }} />
-        }
+          dangerouslySetInnerHTML={{ __html: description }}
+          className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
+        />
       </div>
 
       <div className="flex min-w-[150px] flex-row justify-end">
@@ -125,13 +118,13 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   if (installProgress !== -1) {
     const progress = installProgress * 100
     return (
-      <div className="flex h-10 flex-row items-center justify-center space-x-2 rounded-lg bg-[#EFF8FF] px-4 text-primary dark:bg-secondary">
-        <button onClick={onCancelClick} className="font-semibold text-primary">
+      <div className="text-primary dark flex h-10 flex-row items-center justify-center space-x-2 rounded-lg px-4">
+        <button onClick={onCancelClick} className="text-primary font-semibold">
           Cancel
         </button>
-        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md bg-[#D1E9FF] px-2 py-[2px] dark:bg-black/50">
+        <div className="flex w-[113px] flex-row items-center justify-center space-x-2 rounded-md px-2 py-[2px]">
           <Progress className="h-1 w-[69px]" value={progress} />
-          <span className="text-xs font-bold text-primary">
+          <span className="text-primary text-xs font-bold">
             {progress.toFixed(0)}%
           </span>
         </div>
@@ -142,50 +135,45 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
   switch (installState) {
     case 'Installed':
       return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
+        <div className="rounded-md px-3 py-1.5 font-semibold text-[hsla(var(--text-secondary))]">
           Installed
         </div>
       )
     case 'NotCompatible':
       return (
-        <div className="rounded-md bg-secondary px-3 py-1.5 text-sm font-semibold text-gray-400">
+        <div className="rounded-md px-3 py-1.5 font-semibold text-[hsla(var(--text-secondary))]">
           <div className="flex flex-row items-center justify-center gap-1">
-            Incompatible{' '}
-            <Tooltip>
-              <TooltipTrigger className="w-full">
-                <InfoCircledIcon />
-              </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent side="top">
-                  {compatibility &&
-                  !compatibility['platform']?.includes(PLATFORM) ? (
-                    <span>
-                      Only available on{' '}
-                      {compatibility?.platform
-                        ?.map((e: string) =>
-                          e === 'win32'
-                            ? 'Windows'
-                            : e === 'linux'
-                              ? 'Linux'
-                              : 'MacOS'
-                        )
-                        .join(', ')}
-                    </span>
-                  ) : (
-                    <span>
-                      Your GPUs are not compatible with this extension
-                    </span>
-                  )}
-                  <TooltipArrow />
-                </TooltipContent>
-              </TooltipPortal>
-            </Tooltip>
+            Incompatible
+            <Tooltip
+              trigger={
+                <InfoCircledIcon className="cursor-pointer text-[hsla(var(--text-secondary))]" />
+              }
+              content={
+                compatibility &&
+                !compatibility['platform']?.includes(PLATFORM) ? (
+                  <span>
+                    Only available on&nbsp;
+                    {compatibility?.platform
+                      ?.map((e: string) =>
+                        e === 'win32'
+                          ? 'Windows'
+                          : e === 'linux'
+                            ? 'Linux'
+                            : 'MacOS'
+                      )
+                      .join(', ')}
+                  </span>
+                ) : (
+                  <span>Your GPUs are not compatible with this extension</span>
+                )
+              }
+            />
           </div>
         </div>
       )
     case 'NotInstalled':
       return (
-        <Button themes="secondaryBlue" size="sm" onClick={onInstallClick}>
+        <Button size="small" variant="soft" onClick={onInstallClick}>
           Install
         </Button>
       )
@@ -199,7 +187,10 @@ const marked: Marked = new Marked({
     link: (href, title, text) => {
       return Renderer.prototype.link
         ?.apply(this, [href, title, text])
-        .replace('<a', "<a class='text-blue-500' target='_blank'")
+        .replace(
+          '<a',
+          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
+        )
     },
   },
 })

@@ -2,12 +2,14 @@ import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
 import { getAppConfigurations, AppEvent } from '@janhq/core/node'
+import { getBounds, saveBounds } from '../utils/setup'
 
 /**
  * Manages the current window instance.
  */
 // TODO: refactor this
 let isAppQuitting = false
+
 class WindowManager {
   public mainWindow?: BrowserWindow
   private _quickAskWindow: BrowserWindow | undefined = undefined
@@ -19,9 +21,15 @@ class WindowManager {
    * Creates a new window instance.
    * @returns The created window instance.
    */
-  createMainWindow(preloadPath: string, startUrl: string) {
+  async createMainWindow(preloadPath: string, startUrl: string) {
+    const bounds = await getBounds()
+
     this.mainWindow = new BrowserWindow({
       ...mainWindowConfig,
+      width: bounds.width,
+      height: bounds.height,
+      x: bounds.x,
+      y: bounds.y,
       webPreferences: {
         nodeIntegration: true,
         preload: preloadPath,
@@ -39,6 +47,14 @@ class WindowManager {
         this.sendMainAppDeepLink(url)
       }
     }
+
+    this.mainWindow.on('resized', () => {
+      saveBounds(this.mainWindow?.getBounds())
+    })
+
+    this.mainWindow.on('moved', () => {
+      saveBounds(this.mainWindow?.getBounds())
+    })
 
     /* Load frontend app to the window */
     this.mainWindow.loadURL(startUrl)

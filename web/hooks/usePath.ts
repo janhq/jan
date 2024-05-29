@@ -1,9 +1,8 @@
 import { openFileExplorer, joinPath, baseName } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
-import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const usePath = () => {

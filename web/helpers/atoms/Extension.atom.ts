@@ -1,4 +1,5 @@
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 
 type ExtensionId = string
 
@@ -37,4 +38,10 @@ export const removeInstallingExtensionAtom = atom(
     const newCurrent = current.filter((e) => e.extensionId !== extensionId)
     set(installingExtensionAtom, newCurrent)
   }
+)
+
+const INACTIVE_ENGINE_PROVIDER = 'inActiveEngineProvider'
+export const inActiveEngineProviderAtom = atomWithStorage<string[]>(
+  INACTIVE_ENGINE_PROVIDER,
+  []
 )
