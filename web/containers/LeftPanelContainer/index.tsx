@@ -93,9 +93,9 @@ const LeftPanelContainer = ({ children }: Props) => {
         showLeftPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',
         isResizing && 'cursor-col-resize',
         matches &&
-          'absolute left-2 z-50 rounded-s-lg border-r border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+          'absolute left-2 z-[100] rounded-s-lg border-r border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
         reduceTransparent &&
-          'border-r border-[hsla(var(--app-border))] bg-[hsla(var(--left-panel-bg))]'
+          'left-0 border-r border-[hsla(var(--app-border))] bg-[hsla(var(--left-panel-bg))]'
       )}
       style={{ width: showLeftPanel ? threadLeftPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.stopPropagation()}
