@@ -232,7 +232,10 @@ const ChatInput = () => {
         {showAttacmentMenus && (
           <div
             ref={refAttachmentMenus}
-            className="absolute bottom-14 left-0 z-30 w-36 cursor-pointer rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-1 shadow-sm"
+            className={twMerge(
+              'absolute bottom-14 left-0 z-30 w-36 cursor-pointer rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-1 shadow-sm',
+              activeSetting && 'bottom-28'
+            )}
           >
             <ul>
               <Tooltip
