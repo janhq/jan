@@ -36,7 +36,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
       min: 128,
       max: 4096,
       step: 128,
-      value: 2048,
+      value: 4096,
     },
     requireModelReload: true,
     configType: 'setting',
