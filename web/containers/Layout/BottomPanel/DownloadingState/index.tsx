@@ -33,7 +33,7 @@ export default function DownloadingState() {
         <Modal
           title="Downloading model"
           trigger={
-            <div className="flex items-center gap-2">
+            <div className="flex cursor-pointer items-center gap-2">
               <Button size="small" theme="ghost">
                 <span className="font-medium">
                   Downloading model{' '}
