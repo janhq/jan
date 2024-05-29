@@ -50,7 +50,7 @@ const ModalEditTitleThread = ({ thread }: Props) => {
           />
           <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={(e) => e.stopPropagation()}>
-              <Button theme="ghost">Back</Button>
+              <Button theme="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
               <Button
