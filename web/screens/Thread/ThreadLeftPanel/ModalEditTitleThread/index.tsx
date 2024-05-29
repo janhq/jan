@@ -58,7 +58,7 @@ const ModalEditTitleThread = ({ thread }: Props) => {
                 onClick={onUpdateTitle}
                 disabled={title.length === 0}
               >
-                Update
+                Save
               </Button>
             </ModalClose>
           </div>
