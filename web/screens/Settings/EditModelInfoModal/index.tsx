@@ -145,7 +145,7 @@ const EditModelInfoModal = () => {
             </div>
           </div>
 
-          <form className="flex flex-col space-y-4">
+          <form className="mt-4 flex flex-col space-y-4">
             <div className="flex flex-col">
               <label className="mb-1">Model Name</label>
               <Input
@@ -183,7 +183,7 @@ const EditModelInfoModal = () => {
             </div>
           </form>
 
-          <div className="flex gap-x-2">
+          <div className="mt-4 flex gap-x-2">
             <ModalClose asChild onClick={onCancelClick}>
               <Button theme="ghost">Cancel</Button>
             </ModalClose>
