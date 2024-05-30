@@ -77,11 +77,11 @@ const TopPanel = () => {
               <Fragment>
                 {showRightPanel ? (
                   <Button theme="icon" onClick={() => setShowRightPanel(false)}>
-                    <PanelRightOpenIcon size={16} />
+                    <PanelRightCloseIcon size={16} />
                   </Button>
                 ) : (
                   <Button theme="icon" onClick={() => setShowRightPanel(true)}>
-                    <PanelRightCloseIcon size={16} />
+                    <PanelRightOpenIcon size={16} />
                   </Button>
                 )}
               </Fragment>
