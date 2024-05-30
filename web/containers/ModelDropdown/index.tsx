@@ -35,6 +35,7 @@ import {
 type Props = {
   chatInputMode?: boolean
   strictedThread?: boolean
+  disabled?: boolean
 }
 
 const engineHasLogo = [
@@ -45,7 +46,11 @@ const engineHasLogo = [
   InferenceEngine.openai,
 ]
 
-const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
+const ModelDropdown = ({
+  disabled,
+  chatInputMode,
+  strictedThread = true,
+}: Props) => {
   const { downloadModel } = useDownloadModel()
   const [searchFilter, setSearchFilter] = useState('all')
   const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
@@ -210,7 +215,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
   }
 
   return (
-    <div className="relative">
+    <div className={twMerge('relative', disabled && 'pointer-events-none')}>
       <div ref={setToggle}>
         {chatInputMode ? (
           <Badge
@@ -224,6 +229,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
           <Input
             value={selectedModel?.name || ''}
             className="cursor-pointer"
+            disabled={disabled}
             readOnly
             suffixIcon={
               <ChevronDownIcon
