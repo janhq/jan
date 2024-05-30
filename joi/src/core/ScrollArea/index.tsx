@@ -7,13 +7,17 @@ import './styles.scss'
 const ScrollArea = React.forwardRef<
   React.ElementRef<typeof ScrollAreaPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onScroll, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
     type="scroll"
     className={twMerge('scroll-area__root', className)}
     {...props}
   >
-    <ScrollAreaPrimitive.Viewport className="scroll-area__viewport" ref={ref}>
+    <ScrollAreaPrimitive.Viewport
+      className="scroll-area__viewport"
+      ref={ref}
+      onScroll={onScroll}
+    >
       {children}
     </ScrollAreaPrimitive.Viewport>
     <ScrollAreaPrimitive.Scrollbar

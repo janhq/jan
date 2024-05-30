@@ -16,7 +16,7 @@ const CenterPanelContainer = ({ children }: PropsWithChildren) => {
         className={twMerge(
           'h-full w-full overflow-hidden bg-[hsla(var(--center-panel-bg))]',
           !reduceTransparent &&
-            'rounded-lg border border-[hsla(var(--app-border))] shadow'
+            'rounded-lg border border-[hsla(var(--app-border))]'
         )}
       >
         {children}

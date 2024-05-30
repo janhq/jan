@@ -35,6 +35,7 @@ import {
 type Props = {
   chatInputMode?: boolean
   strictedThread?: boolean
+  disabled?: boolean
 }
 
 const engineHasLogo = [
@@ -45,7 +46,11 @@ const engineHasLogo = [
   InferenceEngine.openai,
 ]
 
-const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
+const ModelDropdown = ({
+  disabled,
+  chatInputMode,
+  strictedThread = true,
+}: Props) => {
   const { downloadModel } = useDownloadModel()
   const [searchFilter, setSearchFilter] = useState('all')
   const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
@@ -210,7 +215,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
   }
 
   return (
-    <div className="relative">
+    <div className={twMerge('relative', disabled && 'pointer-events-none')}>
       <div ref={setToggle}>
         {chatInputMode ? (
           <Badge
@@ -224,6 +229,7 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
           <Input
             value={selectedModel?.name || ''}
             className="cursor-pointer"
+            disabled={disabled}
             readOnly
             suffixIcon={
               <ChevronDownIcon
@@ -387,10 +393,15 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                               className={twMerge(
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey &&
+                                  model.engine !==
+                                    InferenceEngine.nitro_tensorrt_llm &&
                                   'cursor-default text-[hsla(var(--text-tertiary))]'
                               )}
                               onClick={() =>
-                                apiKey && onClickModelItem(model.id)
+                                apiKey ||
+                                (model.engine ===
+                                  InferenceEngine.nitro_tensorrt_llm &&
+                                  onClickModelItem(model.id))
                               }
                             >
                               <div className="flex flex-shrink-0 gap-x-2">

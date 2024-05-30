@@ -85,7 +85,7 @@ const LocalServerRightPanel = () => {
           </p>
         </div>
 
-        <ModelDropdown strictedThread={false} />
+        <ModelDropdown strictedThread={false} disabled={serverEnabled} />
 
         {loadModelError && serverEnabled && (
           <div className="mt-3 flex space-x-2">

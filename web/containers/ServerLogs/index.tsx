@@ -67,7 +67,7 @@ const ServerLogs = (props: ServerLogsProps) => {
       )}
     >
       {withCopy && (
-        <div className="absolute -top-11 right-2">
+        <div className="absolute right-2 top-7">
           <div className="flex w-full flex-row gap-2">
             <Button
               theme="ghost"
