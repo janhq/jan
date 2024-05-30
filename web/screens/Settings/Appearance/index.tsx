@@ -3,7 +3,7 @@ import { useCallback } from 'react'
 import { useTheme } from 'next-themes'
 
 import { fs, joinPath } from '@janhq/core'
-import { Button, Select, Switch } from '@janhq/joi'
+import { Button, Select } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 
 import {

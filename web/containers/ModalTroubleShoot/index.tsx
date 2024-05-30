@@ -1,7 +1,6 @@
 import { useState } from 'react'
 
-import { Modal, ScrollArea } from '@janhq/joi'
-import { motion as m } from 'framer-motion'
+import { Modal } from '@janhq/joi'
 import { atom, useAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
@@ -26,7 +25,7 @@ const ModalTroubleShooting = () => {
       onOpenChange={setModalTroubleShooting}
       title="Troubleshooting Assistance"
       content={
-        <div className="flex h-full w-full flex-col overflow-hidden ">
+        <div className="flex h-full w-full flex-col overflow-hidden text-sm">
           <div className="flex-shrink-0">
             <p className="text-[hsla(var(--text-secondary)] mt-2 pr-3 leading-relaxed">
               {`We're here to help! Your report is crucial for debugging and shaping
@@ -78,41 +77,37 @@ const ModalTroubleShooting = () => {
                 </li>
               </ul>
             </div>
-            <div className="flex h-full w-full flex-col pt-4">
-              <div className="relative border-y border-[hsla(var(--app-border))] px-4 py-2 ">
+            <div className="relative flex h-full w-full flex-col pt-4">
+              <div className="border-y border-[hsla(var(--app-border))] px-4 py-2 ">
                 <ul className="inline-flex space-x-2 rounded-lg px-1">
                   {logOption.map((name, i) => {
                     return (
                       <li
-                        className="relative cursor-pointer px-4 py-2"
+                        className={twMerge(
+                          'relative cursor-pointer px-4 py-2',
+                          isTabActive === i &&
+                            'rounded-md bg-[hsla(var(--primary-bg))] font-bold text-[hsla(var(--primary-fg))]'
+                        )}
                         key={i}
                         onClick={() => setIsTabActivbe(i)}
                       >
                         <span
                           className={twMerge(
-                            'text-[hsla(var(--text-secondary)] relative z-50 font-medium',
-                            isTabActive === i &&
-                              'bg= font-bold text-[hsla(var(--primary-fg))]'
+                            'text-[hsla(var(--text-secondary)] relative z-50 font-medium'
                           )}
                         >
                           {name}
                         </span>
-                        {isTabActive === i && (
-                          <m.div
-                            className="absolute left-0 top-1 h-[calc(100%-8px)] w-full rounded-md bg-[hsla(var(--primary-bg))]"
-                            layoutId="log-state-active"
-                          />
-                        )}
                       </li>
                     )
                   })}
                 </ul>
               </div>
-              <ScrollArea className="w-full">
+              <div className="max-h-[160px] overflow-y-auto">
                 {isTabActive === 0 && <AppLogs />}
                 {isTabActive === 1 && <ServerLogs limit={50} withCopy />}
                 {isTabActive === 2 && <DeviceSpecs />}
-              </ScrollArea>
+              </div>
             </div>
           </div>
         </div>

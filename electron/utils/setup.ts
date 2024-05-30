@@ -2,7 +2,7 @@ import { app } from 'electron'
 import Store from 'electron-store'
 
 const DEFAULT_WIDTH = 1000
-const DEFAULT_HEIGHT = 700
+const DEFAULT_HEIGHT = 800
 
 const storage = new Store()
 

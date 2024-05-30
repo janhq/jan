@@ -27,7 +27,7 @@ const AppLogs = () => {
 
   return (
     <div className="max-w-[50vw] p-4 pb-0">
-      <div className="absolute -top-11 right-2">
+      <div className="absolute right-2 top-7">
         <div className="flex w-full flex-row items-center gap-2">
           <Button
             theme="ghost"
