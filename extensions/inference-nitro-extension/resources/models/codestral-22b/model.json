@@ -13,7 +13,7 @@
     "format": "gguf",
     "settings": {
       "ctx_len": 32000,
-      "prompt_template": "{system_message} [INST]  {prompt} [/INST]",
+      "prompt_template": "{system_message} [INST] {prompt} [/INST]",
       "llama_model_path": "Codestral-22B-v0.1-Q4_K_M.gguf",
       "ngl": 56
     },
