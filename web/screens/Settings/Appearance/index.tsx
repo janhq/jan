@@ -32,13 +32,14 @@ export default function AppearanceOptions() {
       setThemeData(theme)
       setTheme(String(theme?.nativeTheme))
       if (theme?.reduceTransparent) {
-        setReduceTransparent(false)
+        setReduceTransparent(reduceTransparent)
       } else {
         setReduceTransparent(true)
       }
     },
     [
       janThemesPath,
+      reduceTransparent,
       setReduceTransparent,
       setSelectedIdTheme,
       setTheme,

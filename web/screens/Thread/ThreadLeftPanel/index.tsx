@@ -22,6 +22,7 @@ import useSetActiveThread from '@/hooks/useSetActiveThread'
 
 import ModalCleanThread from './ModalCleanThread'
 import ModalDeleteThread from './ModalDeleteThread'
+import ModalEditTitleThread from './ModalEditTitleThread'
 
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -143,6 +144,7 @@ const ThreadLeftPanel = () => {
                   <MoreHorizontalIcon />
                 </Button>
                 <div className="invisible absolute -right-1 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg group-hover/icon:visible">
+                  <ModalEditTitleThread thread={thread} />
                   <ModalCleanThread threadId={thread.id} />
                   <ModalDeleteThread threadId={thread.id} />
                 </div>

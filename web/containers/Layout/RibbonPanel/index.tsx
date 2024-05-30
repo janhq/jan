@@ -40,7 +40,15 @@ export default function RibbonPanel() {
   const RibbonNavMenus = [
     {
       name: 'Thread',
-      icon: <MessageCircleIcon size={18} className="flex-shrink-0" />,
+      icon: (
+        <MessageCircleIcon
+          size={18}
+          className={twMerge(
+            'flex-shrink-0',
+            serverEnabled && 'text-[hsla(var(--disabled-fg))]'
+          )}
+        />
+      ),
       state: MainViewState.Thread,
     },
     {
