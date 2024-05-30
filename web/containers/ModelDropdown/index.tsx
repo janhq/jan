@@ -387,10 +387,15 @@ const ModelDropdown = ({ chatInputMode, strictedThread = true }: Props) => {
                               className={twMerge(
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey &&
+                                  model.engine !==
+                                    InferenceEngine.nitro_tensorrt_llm &&
                                   'cursor-default text-[hsla(var(--text-tertiary))]'
                               )}
                               onClick={() =>
-                                apiKey && onClickModelItem(model.id)
+                                apiKey ||
+                                (model.engine ===
+                                  InferenceEngine.nitro_tensorrt_llm &&
+                                  onClickModelItem(model.id))
                               }
                             >
                               <div className="flex flex-shrink-0 gap-x-2">
