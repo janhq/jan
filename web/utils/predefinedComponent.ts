@@ -4,7 +4,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   prompt_template: {
     key: 'prompt_template',
     title: 'Prompt template',
-    description: 'The prompt to use for internal configuration.',
+    description: `A predefined text or framework that guides the AI model's response generation. It includes placeholders or instructions for the model to fill in or expand upon.`,
     controllerType: 'input',
     controllerProps: {
       placeholder: 'Prompt template',
@@ -16,8 +16,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   stop: {
     key: 'stop',
     title: 'Stop',
-    description:
-      'Defines specific tokens or phrases at which the model will stop generating further output.	',
+    description: `Defines specific tokens or phrases that signal the model to stop producing further output, allowing you to control the length and coherence of the output.`,
     controllerType: 'input',
     controllerProps: {
       placeholder: 'Stop',
@@ -29,8 +28,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   ctx_len: {
     key: 'ctx_len',
     title: 'Context Length',
-    description:
-      'The context length for model operations varies; the maximum depends on the specific model used.',
+    description: `Sets the maximum input the model can use to generate a response, it varies with the model used. Higher length is better for tasks needing extensive context, like summarizing long documents. Lower length can improve response time and reduce computing needs for simple queries.`,
     controllerType: 'slider',
     controllerProps: {
       min: 128,
@@ -44,8 +42,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   max_tokens: {
     key: 'max_tokens',
     title: 'Max Tokens',
-    description:
-      'The maximum number of tokens the model will generate in a single response.',
+    description: `Sets the upper limit on the number of tokens the model can generate in a single output. A higher limit benefits detailed and complex responses, while a lower limit helps maintain conciseness.`,
     controllerType: 'slider',
     controllerProps: {
       min: 100,
@@ -84,7 +81,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   stream: {
     key: 'stream',
     title: 'Stream',
-    description: 'Enable real-time data processing for faster predictions.',
+    description: `Enables real-time data processing, which is useful for applications needing immediate responses, like live interactions. It accelerates predictions by processing data as it becomes available.`,
     controllerType: 'checkbox',
     controllerProps: {
       value: false,
@@ -95,7 +92,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   temperature: {
     key: 'temperature',
     title: 'Temperature',
-    description: 'Controls the randomness of the model’s output.',
+    description: `Influences the randomness of the model's output. A higher value leads to more random and diverse responses, while a lower value produces more predictable outputs.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -109,8 +106,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   frequency_penalty: {
     key: 'frequency_penalty',
     title: 'Frequency Penalty',
-    description:
-      'Adjusts the likelihood of the model repeating words or phrases in its output.	',
+    description: `Modifies the likelihood of the model repeating the same words or phrases within a single output. Increasing it can help avoid repetition, which is useful for scenarios where you want more varied language, like creative writing or content generation.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -124,8 +120,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   presence_penalty: {
     key: 'presence_penalty',
     title: 'Presence Penalty',
-    description:
-      'Influences the generation of new and varied concepts in the model’s output.	',
+    description: `Reduces the likelihood of repeating tokens, promoting novelty in the output. Use a higher value for tasks requiring diverse ideas.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -139,7 +134,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   top_p: {
     key: 'top_p',
     title: 'Top P',
-    description: 'Set probability threshold for more relevant outputs.',
+    description: `Set probability threshold for more relevant outputs. A lower value (e.g., 0.9) may be more suitable for focused, task-oriented applications, while a higher value (e.g., 0.95 or 0.97) may be better for more open-ended, creative tasks.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
