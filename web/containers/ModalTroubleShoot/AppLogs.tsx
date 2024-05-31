@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, memo } from 'react'
 
 import { Button } from '@janhq/joi'
 
 import { CopyIcon, CheckIcon, FolderIcon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import { useClipboard } from '@/hooks/useClipboard'
 import { useLogs } from '@/hooks/useLogs'
@@ -16,7 +18,9 @@ const AppLogs = () => {
   useEffect(() => {
     getLogs('app').then((log) => {
       if (typeof log?.split === 'function') {
-        setLogs(log.split(/\r?\n|\r|\n/g))
+        if (log.length > 0) {
+          setLogs(log.split(/\r?\n|\r|\n/g))
+        }
       }
     })
 
@@ -26,7 +30,12 @@ const AppLogs = () => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <div className="max-w-[50vw] p-4 pb-0">
+    <div
+      className={twMerge(
+        'max-w-[50vw] p-4 pb-0',
+        logs.length === 0 && 'w-full max-w-none'
+      )}
+    >
       <div className="absolute right-2 top-7">
         <div className="flex w-full flex-row items-center gap-2">
           <Button
@@ -76,10 +85,10 @@ const AppLogs = () => {
             })}
           </code>
         ) : (
-          <div className="mt-24 flex flex-col items-center justify-center">
+          <div className="flex flex-col items-center justify-center py-2">
             <svg
-              width="115"
-              height="115"
+              width="80"
+              height="80"
               viewBox="0 0 115 115"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -214,4 +223,4 @@ const AppLogs = () => {
   )
 }
 
-export default AppLogs
+export default memo(AppLogs)
