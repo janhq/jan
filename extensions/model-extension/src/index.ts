@@ -31,6 +31,11 @@ import { GGUFMetadata, gguf } from '@huggingface/gguf'
 import { NotSupportedModelError } from './@types/NotSupportModelError'
 import { InvalidHostError } from './@types/InvalidHostError'
 
+declare const SETTINGS: Array<any>
+enum Settings {
+  huggingFaceAccessToken = 'hugging-face-access-token',
+}
+
 /**
  * A extension for models
  */
@@ -63,6 +68,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async onLoad() {
     // Handle Desktop Events
+    this.registerSettings(SETTINGS)
     this.handleDesktopEvents()
   }
 
@@ -195,7 +201,21 @@ export default class JanModelExtension extends ModelExtension {
     const sanitizedUrl = this.toHuggingFaceUrl(repoId)
     console.debug('sanitizedUrl', sanitizedUrl)
 
-    const res = await fetch(sanitizedUrl)
+    const huggingFaceAccessToken = (
+      await this.getSetting<string>(Settings.huggingFaceAccessToken, '')
+    ).trim()
+
+    const headers = {
+      Accept: 'application/json',
+    }
+
+    if (huggingFaceAccessToken.length > 0) {
+      headers['Authorization'] = `Bearer ${huggingFaceAccessToken}`
+    }
+
+    const res = await fetch(sanitizedUrl, {
+      headers: headers,
+    })
     const response = await res.json()
     if (response['error'] != null) {
       throw new Error(response['error'])

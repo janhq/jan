@@ -4,6 +4,7 @@ import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
 
+const settingJson = require('./resources/settings.json')
 const packageJson = require('./package.json')
 const defaultModelJson = require('./resources/default-model.json')
 
@@ -20,6 +21,7 @@ export default [
       replace({
         preventAssignment: true,
         DEFAULT_MODEL: JSON.stringify(defaultModelJson),
+        SETTINGS: JSON.stringify(settingJson),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
       }),
       // Allow json resolution
