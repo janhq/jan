@@ -324,41 +324,92 @@ const ModelDropdown = ({
                       <h6 className="mb-1 mt-3 px-3 font-medium text-[hsla(var(--text-secondary))]">
                         Cortex
                       </h6>
-                      <ul className="pb-2">
-                        {featuredModel.map((model) => {
-                          const isDownloading = downloadingModels.some(
-                            (md) => md.id === model.id
-                          )
-                          return (
-                            <li
-                              key={model.id}
-                              className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                            >
-                              <div className="flex items-center gap-2">
-                                <p
-                                  className="line-clamp-1 text-[hsla(var(--text-secondary))]"
-                                  title={model.name}
-                                >
-                                  {model.name}
-                                </p>
-                                <ModelLabel metadata={model.metadata} compact />
-                              </div>
-                              <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                <span className="font-medium">
-                                  {toGibibytes(model.metadata.size)}
-                                </span>
-                                {!isDownloading && (
-                                  <DownloadCloudIcon
-                                    size={18}
-                                    className="cursor-pointer text-[hsla(var(--app-link))]"
-                                    onClick={() => downloadModel(model)}
+                      {searchText.length === 0 ? (
+                        <ul className="pb-2">
+                          {featuredModel.map((model) => {
+                            const isDownloading = downloadingModels.some(
+                              (md) => md.id === model.id
+                            )
+                            return (
+                              <li
+                                key={model.id}
+                                className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <p
+                                    className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                    title={model.name}
+                                  >
+                                    {model.name}
+                                  </p>
+                                  <ModelLabel
+                                    metadata={model.metadata}
+                                    compact
                                   />
-                                )}
-                              </div>
-                            </li>
-                          )
-                        })}
-                      </ul>
+                                </div>
+                                <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                  <span className="font-medium">
+                                    {toGibibytes(model.metadata.size)}
+                                  </span>
+                                  {!isDownloading && (
+                                    <DownloadCloudIcon
+                                      size={18}
+                                      className="cursor-pointer text-[hsla(var(--app-link))]"
+                                      onClick={() => downloadModel(model)}
+                                    />
+                                  )}
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : (
+                        <ul className="pb-2">
+                          {configuredModels
+                            .filter((x) => x.engine === InferenceEngine.nitro)
+                            .filter((e) =>
+                              e.name
+                                .toLowerCase()
+                                .includes(searchText.toLowerCase().trim())
+                            )
+                            .map((model) => {
+                              const isDownloading = downloadingModels.some(
+                                (md) => md.id === model.id
+                              )
+                              return (
+                                <li
+                                  key={model.id}
+                                  className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <p
+                                      className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                      title={model.name}
+                                    >
+                                      {model.name}
+                                    </p>
+                                    <ModelLabel
+                                      metadata={model.metadata}
+                                      compact
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                    <span className="font-medium">
+                                      {toGibibytes(model.metadata.size)}
+                                    </span>
+                                    {!isDownloading && (
+                                      <DownloadCloudIcon
+                                        size={18}
+                                        className="cursor-pointer text-[hsla(var(--app-link))]"
+                                        onClick={() => downloadModel(model)}
+                                      />
+                                    )}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                        </ul>
+                      )}
                     </div>
                   </div>
                 )}
@@ -397,12 +448,15 @@ const ModelDropdown = ({
                                     InferenceEngine.nitro_tensorrt_llm &&
                                   'cursor-default text-[hsla(var(--text-tertiary))]'
                               )}
-                              onClick={() =>
-                                apiKey ||
-                                (model.engine ===
-                                  InferenceEngine.nitro_tensorrt_llm &&
-                                  onClickModelItem(model.id))
-                              }
+                              onClick={() => {
+                                if (
+                                  apiKey ||
+                                  model.engine ===
+                                    InferenceEngine.nitro_tensorrt_llm
+                                ) {
+                                  onClickModelItem(model.id)
+                                }
+                              }}
                             >
                               <div className="flex flex-shrink-0 gap-x-2">
                                 {engineHasLogo.map((x) => {
