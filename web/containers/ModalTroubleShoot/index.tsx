@@ -104,9 +104,21 @@ const ModalTroubleShooting = () => {
                 </ul>
               </div>
               <div className="max-h-[160px] overflow-y-auto">
-                {isTabActive === 0 && <AppLogs />}
-                {isTabActive === 1 && <ServerLogs limit={50} withCopy />}
-                {isTabActive === 2 && <DeviceSpecs />}
+                <div
+                  className={twMerge('hidden', isTabActive === 0 && 'block')}
+                >
+                  <AppLogs />
+                </div>
+                <div
+                  className={twMerge('hidden', isTabActive === 1 && 'block')}
+                >
+                  <ServerLogs limit={50} withCopy />
+                </div>
+                <div
+                  className={twMerge('hidden', isTabActive === 2 && 'block')}
+                >
+                  <DeviceSpecs />
+                </div>
               </div>
             </div>
           </div>

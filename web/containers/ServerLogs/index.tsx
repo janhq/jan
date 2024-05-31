@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 
 import { Button, useClipboard } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
@@ -117,10 +117,15 @@ const ServerLogs = (props: ServerLogsProps) => {
             })}
           </code>
         ) : (
-          <div className="mt-24 flex w-full flex-col items-center justify-center">
+          <div
+            className={twMerge(
+              'mt-24 flex w-full flex-col items-center justify-center',
+              withCopy && 'mt-0 py-2'
+            )}
+          >
             <svg
-              width="115"
-              height="115"
+              width="80"
+              height="80"
               viewBox="0 0 115 115"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -255,4 +260,4 @@ const ServerLogs = (props: ServerLogsProps) => {
   )
 }
 
-export default ServerLogs
+export default memo(ServerLogs)
