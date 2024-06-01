@@ -199,7 +199,6 @@ const ExtensionCatalog = () => {
                       <div
                         className="w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))] sm:w-4/5"
                         dangerouslySetInnerHTML={{
-                          // eslint-disable-next-line @typescript-eslint/naming-convention
                           __html: marked.parse(item.description ?? '', {
                             async: false,
                           }),
@@ -240,7 +239,6 @@ const ExtensionCatalog = () => {
                       <div
                         className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
                         dangerouslySetInnerHTML={{
-                          // eslint-disable-next-line @typescript-eslint/naming-convention
                           __html: marked.parse(item.description ?? '', {
                             async: false,
                           }),

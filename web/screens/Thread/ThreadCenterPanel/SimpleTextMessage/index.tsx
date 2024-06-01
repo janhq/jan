@@ -282,7 +282,6 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 'message max-width-[100%] flex flex-col gap-y-2 overflow-auto font-medium leading-relaxed',
                 isUser && 'whitespace-pre-wrap break-words'
               )}
-              // eslint-disable-next-line @typescript-eslint/naming-convention
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
           )}
