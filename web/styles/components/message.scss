@@ -8,11 +8,23 @@
     white-space: normal;
   }
 
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
   a {
     color: hsla(var(--app-link));
     &:hover {
       @apply underline;
     }
+  }
+
+  blockquote {
+    @apply inline-flex flex-col border-s-4 border-[hsla(var(--primary-bg))] bg-[hsla(var(--primary-bg-soft))] px-4 py-2;
   }
 }
 
