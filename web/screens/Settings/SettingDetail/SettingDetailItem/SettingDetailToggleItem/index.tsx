@@ -38,7 +38,6 @@ const SettingDetailToggleItem: React.FC<Props> = ({
         <h1 className="font-semibold">{settingProps.title}</h1>
         {
           <div
-            // eslint-disable-next-line @typescript-eslint/naming-convention
             dangerouslySetInnerHTML={{ __html: description }}
             className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
           />

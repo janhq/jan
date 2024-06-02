@@ -81,7 +81,6 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
           <h6 className="font-semibold">Additional Dependencies</h6>
         </div>
         <div
-          // eslint-disable-next-line @typescript-eslint/naming-convention
           dangerouslySetInnerHTML={{ __html: description }}
           className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
         />
