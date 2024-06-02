@@ -16,11 +16,16 @@ export type ControllerType = 'slider' | 'checkbox' | 'input'
 
 export type InputType = 'password' | 'text' | 'email' | 'number' | 'tel' | 'url'
 
+const InputActions = ['unobscure', 'copy'] as const
+export type InputActionsTuple = typeof InputActions
+export type InputAction = InputActionsTuple[number]
+
 export type InputComponentProps = {
   placeholder: string
   value: string
   type?: InputType
   textAlign?: 'left' | 'right'
+  inputActions?: InputAction[]
 }
 
 export type SliderComponentProps = {

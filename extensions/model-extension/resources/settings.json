@@ -6,7 +6,9 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "",
-      "placeholder": "hf_**********************************"
+      "placeholder": "hf_**********************************",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
     }
   }
 ]
