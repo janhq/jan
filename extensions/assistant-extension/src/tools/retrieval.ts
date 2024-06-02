@@ -37,7 +37,8 @@ export class RetrievalTool extends InferenceTool {
           'toolRetrievalIngestNewDocument',
           docFile,
           data.model?.id,
-          data.model?.engine
+          data.model?.engine,
+          tool?.useTimeWeightedRetriever ?? false
         )
       } else {
         return Promise.resolve(data)
@@ -78,7 +79,8 @@ export class RetrievalTool extends InferenceTool {
       const retrievalResult = await executeOnMain(
         NODE,
         'toolRetrievalQueryResult',
-        prompt
+        prompt,
+        tool?.useTimeWeightedRetriever ?? false
       )
       console.debug('toolRetrievalQueryResult', retrievalResult)
 
