@@ -10,6 +10,7 @@ export function toolRetrievalUpdateTextSplitter(
 }
 export async function toolRetrievalIngestNewDocument(
   file: string,
+  useTimeWeighted: boolean,
   model: string,
   engine: string,
   useTimeWeighted: boolean
