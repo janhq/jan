@@ -36,7 +36,6 @@ export class RetrievalTool extends InferenceTool {
           NODE,
           'toolRetrievalIngestNewDocument',
           docFile,
-          tool?.useTimeWeightedRetriever ?? false,
           data.model?.id,
           data.model?.engine,
           tool?.useTimeWeightedRetriever ?? false
