@@ -10,7 +10,6 @@ const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (window.core?.api?.quickAskSizeUpdated !== 'function') return
     if (text.trim().length === 0) {
       window.core?.api?.quickAskSizeUpdated(0)
     } else {
