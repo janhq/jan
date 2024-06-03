@@ -10,7 +10,7 @@
     "@janhq/web#dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
+      "dependsOn": ["@janhq/core#build", "@janhq/joi#build"]
     },
     "@janhq/server#build": {
       "outputs": ["dist/**"],
@@ -26,7 +26,7 @@
     },
     "@janhq/web#build": {
       "outputs": ["out/**"],
-      "dependsOn": ["@janhq/core#build", "@janhq/uikit#build"]
+      "dependsOn": ["@janhq/core#build", "@janhq/joi#build"]
     },
     "jan#build": {
       "outputs": ["dist/**"],

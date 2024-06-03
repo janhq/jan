@@ -38,6 +38,7 @@ const llama3Hermes8bJson = require('./resources/models/llama3-hermes-8b/model.js
 const aya8bJson = require('./resources/models/aya-23-8b/model.json')
 const aya35bJson = require('./resources/models/aya-23-35b/model.json')
 const phimediumJson = require('./resources/models/phi3-medium/model.json')
+const codestralJson = require('./resources/models/codestral-22b/model.json')
 
 export default [
   {
@@ -82,7 +83,8 @@ export default [
           llama3Hermes8bJson,
           phimediumJson,
           aya8bJson,
-          aya35bJson
+          aya35bJson,
+          codestralJson
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),

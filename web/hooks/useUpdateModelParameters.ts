@@ -10,11 +10,10 @@ import {
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { selectedModelAtom } from '@/containers/DropdownListSidebar'
-
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   ModelParams,
   getActiveThreadModelParamsAtom,

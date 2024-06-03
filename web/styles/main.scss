@@ -4,10 +4,67 @@
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
 
-@import '../../node_modules/@janhq/uikit/dist/index.css';
+@import '@janhq/joi/dist/main.css';
 
 @import './base/global.scss';
 
 @import './components/loader.scss';
 @import './components/code-block.scss';
 @import './components/message.scss';
+
+:root {
+  --warning-bg: 41, 96%, 40%, 1;
+  --warning-bg-soft: 41, 96%, 40%, 0.1;
+  --warning-fg: 0, 0%, 100%, 1;
+
+  --success-bg: 142, 76%, 36%, 1;
+  --success-bg-soft: 142, 76%, 36%, 0.1;
+  --success-fg: 0, 0%, 100%, 1;
+
+  --destructive-bg: 0, 72%, 51%, 1;
+  --destructive-bg-soft: 0, 72%, 51%, 0.1;
+  --destructive-fg: 0, 0%, 100%, 1;
+
+  --icon-bg: 0, 0%, 0%, 0.1;
+  --icon-border: 0, 0%, 0%, 0.1;
+
+  --info-bg: 217, 91%, 60%, 1;
+  --info-bg-soft: 217, 91%, 60%, 0.1;
+  --info-fg: 0, 0%, 100%, 1;
+
+  --ghost-border: 0, 0%, 0%, 0.1;
+
+  // Text Typography
+  --text-primary: 0, 0%, 0%, 1;
+  --text-secondary: 0, 0%, 0%, 0.6;
+  --text-tertiary: 0, 0%, 0%, 0.4;
+  --text-quaternary: 0, 0%, 0%, 0.2;
+}
+
+html.dark {
+  --warning-bg: 45, 93%, 47%, 1;
+  --warning-bg-soft: 45, 93%, 47%, 0.2;
+  --warning-fg: 0, 0%, 100%, 1;
+
+  --success-bg: 142, 71%, 45%, 1;
+  --success-bg-soft: 142, 71%, 45%, 0.2;
+  --success-fg: 0, 0%, 100%, 1;
+
+  --destructive-bg: 0, 84%, 60%, 1;
+  --destructive-bg-soft: 0, 84%, 60%, 0.2;
+  --destructive-fg: 0, 0%, 100%, 1;
+
+  --icon-bg: 0, 0%, 80%, 0.1;
+  --icon-border: 0, 0%, 100%, 0.1;
+
+  --info-bg: 217, 91%, 60%, 1;
+  --info-bg-soft: 217, 91%, 60%, 0.2;
+  --info-fg: 0, 0%, 100%, 1;
+
+  --ghost-border: 0, 0%, 100%, 0.1;
+
+  --text-primary: 0, 0%, 100%, 1;
+  --text-secondary: 0, 0%, 68%, 1;
+  --text-tertiary: 0, 0%, 68%, 0.4;
+  --text-quaternary: 0, 0%, 68%, 0.2;
+}

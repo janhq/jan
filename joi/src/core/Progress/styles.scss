@@ -1,0 +1,25 @@
+.progress {
+  background-color: hsla(var(--progress-track-bg));
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  @apply transition-all;
+
+  &--indicator {
+    background-color: hsla(var(--primary-bg));
+    position: absolute;
+    border-radius: 8px;
+    width: 100%;
+    height: 100%;
+  }
+
+  &--small {
+    height: 6px;
+  }
+  &--medium {
+    @apply h-2;
+  }
+  &--large {
+    @apply h-3;
+  }
+}

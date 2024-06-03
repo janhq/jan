@@ -3,11 +3,14 @@ import { Fragment, PropsWithChildren, useEffect } from 'react'
 import { AppUpdateInfo } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
-import { appDownloadProgress, updateVersionError } from './Jotai'
+import {
+  appDownloadProgressAtom,
+  updateVersionErrorAtom,
+} from '@/helpers/atoms/App.atom'
 
 const AppUpdateListener = ({ children }: PropsWithChildren) => {
-  const setProgress = useSetAtom(appDownloadProgress)
-  const setUpdateVersionError = useSetAtom(updateVersionError)
+  const setProgress = useSetAtom(appDownloadProgressAtom)
+  const setUpdateVersionError = useSetAtom(updateVersionErrorAtom)
 
   useEffect(() => {
     if (window && window.electronAPI) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { Fragment, useEffect, useState } from 'react'
 
 import {
   BaseExtension,
@@ -14,7 +14,7 @@ import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 import { extensionManager } from '@/extension'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-const ExtensionSetting: React.FC = () => {
+const ExtensionSetting = () => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
   const [installationState, setInstallationState] =
@@ -63,7 +63,7 @@ const ExtensionSetting: React.FC = () => {
   }
 
   return (
-    <>
+    <Fragment>
       {settings.length > 0 && (
         <SettingDetailItem
           componentProps={settings}
@@ -73,7 +73,7 @@ const ExtensionSetting: React.FC = () => {
       {baseExtension && installationState !== 'NotRequired' && (
         <ExtensionItem item={baseExtension} />
       )}
-    </>
+    </Fragment>
   )
 }
 

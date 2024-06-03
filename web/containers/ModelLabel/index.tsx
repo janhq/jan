@@ -1,7 +1,7 @@
 import React from 'react'
 
 import { ModelMetadata } from '@janhq/core'
-import { Badge } from '@janhq/uikit'
+import { Badge } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -22,16 +22,17 @@ import {
 
 type Props = {
   metadata: ModelMetadata
+  compact?: boolean
 }
 const UnsupportedModel = () => {
   return (
-    <Badge className="space-x-1 rounded-md" themes="warning">
+    <Badge className="space-x-1 rounded-md" theme="warning">
       <span>Coming Soon</span>
     </Badge>
   )
 }
 
-const ModelLabel: React.FC<Props> = ({ metadata }) => {
+const ModelLabel = ({ metadata, compact }: Props) => {
   const { activeModel } = useActiveModel()
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
@@ -48,14 +49,15 @@ const ModelLabel: React.FC<Props> = ({ metadata }) => {
       return (
         <NotEnoughMemoryLabel
           unit={settings?.run_mode === 'gpu' ? 'VRAM' : 'RAM'}
+          compact={compact}
         />
       )
     }
-    if (minimumRamModel < availableRam) {
+    if (minimumRamModel < availableRam && !compact) {
       return <RecommendedLabel />
     }
     if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
-      return <SlowOnYourDeviceLabel />
+      return <SlowOnYourDeviceLabel compact={compact} />
     }
 
     return null

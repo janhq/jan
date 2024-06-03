@@ -112,7 +112,8 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   },
 ]
 
+export const menu = Menu.buildFromTemplate(template)
+
 export const setupMenu = () => {
-  const menu = Menu.buildFromTemplate(template)
   Menu.setApplicationMenu(menu)
 }

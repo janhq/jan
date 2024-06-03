@@ -2,28 +2,22 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { mainViewStateAtom, showLeftPanelAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 type Props = {
   children: ReactNode
 }
 
-export const showLeftSideBarAtom = atom<boolean>(true)
-export const showSelectModelModalAtom = atom<boolean>(false)
-export const showCommandSearchModalAtom = atom<boolean>(false)
-
 export default function KeyListener({ children }: Props) {
-  const setShowLeftSideBar = useSetAtom(showLeftSideBarAtom)
-  const setShowSelectModelModal = useSetAtom(showSelectModelModalAtom)
+  const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const showCommandSearchModal = useSetAtom(showCommandSearchModalAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const assistants = useAtomValue(assistantsAtom)
 
@@ -38,12 +32,7 @@ export default function KeyListener({ children }: Props) {
       }
 
       if (e.key === 'b' && prefixKey) {
-        setShowLeftSideBar((showLeftSideBar) => !showLeftSideBar)
-        return
-      }
-
-      if (e.key === 'e' && prefixKey) {
-        setShowSelectModelModal((show) => !show)
+        setShowLeftPanel((showLeftSideBar) => !showLeftSideBar)
         return
       }
 
@@ -51,22 +40,10 @@ export default function KeyListener({ children }: Props) {
         setMainViewState(MainViewState.Settings)
         return
       }
-
-      if (e.key === 'k' && prefixKey) {
-        showCommandSearchModal((show) => !show)
-        return
-      }
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [
-    assistants,
-    requestCreateNewThread,
-    setMainViewState,
-    setShowLeftSideBar,
-    setShowSelectModelModal,
-    showCommandSearchModal,
-  ])
+  }, [assistants, requestCreateNewThread, setMainViewState, setShowLeftPanel])
 
   return <Fragment>{children}</Fragment>
 }

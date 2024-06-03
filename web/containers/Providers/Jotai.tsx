@@ -11,8 +11,7 @@ type Props = {
 export const editPromptAtom = atom<string>('')
 export const currentPromptAtom = atom<string>('')
 export const fileUploadAtom = atom<FileInfo[]>([])
-export const appDownloadProgress = atom<number>(-1)
-export const updateVersionError = atom<string | undefined>(undefined)
+
 export const searchAtom = atom<string>('')
 
 export const selectedTextAtom = atom('')

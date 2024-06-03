@@ -1,11 +1,21 @@
-import React from 'react'
+import { memo } from 'react'
 
-import { Badge } from '@janhq/uikit'
+import { Badge } from '@janhq/joi'
 
-const RecommendedLabel: React.FC = () => (
-  <Badge className="space-x-1 rounded-md" themes="success">
-    <span>Recommended</span>
+import { twMerge } from 'tailwind-merge'
+
+type Props = {
+  compact?: boolean
+}
+
+const RecommendedLabel = ({ compact }: Props) => (
+  <Badge
+    theme="success"
+    variant="soft"
+    className={twMerge(compact && 'h-5 w-5 p-1')}
+  >
+    {!compact && <span>Recommended</span>}
   </Badge>
 )
 
-export default React.memo(RecommendedLabel)
+export default memo(RecommendedLabel)

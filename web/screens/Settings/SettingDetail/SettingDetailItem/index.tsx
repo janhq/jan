@@ -8,10 +8,7 @@ type Props = {
   onValueUpdated: (key: string, value: string | number | boolean) => void
 }
 
-const SettingDetailItem: React.FC<Props> = ({
-  componentProps,
-  onValueUpdated,
-}) => {
+const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'input': {
@@ -29,7 +26,9 @@ const SettingDetailItem: React.FC<Props> = ({
           <SettingDetailToggleItem
             key={data.key}
             settingProps={data}
-            onValueChanged={(value) => onValueUpdated(data.key, value)}
+            onValueChanged={(value) =>
+              onValueUpdated(data.key, value.target.checked)
+            }
           />
         )
       }
@@ -43,7 +42,7 @@ const SettingDetailItem: React.FC<Props> = ({
     <div className="flex w-full flex-col">
       {components.map((component, index) => (
         <div
-          className={`mx-6 ${index === components.length - 1 ? '' : 'border-b border-border'}`}
+          className={`mx-4 ${index === components.length - 1 ? '' : 'border-b border-[hsla(var(--app-border))]'}`}
           key={index}
         >
           {component}

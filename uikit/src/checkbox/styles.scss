@@ -1,7 +1,0 @@
-.checkbox {
-  @apply border-border data-[state=checked]:bg-primary h-5 w-5 flex-shrink-0 rounded-md border data-[state=checked]:text-white;
-
-  &--icon {
-    @apply h-4 w-4;
-  }
-}

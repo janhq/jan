@@ -12,7 +12,6 @@ import {
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
-import { selectedModelAtom } from '@/containers/DropdownListSidebar'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { generateThreadId } from '@/utils/thread'
@@ -25,6 +24,7 @@ import useSetActiveThread from './useSetActiveThread'
 import { extensionManager } from '@/extension'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
   threadStatesAtom,

@@ -57,6 +57,11 @@ module.exports = {
         selector: 'typeLike',
         format: ['PascalCase'],
       },
+      {
+        selector: 'property',
+        filter: '^__html$',
+        format: null,
+      },
     ],
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@next/next/no-img-element': 'off',

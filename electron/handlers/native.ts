@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, shell } from 'electron'
+import { app, ipcMain, dialog, shell, nativeTheme, screen } from 'electron'
 import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
@@ -10,7 +10,10 @@ import {
   NativeRoute,
   SelectFileProp,
 } from '@janhq/core/node'
-import { SelectFileOption } from '@janhq/core/.'
+import { SelectFileOption } from '@janhq/core'
+import { menu } from '../utils/menu'
+
+const isMac = process.platform === 'darwin'
 
 export function handleAppIPCs() {
   /**
@@ -20,6 +23,41 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(NativeRoute.openAppDirectory, async (_event) => {
     shell.openPath(getJanDataFolderPath())
+  })
+
+  /**
+   * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
+   * This will change the appearance of the app to the light theme.
+   */
+  ipcMain.handle(NativeRoute.setNativeThemeLight, () => {
+    nativeTheme.themeSource = 'light'
+  })
+
+  ipcMain.handle(NativeRoute.setCloseApp, () => {
+    windowManager.mainWindow?.close()
+  })
+
+  ipcMain.handle(NativeRoute.setMinimizeApp, () => {
+    windowManager.mainWindow?.minimize()
+  })
+
+  ipcMain.handle(NativeRoute.setMaximizeApp, async () => {
+    if (windowManager.mainWindow?.isMaximized()) {
+      // const bounds = await getBounds()
+      // windowManager.mainWindow?.setSize(bounds.width, bounds.height)
+      // windowManager.mainWindow?.setPosition(Number(bounds.x), Number(bounds.y))
+      windowManager.mainWindow.restore()
+    } else {
+      windowManager.mainWindow?.maximize()
+    }
+  })
+
+  /**
+   * Handles the "setNativeThemeDark" IPC message by setting the native theme source to "dark".
+   * This will change the appearance of the app to the dark theme.
+   */
+  ipcMain.handle(NativeRoute.setNativeThemeDark, () => {
+    nativeTheme.themeSource = 'dark'
   })
 
   /**
@@ -135,6 +173,16 @@ export function handleAppIPCs() {
       )
     }
   )
+
+  ipcMain.handle(NativeRoute.showOpenMenu, function (e, args) {
+    if (!isMac && windowManager.mainWindow) {
+      menu.popup({
+        window: windowManager.mainWindow,
+        x: args.x,
+        y: args.y,
+      })
+    }
+  })
 
   ipcMain.handle(
     NativeRoute.hideMainWindow,

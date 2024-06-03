@@ -2,20 +2,20 @@ import { useAtomValue } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
-import ChatScreen from '@/screens/Chat'
-import ExploreModelsScreen from '@/screens/ExploreModels'
+import HubScreen from '@/screens/Hub'
 import LocalServerScreen from '@/screens/LocalServer'
 import SettingsScreen from '@/screens/Settings'
+import ThreadScreen from '@/screens/Thread'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
-const MainViewContainer: React.FC = () => {
+const MainViewContainer = () => {
   const mainViewState = useAtomValue(mainViewStateAtom)
 
   let children = null
   switch (mainViewState) {
     case MainViewState.Hub:
-      children = <ExploreModelsScreen />
+      children = <HubScreen />
       break
 
     case MainViewState.Settings:
@@ -27,7 +27,7 @@ const MainViewContainer: React.FC = () => {
       break
 
     default:
-      children = <ChatScreen />
+      children = <ThreadScreen />
       break
   }
 
