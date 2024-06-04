@@ -2,23 +2,55 @@
 
 import { useEffect } from 'react'
 
+import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
+
+import { useSetAtom } from 'jotai'
+
 import ClipboardListener from '@/containers/Providers/ClipboardListener'
 
 import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
 
+import { useLoadTheme } from '@/hooks/useLoadTheme'
+
 import { setupCoreServices } from '@/services/coreService'
 
 import Search from './page'
 
+import { defaultJanDataFolderAtom } from '@/helpers/atoms/App.atom'
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+
 export default function RootLayout() {
+  const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
+  const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
+
   useEffect(() => {
     setupCoreServices()
   }, [])
 
+  useEffect(() => {
+    window.core?.api
+      ?.getAppConfigurations()
+      ?.then((appConfig: AppConfiguration) => {
+        setJanDataFolderPath(appConfig.data_folder)
+      })
+  }, [setJanDataFolderPath])
+
+  useEffect(() => {
+    async function getDefaultJanDataFolder() {
+      const homePath = await getUserHomePath()
+      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
+
+      setJanDefaultDataFolder(defaultJanDataFolder)
+    }
+    getDefaultJanDataFolder()
+  }, [setJanDefaultDataFolder])
+
+  useLoadTheme()
+
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-white font-sans text-sm antialiased dark:bg-background">
+      <body className="font-sans antialiased">
         <JotaiWrapper>
           <ThemeWrapper>
             <ClipboardListener>

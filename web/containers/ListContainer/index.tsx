@@ -1,10 +1,12 @@
 import { ReactNode, useCallback, useEffect, useRef } from 'react'
 
+import { ScrollArea } from '@janhq/joi'
+
 type Props = {
   children: ReactNode
 }
 
-const ListContainer: React.FC<Props> = ({ children }) => {
+const ListContainer = ({ children }: Props) => {
   const listRef = useRef<HTMLDivElement>(null)
   const prevScrollTop = useRef(0)
   const isUserManuallyScrollingUp = useRef(false)
@@ -25,13 +27,11 @@ const ListContainer: React.FC<Props> = ({ children }) => {
         isUserManuallyScrollingUp.current = false
       }
     }
-
     prevScrollTop.current = currentScrollTop
   }, [])
 
   useEffect(() => {
     if (isUserManuallyScrollingUp.current === true) return
-
     const scrollHeight = listRef.current?.scrollHeight ?? 0
     listRef.current?.scrollTo({
       top: scrollHeight,
@@ -40,13 +40,13 @@ const ListContainer: React.FC<Props> = ({ children }) => {
   }, [listRef.current?.scrollHeight, isUserManuallyScrollingUp])
 
   return (
-    <div
+    <ScrollArea
+      className="flex h-full w-full flex-col overflow-x-hidden"
       ref={listRef}
-      className="flex h-full w-full flex-col overflow-y-scroll"
       onScroll={handleScroll}
     >
       {children}
-    </div>
+    </ScrollArea>
   )
 }
 

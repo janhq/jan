@@ -5,6 +5,7 @@ import {
   ThreadContent,
   ThreadState,
 } from '@janhq/core'
+
 import { atom } from 'jotai'
 
 export const engineParamsUpdateAtom = atom<boolean>(false)

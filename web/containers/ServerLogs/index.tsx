@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/naming-convention */
-import { useCallback, useEffect, useState } from 'react'
 
-import React from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button, useClipboard } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
-import { CopyIcon, CheckIcon, FolderIcon } from 'lucide-react'
+import { FolderIcon, CheckIcon, CopyIcon } from 'lucide-react'
 
-import { useClipboard } from '@/hooks/useClipboard'
+import { twMerge } from 'tailwind-merge'
+
 import { useLogs } from '@/hooks/useLogs'
 
 import { usePath } from '@/hooks/usePath'
@@ -18,13 +18,10 @@ import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 type ServerLogsProps = { limit?: number; withCopy?: boolean }
 
 const ServerLogs = (props: ServerLogsProps) => {
-  const { limit = 0 } = props
+  const { limit = 0, withCopy } = props
   const { getLogs } = useLogs()
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const [logs, setLogs] = useState<string[]>([])
-  const { onRevealInFinder } = usePath()
-
-  const clipboard = useClipboard({ timeout: 1000 })
 
   const updateLogs = useCallback(
     () =>
@@ -51,69 +48,84 @@ const ServerLogs = (props: ServerLogsProps) => {
     // Log polling interval
     const intervalId = setInterval(() => {
       updateLogs()
-    }, window.core?.api?.pollingInterval ?? 1000)
+    }, window.core?.api?.pollingInterval ?? 1200)
 
     // clean up interval
     return () => clearInterval(intervalId)
   }, [updateLogs])
 
+  const { onRevealInFinder } = usePath()
+
+  const clipboard = useClipboard({ timeout: 1000 })
+
   return (
-    <>
-      <div className="absolute -top-11 right-2">
-        <div className="flex w-full flex-row gap-2">
-          <Button
-            themes="outline"
-            className="bg-white dark:bg-secondary/50"
-            onClick={() => onRevealInFinder('Logs')}
-          >
-            <div className="flex items-center space-x-2">
-              <>
-                <FolderIcon size={14} />
-                <span>Open</span>
-              </>
-            </div>
-          </Button>
-          <Button
-            themes="outline"
-            className="bg-white dark:bg-secondary/50"
-            onClick={() => {
-              clipboard.copy(logs.slice(-100).join('\n') ?? '')
-            }}
-          >
-            <div className="flex items-center space-x-2">
-              {clipboard.copied ? (
+    <div
+      className={twMerge(
+        'p-4 pb-0',
+        !withCopy && 'max-w-[38vw] lg:max-w-[40vw] xl:max-w-[50vw]',
+        logs.length === 0 && 'mx-auto'
+      )}
+    >
+      {withCopy && (
+        <div className="absolute right-2 top-7">
+          <div className="flex w-full flex-row gap-2">
+            <Button
+              theme="ghost"
+              variant="outline"
+              onClick={() => onRevealInFinder('Logs')}
+            >
+              <div className="flex items-center space-x-2">
                 <>
-                  <CheckIcon size={14} className="text-green-600" />
-                  <span>Copying...</span>
+                  <FolderIcon size={14} />
+                  <span>Open</span>
                 </>
-              ) : (
-                <>
-                  <CopyIcon size={14} />
-                  <span>Copy All</span>
-                </>
-              )}
-            </div>
-          </Button>
-        </div>
-      </div>
-      <div className="overflow-hidden">
-        {logs.length > 0 ? (
-          <div className="h-full overflow-auto">
-            <code className="inline-block whitespace-pre-line text-xs">
-              {logs.slice(-limit).map((log, i) => {
-                return (
-                  <p key={i} className="my-2 leading-relaxed">
-                    {log}
-                  </p>
-                )
-              })}
-            </code>
+              </div>
+            </Button>
+            <Button
+              theme="ghost"
+              variant="outline"
+              onClick={() => {
+                clipboard.copy(logs.slice(-100).join('\n') ?? '')
+              }}
+            >
+              <div className="flex items-center space-x-2">
+                {clipboard.copied ? (
+                  <>
+                    <CheckIcon size={14} className="text-green-600" />
+                    <span>Copying...</span>
+                  </>
+                ) : (
+                  <>
+                    <CopyIcon size={14} />
+                    <span>Copy All</span>
+                  </>
+                )}
+              </div>
+            </Button>
           </div>
+        </div>
+      )}
+      <div className="flex h-full w-full flex-col">
+        {logs.length > 0 ? (
+          <code className="inline-block whitespace-break-spaces text-[13px]">
+            {logs.slice(-limit).map((log, i) => {
+              return (
+                <p key={i} className="my-2 leading-relaxed">
+                  {log}
+                </p>
+              )
+            })}
+          </code>
         ) : (
-          <div className="mt-24 flex flex-col items-center justify-center">
+          <div
+            className={twMerge(
+              'mt-24 flex w-full flex-col items-center justify-center',
+              withCopy && 'mt-0 py-2'
+            )}
+          >
             <svg
-              width="115"
-              height="115"
+              width="80"
+              height="80"
               viewBox="0 0 115 115"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -240,12 +252,12 @@ const ServerLogs = (props: ServerLogsProps) => {
                 </linearGradient>
               </defs>
             </svg>
-            <p className="mt-4 text-muted-foreground">Empty logs</p>
+            <p className="text-[hsla(var(--text-secondary)] mt-4">Empty logs</p>
           </div>
         )}
       </div>
-    </>
+    </div>
   )
 }
 
-export default ServerLogs
+export default memo(ServerLogs)

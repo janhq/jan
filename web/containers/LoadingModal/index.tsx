@@ -1,4 +1,4 @@
-import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
+import { Modal } from '@janhq/joi'
 import { atom, useAtomValue } from 'jotai'
 
 export type LoadingInfo = {
@@ -12,14 +12,15 @@ const ResettingModal: React.FC = () => {
   const loadingInfo = useAtomValue(loadingModalInfoAtom)
 
   return (
-    <Modal open={loadingInfo != null}>
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>{loadingInfo?.title}</ModalTitle>
-        </ModalHeader>
-        <p className="text-muted-foreground">{loadingInfo?.message}</p>
-      </ModalContent>
-    </Modal>
+    <Modal
+      open={loadingInfo != null}
+      title={loadingInfo?.title}
+      content={
+        <p className="text-[hsla(var(--text-secondary))]">
+          {loadingInfo?.message}
+        </p>
+      }
+    />
   )
 }
 

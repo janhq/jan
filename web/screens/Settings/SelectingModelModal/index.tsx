@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
 import { SelectFileOption, systemInformation } from '@janhq/core'
-import { Modal, ModalContent, ModalHeader, ModalTitle } from '@janhq/uikit'
+import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
@@ -13,7 +13,7 @@ import useImportModel, {
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-const SelectingModelModal: React.FC = () => {
+const SelectingModelModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
@@ -42,11 +42,13 @@ const SelectingModelModal: React.FC = () => {
     onDrop: onDropModels,
   })
 
-  const borderColor = isDragActive ? 'border-primary' : 'border-border'
-  const textColor = isDragActive ? 'text-primary' : 'text-muted-foreground'
-  const dragAndDropBgColor = isDragActive
-    ? 'bg-[#EFF6FF] dark:bg-blue-50/10'
-    : 'bg-background'
+  const borderColor = isDragActive
+    ? 'border-[hsla(var(--primary-bg))]'
+    : 'border-[hsla(var(--app-border))]'
+  const textColor = isDragActive
+    ? 'text-[hsla(var(--primary-bg)]'
+    : 'text-[hsla(var(--text-secondary))]'
+  const dragAndDropBgColor = isDragActive && 'bg-[hsla(var(--primary-bg-soft))]'
 
   return (
     <Modal
@@ -54,41 +56,38 @@ const SelectingModelModal: React.FC = () => {
       onOpenChange={() => {
         setImportModelStage('NONE')
       }}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Import Model</ModalTitle>
-
-          <p className="text-sm font-medium text-muted-foreground">
+      title="Import Model"
+      content={
+        <div>
+          <p className="font-medium text-[hsla(var(--text-secondary))]">
             Import any model file (GGUF) or folder. Your imported model will be
             private to you.
           </p>
-        </ModalHeader>
-
-        <div
-          className={`flex h-[172px] w-full cursor-pointer items-center justify-center rounded-md border ${borderColor} ${dragAndDropBgColor}`}
-          {...getRootProps()}
-          onClick={onSelectFileClick}
-        >
-          <div className="flex flex-col items-center justify-center">
-            <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-blue-200">
-              <UploadCloudIcon size={24} className="text-blue-600" />
+          <div
+            className={`mt-4 flex h-[172px] w-full cursor-pointer items-center justify-center rounded-md border ${borderColor} ${dragAndDropBgColor}`}
+            {...getRootProps()}
+            onClick={onSelectFileClick}
+          >
+            <div className="flex flex-col items-center justify-center">
+              <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
+                <UploadCloudIcon
+                  size={24}
+                  className="text-[hsla(var(--primary-bg))]"
+                />
+              </div>
+              <div className="mt-4">
+                <span className="text-primary font-bold">
+                  Click to upload &nbsp;
+                </span>
+                <span className={`${textColor} font-medium`}>
+                  or drag and drop (GGUF)
+                </span>
+              </div>
             </div>
-
-            <div className="mt-4">
-              <span className="text-sm font-bold text-primary">
-                Click to upload
-              </span>
-              <span className={`text-sm ${textColor} font-medium`}>
-                {' '}
-                or drag and drop
-              </span>
-            </div>
-            <span className={`text-xs font-medium ${textColor}`}>(GGUF)</span>
           </div>
         </div>
-      </ModalContent>
-    </Modal>
+      }
+    />
   )
 }
 

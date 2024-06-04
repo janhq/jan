@@ -4,10 +4,10 @@ import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
-import { TooltipProvider } from '@janhq/uikit'
-
+import Loader from '@/containers/Loader'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
+
 import ThemeWrapper from '@/containers/Providers/Theme'
 
 import { setupCoreServices } from '@/services/coreService'
@@ -18,12 +18,11 @@ import {
 
 import Umami from '@/utils/umami'
 
-import Loader from '../Loader'
-
 import DataLoader from './DataLoader'
 
 import DeepLinkListener from './DeepLinkListener'
 import KeyListener from './KeyListener'
+import Responsive from './Responsive'
 
 import { extensionManager } from '@/extension'
 
@@ -71,24 +70,26 @@ const Providers = ({ children }: PropsWithChildren) => {
   }, [setupCore, setupExtensions])
 
   return (
-    <JotaiWrapper>
-      <ThemeWrapper>
+    <ThemeWrapper>
+      <JotaiWrapper>
         <Umami />
         {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
-          <KeyListener>
-            <EventListenerWrapper>
-              <TooltipProvider delayDuration={0}>
-                <DataLoader>
-                  <DeepLinkListener>{children}</DeepLinkListener>
-                </DataLoader>
-              </TooltipProvider>
-            </EventListenerWrapper>
-            <Toaster />
-          </KeyListener>
+          <>
+            <Responsive>
+              <KeyListener>
+                <EventListenerWrapper>
+                  <DataLoader>
+                    <DeepLinkListener>{children}</DeepLinkListener>
+                  </DataLoader>
+                </EventListenerWrapper>
+                <Toaster />
+              </KeyListener>
+            </Responsive>
+          </>
         )}
-      </ThemeWrapper>
-    </JotaiWrapper>
+      </JotaiWrapper>
+    </ThemeWrapper>
   )
 }
 

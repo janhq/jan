@@ -6,17 +6,17 @@ on:
       - main
       - dev
     paths:
-      - "electron/**"
+      - 'electron/**'
       - .github/workflows/jan-electron-linter-and-test.yml
-      - "web/**"
-      - "uikit/**"
-      - "package.json"
-      - "node_modules/**"
-      - "yarn.lock"
-      - "core/**"
-      - "extensions/**"
-      - "!README.md"
-      - "Makefile"
+      - 'web/**'
+      - 'joi/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
+      - 'core/**'
+      - 'extensions/**'
+      - '!README.md'
+      - 'Makefile'
 
   pull_request:
     branches:
@@ -24,17 +24,17 @@ on:
       - dev
       - release/**
     paths:
-      - "electron/**"
+      - 'electron/**'
       - .github/workflows/jan-electron-linter-and-test.yml
-      - "web/**"
-      - "uikit/**"
-      - "package.json"
-      - "node_modules/**"
-      - "yarn.lock"
-      - "Makefile"
-      - "extensions/**"
-      - "core/**"
-      - "!README.md"
+      - 'web/**'
+      - 'joi/**'
+      - 'package.json'
+      - 'node_modules/**'
+      - 'yarn.lock'
+      - 'Makefile'
+      - 'extensions/**'
+      - 'core/**'
+      - '!README.md'
 
 jobs:
   test-on-macos:
@@ -51,23 +51,23 @@ jobs:
         with:
           node-version: 20
 
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         continue-on-error: true
         run: |
           rm -rf ~/jan
           make clean
 
       - name: Get Commit Message for PR
-        if : github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request'
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}})" >> $GITHUB_ENV
 
       - name: Get Commit Message for push event
-        if : github.event_name == 'push'
+        if: github.event_name == 'push'
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}})" >> $GITHUB_ENV
 
-      - name: "Config report portal"
+      - name: 'Config report portal'
         run: |
           make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App macos" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
@@ -77,10 +77,10 @@ jobs:
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          TURBO_API: "${{ secrets.TURBO_API }}"
-          TURBO_TEAM: "macos"
-          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          TURBO_API: '${{ secrets.TURBO_API }}'
+          TURBO_TEAM: 'macos'
+          TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-macos-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
@@ -96,7 +96,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         continue-on-error: true
         run: |
           rm -rf ~/jan
@@ -108,14 +108,14 @@ jobs:
           yarn config set registry https://registry.npmjs.org --global
           make test
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
   test-on-windows:
     if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
-        antivirus-tools: ['mcafee', 'default-windows-security','bit-defender']
+        antivirus-tools: ['mcafee', 'default-windows-security', 'bit-defender']
     runs-on: windows-desktop-${{ matrix.antivirus-tools }}
     steps:
       - name: Getting the repo
@@ -129,7 +129,7 @@ jobs:
           node-version: 20
 
       # Clean cache, continue on error
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         shell: powershell
         continue-on-error: true
         run: |
@@ -140,14 +140,14 @@ jobs:
               Write-Output "Folder does not exist."
           }
           make clean
-  
+
       - name: Get Commit Message for push event
-        if : github.event_name == 'push'
+        if: github.event_name == 'push'
         shell: bash
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
 
-      - name: "Config report portal"
+      - name: 'Config report portal'
         shell: bash
         run: |
           make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows ${{ matrix.antivirus-tools }}" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
@@ -159,9 +159,9 @@ jobs:
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
         env:
-          TURBO_API: "${{ secrets.TURBO_API }}"
-          TURBO_TEAM: "windows"
-          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
+          TURBO_API: '${{ secrets.TURBO_API }}'
+          TURBO_TEAM: 'windows'
+          TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
   test-on-windows-pr:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: windows-desktop-default-windows-security
@@ -177,7 +177,7 @@ jobs:
           node-version: 20
 
       # Clean cache, continue on error
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         shell: powershell
         continue-on-error: true
         run: |
@@ -190,12 +190,12 @@ jobs:
           make clean
 
       - name: Get Commit Message for PR
-        if : github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request'
         shell: bash
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}}" >> $GITHUB_ENV
 
-      - name: "Config report portal"
+      - name: 'Config report portal'
         shell: bash
         run: |
           make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
@@ -207,9 +207,9 @@ jobs:
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
         env:
-          TURBO_API: "${{ secrets.TURBO_API }}"
-          TURBO_TEAM: "windows"
-          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
+          TURBO_API: '${{ secrets.TURBO_API }}'
+          TURBO_TEAM: 'windows'
+          TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-windows-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
@@ -226,7 +226,7 @@ jobs:
           node-version: 20
 
       # Clean cache, continue on error
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         shell: powershell
         continue-on-error: true
         run: |
@@ -245,7 +245,6 @@ jobs:
           yarn config set registry https://registry.npmjs.org --global
           make test
 
-
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -260,23 +259,23 @@ jobs:
         with:
           node-version: 20
 
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         continue-on-error: true
         run: |
           rm -rf ~/jan
           make clean
 
       - name: Get Commit Message for PR
-        if : github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request'
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}}" >> $GITHUB_ENV
 
       - name: Get Commit Message for push event
-        if : github.event_name == 'push'
+        if: github.event_name == 'push'
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
 
-      - name: "Config report portal"
+      - name: 'Config report portal'
         shell: bash
         run: |
           make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Linux" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
@@ -289,9 +288,9 @@ jobs:
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
         env:
-          TURBO_API: "${{ secrets.TURBO_API }}"
-          TURBO_TEAM: "linux"
-          TURBO_TOKEN: "${{ secrets.TURBO_TOKEN }}"
+          TURBO_API: '${{ secrets.TURBO_API }}'
+          TURBO_TEAM: 'linux'
+          TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-ubuntu-pr-target:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
@@ -307,12 +306,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: "Cleanup cache"
+      - name: 'Cleanup cache'
         continue-on-error: true
         run: |
           rm -rf ~/jan
           make clean
-            
+
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')

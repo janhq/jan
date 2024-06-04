@@ -1,7 +1,6 @@
 .message {
-  @apply text-black dark:text-gray-300;
   white-space: pre-line;
-
+  font-size: 16px;
   ul,
   ol {
     list-style: auto;
@@ -9,18 +8,30 @@
     white-space: normal;
   }
 
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
   a {
-    @apply text-blue-600 dark:text-blue-300;
+    color: hsla(var(--app-link));
     &:hover {
       @apply underline;
     }
   }
-}
 
-button[class*='react-scroll-to-bottom--'] {
-  display: none;
+  blockquote {
+    @apply inline-flex flex-col border-s-4 border-[hsla(var(--primary-bg))] bg-[hsla(var(--primary-bg-soft))] px-4 py-2;
+  }
 }
 
 .code-block {
   white-space: normal;
+}
+
+pre {
+  max-width: 95vw;
 }

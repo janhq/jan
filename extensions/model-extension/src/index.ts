@@ -31,6 +31,11 @@ import { GGUFMetadata, gguf } from '@huggingface/gguf'
 import { NotSupportedModelError } from './@types/NotSupportModelError'
 import { InvalidHostError } from './@types/InvalidHostError'
 
+declare const SETTINGS: Array<any>
+enum Settings {
+  huggingFaceAccessToken = 'hugging-face-access-token',
+}
+
 /**
  * A extension for models
  */
@@ -63,6 +68,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async onLoad() {
     // Handle Desktop Events
+    this.registerSettings(SETTINGS)
     this.handleDesktopEvents()
   }
 
@@ -195,7 +201,21 @@ export default class JanModelExtension extends ModelExtension {
     const sanitizedUrl = this.toHuggingFaceUrl(repoId)
     console.debug('sanitizedUrl', sanitizedUrl)
 
-    const res = await fetch(sanitizedUrl)
+    const huggingFaceAccessToken = (
+      await this.getSetting<string>(Settings.huggingFaceAccessToken, '')
+    ).trim()
+
+    const headers = {
+      Accept: 'application/json',
+    }
+
+    if (huggingFaceAccessToken.length > 0) {
+      headers['Authorization'] = `Bearer ${huggingFaceAccessToken}`
+    }
+
+    const res = await fetch(sanitizedUrl, {
+      headers: headers,
+    })
     const response = await res.json()
     if (response['error'] != null) {
       throw new Error(response['error'])
@@ -397,6 +417,30 @@ export default class JanModelExtension extends ModelExtension {
     )
   }
 
+  private async getModelJsonPath(
+    folderFullPath: string
+  ): Promise<string | undefined> {
+    // try to find model.json recursively inside each folder
+    if (!(await fs.existsSync(folderFullPath))) return undefined
+    const files: string[] = await fs.readdirSync(folderFullPath)
+    if (files.length === 0) return undefined
+    if (files.includes(JanModelExtension._modelMetadataFileName)) {
+      return joinPath([
+        folderFullPath,
+        JanModelExtension._modelMetadataFileName,
+      ])
+    }
+    // continue recursive
+    for (const file of files) {
+      const path = await joinPath([folderFullPath, file])
+      const fileStats = await fs.fileStat(path)
+      if (fileStats.isDirectory) {
+        const result = await this.getModelJsonPath(path)
+        if (result) return result
+      }
+    }
+  }
+
   private async getModelsMetadata(
     selector?: (path: string, model: Model) => Promise<boolean>
   ): Promise<Model[]> {
@@ -418,11 +462,11 @@ export default class JanModelExtension extends ModelExtension {
       const readJsonPromises = allDirectories.map(async (dirName) => {
         // filter out directories that don't match the selector
         // read model.json
-        const jsonPath = await joinPath([
+        const folderFullPath = await joinPath([
           JanModelExtension._homeDir,
           dirName,
-          JanModelExtension._modelMetadataFileName,
         ])
+        const jsonPath = await this.getModelJsonPath(folderFullPath)
 
         if (await fs.existsSync(jsonPath)) {
           // if we have the model.json file, read it

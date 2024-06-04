@@ -28,15 +28,15 @@ export default function Error({
               >
                 <path
                   d="M6 8H6.01M6 16H6.01M6 12H18C20.2091 12 22 10.2091 22 8C22 5.79086 20.2091 4 18 4H6C3.79086 4 2 5.79086 2 8C2 10.2091 3.79086 12 6 12ZM6 12C3.79086 12 2 13.7909 2 16C2 18.2091 3.79086 20 6 20H14"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 ></path>
                 <path
                   d="M17 16L22 21M22 16L17 21"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 ></path>
               </svg>
             </div>
@@ -48,7 +48,7 @@ export default function Error({
             Something went wrong. Try to{' '}
             <button
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
+              className="text-[hsla(var(--app-link))] hover:underline"
               onClick={() => window.location.reload()}
             >
               refresh this page
@@ -56,7 +56,7 @@ export default function Error({
             or <br /> feel free to{' '}
             <a
               rel="noopener noreferrer"
-              className="text-blue-600 hover:underline"
+              className="text-[hsla(var(--app-link))] hover:underline"
               href="https://discord.gg/FTk2MvZwJH"
               target="_blank_"
             >
@@ -71,12 +71,12 @@ export default function Error({
             <strong className="font-bold">Error: </strong>
             <span className="block sm:inline">{error.message}</span>
             <div className="mt-2 h-full w-full">
-              <pre className="mt-2 w-full whitespace-pre-wrap rounded bg-red-200 p-4 text-left text-sm text-red-600">
+              <pre className="mt-2 w-full whitespace-pre-wrap rounded bg-red-200 p-4 text-left text-red-600">
                 {showFull ? error.stack : error.stack?.slice(0, 200)}
               </pre>
               <button
                 onClick={() => setShowFull(!showFull)}
-                className="mt-1 text-sm text-red-700 underline focus:outline-none"
+                className="mt-1 text-red-700 underline focus:outline-none"
               >
                 {showFull ? 'Show less' : 'Show more'}
               </button>

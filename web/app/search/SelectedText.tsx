@@ -10,7 +10,6 @@ const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (window.core?.api?.quickAskSizeUpdated !== 'function') return
     if (text.trim().length === 0) {
       window.core?.api?.quickAskSizeUpdated(0)
     } else {
@@ -30,15 +29,17 @@ const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
   return shouldShowSelectedText ? (
     <div
       ref={containerRef}
-      className="relative rounded-lg border border-border bg-secondary p-[10px]"
+      className="relative rounded-lg border border-[hsla(var(--app-border))] p-[10px]"
     >
       <div
-        className="absolute right-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-border bg-white shadow dark:bg-black/80"
+        className="absolute right-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[hsla(var(--app-border))] shadow"
         onClick={onClearClicked}
       >
-        <X size={14} className="text-muted-foreground" />
+        <X size={14} className="text-[hsla(var(--text-secondary)]" />
       </div>
-      <p className="pr-8 font-medium text-muted-foreground">{text}</p>
+      <p className="text-[hsla(var(--text-secondary)] pr-8 font-medium">
+        {text}
+      </p>
     </div>
   ) : (
     <div />

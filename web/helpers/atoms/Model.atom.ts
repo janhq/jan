@@ -130,3 +130,5 @@ export const updateImportingModelAtom = atom(
     set(importingModelsAtom, newList)
   }
 )
+
+export const selectedModelAtom = atom<Model | undefined>(undefined)

@@ -1,6 +1,0 @@
-.tooltip {
-  @apply dark:bg-input dark:text-foreground z-50 overflow-hidden rounded-md bg-gray-950 px-2 py-1.5 text-xs font-medium text-gray-200 shadow-md;
-  &-arrow {
-    @apply dark:fill-input fill-gray-950;
-  }
-}

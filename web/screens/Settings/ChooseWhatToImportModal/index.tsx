@@ -1,13 +1,7 @@
 import { useCallback } from 'react'
 
 import { SelectFileOption } from '@janhq/core'
-import {
-  Button,
-  Modal,
-  ModalContent,
-  ModalHeader,
-  ModalTitle,
-} from '@janhq/uikit'
+import { Button, Modal } from '@janhq/joi'
 import { useSetAtom, useAtomValue } from 'jotai'
 
 import useImportModel, {
@@ -15,7 +9,7 @@ import useImportModel, {
   getImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-const ChooseWhatToImportModal: React.FC = () => {
+const ChooseWhatToImportModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { sanitizeFilePaths } = useImportModel()
@@ -49,20 +43,18 @@ const ChooseWhatToImportModal: React.FC = () => {
 
   return (
     <Modal
+      title="Choose what to import"
       open={importModelStage === 'CHOOSE_WHAT_TO_IMPORT'}
       onOpenChange={() => setImportModelStage('SELECTING_MODEL')}
-    >
-      <ModalContent>
-        <ModalHeader>
-          <ModalTitle>Choose what to import</ModalTitle>
-        </ModalHeader>
-
-        <div className="mt-2 flex flex-col space-y-3">
-          <Button onClick={onImportFileClick}>Import file (GGUF)</Button>
-          <Button onClick={onImportFolderClick}>Import Folder</Button>
+      content={
+        <div>
+          <div className="mt-2 flex flex-col space-y-3">
+            <Button onClick={onImportFileClick}>Import file (GGUF)</Button>
+            <Button onClick={onImportFolderClick}>Import Folder</Button>
+          </div>
         </div>
-      </ModalContent>
-    </Modal>
+      }
+    />
   )
 }
 

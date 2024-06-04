@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, memo } from 'react'
 
-import { Button } from '@janhq/uikit'
+import { Button } from '@janhq/joi'
 
 import { CopyIcon, CheckIcon, FolderIcon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import { useClipboard } from '@/hooks/useClipboard'
 import { useLogs } from '@/hooks/useLogs'
@@ -16,7 +18,9 @@ const AppLogs = () => {
   useEffect(() => {
     getLogs('app').then((log) => {
       if (typeof log?.split === 'function') {
-        setLogs(log.split(/\r?\n|\r|\n/g))
+        if (log.length > 0) {
+          setLogs(log.split(/\r?\n|\r|\n/g))
+        }
       }
     })
 
@@ -26,12 +30,17 @@ const AppLogs = () => {
   const clipboard = useClipboard({ timeout: 1000 })
 
   return (
-    <>
-      <div className="absolute -top-11 right-2">
-        <div className="flex w-full flex-row gap-2">
+    <div
+      className={twMerge(
+        'max-w-[50vw] p-4 pb-0',
+        logs.length === 0 && 'w-full max-w-none'
+      )}
+    >
+      <div className="absolute right-2 top-7">
+        <div className="flex w-full flex-row items-center gap-2">
           <Button
-            themes="outline"
-            className="bg-white dark:bg-secondary/50"
+            theme="ghost"
+            variant="outline"
             onClick={() => onRevealInFinder('Logs')}
           >
             <div className="flex items-center space-x-2">
@@ -42,8 +51,8 @@ const AppLogs = () => {
             </div>
           </Button>
           <Button
-            themes="outline"
-            className="bg-white dark:bg-secondary/50"
+            theme="ghost"
+            variant="outline"
             onClick={() => {
               clipboard.copy(logs.slice(-50).join('\n') ?? '')
             }}
@@ -64,24 +73,22 @@ const AppLogs = () => {
           </Button>
         </div>
       </div>
-      <div className="overflow-hidden">
-        {logs.length > 1 ? (
-          <div className="h-full overflow-auto">
-            <code className="inline-block whitespace-pre-line text-xs">
-              {logs.slice(-100).map((log, i) => {
-                return (
-                  <p key={i} className="my-2 leading-relaxed">
-                    {log}
-                  </p>
-                )
-              })}
-            </code>
-          </div>
+      <div className="flex h-full w-full flex-col">
+        {logs.length > 0 ? (
+          <code className="inline-block whitespace-break-spaces text-[13px]">
+            {logs.slice(-100).map((log, i) => {
+              return (
+                <p key={i} className="my-2 leading-relaxed">
+                  {log}
+                </p>
+              )
+            })}
+          </code>
         ) : (
-          <div className="mt-24 flex flex-col items-center justify-center">
+          <div className="flex flex-col items-center justify-center py-2">
             <svg
-              width="115"
-              height="115"
+              width="80"
+              height="80"
               viewBox="0 0 115 115"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -208,12 +215,12 @@ const AppLogs = () => {
                 </linearGradient>
               </defs>
             </svg>
-            <p className="mt-4 text-muted-foreground">Empty logs</p>
+            <p className="text-[hsla(var(--text-secondary)] mt-4">Empty logs</p>
           </div>
         )}
       </div>
-    </>
+    </div>
   )
 }
 
-export default AppLogs
+export default memo(AppLogs)

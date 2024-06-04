@@ -19,7 +19,7 @@ import { handleAppIPCs } from './handlers/native'
  **/
 import { setupMenu } from './utils/menu'
 import { createUserSpace } from './utils/path'
-import { migrateExtensions } from './utils/migration'
+import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
@@ -79,7 +79,7 @@ app
   })
   .then(setupCore)
   .then(createUserSpace)
-  .then(migrateExtensions)
+  .then(migrate)
   .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
