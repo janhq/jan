@@ -1,4 +1,4 @@
-# Mistral Engine Extension
+# Nvidia Engine Extension
 
 Created using Jan extension example
 
