@@ -1,10 +1,9 @@
-import { Fragment, PropsWithChildren, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import {
   ImportingModel,
   LocalImportModelEvent,
   Model,
-  ModelEvent,
   events,
 } from '@janhq/core'
 import { useSetAtom } from 'jotai'
@@ -17,7 +16,7 @@ import {
   updateImportingModelProgressAtom,
 } from '@/helpers/atoms/Model.atom'
 
-const ModelImportListener = ({ children }: PropsWithChildren) => {
+const ModelImportListener: React.FC = () => {
   const updateImportingModelProgress = useSetAtom(
     updateImportingModelProgressAtom
   )
@@ -43,7 +42,7 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
   const onImportModelSuccess = useCallback(
     (state: ImportingModel) => {
       if (!state.modelId) return
-      events.emit(ModelEvent.OnModelsUpdate, {})
+      // events.emit(ModelEvent.OnModelsUpdate, {})
       setImportingModelSuccess(state.importId, state.modelId)
     },
     [setImportingModelSuccess]
@@ -103,7 +102,7 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
     onImportModelFailed,
   ])
 
-  return <Fragment>{children}</Fragment>
+  return null
 }
 
 export default ModelImportListener

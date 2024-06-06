@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
@@ -12,26 +12,22 @@ import { twMerge } from 'tailwind-merge'
 
 import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import GenerateResponse from '@/containers/Loader/GenerateResponse'
-import ModelReload from '@/containers/Loader/ModelReload'
-import ModelStart from '@/containers/Loader/ModelStart'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { snackbar } from '@/containers/Toast'
 
-import { activeModelAtom } from '@/hooks/useActiveModel'
-import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
+import useSendMessage from '@/hooks/useSendMessage'
 
 import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 
+import EmptyModel from './ChatBody/EmptyModel'
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
-import {
-  engineParamsUpdateAtom,
-  isGeneratingResponseAtom,
-} from '@/helpers/atoms/Thread.atom'
+import { isGeneratingResponseAtom } from '@/helpers/atoms/Thread.atom'
 
 const renderError = (code: string) => {
   switch (code) {
@@ -49,14 +45,17 @@ const renderError = (code: string) => {
   }
 }
 
-const ThreadCenterPanel = () => {
+const ThreadCenterPanel: React.FC = () => {
+  const { sendMessage, stopInference } = useSendMessage()
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
-  const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
-    .vision_model
+  const isVisionModel = false // activeThread?.assistants[0].model?.settings.vision_model
+
+  const acceptedFormat: Accept = isVisionModel
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -79,7 +78,7 @@ const ThreadCenterPanel = () => {
         e.dataTransfer.items.length === 1 &&
         ((activeThread?.assistants[0].tools &&
           activeThread?.assistants[0].tools[0]?.enabled) ||
-          activeThread?.assistants[0].model.settings.vision_model)
+          isVisionModel)
       ) {
         setDragOver(true)
       } else if (
@@ -101,7 +100,7 @@ const ThreadCenterPanel = () => {
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
           !activeThread?.assistants[0].tools[0]?.enabled &&
-          !activeThread?.assistants[0].model.settings.vision_model)
+          !isVisionModel)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -135,15 +134,10 @@ const ThreadCenterPanel = () => {
     }, 2000)
   }, [dragRejected.code])
 
-  const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
   const [dragOver, setDragOver] = useState(false)
 
-  const queuedMessage = useAtomValue(queuedMessageAtom)
-  const reloadModel = useAtomValue(reloadModelAtom)
-
-  const activeModel = useAtomValue(activeModelAtom)
-
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
+  if (!downloadedModels.length) return <EmptyModel />
 
   return (
     <CenterPanelContainer>
@@ -170,18 +164,13 @@ const ThreadCenterPanel = () => {
                   <h6 className="font-bold">
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
-                          activeThread?.assistants[0].model.settings
-                            .vision_model
-                            ? 'PDF, JPEG, JPG, PNG'
-                            : 'PDF'
+                          isVisionModel ? 'PDF, JPEG, JPG, PNG' : 'PDF'
                         } format`
                       : 'Drop file here'}
                   </h6>
                   {!isDragReject && (
                     <p className="mt-2">
-                      {activeThread?.assistants[0].model.settings.vision_model
-                        ? 'PDF, JPEG, JPG, PNG'
-                        : 'PDF'}
+                      {isVisionModel ? 'PDF, JPEG, JPG, PNG' : 'PDF'}
                     </p>
                   )}
                 </div>
@@ -198,29 +187,18 @@ const ThreadCenterPanel = () => {
             <RequestDownloadModel />
           )}
 
-          {!engineParamsUpdate && <ModelStart />}
+          {/* {!engineParamsUpdate && <ModelStart />} */}
 
-          {reloadModel && (
-            <Fragment>
-              <ModelReload />
-              <div className="mb-2 text-center">
-                <span className="text-[hsla(var(--text-secondary)]">
-                  Model is reloading to apply new changes.
-                </span>
-              </div>
-            </Fragment>
-          )}
-
-          {queuedMessage && !reloadModel && (
+          {/* {queuedMessage && (
             <div className="mb-2 text-center">
               <span className="text-[hsla(var(--text-secondary)]">
                 Message will be sent once the model has started
               </span>
             </div>
-          )}
+          )} */}
 
-          {activeModel && isGeneratingResponse && <GenerateResponse />}
-          <ChatInput />
+          {isGeneratingResponse && <GenerateResponse />}
+          <ChatInput sendMessage={sendMessage} stopInference={stopInference} />
         </div>
       </div>
     </CenterPanelContainer>

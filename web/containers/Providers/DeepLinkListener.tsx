@@ -1,5 +1,3 @@
-import { Fragment, ReactNode } from 'react'
-
 import { useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
@@ -13,11 +11,8 @@ import {
   importHuggingFaceModelStageAtom,
   importingHuggingFaceRepoDataAtom,
 } from '@/helpers/atoms/HuggingFace.atom'
-type Props = {
-  children: ReactNode
-}
 
-const DeepLinkListener: React.FC<Props> = ({ children }) => {
+const DeepLinkListener: React.FC = () => {
   const { getHfRepoData } = useGetHFRepoData()
   const setLoadingInfo = useSetAtom(loadingModalInfoAtom)
   const setImportingHuggingFaceRepoData = useSetAtom(
@@ -69,7 +64,7 @@ const DeepLinkListener: React.FC<Props> = ({ children }) => {
     handleDeepLinkAction(action)
   })
 
-  return <Fragment>{children}</Fragment>
+  return null
 }
 
 type DeepLinkAction = {

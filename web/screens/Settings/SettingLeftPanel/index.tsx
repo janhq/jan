@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect } from 'react'
 
 import { useAtomValue } from 'jotai'
 
@@ -7,20 +7,10 @@ import LeftPanelContainer from '@/containers/LeftPanelContainer'
 import SettingItem from './SettingItem'
 
 import { extensionManager } from '@/extension'
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingLeftPanel = () => {
   const settingScreens = useAtomValue(janSettingScreenAtom)
-  const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
-
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string }[]
-  >([])
-
-  const [engineHasSettings, setEngineHasSettings] = useState<
-    { name?: string; setting: string; provider: string }[]
-  >([])
 
   useEffect(() => {
     const getAllSettings = async () => {
@@ -61,8 +51,8 @@ const SettingLeftPanel = () => {
         }
       }
 
-      setExtensionHasSettings(extensionsMenu)
-      setEngineHasSettings(engineMenu)
+      // setExtensionHasSettings(extensionsMenu)
+      // setEngineHasSettings(engineMenu)
     }
     getAllSettings()
   }, [])
@@ -84,7 +74,7 @@ const SettingLeftPanel = () => {
           />
         ))}
 
-        {engineHasSettings.filter(
+        {/* {engineHasSettings.filter(
           (x) => !inActiveEngineProvider.includes(x.provider)
         ).length > 0 && (
           <div className="mb-1 mt-4 px-2">
@@ -92,9 +82,9 @@ const SettingLeftPanel = () => {
               Model Providers
             </label>
           </div>
-        )}
+        )} */}
 
-        {engineHasSettings
+        {/* {engineHasSettings
           .sort((a, b) => a.provider.localeCompare(b.provider))
           .filter((x) => !inActiveEngineProvider.includes(x.provider))
           .map((item) => (
@@ -103,9 +93,9 @@ const SettingLeftPanel = () => {
               name={item.name?.replace('Inference Engine', '') ?? item.setting}
               setting={item.setting}
             />
-          ))}
+          ))} */}
 
-        {extensionHasSettings.length > 0 && (
+        {/* {extensionHasSettings.length > 0 && (
           <div className="mb-1 mt-4 px-2">
             <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
               Core Extensions
@@ -121,7 +111,7 @@ const SettingLeftPanel = () => {
               name={item.name?.replace('Inference Engine', '') ?? item.setting}
               setting={item.setting}
             />
-          ))}
+          ))} */}
       </div>
     </LeftPanelContainer>
   )

@@ -18,16 +18,14 @@ else
 	cd joi && yarn install && yarn build
 endif
 
-# Installs yarn dependencies and builds core and extensions
+# Installs yarn dependencies and builds core
 install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
 	yarn global add turbo@1.13.2
 	yarn build:core
-	yarn build:server
 	yarn install
-	yarn build:extensions
 
 check-file-counts: install-and-build
 ifeq ($(OS),Windows_NT)

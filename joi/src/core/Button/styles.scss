@@ -3,8 +3,9 @@
 
   &:focus,
   &:focus-within {
-    @apply outline-2 outline-offset-4;
+    @apply outline-none;
   }
+
   &:hover {
     filter: brightness(95%);
   }
@@ -13,6 +14,7 @@
   &--primary {
     color: hsla(var(--primary-fg));
     background-color: hsla(var(--primary-bg)) !important;
+
     &:hover {
       filter: brightness(65%);
     }
@@ -34,6 +36,7 @@
   // Ghost
   &--ghost {
     background-color: transparent !important;
+
     &.btn--soft {
       background-color: transparent !important;
     }
@@ -49,6 +52,7 @@
   &--destructive {
     color: hsla(var(--destructive-fg));
     background-color: hsla(var(--destructive-bg)) !important;
+
     &:hover {
       filter: brightness(65%);
     }
@@ -83,6 +87,7 @@
     width: 24px;
     height: 24px;
     padding: 2px;
+
     &:hover {
       background-color: hsla(var(--icon-bg)) !important;
     }
@@ -90,6 +95,7 @@
     &.btn--outline {
       background-color: transparent !important;
       border: 1px solid hsla(var(--icon-border));
+
       &:hover {
         background-color: hsla(var(--icon-bg)) !important;
       }
@@ -101,6 +107,7 @@
     @apply h-6 px-2;
     font-size: 12px;
     border-radius: 4px;
+
     &.btn--icon {
       width: 24px;
       height: 24px;
@@ -111,6 +118,7 @@
   &--medium {
     @apply h-8;
     border-radius: 6px;
+
     &.btn--icon {
       width: 24px;
       height: 24px;
@@ -121,6 +129,7 @@
   &--large {
     @apply h-9;
     border-radius: 8px;
+
     &.btn--icon {
       width: 24px;
       height: 24px;
