@@ -460,5 +460,108 @@
     },
     "engine": "nvidia"
   },
-  
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "microsoft/phi-3-mini",
+    "object": "model",
+    "name": "phi-3-mini 128k",
+    "version": "1.1",
+    "description": "phi-3-mini 128k with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "temperature": 0.2,
+      "top_p": 0.7,
+      "max_tokens": 1024,
+      "seed": 42,
+      "stream": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "microsoft/phi-3-mini-4k-instruct",
+    "object": "model",
+    "name": "phi-3-mini 4k",
+    "version": "1.1",
+    "description": "phi-3-mini 4k with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "temperature": 0.2,
+      "top_p": 0.7,
+      "max_tokens": 1024,
+      "seed": 42,
+      "stream": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "microsoft/phi-3-small-128k-instruct",
+    "object": "model",
+    "name": "phi-3-small 128k",
+    "version": "1.1",
+    "description": "phi-3-small 128k with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "temperature": 0.2,
+      "top_p": 0.7,
+      "max_tokens": 1024,
+      "seed": 42,
+      "stream": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "microsoft/phi-3-small-8k-instruct",
+    "object": "model",
+    "name": "phi-3-small 8k",
+    "version": "1.1",
+    "description": "phi-3-small 8k with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "temperature": 0.2,
+      "top_p": 0.7,
+      "max_tokens": 1024,
+      "seed": 42,
+      "stream": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
 ]
