@@ -564,4 +564,91 @@
     },
     "engine": "nvidia"
   },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "mistralai/mixtral-8x7b-instruct-v0.1",
+    "object": "model",
+    "name": "Mistral 8x7B",
+    "version": "1.1",
+    "description": "Mistral 8x7B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.3,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "mistralai/mixtral-8x22b-instruct-v0.1",
+    "object": "model",
+    "name": "Mistral 8x22B",
+    "version": "1.1",
+    "description": "Mistral 8x22B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": 0
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "mistralai/mistral-large",
+    "object": "model",
+    "name": "Mistral large",
+    "version": "1.1",
+    "description": "Mistral large with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": 0
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  }
 ]
