@@ -230,5 +230,64 @@
       "tags": ["General"]
     },
     "engine": "nvidia"
-  }
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "ibm/granite-34b-code-instruct",
+    "object": "model",
+    "name": "Granite 34B",
+    "version": "1.1",
+    "description": "Granite 34B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": 0
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "ibm/granite-8b-code-instruct",
+    "object": "model",
+    "name": "Granite 8B",
+    "version": "1.1",
+    "description": "Granite 8B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": 0
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  
 ]
