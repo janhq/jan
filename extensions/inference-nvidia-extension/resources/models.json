@@ -289,5 +289,33 @@
     },
     "engine": "nvidia"
   },
-  
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "mediatek/breeze-7b-instruct",
+    "object": "model",
+    "name": "Breeze 7B",
+    "version": "1.1",
+    "description": "Breeze 8B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": 0
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
 ]
