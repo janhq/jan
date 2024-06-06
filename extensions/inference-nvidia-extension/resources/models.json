@@ -114,5 +114,34 @@
       "tags": ["General"]
     },
     "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "google/gemma-2b",
+    "object": "model",
+    "name": "Gemma 2b",
+    "version": "1.1",
+    "description": "Gemma 2b with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": 0
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
   }
 ]
