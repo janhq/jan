@@ -7,7 +7,7 @@
     ],
     "id": "aisingapore/sea-lion-7b-instruct",
     "object": "model",
-    "name": "Sea Lion 7B",
+    "name": "Sea Lion 7B with NVIDIA",
     "version": "1.1",
     "description": "SEA-LION-7B-Instruct is a multilingual model for natural language understanding (NLU), natural language generation (NLG), and natural language reasoning (NLR) tasks that has been fine-tuned with thousands of English and Indonesian instruction-completion pairs ",
     "format": "api",
@@ -57,4 +57,33 @@
     },
     "engine": "nvidia"
   },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "databricks/dbrx-instruct",
+    "object": "model",
+    "name": "Databricks",
+    "version": "1.1",
+    "description": "Databricks with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.5,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": 0,
+      "seed": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  }
 ]
