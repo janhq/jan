@@ -433,5 +433,32 @@
       "tags": ["General"]
     },
     "engine": "nvidia"
-  }
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "microsoft/phi-3-medium-4k-instruct",
+    "object": "model",
+    "name": "phi-3-medium-4k-instruct",
+    "version": "1.1",
+    "description": "phi-3-medium-4k-instruct with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.2,
+      "top_p": 0.7,
+      "stream": false,
+      "seed": 42
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  
 ]
