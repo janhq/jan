@@ -318,4 +318,62 @@
     },
     "engine": "nvidia"
   },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "meta/codellama-70b",
+    "object": "model",
+    "name": "Codellama 70B",
+    "version": "1.1",
+    "description": "Codellama 70B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.3,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://integrate.api.nvidia.com/v1/chat/completions"
+      }
+    ],
+    "id": "meta/codellama-70b",
+    "object": "model",
+    "name": "Codellama 70B",
+    "version": "1.1",
+    "description": "Codellama 70B with NVIDIA",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.3,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": null
+    },
+    "metadata": {
+      "author": "NVIDIA",
+      "tags": ["General"]
+    },
+    "engine": "nvidia"
+  }
 ]
