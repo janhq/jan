@@ -3,7 +3,7 @@ import { useCallback, memo } from 'react'
 import { Button, Modal, ModalClose } from '@janhq/joi'
 import { Paintbrush } from 'lucide-react'
 
-import useDeleteThread from '@/hooks/useDeleteThread'
+import useThreads from '@/hooks/useThreads'
 
 type Props = {
   threadId: string
@@ -11,7 +11,7 @@ type Props = {
 }
 
 const ModalCleanThread = ({ threadId, closeContextMenu }: Props) => {
-  const { cleanThread } = useDeleteThread()
+  const { cleanThread } = useThreads()
   const onCleanThreadClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       e.stopPropagation()

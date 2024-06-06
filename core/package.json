@@ -40,6 +40,7 @@
     "start": "rollup -c rollup.config.ts -w"
   },
   "devDependencies": {
+    "openai": "4.51.0",
     "@rollup/plugin-replace": "^5.0.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.4",
@@ -58,7 +59,6 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "rxjs": "^7.8.1",
-    "ulidx": "^2.3.0"
+    "rxjs": "^7.8.1"
   }
 }

@@ -1,6 +1,6 @@
 import { memo } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
+import { LocalEngines } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -14,9 +14,10 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 const EmptyThread = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const showOnboardingStep =
-    downloadedModels.filter((e) => e.engine === InferenceEngine.nitro)
-      .length === 0
+
+  const showOnboardingStep = downloadedModels.filter(
+    (e) => LocalEngines.find((x) => x === e.engine) != null
+  )
 
   return (
     <div className="mx-auto flex h-full flex-col items-center justify-center text-center">

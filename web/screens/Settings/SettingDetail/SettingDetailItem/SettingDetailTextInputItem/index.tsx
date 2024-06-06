@@ -8,24 +8,13 @@ import {
 
 import { Input } from '@janhq/joi'
 import { CopyIcon, EyeIcon, FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
+
+import { markdownParser } from '@/utils/markdown-parser'
 
 type Props = {
   settingProps: SettingComponentProps
   onValueChanged?: (e: string) => void
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) =>
-      Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        ),
-  },
-})
 
 const SettingDetailTextInputItem = ({
   settingProps,
@@ -35,7 +24,7 @@ const SettingDetailTextInputItem = ({
     settingProps.controllerProps as InputComponentProps
   const [obscure, setObscure] = useState(type === 'password')
 
-  const description = marked.parse(settingProps.description ?? '', {
+  const description = markdownParser.parse(settingProps.description ?? '', {
     async: false,
   })
 

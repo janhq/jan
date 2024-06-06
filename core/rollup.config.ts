@@ -52,7 +52,6 @@ export default [
       'pacote',
       '@types/pacote',
       '@npmcli/arborist',
-      'ulidx',
       'node-fetch',
       'fs',
       'request',

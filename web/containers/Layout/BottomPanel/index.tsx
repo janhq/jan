@@ -4,7 +4,7 @@ import { useAtomValue } from 'jotai'
 import { FaGithub, FaDiscord } from 'react-icons/fa'
 import { twMerge } from 'tailwind-merge'
 
-import DownloadingState from './DownloadingState'
+import DownloadingStatus from './DownloadingStatus'
 
 import ImportingModelState from './ImportingModelState'
 import InstallingExtension from './InstallingExtension'
@@ -47,7 +47,7 @@ const BottomPanel = () => {
           ) : null}
         </div>
         <ImportingModelState />
-        <DownloadingState />
+        <DownloadingStatus />
         <UpdatedFailedModal />
         <InstallingExtension />
       </div>

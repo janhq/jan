@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import {
-  Model,
-  ModelEvent,
-  events,
-  joinPath,
-  openFileExplorer,
-} from '@janhq/core'
+import { Model, joinPath, openFileExplorer } from '@janhq/core'
 import { Modal, Button, Input, ModalClose, TextArea } from '@janhq/joi'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -69,7 +63,7 @@ const EditModelInfoModal = () => {
     const modelInfo: Partial<Model> = {
       id: editingModel.modelId,
       name: modelName,
-      description,
+      // description,
       metadata: {
         author: 'User',
         tags,
@@ -78,7 +72,7 @@ const EditModelInfoModal = () => {
     }
 
     await updateModelInfo(modelInfo)
-    events.emit(ModelEvent.OnModelsUpdate, {})
+    // events.emit(ModelEvent.OnModelsUpdate, {})
     updateImportingModel(editingModel.importId, modelName, description, tags)
 
     setImportModelStage('IMPORTING_MODEL')

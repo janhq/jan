@@ -20,7 +20,7 @@ export interface Compatibility {
   version: string
 }
 
-const ALL_INSTALLATION_STATE = [
+const InstallationStates = [
   'NotRequired', // not required.
   'Installed', // require and installed. Good to go.
   'NotInstalled', // require to be installed.
@@ -28,8 +28,7 @@ const ALL_INSTALLATION_STATE = [
   'NotCompatible', // require but not compatible.
 ] as const
 
-export type InstallationStateTuple = typeof ALL_INSTALLATION_STATE
-export type InstallationState = InstallationStateTuple[number]
+export type InstallationState = (typeof InstallationStates)[number]
 
 /**
  * Represents a base extension.

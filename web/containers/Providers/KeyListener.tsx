@@ -1,12 +1,14 @@
 'use client'
 
-import { Fragment, ReactNode, useEffect } from 'react'
+import { useEffect } from 'react'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import useThreads from '@/hooks/useThreads'
+
+import { toaster } from '../Toast'
 
 import {
   mainViewStateAtom,
@@ -14,17 +16,16 @@ import {
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
 
-type Props = {
-  children: ReactNode
-}
-
-export default function KeyListener({ children }: Props) {
+const KeyListener: React.FC = () => {
   const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
   const setShowRightPanel = useSetAtom(showRightPanelAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const { requestCreateNewThread } = useCreateNewThread()
+  const { createThread } = useThreads()
+
   const assistants = useAtomValue(assistantsAtom)
+  const selectedModel = useAtomValue(getSelectedModelAtom)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -36,7 +37,16 @@ export default function KeyListener({ children }: Props) {
       }
 
       if (e.key === 'n' && prefixKey) {
-        requestCreateNewThread(assistants[0])
+        if (!selectedModel) {
+          toaster({
+            title: 'No model selected.',
+            description: 'Please select a model to create a new thread.',
+            type: 'error',
+          })
+          return
+        }
+
+        createThread(selectedModel.id, assistants[0])
         setMainViewState(MainViewState.Thread)
         return
       }
@@ -55,11 +65,14 @@ export default function KeyListener({ children }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [
     assistants,
-    requestCreateNewThread,
+    setShowRightPanel,
+    selectedModel,
+    createThread,
     setMainViewState,
     setShowLeftPanel,
-    setShowRightPanel,
   ])
 
-  return <Fragment>{children}</Fragment>
+  return null
 }
+
+export default KeyListener

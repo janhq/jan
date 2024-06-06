@@ -1,22 +1,17 @@
 import { useCallback, useMemo } from 'react'
 
-import {
-  DownloadState,
-  HuggingFaceRepoData,
-  Model,
-  Quantization,
-} from '@janhq/core'
-import { Badge, Button, Progress } from '@janhq/joi'
+import { HuggingFaceRepoData, Model, Quantization } from '@janhq/core'
+import { Badge, Button } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useCreateNewThread } from '@/hooks/useCreateNewThread'
-import useDownloadModel from '@/hooks/useDownloadModel'
-import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
+import useCortex from '@/hooks/useCortex'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import useThreads from '@/hooks/useThreads'
+
+import { toGibibytes } from '@/utils/converter'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -44,11 +39,9 @@ const ModelDownloadRow: React.FC<Props> = ({
   quantization,
 }) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const { downloadModel, abortModelDownload } = useDownloadModel()
-  const allDownloadStates = useAtomValue(modelDownloadStateAtom)
-  const downloadState: DownloadState | undefined = allDownloadStates[fileName]
+  const { downloadModel, abortDownload } = useCortex()
 
-  const { requestCreateNewThread } = useCreateNewThread()
+  const { createThread } = useThreads()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const assistants = useAtomValue(assistantsAtom)
   const isDownloaded = downloadedModels.find((md) => md.id === fileName) != null
@@ -63,12 +56,11 @@ const ModelDownloadRow: React.FC<Props> = ({
 
     const model: Model = {
       ...defaultModel,
-      sources: [
-        {
-          url: downloadUrl,
-          filename: fileName,
-        },
-      ],
+      files: {
+        url: downloadUrl,
+        filename: fileName,
+      },
+
       id: fileName,
       name: fileName,
       created: Date.now(),
@@ -82,15 +74,13 @@ const ModelDownloadRow: React.FC<Props> = ({
   }, [fileName, fileSize, repoData, downloadUrl, defaultModel])
 
   const onAbortDownloadClick = useCallback(() => {
-    if (model) {
-      abortModelDownload(model)
-    }
-  }, [model, abortModelDownload])
+    if (!model) return
+    abortDownload(model.id)
+  }, [model, abortDownload])
 
   const onDownloadClick = useCallback(async () => {
-    if (model) {
-      downloadModel(model)
-    }
+    if (!model) return
+    downloadModel(model.id)
   }, [model, downloadModel])
 
   const onUseModelClick = useCallback(async () => {
@@ -98,21 +88,16 @@ const ModelDownloadRow: React.FC<Props> = ({
       alert('No assistant available')
       return
     }
-    await requestCreateNewThread(assistants[0], model)
+    if (!model) return
+    await createThread(model.id, assistants[0])
     setMainViewState(MainViewState.Thread)
     setHfImportingStage('NONE')
-  }, [
-    assistants,
-    model,
-    requestCreateNewThread,
-    setMainViewState,
-    setHfImportingStage,
-  ])
+  }, [assistants, model, createThread, setMainViewState, setHfImportingStage])
 
   if (!model) {
     return null
   }
-
+  const downloadState = null // TODO: remove
   return (
     <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
       <div className="flex">
@@ -142,7 +127,7 @@ const ModelDownloadRow: React.FC<Props> = ({
             <span className="inline-block" onClick={onAbortDownloadClick}>
               Cancel
             </span>
-            <Progress
+            {/* <Progress
               className="inline-block h-2 w-[80px]"
               value={
                 formatDownloadPercentage(downloadState?.percent, {
@@ -152,7 +137,7 @@ const ModelDownloadRow: React.FC<Props> = ({
             />
             <span className="tabular-nums">
               {formatDownloadPercentage(downloadState.percent)}
-            </span>
+            </span> */}
           </div>
         </Button>
       ) : (

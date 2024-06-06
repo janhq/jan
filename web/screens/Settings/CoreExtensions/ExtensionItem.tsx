@@ -11,7 +11,7 @@ import { Button, Progress, Tooltip } from '@janhq/joi'
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
 
-import { Marked, Renderer } from 'marked'
+import { markdownParser } from '@/utils/markdown-parser'
 
 import { extensionManager } from '@/extension'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
@@ -72,7 +72,9 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
     }
   }
 
-  const description = marked.parse(item.description ?? '', { async: false })
+  const description = markdownParser.parse(item.description ?? '', {
+    async: false,
+  })
 
   return (
     <div className="mx-4 flex items-start justify-between border-b border-[hsla(var(--app-border))] py-6 first:pt-4 last:border-none">
@@ -180,18 +182,5 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
       return <div></div>
   }
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
 
 export default ExtensionItem
