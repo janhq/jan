@@ -4,6 +4,8 @@ import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
 import Loader from '@/containers/Loader'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
@@ -11,20 +13,16 @@ import JotaiWrapper from '@/containers/Providers/Jotai'
 import ThemeWrapper from '@/containers/Providers/Theme'
 
 import { setupCoreServices } from '@/services/coreService'
-import {
-  isCoreExtensionInstalled,
-  setupBaseExtensions,
-} from '@/services/extensionService'
 
 import Umami from '@/utils/umami'
 
 import DataLoader from './DataLoader'
 
-import DeepLinkListener from './DeepLinkListener'
-import KeyListener from './KeyListener'
 import Responsive from './Responsive'
 
 import { extensionManager } from '@/extension'
+
+const queryClient = new QueryClient()
 
 const Providers = ({ children }: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -36,12 +34,6 @@ const Providers = ({ children }: PropsWithChildren) => {
     await extensionManager.registerActive()
 
     setTimeout(async () => {
-      if (!isCoreExtensionInstalled()) {
-        setSettingUp(true)
-        await setupBaseExtensions()
-        return
-      }
-
       extensionManager.load()
       setSettingUp(false)
       setActivated(true)
@@ -75,18 +67,12 @@ const Providers = ({ children }: PropsWithChildren) => {
         <Umami />
         {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
-          <>
-            <Responsive>
-              <KeyListener>
-                <EventListenerWrapper>
-                  <DataLoader>
-                    <DeepLinkListener>{children}</DeepLinkListener>
-                  </DataLoader>
-                </EventListenerWrapper>
-                <Toaster />
-              </KeyListener>
-            </Responsive>
-          </>
+          <QueryClientProvider client={queryClient}>
+            <DataLoader />
+            <EventListenerWrapper />
+            <Responsive>{children}</Responsive>
+            <Toaster />
+          </QueryClientProvider>
         )}
       </JotaiWrapper>
     </ThemeWrapper>

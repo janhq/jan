@@ -1,73 +1,92 @@
-import { useEffect } from 'react'
+import { useCallback } from 'react'
 
-import {
-  ExtensionTypeEnum,
-  Thread,
-  ThreadState,
-  ConversationalExtension,
-} from '@janhq/core'
+import { Assistant } from '@janhq/core'
+import log from 'electron-log/renderer'
 
 import { useSetAtom } from 'jotai'
 
-import { extensionManager } from '@/extension/ExtensionManager'
+import useCortex from './useCortex'
+
 import {
-  ModelParams,
-  threadDataReadyAtom,
-  threadModelParamsAtom,
-  threadStatesAtom,
+  cleanChatMessageAtom,
+  deleteChatMessageAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
+
+import { setThreadMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import {
+  deleteThreadAtom,
+  setActiveThreadIdAtom,
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const useThreads = () => {
-  const setThreadStates = useSetAtom(threadStatesAtom)
   const setThreads = useSetAtom(threadsAtom)
-  const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
-  const setThreadDataReady = useSetAtom(threadDataReadyAtom)
+  const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
+  const setThreadMessage = useSetAtom(setThreadMessagesAtom)
+  const deleteMessages = useSetAtom(deleteChatMessageAtom)
+  const deleteThreadState = useSetAtom(deleteThreadAtom)
+  const cleanMessages = useSetAtom(cleanChatMessageAtom)
+  const {
+    fetchThreads,
+    createThread,
+    fetchMessages,
+    deleteThread: deleteCortexThread,
+    cleanThread: cleanCortexThread,
+  } = useCortex()
 
-  useEffect(() => {
-    const getThreads = async () => {
-      const localThreads = await getLocalThreads()
-      const localThreadStates: Record<string, ThreadState> = {}
-      const threadModelParams: Record<string, ModelParams> = {}
+  const getThreadList = useCallback(async () => {
+    const threads = await fetchThreads()
+    setThreads(threads)
+  }, [setThreads, fetchThreads])
 
-      localThreads.forEach((thread) => {
-        if (thread.id != null) {
-          const lastMessage = (thread.metadata?.lastMessage as string) ?? ''
+  const setActiveThread = useCallback(
+    async (threadId: string) => {
+      const messages = await fetchMessages(threadId)
+      setThreadMessage(threadId, messages)
+      setActiveThreadId(threadId)
+    },
+    [fetchMessages, setThreadMessage, setActiveThreadId]
+  )
 
-          localThreadStates[thread.id] = {
-            hasMore: false,
-            waitingForResponse: false,
-            lastMessage,
-          }
+  const createNewThread = useCallback(
+    async (modelId: string, assistant: Assistant) => {
+      assistant.model = modelId
+      const thread = await createThread(assistant)
+      log.info('Create new thread result', thread)
+      setThreads((threads) => [thread, ...threads])
+      setActiveThread(thread.id)
+    },
+    [createThread, setActiveThread, setThreads]
+  )
 
-          const modelParams = thread.assistants?.[0]?.model?.parameters
-          const engineParams = thread.assistants?.[0]?.model?.settings
-          threadModelParams[thread.id] = {
-            ...modelParams,
-            ...engineParams,
-          }
-        }
-      })
+  const deleteThread = useCallback(
+    async (threadId: string) => {
+      try {
+        await deleteCortexThread(threadId)
+        deleteThreadState(threadId)
+        deleteMessages(threadId)
+      } catch (err) {
+        console.error(err)
+      }
+    },
+    [deleteMessages, deleteCortexThread, deleteThreadState]
+  )
 
-      // updating app states
-      setThreadStates(localThreadStates)
-      setThreads(localThreads)
-      setThreadModelRuntimeParams(threadModelParams)
-      setThreadDataReady(true)
-    }
+  const cleanThread = useCallback(
+    async (threadId: string) => {
+      await cleanCortexThread(threadId)
+      cleanMessages(threadId)
+    },
+    [cleanCortexThread, cleanMessages]
+  )
 
-    getThreads()
-  }, [
-    setThreadModelRuntimeParams,
-    setThreadStates,
-    setThreads,
-    setThreadDataReady,
-  ])
+  return {
+    getThreadList,
+    createThread: createNewThread,
+    setActiveThread,
+    deleteThread,
+    cleanThread,
+  }
 }
-
-const getLocalThreads = async (): Promise<Thread[]> =>
-  (await extensionManager
-    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-    ?.getThreads()) ?? []
 
 export default useThreads

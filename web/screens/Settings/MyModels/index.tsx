@@ -2,8 +2,6 @@ import { useCallback, useMemo, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
-import { InferenceEngine } from '@janhq/core'
-
 import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -13,12 +11,10 @@ import { twMerge } from 'tailwind-merge'
 
 import ModelSearch from '@/containers/ModelSearch'
 
-import SetupRemoteModel from '@/containers/SetupRemoteModel'
-
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
-import MyModelList from './MyModelList'
+import ModelItem from './ModelItem'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
@@ -32,9 +28,9 @@ const MyModels = () => {
     () =>
       downloadedModels
         .filter((e) =>
-          e.name.toLowerCase().includes(searchText.toLowerCase().trim())
+          e.id.toLowerCase().includes(searchText.toLowerCase().trim())
         )
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort((a, b) => a.id.localeCompare(b.id)),
     [downloadedModels, searchText]
   )
 
@@ -52,11 +48,10 @@ const MyModels = () => {
     setSearchText(input)
   }, [])
 
-  const findByEngine = filteredDownloadedModels.map((x) => x.engine)
-  const groupByEngine = findByEngine.filter(function (item, index) {
-    if (findByEngine.indexOf(item) === index)
-      return item !== InferenceEngine.nitro
-  })
+  // const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  // const groupByEngine = findByEngine.filter(function (item, index) {
+  //   if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
+  // })
 
   return (
     <div {...getRootProps()} className="h-full w-full">
@@ -86,19 +81,19 @@ const MyModels = () => {
             <div className="w-full sm:w-[300px]">
               <ModelSearch onSearchLocal={onSearchChange} />
             </div>
-            <Button
+            {/* <Button
               variant="outline"
               theme="ghost"
               onClick={onImportModelClick}
             >
               <UploadIcon size={16} className="mr-2" />
               <p>Import Model</p>
-            </Button>
+            </Button> */}
           </div>
 
           <div className="relative w-full">
             {filteredDownloadedModels.filter(
-              (x) => x.engine === InferenceEngine.nitro
+              (x) => x.engine === 'cortex.llamacpp'
             ).length !== 0 && (
               <div className="my-6">
                 <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -106,17 +101,15 @@ const MyModels = () => {
                 </div>
                 <div className="mt-2">
                   {filteredDownloadedModels
-                    ? filteredDownloadedModels
-                        .filter((x) => x.engine === InferenceEngine.nitro)
-                        .map((model) => {
-                          return <MyModelList key={model.id} model={model} />
-                        })
-                    : null}
+                    .filter((x) => x.engine === 'cortex.llamacpp')
+                    .map((model) => (
+                      <ModelItem key={model.id} model={model} />
+                    ))}
                 </div>
               </div>
             )}
 
-            {groupByEngine.map((engine, i) => {
+            {/* {groupByEngine.map((engine, i) => {
               return (
                 <div className="my-6" key={i}>
                   <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -127,16 +120,14 @@ const MyModels = () => {
                   </div>
                   <div className="mt-2">
                     {filteredDownloadedModels
-                      ? filteredDownloadedModels
-                          .filter((x) => x.engine === engine)
-                          .map((model) => {
-                            return <MyModelList key={model.id} model={model} />
-                          })
-                      : null}
+                      .filter((x) => x.engine === engine)
+                      .map((model) => (
+                        <ModelItem key={model.id} model={model} />
+                      ))}
                   </div>
                 </div>
               )
-            })}
+            })} */}
           </div>
         </div>
       </ScrollArea>

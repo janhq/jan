@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { MessageStatus } from '@janhq/core'
-
 import {
   TextArea,
   Button,
@@ -13,24 +11,19 @@ import {
 } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
-  FileTextIcon,
   ImageIcon,
   StopCircle,
-  PaperclipIcon,
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
   ShapesIcon,
+  PaperclipIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import ModelDropdown from '@/containers/ModelDropdown'
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
-
-import { useActiveModel } from '@/hooks/useActiveModel'
-
-import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
@@ -43,20 +36,22 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
   isGeneratingResponseAtom,
-  threadStatesAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
-const ChatInput = () => {
+type Props = {
+  sendMessage: (message: string) => void
+  stopInference: () => void
+}
+
+const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const [activeSetting, setActiveSetting] = useState(false)
   const spellCheck = useAtomValue(spellCheckAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
-  const { sendChatMessage } = useSendChatMessage()
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
@@ -67,14 +62,9 @@ const ChatInput = () => {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
-  const { stopInference } = useActiveModel()
 
   const setActiveTabThreadRightPanel = useSetAtom(activeTabThreadRightPanelAtom)
-
-  const isStreamingResponse = Object.values(threadStates).some(
-    (threadState) => threadState.waitingForResponse
-  )
+  const isStreamingResponse = useAtomValue(isGeneratingResponseAtom)
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
@@ -88,14 +78,14 @@ const ChatInput = () => {
   useEffect(() => {
     if (isWaitingToSend && activeThreadId) {
       setIsWaitingToSend(false)
-      sendChatMessage(currentPrompt)
+      sendMessage(currentPrompt)
     }
   }, [
     activeThreadId,
     isWaitingToSend,
     currentPrompt,
     setIsWaitingToSend,
-    sendChatMessage,
+    sendMessage,
   ])
 
   useEffect(() => {
@@ -116,14 +106,10 @@ const ChatInput = () => {
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
-        sendChatMessage(currentPrompt)
-      else onStopInferenceClick()
+      if (messages[messages.length - 1]?.status !== 'in_progress')
+        sendMessage(currentPrompt)
+      else stopInference()
     }
-  }
-
-  const onStopInferenceClick = async () => {
-    stopInference()
   }
 
   /**
@@ -153,6 +139,8 @@ const ChatInput = () => {
     }
   }
 
+  const isVisionModel = false
+
   return (
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
@@ -170,7 +158,7 @@ const ChatInput = () => {
           ref={textareaRef}
           onKeyDown={onKeyDown}
           placeholder="Ask me anything"
-          disabled={stateModel.loading || !activeThread}
+          disabled={!activeThread}
           value={currentPrompt}
           onChange={onPromptChange}
         />
@@ -185,7 +173,7 @@ const ChatInput = () => {
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
                       !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings.vision_model)
+                      !isVisionModel)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -208,8 +196,7 @@ const ChatInput = () => {
                 {fileUpload.length > 0 ||
                   (activeThread?.assistants[0].tools &&
                     !activeThread?.assistants[0].tools[0]?.enabled &&
-                    !activeThread?.assistants[0].model.settings
-                      .vision_model && (
+                    !isVisionModel && (
                       <>
                         {fileUpload.length !== 0 && (
                           <span>
@@ -246,14 +233,12 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.vision_model
+                      isVisionModel
                         ? 'cursor-pointer'
                         : 'cursor-not-allowed opacity-50'
                     )}
                     onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings.vision_model
-                      ) {
+                      if (isVisionModel) {
                         imageInputRef.current?.click()
                         setShowAttacmentMenus(false)
                       }
@@ -264,56 +249,54 @@ const ChatInput = () => {
                   </li>
                 }
                 content="This feature only supports multimodal models."
-                disabled={
-                  activeThread?.assistants[0].model.settings.vision_model
-                }
+                disabled={isVisionModel}
               />
-              <Tooltip
-                side="bottom"
-                trigger={
-                  <li
-                    className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.text_model ===
-                        false
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    )}
-                    onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings
-                          .text_model !== false
-                      ) {
-                        fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <FileTextIcon size={16} />
-                    <span className="font-medium">Document</span>
-                  </li>
-                }
-                content={
-                  (!activeThread?.assistants[0].tools ||
-                    !activeThread?.assistants[0].tools[0]?.enabled ||
-                    activeThread?.assistants[0].model.settings.text_model ===
-                      false) && (
-                    <>
-                      {activeThread?.assistants[0].model.settings.text_model ===
-                      false ? (
-                        <span>
-                          This model does not support text-based retrieval.
-                        </span>
-                      ) : (
-                        <span>
-                          Turn on Retrieval in Assistant Settings to use this
-                          feature.
-                        </span>
-                      )}
-                    </>
-                  )
-                }
-              />
+              {/* <Tooltip */}
+              {/*   side="bottom" */}
+              {/*   trigger={ */}
+              {/*     <li */}
+              {/*       className={twMerge( */}
+              {/*         'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]', */}
+              {/*         activeThread?.assistants[0].model.settings.text_model === */}
+              {/*           false */}
+              {/*           ? 'cursor-not-allowed opacity-50' */}
+              {/*           : 'cursor-pointer' */}
+              {/*       )} */}
+              {/*       onClick={() => { */}
+              {/*         if ( */}
+              {/*           activeThread?.assistants[0].model.settings */}
+              {/*             .text_model !== false */}
+              {/*         ) { */}
+              {/*           fileInputRef.current?.click() */}
+              {/*           setShowAttacmentMenus(false) */}
+              {/*         } */}
+              {/*       }} */}
+              {/*     > */}
+              {/*       <FileTextIcon size={16} /> */}
+              {/*       <span className="font-medium">Document</span> */}
+              {/*     </li> */}
+              {/*   } */}
+              {/*   content={ */}
+              {/*     (!activeThread?.assistants[0].tools || */}
+              {/*       !activeThread?.assistants[0].tools[0]?.enabled || */}
+              {/*       activeThread?.assistants[0].model.settings.text_model === */}
+              {/*         false) && ( */}
+              {/*       <> */}
+              {/*         {activeThread?.assistants[0].model.settings.text_model === */}
+              {/*         false ? ( */}
+              {/*           <span> */}
+              {/*             This model does not support text-based retrieval. */}
+              {/*           </span> */}
+              {/*         ) : ( */}
+              {/*           <span> */}
+              {/*             Turn on Retrieval in Assistant Settings to use this */}
+              {/*             feature. */}
+              {/*           </span> */}
+              {/*         )} */}
+              {/*       </> */}
+              {/*     ) */}
+              {/*   } */}
+              {/* /> */}
             </ul>
           </div>
         )}
@@ -335,20 +318,18 @@ const ChatInput = () => {
                 </Button>
               </div>
             )}
-            {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
+            {messages[messages.length - 1]?.status !== 'in_progress' &&
             !isGeneratingResponse &&
             !isStreamingResponse ? (
               <>
                 {currentPrompt.length !== 0 && (
                   <Button
                     disabled={
-                      stateModel.loading ||
-                      !activeThread ||
-                      currentPrompt.trim().length === 0
+                      !activeThread || currentPrompt.trim().length === 0
                     }
                     className="h-8 w-8 rounded-lg p-0"
                     data-testid="btn-send-chat"
-                    onClick={() => sendChatMessage(currentPrompt)}
+                    onClick={() => sendMessage(currentPrompt)}
                   >
                     <svg
                       width="16"
@@ -369,7 +350,7 @@ const ChatInput = () => {
             ) : (
               <Button
                 theme="destructive"
-                onClick={onStopInferenceClick}
+                onClick={stopInference}
                 className="h-8 w-8 rounded-lg p-0"
               >
                 <StopCircle size={20} />
@@ -382,8 +363,7 @@ const ChatInput = () => {
           <div
             className={twMerge(
               'absolute bottom-[6px] left-[1px] flex w-[calc(100%-2px)] items-center justify-between rounded-lg bg-[hsla(var(--textarea-bg))] p-3',
-              !activeThread && 'bg-transparent',
-              stateModel.loading && 'bg-transparent'
+              !activeThread && 'bg-transparent'
             )}
           >
             <div className="flex items-center gap-x-3">

@@ -1,13 +1,14 @@
 'use client'
 
-import { Fragment, ReactNode, useEffect } from 'react'
+import { useEffect } from 'react'
 
 import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
-import useGetSystemResources from '@/hooks/useGetSystemResources'
+import useCortexConfig from '@/hooks/useCortexConfig'
 import { useLoadTheme } from '@/hooks/useLoadTheme'
+import useModelHub from '@/hooks/useModelHub'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
@@ -20,21 +21,27 @@ import {
 } from '@/helpers/atoms/AppConfig.atom'
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
-type Props = {
-  children: ReactNode
-}
-
-const DataLoader: React.FC<Props> = ({ children }) => {
+const DataLoader: React.FC = () => {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
   const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
 
-  useModels()
-  useThreads()
-  useAssistants()
-  useGetSystemResources()
+  const { getAssistantList } = useAssistants()
+  const { getThreadList } = useThreads()
+  const { getModels } = useModels()
+  const { getConfig } = useCortexConfig()
+
   useLoadTheme()
+
+  useEffect(() => {
+    getAssistantList()
+    getThreadList()
+    getModels()
+    getConfig()
+  }, [getThreadList, getAssistantList, getModels, getConfig])
+
+  useModelHub()
 
   useEffect(() => {
     window.core?.api
@@ -63,8 +70,7 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   }, [setJanSettingScreen])
 
   console.debug('Load Data...')
-
-  return <Fragment>{children}</Fragment>
+  return null
 }
 
 export default DataLoader

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
-
+import { LlmEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
 import { SettingsIcon } from 'lucide-react'
@@ -13,7 +12,7 @@ import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
-  engine: InferenceEngine
+  engine: LlmEngine
 }
 
 const SetupRemoteModel = ({ engine }: Props) => {
@@ -63,11 +62,11 @@ const SetupRemoteModel = ({ engine }: Props) => {
     getAllSettings()
   }, [])
 
-  const onSetupItemClick = (setting: InferenceEngine) => {
+  const onSetupItemClick = (engine: LlmEngine) => {
     setMainViewState(MainViewState.Settings)
     setSelectedSetting(
       extensionHasSettings.filter((x) =>
-        x.provider.toLowerCase().includes(setting)
+        x.provider.toLowerCase().includes(engine)
       )[0]?.setting
     )
   }

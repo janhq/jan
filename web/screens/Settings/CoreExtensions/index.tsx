@@ -1,25 +1,21 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
-
-import { Button, ScrollArea, Badge, Switch, Input } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { LlmEngine } from '@janhq/core'
+import { Button, ScrollArea, Badge, Input } from '@janhq/joi'
 import { SearchIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
-import SetupRemoteModel from '@/containers/SetupRemoteModel'
-
 import { formatExtensionsName } from '@/utils/converter'
+
+import { markdownParser } from '@/utils/markdown-parser'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 
 type EngineExtension = {
-  provider: InferenceEngine
+  provider: LlmEngine
 } & Extension
 
 const ExtensionCatalog = () => {
@@ -113,23 +109,6 @@ const ExtensionCatalog = () => {
     }
   }
 
-  const [inActiveEngineProvider, setInActiveEngineProvider] = useAtom(
-    inActiveEngineProviderAtom
-  )
-
-  const onSwitchChange = useCallback(
-    (name: string) => {
-      if (inActiveEngineProvider.includes(name)) {
-        setInActiveEngineProvider(
-          [...inActiveEngineProvider].filter((x) => x !== name)
-        )
-      } else {
-        setInActiveEngineProvider([...inActiveEngineProvider, name])
-      }
-    },
-    [inActiveEngineProvider, setInActiveEngineProvider]
-  )
-
   return (
     <>
       <ScrollArea className="h-full w-full">
@@ -184,22 +163,22 @@ const ExtensionCatalog = () => {
                         <p>{item.provider}</p>
                       </div>
                       <div className="flex items-center gap-x-2">
-                        {!inActiveEngineProvider.includes(item.provider) && (
+                        {/* {!inActiveEngineProvider.includes(item.provider) && (
                           <SetupRemoteModel engine={item.provider} />
-                        )}
-                        <Switch
+                        )} */}
+                        {/* <Switch
                           checked={
                             !inActiveEngineProvider.includes(item.provider)
                           }
                           onChange={() => onSwitchChange(item.provider)}
-                        />
+                        /> */}
                       </div>
                     </div>
                     {
                       <div
                         className="w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))] sm:w-4/5"
                         dangerouslySetInnerHTML={{
-                          __html: marked.parse(item.description ?? '', {
+                          __html: markdownParser.parse(item.description ?? '', {
                             async: false,
                           }),
                         }}
@@ -239,7 +218,7 @@ const ExtensionCatalog = () => {
                       <div
                         className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
                         dangerouslySetInnerHTML={{
-                          __html: marked.parse(item.description ?? '', {
+                          __html: markdownParser.parse(item.description ?? '', {
                             async: false,
                           }),
                         }}
@@ -255,18 +234,5 @@ const ExtensionCatalog = () => {
     </>
   )
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
 
 export default ExtensionCatalog

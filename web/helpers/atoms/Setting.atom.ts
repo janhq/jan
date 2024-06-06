@@ -20,3 +20,5 @@ export const reduceTransparentAtom = atomWithStorage<boolean>(
   false
 )
 export const spellCheckAtom = atomWithStorage<boolean>(SPELL_CHECKING, true)
+
+export const showSidbarFilterAtom = atom<boolean>(false)

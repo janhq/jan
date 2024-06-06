@@ -12,14 +12,10 @@
       "persistent": true,
       "dependsOn": ["@janhq/core#build", "@janhq/joi#build"]
     },
-    "@janhq/server#build": {
-      "outputs": ["dist/**"],
-      "dependsOn": ["@janhq/core#build"]
-    },
     "jan#dev": {
       "cache": false,
       "persistent": true,
-      "dependsOn": ["@janhq/core#build", "@janhq/server#build"]
+      "dependsOn": ["@janhq/core#build"]
     },
     "@janhq/core#build": {
       "outputs": ["dist/**"]
@@ -32,7 +28,6 @@
       "outputs": ["dist/**"],
       "dependsOn": [
         "@janhq/core#build",
-        "@janhq/server#build",
         "@janhq/web#build"
       ]
     },
@@ -41,7 +36,6 @@
       "cache": false,
       "dependsOn": [
         "@janhq/core#build",
-        "@janhq/server#build",
         "@janhq/web#build"
       ]
     },

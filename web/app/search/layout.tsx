@@ -53,9 +53,8 @@ export default function RootLayout() {
       <body className="font-sans antialiased">
         <JotaiWrapper>
           <ThemeWrapper>
-            <ClipboardListener>
-              <Search />
-            </ClipboardListener>
+            <ClipboardListener />
+            <Search />
           </ThemeWrapper>
         </JotaiWrapper>
       </body>

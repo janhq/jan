@@ -32,8 +32,6 @@ COPY --from=builder /app/yarn.lock ./yarn.lock
 COPY --from=builder /app/core ./core/
 COPY --from=builder /app/server ./server/
 RUN cd core && yarn install && yarn run build
-RUN yarn workspace @janhq/server install && yarn workspace @janhq/server build
-COPY --from=builder /app/docs/openapi ./docs/openapi/
 
 # Copy pre-install dependencies
 COPY --from=builder /app/pre-install ./pre-install/

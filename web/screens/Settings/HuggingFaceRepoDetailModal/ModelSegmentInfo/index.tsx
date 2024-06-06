@@ -73,7 +73,7 @@ const ModelSegmentInfo = () => {
 
       <HeaderInfo title="Tags">
         <div className="mt-2 flex flex-wrap gap-x-1 gap-y-1">
-          {importingHuggingFaceRepoData.tags.map((tag) => (
+          {importingHuggingFaceRepoData.tags?.map((tag: string) => (
             <Badge variant="soft" key={tag} title={tag} className="mt-1">
               <span className="line-clamp-1">{tag}</span>
             </Badge>
