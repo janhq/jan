@@ -10,6 +10,7 @@ import {
   ConversationalExtension,
   EngineManager,
   ToolManager,
+  ChatCompletionMessage,
 } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -19,6 +20,7 @@ import {
   fileUploadAtom,
 } from '@/containers/Providers/Jotai'
 
+import { Stack } from '@/utils/Stack'
 import { compressImage, getBase64 } from '@/utils/base64'
 import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
@@ -90,6 +92,27 @@ export default function useSendChatMessage() {
     selectedModelRef.current = selectedModel
   }, [selectedModel])
 
+  const normalizeMessages = (
+    messages: ChatCompletionMessage[]
+  ): ChatCompletionMessage[] => {
+    const stack = new Stack<ChatCompletionMessage>()
+    for (const msg of messages) {
+      if (stack.isEmpty()) {
+        stack.push(msg)
+        continue
+      }
+      const peekMsg = stack.peek()
+
+      if (msg.role === peekMsg.role) {
+        stack.pop()
+      }
+
+      stack.push(msg)
+    }
+
+    return stack.reverseOutput()
+  }
+
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
     if (!activeThreadRef.current) {
       console.error('No active thread')
@@ -139,6 +162,8 @@ export default function useSendChatMessage() {
         (assistant) => assistant.tools ?? []
       ) ?? []
     )
+
+    request.messages = normalizeMessages(request.messages ?? [])
 
     const engine =
       requestBuilder.model?.engine ?? selectedModelRef.current?.engine ?? ''
@@ -258,6 +283,7 @@ export default function useSendChatMessage() {
         (assistant) => assistant.tools ?? []
       ) ?? []
     )
+    request.messages = normalizeMessages(request.messages ?? [])
 
     // Request for inference
     EngineManager.instance()
