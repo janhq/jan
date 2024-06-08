@@ -29,11 +29,11 @@ export const useLoadTheme = async () => {
   const setNativeTheme = useCallback(
     (nativeTheme: NativeThemeProps) => {
       if (nativeTheme === 'dark') {
-        window?.electronAPI.setNativeThemeDark()
+        window?.electronAPI?.setNativeThemeDark()
         setTheme('dark')
         localStorage.setItem('nativeTheme', 'dark')
       } else {
-        window?.electronAPI.setNativeThemeLight()
+        window?.electronAPI?.setNativeThemeLight()
         setTheme('light')
         localStorage.setItem('nativeTheme', 'light')
       }
