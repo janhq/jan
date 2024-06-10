@@ -268,7 +268,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               ) : (
                 <div
                   className={twMerge(
-                    'message flex flex-col gap-y-2 font-medium leading-relaxed',
+                    'message flex flex-col gap-y-2 leading-relaxed',
                     isUser ? 'whitespace-pre-wrap break-words' : 'p-4'
                   )}
                 >
@@ -279,7 +279,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto font-medium leading-relaxed',
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed',
                 isUser && 'whitespace-pre-wrap break-words'
               )}
               dangerouslySetInnerHTML={{ __html: parsedText }}
