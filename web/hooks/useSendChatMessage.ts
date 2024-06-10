@@ -110,7 +110,7 @@ export default function useSendChatMessage() {
             topMessage.role === ChatCompletionRole.User
               ? ChatCompletionRole.Assistant
               : ChatCompletionRole.User,
-          content: '',
+          content: '.', // some model requires not empty message
         })
       }
       stack.push(message)
