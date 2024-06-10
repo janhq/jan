@@ -96,18 +96,24 @@ export default function useSendChatMessage() {
     messages: ChatCompletionMessage[]
   ): ChatCompletionMessage[] => {
     const stack = new Stack<ChatCompletionMessage>()
-    for (const msg of messages) {
+    for (const message of messages) {
       if (stack.isEmpty()) {
-        stack.push(msg)
+        stack.push(message)
         continue
       }
-      const peekMsg = stack.peek()
+      const topMessage = stack.peek()
 
-      if (msg.role === peekMsg.role) {
-        stack.pop()
+      if (message.role === topMessage.role) {
+        // add an empty message
+        stack.push({
+          role:
+            topMessage.role === ChatCompletionRole.User
+              ? ChatCompletionRole.Assistant
+              : ChatCompletionRole.User,
+          content: '',
+        })
       }
-
-      stack.push(msg)
+      stack.push(message)
     }
 
     return stack.reverseOutput()
