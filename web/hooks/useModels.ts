@@ -10,6 +10,8 @@ import {
 
 import { useSetAtom } from 'jotai'
 
+import useCortex from './useCortex'
+
 import { extensionManager } from '@/extension'
 import {
   configuredModelsAtom,
@@ -21,18 +23,20 @@ const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
   const setConfiguredModels = useSetAtom(configuredModelsAtom)
   const setDefaultModel = useSetAtom(defaultModelAtom)
+  const { fetchModels } = useCortex()
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
-      const models = await getLocalDownloadedModels()
+      const models = await fetchModels()
       setDownloadedModels(models)
     }
 
     const getConfiguredModels = async () => {
-      const models = await getLocalConfiguredModels()
+      const models = await fetchModels()
       setConfiguredModels(models)
     }
 
+    // namh: this can be removed in the future
     const getDefaultModel = async () => {
       const defaultModel = await getLocalDefaultModel()
       setDefaultModel(defaultModel)
@@ -43,7 +47,7 @@ const useModels = () => {
       getConfiguredModels(),
       getDefaultModel(),
     ])
-  }, [setDownloadedModels, setConfiguredModels, setDefaultModel])
+  }, [setDownloadedModels, setConfiguredModels, setDefaultModel, fetchModels])
 
   useEffect(() => {
     // Try get data on mount
@@ -62,15 +66,5 @@ const getLocalDefaultModel = async (): Promise<Model | undefined> =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.getDefaultModel()
-
-const getLocalConfiguredModels = async (): Promise<Model[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getConfiguredModels() ?? []
-
-const getLocalDownloadedModels = async (): Promise<Model[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getDownloadedModels() ?? []
 
 export default useModels

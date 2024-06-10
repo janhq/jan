@@ -16,7 +16,7 @@ import {
   EngineManager,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ulid } from 'ulidx'
+import { v4 as uuidv4 } from 'uuid'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
@@ -30,7 +30,6 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
-  updateThreadWaitingForResponseAtom,
   threadsAtom,
   isGeneratingResponseAtom,
   updateThreadAtom,
@@ -49,7 +48,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
 
-  const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
   const modelsRef = useRef(downloadedModels)
   const threadsRef = useRef(threads)
@@ -178,8 +176,6 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         }
         return
       }
-      // Mark the thread as not waiting for response
-      updateThreadWaiting(message.thread_id, false)
 
       setIsGeneratingResponse(false)
 
@@ -211,7 +207,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       // Attempt to generate the title of the Thread when needed
       generateThreadTitle(message, thread)
     },
-    [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
+    [updateMessage, updateThread, setIsGeneratingResponse]
   )
 
   const onMessageResponseUpdate = useCallback(
@@ -248,7 +244,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     const summarizeFirstPrompt = `Summarize in a ${maxWordForThreadTitle}-word Title. Give the title only. "${threadMessages[0].content[0].text.value}"`
 
     // Prompt: Given this query from user {query}, return to me the summary in 10 words as the title
-    const msgId = ulid()
+    const msgId = uuidv4()
     const messages: ChatCompletionMessage[] = [
       {
         role: ChatCompletionRole.User,

@@ -1,136 +1,73 @@
 import { useCallback } from 'react'
 
-import {
-  ChatCompletionRole,
-  ExtensionTypeEnum,
-  ConversationalExtension,
-  fs,
-  joinPath,
-  Thread,
-} from '@janhq/core'
-
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { extensionManager } from '@/extension/ExtensionManager'
+import useCortex from './useCortex'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
-  chatMessages,
   cleanChatMessageAtom as cleanChatMessagesAtom,
   deleteChatMessageAtom as deleteChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import {
-  threadsAtom,
-  setActiveThreadIdAtom,
-  deleteThreadStateAtom,
-  updateThreadStateLastMessageAtom,
-  updateThreadAtom,
-} from '@/helpers/atoms/Thread.atom'
+import { setActiveThreadIdAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
-  const [threads, setThreads] = useAtom(threadsAtom)
-  const messages = useAtomValue(chatMessages)
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
-
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
-  const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
   const cleanMessages = useSetAtom(cleanChatMessagesAtom)
+  const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
 
-  const deleteThreadState = useSetAtom(deleteThreadStateAtom)
-  const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
-  const updateThread = useSetAtom(updateThreadAtom)
+  const { cleanThread: cleanCortexThread, deleteThread: deleteCortexThread } =
+    useCortex()
+  const [threads, setThreads] = useAtom(threadsAtom)
 
   const cleanThread = useCallback(
     async (threadId: string) => {
+      await cleanCortexThread(threadId)
       cleanMessages(threadId)
-      const thread = threads.find((c) => c.id === threadId)
-      if (!thread) return
-
-      const updatedMessages = (messages[threadId] ?? []).filter(
-        (msg) => msg.role === ChatCompletionRole.System
-      )
-
-      // remove files
-      try {
-        const threadFolderPath = await joinPath([
-          janDataFolderPath,
-          'threads',
-          threadId,
-        ])
-        const threadFilesPath = await joinPath([threadFolderPath, 'files'])
-        const threadMemoryPath = await joinPath([threadFolderPath, 'memory'])
-        await fs.rm(threadFilesPath)
-        await fs.rm(threadMemoryPath)
-      } catch (err) {
-        console.warn('Error deleting thread files', err)
-      }
-
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(threadId, updatedMessages)
-
-      thread.metadata = {
-        ...thread.metadata,
-      }
-
-      const updatedThread: Thread = {
-        ...thread,
-        title: 'New Thread',
-        metadata: { ...thread.metadata, lastMessage: undefined },
-      }
-
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(updatedThread)
-      updateThreadLastMessage(threadId, undefined)
-      updateThread(updatedThread)
     },
-    [
-      cleanMessages,
-      threads,
-      messages,
-      updateThreadLastMessage,
-      updateThread,
-      janDataFolderPath,
-    ]
+    [cleanCortexThread, cleanMessages]
   )
 
-  const deleteThread = async (threadId: string) => {
-    if (!threadId) {
-      alert('No active thread')
-      return
-    }
-    try {
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.deleteThread(threadId)
-      const availableThreads = threads.filter((c) => c.id !== threadId)
-      setThreads(availableThreads)
+  const deleteThread = useCallback(
+    async (threadId: string) => {
+      try {
+        const beingDeletedThread = threads.find((c) => c.id === threadId)
+        await deleteCortexThread(threadId)
 
-      // delete the thread state
-      deleteThreadState(threadId)
+        // update app state
+        const availableThreads = threads.filter((c) => c.id !== threadId)
+        setThreads(availableThreads)
+        deleteMessages(threadId)
+        setCurrentPrompt('')
 
-      deleteMessages(threadId)
-      setCurrentPrompt('')
-      toaster({
-        title: 'Thread successfully deleted.',
-        description: `Thread ${threadId} has been successfully deleted.`,
-        type: 'success',
-      })
-      if (availableThreads.length > 0) {
-        setActiveThreadId(availableThreads[0].id)
-      } else {
-        setActiveThreadId(undefined)
+        if (availableThreads.length > 0) {
+          setActiveThreadId(availableThreads[0].id)
+        } else {
+          setActiveThreadId(undefined)
+        }
+
+        toaster({
+          title: 'Thread successfully deleted.',
+          description: `Thread ${beingDeletedThread?.title ?? threadId} has been successfully deleted.`,
+          type: 'success',
+        })
+      } catch (err) {
+        console.error(err)
       }
-    } catch (err) {
-      console.error(err)
-    }
-  }
+    },
+    [
+      setThreads,
+      deleteMessages,
+      setCurrentPrompt,
+      setActiveThreadId,
+      deleteCortexThread,
+      threads,
+    ]
+  )
 
   return {
     cleanThread,

@@ -11,7 +11,7 @@ import {
   Thread,
   ThreadMessage,
 } from '@janhq/core'
-import { ulid } from 'ulidx'
+import { v4 as uuidv4 } from 'uuid'
 
 import { FileType } from '@/containers/Providers/Jotai'
 
@@ -28,7 +28,7 @@ export class MessageRequestBuilder {
     thread: Thread,
     messages: ThreadMessage[]
   ) {
-    this.msgId = ulid()
+    this.msgId = uuidv4()
     this.type = type
     this.model = model
     this.thread = thread

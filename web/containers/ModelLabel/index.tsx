@@ -63,10 +63,10 @@ const ModelLabel = ({ metadata, compact }: Props) => {
     return null
   }
 
-  return metadata.tags.includes('Coming Soon') ? (
+  return metadata?.tags?.includes('Coming Soon') ? (
     <UnsupportedModel />
   ) : (
-    getLabel(metadata.size ?? 0)
+    getLabel(metadata?.size ?? 0)
   )
 }
 

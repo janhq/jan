@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
 import {
@@ -112,12 +111,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
       e.preventDefault()
       if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
         sendEditMessage()
-      else onStopInferenceClick()
+      else stopInference()
     }
-  }
-
-  const onStopInferenceClick = async () => {
-    stopInference()
   }
 
   return (

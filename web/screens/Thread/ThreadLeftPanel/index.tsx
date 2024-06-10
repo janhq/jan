@@ -27,19 +27,14 @@ import ModalEditTitleThread from './ModalEditTitleThread'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
-import {
-  getActiveThreadIdAtom,
-  threadDataReadyAtom,
-  threadsAtom,
-} from '@/helpers/atoms/Thread.atom'
+import { getActiveThreadIdAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const ThreadLeftPanel = () => {
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const { setActiveThread } = useSetActiveThread()
   const assistants = useAtomValue(assistantsAtom)
-  const threadDataReady = useAtomValue(threadDataReadyAtom)
-  const { requestCreateNewThread } = useCreateNewThread()
+  const { requestCreateNewThread: createNewThread } = useCreateNewThread()
   const setEditMessage = useSetAtom(editMessageAtom)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
 
@@ -58,28 +53,26 @@ const ThreadLeftPanel = () => {
    */
   useEffect(() => {
     if (
-      threadDataReady &&
       assistants.length > 0 &&
       threads.length === 0 &&
       (recommendedModel || downloadedModels[0])
     ) {
       const model = recommendedModel || downloadedModels[0]
-      requestCreateNewThread(assistants[0], model)
-    } else if (threadDataReady && !activeThreadId) {
+      createNewThread(assistants[0], model)
+    } else if (!activeThreadId && threads.length > 0) {
       setActiveThread(threads[0])
     }
   }, [
+    createNewThread,
+    setActiveThread,
     assistants,
     threads,
-    threadDataReady,
-    requestCreateNewThread,
     activeThreadId,
-    setActiveThread,
     recommendedModel,
     downloadedModels,
   ])
 
-  const onCreateConversationClick = async () => {
+  const onCreateThreadClicked = useCallback(async () => {
     if (assistants.length === 0) {
       toaster({
         title: 'No assistant available.',
@@ -87,9 +80,9 @@ const ThreadLeftPanel = () => {
         type: 'error',
       })
     } else {
-      requestCreateNewThread(assistants[0])
+      createNewThread(assistants[0])
     }
-  }
+  }, [createNewThread, assistants])
 
   return (
     <LeftPanelContainer>
@@ -106,7 +99,7 @@ const ThreadLeftPanel = () => {
           <Button
             className="mb-2"
             data-testid="btn-create-thread"
-            onClick={onCreateConversationClick}
+            onClick={onCreateThreadClicked}
             theme="icon"
           >
             <PenSquareIcon

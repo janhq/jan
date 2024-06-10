@@ -1,12 +1,12 @@
-import { ExtensionTypeEnum, Thread, ConversationalExtension } from '@janhq/core'
+import { useCallback } from 'react'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { Thread } from '@janhq/core'
 
-import { extensionManager } from '@/extension'
-import {
-  readyThreadsMessagesAtom,
-  setConvoMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
+import { useSetAtom } from 'jotai'
+
+import useCortex from './useCortex'
+
+import { setThreadMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   ModelParams,
   setActiveThreadIdAtom,
@@ -15,29 +15,24 @@ import {
 
 export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
-  const setThreadMessage = useSetAtom(setConvoMessagesAtom)
+  const setThreadMessage = useSetAtom(setThreadMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const readyMessageThreads = useAtomValue(readyThreadsMessagesAtom)
+  const { fetchMessages } = useCortex()
 
-  const setActiveThread = async (thread: Thread) => {
-    // Load local messages only if there are no messages in the state
-    if (!readyMessageThreads[thread?.id]) {
-      const messages = await getLocalThreadMessage(thread?.id)
-      setThreadMessage(thread?.id, messages)
-    }
+  const setActiveThread = useCallback(
+    async (thread: Thread) => {
+      const messages = await fetchMessages(thread.id)
+      setThreadMessage(thread.id, messages)
 
-    setActiveThreadId(thread?.id)
-    const modelParams: ModelParams = {
-      ...thread?.assistants[0]?.model?.parameters,
-      ...thread?.assistants[0]?.model?.settings,
-    }
-    setThreadModelParams(thread?.id, modelParams)
-  }
+      setActiveThreadId(thread.id)
+      const modelParams: ModelParams = {
+        ...thread?.assistants[0]?.model?.parameters,
+        ...thread?.assistants[0]?.model?.settings,
+      }
+      setThreadModelParams(thread?.id, modelParams)
+    },
+    [fetchMessages, setThreadMessage, setActiveThreadId, setThreadModelParams]
+  )
 
   return { setActiveThread }
 }
-
-const getLocalThreadMessage = async (threadId: string) =>
-  extensionManager
-    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-    ?.getAllMessages(threadId) ?? []

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { EngineManager, Model } from '@janhq/core'
+
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import useCortex from './useCortex'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -36,6 +38,7 @@ export function useActiveModel() {
   const [pendingModelLoad, setPendingModelLoad] = useAtom(pendingModelLoadAtom)
 
   const downloadedModelsRef = useRef<Model[]>([])
+  const { startModel: startCortexModel } = useCortex()
 
   useEffect(() => {
     downloadedModelsRef.current = downloadedModels
@@ -91,41 +94,74 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    const engine = EngineManager.instance().get(model.engine)
-    return engine
-      ?.loadModel(model)
-      .then(() => {
-        setActiveModel(model)
-        setStateModel(() => ({
-          state: 'stop',
-          loading: false,
-          model,
-        }))
-        toaster({
-          title: 'Success!',
-          description: `Model ${model.id} has been started.`,
-          type: 'success',
-        })
+    try {
+      await startCortexModel(modelId)
+      setActiveModel(model)
+      setStateModel(() => ({
+        state: 'stop',
+        loading: false,
+        model,
+      }))
+      toaster({
+        title: 'Success!',
+        description: `Model ${model.id} has been started.`,
+        type: 'success',
       })
-      .catch((error) => {
-        setStateModel(() => ({
-          state: 'start',
-          loading: false,
-          model,
-        }))
+    } catch (err) {
+      setStateModel(() => ({
+        state: 'start',
+        loading: false,
+        model,
+      }))
 
-        if (!pendingModelLoad && abortable) {
-          return Promise.reject(new Error('aborted'))
-        }
+      if (!pendingModelLoad && abortable) {
+        return Promise.reject(new Error('aborted'))
+      }
 
-        toaster({
-          title: 'Failed!',
-          description: `Model ${model.id} failed to start.`,
-          type: 'error',
-        })
-        setLoadModelError(error)
-        return Promise.reject(error)
+      toaster({
+        title: 'Failed!',
+        description: `Model ${model.id} failed to start.`,
+        type: 'error',
       })
+      setLoadModelError(err)
+      return Promise.reject(err)
+    }
+
+    // const engine = EngineManager.instance().get(model.engine)
+    // return engine
+    //   ?.loadModel(model)
+    //   .then(() => {
+    //     setActiveModel(model)
+    //     setStateModel(() => ({
+    //       state: 'stop',
+    //       loading: false,
+    //       model,
+    //     }))
+    //     toaster({
+    //       title: 'Success!',
+    //       description: `Model ${model.id} has been started.`,
+    //       type: 'success',
+    //     })
+    //   })
+    //   .catch((error) => {
+    //     setStateModel(() => ({
+    //       state: 'start',
+    //       loading: false,
+    //       model,
+    //     }))
+    //
+    //     if (!pendingModelLoad && abortable) {
+    //       return Promise.reject(new Error('aborted'))
+    //     }
+    //
+    //     toaster({
+    //       title: 'Failed!',
+    //       description: `Model ${model.id} failed to start.`,
+    //       type: 'error',
+    //     })
+    //     setLoadModelError(error)
+    //     return Promise.reject(error)
+    //   })
   }
 
   const stopModel = useCallback(async () => {

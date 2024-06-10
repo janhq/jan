@@ -6,17 +6,12 @@ import {
 } from '@janhq/core'
 import { atom } from 'jotai'
 
-import {
-  getActiveThreadIdAtom,
-  updateThreadStateLastMessageAtom,
-} from './Thread.atom'
+import { getActiveThreadIdAtom } from './Thread.atom'
 
 /**
  * Stores all chat messages for all threads
  */
 export const chatMessages = atom<Record<string, ThreadMessage[]>>({})
-
-export const readyThreadsMessagesAtom = atom<Record<string, boolean>>({})
 
 /**
  * Return the chat messages for the current active conversation
@@ -28,37 +23,14 @@ export const getCurrentChatMessagesAtom = atom<ThreadMessage[]>((get) => {
   return messages ?? []
 })
 
-export const setConvoMessagesAtom = atom(
+// TODO: rename this function to add instead of set
+export const setThreadMessagesAtom = atom(
   null,
   (get, set, threadId: string, messages: ThreadMessage[]) => {
     const newData: Record<string, ThreadMessage[]> = {
       ...get(chatMessages),
     }
-    newData[threadId] = messages
-    set(chatMessages, newData)
-    set(readyThreadsMessagesAtom, {
-      ...get(readyThreadsMessagesAtom),
-      [threadId]: true,
-    })
-  }
-)
-
-/**
- * Used for pagination. Add old messages to the current conversation
- */
-export const addOldMessagesAtom = atom(
-  null,
-  (get, set, newMessages: ThreadMessage[]) => {
-    const currentConvoId = get(getActiveThreadIdAtom)
-    if (!currentConvoId) return
-
-    const currentMessages = get(chatMessages)[currentConvoId] ?? []
-    const updatedMessages = [...currentMessages, ...newMessages]
-
-    const newData: Record<string, ThreadMessage[]> = {
-      ...get(chatMessages),
-    }
-    newData[currentConvoId] = updatedMessages
+    newData[threadId] = [...(newData.messages ?? []), ...messages.reverse()]
     set(chatMessages, newData)
   }
 )
@@ -74,14 +46,6 @@ export const addNewMessageAtom = atom(
     }
     newData[newMessage.thread_id] = updatedMessages
     set(chatMessages, newData)
-
-    // Update thread last message
-    if (newMessage.content.length)
-      set(
-        updateThreadStateLastMessageAtom,
-        newMessage.thread_id,
-        newMessage.content
-      )
   }
 )
 
@@ -143,9 +107,6 @@ export const updateMessageAtom = atom(
       }
       newData[conversationId] = updatedMessages
       set(chatMessages, newData)
-      // Update thread last message
-      if (text.length)
-        set(updateThreadStateLastMessageAtom, conversationId, text)
     }
   }
 )

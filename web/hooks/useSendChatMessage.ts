@@ -10,8 +10,15 @@ import {
   ConversationalExtension,
   EngineManager,
   ToolManager,
+  MessageStatus,
+  MessageEvent,
+  events,
+  ContentType,
+  ThreadContent,
 } from '@janhq/core'
+
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { v4 as uuidv4 } from 'uuid'
 
 import {
   currentPromptAtom,
@@ -27,7 +34,10 @@ import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
 
 import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
 
+import useCortex from './useCortex'
+
 import { extensionManager } from '@/extension/ExtensionManager'
+
 import {
   addNewMessageAtom,
   deleteMessageAtom,
@@ -39,8 +49,6 @@ import {
   engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
   isGeneratingResponseAtom,
-  updateThreadAtom,
-  updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export const queuedMessageAtom = atom(false)
@@ -49,8 +57,6 @@ export const reloadModelAtom = atom(false)
 export default function useSendChatMessage() {
   const activeThread = useAtomValue(activeThreadAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
-  const updateThread = useSetAtom(updateThreadAtom)
-  const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditPrompt = useSetAtom(editPromptAtom)
@@ -73,6 +79,7 @@ export default function useSendChatMessage() {
   const setQueuedMessage = useSetAtom(queuedMessageAtom)
 
   const selectedModelRef = useRef<Model | undefined>()
+  const { createMessage, streamChatMessages, updateMessage } = useCortex()
 
   useEffect(() => {
     modelRef.current = activeModel
@@ -95,7 +102,6 @@ export default function useSendChatMessage() {
       console.error('No active thread')
       return
     }
-    updateThreadWaiting(activeThreadRef.current.id, true)
 
     const requestBuilder = new MessageRequestBuilder(
       MessageRequestType.Thread,
@@ -113,7 +119,7 @@ export default function useSendChatMessage() {
     if (modelRef.current?.id !== modelId) {
       const error = await startModel(modelId).catch((error: Error) => error)
       if (error) {
-        updateThreadWaiting(activeThreadRef.current.id, false)
+        // updateThreadWaiting(activeThreadRef.current.id, false)
         return
       }
     }
@@ -147,7 +153,6 @@ export default function useSendChatMessage() {
   }
 
   // Define interface extending Array prototype
-
   const sendChatMessage = async (message: string) => {
     if (!message || message.trim().length === 0) return
 
@@ -163,7 +168,7 @@ export default function useSendChatMessage() {
 
     const prompt = message.trim()
 
-    updateThreadWaiting(activeThreadRef.current.id, true)
+    // updateThreadWaiting(activeThreadRef.current.id, true)
     setCurrentPrompt('')
     setEditPrompt('')
 
@@ -212,24 +217,13 @@ export default function useSendChatMessage() {
 
     const newMessage = threadMessageBuilder.build()
 
+    await createMessage(activeThreadRef.current.id, {
+      role: ChatCompletionRole.User,
+      content: prompt,
+    })
+
     // Push to states
     addNewMessage(newMessage)
-
-    // Update thread state
-    const updatedThread: Thread = {
-      ...activeThreadRef.current,
-      updated: newMessage.created,
-      metadata: {
-        ...(activeThreadRef.current.metadata ?? {}),
-        lastMessage: prompt,
-      },
-    }
-    updateThread(updatedThread)
-
-    // Add message
-    await extensionManager
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.addNewMessage(newMessage)
 
     // Start Model if not started
     const modelId =
@@ -245,7 +239,7 @@ export default function useSendChatMessage() {
       const error = await startModel(modelId).catch((error: Error) => error)
       setQueuedMessage(false)
       if (error) {
-        updateThreadWaiting(activeThreadRef.current.id, false)
+        // updateThreadWaiting(activeThreadRef.current.id, false)
         return
       }
     }
@@ -259,10 +253,50 @@ export default function useSendChatMessage() {
       ) ?? []
     )
 
-    // Request for inference
-    EngineManager.instance()
-      .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
-      ?.inference(request)
+    const stream = await streamChatMessages(modelId, request.messages ?? [])
+
+    const createdMessage = await createMessage(request.threadId, {
+      role: ChatCompletionRole.Assistant,
+      content: '',
+    })
+
+    const responseMessage: ThreadMessage = {
+      id: createdMessage.id,
+      thread_id: request.threadId,
+      type: request.type,
+      assistant_id: request.assistantId,
+      role: ChatCompletionRole.Assistant,
+      content: [],
+      status: MessageStatus.Pending,
+      created: createdMessage.created_at,
+      object: 'thread.message',
+      metadata: undefined,
+    }
+
+    if (request.type !== MessageRequestType.Summary) {
+      events.emit(MessageEvent.OnMessageResponse, responseMessage)
+    }
+
+    let assistantResponse: string = ''
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || ''
+      assistantResponse += content
+      const messageContent: ThreadContent = {
+        type: ContentType.Text,
+        text: {
+          value: assistantResponse,
+          annotations: [],
+        },
+      }
+      responseMessage.content = [messageContent]
+      events.emit(MessageEvent.OnMessageUpdate, responseMessage)
+    }
+
+    responseMessage.status = MessageStatus.Ready
+    events.emit(MessageEvent.OnMessageUpdate, responseMessage)
+    updateMessage(request.threadId, responseMessage.id, {
+      content: responseMessage.content,
+    })
 
     // Reset states
     setReloadModel(false)

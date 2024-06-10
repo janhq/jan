@@ -1,20 +1,22 @@
 import { useCallback } from 'react'
 
-import { ExtensionTypeEnum, ModelExtension, Model } from '@janhq/core'
+import { Model } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { extensionManager } from '@/extension/ExtensionManager'
+import useCortex from './useCortex'
+
 import { removeDownloadedModelAtom } from '@/helpers/atoms/Model.atom'
 
-export default function useDeleteModel() {
+const useDeleteModel = () => {
   const removeDownloadedModel = useSetAtom(removeDownloadedModelAtom)
+  const { deleteModel: cortexDeleteModel } = useCortex()
 
   const deleteModel = useCallback(
     async (model: Model) => {
-      await localDeleteModel(model.id)
+      await cortexDeleteModel(model.id)
       removeDownloadedModel(model.id)
       toaster({
         title: 'Model Deletion Successful',
@@ -22,11 +24,10 @@ export default function useDeleteModel() {
         type: 'success',
       })
     },
-    [removeDownloadedModel]
+    [removeDownloadedModel, cortexDeleteModel]
   )
 
   return { deleteModel }
 }
 
-const localDeleteModel = async (id: string) =>
-  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.deleteModel(id)
+export default useDeleteModel

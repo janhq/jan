@@ -1,5 +1,5 @@
 export const toGibibytes = (
-  input: number,
+  input?: number,
   options?: { hideUnit?: boolean }
 ) => {
   if (!input) return ''

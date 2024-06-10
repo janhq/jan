@@ -33,14 +33,3 @@ export type ThreadAssistantInfo = {
   instructions?: string
   tools?: AssistantTool[]
 }
-
-/**
- * Represents the state of a thread.
- * @stored
- */
-export type ThreadState = {
-  hasMore: boolean
-  waitingForResponse: boolean
-  error?: Error
-  lastMessage?: string
-}

@@ -1,25 +1,20 @@
 import { useCallback, useEffect } from 'react'
 
-import {
-  Assistant,
-  AssistantEvent,
-  AssistantExtension,
-  ExtensionTypeEnum,
-  events,
-} from '@janhq/core'
-
+import { AssistantEvent, events } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
-import { extensionManager } from '@/extension'
+import useCortex from './useCortex'
+
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 const useAssistants = () => {
   const setAssistants = useSetAtom(assistantsAtom)
+  const { fetchAssistants } = useCortex()
 
   const getData = useCallback(async () => {
-    const assistants = await getLocalAssistants()
+    const assistants = await fetchAssistants()
     setAssistants(assistants)
-  }, [setAssistants])
+  }, [setAssistants, fetchAssistants])
 
   useEffect(() => {
     getData()
@@ -30,10 +25,5 @@ const useAssistants = () => {
     }
   }, [getData])
 }
-
-const getLocalAssistants = async (): Promise<Assistant[]> =>
-  extensionManager
-    .get<AssistantExtension>(ExtensionTypeEnum.Assistant)
-    ?.getAssistants() ?? []
 
 export default useAssistants

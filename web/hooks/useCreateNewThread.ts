@@ -6,7 +6,6 @@ import {
   ExtensionTypeEnum,
   Thread,
   ThreadAssistantInfo,
-  ThreadState,
   Model,
   AssistantTool,
 } from '@janhq/core'
@@ -14,9 +13,8 @@ import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { generateThreadId } from '@/utils/thread'
-
 import { useActiveModel } from './useActiveModel'
+import useCortex from './useCortex'
 import useRecommendedModel from './useRecommendedModel'
 
 import useSetActiveThread from './useSetActiveThread'
@@ -27,24 +25,12 @@ import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
-  threadStatesAtom,
   updateThreadAtom,
   setThreadModelParamsAtom,
   isGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
-  // create thread state for this new thread
-  const currentState = { ...get(threadStatesAtom) }
-
-  const threadState: ThreadState = {
-    hasMore: false,
-    waitingForResponse: false,
-    lastMessage: undefined,
-  }
-  currentState[newThread.id] = threadState
-  set(threadStatesAtom, currentState)
-
   // add the new thread on top of the thread list to the state
   const threads = get(threadsAtom)
   set(threadsAtom, [newThread, ...threads])
@@ -62,9 +48,8 @@ export const useCreateNewThread = () => {
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const { recommendedModel, downloadedModels } = useRecommendedModel()
-
-  const threads = useAtomValue(threadsAtom)
   const { stopInference } = useActiveModel()
+  const { createThread } = useCortex()
 
   const requestCreateNewThread = async (
     assistant: Assistant,
@@ -76,17 +61,6 @@ export const useCreateNewThread = () => {
 
     const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
 
-    if (!model) {
-      // if we have model, which means user wants to create new thread from Model hub. Allow them.
-
-      // check last thread message, if there empty last message use can not create thread
-      const lastMessage = threads[0]?.metadata?.lastMessage
-
-      if (!lastMessage && threads.length) {
-        return null
-      }
-    }
-
     // modify assistant tools when experimental on, retieval toggle enabled in default
     const assistantTools: AssistantTool = {
       type: 'retrieval',
@@ -95,12 +69,12 @@ export const useCreateNewThread = () => {
     }
 
     const overriddenSettings =
-      defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
+      defaultModel?.settings?.ctx_len && defaultModel.settings.ctx_len > 2048
         ? { ctx_len: 2048 }
         : {}
 
     const overriddenParameters =
-      defaultModel?.parameters.max_tokens && defaultModel.parameters.max_tokens
+      defaultModel?.parameters?.max_tokens && defaultModel.parameters.max_tokens
         ? { max_tokens: 2048 }
         : {}
 
@@ -119,9 +93,9 @@ export const useCreateNewThread = () => {
       instructions: assistant.instructions,
     }
 
-    const threadId = generateThreadId(assistant.id)
+    const createdThread = await createThread([assistantInfo])
     const thread: Thread = {
-      id: threadId,
+      id: createdThread.id,
       object: 'thread',
       title: 'New Thread',
       assistants: [assistantInfo],
@@ -130,7 +104,6 @@ export const useCreateNewThread = () => {
     }
 
     // add the new thread on top of the thread list to the state
-    //TODO: Why do we have thread list then thread states? Should combine them
     createNewThread(thread)
 
     setSelectedModel(defaultModel)

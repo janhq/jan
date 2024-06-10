@@ -22,10 +22,12 @@ import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 
+import EmptyModel from './ChatBody/EmptyModel'
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 import {
@@ -54,9 +56,10 @@ const ThreadCenterPanel = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
-  const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
-    .vision_model
+  const acceptedFormat: Accept = activeThread?.assistants[0].model?.settings
+    ?.vision_model
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -144,6 +147,7 @@ const ThreadCenterPanel = () => {
   const activeModel = useAtomValue(activeModelAtom)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
+  if (!downloadedModels.length) return <EmptyModel />
 
   return (
     <CenterPanelContainer>

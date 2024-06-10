@@ -7,22 +7,18 @@ import ListContainer from '@/containers/ListContainer'
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
-import ChatItem from '../ChatItem'
-
 import LoadModelError from '../LoadModelError'
 
-import EmptyModel from './EmptyModel'
+import SimpleTextMessage from '../SimpleTextMessage'
+
 import EmptyThread from './EmptyThread'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
-const ChatBody = () => {
+const ChatBody: React.FC = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
 
-  if (!downloadedModels.length) return <EmptyModel />
   if (!messages.length) return <EmptyThread />
 
   return (
@@ -30,9 +26,7 @@ const ChatBody = () => {
       {messages.map((message, index) => (
         <div key={message.id}>
           {message.status !== MessageStatus.Error &&
-            message.content.length > 0 && (
-              <ChatItem {...message} key={message.id} />
-            )}
+            message.content.length > 0 && <SimpleTextMessage {...message} />}
 
           {!loadModelError &&
             index === messages.length - 1 &&

@@ -42,7 +42,6 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
   isGeneratingResponseAtom,
-  threadStatesAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
@@ -65,14 +64,10 @@ const ChatInput = () => {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
   const { stopInference } = useActiveModel()
 
   const setActiveTabThreadRightPanel = useSetAtom(activeTabThreadRightPanelAtom)
-
-  const isStreamingResponse = Object.values(threadStates).some(
-    (threadState) => threadState.waitingForResponse
-  )
+  const isStreamingResponse = useAtomValue(isGeneratingResponseAtom)
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)

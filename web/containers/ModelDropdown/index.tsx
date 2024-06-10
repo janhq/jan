@@ -69,7 +69,7 @@ const ModelDropdown = ({
 
   const configuredModels = useAtomValue(configuredModelsAtom)
   const featuredModel = configuredModels.filter((x) =>
-    x.metadata.tags.includes('Featured')
+    x.metadata?.tags?.includes('Featured')
   )
 
   useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [

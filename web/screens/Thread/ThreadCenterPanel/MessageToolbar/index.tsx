@@ -2,12 +2,9 @@ import { useCallback } from 'react'
 
 import {
   MessageStatus,
-  ExtensionTypeEnum,
   ThreadMessage,
   ChatCompletionRole,
-  ConversationalExtension,
   ContentType,
-  Thread,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
@@ -19,78 +16,30 @@ import {
 } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
+import useCortex from '@/hooks/useCortex'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { extensionManager } from '@/extension'
 import {
   deleteMessageAtom,
   editMessageAtom,
   getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import {
-  activeThreadAtom,
-  updateThreadAtom,
-  updateThreadStateLastMessageAtom,
-} from '@/helpers/atoms/Thread.atom'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { resendChatMessage } = useSendChatMessage()
   const clipboard = useClipboard({ timeout: 1000 })
-  const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
-  const updateThread = useSetAtom(updateThreadAtom)
+  const { deleteMessage: deleteCortexMessage } = useCortex()
 
-  const onDeleteClick = useCallback(async () => {
-    deleteMessage(message.id ?? '')
-
-    const lastResponse = messages
-      .filter(
-        (msg) =>
-          msg.id !== message.id && msg.role === ChatCompletionRole.Assistant
-      )
-      .slice(-1)[0]
-
-    if (thread) {
-      // Should also delete error messages to clear out the error state
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          thread.id,
-          messages.filter(
-            (msg) => msg.id !== message.id && msg.status !== MessageStatus.Error
-          )
-        )
-
-      const updatedThread: Thread = {
-        ...thread,
-        metadata: {
-          ...thread.metadata,
-          lastMessage: messages.filter(
-            (msg) => msg.role === ChatCompletionRole.Assistant
-          )[
-            messages.filter((msg) => msg.role === ChatCompletionRole.Assistant)
-              .length - 1
-          ]?.content[0].text.value,
-        },
-      }
-
-      updateThreadLastMessage(thread.id, lastResponse?.content)
-
-      updateThread(updatedThread)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages])
-
-  const onEditClick = async () => {
-    setEditMessage(message.id ?? '')
-  }
-
-  const onRegenerateClick = async () => {
-    resendChatMessage(message)
-  }
+  const onDeleteClick = useCallback(
+    async (threadId: string, messageId: string) => {
+      await deleteCortexMessage(threadId, messageId)
+      deleteMessage(messageId)
+    },
+    [deleteMessage, deleteCortexMessage]
+  )
 
   if (message.status === MessageStatus.Pending) return null
 
@@ -101,7 +50,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           message.content[0]?.type === ContentType.Text && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onEditClick}
+              onClick={() => setEditMessage(message.id)}
             >
               <PencilIcon
                 size={14}
@@ -116,7 +65,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             ContentType.Pdf && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onRegenerateClick}
+              onClick={() => resendChatMessage(message)}
             >
               <RefreshCcw
                 size={14}
@@ -142,7 +91,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
         </div>
         <div
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-          onClick={onDeleteClick}
+          onClick={() => onDeleteClick(message.thread_id, message.id)}
         >
           <Trash2Icon
             size={14}
