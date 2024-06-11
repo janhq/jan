@@ -1,4 +1,4 @@
-import { app, ipcMain, dialog, shell, nativeTheme, screen } from 'electron'
+import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
 import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
@@ -41,12 +41,9 @@ export function handleAppIPCs() {
     windowManager.mainWindow?.minimize()
   })
 
-  ipcMain.handle(NativeRoute.setMaximizeApp, async () => {
+  ipcMain.handle(NativeRoute.setMaximizeApp, async (_event) => {
     if (windowManager.mainWindow?.isMaximized()) {
-      // const bounds = await getBounds()
-      // windowManager.mainWindow?.setSize(bounds.width, bounds.height)
-      // windowManager.mainWindow?.setPosition(Number(bounds.x), Number(bounds.y))
-      windowManager.mainWindow.restore()
+      windowManager.mainWindow.unmaximize()
     } else {
       windowManager.mainWindow?.maximize()
     }
