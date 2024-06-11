@@ -9,6 +9,7 @@ import {
   PanelRightCloseIcon,
   MinusIcon,
   MenuIcon,
+  SquareIcon,
   PaletteIcon,
   XIcon,
 } from 'lucide-react'
@@ -51,7 +52,7 @@ const TopPanel = () => {
             <Button
               theme="icon"
               onClick={() => {
-                window?.electronAPI.showOpenMenu(100, 100)
+                window?.electronAPI?.showOpenMenu(100, 100)
               }}
             >
               <MenuIcon size={16} />
@@ -100,13 +101,19 @@ const TopPanel = () => {
             <div className="flex items-center gap-x-2">
               <Button
                 theme="icon"
-                onClick={() => window?.electronAPI.setMinimizeApp()}
+                onClick={() => window?.electronAPI?.setMinimizeApp()}
               >
                 <MinusIcon size={16} />
               </Button>
               <Button
                 theme="icon"
-                onClick={() => window?.electronAPI.setCloseApp()}
+                onClick={() => window?.electronAPI?.setMaximizeApp()}
+              >
+                <SquareIcon size={14} />
+              </Button>
+              <Button
+                theme="icon"
+                onClick={() => window?.electronAPI?.setCloseApp()}
               >
                 <XIcon size={16} />
               </Button>
