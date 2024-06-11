@@ -8,16 +8,19 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon, DownloadCloudIcon, XIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import ProgressCircle from '@/containers/Loader/ProgressCircle'
+
 import ModelLabel from '@/containers/ModelLabel'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import { toGibibytes } from '@/utils/converter'
+import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 
@@ -64,6 +67,7 @@ const ModelDropdown = ({
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
+  const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { updateModelParameter } = useUpdateModelParameters()
 
@@ -351,12 +355,29 @@ const ModelDropdown = ({
                                   <span className="font-medium">
                                     {toGibibytes(model.metadata.size)}
                                   </span>
-                                  {!isDownloading && (
+                                  {!isDownloading ? (
                                     <DownloadCloudIcon
                                       size={18}
                                       className="cursor-pointer text-[hsla(var(--app-link))]"
                                       onClick={() => downloadModel(model)}
                                     />
+                                  ) : (
+                                    Object.values(downloadStates)
+                                      .filter((x) => x.modelId === model.id)
+                                      .map((item) => (
+                                        <ProgressCircle
+                                          key={item.modelId}
+                                          percentage={
+                                            formatDownloadPercentage(
+                                              item?.percent,
+                                              {
+                                                hidePercentage: true,
+                                              }
+                                            ) as number
+                                          }
+                                          size={100}
+                                        />
+                                      ))
                                   )}
                                 </div>
                               </li>
@@ -397,12 +418,29 @@ const ModelDropdown = ({
                                     <span className="font-medium">
                                       {toGibibytes(model.metadata.size)}
                                     </span>
-                                    {!isDownloading && (
+                                    {!isDownloading ? (
                                       <DownloadCloudIcon
                                         size={18}
                                         className="cursor-pointer text-[hsla(var(--app-link))]"
                                         onClick={() => downloadModel(model)}
                                       />
+                                    ) : (
+                                      Object.values(downloadStates)
+                                        .filter((x) => x.modelId === model.id)
+                                        .map((item) => (
+                                          <ProgressCircle
+                                            key={item.modelId}
+                                            percentage={
+                                              formatDownloadPercentage(
+                                                item?.percent,
+                                                {
+                                                  hidePercentage: true,
+                                                }
+                                              ) as number
+                                            }
+                                            size={100}
+                                          />
+                                        ))
                                     )}
                                   </div>
                                 </li>
