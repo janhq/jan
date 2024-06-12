@@ -97,7 +97,7 @@ const TopPanel = () => {
             <PaletteIcon size={16} className="cursor-pointer" />
           </Button>
 
-          {isWindows && (
+          {!isMac && (
             <div className="flex items-center gap-x-2">
               <Button
                 theme="icon"
