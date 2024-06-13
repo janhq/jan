@@ -3,9 +3,13 @@ description: "Suggest an idea for this project \U0001F63B!"
 title: 'feat: [DESCRIPTION]'
 labels: 'type: feature request'
 body:
+  - type: markdown
+    attributes:
+      value: "Thanks for taking the time to fill out this form!"
+
   - type: checkboxes
     attributes:
-      label: "Thanks for taking the time to fill out this form!"
+      label: " "
       description: "Please search [here](./?q=is%3Aissue) to see if an issue already exists for the feature you are requesting"
       options:
         - label: "I have searched the existing issues"
@@ -24,7 +28,7 @@ body:
     validations:
       required: true
     attributes:
-      label: "Describe the solution you'd like"
+      label: "Describe the solution"
       description: "Description of what you want to happen. Add any considered drawbacks"
 
   - type: textarea
