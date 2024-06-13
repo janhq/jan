@@ -4,14 +4,9 @@ labels: [ "type: bug" ]
 title: 'bug: [DESCRIPTION]'
 
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for taking the time to fill out this bug report!
-
   - type: checkboxes
     attributes:
-      label: "Is there an existing issue for this?"
+      label: "Thanks for taking the time to fill out this bug report!"
       description: "Please search [here](./?q=is%3Aissue) to see if an issue already exists for the bug you encountered"
       options:
         - label: "I have searched the existing issues"
@@ -50,7 +45,7 @@ body:
     attributes:
       label: "Screenshots / Logs"
       description: |
-        "Kindly provide your screenshots / [usage logs](https://jan.ai/docs/troubleshooting#how-to-get-error-logs) that could be helpful in diagnosing the problem"
+        Kindly provide your screenshots / [usage logs](https://jan.ai/docs/troubleshooting#how-to-get-error-logs) that could be helpful in diagnosing the problem
         **Tip:** You can attach images, recordings or log files by clicking this area to highlight it and then dragging files in
   - type: markdown
     attributes:
@@ -63,7 +58,7 @@ body:
     attributes:
       label: "Package version"
       description: "Which version of `Jan` are you using?"
-      placeholder: "e.g., 0.5.x-xxx nightly or stable"
+      placeholder: "e.g. 0.5.x-xxx nightly or stable"
 
   - type: checkboxes
     attributes:
