@@ -281,8 +281,8 @@ const ModelDropdown = ({
                 className="h-6 gap-1 px-2"
                 options={[
                   { name: 'All', value: 'all' },
-                  { name: 'Local', value: 'local' },
-                  { name: 'Remote', value: 'remote' },
+                  { name: 'On-device', value: 'local' },
+                  { name: 'Cloud', value: 'remote' },
                 ]}
                 onValueChange={(value) => setSearchFilter(value)}
                 onOpenChange={(open) => setFilterOptionsOpen(open)}
