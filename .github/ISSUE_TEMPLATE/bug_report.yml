@@ -1,9 +1,14 @@
 name: "\U0001F41B Bug Report"
 description: "If something isn't working as expected \U0001F914"
-labels: ["type: bug"]
+labels: [ "type: bug" ]
 title: 'bug: [DESCRIPTION]'
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+
   - type: checkboxes
     attributes:
       label: "Is there an existing issue for this?"
