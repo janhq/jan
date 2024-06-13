@@ -1,4 +1,3 @@
 pulumi==3.118.0
-pulumi_aws==6.38.0
 pulumi_docker==4.5.4
 pulumi_docker_build==0.0.2

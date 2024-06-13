@@ -2,6 +2,7 @@
   "name": "@janhq/monitoring-extension",
   "productName": "System Monitoring",
   "version": "1.0.10",
+  "packageManager": "yarn@1.22.0",
   "description": "This extension provides system health and OS level data",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",

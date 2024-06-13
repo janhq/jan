@@ -2,6 +2,7 @@
   "name": "@janhq/model-extension",
   "productName": "Model Management",
   "version": "1.0.31",
+  "packageManager": "yarn@1.22.0",
   "description": "Model Management Extension provides model exploration and seamless downloads",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",

@@ -2,6 +2,7 @@
   "name": "@janhq/inference-martian-extension",
   "productName": "Martian Inference Engine",
   "version": "1.0.1",
+  "packageManager": "yarn@1.22.0",
   "description": "This extension enables Martian chat completion API calls",
   "main": "dist/index.js",
   "module": "dist/module.js",

@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "pipeline": {
+  "tasks": {
     "build": {
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
@@ -45,6 +45,7 @@
         "@janhq/web#build"
       ]
     },
-    "type-check": {}
+    "type-check": {},
+    "extends": {}
   }
 }

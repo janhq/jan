@@ -1,6 +1,7 @@
 {
   "name": "@janhq/web",
   "version": "0.1.0",
+  "packageManager": "yarn@1.22.0",
   "private": true,
   "homepage": "./",
   "scripts": {

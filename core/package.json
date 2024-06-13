@@ -1,6 +1,7 @@
 {
   "name": "@janhq/core",
   "version": "0.1.10",
+  "packageManager": "yarn@1.22.0",
   "description": "Jan app core lib",
   "keywords": [
     "jan",

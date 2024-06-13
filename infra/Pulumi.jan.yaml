@@ -1,0 +1,5 @@
+config:
+  jan:DOCKER_PAT:
+    secure: AAABAF61aCLshApgsCdGSsFtq7ZQoYII+gr2g9jNwSLEF9Cxu8sOZm0IA35tMbLdAJMqtFXDvaPbmmMOXe8LXPe6JJg=
+  jan:DOCKER_USR: nullstring
+  jan:profile: cpu-fs

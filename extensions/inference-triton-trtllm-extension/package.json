@@ -2,6 +2,7 @@
   "name": "@janhq/inference-triton-trt-llm-extension",
   "productName": "Triton-TRT-LLM Inference Engine",
   "version": "1.0.0",
+  "packageManager": "yarn@1.22.0",
   "description": "This extension enables Nvidia's TensorRT-LLM as an inference engine option",
   "main": "dist/index.js",
   "module": "dist/module.js",

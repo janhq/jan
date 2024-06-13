@@ -48,7 +48,9 @@
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
     "wait-on": "^7.0.1",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "turbo": "^2.0.3"
   },
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "packageManager": "yarn@1.22.0"
 }

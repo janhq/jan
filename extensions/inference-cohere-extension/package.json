@@ -2,6 +2,7 @@
   "name": "@janhq/inference-cohere-extension",
   "productName": "Cohere Inference Engine",
   "version": "1.0.0",
+  "packageManager": "yarn@1.22.0",
   "description": "This extension enables Cohere chat completion API calls",
   "main": "dist/index.js",
   "module": "dist/module.js",
