@@ -1,0 +1,4 @@
+config:
+  jan:profile: cpu-fs
+environment:
+  - imulup-next
