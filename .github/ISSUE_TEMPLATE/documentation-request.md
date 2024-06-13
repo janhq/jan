@@ -1,5 +1,5 @@
 ---
-name: "\U+1F56E Documentation request"
+name: "📖 Documentation request"
 about: Documentation requests
 title: 'docs: TITLE'
 labels: 'type: documentation'
