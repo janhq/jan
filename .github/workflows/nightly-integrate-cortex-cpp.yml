@@ -65,8 +65,8 @@ jobs:
         echo $latest_prerelease_name > $cortex_cpp_version_file_path
         echo "Updated version from $current_version_name to $latest_prerelease_name."
         echo "::set-output name=pr_created::true"
-        cd -
-        git add $cortex_cpp_version_file_path
+
+        git add -f $cortex_cpp_version_file_path
         git commit -m "Update cortex cpp nightly to version $latest_prerelease_name"
         branch_name="update-nightly-$(date +'%Y-%m-%d-%H-%M')"
         git checkout -b $branch_name
@@ -75,7 +75,7 @@ jobs:
         pr_title="Update cortex cpp nightly to version $latest_prerelease_name"
         pr_body="This PR updates the Update cortex cpp nightly to version $latest_prerelease_name"
 
-        gh pr create --title "$pr_title" --body "$pr_body" --head $branch_name --base dev --reviewer vansangpfiev
+        gh pr create --title "$pr_title" --body "$pr_body" --head $branch_name --base dev --reviewer Van-QA
 
         pr_number=$(gh pr list --head $branch_name --json number --jq '.[0].number')
         echo "::set-output name=pr_number::$pr_number"
