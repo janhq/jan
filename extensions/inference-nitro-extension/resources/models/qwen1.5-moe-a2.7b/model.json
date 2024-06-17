@@ -1,0 +1,35 @@
+{
+  "sources": [
+    {
+      "filename": "Qwen1.5-MoE-A2.7B-Chat.Q4_K_M.gguf",
+      "url": "https://huggingface.co/RichardErkhov/Qwen_-_Qwen1.5-MoE-A2.7B-Chat-gguf/resolve/main/Qwen1.5-MoE-A2.7B-Chat.Q4_K_M.gguf"
+    }
+  ],
+  "id": "qwen1.5-moe-a2.7b",
+  "object": "model",
+  "name": "Qwen1.5 MoE A2.7B Chat Q4",
+  "version": "1.1",
+  "description": "a small MoE model with only 2.7 billion activated parameters yet matching the performance of state-of-the-art 7B models like Mistral 7B and Qwen1.5-7B.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 32768,
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "Qwen1.5-MoE-A2.7B-Chat.Q4_K_M.gguf",
+    "ngl": 32
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 32768,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "Alibaba",
+    "tags": ["2.7B", "MoE"],
+    "size": 9496236768
+  },
+  "engine": "nitro"
+}
