@@ -1,0 +1,36 @@
+{
+    "sources": [
+      {
+        "filename": "Yi-1.5-6B-Chat.Q4_K_M.gguf",
+        "url": "https://huggingface.co/MaziyarPanahi/Yi-1.5-6B-Chat-GGUF/resolve/main/Yi-1.5-6B-Chat.Q4_K_M.gguf"
+      }
+    ],
+    "id": "yi-1.5-6b",
+    "object": "model",
+    "name": "Yi-1.5 6B Chat Q4",
+    "version": "1.5",
+    "description": "2024-05-13: The Yi-1.5 series models are open-sourced, further improving coding, math, reasoning, and instruction-following abilities.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 4096,
+      "prompt_template": "{system_message}<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+      "llama_model_path": "Yi-1.5-6B-Chat.Q4_K_M.gguf",
+      "ngl": 60
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 4096,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "01-ai, MaziyarPanahi",
+      "tags": ["6B", "Foundational Model"],
+      "size": 3673968512
+    },
+    "engine": "nitro"
+  }
+  
