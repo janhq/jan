@@ -51,36 +51,36 @@ const AssistantTool: React.FC = () => {
                 type: 'retrieval',
                 enabled: enabled,
                 useTimeWeightedRetriever:
-                (activeThread.assistants[0].tools &&
-                  activeThread.assistants[0].tools[0]
-                    ?.useTimeWeightedRetriever) ||
-                false,
-              settings:
-                (activeThread.assistants[0].tools &&
-                  activeThread.assistants[0].tools[0]?.settings) ??
-                {},
-            },
-          ],
-        },
-      ],
-    })
-  },
-  [activeThread, updateThreadMetadata]
-)
+                  (activeThread.assistants[0].tools &&
+                    activeThread.assistants[0].tools[0]
+                      ?.useTimeWeightedRetriever) ||
+                  false,
+                settings:
+                  (activeThread.assistants[0].tools &&
+                    activeThread.assistants[0].tools[0]?.settings) ??
+                  {},
+              },
+            ],
+          },
+        ],
+      })
+    },
+    [activeThread, updateThreadMetadata]
+  )
 
-const onTimeWeightedRetrieverSwitchUpdate = useCallback(
-  (enabled: boolean) => {
-    if (!activeThread) return
-    updateThreadMetadata({
-      ...activeThread,
-      assistants: [
-        {
-          ...activeThread.assistants[0],
-          tools: [
-            {
-              type: 'retrieval',
-              enabled: true,
-              useTimeWeightedRetriever: enabled,
+  const onTimeWeightedRetrieverSwitchUpdate = useCallback(
+    (enabled: boolean) => {
+      if (!activeThread) return
+      updateThreadMetadata({
+        ...activeThread,
+        assistants: [
+          {
+            ...activeThread.assistants[0],
+            tools: [
+              {
+                type: 'retrieval',
+                enabled: true,
+                useTimeWeightedRetriever: enabled,
                 settings:
                   (activeThread.assistants[0].tools &&
                     activeThread.assistants[0].tools[0]?.settings) ??
