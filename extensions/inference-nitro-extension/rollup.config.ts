@@ -39,6 +39,8 @@ const aya8bJson = require('./resources/models/aya-23-8b/model.json')
 const aya35bJson = require('./resources/models/aya-23-35b/model.json')
 const phimediumJson = require('./resources/models/phi3-medium/model.json')
 const codestralJson = require('./resources/models/codestral-22b/model.json')
+const qwen2Json = require('./resources/models/qwen2-7b/model.json')
+
 
 export default [
   {
@@ -84,7 +86,8 @@ export default [
           phimediumJson,
           aya8bJson,
           aya35bJson,
-          codestralJson
+          codestralJson,
+          qwen2Json
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),

@@ -12,6 +12,11 @@ const availableHotkeys = [
     description: 'Toggle collapsible left panel',
   },
   {
+    combination: 'Shift B',
+    modifierKeys: [isMac ? '⌘' : 'Ctrl'],
+    description: 'Toggle collapsible right panel',
+  },
+  {
     combination: ',',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
     description: 'Navigate to setting page',
@@ -21,7 +26,7 @@ const availableHotkeys = [
     description: 'Send a message',
   },
   {
-    combination: 'Shift + Enter',
+    combination: 'Shift Enter',
     description: 'Insert new line in input box',
   },
   {
