@@ -250,7 +250,7 @@ const AssistantTool: React.FC = () => {
                           className="mr-2"
                           checked={
                             activeThread?.assistants[0].tools[0]
-                              .useTimeWeightedRetriever
+                              .useTimeWeightedRetriever || false
                           }
                           onCheckedChange={onTimeWeightedRetrieverSwitchUpdate}
                         />

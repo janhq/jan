@@ -6,7 +6,7 @@
 export type AssistantTool = {
   type: string
   enabled: boolean
-  useTimeWeightedRetriever: boolean
+  useTimeWeightedRetriever?: boolean
   settings: any
 }
 
