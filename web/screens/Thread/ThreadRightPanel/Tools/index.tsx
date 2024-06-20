@@ -66,6 +66,32 @@ const Tools = () => {
     [activeThread, updateThreadMetadata]
   )
 
+  const onTimeWeightedRetrieverSwitchUpdate = useCallback(
+    (enabled: boolean) => {
+      if (!activeThread) return
+      updateThreadMetadata({
+        ...activeThread,
+        assistants: [
+          {
+            ...activeThread.assistants[0],
+            tools: [
+              {
+                type: 'retrieval',
+                enabled: true,
+                useTimeWeightedRetriever: enabled,
+                settings:
+                  (activeThread.assistants[0].tools &&
+                    activeThread.assistants[0].tools[0]?.settings) ??
+                  {},
+              },
+            ],
+          },
+        ],
+      })
+    },
+    [activeThread, updateThreadMetadata]
+  )
+
   if (!experimentalFeature) return null
 
   return (
@@ -143,6 +169,46 @@ const Tools = () => {
                       className="inline-block font-medium"
                     >
                       Vector Database
+                      <Tooltip
+                        trigger={
+                          <InfoIcon
+                            size={16}
+                            className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
+                          />
+                        }
+                        content="Vector Database is crucial for efficient storage
+                          and retrieval of embeddings. Consider your
+                          specific task, available resources, and language
+                          requirements. Experiment to find the best fit for
+                          your specific use case."
+                      />
+                    </label>
+                    <div className="ml-auto flex items-center justify-between">
+                      <Switch
+                        name="use-time-weighted-retriever"
+                        className="mr-2"
+                        checked={
+                          activeThread?.assistants[0].tools[0]
+                            .useTimeWeightedRetriever || false
+                        }
+                        onChange={(e) =>
+                          onTimeWeightedRetrieverSwitchUpdate(e.target.checked)
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="w-full">
+                    <Input value="HNSWLib" disabled readOnly />
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <div className="mb-2 flex items-center">
+                    <label
+                      id="use-time-weighted-retriever"
+                      className="inline-block font-medium"
+                    >
+                      Time-Weighted Retrieval?
                     </label>
                     <Tooltip
                       trigger={
@@ -151,16 +217,12 @@ const Tools = () => {
                           className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
                         />
                       }
-                      content="Vector Database is crucial for efficient storage
-                        and retrieval of embeddings. Consider your
-                        specific task, available resources, and language
-                        requirements. Experiment to find the best fit for
-                        your specific use case."
+                      content="Time-Weighted Retriever looks at how similar
+                                they are and how new they are. It compares
+                                documents based on their meaning like usual, but
+                                also considers when they were added to give
+                                newer ones more importance."
                     />
-                  </div>
-
-                  <div className="w-full">
-                    <Input value="HNSWLib" disabled readOnly />
                   </div>
                 </div>
                 <AssistantSetting
