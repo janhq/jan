@@ -15,7 +15,7 @@
     "ctx_len": 16384,
     "prompt_template": "### Instruction:\n{prompt}\n### Response:",
     "llama_model_path": "deepseek-coder-1.3b-instruct.Q8_0.gguf",
-    "ngl": 24
+    "ngl": 25
   },
   "parameters": {
     "temperature": 0.7,
