@@ -8,7 +8,7 @@
     "id": "qwen2-7b",
     "object": "model",
     "name": "Qwen 2 Instruct 7B Q4",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Qwen is optimized at Chinese, ideal for everyday tasks.",
     "format": "gguf",
     "settings": {
