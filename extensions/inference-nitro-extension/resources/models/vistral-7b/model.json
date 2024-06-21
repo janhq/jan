@@ -15,7 +15,7 @@
       "ctx_len": 32768,
       "prompt_template": "[INST] <<SYS>>\n{system_message}\n<</SYS>>\n{prompt} [/INST]",
       "llama_model_path": "vistral-7b-chat-dpo.Q4_K_M.gguf",
-      "ngl": 32
+      "ngl": 33
     },
     "parameters": {
       "temperature": 0.7,
