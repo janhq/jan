@@ -19,6 +19,7 @@ enum Settings {
 }
 
 type AnthropicPayloadType = {
+  stream: boolean
   model?: string
   max_tokens?: number
   messages?: Array<{ role: string; content: string }>
@@ -86,16 +87,22 @@ export default class JanInferenceAnthropicExtension extends RemoteOAIEngine {
   // Override the transformPayload method to convert the payload to the required format
   transformPayload = (payload: PayloadType): AnthropicPayloadType => {
     if (!payload.messages || payload.messages.length === 0) {
-      return { max_tokens: this.maxTokens, messages: [], model: payload.model }
+      return {
+        max_tokens: this.maxTokens,
+        messages: [],
+        model: payload.model,
+        stream: payload.stream,
+      }
     }
 
     const convertedData: AnthropicPayloadType = {
       max_tokens: this.maxTokens,
       messages: [],
       model: payload.model,
+      stream: payload.stream,
     }
 
-    payload.messages.forEach((item, index) => {
+    payload.messages.forEach((item) => {
       if (item.role === ChatCompletionRole.User) {
         convertedData.messages.push({
           role: 'user',
@@ -112,13 +119,30 @@ export default class JanInferenceAnthropicExtension extends RemoteOAIEngine {
     return convertedData
   }
 
+  // Sample returned stream data from anthropic
+  // {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}         }
+  // {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}              }
+  // {"type":"content_block_stop","index":0        }
+  // {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":12}   }
+
   // Override the transformResponse method to convert the response to the required format
   transformResponse = (data: any): string => {
+    // handling stream response
+    if (typeof data === 'string' && data.trim().length === 0) return ''
+    if (typeof data === 'string' && data.startsWith('event: ')) return ''
+    if (typeof data === 'string' && data.startsWith('data: ')) {
+      data = data.replace('data: ', '')
+      const parsedData = JSON.parse(data)
+      if (parsedData.type !== 'content_block_delta') return ''
+      return parsedData.delta?.text ?? ''
+    }
+
+    // non stream response
     if (data.content && data.content.length > 0 && data.content[0].text) {
       return data.content[0].text
-    } else {
-      console.error('Invalid response format:', data)
-      return ''
     }
+
+    console.error('Invalid response format:', data)
+    return ''
   }
 }
