@@ -15,7 +15,7 @@
     "ctx_len": 8192,
     "prompt_template": "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model",
     "llama_model_path": "gemma-2b-it-q4_k_m.gguf",
-    "ngl": 18
+    "ngl": 19
   },
   "parameters": {
     "temperature": 0.7,

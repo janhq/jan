@@ -169,5 +169,5 @@ export const APIEvents = [
 export type PayloadType = {
   messages: ChatCompletionMessage[]
   model: string
-  stream: Boolean
+  stream: boolean
 }
