@@ -8,7 +8,7 @@
     "id": "aya-23-8b",
     "object": "model",
     "name": "Aya 23 8B Q4",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Aya 23 can talk upto 23 languages fluently.",
     "format": "gguf",
     "settings": {

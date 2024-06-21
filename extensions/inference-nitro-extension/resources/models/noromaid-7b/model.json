@@ -8,7 +8,7 @@
   "id": "noromaid-7b",
   "object": "model",
   "name": "Noromaid 7B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
   "format": "gguf",
   "settings": {
