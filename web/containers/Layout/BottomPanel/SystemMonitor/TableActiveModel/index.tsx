@@ -44,7 +44,7 @@ const TableActiveModel: React.FC = () => {
                   </td>
                   <td className="px-4 py-2">
                     <Badge theme="secondary">
-                      {toGibibytes(model.metadata?.size)}
+                      {toGibibytes((model.metadata?.size ?? 0) as number)}
                     </Badge>
                   </td>
                   <td className="px-4 py-2 text-center">

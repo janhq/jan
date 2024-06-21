@@ -22,7 +22,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { snackbar, toaster } from '@/containers/Toast'
 
-import { activeModelAtom } from '@/hooks/useActiveModel'
 import useModels from '@/hooks/useModels'
 import { useSettings } from '@/hooks/useSettings'
 
@@ -37,6 +36,7 @@ import {
   vulkanEnabledAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
+import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type GPU = {
   id: string
@@ -66,7 +66,7 @@ const Advanced = () => {
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
 
   const { readSettings, saveSettings } = useSettings()
-  const activeModel = useAtomValue(activeModelAtom)
+  const activeModels = useAtomValue(activeModelsAtom)
   const [open, setOpen] = useState(false)
   const { stopModel } = useModels()
 
@@ -105,9 +105,11 @@ const Advanced = () => {
       title: 'Reload',
       description: 'Vulkan settings updated. Reload now to apply the changes.',
     })
-    if (activeModel) {
-      await stopModel(activeModel.id)
+
+    for (const model of activeModels) {
+      await stopModel(model.model)
     }
+
     setVulkanEnabled(e)
     await saveSettings({ vulkan: e, gpusInUse: [] })
     // Relaunch to apply settings
@@ -267,8 +269,8 @@ const Advanced = () => {
                         }
                         // Stop any running model to apply the changes
                         if (e.target.checked !== gpuEnabled) {
-                          if (activeModel) {
-                            stopModel(activeModel.id)
+                          for (const activeModel of activeModels) {
+                            stopModel(activeModel.model)
                           }
                         }
                       }}

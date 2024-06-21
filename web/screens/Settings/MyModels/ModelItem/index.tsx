@@ -28,8 +28,7 @@ type Props = {
 
 const ModelItem: React.FC<Props> = ({ model }) => {
   const activeModels = useAtomValue(activeModelsAtom)
-  const { startModel, stateModel } = useActiveModel()
-  const isActiveModel = stateModel.model?.id === model.id
+  const { startModel } = useActiveModel()
   const [more, setMore] = useState(false)
   const { stopModel, deleteModel } = useModels()
 
@@ -37,19 +36,20 @@ const ModelItem: React.FC<Props> = ({ model }) => {
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
-  const isModelActived = useMemo(() => {
-    return activeModels.map((m) => m.model).includes(model.id)
-  }, [activeModels, model.id])
+  const isActive = useMemo(
+    () => activeModels.map((m) => m.model).includes(model.id),
+    [activeModels, model.id]
+  )
 
   const onModelActionClick = useCallback(
     (modelId: string) => {
-      if (isModelActived) {
+      if (isActive) {
         stopModel(modelId)
       } else {
         startModel(modelId)
       }
     },
-    [isModelActived, startModel, stopModel]
+    [isActive, startModel, stopModel]
   )
 
   const onDeleteModelClicked = useCallback(
@@ -110,19 +110,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
             </Badge>
 
             <div className="flex items-center gap-x-4">
-              {stateModel.loading && stateModel.model?.id === model.id ? (
-                <Badge
-                  className="inline-flex items-center space-x-2"
-                  theme="secondary"
-                >
-                  <span className="h-2 w-2 rounded-full bg-gray-500" />
-                  <span className="capitalize">
-                    {stateModel.state === 'start'
-                      ? 'Starting...'
-                      : 'Stopping...'}
-                  </span>
-                </Badge>
-              ) : isModelActived ? (
+              {isActive ? (
                 <Badge
                   theme="success"
                   variant="soft"
@@ -158,7 +146,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                     <div
                       className={twMerge(
                         'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                        !isModelActived &&
+                        !isActive &&
                           'pointer-events-none cursor-not-allowed opacity-40'
                       )}
                       onClick={() => {
@@ -166,7 +154,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                         setMore(false)
                       }}
                     >
-                      {isModelActived ? (
+                      {isActive ? (
                         <StopCircleIcon
                           size={16}
                           className="text-[hsla(var(--text-secondary))]"
@@ -178,7 +166,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                         />
                       )}
                       <span className="text-bold capitalize">
-                        {isActiveModel ? stateModel.state : 'Start'}
+                        {isActive ? 'Start' : 'Stop'}
                         &nbsp;Model
                       </span>
                     </div>

@@ -3,8 +3,6 @@ import { atom } from 'jotai'
 
 import { getActiveThreadIdAtom } from './Thread.atom'
 
-export const queuedMessageAtom = atom(false)
-
 /**
  * Stores all chat messages for all threads
  */

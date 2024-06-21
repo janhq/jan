@@ -26,8 +26,6 @@ import { twMerge } from 'tailwind-merge'
 import ModelDropdown from '@/containers/ModelDropdown'
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
@@ -49,7 +47,6 @@ type Props = {
 
 const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const [activeSetting, setActiveSetting] = useState(false)
 
@@ -159,7 +156,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
           ref={textareaRef}
           onKeyDown={onKeyDown}
           placeholder="Ask me anything"
-          disabled={stateModel.loading || !activeThread}
+          disabled={!activeThread}
           value={currentPrompt}
           onChange={onPromptChange}
         />
@@ -326,9 +323,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
                 {currentPrompt.length !== 0 && (
                   <Button
                     disabled={
-                      stateModel.loading ||
-                      !activeThread ||
-                      currentPrompt.trim().length === 0
+                      !activeThread || currentPrompt.trim().length === 0
                     }
                     className="h-8 w-8 rounded-lg p-0"
                     data-testid="btn-send-chat"
@@ -366,8 +361,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
           <div
             className={twMerge(
               'absolute bottom-[6px] left-[1px] flex w-[calc(100%-2px)] items-center justify-between rounded-lg bg-[hsla(var(--textarea-bg))] p-3',
-              !activeThread && 'bg-transparent',
-              stateModel.loading && 'bg-transparent'
+              !activeThread && 'bg-transparent'
             )}
           >
             <div className="flex items-center gap-x-3">

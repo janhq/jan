@@ -8,8 +8,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { editPromptAtom } from '@/containers/Providers/Jotai'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-
 import useSendMessage from '@/hooks/useSendMessage'
 
 import {
@@ -28,7 +26,6 @@ type Props = {
 
 const EditChatInput: React.FC<Props> = ({ message }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [editPrompt, setEditPrompt] = useAtom(editPromptAtom)
@@ -115,7 +112,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           ref={textareaRef}
           onKeyDown={onKeyDown}
           placeholder="Enter your message..."
-          disabled={stateModel.loading || !activeThread}
+          disabled={!activeThread}
           value={editPrompt}
           onChange={onPromptChange}
         />
@@ -123,11 +120,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
 
       <div className="flex items-center space-x-2">
         <Button
-          disabled={
-            stateModel.loading ||
-            !activeThread ||
-            editPrompt.trim().length === 0
-          }
+          disabled={!activeThread || editPrompt.trim().length === 0}
           onClick={sendEditMessage}
         >
           Submit

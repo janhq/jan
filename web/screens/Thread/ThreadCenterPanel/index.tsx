@@ -15,8 +15,6 @@ import GenerateResponse from '@/containers/Loader/GenerateResponse'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { snackbar } from '@/containers/Toast'
 
-import { activeModelAtom } from '@/hooks/useActiveModel'
-
 import useSendMessage from '@/hooks/useSendMessage'
 
 import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
@@ -26,7 +24,6 @@ import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
-import { queuedMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -138,10 +135,6 @@ const ThreadCenterPanel: React.FC = () => {
 
   const [dragOver, setDragOver] = useState(false)
 
-  const queuedMessage = useAtomValue(queuedMessageAtom)
-
-  const activeModel = useAtomValue(activeModelAtom)
-
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   if (!downloadedModels.length) return <EmptyModel />
 
@@ -200,26 +193,15 @@ const ThreadCenterPanel: React.FC = () => {
 
           {/* {!engineParamsUpdate && <ModelStart />} */}
 
-          {/* {reloadModel && (
-            <Fragment>
-              <ModelReload />
-              <div className="mb-2 text-center">
-                <span className="text-[hsla(var(--text-secondary)]">
-                  Model is reloading to apply new changes.
-                </span>
-              </div>
-            </Fragment>
-          )} */}
-
-          {queuedMessage && (
+          {/* {queuedMessage && (
             <div className="mb-2 text-center">
               <span className="text-[hsla(var(--text-secondary)]">
                 Message will be sent once the model has started
               </span>
             </div>
-          )}
+          )} */}
 
-          {activeModel && isGeneratingResponse && <GenerateResponse />}
+          {isGeneratingResponse && <GenerateResponse />}
           <ChatInput sendMessage={sendMessage} stopInference={stopInference} />
         </div>
       </div>
