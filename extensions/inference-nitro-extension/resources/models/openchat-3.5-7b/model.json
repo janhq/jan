@@ -8,7 +8,7 @@
   "id": "openchat-3.5-7b",
   "object": "model",
   "name": "Openchat-3.5 7B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "The performance of Openchat surpasses ChatGPT-3.5 and Grok-1 across various benchmarks.",
   "format": "gguf",
   "settings": {

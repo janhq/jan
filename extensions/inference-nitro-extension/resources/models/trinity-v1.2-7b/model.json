@@ -8,7 +8,7 @@
   "id": "trinity-v1.2-7b",
   "object": "model",
   "name": "Trinity-v1.2 7B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Trinity is an experimental model merge using the Slerp method. Recommended for daily assistance purposes.",
   "format": "gguf",
   "settings": {

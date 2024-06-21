@@ -8,7 +8,7 @@
   "id": "gemma-7b",
   "object": "model",
   "name": "Gemma 7B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Google's Gemma is built for multilingual purpose",
   "format": "gguf",
   "settings": {

@@ -8,7 +8,7 @@
     "id": "codestral-22b",
     "object": "model",
     "name": "Codestral 22B Q4",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Latest model from MistralAI optimized for code generation tasks.",
     "format": "gguf",
     "settings": {

@@ -8,7 +8,7 @@
     "id": "stable-zephyr-3b",
     "object": "model",
     "name": "Stable Zephyr 3B Q8",
-    "version": "1.0",
+    "version": "1.1",
     "description": "StableLM Zephyr 3B is a best model for low-end machine.",
     "format": "gguf",
     "settings": {
