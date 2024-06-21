@@ -13,8 +13,8 @@
     "compile": "tsc --noEmit -p . --pretty"
   },
   "dependencies": {
-    "embla-carousel-react":"^8.1.5",
-    "@janhq/cortex-node": "ssh://git@github.com:janhq/cortex-node.git#fix/import-web",
+    "embla-carousel-react": "^8.1.5",
+    "@janhq/cortex-node": "https://github.com/janhq/cortex-node.git#fix/import-web",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@janhq/core": "link:./core",
     "@janhq/joi": "link:./joi",
