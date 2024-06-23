@@ -23,8 +23,8 @@ const ModelList = ({ models }: Props) => {
     models.forEach((m) => {
       if (m.metadata?.tags?.includes('Featured')) {
         featuredModels.push(m)
-      } else if (m.format === 'api') {
-        remoteModels.push(m)
+        // } else if (m.format === 'api') {
+        //   remoteModels.push(m)
       } else if (downloadedModels.map((m) => m.id).includes(m.id)) {
         localModels.push(m)
       } else {
@@ -32,7 +32,7 @@ const ModelList = ({ models }: Props) => {
       }
     })
     featuredModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
-    remoteModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
+    remoteModels.sort((m1, m2) => m1.model.localeCompare(m2.model))
     localModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
     remainingModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
     return [

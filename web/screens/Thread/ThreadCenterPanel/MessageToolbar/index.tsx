@@ -1,14 +1,8 @@
 import { useCallback } from 'react'
 
-import { Message } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
-import {
-  RefreshCcw,
-  CopyIcon,
-  Trash2Icon,
-  CheckIcon,
-  PencilIcon,
-} from 'lucide-react'
+import { Message, TextContentBlock } from '@janhq/core'
+import { useSetAtom } from 'jotai'
+import { CopyIcon, Trash2Icon, CheckIcon, PencilIcon } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
 import useCortex from '@/hooks/useCortex'
@@ -16,7 +10,6 @@ import useCortex from '@/hooks/useCortex'
 import {
   deleteMessageAtom,
   editMessageAtom,
-  getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 
 type Props = {
@@ -26,7 +19,6 @@ type Props = {
 const MessageToolbar: React.FC<Props> = ({ message }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
   const clipboard = useClipboard({ timeout: 1000 })
   const { deleteMessage: deleteCortexMessage } = useCortex()
 
@@ -37,6 +29,15 @@ const MessageToolbar: React.FC<Props> = ({ message }) => {
     },
     [deleteMessage, deleteCortexMessage]
   )
+
+  const onCopyClick = useCallback(() => {
+    const messageContent = message.content[0]
+    if (!messageContent) return
+    if (messageContent.type === 'text') {
+      const textContentBlock = messageContent as TextContentBlock
+      clipboard.copy(textContentBlock.text.value)
+    }
+  }, [clipboard, message])
 
   if (message.status === 'in_progress') return null
 
@@ -71,9 +72,7 @@ const MessageToolbar: React.FC<Props> = ({ message }) => {
 
         <div
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-          onClick={() => {
-            clipboard.copy(message.content[0]?.text?.value ?? '')
-          }}
+          onClick={onCopyClick}
         >
           {clipboard.copied ? (
             <CheckIcon size={14} className="text-[hsla(var(--success-bg))]" />

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 
-import { ContentType, Message } from '@janhq/core'
+import { Message, TextContentBlock } from '@janhq/core'
 
 import { Tooltip } from '@janhq/joi'
 import hljs from 'highlight.js'
@@ -18,16 +18,12 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 import { useClipboard } from '@/hooks/useClipboard'
 import { usePath } from '@/hooks/usePath'
 
-import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
 import { openFileTitle } from '@/utils/titleUtils'
 
 import EditChatInput from '../EditChatInput'
-import Icon from '../FileUploadPreview/Icon'
 import MessageToolbar from '../MessageToolbar'
-
-import { RelativeImage } from './RelativeImage'
 
 import {
   editMessageAtom,
@@ -42,7 +38,11 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
   const activeThread = useAtomValue(activeThreadAtom)
 
   if (props.content && props.content.length > 0) {
-    text = props.content[0]?.text?.value ?? ''
+    const message = props.content[0]
+    if (message && message.type === 'text') {
+      const textBlockContent = message as TextContentBlock
+      text = textBlockContent.text.value
+    }
   }
 
   const clipboard = useClipboard({ timeout: 1000 })
@@ -90,7 +90,7 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
 
   marked.use(markedKatex({ throwOnError: false }))
 
-  const { onViewFile, onViewFileContainer } = usePath()
+  const { onViewFileContainer } = usePath()
   const parsedText = marked.parse(text)
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
@@ -124,8 +124,15 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
     const currentTimestamp = new Date().getTime() // Get current time in milliseconds
     if (!lastTimestamp) {
       // If this is the first update, just set the lastTimestamp and return
-      if (props.content[0]?.text?.value !== '')
-        setLastTimestamp(currentTimestamp)
+      if (props.content && props.content.length > 0) {
+        const message = props.content[0]
+        if (message && message.type === 'text') {
+          const textContentBlock = message as TextContentBlock
+          if (textContentBlock.text.value !== '') {
+            setLastTimestamp(currentTimestamp)
+          }
+        }
+      }
       return
     }
 
@@ -170,9 +177,7 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
             isUser && 'text-gray-500'
           )}
         >
-          {isUser
-            ? props.role
-            : activeThread?.assistants[0].assistant_name ?? props.role}
+          {isUser ? props.role : activeThread?.assistants[0].name ?? props.role}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created_at)}
@@ -200,13 +205,13 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
           {props.content[0]?.type === 'image_file' && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
               <div className="left-0 top-0 z-20 h-full w-full group-hover/image:inline-block">
-                <RelativeImage
-                  src={props.content[0]?.text.annotations[0]}
-                  id={props.id}
-                  onClick={() =>
-                    onViewFile(`${props.content[0]?.text.annotations[0]}`)
-                  }
-                />
+                {/* <RelativeImage */}
+                {/*   src={props.content[0]?.text.annotations[0]} */}
+                {/*   id={props.id} */}
+                {/*   onClick={() => */}
+                {/*     onViewFile(`${props.content[0]?.text.annotations[0]}`) */}
+                {/*   } */}
+                {/* /> */}
               </div>
               <Tooltip
                 trigger={

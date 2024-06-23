@@ -1,10 +1,8 @@
 import { useCallback } from 'react'
 
 import {
-  ExtensionTypeEnum,
   ImportingModel,
   Model,
-  ModelExtension,
   OptionType,
   baseName,
   fs,
@@ -19,7 +17,6 @@ import { snackbar } from '@/containers/Toast'
 
 import { FilePathWithSize } from '@/utils/file'
 
-import { extensionManager } from '@/extension'
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export type ImportModelStage =
@@ -53,15 +50,15 @@ const useImportModel = () => {
   const setImportingModels = useSetAtom(importingModelsAtom)
 
   const importModels = useCallback(
-    (models: ImportingModel[], optionType: OptionType) =>
-      localImportModels(models, optionType),
+    (models: ImportingModel[], optionType: OptionType) => {
+      // return localImportModels(models, optionType)
+    },
     []
   )
 
-  const updateModelInfo = useCallback(
-    async (modelInfo: Partial<Model>) => localUpdateModelInfo(modelInfo),
-    []
-  )
+  const updateModelInfo = useCallback(async (modelInfo: Partial<Model>) => {
+    // localUpdateModelInfo(modelInfo)
+  }, [])
 
   const sanitizeFilePaths = useCallback(
     async (filePaths: string[]) => {
@@ -133,20 +130,5 @@ const useImportModel = () => {
 
   return { importModels, updateModelInfo, sanitizeFilePaths }
 }
-
-const localImportModels = async (
-  models: ImportingModel[],
-  optionType: OptionType
-): Promise<void> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.importModels(models, optionType)
-
-const localUpdateModelInfo = async (
-  modelInfo: Partial<Model>
-): Promise<Model | undefined> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.updateModelInfo(modelInfo)
 
 export default useImportModel

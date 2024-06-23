@@ -6,6 +6,8 @@ import { AssistantResponseFormatOption as OpenAIAssistantResponseFormatOption } 
 
 export interface Assistant extends OpenAiAssistant {
   avatar?: string
+
+  tools: AssistantTool[]
 }
 
 export type AssistantResponseFormatOption = OpenAIAssistantResponseFormatOption

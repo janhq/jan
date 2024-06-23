@@ -53,8 +53,9 @@ const ThreadCenterPanel: React.FC = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
 
-  const acceptedFormat: Accept = activeThread?.assistants[0].model?.settings
-    ?.vision_model
+  const isVisionModel = false // activeThread?.assistants[0].model?.settings.vision_model
+
+  const acceptedFormat: Accept = isVisionModel
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -77,7 +78,7 @@ const ThreadCenterPanel: React.FC = () => {
         e.dataTransfer.items.length === 1 &&
         ((activeThread?.assistants[0].tools &&
           activeThread?.assistants[0].tools[0]?.enabled) ||
-          activeThread?.assistants[0].model.settings.vision_model)
+          isVisionModel)
       ) {
         setDragOver(true)
       } else if (
@@ -99,7 +100,7 @@ const ThreadCenterPanel: React.FC = () => {
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
           !activeThread?.assistants[0].tools[0]?.enabled &&
-          !activeThread?.assistants[0].model.settings.vision_model)
+          !isVisionModel)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -163,18 +164,13 @@ const ThreadCenterPanel: React.FC = () => {
                   <h6 className="font-bold">
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
-                          activeThread?.assistants[0].model.settings
-                            .vision_model
-                            ? 'PDF, JPEG, JPG, PNG'
-                            : 'PDF'
+                          isVisionModel ? 'PDF, JPEG, JPG, PNG' : 'PDF'
                         } format`
                       : 'Drop file here'}
                   </h6>
                   {!isDragReject && (
                     <p className="mt-2">
-                      {activeThread?.assistants[0].model.settings.vision_model
-                        ? 'PDF, JPEG, JPG, PNG'
-                        : 'PDF'}
+                      {isVisionModel ? 'PDF, JPEG, JPG, PNG' : 'PDF'}
                     </p>
                   )}
                 </div>

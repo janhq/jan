@@ -19,9 +19,9 @@ const Tools = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const componentDataAssistantSetting = getConfigurationsData(
-    (activeThread?.assistants[0]?.tools &&
-      activeThread?.assistants[0]?.tools[0]?.settings) ??
-      {}
+    // (activeThread?.assistants[0]?.tools &&
+    //   activeThread?.assistants[0]?.tools[0]?.settings) ??
+    {}
   )
 
   const onRetrievalSwitchUpdate = useCallback(

@@ -10,15 +10,12 @@ import { twMerge } from 'tailwind-merge'
 
 import ModelLabel from '@/containers/ModelLabel'
 
-import SetupRemoteModel from '@/containers/SetupRemoteModel'
-
 import useCortex from '@/hooks/useCortex'
 
 import useSelectModel from '@/hooks/useSelectModel'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
@@ -83,10 +80,10 @@ const ModelDropdown: React.FC<Props> = ({
             return engine
           }
           if (searchFilter === 'local') {
-            return LocalEngines.includes(engine)
+            return LocalEngines.find((x) => x === engine)
           }
           if (searchFilter === 'remote') {
-            return RemoteEngines.includes(engine)
+            return RemoteEngines.find((x) => x === engine)
           }
         })
         .sort((a, b) => a.id.localeCompare(b.id)),
@@ -101,19 +98,19 @@ const ModelDropdown: React.FC<Props> = ({
     [selectModel]
   )
 
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string; apiKey: string; provider: string }[]
-  >([])
+  // const [extensionHasSettings, setExtensionHasSettings] = useState<
+  //   { name?: string; setting: string; apiKey: string; provider: string }[]
+  // >([])
 
-  const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
+  // const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
 
-  const findByEngine = filteredDownloadedModels
-    .filter((x) => !inActiveEngineProvider.includes(x.engine))
-    .map((x) => x.engine)
+  // const findByEngine = filteredDownloadedModels
+  //   .filter((x) => !inActiveEngineProvider.includes(x.engine))
+  //   .map((x) => x.engine)
 
-  const groupByEngine = findByEngine.filter(function (item, index) {
-    if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
-  })
+  // const groupByEngine = findByEngine.filter(function (item, index) {
+  //   if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
+  // })
 
   if (strictedThread && !activeThread) {
     return null
@@ -320,7 +317,7 @@ const ModelDropdown: React.FC<Props> = ({
               </>
             )}
 
-            {groupByEngine.map((engine, i) => {
+            {/* {groupByEngine.map((engine, i) => {
               const apiKey =
                 extensionHasSettings.filter((x) => x.provider === engine)[0]
                   ?.apiKey.length > 1
@@ -348,13 +345,13 @@ const ModelDropdown: React.FC<Props> = ({
                               className={twMerge(
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey &&
-                                  model.engine !== 'cortex.tensorrt' &&
+                                  model.engine !== 'cortex.tensorrt-llm' &&
                                   'cursor-default text-[hsla(var(--text-tertiary))]'
                               )}
                               onClick={() => {
                                 if (
                                   apiKey ||
-                                  model.engine === 'cortex.tensorrt'
+                                  model.engine === 'cortex.tensorrt-llm'
                                 ) {
                                   onModelSelected(model)
                                 }
@@ -390,7 +387,7 @@ const ModelDropdown: React.FC<Props> = ({
                   </div>
                 </div>
               )
-            })}
+            })} */}
           </ScrollArea>
         </div>
       </div>

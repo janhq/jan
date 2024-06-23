@@ -11,7 +11,6 @@ import {
 } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
-  FileTextIcon,
   ImageIcon,
   StopCircle,
   SettingsIcon,
@@ -249,52 +248,52 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
                 content="This feature only supports multimodal models."
                 disabled={isVisionModel}
               />
-              <Tooltip
-                side="bottom"
-                trigger={
-                  <li
-                    className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.text_model ===
-                        false
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    )}
-                    onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings
-                          .text_model !== false
-                      ) {
-                        fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <FileTextIcon size={16} />
-                    <span className="font-medium">Document</span>
-                  </li>
-                }
-                content={
-                  (!activeThread?.assistants[0].tools ||
-                    !activeThread?.assistants[0].tools[0]?.enabled ||
-                    activeThread?.assistants[0].model.settings.text_model ===
-                      false) && (
-                    <>
-                      {activeThread?.assistants[0].model.settings.text_model ===
-                      false ? (
-                        <span>
-                          This model does not support text-based retrieval.
-                        </span>
-                      ) : (
-                        <span>
-                          Turn on Retrieval in Assistant Settings to use this
-                          feature.
-                        </span>
-                      )}
-                    </>
-                  )
-                }
-              />
+              {/* <Tooltip */}
+              {/*   side="bottom" */}
+              {/*   trigger={ */}
+              {/*     <li */}
+              {/*       className={twMerge( */}
+              {/*         'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]', */}
+              {/*         activeThread?.assistants[0].model.settings.text_model === */}
+              {/*           false */}
+              {/*           ? 'cursor-not-allowed opacity-50' */}
+              {/*           : 'cursor-pointer' */}
+              {/*       )} */}
+              {/*       onClick={() => { */}
+              {/*         if ( */}
+              {/*           activeThread?.assistants[0].model.settings */}
+              {/*             .text_model !== false */}
+              {/*         ) { */}
+              {/*           fileInputRef.current?.click() */}
+              {/*           setShowAttacmentMenus(false) */}
+              {/*         } */}
+              {/*       }} */}
+              {/*     > */}
+              {/*       <FileTextIcon size={16} /> */}
+              {/*       <span className="font-medium">Document</span> */}
+              {/*     </li> */}
+              {/*   } */}
+              {/*   content={ */}
+              {/*     (!activeThread?.assistants[0].tools || */}
+              {/*       !activeThread?.assistants[0].tools[0]?.enabled || */}
+              {/*       activeThread?.assistants[0].model.settings.text_model === */}
+              {/*         false) && ( */}
+              {/*       <> */}
+              {/*         {activeThread?.assistants[0].model.settings.text_model === */}
+              {/*         false ? ( */}
+              {/*           <span> */}
+              {/*             This model does not support text-based retrieval. */}
+              {/*           </span> */}
+              {/*         ) : ( */}
+              {/*           <span> */}
+              {/*             Turn on Retrieval in Assistant Settings to use this */}
+              {/*             feature. */}
+              {/*           </span> */}
+              {/*         )} */}
+              {/*       </> */}
+              {/*     ) */}
+              {/*   } */}
+              {/* /> */}
             </ul>
           </div>
         )}

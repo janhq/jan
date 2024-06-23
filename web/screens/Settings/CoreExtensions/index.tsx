@@ -1,21 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
 import { LlmEngine } from '@janhq/core'
-import { Button, ScrollArea, Badge, Switch, Input } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { Button, ScrollArea, Badge, Input } from '@janhq/joi'
 import { SearchIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
-import SetupRemoteModel from '@/containers/SetupRemoteModel'
-
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 
 type EngineExtension = {
   provider: LlmEngine
@@ -112,23 +108,6 @@ const ExtensionCatalog = () => {
     }
   }
 
-  const [inActiveEngineProvider, setInActiveEngineProvider] = useAtom(
-    inActiveEngineProviderAtom
-  )
-
-  const onSwitchChange = useCallback(
-    (name: string) => {
-      if (inActiveEngineProvider.includes(name)) {
-        setInActiveEngineProvider(
-          [...inActiveEngineProvider].filter((x) => x !== name)
-        )
-      } else {
-        setInActiveEngineProvider([...inActiveEngineProvider, name])
-      }
-    },
-    [inActiveEngineProvider, setInActiveEngineProvider]
-  )
-
   return (
     <>
       <ScrollArea className="h-full w-full">
@@ -183,15 +162,15 @@ const ExtensionCatalog = () => {
                         <p>{item.provider}</p>
                       </div>
                       <div className="flex items-center gap-x-2">
-                        {!inActiveEngineProvider.includes(item.provider) && (
+                        {/* {!inActiveEngineProvider.includes(item.provider) && (
                           <SetupRemoteModel engine={item.provider} />
-                        )}
-                        <Switch
+                        )} */}
+                        {/* <Switch
                           checked={
                             !inActiveEngineProvider.includes(item.provider)
                           }
                           onChange={() => onSwitchChange(item.provider)}
-                        />
+                        /> */}
                       </div>
                     </div>
                     {

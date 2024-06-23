@@ -41,7 +41,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
             <div className="mb-6 flex flex-col gap-1">
               <span className="font-semibold">About</span>
               <p className="text-[hsla(var(--text-secondary))]">
-                {model.description || '-'}
+                {model.metadata?.description || '-'}
               </p>
             </div>
             <div className="flex flex-col gap-y-4 sm:flex-row sm:gap-x-10 sm:gap-y-0">
@@ -79,7 +79,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
           <div className="hidden w-48 flex-shrink-0 border-l border-t border-[hsla(var(--app-border))] p-4">
             <div>
               <span className="font-semibold ">Format</span>
-              <p
+              {/* <p
                 className={twMerge(
                   'mt-2 font-medium',
                   !model.format?.includes(' ') &&
@@ -88,7 +88,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                 )}
               >
                 {model.format}
-              </p>
+              </p> */}
             </div>
           </div>
         </div>

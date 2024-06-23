@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react'
 
-import { Model } from '@janhq/core'
+import { LlmEngine, Model } from '@janhq/core'
 import { Button, Badge, Tooltip } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -132,14 +132,14 @@ const ModelItemHeader: React.FC<Props> = ({ model, onClick, open }) => {
 }
 
 type EngineBadgeProps = {
-  engine: string
+  engine?: LlmEngine
 }
 
 const EngineBadge = ({ engine }: EngineBadgeProps) => {
   const title = 'TensorRT-LLM'
 
   switch (engine) {
-    case 'nitro-tensorrt-llm':
+    case 'cortex.tensorrt-llm':
       return <Badge title={title}>{title}</Badge>
     default:
       return null

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
+import { BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
 import Extension from './Extension'
 
@@ -11,9 +11,6 @@ export class ExtensionManager {
   // Registered extensions
   private extensions = new Map<string, BaseExtension>()
 
-  // Registered inference engines
-  private engines = new Map<string, AIEngine>()
-
   /**
    * Registers an extension.
    * @param extension - The extension to register.
@@ -21,14 +18,6 @@ export class ExtensionManager {
   register<T extends BaseExtension>(name: string, extension: T) {
     // Register for naming use
     this.extensions.set(name, extension)
-
-    // Register AI Engines
-    if ('provider' in extension && typeof extension.provider === 'string') {
-      this.engines.set(
-        extension.provider as unknown as string,
-        extension as unknown as AIEngine
-      )
-    }
   }
 
   /**
@@ -56,15 +45,6 @@ export class ExtensionManager {
    */
   getAll(): BaseExtension[] {
     return Array.from(this.extensions.values())
-  }
-
-  /**
-   * Retrieves a extension by its type.
-   * @param engine - The engine name to retrieve.
-   * @returns The extension, if found.
-   */
-  getEngine<T extends AIEngine>(engine: string): T | undefined {
-    return this.engines.get(engine) as T | undefined
   }
 
   /**

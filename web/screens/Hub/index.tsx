@@ -45,16 +45,16 @@ const HubScreen = () => {
   const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'downloaded') {
       return (
-        x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
+        x.model.toLowerCase().includes(searchValue.toLowerCase()) &&
         downloadedModels.some((y) => y.id === x.id)
       )
     } else if (sortSelected === 'featured') {
       return (
-        x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
-        x.metadata.tags.includes('Featured')
+        x.model.toLowerCase().includes(searchValue.toLowerCase()) &&
+        x.metadata?.tags.includes('Featured')
       )
     } else {
-      return x.name.toLowerCase().includes(searchValue.toLowerCase())
+      return x.model.toLowerCase().includes(searchValue.toLowerCase())
     }
   })
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { Message } from '@janhq/core'
+import { Message, TextContentBlock } from '@janhq/core'
 import { TextArea, Button, Modal, ModalClose } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -70,7 +70,12 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }, [editPrompt])
 
   useEffect(() => {
-    setEditPrompt(message.content[0]?.text?.value)
+    const messageContent = message.content[0]
+    if (!messageContent) return
+    if (messageContent.type === 'text') {
+      const textMessageBlock = messageContent as TextContentBlock
+      setEditPrompt(textMessageBlock.text.value)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
