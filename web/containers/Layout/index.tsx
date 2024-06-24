@@ -17,6 +17,9 @@ import { MainViewState } from '@/constants/screens'
 
 import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
+import DownloadLocalModelModal from '@/screens/HubScreen2/components/DownloadLocalModelModal'
+import SetUpApiKeyModal from '@/screens/HubScreen2/components/SetUpApiKeyModal'
+import SetUpRemoteModelModal from '@/screens/HubScreen2/components/SetUpRemoteModelModal'
 import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFolder'
 import CancelModelImportModal from '@/screens/Settings/CancelModelImportModal'
 import ChooseWhatToImportModal from '@/screens/Settings/ChooseWhatToImportModal'
@@ -77,6 +80,10 @@ const BaseLayout = () => {
         {importModelStage === 'IMPORTING_MODEL' && <ImportingModelModal />}
         {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
         {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
+
+        <DownloadLocalModelModal />
+        <SetUpRemoteModelModal />
+        <SetUpApiKeyModal />
         <ChooseWhatToImportModal />
         <InstallingExtensionModal />
         <HuggingFaceRepoDetailModal />

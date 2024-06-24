@@ -118,3 +118,13 @@ export const updateSelectedModelAtom = atom(null, (get, set, model: Model) => {
 })
 
 export const activeModelsAtom = atom<ModelStatus[]>([])
+
+//// model hub atoms
+const modelHubSelectedModelHandle = atom<string | undefined>(undefined)
+
+export const setModelHubSelectedModelHandle = atom(
+  null,
+  (_get, set, modelHandle: string) => {
+    set(modelHubSelectedModelHandle, modelHandle)
+  }
+)

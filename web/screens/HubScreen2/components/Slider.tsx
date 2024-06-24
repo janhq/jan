@@ -1,5 +1,7 @@
 import React from 'react'
 
+import { HuggingFaceModelEntry } from '@/hooks/useHuggingFace'
+
 import {
   Carousel,
   CarouselContent,
@@ -9,45 +11,20 @@ import {
 } from './Carousel'
 import SliderItem from './SliderItem'
 
-const data = [
-  {
-    title: 'Model 1',
-    subTitle: 'Model 1 Subtitle',
-    image: 'https://via.placeholder.com/150',
-    isLocal: false,
-    subImage: 'https://via.placeholder.com/150',
-  },
-  {
-    title: 'Model 2',
-    subTitle: 'Model 1 Subtitle',
-    image: 'https://via.placeholder.com/150',
-    isLocal: true,
-    subImage: 'https://via.placeholder.com/150',
-  },
-  {
-    title: 'Model ',
-    subTitle: 'Model 1 Subtitle',
-    image: 'https://via.placeholder.com/150',
-    isLocal: false,
-    subImage: 'https://via.placeholder.com/150',
-  },
-  {
-    title: 'Model 4',
-    subTitle: 'Model 1 Subtitle',
-    image: 'https://via.placeholder.com/150',
-    isLocal: true,
-    subImage: 'https://via.placeholder.com/150',
-  },
-  {
-    title: 'Model 5',
-    subTitle: 'Model 1 Subtitle',
-    image: 'https://via.placeholder.com/150',
-    isLocal: false,
-    subImage: 'https://via.placeholder.com/150',
-  },
-]
+type Props = {
+  models: HuggingFaceModelEntry[]
+}
 
-const Slider: React.FC = () => {
+const Slider: React.FC<Props> = ({ models }) => {
+  const normalizedModelsList: HuggingFaceModelEntry[][] = []
+  models.forEach((model, index) => {
+    if (index % 2 === 0) {
+      normalizedModelsList.push([model])
+    } else {
+      normalizedModelsList[normalizedModelsList.length - 1].push(model)
+    }
+  })
+
   return (
     <Carousel
       opts={{
@@ -56,10 +33,11 @@ const Slider: React.FC = () => {
       className="my-12"
     >
       <CarouselContent>
-        {data.map((item, index) => (
+        {normalizedModelsList.map((modelArray, index) => (
           <CarouselItem className="grid grid-cols-2 gap-4 px-16" key={index}>
-            <SliderItem />
-            <SliderItem />
+            {modelArray.map((model) => (
+              <SliderItem model={model} key={model.name} />
+            ))}
           </CarouselItem>
         ))}
       </CarouselContent>

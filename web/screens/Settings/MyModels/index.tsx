@@ -11,8 +11,6 @@ import { twMerge } from 'tailwind-merge'
 
 import ModelSearch from '@/containers/ModelSearch'
 
-import SetupRemoteModel from '@/containers/SetupRemoteModel'
-
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 

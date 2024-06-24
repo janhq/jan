@@ -10,7 +10,6 @@ import DownloadEventListener from './DownloadEventListener'
 import KeyListener from './KeyListener'
 import ModelEventListener from './ModelEventListener'
 import ModelImportListener from './ModelImportListener'
-import QuickAskListener from './QuickAskListener'
 
 const EventListenerWrapper: React.FC = () => {
   return (
@@ -21,7 +20,6 @@ const EventListenerWrapper: React.FC = () => {
       <ModelEventListener />
       <ClipboardListener />
       <DeepLinkListener />
-      <QuickAskListener />
       <ModelImportListener />
     </Fragment>
   )
