@@ -5,7 +5,7 @@ import { join, resolve } from 'path'
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { getAppConfigurations, log } from '@janhq/core/node'
+import { log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -25,17 +25,15 @@ import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 
-import { trayManager } from './managers/tray'
 import { logSystemInfo } from './utils/system'
-import { registerGlobalShortcuts } from './utils/shortcut'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
-const quickAskPath = join(rendererPath, 'search.html')
 const mainPath = join(rendererPath, 'index.html')
 
+import childProcess from 'child_process'
+
 const mainUrl = 'http://localhost:3000'
-const quickAskUrl = `${mainUrl}/search`
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -56,6 +54,36 @@ const createMainWindow = () => {
 
 app
   .whenReady()
+  .then(() => {
+    // init cortex
+    // running shell command cortex init -s
+    childProcess.exec('cortex init -s', (error, stdout, stderr) => {
+      if (error) {
+        log(`error: ${error.message}`)
+        return
+      }
+      if (stderr) {
+        log(`stderr: ${stderr}`)
+        return
+      }
+      log(`stdout: ${stdout}`)
+    })
+  })
+  .then(() => {
+    // start cortex api server
+    // running shell command cortex serve
+    childProcess.exec('cortex serve', (error, stdout, stderr) => {
+      if (error) {
+        log(`error: ${error.message}`)
+        return
+      }
+      if (stderr) {
+        log(`stderr: ${stderr}`)
+        return
+      }
+      log(`stdout: ${stdout}`)
+    })
+  })
   .then(() => {
     if (!gotTheLock) {
       app.quit()
@@ -84,16 +112,13 @@ app
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
-  .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
-  .then(registerGlobalShortcuts)
   .then(() => {
     if (!app.isPackaged) {
       setupReactDevTool()
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
   .then(logSystemInfo)
   .then(() => {
     app.on('activate', () => {
@@ -109,30 +134,13 @@ app.on('open-url', (_event, url) => {
   windowManager.sendMainAppDeepLink(url)
 })
 
-app.on('before-quit', function (_event) {
-  trayManager.destroyCurrentTray()
-})
-
 app.once('quit', () => {
   cleanUpAndQuit()
 })
 
 app.once('window-all-closed', () => {
-  // Feature Toggle for Quick Ask
-  if (
-    getAppConfigurations().quick_ask &&
-    !windowManager.isQuickAskWindowDestroyed()
-  )
-    return
   cleanUpAndQuit()
 })
-
-function createQuickAskWindow() {
-  // Feature Toggle for Quick Ask
-  if (!getAppConfigurations().quick_ask) return
-  const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
-  windowManager.createQuickAskWindow(preloadPath, startUrl)
-}
 
 /**
  * Handles various IPC messages from the renderer process.
@@ -145,8 +153,8 @@ function handleIPCs() {
   handleAppIPCs()
 }
 
-/*
- ** Suppress Node error messages
+/**
+ * Suppress Node error messages
  */
 process.on('uncaughtException', function (err) {
   log(`Error: ${err}`)
