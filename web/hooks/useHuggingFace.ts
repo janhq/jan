@@ -1,20 +1,55 @@
 import { useCallback } from 'react'
 
-import { listFiles, listModels } from '@huggingface/hub'
+import { downloadFile, listFiles, listModels } from '@huggingface/hub'
+import { Model } from '@janhq/core'
+import { parse } from 'yaml'
 
 const useHuggingFace = () => {
-  // TODO: handle abort
+  const tryToReadModelYmlOnMain = useCallback(
+    async (repoName: string, branch?: string): Promise<Model | undefined> => {
+      const revision = branch ?? 'main'
+      try {
+        for await (const fileInfo of listFiles({
+          repo: { type: 'model', name: repoName },
+          revision,
+        })) {
+          if (fileInfo.path !== 'model.yml') continue
+
+          const data = await (
+            await downloadFile({
+              repo: repoName,
+              revision,
+              path: fileInfo.path,
+            })
+          )?.text()
+
+          if (!data) return undefined
+          return parse(data) as Model
+        }
+      } catch (e) {
+        console.debug('Cannot get model info for', repoName, e)
+        return undefined
+      }
+    },
+    []
+  )
+
   const listCortexHubModels = useCallback(async () => {
     const modelEntries: HuggingFaceModelEntry[] = []
+
+    // TODO: improve performance of this
     for await (const model of listModels({
       search: { query: 'cortexhub' },
     })) {
+      const modelData = await tryToReadModelYmlOnMain(model.name)
       modelEntries.push({
         ...model,
+        model: modelData,
       })
     }
+
     return modelEntries
-  }, [])
+  }, [tryToReadModelYmlOnMain])
 
   const getBranches = useCallback(async (name: string): Promise<string[]> => {
     try {
@@ -92,6 +127,7 @@ export type HuggingFaceModelEntry = {
   downloads: number
   gated: false | 'auto' | 'manual'
   likes: number
+  model?: Model
 }
 
 export type EngineType = 'onnx' | 'gguf' | 'tensorrtllm'

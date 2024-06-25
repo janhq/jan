@@ -8,37 +8,53 @@ import BotName from './BotName'
 import InputApiKey from './InputApiKey'
 
 import {
+  clearRemoteModelBeingSetUpAtom,
+  getRemoteModelBeingSetUpAtom,
   getRemoteModelSetUpStageAtom,
   setRemoteModelSetUpStageAtom,
 } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const SetUpApiKeyModal: React.FC = () => {
   const setRemoteModelSetUpStage = useSetAtom(setRemoteModelSetUpStageAtom)
+  const clearModelBeingSetUp = useSetAtom(clearRemoteModelBeingSetUpAtom)
   const remoteModelSetUpStage = useAtomValue(getRemoteModelSetUpStageAtom)
+  const model = useAtomValue(getRemoteModelBeingSetUpAtom)
 
   const onSaveClicked = useCallback(() => {}, [])
 
+  const onDismiss = useCallback(() => {
+    clearModelBeingSetUp()
+    setRemoteModelSetUpStage('NONE')
+  }, [setRemoteModelSetUpStage, clearModelBeingSetUp])
+
+  if (model == null) return null
+  const owner: string = model.metadata?.owned_by ?? ''
+  const logoUrl: string = model.metadata?.owner_logo ?? ''
+  const apiKeyUrl = model.metadata?.api_key_url ?? ''
+
   return (
     <Modal
-      onOpenChange={() => setRemoteModelSetUpStage('NONE')}
+      onOpenChange={onDismiss}
       open={remoteModelSetUpStage === 'SETUP_API_KEY'}
       title="Setup Model"
       content={
         <Fragment>
-          <BotName
-            className="my-4 text-black"
-            name="Open AI"
-            image="https://i.pinimg.com/564x/08/ea/94/08ea94ca94a4b3a04037bdfc335ae00d.jpg"
-          />
+          <BotName className="my-4 text-black" name={owner} image={logoUrl} />
           <div className="mb-1 block">API Key</div>
           <InputApiKey placeholder="Insert API Key" />
-          <span className="my-4 flex items-center gap-1 text-xs text-blue-400">
-            Get your API key from OpenAI <ArrowUpRight size={12} />
+          <span className="mt-4 flex items-center justify-start gap-1 text-xs text-blue-600">
+            <a
+              href={apiKeyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative flex no-underline"
+            >
+              Get your API key from {owner} <ArrowUpRight size={12} />
+            </a>
           </span>
+          <span className="my-4 flex items-center gap-1 text-xs text-blue-500"></span>
           <div className="flex items-center justify-end gap-3">
-            <Button onClick={() => setRemoteModelSetUpStage('NONE')}>
-              Cancel
-            </Button>
+            <Button onClick={onDismiss}>Cancel</Button>
             <Button onClick={onSaveClicked}>Save</Button>
           </div>
         </Fragment>
