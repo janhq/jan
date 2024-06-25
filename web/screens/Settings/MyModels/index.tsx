@@ -16,13 +16,9 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelItem from './ModelItem'
 
-import {
-  activeModelsAtom,
-  downloadedModelsAtom,
-} from '@/helpers/atoms/Model.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const MyModels = () => {
-  const { activeModels } = useAtomValue(activeModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
