@@ -1,0 +1,41 @@
+{
+    "sources": [
+      {
+        "filename": "ggml-model-q4_k.gguf",
+        "url": "https://huggingface.co/hfl/llama-3-chinese-8b-instruct-v3-gguf/resolve/main/ggml-model-q4_k.gguf"
+      }
+    ],
+    "id": "llama-3-chinese-8b-instruct-v3",
+    "object": "model",
+    "name": "Llama 3 Chinese 8B Instruct v3 Q4",
+    "version": "1.1",
+    "description": "The Llama-3-Chinese base model and the Chinese Llama-3-Chinese-Instruct instruction-tuned large model. Llama-3基座模型和中文Llama-3-Instruct指令精调大模型",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 8192,
+      "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+      "llama_model_path": "ggml-model-q4_k.gguf",
+      "ngl": 32
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 8192,
+      "stop": [
+        "<|end_of_text|>",
+        "<|eot_id|>"
+      ],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "ymcui",
+      "tags": [
+        "7B",
+        "Chinese"
+      ],
+      "size": 4920733984
+    },
+    "engine": "nitro"
+  }

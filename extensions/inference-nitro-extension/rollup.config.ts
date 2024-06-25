@@ -35,6 +35,7 @@ const wizardcoder13bJson = require('./resources/models/wizardcoder-13b/model.jso
 const yi34bJson = require('./resources/models/yi-34b/model.json')
 const llama3Json = require('./resources/models/llama3-8b-instruct/model.json')
 const llama3Hermes8bJson = require('./resources/models/llama3-hermes-8b/model.json')
+const llama3ChineseV3Json = require('./resources/models/llama-3-chinese-8b-instruct-v3/model.json')
 const aya8bJson = require('./resources/models/aya-23-8b/model.json')
 const aya35bJson = require('./resources/models/aya-23-35b/model.json')
 const phimediumJson = require('./resources/models/phi3-medium/model.json')
@@ -83,6 +84,7 @@ export default [
           yi34bJson,
           llama3Json,
           llama3Hermes8bJson,
+          llama3ChineseV3Json,
           phimediumJson,
           aya8bJson,
           aya35bJson,
