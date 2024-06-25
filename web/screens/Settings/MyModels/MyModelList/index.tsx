@@ -101,7 +101,7 @@ const MyModelList = ({ model }: Props) => {
               {toGibibytes(model.metadata.size)}
             </Badge>
 
-            <div className="flex items-center gap-x-4">
+            <div className="relative flex items-center gap-x-4">
               {stateModel.loading && stateModel.model?.id === model.id ? (
                 <Badge
                   className="inline-flex items-center space-x-2"
@@ -144,7 +144,7 @@ const MyModelList = ({ model }: Props) => {
                 </Button>
                 {more && (
                   <div
-                    className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
+                    className="absolute right-8 top-0 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
                     ref={setMenu}
                   >
                     <Tooltip

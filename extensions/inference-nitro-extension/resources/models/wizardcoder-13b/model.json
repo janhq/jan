@@ -8,14 +8,14 @@
   "id": "wizardcoder-13b",
   "object": "model",
   "name": "Wizard Coder Python 13B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "WizardCoder 13B is a Python coding model. This model demonstrate high proficiency in specific domains like coding and mathematics.",
   "format": "gguf",
   "settings": {
     "ctx_len": 16384,
     "prompt_template": "### Instruction:\n{prompt}\n### Response:",
     "llama_model_path": "wizardcoder-python-13b-v1.0.Q4_K_M.gguf",
-    "ngl": 40
+    "ngl": 41
   },
   "parameters": {
     "temperature": 0.7,

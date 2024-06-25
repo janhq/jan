@@ -8,14 +8,14 @@
     "id": "vistral-7b",
     "object": "model",
     "name": "Vistral 7B Q4",
-    "version": "1.1",
+    "version": "1.2",
     "description": "Vistral 7B has a deep understanding of Vietnamese.",
     "format": "gguf",
     "settings": {
       "ctx_len": 32768,
       "prompt_template": "[INST] <<SYS>>\n{system_message}\n<</SYS>>\n{prompt} [/INST]",
       "llama_model_path": "vistral-7b-chat-dpo.Q4_K_M.gguf",
-      "ngl": 32
+      "ngl": 33
     },
     "parameters": {
       "temperature": 0.7,

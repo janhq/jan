@@ -126,6 +126,7 @@ export default class JanAssistantExtension extends AssistantExtension {
         {
           type: 'retrieval',
           enabled: false,
+          useTimeWeightedRetriever: false,
           settings: {
             top_k: 2,
             chunk_size: 1024,

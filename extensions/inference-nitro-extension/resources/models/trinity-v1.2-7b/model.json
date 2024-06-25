@@ -8,14 +8,14 @@
   "id": "trinity-v1.2-7b",
   "object": "model",
   "name": "Trinity-v1.2 7B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Trinity is an experimental model merge using the Slerp method. Recommended for daily assistance purposes.",
   "format": "gguf",
   "settings": {
     "ctx_len": 32768,
     "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
     "llama_model_path": "trinity-v1.2.Q4_K_M.gguf",
-    "ngl": 32
+    "ngl": 33
   },
   "parameters": {
     "temperature": 0.7,
