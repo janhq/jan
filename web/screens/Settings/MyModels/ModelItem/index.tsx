@@ -145,9 +145,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                   >
                     <div
                       className={twMerge(
-                        'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                        !isActive &&
-                          'pointer-events-none cursor-not-allowed opacity-40'
+                        'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]'
                       )}
                       onClick={() => {
                         onModelActionClick(model.id)
@@ -166,13 +164,13 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                         />
                       )}
                       <span className="text-bold capitalize">
-                        {isActive ? 'Start' : 'Stop'}
+                        {isActive ? 'Stop' : 'Start'}
                         &nbsp;Model
                       </span>
                     </div>
                     <div
                       className={twMerge(
-                        'pointer-events-none flex cursor-pointer items-center space-x-2 px-4 py-2 opacity-40 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]'
+                        'flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]'
                       )}
                       onClick={() => onDeleteModelClicked(model.id)}
                     >

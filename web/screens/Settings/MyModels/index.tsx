@@ -16,9 +16,13 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelItem from './ModelItem'
 
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  activeModelsAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const MyModels = () => {
+  const { activeModels } = useAtomValue(activeModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
@@ -48,10 +52,10 @@ const MyModels = () => {
     setSearchText(input)
   }, [])
 
-  const findByEngine = filteredDownloadedModels.map((x) => x.engine)
-  const groupByEngine = findByEngine.filter(function (item, index) {
-    if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
-  })
+  // const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  // const groupByEngine = findByEngine.filter(function (item, index) {
+  //   if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
+  // })
 
   return (
     <div {...getRootProps()} className="h-full w-full">

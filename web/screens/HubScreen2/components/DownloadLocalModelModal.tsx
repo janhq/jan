@@ -1,13 +1,16 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 
-import { Button, Modal, Select } from '@janhq/joi'
+import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { ArrowUpRight, Copy } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
+
+import useHuggingFace from '@/hooks/useHuggingFace'
 
 import BotName from './BotName'
-import InputApiKey from './InputApiKey'
 import ListModel from './ListModel'
+
+import UseWithCortex from './UseWithCortex'
 
 import {
   getDownloadLocalModelStageAtom,
@@ -19,7 +22,24 @@ const DownloadLocalModelModal: React.FC = () => {
   const selectedModelHandle = useAtomValue(getModelHubSelectedModelHandle)
   const setDownloadLocalModelStage = useSetAtom(setDownloadLocalModelStageAtom)
   const downloadLocalModelStage = useAtomValue(getDownloadLocalModelStageAtom)
-  const [searchFilter, setSearchFilter] = useState('70B-text-q2-k')
+
+  const { getBranches } = useHuggingFace()
+  const [variants, setVariants] = useState<string[]>([])
+
+  useEffect(() => {
+    if (!selectedModelHandle) return
+    getBranches(selectedModelHandle)
+      .then((res) => {
+        setVariants(res)
+      })
+      .catch((e) => {
+        console.error(
+          'Failed to get HuggingFace revision for',
+          selectedModelHandle,
+          e
+        )
+      })
+  }, [selectedModelHandle, getBranches])
 
   const modelName = selectedModelHandle?.split('/')[1] ?? ''
   if (!selectedModelHandle) return null
@@ -50,22 +70,7 @@ const DownloadLocalModelModal: React.FC = () => {
             <span>Use it with</span>
             <span>cortex</span>
           </div>
-          <div className="mt-4 flex items-center gap-2">
-            <Select
-              value={searchFilter}
-              className="gap-1.5 whitespace-nowrap px-4 py-2 font-semibold"
-              options={[
-                { name: '70B-text-q2-k', value: '70B-text-q2-k' },
-                { name: '70B-text-q3-k', value: '70B-text-q3-k' },
-                { name: '70B-text-q4-k', value: '70B-text-q4-k' },
-              ]}
-              onValueChange={(value) => setSearchFilter(value)}
-            />
-            <InputApiKey className="max-w-[355px] p-2 leading-[16.94px]" />
-            <Button>
-              <Copy size={18} />
-            </Button>
-          </div>
+          <UseWithCortex variants={variants} />
           <span className="mt-4 flex items-center gap-1 text-xs text-blue-400">
             Cortex Quickstart Guide <ArrowUpRight size={12} />
           </span>
