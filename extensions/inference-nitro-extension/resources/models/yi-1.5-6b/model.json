@@ -8,7 +8,7 @@
     "id": "yi-1.5-6b",
     "object": "model",
     "name": "Yi-1.5 6B Chat Q4",
-    "version": "1.5",
+    "version": "1.0",
     "description": "2024-05-13: The Yi-1.5 series models are open-sourced, further improving coding, math, reasoning, and instruction-following abilities.",
     "format": "gguf",
     "settings": {
