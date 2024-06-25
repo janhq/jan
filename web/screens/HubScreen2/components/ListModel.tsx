@@ -1,19 +1,28 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 
-import { Select } from '@janhq/joi'
+import { DownloadItem } from '@janhq/core'
+import { Button, Progress, Select } from '@janhq/joi'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { Download } from 'lucide-react'
-import { ChevronDown } from 'lucide-react'
+
+import useCortex from '@/hooks/useCortex'
+
+import {
+  addDownloadModelStateAtom,
+  downloadStateListAtom,
+} from '@/hooks/useDownloadState'
 
 import useHuggingFace, {
   EngineToBranches,
   EngineType,
 } from '@/hooks/useHuggingFace'
 
+import { formatDownloadPercentage } from '@/utils/converter'
+
 type Props = {
   modelHandle: string
 }
 
-// TODO: handle loading indicator
 const ListModel: React.FC<Props> = ({ modelHandle }) => {
   const { getEngineAndBranches } = useHuggingFace()
 
@@ -23,8 +32,6 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
   const [engineFilter, setEngineFilter] = useState<EngineType | undefined>(
     undefined
   )
-  const [showModel, setShowModel] = useState<number | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -33,22 +40,6 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
     }
     fetchData()
   }, [getEngineAndBranches, modelHandle])
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        event.target instanceof Node &&
-        !dropdownRef.current.contains(event.target)
-      ) {
-        setShowModel(null)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [dropdownRef])
 
   const engineSelection: { name: string; value: string }[] = useMemo(() => {
     if (!engineAndBranches) return []
@@ -87,7 +78,7 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
         />
       </div>
       <div className="mt-3 rounded-md border">
-        {modelBranches.map((item, index) => (
+        {modelBranches.map((item) => (
           <div
             className="relative flex items-center justify-between border-b p-3 last:border-b-0"
             key={item}
@@ -112,47 +103,115 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
                 {item} <Download size={16} />
               </div>
               <span>{item}</span>
-              <div className="flex items-center justify-center">
-                <button className="rounded-l-md bg-[#0000000F] px-3 py-2 font-semibold leading-[14.52px]">
-                  Download
-                </button>
-                <button
-                  onClick={() =>
-                    setShowModel(showModel === index ? null : index)
-                  }
-                  className="flex flex-1 items-center justify-center rounded-r-md border-l bg-[#0000000F] px-3 py-2"
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </div>
-              {showModel === index && (
-                <div
-                  ref={dropdownRef}
-                  className="absolute right-3 top-[85%] z-10"
-                >
-                  <div className="rounded-lg border bg-white p-1 shadow-xl">
-                    {Array(6)
-                      .fill(0)
-                      .map((_, idx) => (
-                        <div className="flex items-center gap-2 p-2" key={idx}>
-                          <img
-                            className="h-4 w-4 rounded-full"
-                            src="https://i.pinimg.com/564x/08/ea/94/08ea94ca94a4b3a04037bdfc335ae00d.jpg"
-                            alt=""
-                          />
-                          <span className="text-md whitespace-nowrap">
-                            Jan on Hugging Face
-                          </span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
-              )}
+              <DownloadContainer modelHandle={modelHandle} branch={item} />
+              {/* {showModel === index && ( */}
+              {/*   <div */}
+              {/*     ref={dropdownRef} */}
+              {/*     className="absolute right-3 top-[85%] z-10" */}
+              {/*   > */}
+              {/*     <div className="rounded-lg border bg-white p-1 shadow-xl"> */}
+              {/*       {Array(6) */}
+              {/*         .fill(0) */}
+              {/*         .map((_, idx) => ( */}
+              {/*           <div className="flex items-center gap-2 p-2" key={idx}> */}
+              {/*             <img */}
+              {/*               className="h-4 w-4 rounded-full" */}
+              {/*               src="https://i.pinimg.com/564x/08/ea/94/08ea94ca94a4b3a04037bdfc335ae00d.jpg" */}
+              {/*               alt="" */}
+              {/*             /> */}
+              {/*             <span className="text-md whitespace-nowrap"> */}
+              {/*               Jan on Hugging Face */}
+              {/*             </span> */}
+              {/*           </div> */}
+              {/*         ))} */}
+              {/*     </div> */}
+              {/*   </div> */}
+              {/* )} */}
             </div>
           </div>
         ))}
       </div>
     </Fragment>
+  )
+}
+
+type DownloadContainerProps = {
+  modelHandle: string
+  branch: string
+}
+
+const DownloadContainer: React.FC<DownloadContainerProps> = ({
+  modelHandle,
+  branch,
+}) => {
+  const { downloadModel, abortDownload } = useCortex()
+  const addDownloadState = useSetAtom(addDownloadModelStateAtom)
+
+  const modelId = `${modelHandle.split('/')[1]}:${branch}`
+  const allDownloadState = useAtomValue(downloadStateListAtom)
+  const downloadState = allDownloadState.find((s) => s.id == modelId)
+
+  const isDownloaded = false // TODO: namh handle this
+  let percentage = 0
+
+  if (downloadState) {
+    const transferred = downloadState.children.reduce(
+      (sum: number, downloadItem: DownloadItem) =>
+        sum + downloadItem.size.transferred,
+      0
+    )
+    const total = downloadState.children.reduce(
+      (sum: number, downloadItem: DownloadItem) =>
+        sum + downloadItem.size.total,
+      0
+    )
+    percentage = total === 0 ? 0 : transferred / total
+  }
+
+  const onDownloadClick = useCallback(async () => {
+    addDownloadState(modelId)
+    await downloadModel(modelId)
+  }, [downloadModel, addDownloadState, modelId])
+
+  const onUseModelClick = useCallback(() => {}, [])
+
+  const onAbortDownloadClick = useCallback(() => {
+    abortDownload(modelId)
+  }, [abortDownload, modelId])
+
+  return (
+    <div className="flex items-center justify-center">
+      {isDownloaded ? (
+        <Button
+          variant="soft"
+          className="min-w-[98px]"
+          onClick={onUseModelClick}
+        >
+          Use
+        </Button>
+      ) : downloadState != null ? (
+        <Button variant="soft">
+          <div className="flex items-center space-x-2">
+            <span className="inline-block" onClick={onAbortDownloadClick}>
+              Cancel
+            </span>
+            <Progress
+              className="inline-block h-2 w-[80px]"
+              value={
+                formatDownloadPercentage(percentage, {
+                  hidePercentage: true,
+                }) as number
+              }
+            />
+            <span className="tabular-nums">
+              {formatDownloadPercentage(percentage)}
+            </span>
+          </div>
+        </Button>
+      ) : (
+        <Button onClick={onDownloadClick}>Download</Button>
+      )}
+    </div>
   )
 }
 
