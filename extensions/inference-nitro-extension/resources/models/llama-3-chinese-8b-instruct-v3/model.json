@@ -8,7 +8,7 @@
     "id": "llama-3-chinese-8b-instruct-v3",
     "object": "model",
     "name": "Llama 3 Chinese 8B Instruct v3 Q4",
-    "version": "1.1",
+    "version": "1.0",
     "description": "The Llama-3-Chinese base model and the Chinese Llama-3-Chinese-Instruct instruction-tuned large model. Llama-3基座模型和中文Llama-3-Instruct指令精调大模型",
     "format": "gguf",
     "settings": {
