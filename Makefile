@@ -18,6 +18,8 @@ else
 	cd joi && yarn install && yarn build
 endif
 
+yarn config set registry https://registry.npmjs.org/
+
 # Installs yarn dependencies and builds core
 install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
