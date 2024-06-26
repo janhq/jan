@@ -125,7 +125,7 @@ const ThreadLeftPanel = () => {
                 onThreadClick(thread)
               }}
             >
-              <div className="relative z-10 p-2">
+              <div className="relative z-10 break-all p-2">
                 <h1
                   className={twMerge(
                     'line-clamp-1 pr-2 font-medium group-hover/message:pr-6',
