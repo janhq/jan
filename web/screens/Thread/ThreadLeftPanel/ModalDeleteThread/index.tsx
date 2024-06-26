@@ -7,10 +7,12 @@ import useDeleteThread from '@/hooks/useDeleteThread'
 
 type Props = {
   threadId: string
+  closeContextMenu?: () => void
 }
 
-const ModalDeleteThread = ({ threadId }: Props) => {
+const ModalDeleteThread = ({ threadId, closeContextMenu }: Props) => {
   const { deleteThread } = useDeleteThread()
+
   const onDeleteThreadClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       e.stopPropagation()
@@ -22,6 +24,11 @@ const ModalDeleteThread = ({ threadId }: Props) => {
   return (
     <Modal
       title="Delete Thread"
+      onOpenChange={(open) => {
+        if (open && closeContextMenu) {
+          closeContextMenu()
+        }
+      }}
       trigger={
         <div
           className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
