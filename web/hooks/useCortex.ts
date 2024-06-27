@@ -218,6 +218,10 @@ const useCortex = () => {
     ) =>
       fetch(`${host}/configs/${engine}`, {
         method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(config),
       }),
     [host]
@@ -228,6 +232,10 @@ const useCortex = () => {
     (model: Model) =>
       fetch(`${host}/models`, {
         method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(model),
       }),
     [host]

@@ -14,6 +14,7 @@ import {
   getRemoteModelSetUpStageAtom,
   setRemoteModelSetUpStageAtom,
 } from '@/helpers/atoms/SetupRemoteModel.atom'
+import { toaster } from '@/containers/Toast'
 
 const SetUpApiKeyModal: React.FC = () => {
   const { createModel, registerEngineConfig } = useCortex()
@@ -27,17 +28,32 @@ const SetUpApiKeyModal: React.FC = () => {
   const onSaveClicked = useCallback(async () => {
     const engine = model?.engine
     if (!engine) {
-      // TODO: display error message
+      alert('Does not have engine')
       return
     }
-    // TODO: Loading is needed here
-    await registerEngineConfig(engine, {
-      key: 'apiKey',
-      value: apiKey,
-      name: engine,
-    })
-    await createModel(model)
-  }, [createModel, registerEngineConfig, model, apiKey])
+    try {
+      await registerEngineConfig(engine, {
+        key: 'apiKey',
+        value: apiKey,
+        name: engine,
+      })
+      await createModel(model)
+      setRemoteModelSetUpStage('NONE')
+      toaster({
+        title: 'Success!',
+        description: `Key added successfully`,
+        type: 'success',
+      })
+    } catch (error) {
+      alert(error)
+    }
+  }, [
+    createModel,
+    registerEngineConfig,
+    setRemoteModelSetUpStage,
+    model,
+    apiKey,
+  ])
 
   const onDismiss = useCallback(() => {
     clearModelBeingSetUp()

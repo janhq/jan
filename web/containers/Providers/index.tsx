@@ -1,14 +1,10 @@
 'use client'
 
-import {
-  Fragment,
-  PropsWithChildren,
-  useCallback,
-  useEffect,
-  useState,
-} from 'react'
+import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
+
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import Loader from '@/containers/Loader'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
@@ -25,6 +21,8 @@ import DataLoader from './DataLoader'
 import Responsive from './Responsive'
 
 import { extensionManager } from '@/extension'
+
+const queryClient = new QueryClient()
 
 const Providers = ({ children }: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
@@ -69,12 +67,12 @@ const Providers = ({ children }: PropsWithChildren) => {
         <Umami />
         {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
-          <Fragment>
+          <QueryClientProvider client={queryClient}>
             <DataLoader />
             <EventListenerWrapper />
             <Responsive>{children}</Responsive>
             <Toaster />
-          </Fragment>
+          </QueryClientProvider>
         )}
       </JotaiWrapper>
     </ThemeWrapper>

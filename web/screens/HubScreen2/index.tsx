@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 
-import useHuggingFace, { HuggingFaceModelEntry } from '@/hooks/useHuggingFace'
+import { useQuery } from '@tanstack/react-query'
+
+import useHuggingFace from '@/hooks/useHuggingFace'
 
 import Filter from './components/Filter'
 import HubModelCard from './components/HubModelCard'
@@ -9,27 +11,26 @@ import SidebarFilter from './components/SidebarFilter'
 import Slider from './components/Slider'
 
 const HubScreen2: React.FC = () => {
-  const [modelEntries, setModelEntries] = useState<HuggingFaceModelEntry[]>([])
   const { listCortexHubModels } = useHuggingFace()
   const [showFilter, setShowFilter] = useState(false)
 
-  useEffect(() => {
-    listCortexHubModels().then((res) => {
-      setModelEntries(res)
-    })
-  }, [listCortexHubModels])
+  const { isPending, error, data } = useQuery({
+    queryKey: ['listCortexHub'],
+    queryFn: () => listCortexHubModels(),
+  })
+
+  // TODO: NamH adding loading state for this screen
+  if (!data) return null
 
   return (
     <div className="flex h-full w-full overflow-hidden pr-1.5">
       {showFilter && <SidebarFilter />}
-      <div className="relative h-full flex-1 flex-shrink-0 gap-12 overflow-x-hidden border-l border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]">
+      <div className="h-full flex-1 flex-shrink-0 gap-12 overflow-x-hidden border-l border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]">
         <ModelSearchBar />
-        <Slider models={modelEntries} />
+        <Slider models={data} />
         <div className="mx-4 px-12">
           <Filter callback={() => setShowFilter(!showFilter)} />
-          {modelEntries.map((entry) => (
-            <HubModelCard key={entry.name} {...entry} />
-          ))}
+          {data?.map((entry) => <HubModelCard key={entry.name} {...entry} />)}
         </div>
       </div>
     </div>

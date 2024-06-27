@@ -1,7 +1,6 @@
 import React from 'react'
 
-import { Button } from '@janhq/joi'
-import { Search, Upload } from 'lucide-react'
+import { Search } from 'lucide-react'
 
 const ModelSearchBar: React.FC = () => {
   return (
@@ -10,12 +9,12 @@ const ModelSearchBar: React.FC = () => {
         <Search size={16} />
         <input className="flex-1 outline-none" placeholder="Search" />
       </div>
-      <Button className="flex items-center gap-2">
-        <Upload size={16} />
-        <span className="hidden text-sm font-semibold md:block">
-          Import model
-        </span>
-      </Button>
+      {/* <Button className="flex items-center gap-2"> */}
+      {/*   <Upload size={16} /> */}
+      {/*   <span className="hidden text-sm font-semibold md:block"> */}
+      {/*     Import model */}
+      {/*   </span> */}
+      {/* </Button> */}
     </div>
   )
 }

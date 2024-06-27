@@ -5,7 +5,7 @@ import { Model } from '@janhq/core'
 import { parse } from 'yaml'
 
 const useHuggingFace = () => {
-  const tryToReadModelYmlOnMain = useCallback(
+  const tryToReadModelYmlByBranch = useCallback(
     async (repoName: string, branch?: string): Promise<Model | undefined> => {
       const revision = branch ?? 'main'
       try {
@@ -37,19 +37,31 @@ const useHuggingFace = () => {
   const listCortexHubModels = useCallback(async () => {
     const modelEntries: HuggingFaceModelEntry[] = []
 
-    // TODO: improve performance of this
     for await (const model of listModels({
       search: { query: 'cortexhub' },
     })) {
-      const modelData = await tryToReadModelYmlOnMain(model.name)
       modelEntries.push({
         ...model,
-        model: modelData,
       })
     }
 
+    const promises: Promise<Model | undefined>[] = []
+    modelEntries.forEach((model) => {
+      promises.push(tryToReadModelYmlByBranch(model.name))
+    })
+
+    const modelData = await Promise.allSettled(promises)
+    for (let i = 0; i < modelEntries.length; i++) {
+      if (modelData[i].status === 'fulfilled') {
+        const fulfillResult = modelData[i] as PromiseFulfilledResult<
+          Model | undefined
+        >
+        modelEntries[i].model = fulfillResult.value
+      }
+    }
+
     return modelEntries
-  }, [tryToReadModelYmlOnMain])
+  }, [tryToReadModelYmlByBranch])
 
   const getBranches = useCallback(async (name: string): Promise<string[]> => {
     try {
@@ -63,29 +75,6 @@ const useHuggingFace = () => {
       return []
     }
   }, [])
-
-  const getSingleModelBranchInfo = useCallback(
-    async (repoName: string, revision: string) => {
-      for await (const fileInfo of listFiles({
-        repo: { type: 'model', name: repoName },
-        revision: revision,
-      })) {
-        // if gguf, the size will be the filesize of filepath endswith .gguf
-        // if (fileInfo.path === 'model.yml') {
-        //   const data = await (
-        //     await downloadFile({
-        //       repo: repoName,
-        //       revision,
-        //       path: fileInfo.path,
-        //     })
-        //   )?.text()
-        //   console.log(data)
-        // }
-        // console.log(JSON.stringify(fileInfo))
-      }
-    },
-    []
-  )
 
   const getEngineAndBranches = useCallback(
     async (name: string): Promise<EngineToBranches> => {
