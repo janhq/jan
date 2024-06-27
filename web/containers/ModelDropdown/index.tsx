@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 import { Badge, Input, ScrollArea, Select, useClickOutside } from '@janhq/joi'
@@ -70,7 +70,7 @@ const ModelDropdown = ({
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { updateModelParameter } = useUpdateModelParameters()
-
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
   const featuredModel = configuredModels.filter((x) =>
     x.metadata.tags.includes('Featured')
@@ -107,6 +107,12 @@ const ModelDropdown = ({
         .sort((a, b) => a.name.localeCompare(b.name)),
     [configuredModels, searchText, searchFilter]
   )
+
+  useEffect(() => {
+    if (open && searchInputRef.current) {
+      searchInputRef.current.focus()
+    }
+  }, [open])
 
   useEffect(() => {
     if (!activeThread) return
@@ -258,6 +264,7 @@ const ModelDropdown = ({
             <Input
               placeholder="Search"
               value={searchText}
+              ref={searchInputRef}
               className="rounded-none border-x-0 border-t-0 focus-within:ring-0 hover:border-b-[hsla(var(--app-border))]"
               onChange={(e) => setSearchText(e.target.value)}
               suffixIcon={

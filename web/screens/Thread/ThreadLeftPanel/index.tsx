@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Thread } from '@janhq/core'
 
@@ -42,6 +42,14 @@ const ThreadLeftPanel = () => {
   const { requestCreateNewThread } = useCreateNewThread()
   const setEditMessage = useSetAtom(editMessageAtom)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
+
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean
+    thread?: Thread
+  }>({
+    visible: false,
+    thread: undefined,
+  })
 
   const onThreadClick = useCallback(
     (thread: Thread) => {
@@ -91,6 +99,21 @@ const ThreadLeftPanel = () => {
     }
   }
 
+  const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
+    event.preventDefault()
+    setContextMenu({
+      visible: true,
+      thread,
+    })
+  }
+
+  const closeContextMenu = () => {
+    setContextMenu({
+      visible: false,
+      thread: undefined,
+    })
+  }
+
   return (
     <LeftPanelContainer>
       {threads.length === 0 ? (
@@ -124,8 +147,10 @@ const ThreadLeftPanel = () => {
               onClick={() => {
                 onThreadClick(thread)
               }}
+              onContextMenu={(e) => onContextMenu(e, thread)}
+              onMouseLeave={closeContextMenu}
             >
-              <div className="relative z-10 p-2">
+              <div className="relative z-10 break-all p-2">
                 <h1
                   className={twMerge(
                     'line-clamp-1 pr-2 font-medium group-hover/message:pr-6',
@@ -143,10 +168,26 @@ const ThreadLeftPanel = () => {
                 <Button theme="icon" className="mt-2">
                   <MoreHorizontalIcon />
                 </Button>
-                <div className="invisible absolute -right-1 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg group-hover/icon:visible">
-                  <ModalEditTitleThread thread={thread} />
-                  <ModalCleanThread threadId={thread.id} />
-                  <ModalDeleteThread threadId={thread.id} />
+                <div
+                  className={twMerge(
+                    'invisible absolute -right-1 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg group-hover/icon:visible',
+                    contextMenu.visible &&
+                      contextMenu.thread?.id === thread.id &&
+                      'visible'
+                  )}
+                >
+                  <ModalEditTitleThread
+                    thread={thread}
+                    closeContextMenu={closeContextMenu}
+                  />
+                  <ModalCleanThread
+                    threadId={thread.id}
+                    closeContextMenu={closeContextMenu}
+                  />
+                  <ModalDeleteThread
+                    threadId={thread.id}
+                    closeContextMenu={closeContextMenu}
+                  />
                 </div>
               </div>
               {activeThreadId === thread.id && (

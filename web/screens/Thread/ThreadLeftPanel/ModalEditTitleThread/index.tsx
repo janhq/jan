@@ -8,9 +8,10 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 type Props = {
   thread: Thread
+  closeContextMenu?: () => void
 }
 
-const ModalEditTitleThread = ({ thread }: Props) => {
+const ModalEditTitleThread = ({ thread, closeContextMenu }: Props) => {
   const [title, setTitle] = useState(thread.title)
 
   const { updateThreadMetadata } = useCreateNewThread()
@@ -30,6 +31,11 @@ const ModalEditTitleThread = ({ thread }: Props) => {
   return (
     <Modal
       title="Edit title thread"
+      onOpenChange={(open) => {
+        if (open && closeContextMenu) {
+          closeContextMenu()
+        }
+      }}
       trigger={
         <div
           className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
