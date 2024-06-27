@@ -16,7 +16,7 @@ import { Cortex } from 'cortexso-node'
 import {
   AssistantCreateParams,
   AssistantUpdateParams,
-} from 'cortexso-node/dist/resources/beta/assistants'
+} from 'cortexso-node/resources/beta/assistants'
 import { useAtomValue } from 'jotai'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
