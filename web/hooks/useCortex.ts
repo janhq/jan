@@ -1,4 +1,4 @@
-import '@janhq/cortex-node/shims/web'
+import 'cortexso-node/shims/web'
 import { useCallback } from 'react'
 
 import {
@@ -11,12 +11,12 @@ import {
   ChatCompletionCreateParamsStreaming,
 } from '@janhq/core'
 
-import { Cortex } from '@janhq/cortex-node'
+import { Cortex } from 'cortexso-node'
 
 import {
   AssistantCreateParams,
   AssistantUpdateParams,
-} from '@janhq/cortex-node/dist/resources/beta/assistants'
+} from 'cortexso-node/dist/resources/beta/assistants'
 import { useAtomValue } from 'jotai'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'

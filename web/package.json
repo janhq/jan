@@ -13,10 +13,11 @@
     "compile": "tsc --noEmit -p . --pretty"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.48.0",
     "yaml": "^2.4.5",
     "@huggingface/hub": "^0.15.1",
     "embla-carousel-react": "^8.1.5",
-    "@janhq/cortex-node": "https://github.com/janhq/cortex-node.git#fix/import-web",
+    "cortexso-node": "^0.0.4",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@janhq/core": "link:./core",
     "@janhq/joi": "link:./joi",
