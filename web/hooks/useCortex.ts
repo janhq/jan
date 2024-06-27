@@ -211,6 +211,28 @@ const useCortex = () => {
     [cortex.beta.assistants]
   )
 
+  const registerEngineConfig = useCallback(
+    async (
+      engine: string,
+      config: { key: string; value: string; name: string }
+    ) =>
+      fetch(`${host}/configs/${engine}`, {
+        method: 'POST',
+        body: JSON.stringify(config),
+      }),
+    [host]
+  )
+
+  // add this to cortex-node?
+  const createModel = useCallback(
+    (model: Model) =>
+      fetch(`${host}/models`, {
+        method: 'POST',
+        body: JSON.stringify(model),
+      }),
+    [host]
+  )
+
   return {
     fetchAssistants,
     fetchThreads,
@@ -233,6 +255,8 @@ const useCortex = () => {
     updateAssistant,
     updateModel,
     chatCompletionNonStreaming,
+    registerEngineConfig,
+    createModel,
   }
 }
 

@@ -1,11 +1,12 @@
-import { Fragment, useCallback } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 
 import { Button, Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
 
+import useCortex from '@/hooks/useCortex'
+
 import BotName from './BotName'
-import InputApiKey from './InputApiKey'
 
 import {
   clearRemoteModelBeingSetUpAtom,
@@ -15,12 +16,28 @@ import {
 } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const SetUpApiKeyModal: React.FC = () => {
+  const { createModel, registerEngineConfig } = useCortex()
   const setRemoteModelSetUpStage = useSetAtom(setRemoteModelSetUpStageAtom)
   const clearModelBeingSetUp = useSetAtom(clearRemoteModelBeingSetUpAtom)
   const remoteModelSetUpStage = useAtomValue(getRemoteModelSetUpStageAtom)
   const model = useAtomValue(getRemoteModelBeingSetUpAtom)
 
-  const onSaveClicked = useCallback(() => {}, [])
+  const [apiKey, setApiKey] = useState<string>('')
+
+  const onSaveClicked = useCallback(async () => {
+    const engine = model?.engine
+    if (!engine) {
+      // TODO: display error message
+      return
+    }
+    // TODO: Loading is needed here
+    await registerEngineConfig(engine, {
+      key: 'apiKey',
+      value: apiKey,
+      name: engine,
+    })
+    await createModel(model)
+  }, [createModel, registerEngineConfig, model, apiKey])
 
   const onDismiss = useCallback(() => {
     clearModelBeingSetUp()
@@ -41,7 +58,13 @@ const SetUpApiKeyModal: React.FC = () => {
         <Fragment>
           <BotName className="my-4 text-black" name={owner} image={logoUrl} />
           <div className="mb-1 block">API Key</div>
-          <InputApiKey placeholder="Insert API Key" />
+          <input
+            className="text-[hsla(var(--text-secondary)] w-full rounded-md border p-2 leading-[16.94px]"
+            placeholder="Input API Key"
+            type="text"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+          />
           <span className="mt-4 flex items-center justify-start gap-1 text-xs text-blue-600">
             <a
               href={apiKeyUrl}

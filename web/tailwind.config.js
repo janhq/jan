@@ -56,5 +56,22 @@ module.exports = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    function ({ addUtilities }) {
+      const newUtilities = {
+        '.custom-slider::-webkit-slider-thumb': {
+          appearance: 'none',
+          width: '14px',
+          height: '14px',
+          backgroundColor: '#FFFFFF',
+          cursor: 'pointer',
+          borderRadius: '9999px',
+          pointerEvents: 'auto',
+          border: '1px solid #2563EB',
+        },
+      }
+
+      addUtilities(newUtilities, ['responsive', 'hover'])
+    },
+  ],
 }

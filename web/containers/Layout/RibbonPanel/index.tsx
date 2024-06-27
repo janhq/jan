@@ -64,38 +64,44 @@ export default function RibbonPanel() {
         const isActive = mainViewState === menu.state
         return (
           <div
+            key={i}
             className={twMerge(
-              'relative my-0.5 flex h-8 w-8 items-center justify-center rounded-md hover:bg-[hsla(var(--ribbon-panel-icon-hover))]',
+              'mx-1 w-full cursor-pointer',
               i === 1 && 'mb-auto'
             )}
-            key={i}
+            onClick={() => onMenuClick(menu.state)}
           >
-            <Tooltip
-              side="right"
-              disabled={mainViewState === menu.state}
-              trigger={
-                <div>
-                  <div
-                    data-testid={menu.name}
-                    className={twMerge(
-                      'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center text-[hsla(var(--ribbon-panel-icon))] ',
-                      isActive &&
-                        'z-10 text-[hsla(var(--ribbon-panel-icon-active))]'
+            <div
+              className={twMerge(
+                'relative mx-auto my-0.5 flex h-8 w-8 items-center justify-center rounded-md hover:bg-[hsla(var(--ribbon-panel-icon-hover))]'
+              )}
+            >
+              <Tooltip
+                side="right"
+                disabled={mainViewState === menu.state}
+                trigger={
+                  <div>
+                    <div
+                      data-testid={menu.name}
+                      className={twMerge(
+                        'relative flex w-full flex-shrink-0 items-center justify-center text-[hsla(var(--ribbon-panel-icon))] ',
+                        isActive &&
+                          'z-10 text-[hsla(var(--ribbon-panel-icon-active))]'
+                      )}
+                    >
+                      {menu.icon}
+                    </div>
+                    {isActive && (
+                      <m.div
+                        className="absolute inset-0 left-0 h-full w-full rounded-md bg-[hsla(var(--ribbon-panel-icon-active-bg))]"
+                        layoutId="active-state-menu"
+                      />
                     )}
-                    onClick={() => onMenuClick(menu.state)}
-                  >
-                    {menu.icon}
                   </div>
-                  {isActive && (
-                    <m.div
-                      className="absolute inset-0 left-0 h-full w-full rounded-md bg-[hsla(var(--ribbon-panel-icon-active-bg))]"
-                      layoutId="active-state-menu"
-                    />
-                  )}
-                </div>
-              }
-              content={menu.name}
-            />
+                }
+                content={menu.name}
+              />
+            </div>
           </div>
         )
       })}

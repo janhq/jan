@@ -22,4 +22,4 @@ export const ignoreSslAtom = atomWithStorage(IGNORE_SSL, false)
 export const vulkanEnabledAtom = atomWithStorage(VULKAN_ENABLED, false)
 export const quickAskEnabledAtom = atomWithStorage(QUICK_ASK_ENABLED, false)
 
-export const hostAtom = atom('http://localhost:1337/')
+export const hostAtom = atom('http://localhost:1337/v1')

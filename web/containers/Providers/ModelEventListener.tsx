@@ -62,7 +62,7 @@ function ModelEventListener() {
     if (abortController.current) return
     abortController.current = new AbortController()
 
-    await fetchEventSource(`${host}events/model`, {
+    await fetchEventSource(`${host}/events/model`, {
       onmessage(ev) {
         if (!ev.data || ev.data === '') return
         try {

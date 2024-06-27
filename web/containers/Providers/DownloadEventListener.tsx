@@ -16,7 +16,7 @@ const DownloadEventListener: React.FC = () => {
 
   const subscribeDownloadEvent = useCallback(async () => {
     if (isRegistered.current) return
-    await fetchEventSource(`${host}events/download`, {
+    await fetchEventSource(`${host}/events/download`, {
       onmessage(ev) {
         if (!ev.data || ev.data === '') return
         try {

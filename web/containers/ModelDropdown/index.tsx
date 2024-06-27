@@ -98,23 +98,7 @@ const ModelDropdown: React.FC<Props> = ({
     [selectModel]
   )
 
-  // const [extensionHasSettings, setExtensionHasSettings] = useState<
-  //   { name?: string; setting: string; apiKey: string; provider: string }[]
-  // >([])
-
-  // const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
-
-  // const findByEngine = filteredDownloadedModels
-  //   .filter((x) => !inActiveEngineProvider.includes(x.engine))
-  //   .map((x) => x.engine)
-
-  // const groupByEngine = findByEngine.filter(function (item, index) {
-  //   if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
-  // })
-
-  if (strictedThread && !activeThread) {
-    return null
-  }
+  if (strictedThread && !activeThread) return null
 
   return (
     <div className={twMerge('relative')}>
@@ -197,7 +181,7 @@ const ModelDropdown: React.FC<Props> = ({
                   </h6>
                   <ul className="pb-2">
                     {filteredDownloadedModels
-                      .filter((x) => x.engine === 'cortex.llamacpp')
+                      // .filter((x) => x.engine === 'cortex.llamacpp')
                       .map((model) => {
                         return (
                           <li
