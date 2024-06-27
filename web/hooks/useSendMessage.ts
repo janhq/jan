@@ -162,7 +162,6 @@ const useSendMessage = () => {
         if (selectedModel.stream === true) {
           const stream = await chatCompletionStreaming({
             messages,
-            ...selectedModel,
             model: selectedModel.id,
             stream: true,
           })
@@ -229,7 +228,6 @@ const useSendMessage = () => {
           const response = await chatCompletionNonStreaming(
             {
               messages,
-              ...selectedModel,
               model: selectedModel.id,
               stream: false,
             },
