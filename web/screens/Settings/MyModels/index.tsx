@@ -81,14 +81,14 @@ const MyModels = () => {
             <div className="w-full sm:w-[300px]">
               <ModelSearch onSearchLocal={onSearchChange} />
             </div>
-            <Button
+            {/* <Button
               variant="outline"
               theme="ghost"
               onClick={onImportModelClick}
             >
               <UploadIcon size={16} className="mr-2" />
               <p>Import Model</p>
-            </Button>
+            </Button> */}
           </div>
 
           <div className="relative w-full">

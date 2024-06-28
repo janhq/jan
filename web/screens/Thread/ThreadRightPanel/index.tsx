@@ -8,9 +8,7 @@ import RightPanelContainer from '@/containers/RightPanelContainer'
 
 import AssistantSettingContainer from './AssistantSettingContainer'
 import ModelSettingContainer from './ModelSettingContainer'
-import Tools from './Tools'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
@@ -20,7 +18,6 @@ const ThreadRightPanel: React.FC = () => {
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   if (!activeThread) return null
 
@@ -30,7 +27,7 @@ const ThreadRightPanel: React.FC = () => {
         options={[
           { name: 'Assistant', value: 'assistant' },
           { name: 'Model', value: 'model' },
-          ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
+          // ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
         ]}
         value={activeTabThreadRightPanel}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}
@@ -44,9 +41,9 @@ const ThreadRightPanel: React.FC = () => {
           </div>
           <ModelSettingContainer />
         </TabsContent>
-        <TabsContent value="tools">
+        {/* <TabsContent value="tools">
           <Tools />
-        </TabsContent>
+        </TabsContent> */}
       </Tabs>
     </RightPanelContainer>
   )
