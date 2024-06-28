@@ -45,7 +45,6 @@ const HubModelCard: React.FC<HuggingFaceModelEntry> = ({
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createModel } = useCortex()
   const { getModels } = useModels()
-  // const { selectModel } = useSelectModel()
 
   const isLocalModel = useMemo(
     () =>
@@ -57,14 +56,20 @@ const HubModelCard: React.FC<HuggingFaceModelEntry> = ({
   const actionLabel = useMemo(() => {
     if (isLocalModel) return 'Download'
 
-    // if remote model, we will have model object
-    if (downloadedModels.find((m) => m.id === model!.model)) return 'Use'
+    const isApiKeyAdded =
+      // @ts-expect-error engine is not null
+      (cortexConfig[model?.engine ?? '']?.apiKey ?? '').length > 0
+    const isModelDownloaded = downloadedModels.find(
+      (m) => m.id === model!.model
+    )
 
-    // @ts-expect-error engine is not null
-    const apiKey: string = cortexConfig[model?.engine ?? '']?.apiKey ?? ''
-    if (apiKey.trim().length > 0) return 'Add'
+    if (isApiKeyAdded && isModelDownloaded) return 'Use'
 
-    return 'Setup'
+    if (!isApiKeyAdded && !isModelDownloaded) return 'Setup'
+
+    if (isModelDownloaded) return 'Setup API Key'
+
+    return 'Add'
   }, [model, isLocalModel, downloadedModels, cortexConfig])
 
   const onActionClick = useCallback(() => {
@@ -74,8 +79,15 @@ const HubModelCard: React.FC<HuggingFaceModelEntry> = ({
     } else {
       if (!model) return
 
-      if (downloadedModels.find((m) => m.id === model.model)) {
-        // if we already downloaded it, use it and creat new thread
+      const isApiKeyAdded =
+        // @ts-expect-error engine is not null
+        (cortexConfig[model?.engine ?? '']?.apiKey ?? '').length > 0
+      const isModelDownloaded = downloadedModels.find(
+        (m) => m.id === model.model
+      )
+
+      if (isApiKeyAdded && isModelDownloaded) {
+        // use
         createThread(model.model, {
           ...assistants[0],
           model: model.model,
@@ -89,17 +101,25 @@ const HubModelCard: React.FC<HuggingFaceModelEntry> = ({
         return
       }
 
-      // @ts-expect-error engine is not null
-      const apiKey: string = cortexConfig[model?.engine ?? '']?.apiKey ?? ''
-      if (apiKey.trim().length > 0) {
+      if (!isApiKeyAdded && !isModelDownloaded) {
+        setRemoteModelBeingSetUp(model!)
+        setRemoteModelSetUpStage('SETUP_INTRO')
+        return
+      }
+
+      if (isModelDownloaded) {
+        // when model is downloaded but key is not there or deleted, we need to setup api key
+        setRemoteModelBeingSetUp(model!)
+        setRemoteModelSetUpStage('SETUP_API_KEY')
+        return
+      }
+
+      if (isApiKeyAdded) {
         createModel(model).then(() => {
           getModels()
         })
         return
       }
-
-      setRemoteModelBeingSetUp(model!)
-      setRemoteModelSetUpStage('SETUP_INTRO')
     }
   }, [
     getModels,

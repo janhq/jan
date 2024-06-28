@@ -59,14 +59,14 @@ app
     // running shell command cortex init -s
     childProcess.exec('cortex init -s', (error, stdout, stderr) => {
       if (error) {
-        log(`error: ${error.message}`)
+        console.error(`error: ${error.message}`)
         return
       }
       if (stderr) {
-        log(`stderr: ${stderr}`)
+        console.error(`stderr: ${stderr}`)
         return
       }
-      log(`stdout: ${stdout}`)
+      console.log(`stdout: ${stdout}`)
     })
   })
   .then(() => {
@@ -74,14 +74,14 @@ app
     // running shell command cortex serve
     childProcess.exec('cortex serve', (error, stdout, stderr) => {
       if (error) {
-        log(`error: ${error.message}`)
+        console.error(`error: ${error.message}`)
         return
       }
       if (stderr) {
-        log(`stderr: ${stderr}`)
+        console.error(`stderr: ${stderr}`)
         return
       }
-      log(`stdout: ${stdout}`)
+      console.log(`stdout: ${stdout}`)
     })
   })
   .then(() => {
