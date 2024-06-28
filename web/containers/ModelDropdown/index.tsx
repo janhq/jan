@@ -1,94 +1,43 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 
-import { LocalEngines, Model, RemoteEngines } from '@janhq/core'
+import { LlmEngines, LocalEngines, Model, RemoteEngines } from '@janhq/core'
 import { Badge, Input, ScrollArea, Select, useClickOutside } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
-import { ChevronDownIcon, DownloadCloudIcon, XIcon } from 'lucide-react'
+import { ChevronDownIcon, XIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
-
-import ModelLabel from '@/containers/ModelLabel'
-
-import useCortex from '@/hooks/useCortex'
 
 import useSelectModel from '@/hooks/useSelectModel'
 
-import { toGibibytes } from '@/utils/converter'
+import ModelSection from './ModelSection'
 
-import {
-  configuredModelsAtom,
-  downloadedModelsAtom,
-  selectedModelAtom,
-} from '@/helpers/atoms/Model.atom'
+import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   chatInputMode?: boolean
-  strictedThread?: boolean
 }
 
-export const engineHasLogo = [
-  'anthropic',
-  'cohere',
-  'martian',
-  'mistral',
-  'openai',
-]
-
-const ModelDropdown: React.FC<Props> = ({
-  chatInputMode,
-  strictedThread = true,
-}) => {
-  const { downloadModel } = useCortex()
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
+const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
   const [searchFilter, setSearchFilter] = useState('all')
   const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
+  const { selectModel } = useSelectModel()
 
   const [open, setOpen] = useState(false)
   const activeThread = useAtomValue(activeThreadAtom)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
-  const selectedModel = useAtomValue(selectedModelAtom)
-
-  const { selectModel } = useSelectModel()
+  const selectedModel = useAtomValue(getSelectedModelAtom)
 
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
-  )
-
-  const configuredModels = useAtomValue(configuredModelsAtom)
-  const featuredModel = configuredModels.filter((x) =>
-    x.metadata?.tags?.includes('Featured')
   )
 
   useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [
     dropdownOptions,
     toggle,
   ])
-
-  const filteredDownloadedModels = useMemo(
-    () =>
-      downloadedModels
-        .filter((e) =>
-          e.id.toLowerCase().includes(searchText.toLowerCase().trim())
-        )
-        .filter((e) => {
-          const engine = e.engine
-          if (!engine) return false
-          if (searchFilter === 'all') {
-            return engine
-          }
-          if (searchFilter === 'local') {
-            return LocalEngines.find((x) => x === engine)
-          }
-          if (searchFilter === 'remote') {
-            return RemoteEngines.find((x) => x === engine)
-          }
-        })
-        .sort((a, b) => a.id.localeCompare(b.id)),
-    [downloadedModels, searchText, searchFilter]
-  )
 
   const onModelSelected = useCallback(
     async (model: Model) => {
@@ -98,10 +47,17 @@ const ModelDropdown: React.FC<Props> = ({
     [selectModel]
   )
 
-  if (strictedThread && !activeThread) return null
+  const engines =
+    searchFilter === 'local'
+      ? LocalEngines
+      : searchFilter === 'remote'
+        ? RemoteEngines
+        : LlmEngines
+
+  if (!activeThread) return null
 
   return (
-    <div className={twMerge('relative')}>
+    <div className="relative">
       <div ref={setToggle}>
         {chatInputMode ? (
           <Badge
@@ -171,207 +127,14 @@ const ModelDropdown: React.FC<Props> = ({
             </div>
           </div>
           <ScrollArea className="h-[calc(100%-36px)] w-full">
-            {filteredDownloadedModels.filter(
-              (x) => x.engine === 'cortex.llamacpp'
-            ).length !== 0 ? (
-              <div className="relative w-full">
-                <div className="mt-2">
-                  <h6 className="mb-1 mt-3 px-3 font-medium text-[hsla(var(--text-secondary))]">
-                    Cortex
-                  </h6>
-                  <ul className="pb-2">
-                    {filteredDownloadedModels
-                      // .filter((x) => x.engine === 'cortex.llamacpp')
-                      .map((model) => {
-                        return (
-                          <li
-                            key={model.id}
-                            className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                            onClick={() => onModelSelected(model)}
-                          >
-                            <p className="line-clamp-1" title={model.id}>
-                              {model.id}
-                            </p>
-                            <ModelLabel metadata={model.metadata} compact />
-                          </li>
-                        )
-                      })}
-                  </ul>
-                </div>
-              </div>
-            ) : (
-              <>
-                {searchFilter !== 'remote' && (
-                  <div className="relative w-full">
-                    <div className="mt-2">
-                      <h6 className="mb-1 mt-3 px-3 font-medium text-[hsla(var(--text-secondary))]">
-                        Cortex
-                      </h6>
-                      {searchText.length === 0 ? (
-                        <ul className="pb-2">
-                          {featuredModel.map((model) => {
-                            const isDownloading = false // TODO: NamH
-                            //   downloadingModels.some(
-                            //   (md) => md.id === model.id
-                            // )
-                            return (
-                              <li
-                                key={model.id}
-                                className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <p
-                                    className="line-clamp-1 text-[hsla(var(--text-secondary))]"
-                                    title={model.name}
-                                  >
-                                    {model.name}
-                                  </p>
-                                  <ModelLabel
-                                    metadata={model.metadata}
-                                    compact
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                  <span className="font-medium">
-                                    {toGibibytes(model.metadata?.size)}
-                                  </span>
-                                  {!isDownloading && (
-                                    <DownloadCloudIcon
-                                      size={18}
-                                      className="cursor-pointer text-[hsla(var(--app-link))]"
-                                      onClick={() => downloadModel(model.id)}
-                                    />
-                                  )}
-                                </div>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      ) : (
-                        <ul className="pb-2">
-                          {configuredModels
-                            .filter((x) => x.engine === 'cortex.llamacpp')
-                            .filter((e) =>
-                              e.id
-                                .toLowerCase()
-                                .includes(searchText.toLowerCase().trim())
-                            )
-                            .map((model) => {
-                              const isDownloading = false // TODO: NamH
-                              //     downloadingModels.some(
-                              //   (md) => md.id === model.id
-                              // )
-                              return (
-                                <li
-                                  key={model.id}
-                                  className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <p
-                                      className="line-clamp-1 text-[hsla(var(--text-secondary))]"
-                                      title={model.name}
-                                    >
-                                      {model.name}
-                                    </p>
-                                    <ModelLabel
-                                      metadata={model.metadata}
-                                      compact
-                                    />
-                                  </div>
-                                  <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                    <span className="font-medium">
-                                      {toGibibytes(model.metadata?.size)}
-                                    </span>
-                                    {!isDownloading && (
-                                      <DownloadCloudIcon
-                                        size={18}
-                                        className="cursor-pointer text-[hsla(var(--app-link))]"
-                                        onClick={() => downloadModel(model.id)}
-                                      />
-                                    )}
-                                  </div>
-                                </li>
-                              )
-                            })}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* {groupByEngine.map((engine, i) => {
-              const apiKey =
-                extensionHasSettings.filter((x) => x.provider === engine)[0]
-                  ?.apiKey.length > 1
-              return (
-                <div
-                  className="relative w-full border-t border-[hsla(var(--app-border))] first:border-t-0"
-                  key={i}
-                >
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between px-3">
-                      <h6 className="mb-1 mt-3 font-medium capitalize text-[hsla(var(--text-secondary))]">
-                        {engine}
-                      </h6>
-                      <div className="-mr-2">
-                        <SetupRemoteModel engine={engine} />
-                      </div>
-                    </div>
-                    <ul className="pb-2">
-                      {filteredDownloadedModels
-                        .filter((x) => x.engine === engine)
-                        .map((model) => {
-                          return (
-                            <li
-                              key={model.id}
-                              className={twMerge(
-                                'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                                !apiKey &&
-                                  model.engine !== 'cortex.tensorrt-llm' &&
-                                  'cursor-default text-[hsla(var(--text-tertiary))]'
-                              )}
-                              onClick={() => {
-                                if (
-                                  apiKey ||
-                                  model.engine === 'cortex.tensorrt-llm'
-                                ) {
-                                  onModelSelected(model)
-                                }
-                              }}
-                            >
-                              <div className="flex flex-shrink-0 gap-x-2">
-                                {engineHasLogo.map((x) => {
-                                  if (x === model.engine) {
-                                    return (
-                                      <div
-                                        className="relative flex-shrink-0 overflow-hidden rounded-full"
-                                        key={x}
-                                      >
-                                        <img
-                                          src={`images/ModelProvider/${x}.svg`}
-                                          alt="Model Provider"
-                                          width={20}
-                                          height={20}
-                                          className="object-cover"
-                                        />
-                                      </div>
-                                    )
-                                  }
-                                })}
-                                <p className="line-clamp-1" title={model.id}>
-                                  {model.id}
-                                </p>
-                              </div>
-                            </li>
-                          )
-                        })}
-                    </ul>
-                  </div>
-                </div>
-              )
-            })} */}
+            {engines.map((engine) => (
+              <ModelSection
+                key={engine}
+                searchText={searchText}
+                engine={engine}
+                onModelSelected={onModelSelected}
+              />
+            ))}
           </ScrollArea>
         </div>
       </div>

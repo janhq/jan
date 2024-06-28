@@ -10,13 +10,13 @@ import AssistantSetting from '@/screens/Thread/ThreadCenterPanel/AssistantSettin
 import { getConfigurationsData } from '@/utils/componentSettings'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
-import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const Tools = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
+  const selectedModel = useAtomValue(getSelectedModelAtom)
 
   const componentDataAssistantSetting = getConfigurationsData(
     // (activeThread?.assistants[0]?.tools &&

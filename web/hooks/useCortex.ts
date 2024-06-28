@@ -20,6 +20,7 @@ import {
 import { useAtomValue } from 'jotai'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
+import { CortexConfig } from '@/helpers/atoms/CortexConfig.atom'
 
 const useCortex = () => {
   const host = useAtomValue(hostAtom)
@@ -141,7 +142,9 @@ const useCortex = () => {
   const updateThread = useCallback(
     async (thread: Thread) => {
       const result = await cortex.beta.threads.update(thread.id, thread)
-      console.log(result)
+      console.debug(
+        `Update thread ${thread.id}, result: ${JSON.stringify(result, null, 2)}`
+      )
     },
     [cortex.beta.threads]
   )
@@ -220,6 +223,7 @@ const useCortex = () => {
         method: 'POST',
         headers: {
           'accept': 'application/json',
+          // eslint-disable-next-line @typescript-eslint/naming-convention
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(config),
@@ -234,12 +238,24 @@ const useCortex = () => {
         method: 'POST',
         headers: {
           'accept': 'application/json',
+          // eslint-disable-next-line @typescript-eslint/naming-convention
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(model),
       }),
     [host]
   )
+
+  const getCortexConfigs = useCallback(async (): Promise<CortexConfig> => {
+    const response = await fetch(`${host}/configs`, {
+      headers: {
+        'accept': 'application/json',
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        'Content-Type': 'application/json',
+      },
+    })
+    return response.json()
+  }, [host])
 
   return {
     fetchAssistants,
@@ -265,6 +281,7 @@ const useCortex = () => {
     chatCompletionNonStreaming,
     registerEngineConfig,
     createModel,
+    getCortexConfigs,
   }
 }
 

@@ -2,7 +2,11 @@ import { ModelRuntimeParams, ModelSettingParams, Thread } from '@janhq/core'
 
 import { atom } from 'jotai'
 
-import { configuredModelsAtom, selectedModelAtom } from './Model.atom'
+import {
+  configuredModelsAtom,
+  getSelectedModelAtom,
+  updateSelectedModelAtom,
+} from './Model.atom'
 
 const threadIdShouldAnimateTitle = atom<string[]>([])
 
@@ -28,16 +32,32 @@ export const setActiveThreadIdAtom = atom(
   null,
   (get, set, threadId: string | undefined) => {
     const thread = get(threadsAtom).find((t) => t.id === threadId)
-    if (!thread) return
+    if (!thread) {
+      console.error(`Thread ${threadId} not found in state`)
+      return
+    }
 
     set(activeThreadIdAtom, threadId)
     const modelId = thread.assistants[0]?.model
-    if (!modelId) return
+    if (!modelId) {
+      console.error('No model id found in thread', thread)
+      return
+    }
+
+    const activeModelId = get(getSelectedModelAtom)?.id
+    if (activeModelId === modelId) {
+      console.debug('Model already selected:', modelId)
+      return
+    }
 
     const model = get(configuredModelsAtom).find((m) => m.id === modelId)
-    if (!model) return
+    if (!model) {
+      console.warn(`Model ${modelId} removed or deleted`)
+      return
+    }
+
     console.debug('Set selected model:', model)
-    set(selectedModelAtom, model)
+    set(updateSelectedModelAtom, model)
   }
 )
 

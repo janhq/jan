@@ -4,9 +4,13 @@ import { Button, Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
 
+import { toaster } from '@/containers/Toast'
+
 import useCortex from '@/hooks/useCortex'
 
-import BotName from './BotName'
+import useCortexConfig from '@/hooks/useCortexConfig'
+
+import ModelTitle from './ModelTitle'
 
 import {
   clearRemoteModelBeingSetUpAtom,
@@ -14,12 +18,13 @@ import {
   getRemoteModelSetUpStageAtom,
   setRemoteModelSetUpStageAtom,
 } from '@/helpers/atoms/SetupRemoteModel.atom'
-import { toaster } from '@/containers/Toast'
 
 const SetUpApiKeyModal: React.FC = () => {
   const { createModel, registerEngineConfig } = useCortex()
   const setRemoteModelSetUpStage = useSetAtom(setRemoteModelSetUpStageAtom)
   const clearModelBeingSetUp = useSetAtom(clearRemoteModelBeingSetUpAtom)
+  const { getConfig } = useCortexConfig()
+
   const remoteModelSetUpStage = useAtomValue(getRemoteModelSetUpStageAtom)
   const model = useAtomValue(getRemoteModelBeingSetUpAtom)
 
@@ -37,6 +42,7 @@ const SetUpApiKeyModal: React.FC = () => {
         value: apiKey,
         name: engine,
       })
+      await getConfig()
       await createModel(model)
       setRemoteModelSetUpStage('NONE')
       toaster({
@@ -48,6 +54,7 @@ const SetUpApiKeyModal: React.FC = () => {
       alert(error)
     }
   }, [
+    getConfig,
     createModel,
     registerEngineConfig,
     setRemoteModelSetUpStage,
@@ -72,7 +79,11 @@ const SetUpApiKeyModal: React.FC = () => {
       title="Setup Model"
       content={
         <Fragment>
-          <BotName className="my-4 text-black" name={owner} image={logoUrl} />
+          <ModelTitle
+            className="my-4 text-black"
+            name={owner}
+            image={logoUrl}
+          />
           <div className="mb-1 block">API Key</div>
           <input
             className="text-[hsla(var(--text-secondary)] w-full rounded-md border p-2 leading-[16.94px]"

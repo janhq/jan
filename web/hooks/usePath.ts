@@ -2,13 +2,12 @@ import { openFileExplorer, joinPath, baseName } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
-import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const usePath = () => {
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
 
   const onRevealInFinder = async (type: string) => {
     // // TODO: this logic should be refactored.

@@ -7,8 +7,8 @@ import { ArrowUpRight } from 'lucide-react'
 
 import useHuggingFace from '@/hooks/useHuggingFace'
 
-import BotName from './BotName'
 import ListModel from './ListModel'
+import ModelTitle from './ModelTitle'
 
 import UseWithCortex from './UseWithCortex'
 
@@ -52,7 +52,7 @@ const DownloadLocalModelModal: React.FC = () => {
       title={modelName}
       content={
         <Fragment>
-          <BotName
+          <ModelTitle
             className="text-[hsla(var(--text-secondary)] my-4"
             name="Open AI"
             image="https://i.pinimg.com/564x/08/ea/94/08ea94ca94a4b3a04037bdfc335ae00d.jpg"

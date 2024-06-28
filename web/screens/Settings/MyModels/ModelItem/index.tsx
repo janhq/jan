@@ -12,8 +12,6 @@ import {
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { engineHasLogo } from '@/containers/ModelDropdown'
-
 import { useActiveModel } from '@/hooks/useActiveModel'
 
 import useModels from '@/hooks/useModels'
@@ -64,21 +62,6 @@ const ModelItem: React.FC<Props> = ({ model }) => {
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex w-1/2 gap-x-8">
-          {engineHasLogo.map((x) => {
-            if (x === model.engine) {
-              return (
-                <div className="relative overflow-hidden rounded-full" key={x}>
-                  <img
-                    src={`images/ModelProvider/${x}.svg`}
-                    alt="Model Provider"
-                    width={24}
-                    height={24}
-                    className="object-cover"
-                  />
-                </div>
-              )
-            }
-          })}
           <div className="flex w-full items-center justify-between">
             <h6
               className={twMerge(

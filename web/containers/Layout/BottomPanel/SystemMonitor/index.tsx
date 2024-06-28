@@ -54,7 +54,7 @@ const SystemMonitor: React.FC = () => {
           const resourceEvent = JSON.parse(ev.data) as ResourceStatus
           setUsedRam(resourceEvent.mem.used)
           setTotalRam(resourceEvent.mem.total)
-          setCpuUsage(resourceEvent.cpu.usage * 100)
+          setCpuUsage(resourceEvent.cpu.usage)
         } catch (err) {
           console.error(err)
         }

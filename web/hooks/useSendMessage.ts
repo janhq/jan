@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react'
 import {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
+  LocalEngines,
   Message,
   MessageContent,
   TextContentBlock,
@@ -13,6 +14,8 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { currentPromptAtom, editPromptAtom } from '@/containers/Providers/Jotai'
 
+import { toaster } from '@/containers/Toast'
+
 import { useActiveModel } from './useActiveModel'
 import useCortex from './useCortex'
 
@@ -21,7 +24,10 @@ import {
   getCurrentChatMessagesAtom,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { activeModelsAtom, selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import {
+  activeModelsAtom,
+  getSelectedModelAtom,
+} from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
   addThreadIdShouldAnimateTitleAtom,
@@ -50,7 +56,7 @@ const useSendMessage = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const activeModels = useAtomValue(activeModelsAtom)
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
+  const selectedModel = useAtomValue(getSelectedModelAtom)
   const { startModel } = useActiveModel()
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
 
@@ -123,9 +129,11 @@ const useSendMessage = () => {
       try {
         // start model if not yet started
         // TODO: Handle case model is starting up
-        if (!activeModels.map((model) => model.model).includes(modelId)) {
-          // start model
-          await startModel(modelId)
+        if (LocalEngines.find((e) => e === selectedModel.engine) != null) {
+          // start model if local and not started
+          if (!activeModels.map((model) => model.model).includes(modelId)) {
+            await startModel(modelId)
+          }
         }
 
         setIsGeneratingResponse(true)
@@ -224,53 +232,64 @@ const useSendMessage = () => {
             content: responseMessage.content,
           })
         } else {
-          const abortController = new AbortController()
-          const response = await chatCompletionNonStreaming(
-            {
-              messages,
-              model: selectedModel.id,
-              stream: false,
-            },
-            {
-              signal: abortController.signal,
-            }
-          )
-
-          assistantResponseMessage = response.choices[0].message.content ?? ''
-          const assistantMessage = await createMessage(activeThread.id, {
-            role: 'assistant',
-            content: assistantResponseMessage,
-          })
-
-          const responseMessage: Message = {
-            id: assistantMessage.id,
-            thread_id: activeThread.id,
-            assistant_id: activeThread.id,
-            role: 'assistant',
-            content: [
+          try {
+            const abortController = new AbortController()
+            const response = await chatCompletionNonStreaming(
               {
-                type: 'text',
-                text: {
-                  value: assistantResponseMessage,
-                  annotations: [],
-                },
+                messages,
+                model: selectedModel.id,
+                stream: false,
               },
-            ],
-            status: 'completed',
-            created_at: assistantMessage.created_at,
-            metadata: undefined,
-            attachments: null,
-            completed_at: Date.now(),
-            incomplete_at: null,
-            incomplete_details: null,
-            object: 'thread.message',
-            run_id: null,
-          }
-          updateMessage(activeThread.id, responseMessage.id, {
-            content: responseMessage.content,
-          })
+              {
+                signal: abortController.signal,
+              }
+            )
 
-          addNewMessage(responseMessage)
+            assistantResponseMessage = response.choices[0].message.content ?? ''
+            const assistantMessage = await createMessage(activeThread.id, {
+              role: 'assistant',
+              content: assistantResponseMessage,
+            })
+
+            const responseMessage: Message = {
+              id: assistantMessage.id,
+              thread_id: activeThread.id,
+              assistant_id: activeThread.id,
+              role: 'assistant',
+              content: [
+                {
+                  type: 'text',
+                  text: {
+                    value: assistantResponseMessage,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: 'completed',
+              created_at: assistantMessage.created_at,
+              metadata: undefined,
+              attachments: null,
+              completed_at: Date.now(),
+              incomplete_at: null,
+              incomplete_details: null,
+              object: 'thread.message',
+              run_id: null,
+            }
+            updateMessage(activeThread.id, responseMessage.id, {
+              content: responseMessage.content,
+            })
+
+            addNewMessage(responseMessage)
+          } catch (err) {
+            console.error(err)
+            if (err instanceof Error) {
+              toaster({
+                title: 'Failed to generate response',
+                description: err.message,
+                type: 'error',
+              })
+            }
+          }
         }
 
         setIsGeneratingResponse(false)

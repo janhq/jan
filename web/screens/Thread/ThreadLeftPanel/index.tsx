@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { Button } from '@janhq/joi'
-import { AnimatePresence, motion as m } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 
 import { useAtomValue } from 'jotai'
 import { PenSquareIcon } from 'lucide-react'
@@ -17,7 +17,7 @@ import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import {
   downloadedModelsAtom,
-  selectedModelAtom,
+  getSelectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { getActiveThreadIdAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -25,7 +25,7 @@ const ThreadLeftPanel: React.FC = () => {
   const { createThread, setActiveThread } = useThreads()
 
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
+  const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const assistants = useAtomValue(assistantsAtom)

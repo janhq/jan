@@ -2,7 +2,7 @@ import { Fragment, useCallback, useMemo } from 'react'
 
 import { Model, SettingComponentProps, SliderComponentProps } from '@janhq/core'
 import { Accordion, AccordionItem } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -18,11 +18,16 @@ import { presetConfiguration } from '@/utils/predefinedComponent'
 
 import PromptTemplateSetting from '../PromptTemplateSetting'
 
-import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import {
+  getSelectedModelAtom,
+  updateSelectedModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const ModelSettingContainer: React.FC = () => {
   const { stopModel, updateModel } = useModels()
-  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
+  const setSelectedModel = useSetAtom(updateSelectedModelAtom)
+
+  const selectedModel = useAtomValue(getSelectedModelAtom)
 
   const modelSettings = useMemo(() => {
     if (!selectedModel) return

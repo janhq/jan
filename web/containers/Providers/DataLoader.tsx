@@ -6,6 +6,7 @@ import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
+import useCortexConfig from '@/hooks/useCortexConfig'
 import { useLoadTheme } from '@/hooks/useLoadTheme'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
@@ -28,6 +29,7 @@ const DataLoader: React.FC = () => {
   const { getAssistantList } = useAssistants()
   const { getThreadList } = useThreads()
   const { getModels } = useModels()
+  const { getConfig } = useCortexConfig()
 
   useLoadTheme()
 
@@ -35,7 +37,8 @@ const DataLoader: React.FC = () => {
     getAssistantList()
     getThreadList()
     getModels()
-  }, [getThreadList, getAssistantList, getModels])
+    getConfig()
+  }, [getThreadList, getAssistantList, getModels, getConfig])
 
   useEffect(() => {
     window.core?.api

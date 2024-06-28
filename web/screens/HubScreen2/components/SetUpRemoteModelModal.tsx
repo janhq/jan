@@ -5,7 +5,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { Copy } from 'lucide-react'
 import { ArrowUpRight } from 'lucide-react'
 
-import BotName from './BotName'
+import ModelTitle from './ModelTitle'
 
 import {
   getRemoteModelBeingSetUpAtom,
@@ -42,7 +42,7 @@ const SetUpRemoteModelModal: React.FC = () => {
               <span className="text-sm font-semibold">Setup</span>
             </Button>
           </div>
-          <BotName
+          <ModelTitle
             className="text-[hsla(var(--text-secondary)] my-4"
             name={owner}
             image={logoUrl}

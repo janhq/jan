@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 
 import React from 'react'
 
@@ -16,17 +16,14 @@ type Props = {
 
 const ModalDeleteThread: React.FC<Props> = ({ id, title }) => {
   const { deleteThread } = useThreads()
-  const isDeletingThreadRef = useRef(false)
 
   const onDeleteThreadClick = useCallback(async () => {
-    if (isDeletingThreadRef.current) return
     await deleteThread(id)
     toaster({
       title: 'Thread successfully deleted.',
       description: `Thread ${title} has been successfully deleted.`,
       type: 'success',
     })
-    isDeletingThreadRef.current = false
   }, [deleteThread, id, title])
 
   return (

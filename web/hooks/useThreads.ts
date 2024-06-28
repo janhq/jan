@@ -3,8 +3,6 @@ import { useCallback } from 'react'
 import { Assistant } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
-import { toaster } from '@/containers/Toast'
-
 import useCortex from './useCortex'
 
 import {
