@@ -30,11 +30,11 @@ const Slider: React.FC<Props> = ({ models }) => {
       opts={{
         align: 'start',
       }}
-      className="my-12"
+      className="mx-16 my-12"
     >
-      <CarouselContent>
+      <CarouselContent className="pl-0">
         {normalizedModelsList.map((modelArray, index) => (
-          <CarouselItem className="grid grid-cols-2 gap-4 px-16" key={index}>
+          <CarouselItem className="grid grid-cols-2 gap-4 p-0" key={index}>
             {modelArray.map((model) => (
               <SliderItem model={model} key={model.name} />
             ))}

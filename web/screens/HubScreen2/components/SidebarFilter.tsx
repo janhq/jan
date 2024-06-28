@@ -1,11 +1,28 @@
 import { Checkbox } from '@janhq/joi'
+import { useAtomValue } from 'jotai'
+
+import { twMerge } from 'tailwind-merge'
 
 import RangeSlider from './DoubleRange'
 import Toggle from './Toggle'
 
+import {
+  reduceTransparentAtom,
+  showSidbarFilterAtom,
+} from '@/helpers/atoms/Setting.atom'
+
 const SidebarFilter: React.FC = () => {
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const showSidbarFilter = useAtomValue(showSidbarFilterAtom)
+
   return (
-    <div className="h-full w-[200px] px-4 py-1.5">
+    <div
+      className={twMerge(
+        'h-full w-[200px] px-4 py-1.5',
+        !reduceTransparent ? 'border-l' : 'border-none',
+        showSidbarFilter && 'border-none'
+      )}
+    >
       <span className="text-[var(--text-secondary)]">Filter</span>
       <div className="mt-4 flex items-start justify-start gap-1.5">
         <Toggle />

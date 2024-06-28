@@ -18,3 +18,5 @@ export const reduceTransparentAtom = atomWithStorage<boolean>(
   REDUCE_TRANSPARENT,
   false
 )
+
+export const showSidbarFilterAtom = atom<boolean>(false)

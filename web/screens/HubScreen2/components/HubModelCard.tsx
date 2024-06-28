@@ -5,6 +5,8 @@ import { LocalEngines } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { CloudDownload } from 'lucide-react'
+
 import { MainViewState } from '@/constants/screens'
 
 import useCortex from '@/hooks/useCortex'
@@ -142,7 +144,7 @@ const HubModelCard: React.FC<HuggingFaceModelEntry> = ({
   const logoUrl = model?.metadata?.owner_logo ?? ''
 
   return (
-    <div className="flex flex-row justify-between border-b-[1px] border-[hsla(var(--app-border))] pb-3 pt-4 last:border-b-0">
+    <div className="flex flex-row justify-between border-b-[1px] border-[hsla(var(--app-border))] pb-3 pt-4 last:border-b-0 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]">
       <div className="flex flex-col gap-2">
         <span>{name}</span>
         <ModelTitle
@@ -152,9 +154,14 @@ const HubModelCard: React.FC<HuggingFaceModelEntry> = ({
         />
       </div>
       <div className="flex flex-col items-end gap-2">
-        <Button onClick={onActionClick}>{actionLabel}</Button>
-        <span>
-          Download: {downloads} Likes: {likes}
+        <Button
+          className="!bg-[#0000000F] text-[var(--text-primary)]"
+          onClick={onActionClick}
+        >
+          {actionLabel}
+        </Button>
+        <span className="flex items-center gap-1">
+          <CloudDownload size={14} /> {downloads} Likes: {likes}
         </span>
       </div>
     </div>

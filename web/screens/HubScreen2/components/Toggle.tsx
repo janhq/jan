@@ -2,7 +2,7 @@ import { twMerge } from 'tailwind-merge'
 
 const Toggle: React.FC = () => {
   return (
-    <label className="inline-flex cursor-pointer items-center">
+    <label className="inline-flex cursor-pointer items-center rounded-full border">
       <input type="checkbox" value="" className="peer sr-only" />
       <div
         className={twMerge(

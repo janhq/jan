@@ -6,6 +6,7 @@ import { useSetAtom } from 'jotai'
 import { HuggingFaceModelEntry } from '@/hooks/useHuggingFace'
 
 import { setDownloadLocalModelStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
+import { setModelHubSelectedModelHandle } from '@/helpers/atoms/Model.atom'
 import { setRemoteModelSetUpStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 type Props = {
@@ -13,22 +14,26 @@ type Props = {
 }
 
 const SliderItem: React.FC<Props> = ({ model }) => {
-  const setDownloadModelStage = useSetAtom(setDownloadLocalModelStageAtom)
+  const setDownloadLocalModelStage = useSetAtom(setDownloadLocalModelStageAtom)
   const setRemoteModelSetUpStage = useSetAtom(setRemoteModelSetUpStageAtom)
+  const setSelectedModelHandle = useSetAtom(setModelHubSelectedModelHandle)
 
-  const isLocalModel = useMemo(() => {
-    // if (!model.engine) return false
-    // return LocalEngines.filter((engine) => engine === model.engine).length > 0
-    return true
-  }, [])
+  const isLocalModel = useMemo(() => !model.model, [model.model])
 
   const onActionButtonClicked = useCallback(() => {
     if (isLocalModel) {
-      setDownloadModelStage('MODEL_LIST')
+      setSelectedModelHandle(model.name)
+      setDownloadLocalModelStage('MODEL_LIST')
     } else {
       setRemoteModelSetUpStage('SETUP_INTRO')
     }
-  }, [isLocalModel, setDownloadModelStage, setRemoteModelSetUpStage])
+  }, [
+    model,
+    isLocalModel,
+    setSelectedModelHandle,
+    setDownloadLocalModelStage,
+    setRemoteModelSetUpStage,
+  ])
 
   const actionButtonLabel = isLocalModel ? 'Download' : 'Setup'
 

@@ -27,7 +27,7 @@
     "highlight.js": "^11.9.0",
     "jotai": "^2.6.0",
     "katex": "^0.16.10",
-    "lucide-react": "^0.291.0",
+    "lucide-react": "^0.352.0",
     "marked": "^9.1.2",
     "marked-highlight": "^2.0.6",
     "marked-katex-extension": "^5.0.1",
