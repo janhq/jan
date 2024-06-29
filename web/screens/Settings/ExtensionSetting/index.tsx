@@ -1,6 +1,10 @@
 import React, { Fragment, useEffect, useState } from 'react'
 
-import { BaseExtension, SettingComponentProps } from '@janhq/core'
+import {
+  BaseExtension,
+  InstallationState,
+  SettingComponentProps,
+} from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
@@ -13,7 +17,8 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 const ExtensionSetting = () => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
-
+  const [installationState, setInstallationState] =
+    useState<InstallationState>('NotRequired')
   const [baseExtension, setBaseExtension] = useState<BaseExtension | undefined>(
     undefined
   )
@@ -31,6 +36,8 @@ const ExtensionSetting = () => {
         if (setting) allSettings.push(...setting)
       }
       setSettings(allSettings)
+
+      setInstallationState(await baseExtension.installationState())
     }
     getExtensionSettings()
   }, [selectedExtensionName])
@@ -63,7 +70,11 @@ const ExtensionSetting = () => {
           onValueUpdated={onValueChanged}
         />
       )}
-      {baseExtension && <ExtensionItem item={baseExtension} />}
+      {(baseExtension && installationState !== 'NotRequired') ||
+        (baseExtension &&
+          selectedExtensionName.includes('inference-cortex-extension') && (
+            <ExtensionItem item={baseExtension as BaseExtension} />
+          ))}
     </Fragment>
   )
 }

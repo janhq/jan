@@ -16,6 +16,7 @@ const SettingLeftPanel = () => {
   const settingScreens = useAtomValue(janSettingScreenAtom)
   const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
   const { settings } = useSettings()
+
   const [extensionHasSettings, setExtensionHasSettings] = useState<
     { name?: string; setting: string }[]
   >([])
@@ -67,7 +68,7 @@ const SettingLeftPanel = () => {
       setEngineHasSettings(engineMenu)
     }
     getAllSettings()
-  }, [])
+  }, [settings?.run_mode])
 
   return (
     <LeftPanelContainer>
@@ -100,7 +101,7 @@ const SettingLeftPanel = () => {
           .sort((a, b) => String(a.name).localeCompare(String(b.name)))
           .filter((x) => !inActiveEngineProvider.includes(x.provider))
           .filter((x) => {
-            if (settings?.run_mode === 'gpu' && !isMac) {
+            if (settings?.run_mode === 'cpu') {
               return !x.name?.toLowerCase().includes('cortex inference engine')
             } else {
               return x
