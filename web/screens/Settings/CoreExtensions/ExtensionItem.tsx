@@ -177,7 +177,11 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
         </Button>
       )
     default:
-      return <div></div>
+      return (
+        <div className="rounded-md px-3 py-1.5 font-semibold text-[hsla(var(--text-secondary))]">
+          {installState}
+        </div>
+      )
   }
 }
 
