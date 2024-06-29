@@ -89,7 +89,7 @@ export function snackbar(props: Props) {
             </p>
             <XIcon
               size={24}
-              className="absolute right-2 top-4 w-4 -translate-y-1/2 cursor-pointer text-[hsla(var(--toaster-close-icon))]"
+              className="absolute right-2 top-6 w-4 -translate-y-1/2 cursor-pointer text-[hsla(var(--toaster-close-icon))]"
               onClick={() => toast.dismiss(t.id)}
             />
           </div>
