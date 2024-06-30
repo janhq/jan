@@ -6,7 +6,7 @@ import { Tooltip } from '@janhq/joi'
 import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
-import { FolderOpenIcon } from 'lucide-react'
+import { CircleUserRound, FolderOpenIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import markedKatex from 'marked-katex-extension'
@@ -31,14 +31,19 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
-const SimpleTextMessage: React.FC<Message> = (props) => {
+type Props = {
+  isLatestMessage: boolean
+  msg: Message
+}
+
+const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
   let text = ''
-  const isUser = props.role === 'user'
+  const isUser = msg.role === 'user'
   const editMessage = useAtomValue(editMessageAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
-  if (props.content && props.content.length > 0) {
-    const message = props.content[0]
+  if (msg.content && msg.content.length > 0) {
+    const message = msg.content[0]
     if (message && message.type === 'text') {
       const textBlockContent = message as TextContentBlock
       text = textBlockContent.text.value
@@ -118,14 +123,14 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
   }, [])
 
   useEffect(() => {
-    if (props.status !== 'in_progress') {
+    if (msg.status !== 'in_progress') {
       return
     }
     const currentTimestamp = new Date().getTime() // Get current time in milliseconds
     if (!lastTimestamp) {
       // If this is the first update, just set the lastTimestamp and return
-      if (props.content && props.content.length > 0) {
-        const message = props.content[0]
+      if (msg.content && msg.content.length > 0) {
+        const message = msg.content[0]
         if (message && message.type === 'text') {
           const textContentBlock = message as TextContentBlock
           if (textContentBlock.text.value !== '') {
@@ -143,7 +148,7 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
     setTokenSpeed(averageTokenSpeed)
     setTokenCount(totalTokenCount)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.content])
+  }, [msg.content])
 
   return (
     <div className="group relative mx-auto p-4">
@@ -153,22 +158,10 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
           !isUser && 'mt-2'
         )}
       >
-        {!isUser && <LogoMark width={28} />}
-        {isUser && (
-          <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[hsla(var(--app-border))] last:border-none">
-            <svg
-              width="12"
-              height="16"
-              viewBox="0 0 12 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M6 0.497864C4.34315 0.497864 3 1.84101 3 3.49786C3 5.15472 4.34315 6.49786 6 6.49786C7.65685 6.49786 9 5.15472 9 3.49786C9 1.84101 7.65685 0.497864 6 0.497864ZM9.75 7.99786L2.24997 7.99787C1.00734 7.99787 0 9.00527 0 10.2479C0 11.922 0.688456 13.2633 1.81822 14.1701C2.93013 15.0625 4.42039 15.4979 6 15.4979C7.57961 15.4979 9.06987 15.0625 10.1818 14.1701C11.3115 13.2633 12 11.922 12 10.2479C12 9.00522 10.9926 7.99786 9.75 7.99786Z"
-                fill="#9CA3AF"
-              />
-            </svg>
-          </div>
+        {isUser ? (
+          <CircleUserRound size={32} color="#9CA3AF" />
+        ) : (
+          <LogoMark width={28} />
         )}
 
         <div
@@ -177,23 +170,23 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
             isUser && 'text-gray-500'
           )}
         >
-          {isUser ? props.role : activeThread?.assistants[0].name ?? props.role}
+          {isUser ? msg.role : activeThread?.assistants[0].name ?? msg.role}
         </div>
         <p className="text-xs font-medium text-gray-400">
-          {displayDate(props.created_at)}
+          {displayDate(msg.created_at)}
         </p>
         <div
           className={twMerge(
             'absolute right-0 cursor-pointer transition-all',
-            messages[messages.length - 1]?.id === props.id && !isUser
+            messages[messages.length - 1]?.id === msg.id && !isUser
               ? 'absolute -bottom-8 right-4'
               : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
-          <MessageToolbar message={props} />
+          <MessageToolbar message={msg} isLastMessage={isLatestMessage} />
         </div>
-        {messages[messages.length - 1]?.id === props.id &&
-          (props.status === 'in_progress' || tokenSpeed > 0) && (
+        {messages[messages.length - 1]?.id === msg.id &&
+          (msg.status === 'in_progress' || tokenSpeed > 0) && (
             <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
               Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
             </p>
@@ -202,14 +195,14 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
 
       <div className={twMerge('w-full')}>
         <>
-          {props.content[0]?.type === 'image_file' && (
+          {msg.content[0]?.type === 'image_file' && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
               <div className="left-0 top-0 z-20 h-full w-full group-hover/image:inline-block">
                 {/* <RelativeImage */}
-                {/*   src={props.content[0]?.text.annotations[0]} */}
-                {/*   id={props.id} */}
+                {/*   src={msg.content[0]?.text.annotations[0]} */}
+                {/*   id={msg.id} */}
                 {/*   onClick={() => */}
-                {/*     onViewFile(`${props.content[0]?.text.annotations[0]}`) */}
+                {/*     onViewFile(`${msg.content[0]?.text.annotations[0]}`) */}
                 {/*   } */}
                 {/* /> */}
               </div>
@@ -227,12 +220,12 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
             </div>
           )}
 
-          {/* {props.content[0]?.type === ContentType.Pdf && (
+          {/* {msg.content[0]?.type === ContentType.Pdf && (
             <div className="group/file bg-secondary relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg p-4">
               <div
                 className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block"
                 onClick={() =>
-                  onViewFile(`${props.id}.${props.content[0]?.type}`)
+                  onViewFile(`${msg.id}.${msg.content[0]?.type}`)
                 }
               />
               <Tooltip
@@ -246,13 +239,13 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
                 }
                 content={<span>{openFileTitle()}</span>}
               />
-              <Icon type={props.content[0].type} />
+              <Icon type={msg.content[0].type} />
               <div className="w-full">
                 <h6 className="line-clamp-1 w-4/5 font-medium">
-                  {props.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
+                  {msg.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
                 </h6>
                 <p className="text-[hsla(var(--text-secondary)]">
-                  {toGibibytes(Number(props.content[0].text.size))}
+                  {toGibibytes(Number(msg.content[0].text.size))}
                 </p>
               </div>
             </div>
@@ -260,9 +253,9 @@ const SimpleTextMessage: React.FC<Message> = (props) => {
 
           {isUser ? (
             <>
-              {editMessage === props.id ? (
+              {editMessage === msg.id ? (
                 <div>
-                  <EditChatInput message={props} />
+                  <EditChatInput message={msg} />
                 </div>
               ) : (
                 <div

@@ -97,6 +97,216 @@ const useSendMessage = () => {
     ]
   )
 
+  const resendMessage = useCallback(async () => {
+    if (!activeThread) {
+      console.error('No active thread')
+      return
+    }
+    if (!selectedModel) {
+      console.error('No selected model')
+      return
+    }
+    if (selectedModel.id !== activeThread.assistants[0].model) {
+      alert(
+        `Selected model ${selectedModel.id} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
+      )
+      return
+    }
+    const modelId = activeThread.assistants[0].model
+
+    try {
+      // start model if not yet started
+      // TODO: Handle case model is starting up
+      if (LocalEngines.find((e) => e === selectedModel.engine) != null) {
+        // start model if local and not started
+        if (!activeModels.map((model) => model.model).includes(modelId)) {
+          await startModel(modelId)
+        }
+      }
+
+      setIsGeneratingResponse(true)
+
+      // building messages
+      const systemMessage: ChatCompletionMessageParam = {
+        role: 'system',
+        content: activeThread.assistants[0].instructions ?? '',
+      }
+
+      const messages: ChatCompletionMessageParam[] = currentMessages
+        .map((msg) => {
+          switch (msg.role) {
+            case 'user':
+            case 'assistant':
+              return {
+                role: msg.role,
+                content: (msg.content[0] as TextContentBlock).text.value,
+              }
+
+            // we will need to support other roles in the future
+            default:
+              break
+          }
+        })
+        .filter((msg) => msg != null) as ChatCompletionMessageParam[]
+      messages.unshift(systemMessage)
+
+      let assistantResponseMessage = ''
+      if (selectedModel.stream === true) {
+        const stream = await chatCompletionStreaming({
+          messages,
+          model: selectedModel.id,
+          stream: true,
+          frequency_penalty: selectedModel.frequency_penalty ?? 0,
+          max_tokens: selectedModel.max_tokens,
+          presence_penalty: selectedModel.presence_penalty ?? 0,
+          stop: selectedModel.stop,
+          temperature: selectedModel.temperature ?? 1,
+          top_p: selectedModel.top_p ?? 1,
+        })
+
+        abortControllerRef.current = stream.controller
+
+        const assistantMessage = await createMessage(activeThread.id, {
+          role: 'assistant',
+          content: '',
+        })
+
+        const responseMessage: Message = {
+          id: assistantMessage.id,
+          thread_id: activeThread.id,
+          assistant_id: activeThread.id,
+          role: 'assistant',
+          content: [],
+          status: 'in_progress',
+          created_at: assistantMessage.created_at,
+          metadata: undefined,
+          attachments: null,
+          completed_at: Date.now(),
+          incomplete_at: null,
+          incomplete_details: null,
+          object: 'thread.message',
+          run_id: null,
+        }
+
+        addNewMessage(responseMessage)
+
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || ''
+          assistantResponseMessage += content
+          const messageContent: MessageContent = {
+            type: 'text',
+            text: {
+              value: assistantResponseMessage,
+              annotations: [],
+            },
+          }
+          responseMessage.content = [messageContent]
+          updateMessageState(
+            responseMessage.id,
+            responseMessage.thread_id,
+            responseMessage.content,
+            responseMessage.status
+          )
+        }
+
+        abortControllerRef.current = undefined
+
+        responseMessage.status = 'completed'
+        updateMessageState(
+          responseMessage.id,
+          responseMessage.thread_id,
+          responseMessage.content,
+          responseMessage.status
+        )
+        updateMessage(activeThread.id, responseMessage.id, {
+          content: responseMessage.content,
+        })
+      } else {
+        try {
+          const abortController = new AbortController()
+          const response = await chatCompletionNonStreaming(
+            {
+              messages,
+              model: selectedModel.id,
+              stream: false,
+              frequency_penalty: selectedModel.frequency_penalty ?? 0,
+              max_tokens: selectedModel.max_tokens,
+              presence_penalty: selectedModel.presence_penalty ?? 0,
+              stop: selectedModel.stop,
+              temperature: selectedModel.temperature ?? 1,
+              top_p: selectedModel.top_p ?? 1,
+            },
+            {
+              signal: abortController.signal,
+            }
+          )
+
+          assistantResponseMessage = response.choices[0].message.content ?? ''
+          const assistantMessage = await createMessage(activeThread.id, {
+            role: 'assistant',
+            content: assistantResponseMessage,
+          })
+
+          const responseMessage: Message = {
+            id: assistantMessage.id,
+            thread_id: activeThread.id,
+            assistant_id: activeThread.id,
+            role: 'assistant',
+            content: [
+              {
+                type: 'text',
+                text: {
+                  value: assistantResponseMessage,
+                  annotations: [],
+                },
+              },
+            ],
+            status: 'completed',
+            created_at: assistantMessage.created_at,
+            metadata: undefined,
+            attachments: null,
+            completed_at: Date.now(),
+            incomplete_at: null,
+            incomplete_details: null,
+            object: 'thread.message',
+            run_id: null,
+          }
+          updateMessage(activeThread.id, responseMessage.id, {
+            content: responseMessage.content,
+          })
+
+          addNewMessage(responseMessage)
+        } catch (err) {
+          console.error(err)
+          if (err instanceof Error) {
+            toaster({
+              title: 'Failed to generate response',
+              description: err.message,
+              type: 'error',
+            })
+          }
+        }
+      }
+
+      setIsGeneratingResponse(false)
+    } catch (err) {
+      console.error(err)
+    }
+  }, [
+    activeThread,
+    activeModels,
+    currentMessages,
+    selectedModel,
+    startModel,
+    updateMessage,
+    updateMessageState,
+    addNewMessage,
+    createMessage,
+    chatCompletionNonStreaming,
+    chatCompletionStreaming,
+    setIsGeneratingResponse,
+  ])
+
   const sendMessage = useCallback(
     async (message: string) => {
       if (!activeThread) {
@@ -109,7 +319,7 @@ const useSendMessage = () => {
       }
       if (selectedModel.id !== activeThread.assistants[0].model) {
         alert(
-          "Selected model doesn't match active thread assistant model. This is a bug"
+          `Selected model ${selectedModel.id} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
         )
         return
       }
@@ -150,7 +360,7 @@ const useSendMessage = () => {
               case 'user':
               case 'assistant':
                 return {
-                  role: 'user',
+                  role: msg.role,
                   content: (msg.content[0] as TextContentBlock).text.value,
                 }
 
@@ -172,6 +382,12 @@ const useSendMessage = () => {
             messages,
             model: selectedModel.id,
             stream: true,
+            frequency_penalty: selectedModel.frequency_penalty ?? 0,
+            max_tokens: selectedModel.max_tokens,
+            presence_penalty: selectedModel.presence_penalty ?? 0,
+            stop: selectedModel.stop,
+            temperature: selectedModel.temperature ?? 1,
+            top_p: selectedModel.top_p ?? 1,
           })
 
           abortControllerRef.current = stream.controller
@@ -239,6 +455,12 @@ const useSendMessage = () => {
                 messages,
                 model: selectedModel.id,
                 stream: false,
+                frequency_penalty: selectedModel.frequency_penalty ?? 0,
+                max_tokens: selectedModel.max_tokens,
+                presence_penalty: selectedModel.presence_penalty ?? 0,
+                stop: selectedModel.stop,
+                temperature: selectedModel.temperature ?? 1,
+                top_p: selectedModel.top_p ?? 1,
               },
               {
                 signal: abortController.signal,
@@ -326,7 +548,7 @@ const useSendMessage = () => {
     ]
   )
 
-  return { sendMessage, stopInference }
+  return { resendMessage, sendMessage, stopInference }
 }
 
 export default useSendMessage

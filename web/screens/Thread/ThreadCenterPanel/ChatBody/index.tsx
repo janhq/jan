@@ -15,9 +15,16 @@ const ChatBody: React.FC = () => {
 
   return (
     <ListContainer>
-      {messages.map((message) => (
-        <SimpleTextMessage key={message.id} {...message} />
-      ))}
+      {messages.map((message, index) => {
+        const isLatestMessage = index === messages.length - 1
+        return (
+          <SimpleTextMessage
+            key={message.id}
+            msg={message}
+            isLatestMessage={isLatestMessage}
+          />
+        )
+      })}
     </ListContainer>
   )
 }
