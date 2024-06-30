@@ -38,6 +38,7 @@ import ImageUploadPreview from '../ImageUploadPreview'
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
@@ -52,6 +53,7 @@ const ChatInput = () => {
   const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const [activeSetting, setActiveSetting] = useState(false)
+  const spellCheck = useAtomValue(spellCheckAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const { sendChatMessage } = useSendChatMessage()
@@ -162,6 +164,7 @@ const ChatInput = () => {
             experimentalFeature && 'pl-10',
             activeSetting && 'pb-14 pr-16'
           )}
+          spellCheck={spellCheck}
           data-testid="txt-input-chat"
           style={{ height: activeSetting ? '100px' : '40px' }}
           ref={textareaRef}
