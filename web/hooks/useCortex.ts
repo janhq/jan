@@ -163,9 +163,8 @@ const useCortex = () => {
   )
 
   const updateMessage = useCallback(
-    async (threadId: string, messageId: string, data: object) => {
-      return cortex.beta.threads.messages.update(threadId, messageId, data)
-    },
+    async (threadId: string, messageId: string, data: object) =>
+      cortex.beta.threads.messages.update(threadId, messageId, data),
     [cortex.beta.threads]
   )
 

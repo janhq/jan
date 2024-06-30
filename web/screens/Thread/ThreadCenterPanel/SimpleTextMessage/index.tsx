@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { Fragment, useEffect, useRef, useState } from 'react'
 
 import { Message, TextContentBlock } from '@janhq/core'
 
@@ -252,11 +252,9 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
           )} */}
 
           {isUser ? (
-            <>
+            <Fragment>
               {editMessage === msg.id ? (
-                <div>
-                  <EditChatInput message={msg} />
-                </div>
+                <EditChatInput message={msg} />
               ) : (
                 <div
                   className={twMerge(
@@ -267,7 +265,7 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
                   {text}
                 </div>
               )}
-            </>
+            </Fragment>
           ) : (
             <div
               className={twMerge(

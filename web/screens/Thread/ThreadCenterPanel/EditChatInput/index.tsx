@@ -1,72 +1,50 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { Message, TextContentBlock } from '@janhq/core'
-import { TextArea, Button, Modal, ModalClose } from '@janhq/joi'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { TextArea, Button } from '@janhq/joi'
+import { useAtom, useSetAtom } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
 import { editPromptAtom } from '@/containers/Providers/Jotai'
 
-import useSendMessage from '@/hooks/useSendMessage'
+import useCortex from '@/hooks/useCortex'
 
 import {
   editMessageAtom,
-  getCurrentChatMessagesAtom,
+  updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import {
-  activeThreadAtom,
-  getActiveThreadIdAtom,
-  waitingToSendMessage,
-} from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   message: Message
 }
 
 const EditChatInput: React.FC<Props> = ({ message }) => {
-  const activeThread = useAtomValue(activeThreadAtom)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
-
   const [editPrompt, setEditPrompt] = useAtom(editPromptAtom)
-  const { sendMessage } = useSendMessage()
-  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
-
-  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const textAreaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const [showDialog, setshowDialog] = useState(false)
+  const updateMessageState = useSetAtom(updateMessageAtom)
+  const { updateMessage: updateCortexMessage } = useCortex()
 
-  const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setEditPrompt(e.target.value)
-  }
-
-  useEffect(() => {
-    if (isWaitingToSend && activeThreadId) {
-      setIsWaitingToSend(false)
-      sendMessage(editPrompt)
-    }
-  }, [
-    activeThreadId,
-    isWaitingToSend,
-    editPrompt,
-    setIsWaitingToSend,
-    sendMessage,
-  ])
+  const onPromptChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setEditPrompt(e.target.value)
+    },
+    [setEditPrompt]
+  )
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.focus()
+    if (textAreaRef.current) {
+      textAreaRef.current.focus()
     }
-  }, [activeThreadId])
+  }, [message.id])
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '40px'
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
-      textareaRef.current.style.overflow =
-        textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
-    }
+    if (!textAreaRef.current) return
+    textAreaRef.current.style.height = '40px'
+    textAreaRef.current.style.height = textAreaRef.current.scrollHeight + 'px'
+    textAreaRef.current.style.overflow =
+      textAreaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
   }, [editPrompt])
 
   useEffect(() => {
@@ -76,37 +54,44 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
       const textMessageBlock = messageContent as TextContentBlock
       setEditPrompt(textMessageBlock.text.value)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [setEditPrompt, message])
 
-  const sendEditMessage = async () => {
-    setEditMessage('')
-    const messageIdx = messages.findIndex((msg) => msg.id === message.id)
-    const newMessages = messages.slice(0, messageIdx)
-    if (activeThread) {
-      // setMessages(activeThread.id, newMessages)
-      // await extensionManager
-      //   .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      //   ?.writeMessages(
-      //     activeThread.id,
-      //     // Remove all of the messages below this
-      //     newMessages
-      //   )
-      //   .then(() => {
-      //     sendChatMessage(editPrompt)
-      //   })
+  const updateMessage = useCallback(async () => {
+    const updateMessage: TextContentBlock = {
+      text: {
+        annotations: [],
+        value: editPrompt,
+      },
+      type: 'text',
     }
-  }
+    updateCortexMessage(message.thread_id, message.id, {
+      content: [updateMessage],
+    }).then(() => {
+      updateMessageState(
+        message.id,
+        message.thread_id,
+        [updateMessage],
+        message.status
+      )
+      setEditMessage('')
+    })
+  }, [
+    updateMessageState,
+    updateCortexMessage,
+    setEditMessage,
+    message,
+    editPrompt,
+  ])
 
-  const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      if (messages[messages.length - 1]?.status !== 'in_progress') {
-        sendEditMessage()
+  const onKeyDown = useCallback(
+    async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        updateMessage()
       }
-      // else stopInference()
-    }
-  }
+    },
+    [updateMessage]
+  )
 
   return (
     <div className="mx-auto flex w-full flex-shrink-0 flex-col items-start justify-center space-y-4 pb-0 pt-1">
@@ -114,10 +99,9 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
         <TextArea
           className={twMerge('max-h-[400px] resize-none pr-20')}
           style={{ height: '40px' }}
-          ref={textareaRef}
+          ref={textAreaRef}
           onKeyDown={onKeyDown}
           placeholder="Enter your message..."
-          disabled={!activeThread}
           value={editPrompt}
           onChange={onPromptChange}
         />
@@ -125,8 +109,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
 
       <div className="flex items-center space-x-2">
         <Button
-          disabled={!activeThread || editPrompt.trim().length === 0}
-          onClick={sendEditMessage}
+          disabled={editPrompt.trim().length === 0}
+          onClick={updateMessage}
         >
           Submit
         </Button>
@@ -138,27 +122,6 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           Cancel
         </Button>
       </div>
-
-      <Modal
-        open={showDialog}
-        onOpenChange={() => setshowDialog(false)}
-        title="Edit Message"
-        content={
-          <div>
-            <p className="text-[hsla(var(--text-secondary)]">
-              Do you want to discard the change
-            </p>
-            <div className="mt-4 flex justify-end gap-x-2">
-              <ModalClose asChild onClick={() => setshowDialog(false)}>
-                <Button theme="ghost">Cancel</Button>
-              </ModalClose>
-              <ModalClose asChild onClick={() => setEditMessage('')}>
-                <Button autoFocus>Yes</Button>
-              </ModalClose>
-            </div>
-          </div>
-        }
-      />
     </div>
   )
 }

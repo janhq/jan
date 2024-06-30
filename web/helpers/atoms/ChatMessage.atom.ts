@@ -9,7 +9,7 @@ import { getActiveThreadIdAtom } from './Thread.atom'
 export const chatMessages = atom<Record<string, Message[]>>({})
 
 /**
- * Return the chat messages for the current active conversation
+ * Return the chat messages for the current active thread
  */
 export const getCurrentChatMessagesAtom = atom<Message[]>((get) => {
   const activeThreadId = get(getActiveThreadIdAtom)
@@ -79,21 +79,20 @@ export const updateMessageAtom = atom(
     get,
     set,
     id: string,
-    conversationId: string,
+    threadId: string,
     text: MessageContent[],
     status: 'in_progress' | 'completed' | 'incomplete'
   ) => {
-    const messages = get(chatMessages)[conversationId] ?? []
+    const messages = get(chatMessages)[threadId] ?? []
     const message = messages.find((e) => e.id === id)
-    if (message) {
-      message.content = text
-      message.status = status
-      const updatedMessages = [...messages]
-      const newData: Record<string, Message[]> = {
-        ...get(chatMessages),
-      }
-      newData[conversationId] = updatedMessages
-      set(chatMessages, newData)
+    if (!message) return
+    message.content = text
+    message.status = status
+    const updatedMessages = [...messages]
+    const newData: Record<string, Message[]> = {
+      ...get(chatMessages),
     }
+    newData[threadId] = updatedMessages
+    set(chatMessages, newData)
   }
 )
