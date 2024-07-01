@@ -5,6 +5,8 @@ import { Button, Progress, Select } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Download } from 'lucide-react'
 
+import { MainViewState } from '@/constants/screens'
+
 import useCortex from '@/hooks/useCortex'
 
 import {
@@ -17,7 +19,14 @@ import useHuggingFace, {
   EngineType,
 } from '@/hooks/useHuggingFace'
 
+import useThreads from '@/hooks/useThreads'
+
 import { formatDownloadPercentage } from '@/utils/converter'
+
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+import { setDownloadLocalModelStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   modelHandle: string
@@ -146,12 +155,25 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
 }) => {
   const { downloadModel, abortDownload } = useCortex()
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
+  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const { createThread } = useThreads()
+  const setDownloadLocalModelStage = useSetAtom(setDownloadLocalModelStageAtom)
 
-  const modelId = `${modelHandle.split('/')[1]}:${branch}`
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const allDownloadState = useAtomValue(downloadStateListAtom)
+  const assistants = useAtomValue(assistantsAtom)
+
+  const modelId = useMemo(
+    () => `${modelHandle.split('/')[1]}:${branch}`,
+    [modelHandle, branch]
+  )
   const downloadState = allDownloadState.find((s) => s.id == modelId)
 
-  const isDownloaded = false // TODO: namh handle this
+  const isDownloaded = useMemo(
+    () => downloadedModels.find((m) => m.id === modelId),
+    [downloadedModels, modelId]
+  )
+
   let percentage = 0
 
   if (downloadState) {
@@ -173,7 +195,20 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     await downloadModel(modelId)
   }, [downloadModel, addDownloadState, modelId])
 
-  const onUseModelClick = useCallback(() => {}, [])
+  const onUseModelClick = useCallback(async () => {
+    await createThread(modelId, {
+      ...assistants[0],
+      model: modelId,
+    })
+    setDownloadLocalModelStage('NONE')
+    setMainViewState(MainViewState.Thread)
+  }, [
+    setDownloadLocalModelStage,
+    setMainViewState,
+    createThread,
+    modelId,
+    assistants,
+  ])
 
   const onAbortDownloadClick = useCallback(() => {
     abortDownload(modelId)

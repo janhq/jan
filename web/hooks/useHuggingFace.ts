@@ -38,7 +38,7 @@ const useHuggingFace = () => {
     const modelEntries: HuggingFaceModelEntry[] = []
 
     for await (const model of listModels({
-      search: { query: 'cortexhub' },
+      search: { query: 'cortexso' },
     })) {
       modelEntries.push({
         ...model,

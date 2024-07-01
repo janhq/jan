@@ -9,6 +9,9 @@ import {
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { removeDownloadSuccessItemAtom } from '@/hooks/useDownloadState'
+import useModels from '@/hooks/useModels'
+
 import { toaster } from '../Toast'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
@@ -18,45 +21,61 @@ function ModelEventListener() {
   const setActiveModels = useSetAtom(activeModelsAtom)
   const host = useAtomValue(hostAtom)
   const abortController = useRef<AbortController | null>(null)
+  const removeDownloadSuccessItem = useSetAtom(removeDownloadSuccessItemAtom)
 
-  const handleModelEvent = useCallback((modelEvent: ModelEvent) => {
-    switch (modelEvent.event) {
-      case 'started':
-        toaster({
-          title: 'Success!',
-          description: `Model ${modelEvent.model} has been started.`,
-          type: 'success',
-        })
-        break
+  const { getModels } = useModels()
 
-      case 'starting-failed':
-        toaster({
-          title: 'Failed!',
-          description: `Model ${modelEvent.model} failed to start.`,
-          type: 'error',
-        })
-        break
+  const handleModelEvent = useCallback(
+    (modelEvent: ModelEvent) => {
+      console.log('Model event:', modelEvent.event)
+      switch (modelEvent.event) {
+        case 'started':
+          toaster({
+            title: 'Success!',
+            description: `Model ${modelEvent.model} has been started.`,
+            type: 'success',
+          })
+          break
 
-      case 'stopped':
-        toaster({
-          title: 'Success!',
-          description: `Model ${modelEvent.model} has been stopped.`,
-          type: 'success',
-        })
-        break
+        case 'starting-failed':
+          toaster({
+            title: 'Failed!',
+            description: `Model ${modelEvent.model} failed to start.`,
+            type: 'error',
+          })
+          break
 
-      case 'stopping-failed':
-        toaster({
-          title: 'Failed!',
-          description: `Model ${modelEvent.model} failed to stop.`,
-          type: 'error',
-        })
-        break
+        case 'stopped':
+          toaster({
+            title: 'Success!',
+            description: `Model ${modelEvent.model} has been stopped.`,
+            type: 'success',
+          })
+          break
 
-      default:
-        break
-    }
-  }, [])
+        case 'model-downloaded':
+          removeDownloadSuccessItem(modelEvent.model)
+          getModels()
+          break
+
+        case 'model-deleted':
+          getModels()
+          break
+
+        case 'stopping-failed':
+          toaster({
+            title: 'Failed!',
+            description: `Model ${modelEvent.model} failed to stop.`,
+            type: 'error',
+          })
+          break
+
+        default:
+          break
+      }
+    },
+    [getModels, removeDownloadSuccessItem]
+  )
 
   const subscribeModelEvent = useCallback(async () => {
     if (abortController.current) return

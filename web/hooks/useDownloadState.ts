@@ -29,3 +29,18 @@ export const addDownloadModelStateAtom = atom(
     set(downloadStateListAtom, (old) => [...old, state])
   }
 )
+
+/**
+ * Used to remove a download item from a list of downloading.
+ *
+ * @param downloadId The download id to be removed. If item is model then
+ * this is the modelId.
+ */
+export const removeDownloadSuccessItemAtom = atom(
+  null,
+  (_get, set, downloadId: string) => {
+    set(downloadStateListAtom, (old) =>
+      old.filter((state) => state.id !== downloadId)
+    )
+  }
+)
