@@ -93,10 +93,9 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
         },
       }
     )
+    markedParser.use(markedKatex({ throwOnError: false }))
     return markedParser
   }, [clipboard.copied])
-
-  marked.use(markedKatex({ throwOnError: false }))
 
   const { onViewFileContainer } = usePath()
   const parsedText = useMemo(() => marked.parse(text), [marked, text])
