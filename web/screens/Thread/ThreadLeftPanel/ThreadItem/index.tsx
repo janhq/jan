@@ -61,14 +61,12 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
       )}
       <div
         className={twMerge(
-          'absolute bottom-0 right-0 top-0 flex w-[42px] items-center justify-end rounded-r-md',
-          `${activeThreadId === thread.id ? 'bg-gradient-to-l from-[#dadbde] via-[#dadbde] via-65%' : 'from-[#dadbde] via-[#dadbde] via-65% group-hover:bg-gradient-to-l'}`
+          'absolute bottom-0 right-0 top-0 flex w-[42px] items-center justify-end rounded-r-md'
         )}
       >
         <div
           className={twMerge(
-            'group/icon  mr-1 flex h-[20px] w-[20px] items-center justify-center rounded-md bg-[#DDCAC6] group-hover:visible',
-            `${activeThreadId === thread.id ? 'visible' : 'invisible'}`
+            'group/icon invisible mr-1 flex h-[20px] w-[20px] items-center justify-center rounded-md bg-[#0000000F] group-hover:visible'
           )}
         >
           <MoreHorizontalIcon size={18} />

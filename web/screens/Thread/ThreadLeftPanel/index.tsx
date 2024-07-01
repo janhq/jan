@@ -6,6 +6,8 @@ import { AnimatePresence } from 'framer-motion'
 import { useAtomValue } from 'jotai'
 import { PenSquareIcon } from 'lucide-react'
 
+import { twMerge } from 'tailwind-merge'
+
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 import { toaster } from '@/containers/Toast'
 
@@ -19,11 +21,12 @@ import {
   downloadedModelsAtom,
   getSelectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import { getActiveThreadIdAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const ThreadLeftPanel: React.FC = () => {
   const { createThread, setActiveThread } = useThreads()
-
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
@@ -71,7 +74,7 @@ const ThreadLeftPanel: React.FC = () => {
 
   return (
     <LeftPanelContainer>
-      <div className="pl-1.5 pt-3">
+      <div className={twMerge('pl-1.5 pt-3', reduceTransparent && 'pr-1.5')}>
         <Button
           className="mb-2"
           data-testid="btn-create-thread"

@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useRef, useState } from 'react'
+import React, { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Message, TextContentBlock } from '@janhq/core'
 
@@ -52,29 +52,30 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
 
   const clipboard = useClipboard({ timeout: 1000 })
 
-  const marked: Marked = new Marked(
-    markedHighlight({
-      langPrefix: 'hljs',
-      highlight(code, lang) {
-        if (lang === undefined || lang === '') {
-          return hljs.highlightAuto(code).value
-        }
-        try {
-          return hljs.highlight(code, { language: lang }).value
-        } catch (err) {
-          return hljs.highlight(code, { language: 'javascript' }).value
-        }
-      },
-    }),
-    {
-      renderer: {
-        link: (href, title, text) => {
-          return Renderer.prototype.link
-            ?.apply(this, [href, title, text])
-            .replace('<a', "<a target='_blank'")
+  const marked = useMemo(() => {
+    const markedParser = new Marked(
+      markedHighlight({
+        langPrefix: 'hljs',
+        highlight(code, lang) {
+          if (lang === undefined || lang === '') {
+            return hljs.highlightAuto(code).value
+          }
+          try {
+            return hljs.highlight(code, { language: lang }).value
+          } catch (err) {
+            return hljs.highlight(code, { language: 'javascript' }).value
+          }
         },
-        code(code, lang) {
-          return `
+      }),
+      {
+        renderer: {
+          link: (href, title, text) => {
+            return Renderer.prototype.link
+              ?.apply(this, [href, title, text])
+              .replace('<a', "<a target='_blank'")
+          },
+          code(code, lang) {
+            return `
           <div class="relative code-block group/item overflow-auto">
             <button class='text-xs copy-action hidden group-hover/item:block p-2 rounded-lg absolute top-6 right-2'>
               ${
@@ -88,15 +89,17 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
             </pre>
           </div>
           `
+          },
         },
-      },
-    }
-  )
+      }
+    )
+    return markedParser
+  }, [clipboard.copied])
 
   marked.use(markedKatex({ throwOnError: false }))
 
   const { onViewFileContainer } = usePath()
-  const parsedText = marked.parse(text)
+  const parsedText = useMemo(() => marked.parse(text), [marked, text])
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
