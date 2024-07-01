@@ -188,9 +188,11 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 ### Pre-requisites
 
-- node >= 20.0.0
-- yarn >= 1.22.0
-- make >= 3.81
+- [Devbox Shell](https://www.jetify.com/devbox/docs/installing_devbox/)
+- Installs the following in a virtualized environment:
+  - node >= 20.0.0
+  - yarn >= 1.22.0
+  - make >= 3.81
 
 ### Instructions
 
@@ -202,7 +204,13 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
    git checkout -b DESIRED_BRANCH
    ```
 
-2. **Run development and use Jan Desktop**
+2. **Enter the local shell and install dependencies:**
+
+   ```bash
+   devbox shell
+   ```
+
+3. **Run development and use Jan Desktop**
 
    ```bash
    make dev
@@ -210,7 +218,7 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 
 This will start the development server and open the desktop app.
 
-3. (Optional) **Run the API server without frontend**
+4. (Optional) **Run the API server without frontend**
 
    ```bash
    yarn dev:server
