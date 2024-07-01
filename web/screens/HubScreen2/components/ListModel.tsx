@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 
-import { DownloadItem } from '@janhq/core'
 import { Button, Progress, Select } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Download } from 'lucide-react'
@@ -22,6 +21,8 @@ import useHuggingFace, {
 import useThreads from '@/hooks/useThreads'
 
 import { formatDownloadPercentage } from '@/utils/converter'
+
+import { downloadProgress } from '@/utils/download'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -174,22 +175,6 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     [downloadedModels, modelId]
   )
 
-  let percentage = 0
-
-  if (downloadState) {
-    const transferred = downloadState.children.reduce(
-      (sum: number, downloadItem: DownloadItem) =>
-        sum + downloadItem.size.transferred,
-      0
-    )
-    const total = downloadState.children.reduce(
-      (sum: number, downloadItem: DownloadItem) =>
-        sum + downloadItem.size.total,
-      0
-    )
-    percentage = total === 0 ? 0 : transferred / total
-  }
-
   const onDownloadClick = useCallback(async () => {
     addDownloadState(modelId)
     await downloadModel(modelId)
@@ -233,13 +218,13 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
             <Progress
               className="inline-block h-2 w-[80px]"
               value={
-                formatDownloadPercentage(percentage, {
+                formatDownloadPercentage(downloadProgress(downloadState), {
                   hidePercentage: true,
                 }) as number
               }
             />
             <span className="tabular-nums">
-              {formatDownloadPercentage(percentage)}
+              {formatDownloadPercentage(downloadProgress(downloadState))}
             </span>
           </div>
         </Button>
