@@ -136,6 +136,7 @@ export type ModelRuntimeParams = {
   stream?: boolean
   max_tokens?: number
   stop?: string[]
+  bad?: string[]
   frequency_penalty?: number
   presence_penalty?: number
   engine?: string
