@@ -70,9 +70,11 @@ const ExtensionSetting = () => {
           onValueUpdated={onValueChanged}
         />
       )}
-      {baseExtension && installationState !== 'NotRequired' && (
-        <ExtensionItem item={baseExtension} />
-      )}
+      {(baseExtension && installationState !== 'NotRequired') ||
+        (baseExtension &&
+          selectedExtensionName.includes('inference-cortex-extension') && (
+            <ExtensionItem item={baseExtension as BaseExtension} />
+          ))}
     </Fragment>
   )
 }

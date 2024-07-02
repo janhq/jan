@@ -4,6 +4,8 @@ import { useAtomValue } from 'jotai'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 
+import { useSettings } from '@/hooks/useSettings'
+
 import SettingItem from './SettingItem'
 
 import { extensionManager } from '@/extension'
@@ -13,6 +15,7 @@ import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 const SettingLeftPanel = () => {
   const settingScreens = useAtomValue(janSettingScreenAtom)
   const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
+  const { settings } = useSettings()
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<
     { name?: string; setting: string }[]
@@ -33,15 +36,15 @@ const SettingLeftPanel = () => {
       const extensions = extensionManager.getAll()
 
       for (const extension of extensions) {
-        const settings = await extension.getSettings()
+        const settingsExtension = await extension.getSettings()
         if (
           typeof extension.getSettings === 'function' &&
           'provider' in extension &&
           typeof extension.provider === 'string'
         ) {
           if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
+            (settingsExtension && settingsExtension.length > 0) ||
+            (await extension.installationState())
           ) {
             engineMenu.push({
               name: extension.productName,
@@ -53,7 +56,7 @@ const SettingLeftPanel = () => {
                   : '',
             })
           }
-        } else if (settings && settings.length > 0) {
+        } else if (settingsExtension && settingsExtension.length > 0) {
           extensionsMenu.push({
             name: extension.productName,
             setting: extension.name,
@@ -65,7 +68,7 @@ const SettingLeftPanel = () => {
       setEngineHasSettings(engineMenu)
     }
     getAllSettings()
-  }, [])
+  }, [settings?.run_mode])
 
   return (
     <LeftPanelContainer>
@@ -95,8 +98,15 @@ const SettingLeftPanel = () => {
         )}
 
         {engineHasSettings
-          .sort((a, b) => a.provider.localeCompare(b.provider))
+          .sort((a, b) => String(a.name).localeCompare(String(b.name)))
           .filter((x) => !inActiveEngineProvider.includes(x.provider))
+          .filter((x) => {
+            if (settings?.run_mode === 'cpu') {
+              return !x.name?.toLowerCase().includes('cortex inference engine')
+            } else {
+              return x
+            }
+          })
           .map((item) => (
             <SettingItem
               key={item.name}
