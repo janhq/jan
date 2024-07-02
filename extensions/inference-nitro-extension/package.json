@@ -53,7 +53,7 @@
     "fetch-retry": "^5.0.6",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
-    "terminate": "^2.6.1",
+    "terminate": "2.6.1",
     "ulidx": "^2.3.0"
   },
   "engines": {
