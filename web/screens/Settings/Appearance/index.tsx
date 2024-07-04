@@ -57,7 +57,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Appearance</h6>
           </div>
           <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Select of customize your interface color scheme
+            Select a color theme
           </p>
         </div>
         <Select
@@ -72,9 +72,6 @@ export default function AppearanceOptions() {
             <div className="flex gap-x-2">
               <h6 className="font-semibold capitalize">Interface theme</h6>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Choose the type of the interface
-            </p>
           </div>
           <div className="flex items-center gap-x-2">
             <Button
@@ -89,7 +86,7 @@ export default function AppearanceOptions() {
               variant={reduceTransparent ? 'outline' : 'solid'}
               onClick={() => setReduceTransparent(false)}
             >
-              Transparent
+              Transparency
             </Button>
           </div>
         </div>
