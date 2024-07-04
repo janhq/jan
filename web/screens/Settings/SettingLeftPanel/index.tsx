@@ -89,7 +89,7 @@ const SettingLeftPanel = () => {
         ).length > 0 && (
           <div className="mb-1 mt-4 px-2">
             <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Model Provider
+              Model Providers
             </label>
           </div>
         )}
