@@ -9,6 +9,7 @@ import {
   ContentType,
   Thread,
 } from '@janhq/core'
+import { Tooltip } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
   RefreshCcw,
@@ -103,9 +104,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onEditClick}
             >
-              <PencilIcon
-                size={14}
-                className="text-[hsla(var(--text-secondary))]"
+              <Tooltip
+                trigger={
+                  <PencilIcon
+                    size={14}
+                    className="text-[hsla(var(--text-secondary))]"
+                  />
+                }
+                content="Edit"
               />
             </div>
           )}
@@ -118,9 +124,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onRegenerateClick}
             >
-              <RefreshCcw
-                size={14}
-                className="text-[hsla(var(--text-secondary))]"
+              <Tooltip
+                trigger={
+                  <RefreshCcw
+                    size={14}
+                    className="text-[hsla(var(--text-secondary))]"
+                  />
+                }
+                content="Regenerate"
               />
             </div>
           )}
@@ -134,9 +145,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           {clipboard.copied ? (
             <CheckIcon size={14} className="text-[hsla(var(--success-bg))]" />
           ) : (
-            <CopyIcon
-              size={14}
-              className="text-[hsla(var(--text-secondary))]"
+            <Tooltip
+              trigger={
+                <CopyIcon
+                  size={14}
+                  className="text-[hsla(var(--text-secondary))]"
+                />
+              }
+              content="Copy"
             />
           )}
         </div>
@@ -144,9 +160,14 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
           onClick={onDeleteClick}
         >
-          <Trash2Icon
-            size={14}
-            className="text-[hsla(var(--text-secondary))]"
+          <Tooltip
+            trigger={
+              <Trash2Icon
+                size={14}
+                className="text-[hsla(var(--text-secondary))]"
+              />
+            }
+            content="Delete"
           />
         </div>
       </div>
