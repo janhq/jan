@@ -104,8 +104,23 @@ const ModelDropdown = ({
             )
           }
         })
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [configuredModels, searchText, searchFilter]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => {
+          const aInDownloadedModels = downloadedModels.some(
+            (item) => item.id === a.id
+          )
+          const bInDownloadedModels = downloadedModels.some(
+            (item) => item.id === b.id
+          )
+          if (aInDownloadedModels && !bInDownloadedModels) {
+            return -1
+          } else if (!aInDownloadedModels && bInDownloadedModels) {
+            return 1
+          } else {
+            return 0
+          }
+        }),
+    [configuredModels, searchText, searchFilter, downloadedModels]
   )
 
   useEffect(() => {
