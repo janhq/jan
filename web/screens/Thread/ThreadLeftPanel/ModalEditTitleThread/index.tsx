@@ -1,4 +1,4 @@
-import { useCallback, memo, useState } from 'react'
+import { useCallback, useLayoutEffect, memo, useState } from 'react'
 
 import { Thread } from '@janhq/core'
 import { Modal, ModalClose, Button, Input } from '@janhq/joi'
@@ -13,8 +13,13 @@ type Props = {
 
 const ModalEditTitleThread = ({ thread, closeContextMenu }: Props) => {
   const [title, setTitle] = useState(thread.title)
-
   const { updateThreadMetadata } = useCreateNewThread()
+
+  useLayoutEffect(() => {
+    if (thread.title) {
+      setTitle(thread.title)
+    }
+  }, [thread.title])
 
   const onUpdateTitle = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
