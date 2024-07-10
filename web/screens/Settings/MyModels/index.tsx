@@ -27,9 +27,10 @@ const MyModels = () => {
   const filteredDownloadedModels = useMemo(
     () =>
       downloadedModels
-        .filter((e) =>
-          e.id.toLowerCase().includes(searchText.toLowerCase().trim())
-        )
+        .filter((e) => {
+          const modelId = e.id ?? e.model ?? ''
+          return modelId.toLowerCase().includes(searchText.toLowerCase().trim())
+        })
         .sort((a, b) => a.id.localeCompare(b.id)),
     [downloadedModels, searchText]
   )
