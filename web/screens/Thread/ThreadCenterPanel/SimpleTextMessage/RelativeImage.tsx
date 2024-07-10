@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 
-import { getJanDataFolderPath } from '@janhq/core'
-
 export const RelativeImage = ({
   id,
   src,
@@ -13,11 +11,6 @@ export const RelativeImage = ({
 }) => {
   const [path, setPath] = useState<string>('')
 
-  useEffect(() => {
-    getJanDataFolderPath().then((dataFolderPath) => {
-      setPath(dataFolderPath)
-    })
-  }, [])
   return (
     <button onClick={onClick}>
       <img

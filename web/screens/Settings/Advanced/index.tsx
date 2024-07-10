@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, ChangeEvent } from 'react'
 
-import { openExternalUrl, fs, AppConfiguration } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 
 import {
   ScrollArea,
@@ -130,30 +130,29 @@ const Advanced = () => {
   }
 
   useEffect(() => {
-    const setUseGpuIfPossible = async () => {
-      const settings = await readSettings()
-      setGpuEnabled(settings.run_mode === 'gpu' && settings.gpus?.length > 0)
-      setGpusInUse(settings.gpus_in_use || [])
-      setVulkanEnabled(settings.vulkan || false)
-      if (settings.gpus) {
-        setGpuList(settings.gpus)
-      }
-    }
-    setUseGpuIfPossible()
+    // const setUseGpuIfPossible = async () => {
+    //   const settings = await readSettings()
+    //   setGpuEnabled(settings.run_mode === 'gpu' && settings.gpus?.length > 0)
+    //   setGpusInUse(settings.gpus_in_use || [])
+    //   setVulkanEnabled(settings.vulkan || false)
+    //   if (settings.gpus) {
+    //     setGpuList(settings.gpus)
+    //   }
+    // }
+    // setUseGpuIfPossible()
   }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
 
   const clearLogs = async () => {
-    try {
-      await fs.rm(`file://logs`)
-    } catch (err) {
-      console.error('Error clearing logs: ', err)
-    }
-
-    toaster({
-      title: 'Logs cleared',
-      description: 'All logs have been cleared.',
-      type: 'success',
-    })
+    // try {
+    //   await fs.rm(`file://logs`)
+    // } catch (err) {
+    //   console.error('Error clearing logs: ', err)
+    // }
+    // toaster({
+    //   title: 'Logs cleared',
+    //   description: 'All logs have been cleared.',
+    //   type: 'success',
+    // })
   }
 
   const handleGPUChange = (gpuId: string) => {
@@ -217,11 +216,11 @@ const Advanced = () => {
                     {' '}
                     <span
                       className="cursor-pointer text-[var(--app-link)]"
-                      onClick={() =>
-                        openExternalUrl(
-                          'https://jan.ai/guides/troubleshooting/gpu-not-used/'
-                        )
-                      }
+                      // onClick={() =>
+                      //   openExternalUrl(
+                      //     'https://jan.ai/guides/troubleshooting/gpu-not-used/'
+                      //   )
+                      // }
                     >
                       troubleshooting guide
                     </span>{' '}

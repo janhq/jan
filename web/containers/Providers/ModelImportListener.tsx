@@ -1,11 +1,6 @@
 import { useCallback, useEffect } from 'react'
 
-import {
-  ImportingModel,
-  LocalImportModelEvent,
-  Model,
-  events,
-} from '@janhq/core'
+import { ImportingModel, LocalImportModelEvent, Model } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { snackbar } from '../Toast'
@@ -59,42 +54,42 @@ const ModelImportListener: React.FC = () => {
   useEffect(() => {
     console.debug('ModelImportListener: registering event listeners..')
 
-    events.on(
-      LocalImportModelEvent.onLocalImportModelUpdate,
-      onImportModelUpdate
-    )
-    events.on(
-      LocalImportModelEvent.onLocalImportModelSuccess,
-      onImportModelSuccess
-    )
-    events.on(
-      LocalImportModelEvent.onLocalImportModelFinished,
-      onImportModelFinished
-    )
-    events.on(
-      LocalImportModelEvent.onLocalImportModelFailed,
-      onImportModelFailed
-    )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelUpdate,
+    //   onImportModelUpdate
+    // )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelSuccess,
+    //   onImportModelSuccess
+    // )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelFinished,
+    //   onImportModelFinished
+    // )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelFailed,
+    //   onImportModelFailed
+    // )
 
-    return () => {
-      console.debug('ModelImportListener: unregistering event listeners...')
-      events.off(
-        LocalImportModelEvent.onLocalImportModelUpdate,
-        onImportModelUpdate
-      )
-      events.off(
-        LocalImportModelEvent.onLocalImportModelSuccess,
-        onImportModelSuccess
-      )
-      events.off(
-        LocalImportModelEvent.onLocalImportModelFinished,
-        onImportModelFinished
-      )
-      events.off(
-        LocalImportModelEvent.onLocalImportModelFailed,
-        onImportModelFailed
-      )
-    }
+    // return () => {
+    //   console.debug('ModelImportListener: unregistering event listeners...')
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelUpdate,
+    //     onImportModelUpdate
+    //   )
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelSuccess,
+    //     onImportModelSuccess
+    //   )
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelFinished,
+    //     onImportModelFinished
+    //   )
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelFailed,
+    //     onImportModelFailed
+    //   )
+    // }
   }, [
     onImportModelUpdate,
     onImportModelSuccess,

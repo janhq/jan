@@ -7,7 +7,6 @@ import { SettingsIcon } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
-import { extensionManager } from '@/extension'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
@@ -23,44 +22,44 @@ const SetupRemoteModel = ({ engine }: Props) => {
     { name?: string; setting: string; apiKey: string; provider: string }[]
   >([])
 
-  useEffect(() => {
-    const getAllSettings = async () => {
-      const extensionsMenu: {
-        name?: string
-        setting: string
-        apiKey: string
-        provider: string
-      }[] = []
-      const extensions = extensionManager.getAll()
+  // useEffect(() => {
+  //   const getAllSettings = async () => {
+  //     const extensionsMenu: {
+  //       name?: string
+  //       setting: string
+  //       apiKey: string
+  //       provider: string
+  //     }[] = []
+  //     const extensions = extensionManager.getAll()
 
-      for (const extension of extensions) {
-        if (typeof extension.getSettings === 'function') {
-          const settings = await extension.getSettings()
+  //     for (const extension of extensions) {
+  //       if (typeof extension.getSettings === 'function') {
+  //         const settings = await extension.getSettings()
 
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            extensionsMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-              apiKey:
-                'apiKey' in extension && typeof extension.apiKey === 'string'
-                  ? extension.apiKey
-                  : '',
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
-            })
-          }
-        }
-      }
-      setExtensionHasSettings(extensionsMenu)
-    }
-    getAllSettings()
-  }, [])
+  //         if (
+  //           (settings && settings.length > 0) ||
+  //           (await extension.installationState()) !== 'NotRequired'
+  //         ) {
+  //           extensionsMenu.push({
+  //             name: extension.productName,
+  //             setting: extension.name,
+  //             apiKey:
+  //               'apiKey' in extension && typeof extension.apiKey === 'string'
+  //                 ? extension.apiKey
+  //                 : '',
+  //             provider:
+  //               'provider' in extension &&
+  //               typeof extension.provider === 'string'
+  //                 ? extension.provider
+  //                 : '',
+  //           })
+  //         }
+  //       }
+  //     }
+  //     setExtensionHasSettings(extensionsMenu)
+  //   }
+  //   getAllSettings()
+  // }, [])
 
   const onSetupItemClick = (engine: LlmEngine) => {
     setMainViewState(MainViewState.Settings)

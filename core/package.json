@@ -8,7 +8,7 @@
   ],
   "homepage": "https://jan.ai",
   "license": "AGPL-3.0",
-  "main": "dist/core.es5.js",
+  "main": "dist/lib/index.js",
   "module": "dist/core.cjs.js",
   "typings": "dist/types/index.d.ts",
   "files": [
@@ -17,18 +17,18 @@
   ],
   "author": "Jan <service@jan.ai>",
   "exports": {
-    ".": "./dist/core.es5.js",
+    ".": "./dist/lib/index.js",
     "./node": "./dist/node/index.cjs.js"
   },
   "typesVersions": {
     "*": {
       ".": [
-        "./dist/core.es5.js.map",
+        "./dist/lib/index.js",
         "./dist/types/index.d.ts"
       ],
       "node": [
         "./dist/node/index.cjs.js.map",
-        "./dist/types/node/index.d.ts"
+        "./dist/types/index.d.ts"
       ]
     }
   },

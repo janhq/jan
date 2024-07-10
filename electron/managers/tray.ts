@@ -1,7 +1,7 @@
 import { join } from 'path'
 import { Tray, app, Menu } from 'electron'
 import { windowManager } from '../managers/window'
-import { getAppConfigurations } from '@janhq/core/node'
+import { getAppConfigurations } from './../utils/path'
 
 class TrayManager {
   currentTray: Tray | undefined

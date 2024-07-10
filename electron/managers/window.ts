@@ -1,8 +1,9 @@
 import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
-import { getAppConfigurations, AppEvent } from '@janhq/core/node'
+import { getAppConfigurations } from './../utils/path'
 import { getBounds, saveBounds } from '../utils/setup'
+import { AppEvent } from '@janhq/core/node'
 
 /**
  * Manages the current window instance.
