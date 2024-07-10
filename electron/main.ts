@@ -9,7 +9,6 @@ import { windowManager } from './managers/window'
 /**
  * IPC Handlers
  **/
-import { injectHandler } from './handlers/common'
 import { handleAppUpdates } from './handlers/update'
 import { handleAppIPCs } from './handlers/native'
 
@@ -20,11 +19,8 @@ import { setupMenu } from './utils/menu'
 import { createUserSpace } from './utils/path'
 import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
-import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
-
-import { logSystemInfo } from './utils/system'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -118,7 +114,6 @@ app
   .then(setupCore)
   .then(createUserSpace)
   .then(migrate)
-  .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
@@ -129,7 +124,6 @@ app
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(logSystemInfo)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
@@ -172,8 +166,6 @@ async function stopApiServer() {
  */
 function handleIPCs() {
   // Inject core handlers for IPCs
-  injectHandler()
-
   // Handle native IPCs
   handleAppIPCs()
 }

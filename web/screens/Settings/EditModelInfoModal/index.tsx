@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Model, joinPath, openFileExplorer } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { Modal, Button, Input, ModalClose, TextArea } from '@janhq/joi'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -83,14 +83,14 @@ const EditModelInfoModal = () => {
     const getModelPath = async () => {
       const modelId = editingModel?.modelId
       if (!modelId) return ''
-      const path = await joinPath([janDataFolder, 'models', modelId])
-      setModelPath(path)
+      // const path = await joinPath([janDataFolder, 'models', modelId])
+      // setModelPath(path)
     }
     getModelPath()
   }, [janDataFolder, editingModel])
 
   const onShowInFinderClick = useCallback(() => {
-    openFileExplorer(modelPath)
+    // openFileExplorer(modelPath)
   }, [modelPath])
 
   if (!editingModel) {

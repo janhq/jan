@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { app, Menu, shell, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
-import { log } from '@janhq/core/node'
 const isMac = process.platform === 'darwin'
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
@@ -34,7 +33,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
               }
             })
             .catch((error) => {
-              log('Error checking for updates:' + JSON.stringify(error))
+              console.error('Error checking for updates:' + JSON.stringify(error))
             }),
       },
       { type: 'separator' },

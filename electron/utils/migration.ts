@@ -11,7 +11,7 @@ import {
   lstatSync,
 } from 'fs'
 import Store from 'electron-store'
-import { getJanDataFolderPath, appResourcePath } from '@janhq/core/node'
+import { getJanDataFolderPath, appResourcePath } from './../utils/path'
 
 /**
  * Migrates the extensions & themes.
