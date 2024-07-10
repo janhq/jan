@@ -55,6 +55,7 @@ const useThreads = () => {
       log.info('Create new thread result', thread)
       setThreads((threads) => [thread, ...threads])
       setActiveThread(thread.id)
+      return thread
     },
     [createThread, setActiveThread, setThreads]
   )
