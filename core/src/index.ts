@@ -5,12 +5,6 @@
 export * from './types'
 
 /**
- * Export browser module
- * @module
- */
-export * from './browser'
-
-/**
  * Declare global object
  */
 declare global {

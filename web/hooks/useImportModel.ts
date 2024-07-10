@@ -4,9 +4,9 @@ import {
   ImportingModel,
   Model,
   OptionType,
-  baseName,
-  fs,
-  joinPath,
+  // baseName,
+  // fs,
+  // joinPath,
 } from '@janhq/core'
 
 import { atom, useSetAtom } from 'jotai'
@@ -62,68 +62,61 @@ const useImportModel = () => {
 
   const sanitizeFilePaths = useCallback(
     async (filePaths: string[]) => {
-      if (!filePaths || filePaths.length === 0) return
-
-      const sanitizedFilePaths: FilePathWithSize[] = []
-      for (const filePath of filePaths) {
-        const fileStats = await fs.fileStat(filePath, true)
-        if (!fileStats) continue
-
-        if (!fileStats.isDirectory) {
-          const fileName = await baseName(filePath)
-          sanitizedFilePaths.push({
-            path: filePath,
-            name: fileName,
-            size: fileStats.size,
-          })
-        } else {
-          // allowing only one level of directory
-          const files = await fs.readdirSync(filePath)
-
-          for (const file of files) {
-            const fullPath = await joinPath([filePath, file])
-            const fileStats = await fs.fileStat(fullPath, true)
-            if (!fileStats || fileStats.isDirectory) continue
-
-            sanitizedFilePaths.push({
-              path: fullPath,
-              name: file,
-              size: fileStats.size,
-            })
-          }
-        }
-      }
-
-      const unsupportedFiles = sanitizedFilePaths.filter(
-        (file) => !file.path.endsWith('.gguf')
-      )
-      const supportedFiles = sanitizedFilePaths.filter((file) =>
-        file.path.endsWith('.gguf')
-      )
-
-      const importingModels: ImportingModel[] = supportedFiles.map(
-        ({ path, name, size }: FilePathWithSize) => ({
-          importId: uuidv4(),
-          modelId: undefined,
-          name: name.replace('.gguf', ''),
-          description: '',
-          path: path,
-          tags: [],
-          size: size,
-          status: 'PREPARING',
-          format: 'gguf',
-        })
-      )
-      if (unsupportedFiles.length > 0) {
-        snackbar({
-          description: `Only files with .gguf extension can be imported.`,
-          type: 'error',
-        })
-      }
-      if (importingModels.length === 0) return
-
-      setImportingModels(importingModels)
-      setImportModelStage('MODEL_SELECTED')
+      //   if (!filePaths || filePaths.length === 0) return
+      //   const sanitizedFilePaths: FilePathWithSize[] = []
+      //   for (const filePath of filePaths) {
+      //     const fileStats = await fs.fileStat(filePath, true)
+      //     if (!fileStats) continue
+      //     if (!fileStats.isDirectory) {
+      //       const fileName = await baseName(filePath)
+      //       sanitizedFilePaths.push({
+      //         path: filePath,
+      //         name: fileName,
+      //         size: fileStats.size,
+      //       })
+      //     } else {
+      //       // allowing only one level of directory
+      //       const files = await fs.readdirSync(filePath)
+      //       for (const file of files) {
+      //         const fullPath = await joinPath([filePath, file])
+      //         const fileStats = await fs.fileStat(fullPath, true)
+      //         if (!fileStats || fileStats.isDirectory) continue
+      //         sanitizedFilePaths.push({
+      //           path: fullPath,
+      //           name: file,
+      //           size: fileStats.size,
+      //         })
+      //       }
+      //     }
+      //   }
+      //   const unsupportedFiles = sanitizedFilePaths.filter(
+      //     (file) => !file.path.endsWith('.gguf')
+      //   )
+      //   const supportedFiles = sanitizedFilePaths.filter((file) =>
+      //     file.path.endsWith('.gguf')
+      //   )
+      //   const importingModels: ImportingModel[] = supportedFiles.map(
+      //     ({ path, name, size }: FilePathWithSize) => ({
+      //       importId: uuidv4(),
+      //       modelId: undefined,
+      //       name: name.replace('.gguf', ''),
+      //       description: '',
+      //       path: path,
+      //       tags: [],
+      //       size: size,
+      //       status: 'PREPARING',
+      //       format: 'gguf',
+      //     })
+      //   )
+      //   if (unsupportedFiles.length > 0) {
+      //     snackbar({
+      //       description: `Only files with .gguf extension can be imported.`,
+      //       type: 'error',
+      //     })
+      //   }
+      //   if (importingModels.length === 0) return
+      //   setImportingModels(importingModels)
+      //   setImportModelStage('MODEL_SELECTED')
     },
     [setImportModelStage, setImportingModels]
   )

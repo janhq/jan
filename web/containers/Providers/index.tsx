@@ -20,53 +20,22 @@ import DataLoader from './DataLoader'
 
 import Responsive from './Responsive'
 
-import { extensionManager } from '@/extension'
-
 const queryClient = new QueryClient()
 
 const Providers = ({ children }: PropsWithChildren) => {
   const [setupCore, setSetupCore] = useState(false)
-  const [activated, setActivated] = useState(false)
-  const [settingUp, setSettingUp] = useState(false)
-
-  const setupExtensions = useCallback(async () => {
-    // Register all active extensions
-    await extensionManager.registerActive()
-
-    setTimeout(async () => {
-      extensionManager.load()
-      setSettingUp(false)
-      setActivated(true)
-    }, 500)
-  }, [])
 
   // Services Setup
   useEffect(() => {
     setupCoreServices()
     setSetupCore(true)
-    return () => {
-      extensionManager.unload()
-    }
   }, [])
-
-  useEffect(() => {
-    if (setupCore) {
-      // Electron
-      if (window && window.core?.api) {
-        setupExtensions()
-      } else {
-        // Host
-        setActivated(true)
-      }
-    }
-  }, [setupCore, setupExtensions])
 
   return (
     <ThemeWrapper>
       <JotaiWrapper>
         <Umami />
-        {settingUp && <Loader description="Preparing Update..." />}
-        {setupCore && activated && (
+        {setupCore && (
           <QueryClientProvider client={queryClient}>
             <DataLoader />
             <EventListenerWrapper />

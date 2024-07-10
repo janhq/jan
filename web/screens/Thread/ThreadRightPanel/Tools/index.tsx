@@ -166,7 +166,7 @@ const Tools = () => {
                           your specific use case."
                       />
                     </label>
-                    <div className="ml-auto flex items-center justify-between">
+                    {/* <div className="ml-auto flex items-center justify-between">
                       <Switch
                         name="use-time-weighted-retriever"
                         className="mr-2"
@@ -178,7 +178,7 @@ const Tools = () => {
                           onTimeWeightedRetrieverSwitchUpdate(e.target.checked)
                         }
                       />
-                    </div>
+                    </div> */}
                   </div>
 
                   <div className="w-full">

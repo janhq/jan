@@ -2,12 +2,10 @@ import { useCallback } from 'react'
 
 import { useTheme } from 'next-themes'
 
-import { fs, joinPath } from '@janhq/core'
 import { Button, Select, Switch } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 
 import {
-  janThemesPathAtom,
   reduceTransparentAtom,
   selectedThemeIdAtom,
   spellCheckAtom,
@@ -19,7 +17,6 @@ export default function AppearanceOptions() {
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
   const themeOptions = useAtomValue(themesOptionsAtom)
   const { setTheme } = useTheme()
-  const janThemesPath = useAtomValue(janThemesPathAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [reduceTransparent, setReduceTransparent] = useAtom(
     reduceTransparentAtom
@@ -29,8 +26,7 @@ export default function AppearanceOptions() {
   const handleClickTheme = useCallback(
     async (e: string) => {
       setSelectedIdTheme(e)
-      const filePath = await joinPath([`${janThemesPath}/${e}`, `theme.json`])
-      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+      const theme: Theme = await window.electronAPI.readTheme(e)
       setThemeData(theme)
       setTheme(String(theme?.nativeTheme))
       if (theme?.reduceTransparent) {
@@ -40,7 +36,6 @@ export default function AppearanceOptions() {
       }
     },
     [
-      janThemesPath,
       reduceTransparent,
       setReduceTransparent,
       setSelectedIdTheme,
