@@ -6,7 +6,7 @@ import {
 } from '@huggingface/hub'
 import {
   AllQuantizations,
-  getFileSize,
+  // getFileSize,
   HuggingFaceRepoData,
   LlmEngine,
   Model,
@@ -249,7 +249,7 @@ export const fetchHuggingFaceRepoData = async (
   for (const sibling of data.siblings) {
     const downloadUrl = `https://huggingface.co/${paths[2]}/${paths[3]}/resolve/main/${sibling.rfilename}`
     sibling.downloadUrl = downloadUrl
-    promises.push(getFileSize(downloadUrl))
+    // promises.push(getFileSize(downloadUrl))
   }
 
   const result = await Promise.all(promises)

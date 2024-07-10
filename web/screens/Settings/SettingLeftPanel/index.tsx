@@ -6,7 +6,6 @@ import LeftPanelContainer from '@/containers/LeftPanelContainer'
 
 import SettingItem from './SettingItem'
 
-import { extensionManager } from '@/extension'
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingLeftPanel = () => {
@@ -20,36 +19,36 @@ const SettingLeftPanel = () => {
         setting: string
         provider: string
       }[] = []
-      const extensions = extensionManager.getAll()
+      // const extensions = extensionManager.getAll()
 
-      for (const extension of extensions) {
-        const settings = await extension.getSettings()
-        if (
-          typeof extension.getSettings === 'function' &&
-          'provider' in extension &&
-          typeof extension.provider === 'string'
-        ) {
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            engineMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
-            })
-          }
-        } else if (settings && settings.length > 0) {
-          extensionsMenu.push({
-            name: extension.productName,
-            setting: extension.name,
-          })
-        }
-      }
+      // for (const extension of extensions) {
+      //   const settings = await extension.getSettings()
+      //   if (
+      //     typeof extension.getSettings === 'function' &&
+      //     'provider' in extension &&
+      //     typeof extension.provider === 'string'
+      //   ) {
+      //     if (
+      //       (settings && settings.length > 0) ||
+      //       (await extension.installationState()) !== 'NotRequired'
+      //     ) {
+      //       engineMenu.push({
+      //         name: extension.productName,
+      //         setting: extension.name,
+      //         provider:
+      //           'provider' in extension &&
+      //           typeof extension.provider === 'string'
+      //             ? extension.provider
+      //             : '',
+      //       })
+      //     }
+      //   } else if (settings && settings.length > 0) {
+      //     extensionsMenu.push({
+      //       name: extension.productName,
+      //       setting: extension.name,
+      //     })
+      //   }
+      // }
 
       // setExtensionHasSettings(extensionsMenu)
       // setEngineHasSettings(engineMenu)

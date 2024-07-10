@@ -1,4 +1,4 @@
-import { getAppConfigurations } from '@janhq/core/node'
+import { getAppConfigurations } from './../utils/path'
 import { registerShortcut } from './selectedText'
 import { windowManager } from '../managers/window'
 // TODO: Retrieve from config later

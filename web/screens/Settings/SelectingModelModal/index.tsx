@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { SelectFileOption, systemInformation } from '@janhq/core'
+import { SelectFileOption } from '@janhq/core'
 import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -20,20 +20,20 @@ const SelectingModelModal = () => {
   const { sanitizeFilePaths } = useImportModel()
 
   const onSelectFileClick = useCallback(async () => {
-    const platform = (await systemInformation()).osInfo?.platform
-    if (platform === 'win32') {
-      setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
-      return
-    }
-    const options: SelectFileOption = {
-      title: 'Select model folders',
-      buttonLabel: 'Select',
-      allowMultiple: true,
-      selectDirectory: true,
-    }
-    const filePaths = await window.core?.api?.selectFiles(options)
-    if (!filePaths || filePaths.length === 0) return
-    sanitizeFilePaths(filePaths)
+    // const platform = (await systemInformation()).osInfo?.platform
+    // if (platform === 'win32') {
+    //   setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
+    //   return
+    // }
+    // const options: SelectFileOption = {
+    //   title: 'Select model folders',
+    //   buttonLabel: 'Select',
+    //   allowMultiple: true,
+    //   selectDirectory: true,
+    // }
+    // const filePaths = await window.core?.api?.selectFiles(options)
+    // if (!filePaths || filePaths.length === 0) return
+    // sanitizeFilePaths(filePaths)
   }, [sanitizeFilePaths, setImportModelStage])
 
   const { isDragActive, getRootProps } = useDropzone({

@@ -1,30 +1,19 @@
 import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
-import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
-  ModuleManager,
-  getJanDataFolderPath,
-  getJanExtensionsPath,
-  init,
   AppEvent,
   NativeRoute,
   SelectFileProp,
+  SelectFileOption,
 } from '@janhq/core/node'
-import { SelectFileOption } from '@janhq/core'
 import { menu } from '../utils/menu'
+import { join } from 'path'
+import { getJanDataFolderPath } from './../utils/path'
+import { readdirSync, readFileSync } from 'fs'
 
 const isMac = process.platform === 'darwin'
 
 export function handleAppIPCs() {
-  /**
-   * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
-   * The `shell.openPath` method is used to open the directory in the user's default file explorer.
-   * @param _event - The IPC event object.
-   */
-  ipcMain.handle(NativeRoute.openAppDirectory, async (_event) => {
-    shell.openPath(getJanDataFolderPath())
-  })
-
   /**
    * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
    * This will change the appearance of the app to the light theme.
@@ -41,12 +30,41 @@ export function handleAppIPCs() {
     windowManager.mainWindow?.minimize()
   })
 
+  ipcMain.handle(NativeRoute.homePath, () => {
+    // Handles the 'get jan home path' IPC event. This event is triggered to get the default jan home path.
+    return join(
+      process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'] ?? '',
+      'jan'
+    )
+  })
   ipcMain.handle(NativeRoute.setMaximizeApp, async (_event) => {
     if (windowManager.mainWindow?.isMaximized()) {
       windowManager.mainWindow.unmaximize()
     } else {
       windowManager.mainWindow?.maximize()
     }
+  })
+
+  ipcMain.handle(NativeRoute.getThemes, async () => {
+    const folderPath = join(await getJanDataFolderPath(), 'themes')
+    const installedThemes = await readdirSync(folderPath)
+
+    const themesOptions = Promise.all(
+      installedThemes
+        .filter((x: string) => x !== '.DS_Store')
+        .map(async (x: string) => {
+          const y = await join(folderPath, x, `theme.json`)
+          const c = JSON.parse(await readFileSync(y, 'utf-8'))
+          return { name: c?.displayName, value: c.id }
+        })
+    )
+    return themesOptions
+  })
+
+  ipcMain.handle(NativeRoute.readTheme, async (_event, themeId: string) => {
+    const folderPath = join(await getJanDataFolderPath(), 'themes')
+    const filePath = await join(folderPath, themeId, `theme.json`)
+    return JSON.parse(await readFileSync(filePath, 'utf-8'))
   })
 
   /**
@@ -81,27 +99,8 @@ export function handleAppIPCs() {
    * @param url - The URL to reload.
    */
   ipcMain.handle(NativeRoute.relaunch, async (_event) => {
-    ModuleManager.instance.clearImportedModules()
-
-    if (app.isPackaged) {
-      app.relaunch()
-      app.exit()
-    } else {
-      for (const modulePath in ModuleManager.instance.requiredModules) {
-        delete require.cache[
-          require.resolve(join(getJanExtensionsPath(), modulePath))
-        ]
-      }
-      init({
-        // Function to check from the main process that user wants to install a extension
-        confirmInstall: async (_extensions: string[]) => {
-          return true
-        },
-        // Path to install extension to
-        extensionsPath: getJanExtensionsPath(),
-      })
-      windowManager.mainWindow?.reload()
-    }
+    app.relaunch()
+    app.exit()
   })
 
   ipcMain.handle(NativeRoute.selectDirectory, async () => {

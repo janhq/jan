@@ -1,4 +1,3 @@
-import { openFileExplorer, joinPath, baseName } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
@@ -73,23 +72,23 @@ export const usePath = () => {
   const onViewFile = async (id: string) => {
     if (!activeThread) return
 
-    let filePath = undefined
+    // let filePath = undefined
 
-    id = await baseName(id)
-    filePath = await joinPath(['threads', `${activeThread.id}/files`, `${id}`])
-    if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
-    openFileExplorer(fullPath)
+    // id = await baseName(id)
+    // filePath = await joinPath(['threads', `${activeThread.id}/files`, `${id}`])
+    // if (!filePath) return
+    // const fullPath = await joinPath([janDataFolderPath, filePath])
+    // openFileExplorer(fullPath)
   }
 
   const onViewFileContainer = async () => {
     if (!activeThread) return
 
-    let filePath = undefined
-    filePath = await joinPath(['threads', `${activeThread.id}/files`])
-    if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
-    openFileExplorer(fullPath)
+    // let filePath = undefined
+    // filePath = await joinPath(['threads', `${activeThread.id}/files`])
+    // if (!filePath) return
+    // const fullPath = await joinPath([janDataFolderPath, filePath])
+    // openFileExplorer(fullPath)
   }
 
   return {

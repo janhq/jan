@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useState } from 'react'
 
-import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 import { Button, Input } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
@@ -46,20 +46,20 @@ const DataFolder = () => {
       await window.core?.api?.getAppConfigurations()
     const currentJanDataFolder = appConfiguration.data_folder
 
-    if (await isSubdirectory(currentJanDataFolder, destFolder)) {
-      setShowSameDirectory(true)
-      return
-    }
+    // if (await isSubdirectory(currentJanDataFolder, destFolder)) {
+    //   setShowSameDirectory(true)
+    //   return
+    // }
 
-    const newDestChildren: string[] = await fs.readdirSync(destFolder)
-    const isNotEmpty =
-      newDestChildren.filter((x) => x !== '.DS_Store').length > 0
+    // const newDestChildren: string[] = await fs.readdirSync(destFolder)
+    // const isNotEmpty =
+    //   newDestChildren.filter((x) => x !== '.DS_Store').length > 0
 
-    if (isNotEmpty) {
-      setDestinationPath(destFolder)
-      showDestNotEmptyConfirm(true)
-      return
-    }
+    // if (isNotEmpty) {
+    //   setDestinationPath(destFolder)
+    //   showDestNotEmptyConfirm(true)
+    //   return
+    // }
 
     setDestinationPath(destFolder)
     setShowDirectoryConfirm(true)
@@ -72,28 +72,28 @@ const DataFolder = () => {
 
   const onUserConfirmed = useCallback(async () => {
     if (!destinationPath) return
-    try {
-      setShowLoader(true)
-      const appConfiguration: AppConfiguration =
-        await window.core?.api?.getAppConfigurations()
-      const currentJanDataFolder = appConfiguration.data_folder
-      appConfiguration.data_folder = destinationPath
-      const { err } = await fs.syncFile(currentJanDataFolder, destinationPath)
-      if (err) throw err
-      await window.core?.api?.updateAppConfiguration(appConfiguration)
-      console.debug(
-        `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
-      )
-      localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
-      setTimeout(() => {
-        setShowLoader(false)
-      }, 1200)
-      await window.core?.api?.relaunch()
-    } catch (e) {
-      console.error(e)
-      setShowLoader(false)
-      setShowChangeFolderError(true)
-    }
+    // try {
+    //   setShowLoader(true)
+    //   const appConfiguration: AppConfiguration =
+    //     await window.core?.api?.getAppConfigurations()
+    //   const currentJanDataFolder = appConfiguration.data_folder
+    //   appConfiguration.data_folder = destinationPath
+    //   const { err } = await fs.syncFile(currentJanDataFolder, destinationPath)
+    //   if (err) throw err
+    //   await window.core?.api?.updateAppConfiguration(appConfiguration)
+    //   console.debug(
+    //     `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
+    //   )
+    //   localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
+    //   setTimeout(() => {
+    //     setShowLoader(false)
+    //   }, 1200)
+    //   await window.core?.api?.relaunch()
+    // } catch (e) {
+    //   console.error(e)
+    //   setShowLoader(false)
+    //   setShowChangeFolderError(true)
+    // }
   }, [destinationPath, setShowChangeFolderError])
 
   return (
