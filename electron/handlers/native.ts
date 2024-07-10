@@ -9,7 +9,15 @@ import {
 import { menu } from '../utils/menu'
 import { join } from 'path'
 import { getJanDataFolderPath } from './../utils/path'
-import { readdirSync, readFileSync } from 'fs'
+import {
+  readdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+} from 'fs'
+import { dump } from 'js-yaml'
+import os from 'os'
 
 const isMac = process.platform === 'darwin'
 
@@ -199,4 +207,134 @@ export function handleAppIPCs() {
   ipcMain.handle(NativeRoute.ackDeepLink, async (_event): Promise<void> => {
     windowManager.ackDeepLink()
   })
+
+  ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
+    const janModelFolderPath = join(await getJanDataFolderPath(), 'models')
+    const allModelFolders = readdirSync(janModelFolderPath)
+
+    const cortexHomeDir = join(os.homedir(), 'cortex')
+    const cortexModelFolderPath = join(cortexHomeDir, 'models')
+    console.log('cortexModelFolderPath', cortexModelFolderPath)
+    const reflect = require('@alumna/reflect')
+
+    for (const modelName of allModelFolders) {
+      const modelFolderPath = join(janModelFolderPath, modelName)
+      const filesInModelFolder = readdirSync(modelFolderPath)
+      if (filesInModelFolder.length <= 1) {
+        // if only have model.json file or empty folder, we skip it
+        continue
+      }
+
+      const destinationPath = join(cortexModelFolderPath, modelName)
+
+      // create folder if not exist
+      if (!existsSync(destinationPath)) {
+        mkdirSync(destinationPath, { recursive: true })
+      }
+
+      try {
+        const modelJsonFullPath = join(
+          janModelFolderPath,
+          modelName,
+          'model.json'
+        )
+
+        const model = JSON.parse(readFileSync(modelJsonFullPath, 'utf-8'))
+        const fileNames: string[] = model.sources.map((x: any) => x.filename)
+        // prepend fileNames with cortexModelFolderPath
+        const files = fileNames.map((x: string) =>
+          join(cortexModelFolderPath, x)
+        )
+
+        const engine = 'cortex.llamacpp'
+
+        const updatedModelFormat = {
+          id: model.id,
+          name: model.id,
+          model: model.id,
+          version: Number(model.version),
+          files: files ?? [],
+          created: Date.now(),
+          object: 'model',
+          owned_by: model.metadata?.author ?? '',
+
+          // settings
+          ngl: model.settings?.ngl,
+          ctx_len: model.settings?.ctx_len ?? 2048,
+          engine: engine,
+          prompt_template: model.settings?.prompt_template ?? '',
+
+          // parameters
+          stop: model.parameters?.stop ?? [],
+          top_p: model.parameters?.top_p,
+          temperature: model.parameters?.temperature,
+          frequency_penalty: model.parameters?.frequency_penalty,
+          presence_penalty: model.parameters?.presence_penalty,
+          max_tokens: model.parameters?.max_tokens ?? 2048,
+          stream: model.parameters?.stream ?? true,
+        }
+
+        const { err } = await reflect({
+          src: modelFolderPath,
+          dest: destinationPath,
+          recursive: true,
+          exclude: ['model.json'],
+          delete: false,
+          overwrite: true,
+          errorOnExist: false,
+        })
+        if (err) console.error(err)
+        else {
+          // create the model.yml file
+          const modelYamlData = dump(updatedModelFormat)
+          const modelYamlPath = join(cortexModelFolderPath, `${modelName}.yaml`)
+
+          writeFileSync(modelYamlPath, modelYamlData)
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+  })
+
+  ipcMain.handle(
+    NativeRoute.getAllMessagesAndThreads,
+    async (_event): Promise<any> => {
+      const janThreadFolderPath = join(await getJanDataFolderPath(), 'threads')
+      // get children of thread folder
+      const allThreadFolders = readdirSync(janThreadFolderPath)
+      const threads: any[] = []
+      const messages: any[] = []
+      for (const threadFolder of allThreadFolders) {
+        try {
+          const threadJsonFullPath = join(
+            janThreadFolderPath,
+            threadFolder,
+            'thread.json'
+          )
+          const thread = JSON.parse(readFileSync(threadJsonFullPath, 'utf-8'))
+          threads.push(thread)
+
+          const messageFullPath = join(
+            janThreadFolderPath,
+            threadFolder,
+            'messages.jsonl'
+          )
+          const lines = readFileSync(messageFullPath, 'utf-8')
+            .toString()
+            .split('\n')
+            .filter((line: any) => line !== '')
+          for (const line of lines) {
+            messages.push(JSON.parse(line))
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      return {
+        threads,
+        messages,
+      }
+    }
+  )
 }

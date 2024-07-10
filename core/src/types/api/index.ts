@@ -28,6 +28,10 @@ export enum NativeRoute {
   homePath = 'homePath',
   getThemes = 'getThemes',
   readTheme = 'readTheme',
+
+  // used for migration. Please remove this later on.
+  getAllMessagesAndThreads = 'getAllMessagesAndThreads',
+  syncModelFileToCortex = 'syncModelFileToCortex',
 }
 
 export enum AppEvent {
