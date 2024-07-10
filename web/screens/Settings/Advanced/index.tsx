@@ -304,7 +304,7 @@ const Advanced = () => {
                 />
                 <div
                   className={twMerge(
-                    'absolute right-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+                    'max-h-80 shadow-sm absolute right-0 z-20 mt-10 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
                     open ? 'flex' : 'hidden'
                   )}
                   ref={setDropdownOptions}
