@@ -123,7 +123,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                 </Button>
                 {more && (
                   <div
-                    className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
+                    className="shadow-lg absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]"
                     ref={setMenu}
                   >
                     <div
