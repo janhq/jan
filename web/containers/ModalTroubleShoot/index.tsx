@@ -36,7 +36,7 @@ const ModalTroubleShooting = () => {
           </div>
 
           {!showLogFullSize && (
-            <div className="mb-3 rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
+            <div className="shadow mb-3 rounded-lg border border-[hsla(var(--app-border))] p-4">
               <h2 className="font-semibold">Step 1</h2>
               <p className="text-[hsla(var(--text-secondary)] mt-1">
                 Follow our&nbsp;
@@ -54,7 +54,7 @@ const ModalTroubleShooting = () => {
 
           <div
             className={twMerge(
-              'rounded-lg border border-[hsla(var(--app-border))] pb-2 shadow',
+              'shadow rounded-lg border border-[hsla(var(--app-border))] pb-2',
               !showLogFullSize && 'pt-4'
             )}
           >

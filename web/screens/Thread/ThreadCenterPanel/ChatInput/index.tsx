@@ -223,7 +223,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
           <div
             ref={refAttachmentMenus}
             className={twMerge(
-              'absolute bottom-14 left-0 z-30 w-36 cursor-pointer rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-1 shadow-sm',
+              'shadow-sm absolute bottom-14 left-0 z-30 w-36 cursor-pointer rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-1',
               activeSetting && 'bottom-28'
             )}
           >
