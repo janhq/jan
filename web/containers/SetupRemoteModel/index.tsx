@@ -66,7 +66,7 @@ const SetupRemoteModel = ({ engine }: Props) => {
     setMainViewState(MainViewState.Settings)
     setSelectedSetting(
       extensionHasSettings.filter((x) =>
-        x.provider.toLowerCase().includes(engine)
+        x.provider?.toLowerCase().includes(engine)
       )[0]?.setting
     )
   }
