@@ -33,6 +33,10 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
     (entry) => entry.model?.metadata?.owner_logo != null
   )?.model?.metadata?.owner_logo
 
+  const apiKeyUrl: string | undefined = data.find(
+    (entry) => entry.model?.metadata?.api_key_url != null
+  )?.model?.metadata?.api_key_url
+
   // get maximum 4 items
   const models = data.slice(0, 4)
   const showSeeAll = models.length < data.length
@@ -46,8 +50,9 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
   const onSetUpClick = useCallback(() => {
     setUpRemoteModelStage('SETUP_API_KEY', engine, {
       owner_logo: engineLogo,
+      api_key_url: apiKeyUrl,
     })
-  }, [setUpRemoteModelStage, engine, engineLogo])
+  }, [setUpRemoteModelStage, engine, engineLogo, apiKeyUrl])
 
   return (
     <Fragment>
