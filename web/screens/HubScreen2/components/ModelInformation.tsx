@@ -14,6 +14,7 @@ const ModelInformation: React.FC<Props> = ({ modelHandle, maxHeight }) => {
   if (!data) return null
   return (
     <div
+      id="markdown"
       style={{ maxHeight }}
       className={twMerge(
         'text-[hsla(var(--text-secondary)] mt-4 h-full w-full overflow-x-hidden text-sm leading-[16.94px]'

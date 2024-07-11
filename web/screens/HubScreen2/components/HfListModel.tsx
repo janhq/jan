@@ -58,7 +58,7 @@ const HfListModel: React.FC<Props> = ({ modelHandle }) => {
                 </td>
                 <td className="w-full pl-4">{item.rfilename}</td>
                 <td>
-                  <div className="mr-3 flex items-center gap-3 whitespace-nowrap py-3">
+                  <div className="mr-3 flex items-center justify-end gap-3 whitespace-nowrap py-3">
                     <span>{toGibibytes(item.fileSize)}</span>
                     <DownloadContainer
                       modelHandle={modelHandle}
