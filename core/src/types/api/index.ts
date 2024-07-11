@@ -90,7 +90,6 @@ export enum ExtensionRoute {
 }
 export enum FileSystemRoute {
   appendFileSync = 'appendFileSync',
-  copyFileSync = 'copyFileSync',
   unlinkSync = 'unlinkSync',
   existsSync = 'existsSync',
   readdirSync = 'readdirSync',

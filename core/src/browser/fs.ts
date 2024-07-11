@@ -64,10 +64,6 @@ const appendFileSync = (...args: any[]) => globalThis.core.api?.appendFileSync(.
 const syncFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
   globalThis.core.api?.syncFile(src, dest)
 
-/**
- * Copy file sync.
- */
-const copyFileSync = (...args: any[]) => globalThis.core.api?.copyFileSync(...args)
 
 const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
   globalThis.core.api?.copyFile(src, dest)
@@ -95,7 +91,6 @@ export const fs = {
   rm,
   unlinkSync,
   appendFileSync,
-  copyFileSync,
   copyFile,
   syncFile,
   fileStat,

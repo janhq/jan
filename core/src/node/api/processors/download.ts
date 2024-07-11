@@ -1,6 +1,6 @@
 import { resolve, sep } from 'path'
 import { DownloadEvent } from '../../../types/api'
-import { normalizeFilePath } from '../../helper/path'
+import { normalizeFilePath, validatePath } from '../../helper/path'
 import { getJanDataFolderPath } from '../../helper'
 import { DownloadManager } from '../../helper/download'
 import { createWriteStream, renameSync } from 'fs'
@@ -37,6 +37,7 @@ export class Downloader implements Processor {
     const modelId = array.pop() ?? ''
 
     const destination = resolve(getJanDataFolderPath(), normalizedPath)
+    validatePath(destination)
     const rq = request({ url, strictSSL, proxy })
 
     // Put request to download manager instance
