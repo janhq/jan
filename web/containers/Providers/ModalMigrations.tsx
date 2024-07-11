@@ -178,7 +178,11 @@ const ModalMigrations = ({ children }: React.PropsWithChildren) => {
                     <Spinner />
                   ) : (
                     !threadsMessagesMigrationSuccess && (
-                      <Button size="small" theme="ghost">
+                      <Button
+                        size="small"
+                        theme="ghost"
+                        onClick={() => handleStartMigrationThreads()}
+                      >
                         Retry
                       </Button>
                     )
@@ -209,7 +213,11 @@ const ModalMigrations = ({ children }: React.PropsWithChildren) => {
                     <Spinner />
                   ) : (
                     !modelsMigrationSuccess && (
-                      <Button size="small" theme="ghost">
+                      <Button
+                        size="small"
+                        theme="ghost"
+                        onClick={() => handleStartMigrationModels()}
+                      >
                         Retry
                       </Button>
                     )
