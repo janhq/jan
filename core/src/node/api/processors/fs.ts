@@ -1,5 +1,5 @@
 import { join, resolve } from 'path'
-import { normalizeFilePath } from '../../helper/path'
+import { normalizeFilePath, validatePath } from '../../helper/path'
 import { getJanDataFolderPath } from '../../helper'
 import { Processor } from './Processor'
 import fs from 'fs'
@@ -35,12 +35,8 @@ export class FileSystem implements Processor {
             if(path.startsWith(`http://`) || path.startsWith(`https://`)) {
               return path
             }
-            const janDataFolderPath = getJanDataFolderPath()
             const absolutePath = resolve(path)
-            if(!absolutePath.startsWith(janDataFolderPath)) {
-              throw new Error(`Invalid path: ${absolutePath}`)
-            }
-
+            validatePath(absolutePath)
             return absolutePath
           })
         )
@@ -58,11 +54,8 @@ export class FileSystem implements Processor {
       path = join(getJanDataFolderPath(), normalizeFilePath(path))
     }
 
-    const janDataFolderPath = getJanDataFolderPath()
     const absolutePath = resolve(path)
-    if(!absolutePath.startsWith(janDataFolderPath)) {
-      throw new Error(`Invalid path: ${absolutePath}`)
-    }
+    validatePath(absolutePath)
 
     return new Promise((resolve, reject) => {
       fs.rm(absolutePath, { recursive: true, force: true }, (err) => {
@@ -85,11 +78,8 @@ export class FileSystem implements Processor {
       path = join(getJanDataFolderPath(), normalizeFilePath(path))
     }
 
-    const janDataFolderPath = getJanDataFolderPath()
     const absolutePath = resolve(path)
-    if(!absolutePath.startsWith(janDataFolderPath)) {
-      throw new Error(`Invalid path: ${absolutePath}`)
-    }
+    validatePath(absolutePath)
 
     return new Promise((resolve, reject) => {
       fs.mkdir(absolutePath, { recursive: true }, (err) => {
