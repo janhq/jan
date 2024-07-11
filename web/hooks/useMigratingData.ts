@@ -90,7 +90,7 @@ const useMigratingData = () => {
     createMessage,
   ])
 
-  return { migrateModels, migrateThreadsAndMessages }
+  return { migrateModels, migrateThreadsAndMessages, getJanThreadsAndMessages }
 }
 
 export default useMigratingData
