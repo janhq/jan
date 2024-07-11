@@ -14,10 +14,7 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelList from '@/screens/Hub/ModelList'
 
-import {
-  configuredModelsAtom,
-  downloadedModelsAtom,
-} from '@/helpers/atoms/Model.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const sortMenus = [
   {
@@ -35,14 +32,13 @@ const sortMenus = [
 ]
 
 const HubScreen = () => {
-  const configuredModels = useAtomValue(configuredModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('all-models')
 
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
-  const filteredModels = configuredModels.filter((x) => {
+  const filteredModels = downloadedModels.filter((x) => {
     if (sortSelected === 'downloaded') {
       return (
         x.model?.toLowerCase().includes(searchValue.toLowerCase()) &&

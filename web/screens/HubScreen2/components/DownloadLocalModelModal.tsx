@@ -3,10 +3,6 @@ import { Fragment, useEffect, useState } from 'react'
 import { Modal } from '@janhq/joi'
 import { useAtom } from 'jotai'
 
-import useHuggingFace from '@/hooks/useHuggingFace'
-
-import { tryGettingReadMeFile } from '@/utils/huggingface'
-
 import HeaderModal from './HeaderModal'
 import HfListModel from './HfListModel'
 import ListModel from './ListModel'
@@ -21,9 +17,7 @@ const DownloadLocalModelModal: React.FC = () => {
     localModelModalStageAtom
   )
   const [tab, setTab] = useState<ModelTab>('Versions')
-  const { getBranches } = useHuggingFace()
   const [height, setHeight] = useState<number>(0)
-  const [description, setDescription] = useState<string>('')
 
   useEffect(() => {
     const updateHeight = () => {
@@ -35,20 +29,6 @@ const DownloadLocalModelModal: React.FC = () => {
       window.removeEventListener('resize', updateHeight)
     }
   }, [])
-
-  useEffect(() => {
-    if (!modelHandle) return
-    getBranches(modelHandle).catch((e) => {
-      console.error('Failed to get HuggingFace revision for', modelHandle, e)
-    })
-    tryGettingReadMeFile(modelHandle)
-      .then((data) => {
-        if (data) {
-          setDescription(data)
-        }
-      })
-      .catch(console.error)
-  }, [modelHandle, getBranches])
 
   const modelName = modelHandle?.split('/')[1] ?? ''
   if (!modelHandle) return null
@@ -65,7 +45,7 @@ const DownloadLocalModelModal: React.FC = () => {
           <HeaderModal
             name={modelName}
             onCortexButtonClick={function (): void {
-              throw new Error('Function not implemented.')
+              throw new Error('Function not implemented.') // TODO: NamH
             }}
             onActionClick={function (): void {
               throw new Error('Function not implemented.')
@@ -82,7 +62,7 @@ const DownloadLocalModelModal: React.FC = () => {
               <HfListModel modelHandle={modelHandle} />
             ))}
           {tab === 'Information' && (
-            <ModelInformation description={description} maxHeight={height} />
+            <ModelInformation maxHeight={height} modelHandle={modelHandle} />
           )}
         </Fragment>
       }

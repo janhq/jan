@@ -1,6 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useMemo } from 'react'
 
-import { HuggingFaceRepoData } from '@janhq/core'
 import { Button, Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -13,13 +12,12 @@ import {
   downloadStateListAtom,
 } from '@/hooks/useDownloadState'
 
+import useHfRepoDataQuery from '@/hooks/useHfRepoDataQuery'
 import useThreads from '@/hooks/useThreads'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
 import { downloadProgress } from '@/utils/download'
-
-import { fetchHuggingFaceRepoData } from '@/utils/huggingface'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -31,26 +29,16 @@ type Props = {
 }
 
 const HfListModel: React.FC<Props> = ({ modelHandle }) => {
-  const [hfRepoData, setHfRepoData] = useState<HuggingFaceRepoData | undefined>(
-    undefined
-  )
-
-  useEffect(() => {
-    const fetchData = async () => {
-      const result = await fetchHuggingFaceRepoData(modelHandle)
-      setHfRepoData(result)
-    }
-    fetchData()
-  }, [modelHandle])
+  const { data } = useHfRepoDataQuery(modelHandle)
 
   const downloadableModels = useMemo(
     () =>
-      hfRepoData?.siblings
+      data?.siblings
         .filter((item) => item.rfilename.endsWith('.gguf'))
         .sort((a, b) => (a.fileSize ?? 0) - (b.fileSize ?? 0)) ??
       [] ??
       [],
-    [hfRepoData]
+    [data]
   )
 
   return (
