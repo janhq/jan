@@ -70,7 +70,9 @@ const SetUpApiKeyModal: React.FC = () => {
   if (remoteEngine == null) return null
   const owner: string = getTitleByCategory(remoteEngine)
   const logoUrl: string = (metadata?.owner_logo ?? '') as string
-  const apiKeyUrl: string = (metadata?.api_key_url ?? '') as string
+  const apiKeyUrl: string | undefined = (metadata?.api_key_url ?? '') as
+    | string
+    | undefined
 
   return (
     <Modal
@@ -95,16 +97,18 @@ const SetUpApiKeyModal: React.FC = () => {
             onChange={(e) => setApiKey(e.target.value)}
           />
 
-          <span className="mt-3 flex items-center justify-start gap-1 text-xs font-medium leading-3 text-blue-600">
-            <a
-              href={apiKeyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="relative flex no-underline"
-            >
-              Get your API key from {owner} <ArrowUpRight size={12} />
-            </a>
-          </span>
+          {apiKeyUrl && (
+            <span className="mt-3 flex items-center justify-start gap-1 text-xs font-medium leading-3 text-blue-600">
+              <a
+                href={apiKeyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative flex no-underline"
+              >
+                Get your API key from {owner} <ArrowUpRight size={12} />
+              </a>
+            </span>
+          )}
 
           <span className="my-4 flex items-center gap-1 text-xs text-blue-500"></span>
           <div className="flex items-center justify-end gap-3">
