@@ -2,10 +2,11 @@ import { useCallback, useMemo, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
-import { Button, ScrollArea } from '@janhq/joi'
+import { LlmEngines } from '@janhq/core'
+import { ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { UploadCloudIcon, UploadIcon } from 'lucide-react'
+import { UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -49,11 +50,6 @@ const MyModels = () => {
     setSearchText(input)
   }, [])
 
-  // const findByEngine = filteredDownloadedModels.map((x) => x.engine)
-  // const groupByEngine = findByEngine.filter(function (item, index) {
-  //   if (findByEngine.indexOf(item) === index) return item !== 'cortex.llamacpp'
-  // })
-
   return (
     <div {...getRootProps()} className="h-full w-full">
       <ScrollArea className="h-full w-full">
@@ -93,42 +89,29 @@ const MyModels = () => {
           </div>
 
           <div className="relative w-full">
-            {filteredDownloadedModels.filter(
-              (x) => x.engine === 'cortex.llamacpp'
-            ).length !== 0 && (
-              <div className="my-6">
-                <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <h6 className="text-base font-semibold">Cortex</h6>
-                </div>
-                <div className="mt-2">
-                  {filteredDownloadedModels
-                    .filter((x) => x.engine === 'cortex.llamacpp')
-                    .map((model) => (
-                      <ModelItem key={model.id} model={model} />
-                    ))}
-                </div>
-              </div>
-            )}
+            {LlmEngines.map((engine) => {
+              const modelByEngine = filteredDownloadedModels.filter(
+                (x) => x.engine === engine
+              )
 
-            {/* {groupByEngine.map((engine, i) => {
+              if (modelByEngine.length === 0) return null
+
               return (
-                <div className="my-6" key={i}>
+                <div className="my-6" key={engine}>
                   <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <h6 className="text-base font-semibold capitalize">
                       {engine}
                     </h6>
-                    <SetupRemoteModel engine={engine} />
+                    {/* <SetupRemoteModel engine={engine} /> */}
                   </div>
                   <div className="mt-2">
-                    {filteredDownloadedModels
-                      .filter((x) => x.engine === engine)
-                      .map((model) => (
-                        <ModelItem key={model.id} model={model} />
-                      ))}
+                    {modelByEngine.map((model) => (
+                      <ModelItem key={model.id} model={model} />
+                    ))}
                   </div>
                 </div>
               )
-            })} */}
+            })}
           </div>
         </div>
       </ScrollArea>
