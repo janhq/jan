@@ -16,7 +16,7 @@ export const SettingScreenList = [
   'Appearance',
   'Keyboard Shortcuts',
   'Advanced Settings',
-  'Extensions',
+  // 'Extensions',
 ] as const
 
 export type SettingScreenTuple = typeof SettingScreenList
