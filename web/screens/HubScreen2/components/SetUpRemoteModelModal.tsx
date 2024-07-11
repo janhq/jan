@@ -1,4 +1,4 @@
-import { Fragment, useCallback } from 'react'
+import { Fragment } from 'react'
 
 import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -16,8 +16,6 @@ const SetUpRemoteModelModal: React.FC = () => {
   const navigateToSetUpApiKey = useSetAtom(navigateToSetUpApiKeyAtom)
   const { stage, metadata } = useAtomValue(setUpRemoteModelStageAtom)
 
-  const onCortexButtonClick = useCallback(() => {}, [])
-
   const owner: string = (metadata?.owned_by ?? '') as string
   const logoUrl: string = (metadata?.owner_logo ?? '') as string
   const description: string = (metadata?.description ?? '') as string
@@ -29,11 +27,7 @@ const SetUpRemoteModelModal: React.FC = () => {
       onOpenChange={() => setUpRemoteModelStage('NONE', undefined)}
       content={
         <Fragment>
-          <HeaderModal
-            name={modelName}
-            onCortexButtonClick={onCortexButtonClick}
-            onActionClick={navigateToSetUpApiKey}
-          />
+          <HeaderModal name={modelName} onActionClick={navigateToSetUpApiKey} />
           <ModelTitle
             className="text-[hsla(var(--text-secondary)] my-4"
             name={owner}

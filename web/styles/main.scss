@@ -11,6 +11,7 @@
 @import './components/loader.scss';
 @import './components/code-block.scss';
 @import './components/message.scss';
+@import './markdown.scss';
 
 :root {
   --warning-bg: 41, 96%, 40%, 1;
@@ -39,6 +40,7 @@
   --text-secondary: 0, 0%, 0%, 0.6;
   --text-tertiary: 0, 0%, 0%, 0.4;
   --text-quaternary: 0, 0%, 0%, 0.2;
+  --text-muted: 240, 4%, 46%, 1;
 }
 
 html.dark {
@@ -67,4 +69,5 @@ html.dark {
   --text-secondary: 0, 0%, 68%, 1;
   --text-tertiary: 0, 0%, 68%, 0.4;
   --text-quaternary: 0, 0%, 68%, 0.2;
+  --text-muted: 240, 4%, 46%, 1;
 }
