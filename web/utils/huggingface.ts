@@ -133,12 +133,12 @@ export const getEngineAndBranches = async (
   }
 
   branches.forEach((branch) => {
-    if (branch.includes('-onnx')) {
+    if (branch.includes('onnx')) {
       engineToBranches.onnx.push(branch)
       return
     }
 
-    if (branch.includes('-gguf')) {
+    if (branch.includes('gguf')) {
       engineToBranches.gguf.push(branch)
       return
     }
