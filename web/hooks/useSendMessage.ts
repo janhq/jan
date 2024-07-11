@@ -173,18 +173,25 @@ const useSendMessage = () => {
         .filter((msg) => msg != null) as ChatCompletionMessageParam[]
       messages.unshift(systemMessage)
 
+      const modelOptions: Record<string, string | number> = {}
+      if (selectedModel.frequency_penalty) {
+        modelOptions.frequency_penalty = selectedModel.frequency_penalty
+      }
+      if (selectedModel.presence_penalty) {
+        modelOptions.presence_penalty = selectedModel.presence_penalty
+      }
+
       let assistantResponseMessage = ''
       if (selectedModel.stream === true) {
         const stream = await chatCompletionStreaming({
           messages,
           model: selectedModel.id,
           stream: true,
-          frequency_penalty: selectedModel.frequency_penalty ?? 0,
           max_tokens: selectedModel.max_tokens,
-          presence_penalty: selectedModel.presence_penalty ?? 0,
           stop: selectedModel.stop,
           temperature: selectedModel.temperature ?? 1,
           top_p: selectedModel.top_p ?? 1,
+          ...modelOptions,
         })
 
         abortControllerRef.current = stream.controller
@@ -252,12 +259,11 @@ const useSendMessage = () => {
               messages,
               model: selectedModel.id,
               stream: false,
-              frequency_penalty: selectedModel.frequency_penalty ?? 0,
               max_tokens: selectedModel.max_tokens,
-              presence_penalty: selectedModel.presence_penalty ?? 0,
               stop: selectedModel.stop,
               temperature: selectedModel.temperature ?? 1,
               top_p: selectedModel.top_p ?? 1,
+              ...modelOptions,
             },
             {
               signal: abortController.signal,
@@ -398,19 +404,24 @@ const useSendMessage = () => {
           content: message,
         })
         messages.unshift(systemMessage)
-
+        const modelOptions: Record<string, string | number> = {}
+        if (selectedModel.frequency_penalty) {
+          modelOptions.frequency_penalty = selectedModel.frequency_penalty
+        }
+        if (selectedModel.presence_penalty) {
+          modelOptions.presence_penalty = selectedModel.presence_penalty
+        }
         let assistantResponseMessage = ''
         if (selectedModel.stream === true) {
           const stream = await chatCompletionStreaming({
             messages,
             model: selectedModel.id,
             stream: true,
-            frequency_penalty: selectedModel.frequency_penalty ?? 0,
             max_tokens: selectedModel.max_tokens,
-            presence_penalty: selectedModel.presence_penalty ?? 0,
             stop: selectedModel.stop,
             temperature: selectedModel.temperature ?? 1,
             top_p: selectedModel.top_p ?? 1,
+            ...modelOptions,
           })
 
           abortControllerRef.current = stream.controller
@@ -478,12 +489,11 @@ const useSendMessage = () => {
                 messages,
                 model: selectedModel.id,
                 stream: false,
-                frequency_penalty: selectedModel.frequency_penalty ?? 0,
                 max_tokens: selectedModel.max_tokens,
-                presence_penalty: selectedModel.presence_penalty ?? 0,
                 stop: selectedModel.stop,
                 temperature: selectedModel.temperature ?? 1,
                 top_p: selectedModel.top_p ?? 1,
+                ...modelOptions,
               },
               {
                 signal: abortController.signal,
