@@ -13,7 +13,10 @@ const Tab: React.FC<Props> = ({ tab, handleTab }) => {
     <div className="w-full border-b">
       {AvailableLocalModelTabs.map((item) => (
         <button
-          className={twMerge('relative px-4 py-2')}
+          className={twMerge(
+            'relative px-4 py-2 text-base leading-6',
+            tab === item ? 'font-semibold' : 'text-[var(--text-secondary)]'
+          )}
           onClick={() => handleTab(item)}
           key={item}
         >

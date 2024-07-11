@@ -80,13 +80,15 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
                 className="border-b last:border-b-0 hover:bg-[#2563EB0D]"
               >
                 <td className="whitespace-nowrap py-4 pl-3">
-                  <div className="w-fit rounded-md border bg-white px-1.5 py-0.5 text-[var(--text-primary)]">
+                  <div className="w-fit rounded-md border bg-white px-1.5 py-0.5 text-xs font-medium leading-4 text-[hsla(var(--text-primary))]">
                     {item}
                   </div>
                 </td>
-                <td className="w-full pl-4">{item}</td>
+                <td className="w-full pl-4 font-medium leading-5 text-[hsla(var(--text-muted))]">
+                  {item}
+                </td>
                 <td>
-                  <div className="mr-3 flex items-center gap-3 whitespace-nowrap py-3">
+                  <div className="mr-3 flex items-center justify-end gap-3 whitespace-nowrap py-3">
                     <span>4.06 MB</span>
                     <DownloadContainer
                       modelHandle={modelHandle}
