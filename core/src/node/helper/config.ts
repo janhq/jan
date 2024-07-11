@@ -7,7 +7,7 @@ import childProcess from 'child_process'
 const configurationFileName = 'settings.json'
 
 // TODO: do no specify app name in framework module
-const defaultJanDataFolder = join(os.homedir(), 'jan')
+const defaultJanDataFolder = join(os?.homedir(), 'jan')
 const defaultAppConfig: AppConfiguration = {
   data_folder: defaultJanDataFolder,
   quick_ask: false,
