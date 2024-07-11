@@ -139,8 +139,6 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
     }
   }
 
-  const isVisionModel = false
-
   return (
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
@@ -149,7 +147,6 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
           className={twMerge(
             'relative max-h-[400px] resize-none  pr-20',
             fileUpload.length && 'rounded-t-none',
-            experimentalFeature && 'pl-10',
             activeSetting && 'pb-14 pr-16'
           )}
           spellCheck={spellCheck}
@@ -162,7 +159,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
           value={currentPrompt}
           onChange={onPromptChange}
         />
-        {experimentalFeature && (
+        {/* {experimentalFeature && (
           <Tooltip
             trigger={
               <Button
@@ -217,89 +214,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
               </>
             }
           />
-        )}
-
-        {showAttacmentMenus && (
-          <div
-            ref={refAttachmentMenus}
-            className={twMerge(
-              'shadow-sm absolute bottom-14 left-0 z-30 w-36 cursor-pointer rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-1',
-              activeSetting && 'bottom-28'
-            )}
-          >
-            <ul>
-              <Tooltip
-                trigger={
-                  <li
-                    className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      isVisionModel
-                        ? 'cursor-pointer'
-                        : 'cursor-not-allowed opacity-50'
-                    )}
-                    onClick={() => {
-                      if (isVisionModel) {
-                        imageInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <ImageIcon size={16} />
-                    <span className="font-medium">Image</span>
-                  </li>
-                }
-                content="This feature only supports multimodal models."
-                disabled={isVisionModel}
-              />
-              {/* <Tooltip */}
-              {/*   side="bottom" */}
-              {/*   trigger={ */}
-              {/*     <li */}
-              {/*       className={twMerge( */}
-              {/*         'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]', */}
-              {/*         activeThread?.assistants[0].model.settings.text_model === */}
-              {/*           false */}
-              {/*           ? 'cursor-not-allowed opacity-50' */}
-              {/*           : 'cursor-pointer' */}
-              {/*       )} */}
-              {/*       onClick={() => { */}
-              {/*         if ( */}
-              {/*           activeThread?.assistants[0].model.settings */}
-              {/*             .text_model !== false */}
-              {/*         ) { */}
-              {/*           fileInputRef.current?.click() */}
-              {/*           setShowAttacmentMenus(false) */}
-              {/*         } */}
-              {/*       }} */}
-              {/*     > */}
-              {/*       <FileTextIcon size={16} /> */}
-              {/*       <span className="font-medium">Document</span> */}
-              {/*     </li> */}
-              {/*   } */}
-              {/*   content={ */}
-              {/*     (!activeThread?.assistants[0].tools || */}
-              {/*       !activeThread?.assistants[0].tools[0]?.enabled || */}
-              {/*       activeThread?.assistants[0].model.settings.text_model === */}
-              {/*         false) && ( */}
-              {/*       <> */}
-              {/*         {activeThread?.assistants[0].model.settings.text_model === */}
-              {/*         false ? ( */}
-              {/*           <span> */}
-              {/*             This model does not support text-based retrieval. */}
-              {/*           </span> */}
-              {/*         ) : ( */}
-              {/*           <span> */}
-              {/*             Turn on Retrieval in Assistant Settings to use this */}
-              {/*             feature. */}
-              {/*           </span> */}
-              {/*         )} */}
-              {/*       </> */}
-              {/*     ) */}
-              {/*   } */}
-              {/* /> */}
-            </ul>
-          </div>
-        )}
+        )} */}
 
         <div className={twMerge('absolute right-3 top-1.5')}>
           <div className="flex items-center gap-x-4">
@@ -384,7 +299,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
               </Button>
-              {experimentalFeature && (
+              {/* {experimentalFeature && (
                 <Badge
                   className="flex cursor-pointer items-center gap-x-1"
                   theme="secondary"
@@ -403,7 +318,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
                   />
                   <span>Tools</span>
                 </Badge>
-              )}
+              )} */}
             </div>
             <Button theme="icon" onClick={() => setActiveSetting(false)}>
               <ChevronUpIcon
@@ -415,7 +330,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
         )}
       </div>
 
-      <input
+      {/* <input
         type="file"
         className="hidden"
         ref={imageInputRef}
@@ -431,7 +346,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
         value=""
         onChange={handleFileChange}
         accept="application/pdf"
-      />
+      /> */}
     </div>
   )
 }
