@@ -19,7 +19,7 @@ const SettingDetail = () => {
     case 'Appearance':
       return <AppearanceOptions />
 
-    case 'Hotkey & Shortcut':
+    case 'Keyboard Shortcuts':
       return <Hotkeys />
 
     case 'Advanced Settings':

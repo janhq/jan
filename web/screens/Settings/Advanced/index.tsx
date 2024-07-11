@@ -381,7 +381,7 @@ const Advanced = () => {
           </div>
         )}
 
-        <DataFolder />
+        {/* <DataFolder /> */}
 
         {/* Proxy */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
@@ -429,7 +429,7 @@ const Advanced = () => {
           />
         </div>
 
-        {experimentalEnabled && (
+        {/* {experimentalEnabled && (
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
@@ -455,10 +455,10 @@ const Advanced = () => {
               }}
             />
           </div>
-        )}
+        )} */}
 
         {/* Clear log */}
-        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+        {/* <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
           <div className="flex-shrink-0 space-y-1">
             <div className="flex gap-x-2">
               <h6 className="font-semibold capitalize">Clear logs</h6>
@@ -470,10 +470,10 @@ const Advanced = () => {
           <Button theme="destructive" onClick={clearLogs}>
             Clear
           </Button>
-        </div>
+        </div> */}
 
         {/* Factory Reset */}
-        <FactoryReset />
+        {/* <FactoryReset /> */}
       </div>
     </ScrollArea>
   )
