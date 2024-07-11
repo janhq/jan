@@ -1,5 +1,9 @@
+import Image from 'next/image'
+
 import { LlmEngine, Model } from '@janhq/core'
 import { useAtomValue } from 'jotai'
+
+import { getTitleByCategory } from '@/utils/model-engine'
 
 import ModelLabel from '../ModelLabel'
 
@@ -25,11 +29,12 @@ const ModelSection: React.FC<Props> = ({
     })
 
   if (modelByEngine.length === 0) return null
+  const engineName = getTitleByCategory(engine)
 
   return (
     <div className="w-full pt-2">
       <h6 className="mb-1 px-3 font-medium text-[hsla(var(--text-secondary))]">
-        {engine}
+        {engineName}
       </h6>
       <ul className="pb-2">
         {modelByEngine.map((model) => (
@@ -39,13 +44,15 @@ const ModelSection: React.FC<Props> = ({
             onClick={() => onModelSelected(model)}
           >
             {model.metadata?.owner_logo && (
-              <img
-                className="h-5 w-5 rounded-full object-cover"
+              <Image
+                className="rounded-full object-cover"
+                width={20}
+                height={20}
                 src={model.metadata?.owner_logo}
-                alt="bot"
+                alt="logo"
               />
             )}
-            <p className="line-clamp-1">{model.id}</p>
+            <p className="line-clamp-1">{model.name ?? model.id}</p>
             <ModelLabel metadata={model.metadata} compact />
           </li>
         ))}
