@@ -6,7 +6,6 @@ import { AppConfiguration } from '@janhq/core'
 
 import {
   ScrollArea,
-  Button,
   Switch,
   Input,
   Tooltip,
@@ -24,9 +23,6 @@ import { snackbar, toaster } from '@/containers/Toast'
 
 import useModels from '@/hooks/useModels'
 import { useSettings } from '@/hooks/useSettings'
-
-import DataFolder from './DataFolder'
-import FactoryReset from './FactoryReset'
 
 import {
   experimentalFeatureEnabledAtom,
