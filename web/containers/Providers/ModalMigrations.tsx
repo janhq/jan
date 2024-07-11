@@ -47,11 +47,10 @@ const ModalMigrations = ({ children }: React.PropsWithChildren) => {
     didShowMigrationWarningAtom
   )
   const [skipMigration, setSkipMigration] = useAtom(skipMigrationAtom)
-  const [modelsMigrationSuccess, setModelsMigrationSuccess] = useAtom(
-    modelsMigrationSuccessAtom
+  const modelsMigrationSuccess = useAtomValue(modelsMigrationSuccessAtom)
+  const threadsMessagesMigrationSuccess = useAtomValue(
+    threadsMessagesMigrationSuccessAtom
   )
-  const [threadsMessagesMigrationSuccess, setThreadsMessagesMigrationSuccess] =
-    useAtom(threadsMessagesMigrationSuccessAtom)
 
   const [step, setStep] = React.useState(1)
   const [loaderThreads, setLoaderThreads] = React.useState(false)
