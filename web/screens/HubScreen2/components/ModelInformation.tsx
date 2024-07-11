@@ -2,13 +2,16 @@ import React from 'react'
 
 import { twMerge } from 'tailwind-merge'
 
+import useGetReadMeContent from '@/hooks/useGetReadMeContent'
+
 type Props = {
-  description: string
+  modelHandle: string
   maxHeight: number
 }
 
-const ModelInformation: React.FC<Props> = ({ description, maxHeight }) => {
-  // TODO: Add more styling or using another markdown lib
+const ModelInformation: React.FC<Props> = ({ modelHandle, maxHeight }) => {
+  const { data } = useGetReadMeContent(modelHandle)
+  if (!data) return null
   return (
     <div
       style={{ maxHeight }}
@@ -16,7 +19,7 @@ const ModelInformation: React.FC<Props> = ({ description, maxHeight }) => {
         'text-[hsla(var(--text-secondary)] mt-4 h-full w-full overflow-x-hidden text-sm leading-[16.94px]'
       )}
       dangerouslySetInnerHTML={{
-        __html: description,
+        __html: data,
       }}
     />
   )

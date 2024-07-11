@@ -7,14 +7,12 @@ import { toaster } from '@/containers/Toast'
 import useCortex from './useCortex'
 
 import {
-  configuredModelsAtom,
   downloadedModelsAtom,
   removeDownloadedModelAtom,
 } from '@/helpers/atoms/Model.atom'
 
 const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
-  const setConfiguredModels = useSetAtom(configuredModelsAtom)
   const removeDownloadedModel = useSetAtom(removeDownloadedModelAtom)
   const {
     fetchModels,
@@ -27,10 +25,9 @@ const useModels = () => {
     const getDownloadedModels = async () => {
       const models = await fetchModels()
       setDownloadedModels(models)
-      setConfiguredModels(models)
     }
     getDownloadedModels()
-  }, [setDownloadedModels, setConfiguredModels, fetchModels])
+  }, [setDownloadedModels, fetchModels])
 
   const stopModel = useCallback(
     async (modelId: string) => cortexStopModel(modelId),

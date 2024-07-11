@@ -3,7 +3,7 @@ import { ModelRuntimeParams, ModelSettingParams, Thread } from '@janhq/core'
 import { atom } from 'jotai'
 
 import {
-  configuredModelsAtom,
+  downloadedModelsAtom,
   getSelectedModelAtom,
   updateSelectedModelAtom,
 } from './Model.atom'
@@ -50,7 +50,7 @@ export const setActiveThreadIdAtom = atom(
       return
     }
 
-    const model = get(configuredModelsAtom).find((m) => m.id === modelId)
+    const model = get(downloadedModelsAtom).find((m) => m.id === modelId)
     if (!model) {
       console.warn(`Model ${modelId} removed or deleted`)
       return

@@ -12,7 +12,7 @@ import {
   downloadStateListAtom,
 } from '@/hooks/useDownloadState'
 
-import useHuggingFace from '@/hooks/useHuggingFace'
+import useHfEngineToBranchesQuery from '@/hooks/useHfEngineToBranchesQuery'
 
 import useThreads from '@/hooks/useThreads'
 
@@ -20,7 +20,7 @@ import { formatDownloadPercentage } from '@/utils/converter'
 
 import { downloadProgress } from '@/utils/download'
 
-import { EngineToBranches, EngineType } from '@/utils/huggingface'
+import { EngineType } from '@/utils/huggingface'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -32,35 +32,21 @@ type Props = {
 }
 
 const ListModel: React.FC<Props> = ({ modelHandle }) => {
-  const { getEngineAndBranches } = useHuggingFace()
-
-  const [engineAndBranches, setEngineAndBranches] = useState<
-    EngineToBranches | undefined
-  >(undefined)
   const [engineFilter, setEngineFilter] = useState<EngineType | undefined>(
     undefined
   )
-
-  useEffect(() => {
-    const fetchData = async () => {
-      const result = await getEngineAndBranches(modelHandle)
-      setEngineAndBranches(result)
-    }
-    fetchData()
-  }, [getEngineAndBranches, modelHandle])
+  const { data } = useHfEngineToBranchesQuery(modelHandle)
 
   const engineSelection: { name: string; value: string }[] = useMemo(() => {
-    if (!engineAndBranches) return []
+    if (!data) return []
     const result: { name: string; value: string }[] = []
-    if (engineAndBranches.gguf.length > 0)
-      result.push({ name: 'GGUF', value: 'gguf' })
-    if (engineAndBranches.onnx.length > 0)
-      result.push({ name: 'ONNX', value: 'onnx' })
-    if (engineAndBranches.tensorrtllm.length > 0)
+    if (data.gguf.length > 0) result.push({ name: 'GGUF', value: 'gguf' })
+    if (data.onnx.length > 0) result.push({ name: 'ONNX', value: 'onnx' })
+    if (data.tensorrtllm.length > 0)
       result.push({ name: 'TensorRT', value: 'tensorrtllm' })
 
     return result
-  }, [engineAndBranches])
+  }, [data])
 
   useEffect(() => {
     if (engineSelection.length === 0) return
@@ -68,8 +54,8 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
   }, [engineSelection])
 
   const modelBranches: string[] = []
-  if (engineAndBranches) {
-    const branches = engineAndBranches[engineFilter as EngineType] as string[]
+  if (data) {
+    const branches = data[engineFilter as EngineType] as string[]
     if (!branches || branches.length === 0) return
     modelBranches.push(...branches)
   }

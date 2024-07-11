@@ -20,8 +20,6 @@ export const removeDownloadedModelAtom = atom(
   }
 )
 
-export const configuredModelsAtom = atom<Model[]>([])
-
 export const defaultModelAtom = atom<Model | undefined>(undefined)
 
 /// TODO: move this part to another atom
