@@ -383,7 +383,12 @@ export default class JanModelExtension extends ModelExtension {
 
         // model binaries (sources) are absolute path & exist
         const existFiles = await Promise.all(
-          model.sources.map((source) => fs.existsSync(source.url))
+          model.sources.map(
+            (source) =>
+              // Supposed to be a local file url
+              !source.url.startsWith(`http://`) &&
+              !source.url.startsWith(`https://`)
+          )
         )
         if (existFiles.every((exist) => exist)) return true
 
