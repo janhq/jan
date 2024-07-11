@@ -24,6 +24,7 @@ export type SettingScreen = SettingScreenTuple[number]
 
 const SettingsScreen = () => {
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
+
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setSelectedSettingScreen('Advanced Settings')
