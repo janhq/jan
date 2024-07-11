@@ -50,12 +50,12 @@ const DataLoader: React.FC = () => {
     //   })
   }, [setJanDataFolderPath, setQuickAskEnabled])
 
-  useEffect(() => {
-    const janSettingScreen = SettingScreenList.filter(
-      (screen) => window.electronAPI || screen !== 'Extensions'
-    )
-    setJanSettingScreen(janSettingScreen)
-  }, [setJanSettingScreen])
+  // useEffect(() => {
+  //   const janSettingScreen = SettingScreenList.filter(
+  //     (screen) => window.electronAPI || screen !== 'Extensions'
+  //   )
+  //   setJanSettingScreen(janSettingScreen)
+  // }, [setJanSettingScreen])
 
   console.debug('Load Data...')
   return null
