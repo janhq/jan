@@ -40,13 +40,11 @@ const Providers = ({ children }: PropsWithChildren) => {
           <QueryClientProvider client={queryClient}>
             <DataLoader />
             <EventListenerWrapper />
-            <Responsive>
-              <ModalMigrations>{children}</ModalMigrations>
-              {children}
-            </Responsive>
+            <Responsive>{children}</Responsive>
             <Toaster />
           </QueryClientProvider>
         )}
+        <ModalMigrations />
       </JotaiWrapper>
     </ThemeWrapper>
   )
