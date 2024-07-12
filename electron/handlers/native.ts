@@ -243,7 +243,7 @@ export function handleAppIPCs() {
         const fileNames: string[] = model.sources.map((x: any) => x.filename)
         // prepend fileNames with cortexModelFolderPath
         const files = fileNames.map((x: string) =>
-          join(cortexModelFolderPath, x)
+          join(cortexModelFolderPath, model.id, x)
         )
 
         const engine = 'cortex.llamacpp'
