@@ -7,8 +7,10 @@ import Image from 'next/image'
 import { RemoteEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 import { Settings } from 'lucide-react'
+
+import useConfigQuery from '@/hooks/useConfigQuery'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
@@ -16,7 +18,6 @@ import { getTitleByCategory } from '@/utils/model-engine'
 
 import RemoteModelCard from './RemoteModelCard'
 
-import { getCortexConfigAtom } from '@/helpers/atoms/CortexConfig.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 type Props = {
@@ -26,7 +27,7 @@ type Props = {
 }
 
 const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
-  const cortexConfig = useAtomValue(getCortexConfigAtom)
+  const { data: configData } = useConfigQuery()
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
 
   const engineLogo: string | undefined = data.find(
@@ -43,9 +44,10 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
   const refinedTitle = getTitleByCategory(engine)
 
   const isHasApiKey = useMemo(() => {
+    if (!configData) return false
     // @ts-expect-error engine is not null
-    return (cortexConfig[engine ?? '']?.apiKey ?? '').length > 0
-  }, [cortexConfig, engine])
+    return (configData[engine ?? '']?.apiKey ?? '').length > 0
+  }, [configData, engine])
 
   const onSetUpClick = useCallback(() => {
     setUpRemoteModelStage('SETUP_API_KEY', engine, {

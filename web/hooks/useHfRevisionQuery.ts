@@ -6,6 +6,7 @@ const useHfRevisionQuery = (repoName: string) =>
   useQuery({
     queryKey: ['hfRevision', repoName],
     queryFn: () => getBranches(repoName),
+    staleTime: 5 * 60 * 1000,
   })
 
 export default useHfRevisionQuery
