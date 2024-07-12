@@ -13,6 +13,7 @@ export * from './core/TextArea'
 export * from './core/Tabs'
 export * from './core/Accordion'
 export * from './core/DropdownMenu'
+export * from './core/VisuallyHidden'
 
 export * from './hooks/useClipboard'
 export * from './hooks/usePageLeave'

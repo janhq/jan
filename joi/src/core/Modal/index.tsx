@@ -4,6 +4,7 @@ import { Cross2Icon } from '@radix-ui/react-icons'
 
 import './styles.scss'
 import { twMerge } from 'tailwind-merge'
+import { VisuallyHidden } from '../VisuallyHidden'
 
 type Props = {
   trigger?: ReactNode
@@ -39,6 +40,12 @@ const Modal = ({
           className
         )}
       >
+        <DialogPrimitive.Title>
+          <VisuallyHidden></VisuallyHidden>
+        </DialogPrimitive.Title>
+        <DialogPrimitive.Description>
+          <VisuallyHidden></VisuallyHidden>
+        </DialogPrimitive.Description>
         <div className="modal__title">{title}</div>
         {content}
         {!hideClose && (
