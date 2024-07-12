@@ -51,11 +51,10 @@ const DataFolder = () => {
       return
     }
 
-    const newDestChildren: string[] = await fs.readdirSync(destFolder)
-    const isNotEmpty =
-      newDestChildren.filter((x) => x !== '.DS_Store').length > 0
+    const isEmpty: boolean =
+      await window.core?.api?.isDirectoryEmpty(destFolder)
 
-    if (isNotEmpty) {
+    if (!isEmpty) {
       setDestinationPath(destFolder)
       showDestNotEmptyConfirm(true)
       return
@@ -74,16 +73,7 @@ const DataFolder = () => {
     if (!destinationPath) return
     try {
       setShowLoader(true)
-      const appConfiguration: AppConfiguration =
-        await window.core?.api?.getAppConfigurations()
-      const currentJanDataFolder = appConfiguration.data_folder
-      appConfiguration.data_folder = destinationPath
-      const { err } = await fs.syncFile(currentJanDataFolder, destinationPath)
-      if (err) throw err
-      await window.core?.api?.updateAppConfiguration(appConfiguration)
-      console.debug(
-        `File sync finished from ${currentJanDataFolder} to ${destinationPath}`
-      )
+      await window.core?.api?.changeDataFolder(destinationPath)
       localStorage.setItem(SUCCESS_SET_NEW_DESTINATION, 'true')
       setTimeout(() => {
         setShowLoader(false)
