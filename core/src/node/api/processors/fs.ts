@@ -1,5 +1,5 @@
-import { join } from 'path'
-import { normalizeFilePath } from '../../helper/path'
+import { join, resolve } from 'path'
+import { normalizeFilePath, validatePath } from '../../helper/path'
 import { getJanDataFolderPath } from '../../helper'
 import { Processor } from './Processor'
 import fs from 'fs'
@@ -15,17 +15,29 @@ export class FileSystem implements Processor {
   process(route: string, ...args: any): any {
     const instance = this as any
     const func = instance[route]
-
     if (func) {
       return func(...args)
     } else {
       return import(FileSystem.moduleName).then((mdl) =>
         mdl[route](
-          ...args.map((arg: any) => {
-            return typeof arg === 'string' &&
-              (arg.startsWith(`file:/`) || arg.startsWith(`file:\\`))
-              ? join(getJanDataFolderPath(), normalizeFilePath(arg))
-              : arg
+          ...args.map((arg: any, index: number) => {
+            if(index !== 0) {
+              return arg
+            }
+            if (index === 0 && typeof arg !== 'string') {
+              throw new Error(`Invalid argument ${JSON.stringify(args)}`)
+            }
+            const path =
+            (arg.startsWith(`file:/`) || arg.startsWith(`file:\\`))
+            ? join(getJanDataFolderPath(), normalizeFilePath(arg))
+            : arg
+
+            if(path.startsWith(`http://`) || path.startsWith(`https://`)) {
+              return path
+            }
+            const absolutePath = resolve(path)
+            validatePath(absolutePath)
+            return absolutePath
           })
         )
       )
@@ -42,8 +54,11 @@ export class FileSystem implements Processor {
       path = join(getJanDataFolderPath(), normalizeFilePath(path))
     }
 
+    const absolutePath = resolve(path)
+    validatePath(absolutePath)
+
     return new Promise((resolve, reject) => {
-      fs.rm(path, { recursive: true, force: true }, (err) => {
+      fs.rm(absolutePath, { recursive: true, force: true }, (err) => {
         if (err) {
           reject(err)
         } else {
@@ -63,8 +78,11 @@ export class FileSystem implements Processor {
       path = join(getJanDataFolderPath(), normalizeFilePath(path))
     }
 
+    const absolutePath = resolve(path)
+    validatePath(absolutePath)
+
     return new Promise((resolve, reject) => {
-      fs.mkdir(path, { recursive: true }, (err) => {
+      fs.mkdir(absolutePath, { recursive: true }, (err) => {
         if (err) {
           reject(err)
         } else {
@@ -73,4 +91,5 @@ export class FileSystem implements Processor {
       })
     })
   }
+
 }
