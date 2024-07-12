@@ -5,7 +5,7 @@
 
 import { APIEvents, APIRoutes, AppConfiguration, getAppConfigurations, updateAppConfiguration } from '@janhq/core/node'
 import { contextBridge, ipcRenderer } from 'electron'
-import {readdirSync} from 'fs'
+import { readdirSync } from 'fs'
 
 const interfaces: { [key: string]: (...args: any[]) => any } = {}
 
