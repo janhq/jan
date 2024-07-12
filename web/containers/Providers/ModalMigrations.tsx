@@ -20,7 +20,7 @@ import {
   skipMigrationAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
-const ModalMigrations = ({ children }: React.PropsWithChildren) => {
+const ModalMigrations = () => {
   const [didShowMigrationWarning, setDidShowMigrationWarning] = useAtom(
     didShowMigrationWarningAtom
   )
@@ -238,7 +238,6 @@ const ModalMigrations = ({ children }: React.PropsWithChildren) => {
           </>
         }
       />
-      {children}
     </>
   )
 }
