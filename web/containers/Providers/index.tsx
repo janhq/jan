@@ -17,6 +17,7 @@ import { setupCoreServices } from '@/services/coreService'
 import Umami from '@/utils/umami'
 
 import DataLoader from './DataLoader'
+import ModalMigrations from './ModalMigrations'
 
 import Responsive from './Responsive'
 
@@ -39,7 +40,10 @@ const Providers = ({ children }: PropsWithChildren) => {
           <QueryClientProvider client={queryClient}>
             <DataLoader />
             <EventListenerWrapper />
-            <Responsive>{children}</Responsive>
+            <Responsive>
+              <ModalMigrations>{children}</ModalMigrations>
+              {children}
+            </Responsive>
             <Toaster />
           </QueryClientProvider>
         )}
