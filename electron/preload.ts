@@ -45,7 +45,7 @@ interfaces['changeDataFolder'] = async path => {
 }
 
 interfaces['isDirectoryEmpty'] = async path => {
-  const dirChildren= await readdirSync(path)
+  const dirChildren = await readdirSync(path)
   return dirChildren.filter((x) => x !== '.DS_Store').length === 0
 }
 
