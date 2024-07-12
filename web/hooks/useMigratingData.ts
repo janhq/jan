@@ -2,14 +2,23 @@
 import { useCallback } from 'react'
 
 import { MessageCreateParams } from '@janhq/core'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import useCortex from './useCortex'
 import useThreads from './useThreads'
 
+import {
+  threadsMessagesMigrationSuccessAtom,
+  modelsMigrationSuccessAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 const useMigratingData = () => {
+  const [threadsMessagesMigrationSuccess, setThreadsMessagesMigrationSuccess] =
+    useAtom(threadsMessagesMigrationSuccessAtom)
+  const [modelsMigrationSuccess, setModelsMigrationSuccess] = useAtom(
+    modelsMigrationSuccessAtom
+  )
   const { createThread } = useThreads()
   const { updateThread, createMessage } = useCortex()
   const assistants = useAtomValue(assistantsAtom)
@@ -22,8 +31,16 @@ const useMigratingData = () => {
   }, [])
 
   const migrateModels = useCallback(async () => {
-    await window?.electronAPI?.syncModelFileToCortex()
-  }, [])
+    try {
+      if (!modelsMigrationSuccess) {
+        await window?.electronAPI?.syncModelFileToCortex()
+        setModelsMigrationSuccess(true)
+      }
+    } catch (err) {
+      console.log(err)
+      setModelsMigrationSuccess(false)
+    }
+  }, [modelsMigrationSuccess, setModelsMigrationSuccess])
 
   const migrateThreadsAndMessages = useCallback(async () => {
     if (!assistants || assistants.length === 0) {
@@ -31,6 +48,7 @@ const useMigratingData = () => {
       return
     }
     try {
+      if (threadsMessagesMigrationSuccess) return
       const threadsAndMessages = await getJanThreadsAndMessages()
       const janThreads = threadsAndMessages.threads
       for (const thread of janThreads) {
@@ -78,19 +96,23 @@ const useMigratingData = () => {
             console.error(err)
           }
         }
+        setThreadsMessagesMigrationSuccess(true)
       }
     } catch (err) {
       console.log(err)
+      setThreadsMessagesMigrationSuccess(false)
     }
   }, [
     assistants,
     getJanThreadsAndMessages,
-    updateThread,
+    threadsMessagesMigrationSuccess,
     createThread,
+    updateThread,
+    setThreadsMessagesMigrationSuccess,
     createMessage,
   ])
 
-  return { migrateModels, migrateThreadsAndMessages }
+  return { migrateModels, migrateThreadsAndMessages, getJanThreadsAndMessages }
 }
 
 export default useMigratingData
