@@ -9,6 +9,8 @@ import { CloudDownload } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
+import useConfigQuery from '@/hooks/useConfigQuery'
+
 import useCortex from '@/hooks/useCortex'
 
 import useModels from '@/hooks/useModels'
@@ -22,7 +24,6 @@ import ModelTitle from './ModelTitle'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
-import { getCortexConfigAtom } from '@/helpers/atoms/CortexConfig.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
@@ -30,7 +31,7 @@ import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom
 const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const assistants = useAtomValue(assistantsAtom)
-  const cortexConfig = useAtomValue(getCortexConfigAtom)
+  const { data: configData } = useConfigQuery()
 
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
   const setLocalModelModalStage = useSetAtom(localModelModalStageAtom)
@@ -52,7 +53,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
 
     const isApiKeyAdded =
       // @ts-expect-error engine is not null
-      (cortexConfig[model?.engine ?? '']?.apiKey ?? '').length > 0
+      (configData[model?.engine ?? '']?.apiKey ?? '').length > 0
     const isModelDownloaded = downloadedModels.find(
       (m) => m.id === model!.model
     )
@@ -64,7 +65,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
     if (isModelDownloaded) return 'Setup API Key'
 
     return 'Add'
-  }, [model, isLocalModel, downloadedModels, cortexConfig])
+  }, [model, isLocalModel, downloadedModels, configData])
 
   const onActionClick = useCallback(() => {
     if (isLocalModel) {
@@ -132,7 +133,6 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
     isLocalModel,
     downloadedModels,
     assistants,
-    cortexConfig,
   ])
 
   const owner = model?.metadata?.owned_by ?? ''
