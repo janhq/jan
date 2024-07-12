@@ -32,8 +32,15 @@ interfaces['changeDataFolder'] = async path => {
   getAppConfigurations()
   const currentJanDataFolder = appConfiguration.data_folder
   appConfiguration.data_folder = path
-  const { err } = await ipcRenderer.invoke('syncFile', currentJanDataFolder, path)
-  if (err) throw err
+  const reflect = require('@alumna/reflect')
+  await reflect({
+      currentJanDataFolder,
+      path,
+      recursive: true,
+      delete: false,
+      overwrite: true,
+      errorOnExist: false,
+    })
   await ipcRenderer.invoke('updateAppConfiguration', appConfiguration)
 }
 
@@ -42,7 +49,6 @@ interfaces['isDirectoryEmpty'] = async path => {
   return dirChildren.filter((x) => x !== '.DS_Store').length === 0
 }
 
-delete interfaces['syncFile']
 // Expose the 'interfaces' object in the main world under the name 'electronAPI'
 // This allows the renderer process to access these methods directly
 contextBridge.exposeInMainWorld('electronAPI', {

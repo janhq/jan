@@ -18,20 +18,6 @@ export class FSExt implements Processor {
     return func(...args)
   }
 
-  // Handles the 'syncFile' IPC event. This event is triggered to synchronize a file from a source path to a destination path.
-  syncFile(src: string, dest: string) {
-    const reflect = require('@alumna/reflect')
-    validatePath(dest)
-    return reflect({
-      src,
-      dest,
-      recursive: true,
-      delete: false,
-      overwrite: true,
-      errorOnExist: false,
-    })
-  }
-
   // Handles the 'getJanDataFolderPath' IPC event. This event is triggered to get the user space path.
   getJanDataFolderPath() {
     return Promise.resolve(getPath())

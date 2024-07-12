@@ -99,7 +99,6 @@ export enum FileSystemRoute {
   writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
-  syncFile = 'syncFile',
   copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
