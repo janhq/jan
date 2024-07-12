@@ -5,6 +5,8 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
+import useConfigQuery from '@/hooks/useConfigQuery'
+
 import useCortex from '@/hooks/useCortex'
 
 import useModels from '@/hooks/useModels'
@@ -14,7 +16,6 @@ import { HfModelEntry } from '@/utils/huggingface'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
-import { getCortexConfigAtom } from '@/helpers/atoms/CortexConfig.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
@@ -27,15 +28,16 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
   const { getModels } = useModels()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const assistants = useAtomValue(assistantsAtom)
-  const cortexConfig = useAtomValue(getCortexConfigAtom)
+
+  const { data: configData } = useConfigQuery()
 
   const modelDisplayName = model?.name ?? name
 
   const onClick = useCallback(async () => {
-    if (!model) return
+    if (!model || !configData) return
     const isApiKeyAdded =
       // @ts-expect-error engine is not null
-      (cortexConfig[engine ?? '']?.apiKey ?? '').length > 0
+      (configData[engine ?? '']?.apiKey ?? '').length > 0
     const isModelDownloaded = downloadedModels.find((m) => m.id === model.model)
 
     if (isApiKeyAdded && isModelDownloaded) {
@@ -90,7 +92,7 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
     }
   }, [
     assistants,
-    cortexConfig,
+    configData,
     createModel,
     createThread,
     downloadedModels,

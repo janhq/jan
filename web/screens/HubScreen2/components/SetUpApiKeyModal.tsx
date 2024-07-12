@@ -3,24 +3,20 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
 
 import { Button, Modal } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
 
-import { toaster } from '@/containers/Toast'
+import useConfigMutation from '@/hooks/useConfigMutation'
 
-import useCortex from '@/hooks/useCortex'
-
-import useCortexConfig from '@/hooks/useCortexConfig'
+import useConfigQuery from '@/hooks/useConfigQuery'
 
 import { getTitleByCategory } from '@/utils/model-engine'
 
-import { getCortexConfigAtom } from '@/helpers/atoms/CortexConfig.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const SetUpApiKeyModal: React.FC = () => {
-  const { registerEngineConfig } = useCortex()
-  const { getConfig } = useCortexConfig()
-  const cortexConfig = useAtomValue(getCortexConfigAtom)
+  const updateCortexConfig = useConfigMutation()
+  const { data: configData } = useConfigQuery()
 
   const [{ stage, remoteEngine, metadata }, setUpRemoteModelStage] = useAtom(
     setUpRemoteModelStageAtom
@@ -28,40 +24,25 @@ const SetUpApiKeyModal: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>('')
 
   useEffect(() => {
-    if (!remoteEngine) return
+    if (!remoteEngine || !configData) return
     // @ts-expect-error remoteEngine is not null
-    setApiKey(cortexConfig[remoteEngine ?? '']?.apiKey ?? '')
-  }, [remoteEngine, cortexConfig])
+    setApiKey(configData[remoteEngine ?? '']?.apiKey ?? '')
+  }, [remoteEngine, configData])
 
   const onSaveClicked = useCallback(async () => {
     if (!remoteEngine) {
       alert('Does not have engine')
       return
     }
-    try {
-      // TODO: apply use mutation
-      await registerEngineConfig(remoteEngine, {
+    updateCortexConfig.mutate({
+      engine: remoteEngine,
+      config: {
         key: 'apiKey',
         value: apiKey,
         name: remoteEngine,
-      })
-      setUpRemoteModelStage('NONE', undefined)
-      getConfig().catch(console.error)
-      toaster({
-        title: 'Success!',
-        description: `Key added successfully`,
-        type: 'success',
-      })
-    } catch (error) {
-      alert(error)
-    }
-  }, [
-    getConfig,
-    registerEngineConfig,
-    setUpRemoteModelStage,
-    apiKey,
-    remoteEngine,
-  ])
+      },
+    })
+  }, [updateCortexConfig, apiKey, remoteEngine])
 
   const onDismiss = useCallback(() => {
     setUpRemoteModelStage('NONE', undefined)

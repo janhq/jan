@@ -19,6 +19,8 @@ import {
 } from 'cortexso-node/resources/beta/assistants'
 import { useAtomValue } from 'jotai'
 
+import { UpdateConfigMutationVariables } from './useConfigMutation'
+
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 import { CortexConfig } from '@/helpers/atoms/CortexConfig.atom'
 
@@ -222,20 +224,24 @@ const useCortex = () => {
     [cortex.beta.assistants]
   )
 
+  // TODO: add this to cortex-node
   const registerEngineConfig = useCallback(
-    async (
-      engine: string,
-      config: { key: string; value: string; name: string }
-    ) =>
-      fetch(`${host}/configs/${engine}`, {
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          // eslint-disable-next-line @typescript-eslint/naming-convention
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(config),
-      }),
+    async (variables: UpdateConfigMutationVariables) => {
+      try {
+        const { engine, config } = variables
+        await fetch(`${host}/configs/${engine}`, {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(config),
+        })
+      } catch (err) {
+        console.error(err)
+      }
+    },
     [host]
   )
 
