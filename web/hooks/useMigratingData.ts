@@ -2,7 +2,9 @@
 import { useCallback } from 'react'
 
 import { MessageCreateParams } from '@janhq/core'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
+
+import useAssistantQuery from './useAssistantQuery'
 
 import useCortex from './useCortex'
 import useThreads from './useThreads'
@@ -11,7 +13,6 @@ import {
   threadsMessagesMigrationSuccessAtom,
   modelsMigrationSuccessAtom,
 } from '@/helpers/atoms/AppConfig.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 const useMigratingData = () => {
   const [threadsMessagesMigrationSuccess, setThreadsMessagesMigrationSuccess] =
@@ -21,7 +22,7 @@ const useMigratingData = () => {
   )
   const { createThread } = useThreads()
   const { updateThread, createMessage } = useCortex()
-  const assistants = useAtomValue(assistantsAtom)
+  const { data: assistants } = useAssistantQuery()
 
   const getJanThreadsAndMessages = useCallback(async (): Promise<{
     messages: any[]

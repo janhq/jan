@@ -1,6 +1,8 @@
 import {
   AssistantTool as OpenAiAssistantTool,
   Assistant as OpenAiAssistant,
+  AssistantCreateParams as OpenAiAssistantCreateParams,
+  AssistantUpdateParams as OpenAiAssistantUpdateParams,
 } from 'openai/resources/beta/assistants'
 import { AssistantResponseFormatOption as OpenAIAssistantResponseFormatOption } from 'openai/resources/beta/threads/threads'
 
@@ -19,3 +21,7 @@ export type AssistantTool = OpenAiAssistantTool & {
 
   useTimeWeightedRetriever?: boolean
 }
+
+export interface AssistantCreateParams extends OpenAiAssistantCreateParams {}
+
+export interface AssistantUpdateParams extends OpenAiAssistantUpdateParams {}
