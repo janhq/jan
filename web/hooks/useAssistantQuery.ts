@@ -2,13 +2,15 @@ import { useQuery } from '@tanstack/react-query'
 
 import useCortex from './useCortex'
 
+export const assistantQueryKey = ['assistants']
+
 const useAssistantQuery = () => {
   const { fetchAssistants } = useCortex()
 
   return useQuery({
-    queryKey: ['assistant'],
+    queryKey: assistantQueryKey,
     queryFn: fetchAssistants,
-    staleTime: 5 * 60 * 1000,
+    staleTime: Infinity,
   })
 }
 

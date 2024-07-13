@@ -3,7 +3,11 @@ import { Fragment, useCallback, useMemo } from 'react'
 import { Button, Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
+
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useCortex from '@/hooks/useCortex'
 
@@ -20,8 +24,8 @@ import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { downloadProgress } from '@/utils/download'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
+
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
@@ -91,11 +95,12 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
+  const { data: assistants } = useAssistantQuery()
+
   const setDownloadLocalModelModalStage = useSetAtom(localModelModalStageAtom)
 
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const allDownloadState = useAtomValue(downloadStateListAtom)
-  const assistants = useAtomValue(assistantsAtom)
 
   const modelId = useMemo(
     () => `${modelHandle.split('/')[1]}:${branch}`,
@@ -109,12 +114,20 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   )
 
   const onDownloadClick = useCallback(async () => {
-    console.log(modelHandle, fileName)
     addDownloadState(modelHandle)
     await downloadModel(modelHandle, fileName)
   }, [addDownloadState, downloadModel, modelHandle, fileName])
 
   const onUseModelClick = useCallback(async () => {
+    if (!assistants || assistants.length === 0) {
+      toaster({
+        title: 'No assistant available.',
+        description: 'Please create an assistant to create a new thread',
+        type: 'error',
+      })
+      return
+    }
+
     await createThread(modelId, {
       ...assistants[0],
       model: modelId,
