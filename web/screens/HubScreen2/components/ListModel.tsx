@@ -3,7 +3,11 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Progress, Select } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
+
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useCortex from '@/hooks/useCortex'
 
@@ -23,7 +27,6 @@ import { downloadProgress } from '@/utils/download'
 import { EngineType } from '@/utils/huggingface'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
@@ -122,7 +125,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
 
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const allDownloadState = useAtomValue(downloadStateListAtom)
-  const assistants = useAtomValue(assistantsAtom)
+  const { data: assistants } = useAssistantQuery()
 
   const modelId = useMemo(
     () => `${modelHandle.split('/')[1]}:${branch}`,
@@ -141,6 +144,14 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   }, [downloadModel, addDownloadState, modelId])
 
   const onUseModelClick = useCallback(async () => {
+    if (!assistants || assistants.length === 0) {
+      toaster({
+        title: 'No assistant available.',
+        description: 'Please create an assistant to create a new thread',
+        type: 'error',
+      })
+      return
+    }
     await createThread(modelId, {
       ...assistants[0],
       model: modelId,

@@ -7,6 +7,8 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
+import useAssistantQuery from '@/hooks/useAssistantQuery'
+
 import useCortex from '@/hooks/useCortex'
 
 import useThreads from '@/hooks/useThreads'
@@ -14,7 +16,6 @@ import useThreads from '@/hooks/useThreads'
 import { toGibibytes } from '@/utils/converter'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
 import {
@@ -43,7 +44,7 @@ const ModelDownloadRow: React.FC<Props> = ({
 
   const { createThread } = useThreads()
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const assistants = useAtomValue(assistantsAtom)
+  const { data: assistants } = useAssistantQuery()
   const isDownloaded = downloadedModels.find((md) => md.id === fileName) != null
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
@@ -84,7 +85,7 @@ const ModelDownloadRow: React.FC<Props> = ({
   }, [model, downloadModel])
 
   const onUseModelClick = useCallback(async () => {
-    if (assistants.length === 0) {
+    if (!assistants || assistants.length === 0) {
       alert('No assistant available')
       return
     }

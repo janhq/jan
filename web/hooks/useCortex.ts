@@ -9,14 +9,12 @@ import {
   MessageCreateParams,
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
+  AssistantCreateParams,
+  AssistantUpdateParams,
 } from '@janhq/core'
 
 import { Cortex } from 'cortexso-node'
 
-import {
-  AssistantCreateParams,
-  AssistantUpdateParams,
-} from 'cortexso-node/resources/beta/assistants'
 import { useAtomValue } from 'jotai'
 
 import { UpdateConfigMutationVariables } from './useConfigMutation'

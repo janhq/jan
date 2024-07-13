@@ -7,7 +7,11 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { CloudDownload } from 'lucide-react'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
+
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useConfigQuery from '@/hooks/useConfigQuery'
 
@@ -23,14 +27,13 @@ import { addThousandSeparator } from '@/utils/number'
 import ModelTitle from './ModelTitle'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const assistants = useAtomValue(assistantsAtom)
+  const { data: assistants } = useAssistantQuery()
   const { data: configData } = useConfigQuery()
 
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
@@ -81,6 +84,15 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
       )
 
       if (isApiKeyAdded && isModelDownloaded) {
+        if (!assistants || assistants.length === 0) {
+          toaster({
+            title: 'No assistant available.',
+            description: 'Please create an assistant to create a new thread',
+            type: 'error',
+          })
+          return
+        }
+
         // use
         createThread(model.model, {
           ...assistants[0],

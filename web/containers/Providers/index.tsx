@@ -1,12 +1,11 @@
 'use client'
 
-import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
+import { Fragment, PropsWithChildren, useEffect, useState } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-import Loader from '@/containers/Loader'
 import EventListenerWrapper from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 
@@ -35,16 +34,18 @@ const Providers = ({ children }: PropsWithChildren) => {
   return (
     <ThemeWrapper>
       <JotaiWrapper>
-        <Umami />
-        {setupCore && (
-          <QueryClientProvider client={queryClient}>
-            <DataLoader />
-            <EventListenerWrapper />
-            <Responsive>{children}</Responsive>
-            <Toaster />
-          </QueryClientProvider>
-        )}
-        <ModalMigrations />
+        <QueryClientProvider client={queryClient}>
+          <Umami />
+          {setupCore && (
+            <Fragment>
+              <DataLoader />
+              <EventListenerWrapper />
+              <Responsive>{children}</Responsive>
+              <Toaster />
+            </Fragment>
+          )}
+          <ModalMigrations />
+        </QueryClientProvider>
       </JotaiWrapper>
     </ThemeWrapper>
   )

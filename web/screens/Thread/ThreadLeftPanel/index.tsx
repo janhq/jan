@@ -12,11 +12,11 @@ import { twMerge } from 'tailwind-merge'
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 import { toaster } from '@/containers/Toast'
 
+import useAssistantQuery from '@/hooks/useAssistantQuery'
+
 import useThreads from '@/hooks/useThreads'
 
 import ThreadItem from './ThreadItem'
-
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import {
   downloadedModelsAtom,
@@ -32,7 +32,8 @@ const ThreadLeftPanel: React.FC = () => {
   const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
-  const assistants = useAtomValue(assistantsAtom)
+
+  const { data: assistants } = useAssistantQuery()
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean
@@ -47,7 +48,7 @@ const ThreadLeftPanel: React.FC = () => {
   useEffect(() => {
     // if user does not have any threads, we should create one
     const createThreadIfEmpty = async () => {
-      if (assistants.length === 0) return
+      if (!assistants || assistants.length === 0) return
       if (downloadedModels.length === 0) return
       if (threads.length > 0) return
       if (isCreatingThread.current) return
@@ -69,7 +70,7 @@ const ThreadLeftPanel: React.FC = () => {
   }, [activeThreadId, setActiveThread, threads])
 
   const onCreateThreadClicked = useCallback(async () => {
-    if (assistants.length === 0) {
+    if (!assistants || assistants.length === 0) {
       toaster({
         title: 'No assistant available.',
         description: `Could not create a new thread. Please add an assistant.`,

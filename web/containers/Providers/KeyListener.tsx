@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useThreads from '@/hooks/useThreads'
 
 import { toaster } from '../Toast'
@@ -15,7 +16,6 @@ import {
   showLeftPanelAtom,
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
 
 const KeyListener: React.FC = () => {
@@ -24,8 +24,32 @@ const KeyListener: React.FC = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
 
-  const assistants = useAtomValue(assistantsAtom)
+  const { data: assistants } = useAssistantQuery()
+
   const selectedModel = useAtomValue(getSelectedModelAtom)
+
+  const createNewThread = useCallback(() => {
+    if (!selectedModel) {
+      toaster({
+        title: 'No model selected.',
+        description: 'Please select a model to create a new thread.',
+        type: 'error',
+      })
+      return
+    }
+
+    if (!assistants || assistants.length === 0) {
+      toaster({
+        title: 'No assistant available.',
+        description: 'Please create an assistant to create a new thread',
+        type: 'error',
+      })
+      return
+    }
+
+    createThread(selectedModel.id, assistants[0])
+    setMainViewState(MainViewState.Thread)
+  }, [selectedModel, createThread, assistants, setMainViewState])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -37,18 +61,7 @@ const KeyListener: React.FC = () => {
       }
 
       if (e.key === 'n' && prefixKey) {
-        if (!selectedModel) {
-          toaster({
-            title: 'No model selected.',
-            description: 'Please select a model to create a new thread.',
-            type: 'error',
-          })
-          return
-        }
-
-        createThread(selectedModel.id, assistants[0])
-        setMainViewState(MainViewState.Thread)
-        return
+        return createNewThread()
       }
 
       if (e.key === 'b' && prefixKey) {
@@ -70,6 +83,7 @@ const KeyListener: React.FC = () => {
     createThread,
     setMainViewState,
     setShowLeftPanel,
+    createNewThread,
   ])
 
   return null

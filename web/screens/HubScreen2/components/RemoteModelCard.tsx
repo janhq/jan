@@ -3,7 +3,11 @@ import React, { useCallback } from 'react'
 import { RemoteEngine } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
+
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useConfigQuery from '@/hooks/useConfigQuery'
 
@@ -15,7 +19,6 @@ import useThreads from '@/hooks/useThreads'
 import { HfModelEntry } from '@/utils/huggingface'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
@@ -27,7 +30,7 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
   const { createModel } = useCortex()
   const { getModels } = useModels()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const assistants = useAtomValue(assistantsAtom)
+  const { data: assistants } = useAssistantQuery()
 
   const { data: configData } = useConfigQuery()
 
@@ -41,9 +44,12 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
     const isModelDownloaded = downloadedModels.find((m) => m.id === model.model)
 
     if (isApiKeyAdded && isModelDownloaded) {
-      if (assistants.length === 0) {
-        // TODO: show toast instead?
-        alert('No assistant available')
+      if (!assistants || assistants.length === 0) {
+        toaster({
+          title: 'No assistant available.',
+          description: 'Please create an assistant to create a new thread',
+          type: 'error',
+        })
         return
       }
       // use this model to create new thread
@@ -77,11 +83,15 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
       // TODO: useMutation reactQuery?
       await createModel(model)
       getModels()
-      if (assistants.length === 0) {
-        // TODO: show toast instead?
-        alert('No assistant available')
+      if (!assistants || assistants.length === 0) {
+        toaster({
+          title: 'No assistant available.',
+          description: 'Please create an assistant to create a new thread',
+          type: 'error',
+        })
         return
       }
+
       // use this model to create new thread
       await createThread(model.model, {
         ...assistants[0],
