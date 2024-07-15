@@ -55,20 +55,6 @@ const unlinkSync = (...args: any[]) => globalThis.core.api?.unlinkSync(...args)
  */
 const appendFileSync = (...args: any[]) => globalThis.core.api?.appendFileSync(...args)
 
-/**
- * Synchronizes a file from a source path to a destination path.
- * @param {string} src - The source path of the file to be synchronized.
- * @param {string} dest - The destination path where the file will be synchronized to.
- * @returns {Promise<any>} - A promise that resolves when the file has been successfully synchronized.
- */
-const syncFile: (src: string, dest: string) => Promise<any> = (src, dest) =>
-  globalThis.core.api?.syncFile(src, dest)
-
-/**
- * Copy file sync.
- */
-const copyFileSync = (...args: any[]) => globalThis.core.api?.copyFileSync(...args)
-
 const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
   globalThis.core.api?.copyFile(src, dest)
 
@@ -95,9 +81,7 @@ export const fs = {
   rm,
   unlinkSync,
   appendFileSync,
-  copyFileSync,
   copyFile,
-  syncFile,
   fileStat,
   writeBlob,
 }

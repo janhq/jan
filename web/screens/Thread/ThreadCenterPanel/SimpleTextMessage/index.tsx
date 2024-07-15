@@ -178,7 +178,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         >
           {isUser
             ? props.role
-            : activeThread?.assistants[0].assistant_name ?? props.role}
+            : (activeThread?.assistants[0].assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created)}
@@ -201,7 +201,12 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           )}
       </div>
 
-      <div className={twMerge('w-full')}>
+      <div
+        className={twMerge(
+          'w-full',
+          !isUser && !text.includes(' ') && 'break-all'
+        )}
+      >
         <>
           {props.content[0]?.type === ContentType.Image && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">

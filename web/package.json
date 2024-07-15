@@ -28,7 +28,7 @@
     "lucide-react": "^0.291.0",
     "marked": "^9.1.2",
     "marked-highlight": "^2.0.6",
-    "marked-katex-extension": "^5.0.1",
+    "marked-katex-extension": "^5.0.2",
     "next": "14.2.3",
     "next-themes": "^0.2.1",
     "postcss": "8.4.31",
