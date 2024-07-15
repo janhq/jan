@@ -26,6 +26,7 @@ import {
   getCurrentChatMessagesAtom,
   setConvoMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
@@ -45,7 +46,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const { sendChatMessage } = useSendChatMessage()
   const setMessages = useSetAtom(setConvoMessagesAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
-
+  const spellCheck = useAtomValue(spellCheckAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
@@ -127,6 +128,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           className={twMerge('max-h-[400px] resize-none pr-20')}
           style={{ height: '40px' }}
           ref={textareaRef}
+          spellCheck={spellCheck}
           onKeyDown={onKeyDown}
           placeholder="Enter your message..."
           disabled={stateModel.loading || !activeThread}

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 
-import { Modal } from '@janhq/joi'
+import { Button, Modal } from '@janhq/joi'
 import { atom, useAtom } from 'jotai'
+import { Maximize2 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import ServerLogs from '@/containers/ServerLogs'
@@ -17,6 +18,7 @@ const ModalTroubleShooting = () => {
     modalTroubleShootingAtom
   )
   const [isTabActive, setIsTabActivbe] = useState(0)
+  const [showLogFullSize, setshowLogFullSize] = useState(false)
 
   return (
     <Modal
@@ -26,59 +28,76 @@ const ModalTroubleShooting = () => {
       title="Troubleshooting Assistance"
       content={
         <div className="flex h-full w-full flex-col overflow-hidden text-sm">
-          <div className="flex-shrink-0">
+          <div className="mb-3 flex-shrink-0">
             <p className="text-[hsla(var(--text-secondary)] mt-2 pr-3 leading-relaxed">
               {`We're here to help! Your report is crucial for debugging and shaping
           the next version. Here’s how you can report & get further support:`}
             </p>
           </div>
 
-          <div className="my-3 rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
-            <h2 className="font-semibold">Step 1</h2>
-            <p className="text-[hsla(var(--text-secondary)] mt-1">
-              Follow our&nbsp;
-              <a
-                href="https://jan.ai/guides/troubleshooting"
-                target="_blank"
-                className="text-[hsla(var(--app-link))] hover:underline"
-              >
-                troubleshooting guide
-              </a>
-              &nbsp;for step-by-step solutions.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-[hsla(var(--app-border))]  pb-2 pt-4 shadow">
-            <div className="px-4">
-              <h2 className="font-semibold">Step 2</h2>
+          {!showLogFullSize && (
+            <div className="mb-3 rounded-lg border border-[hsla(var(--app-border))] p-4 shadow">
+              <h2 className="font-semibold">Step 1</h2>
               <p className="text-[hsla(var(--text-secondary)] mt-1">
-                {`If you can't find what you need in our troubleshooting guide, feel
-            free reach out to us for extra help:`}
+                Follow our&nbsp;
+                <a
+                  href="https://jan.ai/guides/troubleshooting"
+                  target="_blank"
+                  className="text-[hsla(var(--app-link))] hover:underline"
+                >
+                  troubleshooting guide
+                </a>
+                &nbsp;for step-by-step solutions.
               </p>
-              <ul className="mt-2 list-disc space-y-2 pl-6">
-                <li>
-                  <p className="font-medium">
-                    Copy your 2-hour logs & device specifications provided
-                    below.{' '}
-                  </p>
-                </li>
-                <li>
-                  <p className="font-medium">
-                    Go to our&nbsp;
-                    <a
-                      href="https://discord.gg/AsJ8krTT3N"
-                      target="_blank"
-                      className="text-[hsla(var(--app-link))] hover:underline"
-                    >
-                      Discord
-                    </a>
-                    &nbsp;& send it to #🆘|get-help channel for further support.
-                  </p>
-                </li>
-              </ul>
             </div>
-            <div className="relative flex h-full w-full flex-col pt-4">
-              <div className="border-y border-[hsla(var(--app-border))] px-4 py-2 ">
+          )}
+
+          <div
+            className={twMerge(
+              'rounded-lg border border-[hsla(var(--app-border))] pb-2 shadow',
+              !showLogFullSize && 'pt-4'
+            )}
+          >
+            {!showLogFullSize && (
+              <div className="px-4">
+                <h2 className="font-semibold">Step 2</h2>
+                <p className="text-[hsla(var(--text-secondary)] mt-1">
+                  {`If you can't find what you need in our troubleshooting guide, feel
+            free reach out to us for extra help:`}
+                </p>
+                <ul className="mt-2 list-disc space-y-2 pl-6">
+                  <li>
+                    <p className="font-medium">
+                      Copy your 2-hour logs & device specifications provided
+                      below.{' '}
+                    </p>
+                  </li>
+                  <li>
+                    <p className="font-medium">
+                      Go to our&nbsp;
+                      <a
+                        href="https://discord.gg/AsJ8krTT3N"
+                        target="_blank"
+                        className="text-[hsla(var(--app-link))] hover:underline"
+                      >
+                        Discord
+                      </a>
+                      &nbsp;& send it to #🆘|get-help channel for further
+                      support.
+                    </p>
+                  </li>
+                </ul>
+              </div>
+            )}
+
+            <div
+              className={twMerge('relative flex h-full w-full flex-col pt-4')}
+            >
+              <div
+                className={twMerge(
+                  'border-y border-[hsla(var(--app-border))] px-4 py-2'
+                )}
+              >
                 <ul className="inline-flex space-x-2 rounded-lg px-1">
                   {logOption.map((name, i) => {
                     return (
@@ -103,7 +122,20 @@ const ModalTroubleShooting = () => {
                   })}
                 </ul>
               </div>
-              <div className="max-h-[160px] overflow-y-auto">
+              <div
+                className={twMerge(
+                  'max-h-[180px] overflow-y-auto',
+                  showLogFullSize && 'max-h-[400px]'
+                )}
+              >
+                <Button
+                  theme="icon"
+                  className="absolute right-4 top-20"
+                  autoFocus={false}
+                  onClick={() => setshowLogFullSize(!showLogFullSize)}
+                >
+                  <Maximize2 size={14} />
+                </Button>
                 <div
                   className={twMerge('hidden', isTabActive === 0 && 'block')}
                 >

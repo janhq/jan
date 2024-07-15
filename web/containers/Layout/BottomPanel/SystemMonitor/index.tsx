@@ -1,13 +1,21 @@
 import { Fragment, useEffect, useState } from 'react'
 
-import { Progress } from '@janhq/joi'
+import { Button, Progress } from '@janhq/joi'
 import { useClickOutside } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
-import { MonitorIcon, XIcon, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  MonitorIcon,
+  XIcon,
+  ChevronDown,
+  ChevronUp,
+  FolderOpenIcon,
+} from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import useGetSystemResources from '@/hooks/useGetSystemResources'
+
+import { usePath } from '@/hooks/usePath'
 
 import { toGibibytes } from '@/utils/converter'
 
@@ -28,6 +36,7 @@ const SystemMonitor = () => {
   const usedRam = useAtomValue(usedRamAtom)
   const cpuUsage = useAtomValue(cpuUsageAtom)
   const gpus = useAtomValue(gpusAtom)
+  const { onRevealInFinder } = usePath()
   const [showFullScreen, setShowFullScreen] = useState(false)
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
@@ -64,7 +73,7 @@ const SystemMonitor = () => {
       <div
         ref={setControl}
         className={twMerge(
-          'flex cursor-pointer items-center gap-x-1 rounded-l px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
+          'flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
           showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))]'
         )}
         onClick={() => {
@@ -89,6 +98,12 @@ const SystemMonitor = () => {
               Running Models
             </h6>
             <div className="unset-drag flex cursor-pointer items-center gap-x-2">
+              <div
+                className="flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]"
+                onClick={() => onRevealInFinder('Logs')}
+              >
+                <FolderOpenIcon size={12} /> App Log
+              </div>
               {showFullScreen ? (
                 <ChevronDown
                   size={20}

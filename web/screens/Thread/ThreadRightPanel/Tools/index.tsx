@@ -166,7 +166,7 @@ const Tools = () => {
                   <div className="mb-2 flex items-center">
                     <label
                       id="vector-database"
-                      className="inline-block font-medium"
+                      className="inline-flex items-center font-medium"
                     >
                       Vector Database
                       <Tooltip
