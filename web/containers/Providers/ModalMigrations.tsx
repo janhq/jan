@@ -29,7 +29,6 @@ const ModalMigrations = () => {
   const threadsMessagesMigrationSuccess = useAtomValue(
     threadsMessagesMigrationSuccessAtom
   )
-
   const [step, setStep] = React.useState(1)
   const [loaderThreads, setLoaderThreads] = React.useState(false)
   const [loaderModels, setLoaderModels] = React.useState(false)
@@ -89,9 +88,25 @@ const ModalMigrations = () => {
 
     if (skipMigration) {
       setDidShowMigrationWarning(false)
+    } else {
+      if (!threadsMessagesMigrationSuccess || !modelsMigrationSuccess) {
+        setDidShowMigrationWarning(true)
+        setSkipMigration(false)
+      } else {
+        if (step !== 2) {
+          setDidShowMigrationWarning(false)
+          setSkipMigration(true)
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skipMigration, setSkipMigration, setDidShowMigrationWarning])
+  }, [
+    skipMigration,
+    setSkipMigration,
+    setDidShowMigrationWarning,
+    threadsMessagesMigrationSuccess,
+    modelsMigrationSuccess,
+  ])
 
   return (
     <>
@@ -226,6 +241,7 @@ const ModalMigrations = () => {
                 <div className="flex justify-end">
                   <Button
                     className="mt-2"
+                    disabled={loaderThreads || loaderModels}
                     onClick={() => {
                       setDidShowMigrationWarning(false)
                     }}
