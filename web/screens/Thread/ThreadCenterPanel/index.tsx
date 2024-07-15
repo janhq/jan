@@ -21,7 +21,6 @@ import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 
 import EmptyModel from './ChatBody/EmptyModel'
 import ChatInput from './ChatInput'
-import RequestDownloadModel from './RequestDownloadModel'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -137,7 +136,7 @@ const ThreadCenterPanel: React.FC = () => {
   const [dragOver, setDragOver] = useState(false)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  if (!downloadedModels.length) return <EmptyModel />
+  // if (!downloadedModels.length) return <EmptyModel />
 
   return (
     <CenterPanelContainer>
@@ -179,12 +178,12 @@ const ThreadCenterPanel: React.FC = () => {
           </div>
         )}
         <div className="flex h-full w-full flex-col justify-between">
-          {activeThread ? (
+          {!downloadedModels.length && <EmptyModel />}
+
+          {activeThread && (
             <div className="flex h-full w-full overflow-x-hidden">
               <ChatBody />
             </div>
-          ) : (
-            <RequestDownloadModel />
           )}
 
           {/* {!engineParamsUpdate && <ModelStart />} */}
@@ -198,7 +197,12 @@ const ThreadCenterPanel: React.FC = () => {
           )} */}
 
           {isGeneratingResponse && <GenerateResponse />}
-          <ChatInput sendMessage={sendMessage} stopInference={stopInference} />
+          {activeThread && downloadedModels.length > 0 && (
+            <ChatInput
+              sendMessage={sendMessage}
+              stopInference={stopInference}
+            />
+          )}
         </div>
       </div>
     </CenterPanelContainer>
