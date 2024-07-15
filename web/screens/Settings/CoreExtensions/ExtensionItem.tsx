@@ -32,8 +32,8 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
   )
 
   const progress = isInstalling
-    ? installingExtensions.find((e) => e.extensionId === item.name)
-        ?.percentage ?? -1
+    ? (installingExtensions.find((e) => e.extensionId === item.name)
+        ?.percentage ?? -1)
     : -1
 
   useEffect(() => {

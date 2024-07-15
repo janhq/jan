@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useState } from 'react'
 
-import { fs, AppConfiguration, isSubdirectory } from '@janhq/core'
+import { AppConfiguration, isSubdirectory } from '@janhq/core'
 import { Button, Input } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'

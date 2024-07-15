@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 
-import { Button, Progress } from '@janhq/joi'
+import { Progress } from '@janhq/joi'
 import { useClickOutside } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
