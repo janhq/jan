@@ -1,4 +1,5 @@
-import { join } from 'path'
+import { join, resolve } from 'path'
+import { getJanDataFolderPath } from './config'
 
 /**
  * Normalize file path
@@ -32,4 +33,12 @@ export async function appResourcePath(): Promise<string> {
   }
   // server
   return join(global.core.appPath(), '../../..')
+}
+
+export function validatePath(path: string) {
+  const janDataFolderPath = getJanDataFolderPath()
+  const absolutePath = resolve(__dirname, path)
+  if (!absolutePath.startsWith(janDataFolderPath)) {
+    throw new Error(`Invalid path: ${absolutePath}`)
+  }
 }

@@ -41,12 +41,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       case ErrorCode.Unknown:
         return 'Apologies, something’s amiss!'
       case ErrorCode.InvalidApiKey:
+      case ErrorCode.AuthenticationError:
       case ErrorCode.InvalidRequestError:
         return (
           <span data-testid="invalid-API-key-error">
             Invalid API key. Please check your API key from{' '}
             <button
-              className="font-medium text-[hsla(var(--app-link))]"
+              className="font-medium text-[hsla(var(--app-link))] underline"
               onClick={() => {
                 setMainState(MainViewState.Settings)
 
@@ -102,7 +103,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           <p>
             Jan’s in beta. Access&nbsp;
             <span
-              className="cursor-pointer text-[hsla(var(--app-link))]"
+              className="cursor-pointer text-[hsla(var(--app-link))] underline"
               onClick={() => setModalTroubleShooting(true)}
             >
               troubleshooting assistance

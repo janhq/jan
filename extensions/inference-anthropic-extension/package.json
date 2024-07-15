@@ -1,7 +1,7 @@
 {
   "name": "@janhq/inference-anthropic-extension",
   "productName": "Anthropic Inference Engine",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "This extension enables Anthropic chat completion API calls",
   "main": "dist/index.js",
   "module": "dist/module.js",
