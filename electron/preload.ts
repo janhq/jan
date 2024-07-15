@@ -28,8 +28,7 @@ APIEvents.forEach((method) => {
 
 
 interfaces['changeDataFolder'] = async path => {
-  const appConfiguration: AppConfiguration =
-  getAppConfigurations()
+  const appConfiguration: AppConfiguration = await ipcRenderer.invoke('getAppConfigurations')
   const currentJanDataFolder = appConfiguration.data_folder
   appConfiguration.data_folder = path
   const reflect = require('@alumna/reflect')
