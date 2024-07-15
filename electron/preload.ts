@@ -33,19 +33,23 @@ interfaces['changeDataFolder'] = async path => {
   const currentJanDataFolder = appConfiguration.data_folder
   appConfiguration.data_folder = path
   const reflect = require('@alumna/reflect')
-  await reflect({
-      currentJanDataFolder,
-      path,
+  const { err } = await reflect({
+      src: currentJanDataFolder,
+      dest: path,
       recursive: true,
       delete: false,
       overwrite: true,
       errorOnExist: false,
     })
+  if (err) {
+    console.error(err)
+    throw err
+  }
   await ipcRenderer.invoke('updateAppConfiguration', appConfiguration)
 }
 
 interfaces['isDirectoryEmpty'] = async path => {
-  const dirChildren= await readdirSync(path)
+  const dirChildren = await readdirSync(path)
   return dirChildren.filter((x) => x !== '.DS_Store').length === 0
 }
 
