@@ -104,7 +104,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     .concat('_')
     .concat(fileName)
 
-  const downloadState = allDownloadState.find((s) => s.id == persistModelId)
+  const downloadState = allDownloadState.find((s) => s.id === persistModelId)
 
   const downloadedModel = useMemo(
     () => downloadedModels.find((m) => m.id === persistModelId),

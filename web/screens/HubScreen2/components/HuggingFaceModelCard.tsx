@@ -66,7 +66,7 @@ const HuggingFaceModelCard: React.FC<HfModelEntry> = ({
         >
           {actionLabel}
         </Button> */}
-        <DownloadContainer modelHandle={name} branch={''} />
+        <DownloadContainer modelHandle={name} />
         <span className="flex items-center gap-1 text-sm font-medium leading-3">
           {addThousandSeparator(downloads)}
           <CloudDownload size={14} />
@@ -78,12 +78,10 @@ const HuggingFaceModelCard: React.FC<HfModelEntry> = ({
 
 type DownloadContainerProps = {
   modelHandle: string
-  branch: string
 }
 
 const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
-  branch,
 }) => {
   const { downloadModel, abortDownload } = useCortex()
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
@@ -95,23 +93,32 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   const allDownloadState = useAtomValue(downloadStateListAtom)
   const { data: assistants } = useAssistantQuery()
 
-  const modelId = useMemo(
-    () => `${modelHandle.split('/')[1]}:${branch}`,
-    [modelHandle, branch]
-  )
-  const downloadState = allDownloadState.find((s) => s.id == modelId)
+  const modelIdPrefix = modelHandle.replaceAll('/', '_')
 
-  const isDownloaded = useMemo(
-    () => downloadedModels.find((m) => m.id === modelId),
-    [downloadedModels, modelId]
+  const downloadState = allDownloadState.find((s) =>
+    s.id.startsWith(modelIdPrefix)
   )
 
-  const onDownloadClick = useCallback(async () => {
-    addDownloadState(modelId)
-    await downloadModel(modelId)
-  }, [downloadModel, addDownloadState, modelId])
+  const downloadedModel = useMemo(
+    () => downloadedModels.find((m) => m.id.startsWith(modelIdPrefix)),
+    [downloadedModels, modelIdPrefix]
+  )
+
+  const onDownloadClick = useCallback(
+    async () => {
+      // addDownloadState(modelId)
+      // await downloadModel(modelId)
+    },
+    [
+      // downloadModel, addDownloadState, modelId
+    ]
+  )
 
   const onUseModelClick = useCallback(async () => {
+    if (!downloadedModel) {
+      console.error('Downloaded model not found')
+      return
+    }
     if (!assistants || assistants.length === 0) {
       toaster({
         title: 'No assistant available.',
@@ -120,9 +127,9 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
       })
       return
     }
-    await createThread(modelId, {
+    await createThread(downloadedModel.id, {
       ...assistants[0],
-      model: modelId,
+      model: downloadedModel.id,
     })
     setDownloadLocalModelModalStage('NONE', undefined)
     setMainViewState(MainViewState.Thread)
@@ -130,17 +137,21 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     setDownloadLocalModelModalStage,
     setMainViewState,
     createThread,
-    modelId,
+    downloadedModel,
     assistants,
   ])
 
   const onAbortDownloadClick = useCallback(() => {
-    abortDownload(modelId)
-  }, [abortDownload, modelId])
+    if (!downloadState) {
+      console.error('Download state not found')
+      return
+    }
+    abortDownload(downloadState.id)
+  }, [abortDownload, downloadState])
 
   return (
     <div className="flex items-center justify-center">
-      {isDownloaded ? (
+      {downloadedModel ? (
         <Button
           variant="soft"
           className="min-w-[98px]"
