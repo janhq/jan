@@ -86,7 +86,6 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
 
   const modelId = useMemo(() => `${modelHandle.split('/')[1]}`, [modelHandle])
   const downloadState = allDownloadState.find((s) => s.id == modelId)
-  console.log('NamH built in model', modelId)
   const downloadedModel = useMemo(
     () =>
       downloadedModels.find((m) => {
