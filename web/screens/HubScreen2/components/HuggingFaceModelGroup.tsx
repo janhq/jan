@@ -10,7 +10,7 @@ import useModelHub from '@/hooks/useModelHub'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
-import HubScreenModelCard from './HubScreenModelCard'
+import HuggingFaceModelCard from './HuggingFaceModelCard'
 
 type Props = {
   onSeeAllClick: () => void
@@ -46,7 +46,7 @@ const HuggingFaceModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
 
       <div className="grid grid-cols-1 gap-x-20 md:grid-cols-2">
         {models.map((model) => (
-          <HubScreenModelCard key={model.id} {...model} />
+          <HuggingFaceModelCard key={model.id} {...model} />
         ))}
       </div>
     </Fragment>

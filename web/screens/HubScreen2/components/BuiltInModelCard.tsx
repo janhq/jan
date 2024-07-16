@@ -1,120 +1,104 @@
-import { Fragment, useCallback, useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 
 import { Button, Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
+import { CloudDownload } from 'lucide-react'
 
 import { toaster } from '@/containers/Toast'
 
 import { MainViewState } from '@/constants/screens'
 
 import useAssistantQuery from '@/hooks/useAssistantQuery'
-
 import useCortex from '@/hooks/useCortex'
-
 import {
   addDownloadModelStateAtom,
   downloadStateListAtom,
 } from '@/hooks/useDownloadState'
-
-import useHfRepoDataQuery from '@/hooks/useHfRepoDataQuery'
 import useThreads from '@/hooks/useThreads'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
-
+import { formatDownloadPercentage } from '@/utils/converter'
 import { downloadProgress } from '@/utils/download'
+import { HfModelEntry } from '@/utils/huggingface'
+import { addThousandSeparator } from '@/utils/number'
+
+import ModelTitle from './ModelTitle'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
-
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
-type Props = {
-  modelHandle: string
-}
+const BuiltInModelCard: React.FC<HfModelEntry> = ({
+  name,
+  downloads,
+  model,
+}) => {
+  const setLocalModelModalStage = useSetAtom(localModelModalStageAtom)
 
-const HfListModel: React.FC<Props> = ({ modelHandle }) => {
-  const { data } = useHfRepoDataQuery(modelHandle)
+  const onItemClick = useCallback(() => {
+    setLocalModelModalStage('MODEL_LIST', name)
+  }, [setLocalModelModalStage, name])
 
-  const downloadableModels = useMemo(
-    () =>
-      data?.siblings
-        .filter((item) => item.rfilename.endsWith('.gguf'))
-        .sort((a, b) => (a.fileSize ?? 0) - (b.fileSize ?? 0)) ??
-      [] ??
-      [],
-    [data]
-  )
+  const owner = model?.metadata?.owned_by ?? ''
+  const logoUrl = model?.metadata?.owner_logo ?? ''
 
   return (
-    <Fragment>
-      <div className="mt-3 max-h-[320px] w-full overflow-x-hidden rounded-md border">
-        <table className="w-full">
-          <tbody>
-            {downloadableModels.map((item) => (
-              <tr
-                key={item.rfilename}
-                className="border-b last:border-b-0 hover:bg-[#2563EB0D]"
-              >
-                <td className="whitespace-nowrap py-4 pl-3">
-                  <div className="w-fit rounded-md border bg-white px-1.5 py-0.5 text-[var(--text-primary)]">
-                    {item.quantization}
-                  </div>
-                </td>
-                <td className="w-full pl-4">{item.rfilename}</td>
-                <td>
-                  <div className="mr-3 flex items-center justify-end gap-3 whitespace-nowrap py-3">
-                    <span>{toGibibytes(item.fileSize)}</span>
-                    <DownloadContainer
-                      modelHandle={modelHandle}
-                      fileName={item.rfilename}
-                    />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div
+      className="group flex cursor-pointer flex-row justify-between border-b-[1px] border-[hsla(var(--app-border))] pb-3 pt-4"
+      onClick={onItemClick}
+    >
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium leading-4 group-hover:underline">
+          {name}
+        </span>
+        <ModelTitle
+          className="text-[hsla(var(--text-secondary)]"
+          name={owner}
+          image={logoUrl}
+        />
       </div>
-    </Fragment>
+      <div className="pointer-events-auto flex flex-col items-end gap-2">
+        <DownloadContainer modelHandle={name} />
+        <span className="flex items-center gap-1 text-sm font-medium leading-3">
+          {addThousandSeparator(downloads)}
+          <CloudDownload size={14} />
+        </span>
+      </div>
+    </div>
   )
 }
 
 type DownloadContainerProps = {
   modelHandle: string
-  fileName: string
 }
 
 const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
-  fileName,
 }) => {
   const { downloadModel, abortDownload } = useCortex()
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
-  const { data: assistants } = useAssistantQuery()
-
   const setDownloadLocalModelModalStage = useSetAtom(localModelModalStageAtom)
 
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const allDownloadState = useAtomValue(downloadStateListAtom)
+  const { data: assistants } = useAssistantQuery()
 
-  const persistModelId = modelHandle
-    .replaceAll('/', '_')
-    .concat('_')
-    .concat(fileName)
-
-  const downloadState = allDownloadState.find((s) => s.id == persistModelId)
-
+  const modelId = useMemo(() => `${modelHandle.split('/')[1]}`, [modelHandle])
+  const downloadState = allDownloadState.find((s) => s.id == modelId)
+  console.log('NamH built in model', modelId)
   const downloadedModel = useMemo(
-    () => downloadedModels.find((m) => m.id === persistModelId),
-    [downloadedModels, persistModelId]
+    () =>
+      downloadedModels.find((m) => {
+        return m.id.split(':')[0] === modelId
+      }),
+    [downloadedModels, modelId]
   )
 
   const onDownloadClick = useCallback(async () => {
-    addDownloadState(persistModelId)
-    await downloadModel(modelHandle, fileName, persistModelId)
-  }, [addDownloadState, downloadModel, modelHandle, fileName, persistModelId])
+    addDownloadState(modelId)
+    await downloadModel(modelId)
+  }, [downloadModel, addDownloadState, modelId])
 
   const onUseModelClick = useCallback(async () => {
     if (!assistants || assistants.length === 0) {
@@ -125,10 +109,9 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
       })
       return
     }
-
-    await createThread(fileName, {
+    await createThread(modelId, {
       ...assistants[0],
-      model: fileName,
+      model: modelId,
     })
     setDownloadLocalModelModalStage('NONE', undefined)
     setMainViewState(MainViewState.Thread)
@@ -136,13 +119,13 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     setDownloadLocalModelModalStage,
     setMainViewState,
     createThread,
-    fileName,
+    modelId,
     assistants,
   ])
 
   const onAbortDownloadClick = useCallback(() => {
-    abortDownload(persistModelId)
-  }, [abortDownload, persistModelId])
+    abortDownload(modelId)
+  }, [abortDownload, modelId])
 
   return (
     <div className="flex items-center justify-center">
@@ -150,14 +133,23 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
         <Button
           variant="soft"
           className="min-w-[98px]"
-          onClick={onUseModelClick}
+          onClick={(e) => {
+            e.stopPropagation()
+            onUseModelClick()
+          }}
         >
           Use
         </Button>
       ) : downloadState != null ? (
         <Button variant="soft">
           <div className="flex items-center space-x-2">
-            <span className="inline-block" onClick={onAbortDownloadClick}>
+            <span
+              className="inline-block"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAbortDownloadClick()
+              }}
+            >
               Cancel
             </span>
             <Progress
@@ -174,10 +166,17 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           </div>
         </Button>
       ) : (
-        <Button onClick={onDownloadClick}>Download</Button>
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDownloadClick()
+          }}
+        >
+          Download
+        </Button>
       )}
     </div>
   )
 }
 
-export default HfListModel
+export default BuiltInModelCard

@@ -192,7 +192,7 @@ const useCortex = () => {
   )
 
   const downloadModel = useCallback(
-    async (modelId: string, fileName?: string) => {
+    async (modelId: string, fileName?: string, persistedModelId?: string) => {
       // TODO: clean this up in cortex-node. not sure why
       /**
        * query: {
@@ -200,7 +200,9 @@ const useCortex = () => {
           }, not work
        */
       if (!fileName) return cortex.models.download(modelId)
-      return cortex.models.download(`${modelId}?fileName=${fileName}`)
+      return cortex.models.download(
+        `${modelId}?fileName=${fileName}&persistedModelId=${persistedModelId}`
+      )
     },
     [cortex.models]
   )

@@ -1,32 +1,32 @@
-import { MessageCreateParams } from '@janhq/core'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+// import { MessageCreateParams } from '@janhq/core'
+// import { useMutation, useQueryClient } from '@tanstack/react-query'
 
-import useCortex from './useCortex'
-import { messageQueryKey } from './useMessageQuery'
+// import useCortex from './useCortex'
+// import { messageQueryKey } from './useMessageQuery'
 
-export type MessageCreateMutationVariables = {
-  threadId: string
-  createMessageParams: MessageCreateParams
-}
+// export type MessageCreateMutationVariables = {
+//   threadId: string
+//   createMessageParams: MessageCreateParams
+// }
 
-const useMessageCreateMutation = (params: MessageCreateMutationVariables) => {
-  const { createMessage } = useCortex()
-  const queryClient = useQueryClient()
+// const useMessageCreateMutation = (params: MessageCreateMutationVariables) => {
+//   const { createMessage } = useCortex()
+//   const queryClient = useQueryClient()
 
-  return useMutation({
-    mutationFn: () => createMessage(params),
+//   return useMutation({
+//     mutationFn: () => createMessage(params),
 
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: [...messageQueryKey, params.threadId],
-      }),
+//     onSuccess: () =>
+//       queryClient.invalidateQueries({
+//         queryKey: [...messageQueryKey, params.threadId],
+//       }),
 
-    onError: (err, variables) => {
-      console.error(
-        `Failed to create message with variables: ${JSON.stringify(variables, null, 2)}, err: ${err}`
-      )
-    },
-  })
-}
+//     onError: (err, variables) => {
+//       console.error(
+//         `Failed to create message with variables: ${JSON.stringify(variables, null, 2)}, err: ${err}`
+//       )
+//     },
+//   })
+// }
 
-export default useMessageCreateMutation
+// export default useMessageCreateMutation

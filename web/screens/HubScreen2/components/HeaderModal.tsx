@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useCallback, useRef, useState } from 'react'
 
 import Image from 'next/image'
 
@@ -8,17 +8,30 @@ import { ChevronsLeftRight, Copy, ExternalLink } from 'lucide-react'
 import DropdownModal from './DropdownModal'
 
 type Props = {
+  modelIdVariants: string[]
+  modelId: string
   name: string
   onActionClick: () => void
 }
 
-const HeaderModal: React.FC<Props> = ({ name, onActionClick }) => {
-  const [searchFilter, setSearchFilter] = useState('all')
+const HeaderModal: React.FC<Props> = ({
+  modelIdVariants,
+  modelId,
+  name,
+  onActionClick,
+}) => {
+  const [selectedVariant, setSelectedVariant] = useState<string>(modelId)
   const textRef = useRef<HTMLDivElement>(null)
 
-  const handleCoppy = () => {
+  const options = modelIdVariants.map((variant) => ({
+    name: variant,
+    value: variant,
+  }))
+
+  const onCopyClicked = useCallback(() => {
     navigator.clipboard.writeText(textRef.current?.innerText ?? '')
-  }
+  }, [])
+
   const title = name.charAt(0).toUpperCase() + name.slice(1)
 
   return (
@@ -34,37 +47,40 @@ const HeaderModal: React.FC<Props> = ({ name, onActionClick }) => {
               src="/icons/ic_cortex.svg"
               alt="Cortex icon"
             />
-            <span className="text-[16.2px] font-bold leading-[9px]">Cotex</span>
+            <span className="text-[16.2px] font-bold leading-[9px]">
+              Cortex
+            </span>
             <ChevronsLeftRight size={16} color="#00000099" />
           </div>
         }
         content={
           <Fragment>
             <Select
-              value={searchFilter}
+              value={selectedVariant}
               className="z-[999] h-8 w-full gap-1 px-2"
-              options={[
-                { name: 'All', value: 'all' },
-                { name: 'On-device', value: 'local' },
-                { name: 'Cloud', value: 'remote' },
-              ]}
-              onValueChange={(value) => setSearchFilter(value)}
+              options={options}
+              onValueChange={(value) => setSelectedVariant(value)}
             />
             <div className="mt-3 flex w-full items-center gap-1 font-medium text-[var(--text-primary)]">
               <div
                 ref={textRef}
                 className="line-clamp-1 flex-1 whitespace-nowrap rounded-md border bg-[#0000000F] p-2 leading-[16.71px]"
               >
-                cortex run llama3:70b-text-q2_K
+                cortex run {selectedVariant}
               </div>
               <button
-                onClick={handleCoppy}
+                onClick={onCopyClicked}
                 className="flex h-8 w-8 items-center justify-center rounded-md border bg-white"
               >
                 <Copy size={18} />
               </button>
             </div>
-            <a className="mt-4 flex items-center gap-1 text-xs text-[#2563EB] no-underline">
+            <a
+              rel="noopener noreferrer"
+              className="mt-4 flex items-center gap-1 text-xs text-[#2563EB] no-underline"
+              href="https://cortex.so/docs/quickstart"
+              target="_blank_"
+            >
               Cortex Quickstart Guide
               <ExternalLink size={12} />
             </a>
