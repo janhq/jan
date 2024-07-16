@@ -117,9 +117,9 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
       return
     }
 
-    await createThread(fileName, {
+    await createThread(persistModelId, {
       ...assistants[0],
-      model: fileName,
+      model: persistModelId,
     })
     setDownloadLocalModelModalStage('NONE', undefined)
     setMainViewState(MainViewState.Thread)
@@ -127,7 +127,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     setDownloadLocalModelModalStage,
     setMainViewState,
     createThread,
-    fileName,
+    persistModelId,
     assistants,
   ])
 
