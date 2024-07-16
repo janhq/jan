@@ -1,21 +1,8 @@
 import { useCallback } from 'react'
 
-import {
-  ImportingModel,
-  Model,
-  OptionType,
-  // baseName,
-  // fs,
-  // joinPath,
-} from '@janhq/core'
+import { ImportingModel, Model, OptionType } from '@janhq/core'
 
 import { atom, useSetAtom } from 'jotai'
-
-import { v4 as uuidv4 } from 'uuid'
-
-import { snackbar } from '@/containers/Toast'
-
-import { FilePathWithSize } from '@/utils/file'
 
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 

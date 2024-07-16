@@ -6,7 +6,6 @@ import {
 } from '@huggingface/hub'
 import {
   AllQuantizations,
-  // getFileSize,
   HuggingFaceRepoData,
   LlmEngine,
   Model,
@@ -193,10 +192,6 @@ const toHuggingFaceUrl = (repoId: string): string => {
 
     return `${url.origin}/api/models/${paths[0]}/${paths[1]}`
   } catch (err) {
-    // if (err instanceof InvalidHostError) {
-    //   throw err
-    // }
-
     if (repoId.startsWith('https')) {
       throw new Error(`Cannot parse url: ${repoId}`)
     }
@@ -211,18 +206,9 @@ export const fetchHuggingFaceRepoData = async (
   const sanitizedUrl = toHuggingFaceUrl(repoId)
   console.debug('sanitizedUrl', sanitizedUrl)
 
-  // TODO: add token
-  // const huggingFaceAccessToken = (
-  //   await this.getSetting<string>(Settings.huggingFaceAccessToken, '')
-  // ).trim()
-
   const headers = {
     Accept: 'application/json',
   }
-
-  // if (huggingFaceAccessToken.length > 0) {
-  //   headers['Authorization'] = `Bearer ${huggingFaceAccessToken}`
-  // }
 
   const res = await fetch(sanitizedUrl, {
     headers: headers,
@@ -240,21 +226,22 @@ export const fetchHuggingFaceRepoData = async (
     )
   }
 
-  const promises: Promise<number>[] = []
-
-  // fetching file sizes
   const url = new URL(sanitizedUrl)
   const paths = url.pathname.split('/').filter((e) => e.trim().length > 0)
 
   for (const sibling of data.siblings) {
     const downloadUrl = `https://huggingface.co/${paths[2]}/${paths[3]}/resolve/main/${sibling.rfilename}`
     sibling.downloadUrl = downloadUrl
-    // promises.push(getFileSize(downloadUrl))
   }
-
-  const result = await Promise.all(promises)
-  for (let i = 0; i < data.siblings.length; i++) {
-    data.siblings[i].fileSize = result[i]
+  for await (const fileInfo of listFiles({
+    repo: { type: 'model', name: repoId },
+  })) {
+    const sibling = data.siblings.find(
+      (sibling) => sibling.rfilename === fileInfo.path
+    )
+    if (sibling) {
+      sibling.fileSize = fileInfo.size
+    }
   }
 
   AllQuantizations.forEach((quantization) => {
@@ -264,6 +251,9 @@ export const fetchHuggingFaceRepoData = async (
       }
     })
   })
+  data.siblings = data.siblings.filter(
+    (sibling) => sibling.quantization != null
+  )
 
   data.modelUrl = `https://huggingface.co/${paths[2]}/${paths[3]}`
   return data

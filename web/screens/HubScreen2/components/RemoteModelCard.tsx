@@ -65,6 +65,7 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
       setUpRemoteModelStage('SETUP_INTRO', model.engine as RemoteEngine, {
         ...model.metadata,
         modelName: modelDisplayName,
+        modelId: model.model,
       })
       return
     }
@@ -117,9 +118,11 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
   return (
     <div
       onClick={onClick}
-      className="flex h-[46px] cursor-pointer flex-col justify-center border-b-[1px] border-[hsla(var(--app-border))] hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+      className="group flex h-[46px] cursor-pointer flex-col justify-center border-b-[1px] border-[hsla(var(--app-border))]"
     >
-      <h1 className="text-sm font-medium leading-4">{modelDisplayName}</h1>
+      <h1 className="text-sm font-medium leading-4 group-hover:underline">
+        {modelDisplayName}
+      </h1>
     </div>
   )
 }

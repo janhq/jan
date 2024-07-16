@@ -1,110 +1,78 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useCallback } from 'react'
 
-import { Button, Progress, Select } from '@janhq/joi'
+import { Button, Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
+import { CloudDownload } from 'lucide-react'
 
 import { toaster } from '@/containers/Toast'
 
 import { MainViewState } from '@/constants/screens'
 
 import useAssistantQuery from '@/hooks/useAssistantQuery'
-
 import useCortex from '@/hooks/useCortex'
-
 import {
   addDownloadModelStateAtom,
   downloadStateListAtom,
 } from '@/hooks/useDownloadState'
-
-import useHfEngineToBranchesQuery from '@/hooks/useHfEngineToBranchesQuery'
-
 import useThreads from '@/hooks/useThreads'
 
 import { formatDownloadPercentage } from '@/utils/converter'
-
 import { downloadProgress } from '@/utils/download'
+import { HfModelEntry } from '@/utils/huggingface'
+import { addThousandSeparator } from '@/utils/number'
 
-import { EngineType } from '@/utils/huggingface'
+import ModelTitle from './ModelTitle'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
-type Props = {
-  modelHandle: string
-}
+const HuggingFaceModelCard: React.FC<HfModelEntry> = ({
+  name,
+  downloads,
+  model,
+}) => {
+  const setLocalModelModalStage = useSetAtom(localModelModalStageAtom)
 
-const ListModel: React.FC<Props> = ({ modelHandle }) => {
-  const [engineFilter, setEngineFilter] = useState<EngineType | undefined>(
-    undefined
-  )
-  const { data } = useHfEngineToBranchesQuery(modelHandle)
+  const onItemClick = useCallback(() => {
+    setLocalModelModalStage('MODEL_LIST', name)
+  }, [setLocalModelModalStage, name])
 
-  const engineSelection: { name: string; value: string }[] = useMemo(() => {
-    if (!data) return []
-    const result: { name: string; value: string }[] = []
-    if (data.gguf.length > 0) result.push({ name: 'GGUF', value: 'gguf' })
-    if (data.onnx.length > 0) result.push({ name: 'ONNX', value: 'onnx' })
-    if (data.tensorrtllm.length > 0)
-      result.push({ name: 'TensorRT', value: 'tensorrtllm' })
-
-    return result
-  }, [data])
-
-  useEffect(() => {
-    if (engineSelection.length === 0) return
-    setEngineFilter(engineSelection[0].value as EngineType)
-  }, [engineSelection])
-
-  const modelBranches: string[] = []
-  if (data) {
-    const branches = data[engineFilter as EngineType] as string[]
-    if (!branches || branches.length === 0) return
-    modelBranches.push(...branches)
-  }
+  const owner = model?.metadata?.owned_by ?? ''
+  const logoUrl = model?.metadata?.owner_logo ?? ''
 
   return (
-    <Fragment>
-      <div className="mt-6 flex items-center gap-2">
-        <span>Format:</span>
-        <Select
-          value={engineFilter}
-          className="gap-1.5 whitespace-nowrap px-4 py-2 font-semibold"
-          options={engineSelection}
-          onValueChange={(value) => setEngineFilter(value as EngineType)}
+    <div
+      className="group flex cursor-pointer flex-row justify-between border-b-[1px] border-[hsla(var(--app-border))] pb-3 pt-4"
+      onClick={onItemClick}
+    >
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-medium leading-4 group-hover:underline">
+          {name}
+        </span>
+        <ModelTitle
+          className="text-[hsla(var(--text-secondary)]"
+          name={owner}
+          image={logoUrl}
         />
       </div>
-      <div className="mt-3 w-full overflow-hidden rounded-md border">
-        <table className="w-full">
-          <tbody>
-            {modelBranches.map((item) => (
-              <tr
-                key={item}
-                className="border-b last:border-b-0 hover:bg-[#2563EB0D]"
-              >
-                <td className="whitespace-nowrap py-4 pl-3">
-                  <div className="w-fit rounded-md border bg-white px-1.5 py-0.5 text-xs font-medium leading-4 text-[hsla(var(--text-primary))]">
-                    {item}
-                  </div>
-                </td>
-                <td className="w-full pl-4 font-medium leading-5 text-[hsla(var(--text-muted))]">
-                  {item}
-                </td>
-                <td>
-                  <div className="mr-3 flex items-center justify-end gap-3 whitespace-nowrap py-3">
-                    {/* <span>4.06 MB</span> */}
-                    <DownloadContainer
-                      modelHandle={modelHandle}
-                      branch={item}
-                    />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="pointer-events-auto flex flex-col items-end gap-2">
+        {/* <Button
+          className="!bg-[#0000000F] text-[var(--text-primary)]"
+          onClick={(e) => {
+            e.stopPropagation()
+            onActionClick()
+          }}
+        >
+          {actionLabel}
+        </Button> */}
+        <DownloadContainer modelHandle={name} branch={''} />
+        <span className="flex items-center gap-1 text-sm font-medium leading-3">
+          {addThousandSeparator(downloads)}
+          <CloudDownload size={14} />
+        </span>
       </div>
-    </Fragment>
+    </div>
   )
 }
 
@@ -176,14 +144,23 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
         <Button
           variant="soft"
           className="min-w-[98px]"
-          onClick={onUseModelClick}
+          onClick={(e) => {
+            e.stopPropagation()
+            onUseModelClick()
+          }}
         >
           Use
         </Button>
       ) : downloadState != null ? (
         <Button variant="soft">
           <div className="flex items-center space-x-2">
-            <span className="inline-block" onClick={onAbortDownloadClick}>
+            <span
+              className="inline-block"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAbortDownloadClick()
+              }}
+            >
               Cancel
             </span>
             <Progress
@@ -200,10 +177,17 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           </div>
         </Button>
       ) : (
-        <Button onClick={onDownloadClick}>Download</Button>
+        <Button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDownloadClick()
+          }}
+        >
+          Download
+        </Button>
       )}
     </div>
   )
 }
 
-export default ListModel
+export default HuggingFaceModelCard

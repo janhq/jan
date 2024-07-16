@@ -20,6 +20,7 @@ const SetUpRemoteModelModal: React.FC = () => {
   const logoUrl: string = (metadata?.owner_logo ?? '') as string
   const description: string = (metadata?.description ?? '') as string
   const modelName: string = (metadata?.modelName ?? '') as string
+  const modelId: string = (metadata?.modelId ?? '') as string
 
   return (
     <Modal
@@ -27,7 +28,12 @@ const SetUpRemoteModelModal: React.FC = () => {
       onOpenChange={() => setUpRemoteModelStage('NONE', undefined)}
       content={
         <Fragment>
-          <HeaderModal name={modelName} onActionClick={navigateToSetUpApiKey} />
+          <HeaderModal
+            name={modelName}
+            onActionClick={navigateToSetUpApiKey}
+            modelId={modelId}
+            modelIdVariants={[modelId]}
+          />
           <ModelTitle
             className="text-[hsla(var(--text-secondary)] my-4"
             name={owner}

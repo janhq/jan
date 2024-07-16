@@ -18,6 +18,7 @@ const DownloadLocalModelModal: React.FC = () => {
   )
   const [tab, setTab] = useState<ModelTab>('Versions')
   const [height, setHeight] = useState<number>(0)
+
   useEffect(() => {
     const updateHeight = () => {
       setHeight(window.innerHeight - window.innerHeight * 0.4)
@@ -41,7 +42,12 @@ const DownloadLocalModelModal: React.FC = () => {
       onOpenChange={() => setLocalModelModalStage('NONE', undefined)}
       content={
         <Fragment>
-          <HeaderModal name={modelName} onActionClick={() => {}} />
+          <HeaderModal
+            modelId={modelHandle}
+            name={modelName}
+            onActionClick={() => {}}
+            modelIdVariants={[modelHandle]}
+          />
           <Tab
             tab={tab}
             handleTab={(input) => setTab(input as 'Versions' | 'Information')}

@@ -36,7 +36,7 @@ const InstallingExtensionModal = () => {
         abortDownload(item.localPath)
       }
     },
-    []
+    [abortDownload]
   )
 
   return (
