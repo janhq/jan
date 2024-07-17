@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import useAssistantCreate, { janAssistant } from '@/hooks/useAssistantCreate'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useConfigQuery from '@/hooks/useConfigQuery'
+import useEngineQuery from '@/hooks/useEngineQuery'
 import { useLoadTheme } from '@/hooks/useLoadTheme'
 import useModelHub from '@/hooks/useModelHub'
 import useModels from '@/hooks/useModels'
@@ -28,6 +29,7 @@ const DataLoader: React.FC = () => {
   useConfigQuery()
   useModelHub()
   useLoadTheme()
+  useEngineQuery()
 
   useEffect(() => {
     getThreadList()

@@ -16,11 +16,10 @@ export const SettingScreenList = [
   'Appearance',
   'Keyboard Shortcuts',
   'Advanced Settings',
-  // 'Extensions',
+  'Engines',
 ] as const
 
-export type SettingScreenTuple = typeof SettingScreenList
-export type SettingScreen = SettingScreenTuple[number]
+export type SettingScreen = (typeof SettingScreenList)[number]
 
 const SettingsScreen = () => {
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)

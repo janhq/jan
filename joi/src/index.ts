@@ -14,6 +14,7 @@ export * from './core/Tabs'
 export * from './core/Accordion'
 export * from './core/DropdownMenu'
 export * from './core/VisuallyHidden'
+export * from './core/Table'
 
 export * from './hooks/useClipboard'
 export * from './hooks/usePageLeave'
