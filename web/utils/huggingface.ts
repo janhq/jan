@@ -81,7 +81,7 @@ export const fetchCortexHubModelEntries = async (): Promise<HfModelEntry[]> => {
   return modelEntries
 }
 
-export const listCortexHubModels = async (): Promise<HfModelEntry[]> => {
+export const fetchCortexHubModels = async (): Promise<HfModelEntry[]> => {
   const modelEntries = await fetchCortexHubModelEntries()
   const promises: Promise<Model | undefined>[] = []
   modelEntries.forEach((model) => {
@@ -98,8 +98,9 @@ export const listCortexHubModels = async (): Promise<HfModelEntry[]> => {
       const model: Model = fulfillResult.value as Model
       if (model) {
         modelEntries[i].model = model
-        modelEntries[i].remoteModel =
+        const isRemoteModel =
           RemoteEngines.find((engine) => model.engine === engine) != null
+        modelEntries[i].remoteModel = isRemoteModel
         modelEntries[i].engine = model.engine
       }
     }

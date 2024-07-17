@@ -5,7 +5,7 @@ import { useQueries } from '@tanstack/react-query'
 import {
   fetchHuggingFaceModel,
   HfModelEntry,
-  listCortexHubModels,
+  fetchCortexHubModels,
 } from '@/utils/huggingface'
 
 // TODO: change curated models to built in models
@@ -124,8 +124,8 @@ const useModelHub = () => {
         queryFn: getBuiltInModelEntries,
       },
       {
-        queryKey: ['listCortexHubModels'],
-        queryFn: listCortexHubModels,
+        queryKey: ['fetchCortexHubModels'],
+        queryFn: fetchCortexHubModels,
       },
     ],
   })
@@ -154,7 +154,9 @@ const useModelHub = () => {
       if (results[1].data) {
         data.modelCategories.set(
           'BuiltInModels',
-          results[1].data.filter((modelEntry) => modelEntry.remoteModel == null)
+          results[1].data.filter(
+            (modelEntry) => modelEntry.remoteModel === false
+          )
         )
 
         // for remote models
