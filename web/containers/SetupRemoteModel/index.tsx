@@ -1,13 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 
 import { LlmEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
 import { SettingsIcon } from 'lucide-react'
 
-import { MainViewState } from '@/constants/screens'
-
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {

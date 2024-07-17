@@ -5,8 +5,6 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { MainViewState } from '@/constants/screens'
-
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useCortex from '@/hooks/useCortex'
@@ -26,7 +24,7 @@ import { downloadProgress } from '@/utils/download'
 
 import { EngineType } from '@/utils/huggingface'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 

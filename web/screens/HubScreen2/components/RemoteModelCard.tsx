@@ -5,8 +5,6 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { MainViewState } from '@/constants/screens'
-
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useConfigQuery from '@/hooks/useConfigQuery'
@@ -18,7 +16,7 @@ import useThreads from '@/hooks/useThreads'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 

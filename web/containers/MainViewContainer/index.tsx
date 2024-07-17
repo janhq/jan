@@ -1,12 +1,10 @@
 import { useAtomValue } from 'jotai'
 
-import { MainViewState } from '@/constants/screens'
-
 import HubScreen2 from '@/screens/HubScreen2'
 import SettingsScreen from '@/screens/Settings'
 import ThreadScreen from '@/screens/Thread'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const MainViewContainer = () => {
   const mainViewState = useAtomValue(mainViewStateAtom)

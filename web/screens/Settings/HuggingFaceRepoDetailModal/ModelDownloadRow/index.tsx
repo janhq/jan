@@ -5,8 +5,6 @@ import { Badge, Button } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { MainViewState } from '@/constants/screens'
-
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useCortex from '@/hooks/useCortex'
@@ -15,7 +13,7 @@ import useThreads from '@/hooks/useThreads'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
 import {

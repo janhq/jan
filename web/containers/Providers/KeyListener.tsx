@@ -4,14 +4,13 @@ import { useCallback, useEffect } from 'react'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { MainViewState } from '@/constants/screens'
-
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useThreads from '@/hooks/useThreads'
 
 import { toaster } from '../Toast'
 
 import {
+  MainViewState,
   mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,

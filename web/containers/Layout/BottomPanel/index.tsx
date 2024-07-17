@@ -1,8 +1,11 @@
 import { Button, Tooltip } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
-import { FaGithub, FaDiscord } from 'react-icons/fa'
 import { twMerge } from 'tailwind-merge'
+
+import Discord from '@/components/Discord'
+
+import GitHub from '@/components/GitHub'
 
 import DownloadingStatus from './DownloadingStatus'
 
@@ -18,12 +21,12 @@ import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 const menuLinks = [
   {
     name: 'Discord',
-    icon: <FaDiscord size={16} className="flex-shrink-0" />,
+    icon: <Discord />,
     link: 'https://discord.gg/FTk2MvZwJH',
   },
   {
     name: 'Github',
-    icon: <FaGithub size={14} className="flex-shrink-0" />,
+    icon: <GitHub />,
     link: 'https://github.com/janhq/jan',
   },
 ]

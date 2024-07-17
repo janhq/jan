@@ -10,15 +10,6 @@
   "build": {
     "appId": "jan.ai.app",
     "productName": "Jan",
-    "extraResources": [
-      {
-        "from": "resources/${os}",
-        "to": "bin",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
     "files": [
       "renderer/**/*",
       "build/**/*.{js,map}",

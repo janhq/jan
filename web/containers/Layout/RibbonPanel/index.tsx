@@ -5,9 +5,11 @@ import { MessageCircleIcon, SettingsIcon, LayoutGridIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import { MainViewState } from '@/constants/screens'
-
-import { mainViewStateAtom, showLeftPanelAtom } from '@/helpers/atoms/App.atom'
+import {
+  MainViewState,
+  mainViewStateAtom,
+  showLeftPanelAtom,
+} from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import {

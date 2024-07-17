@@ -13,8 +13,6 @@ import RibbonPanel from '@/containers/Layout/RibbonPanel'
 
 import TopPanel from '@/containers/Layout/TopPanel'
 
-import { MainViewState } from '@/constants/screens'
-
 import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
 import DownloadLocalModelModal from '@/screens/HubScreen2/components/DownloadLocalModelModal'
@@ -35,7 +33,7 @@ import MainViewContainer from '../MainViewContainer'
 
 import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
 const BaseLayout = () => {
