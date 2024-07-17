@@ -66,6 +66,8 @@ const useSendMessage = () => {
     updateMessage,
     chatCompletionNonStreaming,
     updateThread,
+    getEngineStatus,
+    initializeEngine,
   } = useCortex()
   const updateMessageState = useSetAtom(updateMessageAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
@@ -352,6 +354,37 @@ const useSendMessage = () => {
         )
         return
       }
+      const engine = selectedModel.engine
+      if (!engine) {
+        toaster({
+          title: 'Start model failed',
+          description: `Model ${selectedModel.id} does not have an engine`,
+          type: 'error',
+        })
+        console.error(`Model ${selectedModel.id} does not have an engine`)
+        return
+      }
+
+      const engineStatus = await getEngineStatus(engine)
+      if (!engineStatus) {
+        toaster({
+          title: 'Start model failed',
+          description: `Cannot get engine status for ${engine}`,
+          type: 'error',
+        })
+        console.error(`Cannot get engine status for ${engine}`)
+        return
+      }
+      if (!engineStatus.initialized) {
+        toaster({
+          title: 'Please wait for engine to initialize',
+          description: `Please retry after engine ${engine} is installed.`,
+          type: 'default',
+        })
+        initializeEngine(engine)
+        return
+      }
+
       const shouldSummarize = activeThread.title === 'New Thread'
       const modelId = activeThread.assistants[0].model
 
@@ -578,6 +611,8 @@ const useSendMessage = () => {
       chatCompletionNonStreaming,
       chatCompletionStreaming,
       summarizeThread,
+      getEngineStatus,
+      initializeEngine,
     ]
   )
 

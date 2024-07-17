@@ -11,6 +11,7 @@ import {
   ChatCompletionCreateParamsStreaming,
   AssistantCreateParams,
   AssistantUpdateParams,
+  LlmEngine,
 } from '@janhq/core'
 
 import { Cortex } from 'cortexso-node'
@@ -22,6 +23,14 @@ import { UpdateConfigMutationVariables } from './useConfigMutation'
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 import { CortexConfig } from '@/helpers/atoms/CortexConfig.atom'
 
+export type EngineStatus = {
+  name: LlmEngine
+  description: string
+  version: string
+  productName: string
+  initialized: boolean
+}
+
 const useCortex = () => {
   const host = useAtomValue(hostAtom)
 
@@ -30,6 +39,39 @@ const useCortex = () => {
     apiKey: '',
     dangerouslyAllowBrowser: true,
   })
+
+  // TODO: put in to cortexso-node?
+  const getEngineStatus = useCallback(
+    async (engine: LlmEngine): Promise<EngineStatus | undefined> => {
+      try {
+        const response = await fetch(`${host}/engines/${engine}`, {
+          method: 'GET',
+        })
+        const data = (await response.json()) as EngineStatus
+        return data
+      } catch (err) {
+        console.error(err)
+      }
+    },
+    [host]
+  )
+
+  // TODO: put in to cortexso-node?
+  const initializeEngine = useCallback(
+    async (engine: LlmEngine) => {
+      try {
+        await fetch(`${host}/engines/${engine}/init/`, {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+          },
+        })
+      } catch (err) {
+        console.error(err)
+      }
+    },
+    [host]
+  )
 
   const fetchAssistants = useCallback(async () => {
     const assistants: Assistant[] = []
@@ -296,6 +338,8 @@ const useCortex = () => {
     registerEngineConfig,
     createModel,
     getCortexConfigs,
+    getEngineStatus,
+    initializeEngine,
   }
 }
 
