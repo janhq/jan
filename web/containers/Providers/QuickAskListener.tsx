@@ -2,11 +2,9 @@ import { useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import { MainViewState } from '@/constants/screens'
-
 import useSendMessage from '@/hooks/useSendMessage'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const QuickAskListener: React.FC = () => {
   const { sendMessage } = useSendMessage()

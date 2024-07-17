@@ -44,7 +44,7 @@ const HeaderModal: React.FC<Props> = ({
             <Image
               width={22.5}
               height={18}
-              src="/icons/ic_cortex.svg"
+              src="icons/ic_cortex.svg"
               alt="Cortex icon"
             />
             <span className="text-[16.2px] font-bold leading-[9px]">

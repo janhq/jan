@@ -6,8 +6,6 @@ import { CloudDownload } from 'lucide-react'
 
 import { toaster } from '@/containers/Toast'
 
-import { MainViewState } from '@/constants/screens'
-
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useCortex from '@/hooks/useCortex'
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
@@ -21,7 +19,7 @@ import { addThousandSeparator } from '@/utils/number'
 
 import ModelTitle from './ModelTitle'
 
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 

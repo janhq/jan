@@ -31,7 +31,7 @@ const BuiltInModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
         <Image
           width={24}
           height={24}
-          src="/icons/app_icon.svg"
+          src="icons/app_icon.svg"
           alt="Built-In Models"
         />
         <h1 className="text-lg font-semibold">Built-In Models</h1>

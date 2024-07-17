@@ -31,7 +31,7 @@ const HuggingFaceModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
         <Image
           width={24}
           height={24}
-          src="/icons/ic_hugging_face.svg"
+          src="icons/ic_hugging_face.svg"
           alt="Hugging Face"
         />
         <h1 className="text-lg font-semibold">Hugging Face</h1>

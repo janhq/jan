@@ -1,6 +1,11 @@
 import { atom } from 'jotai'
 
-import { MainViewState } from '@/constants/screens'
+export enum MainViewState {
+  Hub,
+  Settings,
+  Thread,
+  LocalServer,
+}
 
 export const mainViewStateAtom = atom<MainViewState>(MainViewState.Thread)
 

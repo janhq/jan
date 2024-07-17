@@ -17,9 +17,8 @@ import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import { MainViewState } from '@/constants/screens'
-
 import {
+  MainViewState,
   mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,

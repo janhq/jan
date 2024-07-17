@@ -5,9 +5,7 @@ import { useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import { MainViewState } from '@/constants/screens'
-
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const EmptyModel = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)

@@ -30,9 +30,9 @@ export const getDescriptionByCategory = (category: ModelHubCategory) => {
 export const getLogoByCategory = (category: ModelHubCategory) => {
   switch (category) {
     case 'BuiltInModels':
-      return '/icons/app_icon.svg'
+      return 'icons/app_icon.svg'
     case 'HuggingFace':
-      return '/icons/ic_hugging_face.svg'
+      return 'icons/ic_hugging_face.svg'
     default:
       return undefined
   }
