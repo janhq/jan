@@ -17,7 +17,7 @@ const SetUpRemoteModelModal: React.FC = () => {
   const { stage, metadata } = useAtomValue(setUpRemoteModelStageAtom)
 
   const owner: string = (metadata?.owned_by ?? '') as string
-  const logoUrl: string = (metadata?.owner_logo ?? '') as string
+  const logoUrl: string = (metadata?.logo ?? '') as string
   const description: string = (metadata?.description ?? '') as string
   const modelName: string = (metadata?.modelName ?? '') as string
   const modelId: string = (metadata?.modelId ?? '') as string

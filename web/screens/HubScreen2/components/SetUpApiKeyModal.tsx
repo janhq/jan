@@ -50,7 +50,7 @@ const SetUpApiKeyModal: React.FC = () => {
 
   if (remoteEngine == null) return null
   const owner: string = getTitleByCategory(remoteEngine)
-  const logoUrl: string = (metadata?.owner_logo ?? '') as string
+  const logoUrl: string = (metadata?.logo ?? '') as string
   const apiKeyUrl: string | undefined = (metadata?.api_key_url ?? '') as
     | string
     | undefined

@@ -39,7 +39,7 @@ const BuiltInModelCard: React.FC<HfModelEntry> = ({
   }, [setLocalModelModalStage, name])
 
   const owner = model?.metadata?.owned_by ?? ''
-  const logoUrl = model?.metadata?.owner_logo ?? ''
+  const logoUrl = model?.metadata?.logo ?? ''
 
   return (
     <div

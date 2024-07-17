@@ -31,8 +31,8 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
 
   const engineLogo: string | undefined = data.find(
-    (entry) => entry.model?.metadata?.owner_logo != null
-  )?.model?.metadata?.owner_logo
+    (entry) => entry.model?.metadata?.logo != null
+  )?.model?.metadata?.logo
 
   const apiKeyUrl: string | undefined = data.find(
     (entry) => entry.model?.metadata?.api_key_url != null
@@ -51,7 +51,7 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
 
   const onSetUpClick = useCallback(() => {
     setUpRemoteModelStage('SETUP_API_KEY', engine, {
-      owner_logo: engineLogo,
+      logo: engineLogo,
       api_key_url: apiKeyUrl,
     })
   }, [setUpRemoteModelStage, engine, engineLogo, apiKeyUrl])
