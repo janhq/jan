@@ -17,8 +17,8 @@ type CuratedModelResponse = {
 export type QuickStartModel = {
   note: string
   url: string
-  owner_name: string
-  owner_logo: string
+  author: string
+  logo: string
   model_name: string
   model_logo: string
   size: number

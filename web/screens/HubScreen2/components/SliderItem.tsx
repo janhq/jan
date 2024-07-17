@@ -39,8 +39,7 @@ const SliderItem: React.FC<Props> = ({ model }) => {
   const fileName = pathArray[pathArray.length - 1]
   const repoId = `${owner}/${repo}`
 
-  const shouldShowOwnerLogo =
-    model.owner_logo !== undefined && model.owner_logo !== ''
+  const shouldShowOwnerLogo = model.logo !== undefined && model.logo !== ''
 
   return (
     <div className="flex justify-between rounded-2xl border border-[hsla(var(--app-border))] p-4">
@@ -50,16 +49,9 @@ const SliderItem: React.FC<Props> = ({ model }) => {
         </span>
         <div className="flex items-center gap-1.5">
           {shouldShowOwnerLogo && (
-            <Image
-              width={20}
-              height={20}
-              src={model.owner_logo}
-              alt={model.owner_name}
-            />
+            <Image width={20} height={20} src={model.logo} alt={model.author} />
           )}
-          <span className="text-sm font-medium leading-4">
-            {model.owner_name}
-          </span>
+          <span className="text-sm font-medium leading-4">{model.author}</span>
         </div>
       </div>
       <div className="flex flex-col items-end gap-4">

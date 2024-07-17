@@ -43,12 +43,12 @@ const ModelSection: React.FC<Props> = ({
             className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
             onClick={() => onModelSelected(model)}
           >
-            {model.metadata?.owner_logo && (
+            {model.metadata?.logo && (
               <Image
                 className="rounded-full object-cover"
                 width={20}
                 height={20}
-                src={model.metadata?.owner_logo}
+                src={model.metadata?.logo}
                 alt="logo"
               />
             )}

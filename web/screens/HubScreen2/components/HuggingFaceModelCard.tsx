@@ -10,10 +10,8 @@ import { MainViewState } from '@/constants/screens'
 
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useCortex from '@/hooks/useCortex'
-import {
-  addDownloadModelStateAtom,
-  downloadStateListAtom,
-} from '@/hooks/useDownloadState'
+import { downloadStateListAtom } from '@/hooks/useDownloadState'
+import useHfModelFetchAndDownload from '@/hooks/useHfModelFetchAndDownload'
 import useThreads from '@/hooks/useThreads'
 
 import { formatDownloadPercentage } from '@/utils/converter'
@@ -39,7 +37,7 @@ const HuggingFaceModelCard: React.FC<HfModelEntry> = ({
   }, [setLocalModelModalStage, name])
 
   const owner = model?.metadata?.owned_by ?? ''
-  const logoUrl = model?.metadata?.owner_logo ?? ''
+  const logoUrl = model?.metadata?.logo ?? ''
 
   return (
     <div
@@ -57,15 +55,6 @@ const HuggingFaceModelCard: React.FC<HfModelEntry> = ({
         />
       </div>
       <div className="pointer-events-auto flex flex-col items-end gap-2">
-        {/* <Button
-          className="!bg-[#0000000F] text-[var(--text-primary)]"
-          onClick={(e) => {
-            e.stopPropagation()
-            onActionClick()
-          }}
-        >
-          {actionLabel}
-        </Button> */}
         <DownloadContainer modelHandle={name} />
         <span className="flex items-center gap-1 text-sm font-medium leading-3">
           {addThousandSeparator(downloads)}
@@ -83,8 +72,7 @@ type DownloadContainerProps = {
 const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
 }) => {
-  const { downloadModel, abortDownload } = useCortex()
-  const addDownloadState = useSetAtom(addDownloadModelStateAtom)
+  const { abortDownload } = useCortex()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
   const setDownloadLocalModelModalStage = useSetAtom(localModelModalStageAtom)
@@ -92,6 +80,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const allDownloadState = useAtomValue(downloadStateListAtom)
   const { data: assistants } = useAssistantQuery()
+  const { fetchDataAndDownload } = useHfModelFetchAndDownload()
 
   const modelIdPrefix = modelHandle.replaceAll('/', '_')
 
@@ -105,13 +94,8 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   )
 
   const onDownloadClick = useCallback(
-    async () => {
-      // addDownloadState(modelId)
-      // await downloadModel(modelId)
-    },
-    [
-      // downloadModel, addDownloadState, modelId
-    ]
+    async () => fetchDataAndDownload(modelHandle),
+    [fetchDataAndDownload, modelHandle]
   )
 
   const onUseModelClick = useCallback(async () => {
