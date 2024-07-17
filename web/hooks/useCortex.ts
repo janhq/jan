@@ -41,6 +41,19 @@ const useCortex = () => {
   })
 
   // TODO: put in to cortexso-node?
+  const getEngineStatuses = useCallback(async (): Promise<EngineStatus[]> => {
+    const response = await fetch(`${host}/engines`, {
+      method: 'GET',
+    })
+    const data = await response.json()
+    const engineStatuses: EngineStatus[] = []
+    data.data.forEach((engineStatus: EngineStatus) => {
+      engineStatuses.push(engineStatus)
+    })
+    return engineStatuses
+  }, [host])
+
+  // TODO: put in to cortexso-node?
   const getEngineStatus = useCallback(
     async (engine: LlmEngine): Promise<EngineStatus | undefined> => {
       try {
@@ -340,6 +353,7 @@ const useCortex = () => {
     getCortexConfigs,
     getEngineStatus,
     initializeEngine,
+    getEngineStatuses,
   }
 }
 
