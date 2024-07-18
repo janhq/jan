@@ -14,7 +14,9 @@ const GroupInfo: React.FC<Props> = ({ title, imageUrl, subTitle }) => (
       )}
       {title}
     </div>
-    <span className="text-sm text-[var(--text-secondary)]">{subTitle}</span>
+    <span className="text-[hsla(var(--text-secondary)] text-sm">
+      {subTitle}
+    </span>
   </div>
 )
 
