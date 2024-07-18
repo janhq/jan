@@ -17,10 +17,11 @@ const CenterPanelContainer = ({ children }: PropsWithChildren) => {
     <div
       className={twMerge(
         'flex h-full w-full',
-        !reduceTransparent && mainViewState !== MainViewState.Hub && 'px-1.5',
+        !reduceTransparent && 'px-1.5',
+        mainViewState === MainViewState.Hub && 'pl-0',
         !downloadedModels.length &&
           mainViewState === MainViewState.Thread &&
-          'px-0'
+          'pl-0'
       )}
     >
       <div
