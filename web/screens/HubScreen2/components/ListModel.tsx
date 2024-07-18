@@ -72,16 +72,16 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
           onValueChange={(value) => setEngineFilter(value as EngineType)}
         />
       </div>
-      <div className="mt-3 w-full overflow-hidden rounded-md border">
+      <div className="mt-3 w-full overflow-hidden rounded-md border border-[hsla(var(--app-border))]">
         <table className="w-full">
           <tbody>
             {modelBranches.map((item) => (
               <tr
                 key={item}
-                className="border-b last:border-b-0 hover:bg-[#2563EB0D]"
+                className="border-b border-[hsla(var(--app-border))] last:border-b-0 hover:bg-[hsla(var(--primary-bg-soft))]"
               >
                 <td className="whitespace-nowrap py-4 pl-3">
-                  <div className="w-fit rounded-md border bg-white px-1.5 py-0.5 text-xs font-medium leading-4 text-[hsla(var(--text-primary))]">
+                  <div className="w-fit rounded-md border border-[hsla(var(--app-border))] bg-transparent px-1.5 py-0.5 text-xs font-medium leading-4 text-[hsla(var(--text-primary))]">
                     {item}
                   </div>
                 </td>

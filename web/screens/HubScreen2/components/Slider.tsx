@@ -32,6 +32,7 @@ const Slider: React.FC = () => {
   const models = data.sliderData ?? []
 
   const normalizedModelsList: QuickStartModel[][] = []
+
   const getColumnCount = () => {
     if (width <= 670) return 1
     if (width <= 1000) return 2

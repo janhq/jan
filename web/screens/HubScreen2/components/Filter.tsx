@@ -12,13 +12,15 @@ type Props = {
 }
 
 const Filter: React.FC<Props> = ({ currentFilter, onFilterClicked }) => (
-  <div className="sticky top-0 flex gap-[6px] bg-[hsla(var(--app-bg))] md:flex-row">
+  <div className="sticky top-0 flex gap-[6px] bg-[hsla(var(--app-bg))] py-4 md:flex-row">
     {ModelFilters.map((filter) => (
       <Button
         key={filter}
+        theme="ghost"
+        variant="outline"
         className={twMerge(
-          'border !bg-transparent text-[hsla(var(--text-primary))]',
-          currentFilter === filter && '!bg-[#0000000F]'
+          currentFilter === filter &&
+            '!border-none !bg-[hsla(var(--secondary-bg))]'
         )}
         onClick={() => onFilterClicked(filter)}
       >

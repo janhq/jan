@@ -34,35 +34,37 @@ const EngineSetting: React.FC = () => {
 
   return (
     <ScrollArea className="h-full w-full">
-      <Table>
-        <TableCaption className="text-xl font-bold">Engines</TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Engine name</TableHead>
-            <TableHead>Description</TableHead>
-            <TableHead>Version</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.map((engineStatus) => {
-            return (
-              <TableRow key={engineStatus.name}>
-                <TableCell className="font-medium">
-                  {engineStatus.name}
-                </TableCell>
-                <TableCell>{engineStatus.description}</TableCell>
-                <TableCell className="text-center">
-                  {engineStatus.version}
-                </TableCell>
-                <TableCell>
-                  {engineStatus.initialized ? 'Installed' : 'Not Installed'}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+      <div className="p-4">
+        <Table>
+          <TableCaption className="text-xl font-bold">Engines</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Engine name</TableHead>
+              <TableHead>Description</TableHead>
+              <TableHead>Version</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.map((engineStatus) => {
+              return (
+                <TableRow key={engineStatus.name}>
+                  <TableCell className="font-medium">
+                    {engineStatus.name}
+                  </TableCell>
+                  <TableCell>{engineStatus.description}</TableCell>
+                  <TableCell className="text-center">
+                    {engineStatus.version}
+                  </TableCell>
+                  <TableCell>
+                    {engineStatus.initialized ? 'Installed' : 'Not Installed'}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </ScrollArea>
   )
 }

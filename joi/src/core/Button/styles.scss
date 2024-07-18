@@ -35,15 +35,15 @@
 
   // Ghost
   &--ghost {
-    background-color: transparent !important;
+    background-color: transparent;
 
     &.btn--soft {
-      background-color: transparent !important;
+      background-color: transparent;
     }
 
     // Variant outline ghost
     &.btn--outline {
-      background-color: transparent !important;
+      background-color: transparent;
       border: 1px solid hsla(var(--ghost-border));
     }
   }

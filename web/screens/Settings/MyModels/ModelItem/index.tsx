@@ -89,7 +89,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
         {model.engine === 'cortex.llamacpp' && (
           <div className="flex gap-x-4">
             <Badge theme="secondary" className="sm:mr-16">
-              {toGibibytes(model.metadata?.size)}
+              {toGibibytes(model.metadata?.size) || '-'}
             </Badge>
 
             <div className="flex items-center gap-x-4">

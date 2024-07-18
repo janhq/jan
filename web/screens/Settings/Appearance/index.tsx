@@ -56,7 +56,7 @@ export default function AppearanceOptions() {
           </p>
         </div>
         <Select
-          value={selectedIdTheme}
+          value={selectedIdTheme || 'joi-light'}
           options={themeOptions}
           onValueChange={(e) => handleClickTheme(e)}
         />

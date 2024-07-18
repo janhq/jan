@@ -1,17 +1,21 @@
 import React, { useCallback, useState } from 'react'
 
-import { useSetAtom } from 'jotai'
-import { Search } from 'lucide-react'
+import { Button, Input } from '@janhq/joi'
+import { useAtomValue, useSetAtom } from 'jotai'
+import { SearchIcon } from 'lucide-react'
+import { FoldersIcon } from 'lucide-react'
 import { useDebouncedCallback } from 'use-debounce'
 
 import { toaster } from '@/containers/Toast'
 
 import { useGetHFRepoData } from '@/hooks/useGetHFRepoData'
 
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
   importHuggingFaceModelStageAtom,
   importingHuggingFaceRepoDataAtom,
 } from '@/helpers/atoms/HuggingFace.atom'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   onSearchChanged: (query: string) => void
@@ -20,6 +24,8 @@ type Props = {
 const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
   const [searchText, setSearchText] = useState('')
   const { getHfRepoData } = useGetHFRepoData()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const setSelectedSetting = useSetAtom(selectedSettingAtom)
 
   const setImportingHuggingFaceRepoData = useSetAtom(
     importingHuggingFaceRepoDataAtom
@@ -66,15 +72,24 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
 
   return (
     <div className="mx-4 mt-4 flex h-[128px] items-center justify-center gap-3 rounded-[10px] bg-blue-400">
-      <div className="flex h-8 w-full max-w-[320px] items-center gap-2 rounded-md border bg-[hsla(var(--app-bg))] p-2">
-        <Search size={16} />
-        <input
-          className="flex-1 outline-none"
-          placeholder="Search or enter Hugging Face model URL"
-          value={searchText}
-          onChange={onQueryChanged}
-        />
-      </div>
+      <Input
+        className="w-full bg-[hsla(var(--app-bg))] md:w-[320px]"
+        prefixIcon={<SearchIcon size={16} />}
+        placeholder="Search"
+        value={searchText}
+        onChange={onQueryChanged}
+      />
+      <Button
+        className="flex gap-2 bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]"
+        theme="ghost"
+        onClick={() => {
+          setMainViewState(MainViewState.Settings)
+          setSelectedSetting('My Models')
+        }}
+      >
+        <FoldersIcon size={16} />
+        <span>My models</span>
+      </Button>
       {/* <Button className="flex items-center gap-2"> */}
       {/*   <Upload size={16} /> */}
       {/*   <span className="hidden text-sm font-semibold md:block"> */}

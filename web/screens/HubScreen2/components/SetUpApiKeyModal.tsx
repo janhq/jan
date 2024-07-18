@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 
 import Image from 'next/image'
 
-import { Button, Modal } from '@janhq/joi'
+import { Button, Input, Modal } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
 
@@ -65,13 +65,14 @@ const SetUpApiKeyModal: React.FC = () => {
             {logoUrl && (
               <Image width={24} height={24} src={logoUrl} alt="Model owner" />
             )}
-            <h1 className="text-lg font-semibold leading-7">{owner}</h1>
+            <h1 className="text-lg font-semibold leading-7 text-[hsla(var(--text-primary))]">
+              {owner}
+            </h1>
           </div>
 
           <div className="mb-3 text-sm font-medium leading-4">API Key</div>
 
-          <input
-            className="text-[hsla(var(--text-secondary)] w-full rounded-md border p-2 leading-[16.94px]"
+          <Input
             placeholder="Input API Key"
             type="text"
             value={apiKey}
@@ -84,7 +85,7 @@ const SetUpApiKeyModal: React.FC = () => {
                 href={apiKeyUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="relative flex no-underline"
+                className="relative flex no-underline hover:underline"
               >
                 Get your API key from {owner} <ArrowUpRight size={12} />
               </a>
@@ -93,8 +94,12 @@ const SetUpApiKeyModal: React.FC = () => {
 
           <span className="my-4 flex items-center gap-1 text-xs text-blue-500"></span>
           <div className="flex items-center justify-end gap-3">
-            <Button onClick={onDismiss}>Cancel</Button>
-            <Button onClick={onSaveClicked}>Save</Button>
+            <Button theme="ghost" variant="outline" onClick={onDismiss}>
+              Cancel
+            </Button>
+            <Button disabled={apiKey.length === 0} onClick={onSaveClicked}>
+              Save
+            </Button>
           </div>
         </Fragment>
       }

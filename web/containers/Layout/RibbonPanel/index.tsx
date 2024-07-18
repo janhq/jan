@@ -12,6 +12,7 @@ import {
 } from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   reduceTransparentAtom,
   selectedSettingAtom,
@@ -42,6 +43,7 @@ export default function RibbonPanel() {
   const matches = useMediaQuery('(max-width: 880px)')
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -59,7 +61,11 @@ export default function RibbonPanel() {
           'border-none',
         !showLeftPanel && !reduceTransparent && 'border-none',
         matches && !reduceTransparent && 'border-none',
-        reduceTransparent && ' bg-[hsla(var(--ribbon-panel-bg))]'
+        reduceTransparent && ' bg-[hsla(var(--ribbon-panel-bg))]',
+        !downloadedModels.length &&
+          mainViewState === MainViewState.Thread &&
+          !reduceTransparent &&
+          'border-none'
       )}
     >
       {RibbonNavMenus.filter((menu) => !!menu).map((menu, i) => {

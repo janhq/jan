@@ -175,6 +175,8 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
             e.stopPropagation()
             onDownloadClick()
           }}
+          theme="ghost"
+          className="bg-[hsla(var(--secondary-bg))]"
         >
           Download
         </Button>

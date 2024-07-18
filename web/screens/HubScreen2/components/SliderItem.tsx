@@ -42,7 +42,10 @@ const SliderItem: React.FC<Props> = ({ model }) => {
   return (
     <div className="flex flex-col justify-between rounded-2xl border border-[hsla(var(--app-border))] p-4">
       <div className="gap-1.5">
-        <span className="text-base font-semibold leading-6">
+        <span
+          className="line-clamp-1 text-base font-semibold leading-6"
+          title={model.model_name}
+        >
           {model.model_name}
         </span>
         <div className="mt-1.5 flex items-center gap-1.5">
@@ -157,7 +160,13 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           </div>
         </Button>
       ) : (
-        <Button onClick={onDownloadClick}>Download</Button>
+        <Button
+          onClick={onDownloadClick}
+          theme="ghost"
+          className="bg-[hsla(var(--secondary-bg))]"
+        >
+          Download
+        </Button>
       )}
     </div>
   )

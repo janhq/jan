@@ -10,7 +10,7 @@ export const THEME = 'themeAppearance'
 export const REDUCE_TRANSPARENT = 'reduceTransparent'
 export const SPELL_CHECKING = 'spellChecking'
 export const themesOptionsAtom = atom<{ name: string; value: string }[]>([])
-export const selectedThemeIdAtom = atomWithStorage<string>(THEME, '')
+export const selectedThemeIdAtom = atomWithStorage<string | null>(THEME, null)
 export const themeDataAtom = atom<Theme | undefined>(undefined)
 export const reduceTransparentAtom = atomWithStorage<boolean>(
   REDUCE_TRANSPARENT,
