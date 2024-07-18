@@ -40,20 +40,19 @@ const SliderItem: React.FC<Props> = ({ model }) => {
   const shouldShowOwnerLogo = model.logo !== undefined && model.logo !== ''
 
   return (
-    <div className="flex justify-between rounded-2xl border border-[hsla(var(--app-border))] p-4">
-      <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col justify-between rounded-2xl border border-[hsla(var(--app-border))] p-4">
+      <div className="gap-1.5">
         <span className="text-base font-semibold leading-6">
           {model.model_name}
         </span>
-        <div className="flex items-center gap-1.5">
+        <div className="mt-1.5 flex items-center gap-1.5">
           {shouldShowOwnerLogo && (
             <Image width={20} height={20} src={model.logo} alt={model.author} />
           )}
           <span className="text-sm font-medium leading-4">{model.author}</span>
         </div>
       </div>
-      <div className="flex flex-col items-end gap-4">
-        <div className="h-12 w-12 rounded-full bg-transparent" />
+      <div className="ml-auto mt-4">
         <DownloadContainer modelHandle={repoId} fileName={fileName} />
       </div>
     </div>
