@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useState } from 'react'
 
-import { AppConfiguration, isSubdirectory } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 import { Button, Input } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
@@ -46,10 +46,10 @@ const DataFolder = () => {
       await window.core?.api?.getAppConfigurations()
     const currentJanDataFolder = appConfiguration.data_folder
 
-    if (await isSubdirectory(currentJanDataFolder, destFolder)) {
-      setShowSameDirectory(true)
-      return
-    }
+    // if (await isSubdirectory(currentJanDataFolder, destFolder)) {
+    //   setShowSameDirectory(true)
+    //   return
+    // }
 
     const isEmpty: boolean =
       await window.core?.api?.isDirectoryEmpty(destFolder)
