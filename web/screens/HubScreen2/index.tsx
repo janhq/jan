@@ -75,7 +75,7 @@ const HubScreen2: React.FC = () => {
           'h-full flex-1 flex-shrink-0 gap-12 overflow-x-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]'
         )}
       >
-        <ModelSearchBar queryText={query} onSearchChanged={setQuery} />
+        <ModelSearchBar onSearchChanged={setQuery} />
         {query.length > 0 ? (
           <HubScreenFilter queryText={query} />
         ) : (
