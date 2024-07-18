@@ -229,13 +229,14 @@ export const fetchHuggingFaceRepoData = async (
 
   const url = new URL(sanitizedUrl)
   const paths = url.pathname.split('/').filter((e) => e.trim().length > 0)
+  const sanitizedRepoId = `${paths[2]}/${paths[3]}`
 
   for (const sibling of data.siblings) {
-    const downloadUrl = `https://huggingface.co/${paths[2]}/${paths[3]}/resolve/main/${sibling.rfilename}`
+    const downloadUrl = `https://huggingface.co/${sanitizedRepoId}/resolve/main/${sibling.rfilename}`
     sibling.downloadUrl = downloadUrl
   }
   for await (const fileInfo of listFiles({
-    repo: { type: 'model', name: repoId },
+    repo: { type: 'model', name: sanitizedRepoId },
   })) {
     const sibling = data.siblings.find(
       (sibling) => sibling.rfilename === fileInfo.path
