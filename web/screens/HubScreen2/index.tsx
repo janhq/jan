@@ -12,6 +12,7 @@ import { HfModelEntry } from '@/utils/huggingface'
 import BuiltInModelGroup from './components/BuiltInModelGroup'
 import DetailModelGroup from './components/DetailModelGroup'
 import Filter from './components/Filter'
+import HubScreenFilter from './components/HubScreenFilter'
 import HuggingFaceModelGroup from './components/HuggingFaceModelGroup'
 import LoadingIndicator from './components/LoadingIndicator'
 import ModelSearchBar from './components/ModelSearchBar'
@@ -28,6 +29,7 @@ export const ModelFilters = ['All', 'On-device', 'Cloud'] as const
 export type ModelFilter = (typeof ModelFilters)[number]
 
 const HubScreen2: React.FC = () => {
+  const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ModelFilter>('All')
   const setShowSidebarFilter = useSetAtom(showSidbarFilterAtom)
 
@@ -73,38 +75,44 @@ const HubScreen2: React.FC = () => {
           'h-full flex-1 flex-shrink-0 gap-12 overflow-x-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]'
         )}
       >
-        <ModelSearchBar />
-        <Slider />
-        <div className="mx-4 px-12">
-          <Filter
-            currentFilter={filter}
-            callback={() => setShowSidebarFilter(!showSidebarFilter)}
-            onFilterClicked={(newFilter) => setFilter(newFilter)}
-          />
+        <ModelSearchBar queryText={query} onSearchChanged={setQuery} />
+        {query.length > 0 ? (
+          <HubScreenFilter queryText={query} />
+        ) : (
+          <Fragment>
+            <Slider />
+            <div className="mx-4 px-12">
+              <Filter
+                currentFilter={filter}
+                callback={() => setShowSidebarFilter(!showSidebarFilter)}
+                onFilterClicked={(newFilter) => setFilter(newFilter)}
+              />
 
-          {shouldShowLocalModel && (
-            <Fragment>
-              <BuiltInModelGroup
-                onSeeAllClick={() => setDetailCategory('BuiltInModels')}
-              />
-              <HuggingFaceModelGroup
-                onSeeAllClick={() => setDetailCategory('HuggingFace')}
-              />
-            </Fragment>
-          )}
+              {shouldShowLocalModel && (
+                <Fragment>
+                  <BuiltInModelGroup
+                    onSeeAllClick={() => setDetailCategory('BuiltInModels')}
+                  />
+                  <HuggingFaceModelGroup
+                    onSeeAllClick={() => setDetailCategory('HuggingFace')}
+                  />
+                </Fragment>
+              )}
 
-          {shouldShowRemoteModel &&
-            Array.from(engineModelMap.entries()).map(([engine, models]) => (
-              <RemoteModelGroup
-                key={engine as unknown as string}
-                data={models}
-                engine={engine as unknown as RemoteEngine}
-                onSeeAllClick={() =>
-                  setDetailCategory(engine as unknown as ModelHubCategory)
-                }
-              />
-            ))}
-        </div>
+              {shouldShowRemoteModel &&
+                Array.from(engineModelMap.entries()).map(([engine, models]) => (
+                  <RemoteModelGroup
+                    key={engine as unknown as string}
+                    data={models}
+                    engine={engine as unknown as RemoteEngine}
+                    onSeeAllClick={() =>
+                      setDetailCategory(engine as unknown as ModelHubCategory)
+                    }
+                  />
+                ))}
+            </div>
+          </Fragment>
+        )}
       </div>
     </div>
   )

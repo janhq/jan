@@ -15,8 +15,10 @@ import {
   getTitleByCategory,
 } from '@/utils/model-engine'
 
+import BuiltInModelCard from './BuiltInModelCard'
 import GroupInfo from './GroupInfo'
 import HubModelCard from './HubModelCard'
+import HuggingFaceModelCard from './HuggingFaceModelCard'
 
 type Props = {
   category: ModelHubCategory
@@ -64,9 +66,18 @@ const DetailModelGroup: React.FC<Props> = ({
           />
         </div>
         <div className="flex flex-col">
-          {models.map((model) => (
-            <HubModelCard key={model.name} {...model} />
-          ))}
+          {models.map((model) => {
+            switch (category) {
+              case 'BuiltInModels':
+                return <BuiltInModelCard key={model.name} {...model} />
+
+              case 'HuggingFace':
+                return <HuggingFaceModelCard key={model.id} {...model} />
+
+              default:
+                return <HubModelCard key={model.name} {...model} />
+            }
+          })}
         </div>
       </div>
     </div>
