@@ -391,7 +391,7 @@ const Advanced = () => {
             </p>
           </div>
 
-          <div className="flex w-full flex-shrink-0 flex-col items-end gap-2 pr-1 sm:w-1/2">
+          <div className="flex w-full flex-shrink-0 flex-col items-end gap-2 sm:w-1/2">
             <Switch
               checked={proxyEnabled}
               onChange={() => setProxyEnabled(!proxyEnabled)}
