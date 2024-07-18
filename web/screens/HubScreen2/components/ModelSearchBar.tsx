@@ -70,7 +70,7 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
         <Search size={16} />
         <input
           className="flex-1 outline-none"
-          placeholder="Search"
+          placeholder="Search or enter Hugging Face model URL"
           value={searchText}
           onChange={onQueryChanged}
         />

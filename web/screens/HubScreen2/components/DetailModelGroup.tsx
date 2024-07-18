@@ -1,44 +1,66 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 import React from 'react'
 
-import { Select } from '@janhq/joi'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Search } from 'lucide-react'
 
 import useModelHub, { ModelHubCategory } from '@/hooks/useModelHub'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
-import {
-  getDescriptionByCategory,
-  getLogoByCategory,
-  getTitleByCategory,
-} from '@/utils/model-engine'
+import { getLogoByCategory } from '@/utils/model-engine'
 
 import BuiltInModelCard from './BuiltInModelCard'
 import GroupInfo from './GroupInfo'
-import HubModelCard from './HubModelCard'
 import HuggingFaceModelCard from './HuggingFaceModelCard'
+import RemoteModelCard from './RemoteModelCard'
 
 type Props = {
   category: ModelHubCategory
-  imageUrl?: string
   onBackClicked: () => void
 }
 
-const DetailModelGroup: React.FC<Props> = ({
-  category,
-  imageUrl,
-  onBackClicked,
-}) => {
-  const [selectPopular, setSelectPopular] = useState<string>('Most popular')
+const DetailModelGroup: React.FC<Props> = ({ category, onBackClicked }) => {
+  const [filter, setFilter] = useState('')
   const { data } = useModelHub()
+
+  const onFilterChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      setFilter(e.target.value)
+    },
+    []
+  )
+
   if (!data) return null
 
-  const models: HfModelEntry[] = data.modelCategories.get(category) ?? []
-  const title = getTitleByCategory(category)
-  const description = getDescriptionByCategory(category)
-  const refinedImageUrl = imageUrl ?? getLogoByCategory(category)
+  const modelEntries: HfModelEntry[] = []
+  if (category === 'BuiltInModels') {
+    modelEntries.push(...(data.modelCategories.get('BuiltInModels') ?? []))
+  } else if (category === 'HuggingFace') {
+    modelEntries.push(...(data.modelCategories.get('HuggingFace') ?? []))
+  } else {
+    Object.entries(data.modelCategories).forEach(([key, value]) => {
+      if (key === category) {
+        modelEntries.push(...value)
+      }
+    })
+  }
+
+  const refinedImageUrl =
+    getLogoByCategory(category) ??
+    modelEntries.find((entry) => entry.model?.metadata?.logo != null)?.model
+      ?.metadata?.logo
+
+  const apiKeyUrl: string | undefined = modelEntries.find(
+    (entry) => entry.model?.metadata?.api_key_url != null
+  )?.model?.metadata?.api_key_url
+
+  const filteredModels =
+    filter.trim().length > 0
+      ? modelEntries.filter((model) =>
+          model.name.toLowerCase().includes(filter.toLowerCase())
+        )
+      : modelEntries
 
   return (
     <div className="h-full w-full overflow-x-hidden rounded-lg bg-[hsla(var(--app-bg))]">
@@ -50,11 +72,21 @@ const DetailModelGroup: React.FC<Props> = ({
           <ArrowLeft size={16} /> Back
         </button>
         <GroupInfo
-          title={title}
+          apiKeyUrl={apiKeyUrl}
           imageUrl={refinedImageUrl}
-          subTitle={description}
+          category={category}
         />
-        <div>
+        <div className="flex h-8 w-full max-w-[320px] items-center gap-2 rounded-md border bg-[hsla(var(--app-bg))] p-2">
+          <Search size={16} />
+          <input
+            className="flex-1 outline-none"
+            placeholder="Search"
+            value={filter}
+            onChange={onFilterChange}
+          />
+        </div>
+
+        {/* <div>
           <Select
             value={selectPopular}
             className="gap-1.5 px-4 py-2"
@@ -64,9 +96,10 @@ const DetailModelGroup: React.FC<Props> = ({
             ]}
             onValueChange={(value) => setSelectPopular(value)}
           />
-        </div>
+        </div> */}
+
         <div className="flex flex-col">
-          {models.map((model) => {
+          {filteredModels.map((model) => {
             switch (category) {
               case 'BuiltInModels':
                 return <BuiltInModelCard key={model.name} {...model} />
@@ -75,7 +108,7 @@ const DetailModelGroup: React.FC<Props> = ({
                 return <HuggingFaceModelCard key={model.id} {...model} />
 
               default:
-                return <HubModelCard key={model.name} {...model} />
+                return <RemoteModelCard key={model.name} {...model} />
             }
           })}
         </div>
