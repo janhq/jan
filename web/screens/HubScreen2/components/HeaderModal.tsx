@@ -12,6 +12,7 @@ type Props = {
   modelId: string
   name: string
   onActionClick: () => void
+  isLocalModel?: boolean
 }
 
 const HeaderModal: React.FC<Props> = ({
@@ -19,6 +20,7 @@ const HeaderModal: React.FC<Props> = ({
   modelId,
   name,
   onActionClick,
+  isLocalModel = false,
 }) => {
   const [selectedVariant, setSelectedVariant] = useState<string>(modelId)
   const textRef = useRef<HTMLDivElement>(null)
@@ -87,13 +89,15 @@ const HeaderModal: React.FC<Props> = ({
           </Fragment>
         }
       />
-      <Button
-        className="mr-6 px-4 py-2"
-        onClick={onActionClick}
-        variant="solid"
-      >
-        <span className="text-sm font-semibold">Set Up</span>
-      </Button>
+      {isLocalModel ? null : (
+        <Button
+          className="mr-6 px-4 py-2"
+          onClick={onActionClick}
+          variant="solid"
+        >
+          <span className="text-sm font-semibold">Set Up</span>
+        </Button>
+      )}
     </div>
   )
 }

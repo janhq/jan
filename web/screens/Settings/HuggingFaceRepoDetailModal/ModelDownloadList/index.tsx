@@ -7,7 +7,7 @@ import ModelDownloadRow from '../ModelDownloadRow'
 
 import { importingHuggingFaceRepoDataAtom } from '@/helpers/atoms/HuggingFace.atom'
 
-const ModelDownloadList = () => {
+const ModelDownloadList: React.FC = () => {
   const importingHuggingFaceRepoData = useAtomValue(
     importingHuggingFaceRepoDataAtom
   )

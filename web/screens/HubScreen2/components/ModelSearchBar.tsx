@@ -1,21 +1,67 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 
+import { useSetAtom } from 'jotai'
 import { Search } from 'lucide-react'
+import { useDebouncedCallback } from 'use-debounce'
+
+import { toaster } from '@/containers/Toast'
+
+import { useGetHFRepoData } from '@/hooks/useGetHFRepoData'
+
+import {
+  importHuggingFaceModelStageAtom,
+  importingHuggingFaceRepoDataAtom,
+} from '@/helpers/atoms/HuggingFace.atom'
 
 type Props = {
-  queryText: string
   onSearchChanged: (query: string) => void
 }
 
-const ModelSearchBar: React.FC<Props> = ({ queryText, onSearchChanged }) => {
+const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
+  const [searchText, setSearchText] = useState('')
+  const { getHfRepoData } = useGetHFRepoData()
+
+  const setImportingHuggingFaceRepoData = useSetAtom(
+    importingHuggingFaceRepoDataAtom
+  )
+  const setImportHuggingFaceModelStage = useSetAtom(
+    importHuggingFaceModelStageAtom
+  )
+
+  const debounced = useDebouncedCallback(async (searchText: string) => {
+    if (searchText.indexOf('/') === -1) {
+      // If we don't find / in the text, perform a local search
+      onSearchChanged?.(searchText)
+      return
+    }
+
+    try {
+      const data = await getHfRepoData(searchText)
+      setImportingHuggingFaceRepoData(data)
+      setImportHuggingFaceModelStage('REPO_DETAIL')
+    } catch (err) {
+      let errMessage = 'Unexpected Error'
+      if (err instanceof Error) {
+        errMessage = err.message
+      }
+      toaster({
+        title: 'Failed to get Hugging Face models',
+        description: errMessage,
+        type: 'error',
+      })
+      console.error(err)
+    }
+  }, 300)
+
   const onQueryChanged = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       e.preventDefault()
       e.stopPropagation()
       const text = e.target.value
-      onSearchChanged(text)
+      setSearchText(text)
+      debounced(text)
     },
-    [onSearchChanged]
+    [debounced]
   )
 
   return (
@@ -25,7 +71,7 @@ const ModelSearchBar: React.FC<Props> = ({ queryText, onSearchChanged }) => {
         <input
           className="flex-1 outline-none"
           placeholder="Search"
-          value={queryText}
+          value={searchText}
           onChange={onQueryChanged}
         />
       </div>

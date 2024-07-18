@@ -47,6 +47,7 @@ const DownloadLocalModelModal: React.FC = () => {
             name={modelName}
             onActionClick={() => {}}
             modelIdVariants={[modelHandle]}
+            isLocalModel={true}
           />
           <Tab
             tab={tab}
