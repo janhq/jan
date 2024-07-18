@@ -34,8 +34,7 @@ const ModelDownloadList: React.FC = () => {
           if (!model.downloadUrl) return null
           return (
             <ModelDownloadRow
-              repoData={importingHuggingFaceRepoData}
-              downloadUrl={model.downloadUrl}
+              modelHandle={importingHuggingFaceRepoData.id}
               key={model.rfilename}
               index={index}
               fileName={model.rfilename}
