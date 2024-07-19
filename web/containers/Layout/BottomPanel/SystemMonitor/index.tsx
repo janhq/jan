@@ -16,8 +16,6 @@ import {
 
 import { twMerge } from 'tailwind-merge'
 
-import { usePath } from '@/hooks/usePath'
-
 import { toGibibytes } from '@/utils/converter'
 
 import TableActiveModel from './TableActiveModel'
@@ -39,7 +37,7 @@ const SystemMonitor: React.FC = () => {
   const [totalRam, setTotalRam] = useAtom(totalRamAtom)
   const [cpuUsage, setCpuUsage] = useAtom(cpuUsageAtom)
   const gpus = useAtomValue(gpusAtom)
-  const { onRevealInFinder } = usePath()
+
   const [showFullScreen, setShowFullScreen] = useState(false)
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
@@ -51,6 +49,10 @@ const SystemMonitor: React.FC = () => {
   )
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const abortControllerRef = useRef<AbortController | null>(null)
+
+  const onOpenAppLogClick = useCallback(() => {
+    window?.electronAPI?.openAppLog()
+  }, [])
 
   const register = useCallback(async () => {
     if (abortControllerRef.current) return
@@ -125,7 +127,7 @@ const SystemMonitor: React.FC = () => {
             <div className="unset-drag flex cursor-pointer items-center gap-x-2">
               <div
                 className="flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]"
-                onClick={() => onRevealInFinder('Logs')}
+                onClick={() => onOpenAppLogClick()}
               >
                 <FolderOpenIcon size={12} /> App Log
               </div>
