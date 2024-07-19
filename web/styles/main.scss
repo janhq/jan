@@ -1,10 +1,10 @@
 // Tailwind
 
+@import '@janhq/joi/dist/main.css';
+
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
-
-@import '@janhq/joi/dist/main.css';
 
 @import './base/global.scss';
 

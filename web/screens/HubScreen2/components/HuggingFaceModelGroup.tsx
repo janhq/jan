@@ -38,7 +38,7 @@ const HuggingFaceModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
         <Button
           theme="ghost"
           onClick={onSeeAllClick}
-          className="ml-auto pr-0 text-sm text-[#2563EB]"
+          className="ml-auto pr-0 text-sm text-[hsla(var(--app-link))]"
         >
           See All
         </Button>

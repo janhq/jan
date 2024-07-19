@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 
 import React from 'react'
 
+import { Input } from '@janhq/joi'
 import { ArrowLeft, Search } from 'lucide-react'
 
 import useModelHub, { ModelHubCategory } from '@/hooks/useModelHub'
@@ -76,10 +77,9 @@ const DetailModelGroup: React.FC<Props> = ({ category, onBackClicked }) => {
           imageUrl={refinedImageUrl}
           category={category}
         />
-        <div className="flex h-8 w-full max-w-[320px] items-center gap-2 rounded-md border bg-[hsla(var(--app-bg))] p-2">
-          <Search size={16} />
-          <input
-            className="flex-1 outline-none"
+        <div className="w-full md:w-1/2">
+          <Input
+            prefixIcon={<Search size={16} />}
             placeholder="Search"
             value={filter}
             onChange={onFilterChange}

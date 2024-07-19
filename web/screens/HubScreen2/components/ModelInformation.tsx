@@ -17,7 +17,7 @@ const ModelInformation: React.FC<Props> = ({ modelHandle, maxHeight }) => {
       id="markdown"
       style={{ maxHeight }}
       className={twMerge(
-        'text-[hsla(var(--text-secondary)] mt-4 h-full w-full overflow-x-hidden text-sm leading-[16.94px]'
+        'mt-4 h-full w-full overflow-x-hidden text-sm leading-relaxed text-[hsla(var(--text-secondary))] [&_h2]:!mt-4 [&_h2]:!text-[hsla(var(--text-primary))]'
       )}
       dangerouslySetInnerHTML={{
         __html: data,
