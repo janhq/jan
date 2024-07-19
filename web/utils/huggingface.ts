@@ -122,6 +122,29 @@ export const getBranches = async (name: string): Promise<string[]> => {
   }
 }
 
+/**
+ * Getting the total file size of a repo by repoId and branch. This will get all file size.
+ * So this function can't be used on a multiple model branch.
+ *
+ * @param repoId The repoId of the model
+ * @param branch The branch of the model
+ * @returns The total file size of the model
+ */
+const getFileSizeByRepoAndBranch = async (
+  repoId: string,
+  branch: string
+): Promise<number> => {
+  let number = 0
+  for await (const fileInfo of listFiles({
+    repo: { type: 'model', name: repoId },
+    revision: branch,
+  })) {
+    number += fileInfo.size
+  }
+
+  return number
+}
+
 export const getEngineAndBranches = async (
   name: string
 ): Promise<EngineToBranches> => {
@@ -132,21 +155,33 @@ export const getEngineAndBranches = async (
     tensorrtllm: [],
   }
 
-  branches.forEach((branch) => {
+  for (const branch of branches) {
     if (branch.includes('onnx')) {
-      engineToBranches.onnx.push(branch)
-      return
+      const fileSize = await getFileSizeByRepoAndBranch(name, branch)
+      engineToBranches.onnx.push({
+        name: branch,
+        fileSize: fileSize,
+      })
+      continue
     }
-
     if (branch.includes('gguf')) {
-      engineToBranches.gguf.push(branch)
-      return
+      const fileSize = await getFileSizeByRepoAndBranch(name, branch)
+      engineToBranches.gguf.push({
+        name: branch,
+        fileSize: fileSize,
+      })
+      continue
     }
     if (branch.includes('tensorrtllm')) {
-      engineToBranches.tensorrtllm.push(branch)
-      return
+      const fileSize = await getFileSizeByRepoAndBranch(name, branch)
+      engineToBranches.tensorrtllm.push({
+        name: branch,
+        fileSize: fileSize,
+      })
+      continue
     }
-  })
+  }
+
   return engineToBranches
 }
 
@@ -198,6 +233,27 @@ const toHuggingFaceUrl = (repoId: string): string => {
     }
 
     return `https://huggingface.co/api/models/${repoId}`
+  }
+}
+
+export const getFileSize = async (url: string) => {
+  try {
+    const response = await fetch(url, { method: 'HEAD' })
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const contentLength = response.headers.get('Content-Length')
+
+    if (contentLength) {
+      return parseInt(contentLength, 10)
+    } else {
+      throw new Error('Content-Length header is missing')
+    }
+  } catch (error) {
+    console.error('Error fetching file size:', error)
+    return null
   }
 }
 
@@ -253,9 +309,9 @@ export const fetchHuggingFaceRepoData = async (
       }
     })
   })
-  data.siblings = data.siblings.filter(
-    (sibling) => sibling.quantization != null
-  )
+  data.siblings = data.siblings
+    .filter((sibling) => sibling.quantization != null)
+    .filter((sibling) => sibling.fileSize != null)
 
   data.modelUrl = `https://huggingface.co/${paths[2]}/${paths[3]}`
   return data
@@ -270,4 +326,9 @@ export interface HfModelEntry extends ModelEntry {
 
 export type EngineType = 'onnx' | 'gguf' | 'tensorrtllm'
 
-export type EngineToBranches = Record<EngineType, string[]>
+export type EngineToBranches = Record<EngineType, CortexHubModel[]>
+
+export type CortexHubModel = {
+  name: string
+  fileSize?: number
+}
