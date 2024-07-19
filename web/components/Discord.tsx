@@ -5,7 +5,7 @@ const Discord: React.FC = () => (
     className="w- text-[hsla(var(--text-primary))]"
     stroke="currentColor"
     fill="currentColor"
-    stroke-width="0"
+    strokeWidth="0"
     viewBox="0 0 640 512"
     height="14"
     width="14"

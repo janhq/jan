@@ -19,11 +19,10 @@ import useSendMessage from '@/hooks/useSendMessage'
 
 import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 
-import EmptyModel from './ChatBody/EmptyModel'
 import ChatInput from './ChatInput'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 import { isGeneratingResponseAtom } from '@/helpers/atoms/Thread.atom'
@@ -50,7 +49,6 @@ const ThreadCenterPanel: React.FC = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
   const isVisionModel = false // activeThread?.assistants[0].model?.settings.vision_model
 
@@ -178,8 +176,6 @@ const ThreadCenterPanel: React.FC = () => {
           </div>
         )}
         <div className="flex h-full w-full flex-col justify-between">
-          {!downloadedModels.length && <EmptyModel />}
-
           {activeThread && (
             <div className="flex h-full w-full overflow-x-hidden">
               <ChatBody />
@@ -197,7 +193,7 @@ const ThreadCenterPanel: React.FC = () => {
           )} */}
 
           {isGeneratingResponse && <GenerateResponse />}
-          {activeThread && downloadedModels.length > 0 && (
+          {activeThread && (
             <ChatInput
               sendMessage={sendMessage}
               stopInference={stopInference}

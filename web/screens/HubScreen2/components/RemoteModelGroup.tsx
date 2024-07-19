@@ -70,7 +70,10 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
           </Button>
         ) : (
           <Button
-            className="ml-2 !bg-[#0000000F] px-3 py-2 text-xs text-[var(--text-primary)]"
+            // className="ml-2 !bg-[#0000000F] px-3 py-2 text-xs text-[var(--text-primary)]"
+            theme="ghost"
+            size="small"
+            className="bg-[hsla(var(--secondary-bg))]"
             onClick={onSetUpClick}
           >
             Set Up
@@ -81,7 +84,7 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
           <Button
             theme="ghost"
             onClick={onSeeAllClick}
-            className="ml-auto pr-0 text-sm text-[#2563EB]"
+            className="ml-auto pr-0 text-sm text-[hsla(var(--app-link))]"
           >
             See All
           </Button>

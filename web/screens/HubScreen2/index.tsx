@@ -2,8 +2,10 @@ import React, { Fragment, useState } from 'react'
 
 import { RemoteEngine, RemoteEngines } from '@janhq/core'
 
-import { useAtomValue, useSetAtom } from 'jotai'
-import { twMerge } from 'tailwind-merge'
+import { ScrollArea } from '@janhq/joi'
+import { useAtom } from 'jotai'
+
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
 
 import useModelHub, { ModelHubCategory } from '@/hooks/useModelHub'
 
@@ -20,10 +22,7 @@ import RemoteModelGroup from './components/RemoteModelGroup'
 import SidebarFilter from './components/SidebarFilter'
 import Slider from './components/Slider'
 
-import {
-  reduceTransparentAtom,
-  showSidbarFilterAtom,
-} from '@/helpers/atoms/Setting.atom'
+import { showSidbarFilterAtom } from '@/helpers/atoms/Setting.atom'
 
 export const ModelFilters = ['All', 'On-device', 'Cloud'] as const
 export type ModelFilter = (typeof ModelFilters)[number]
@@ -31,10 +30,10 @@ export type ModelFilter = (typeof ModelFilters)[number]
 const HubScreen2: React.FC = () => {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<ModelFilter>('All')
-  const setShowSidebarFilter = useSetAtom(showSidbarFilterAtom)
 
-  const showSidebarFilter = useAtomValue(showSidbarFilterAtom)
-  const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const [showSidebarFilter, setShowSidebarFilter] =
+    useAtom(showSidbarFilterAtom)
+
   const [detailCategory, setDetailCategory] = useState<
     ModelHubCategory | undefined
   >(undefined)
@@ -63,25 +62,16 @@ const HubScreen2: React.FC = () => {
   const shouldShowLocalModel = filter === 'All' || filter === 'On-device'
 
   return (
-    <div
-      className={twMerge(
-        'relative flex h-full w-full overflow-hidden pr-1.5',
-        !reduceTransparent && showSidebarFilter && 'border-l'
-      )}
-    >
-      {showSidebarFilter && <SidebarFilter />}
-      <div
-        className={twMerge(
-          'h-full flex-1 flex-shrink-0 gap-12 overflow-x-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]'
-        )}
-      >
+    <CenterPanelContainer>
+      <ScrollArea className="h-full w-full">
+        {showSidebarFilter && <SidebarFilter />}
         <ModelSearchBar onSearchChanged={setQuery} />
         {query.length > 0 ? (
           <HubScreenFilter queryText={query} />
         ) : (
           <Fragment>
             <Slider />
-            <div className="mx-4 px-12">
+            <div className="mx-4 px-4 md:px-12">
               <Filter
                 currentFilter={filter}
                 callback={() => setShowSidebarFilter(!showSidebarFilter)}
@@ -113,8 +103,8 @@ const HubScreen2: React.FC = () => {
             </div>
           </Fragment>
         )}
-      </div>
-    </div>
+      </ScrollArea>
+    </CenterPanelContainer>
   )
 }
 

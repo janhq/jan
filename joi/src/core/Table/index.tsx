@@ -61,7 +61,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={twMerge(
-      'hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors',
+      'hover:bg-muted/50 data-[state=selected]:bg-muted border-b border-[hsla(var(--app-border))] transition-colors',
       className
     )}
     {...props}
