@@ -18,11 +18,11 @@ import useHfEngineToBranchesQuery from '@/hooks/useHfEngineToBranchesQuery'
 
 import useThreads from '@/hooks/useThreads'
 
-import { formatDownloadPercentage } from '@/utils/converter'
+import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
 import { downloadProgress } from '@/utils/download'
 
-import { EngineType } from '@/utils/huggingface'
+import { CortexHubModel, EngineType } from '@/utils/huggingface'
 
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
@@ -54,9 +54,9 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
     setEngineFilter(engineSelection[0].value as EngineType)
   }, [engineSelection])
 
-  const modelBranches: string[] = []
+  const modelBranches: CortexHubModel[] = []
   if (data) {
-    const branches = data[engineFilter as EngineType] as string[]
+    const branches = data[engineFilter as EngineType] as CortexHubModel[]
     if (!branches || branches.length === 0) return
     modelBranches.push(...branches)
   }
@@ -77,23 +77,23 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
           <tbody>
             {modelBranches.map((item) => (
               <tr
-                key={item}
+                key={item.name}
                 className="border-b border-[hsla(var(--app-border))] last:border-b-0 hover:bg-[hsla(var(--primary-bg-soft))]"
               >
                 <td className="whitespace-nowrap py-4 pl-3">
                   <div className="w-fit rounded-md border border-[hsla(var(--app-border))] bg-transparent px-1.5 py-0.5 text-xs font-medium leading-4 text-[hsla(var(--text-primary))]">
-                    {item}
+                    {item.name}
                   </div>
                 </td>
                 <td className="w-full pl-4 font-medium leading-5 text-[hsla(var(--text-muted))]">
-                  {item}
+                  {item.name}
                 </td>
                 <td>
                   <div className="mr-3 flex items-center justify-end gap-3 whitespace-nowrap py-3">
-                    {/* <span>4.06 MB</span> */}
+                    {item.fileSize && <span>{toGibibytes(item.fileSize)}</span>}
                     <DownloadContainer
                       modelHandle={modelHandle}
-                      branch={item}
+                      branch={item.name}
                     />
                   </div>
                 </td>
