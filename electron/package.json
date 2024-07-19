@@ -96,7 +96,7 @@
     "build:publish:linux": "tsc -p . && electron-builder -p always -l deb -l AppImage"
   },
   "dependencies": {
-    "cortexso": "0.1.12",
+    "cortexso": "0.1.13",
     "js-yaml": "4.1.0",
     "electron-log": "^5.1.5",
     "@alumna/reflect": "^1.1.3",
