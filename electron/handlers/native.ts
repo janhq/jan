@@ -208,6 +208,21 @@ export function handleAppIPCs() {
     windowManager.ackDeepLink()
   })
 
+  ipcMain.handle(NativeRoute.openAppLog, async (_event): Promise<void> => {
+    const cortexHomeDir = join(os.homedir(), 'cortex')
+
+    try {
+      const errorMessage = await shell.openPath(join(cortexHomeDir))
+      if (errorMessage) {
+        console.error(`An error occurred: ${errorMessage}`)
+      } else {
+        console.log('Path opened successfully')
+      }
+    } catch (error) {
+      console.error(`Failed to open path: ${error}`)
+    }
+  })
+
   ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
     const janModelFolderPath = join(await getJanDataFolderPath(), 'models')
     const allModelFolders = readdirSync(janModelFolderPath)
