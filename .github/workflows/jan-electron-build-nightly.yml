@@ -50,6 +50,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      is_beta: true
 
   build-macos-arm64:
     uses: ./.github/workflows/template-build-macos-arm64.yml
@@ -59,6 +60,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      is_beta: true
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
@@ -68,6 +70,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      is_beta: true
 
           
   build-linux-x64:
@@ -78,6 +81,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      is_beta: true
 
   combine-latest-mac-yml:
     needs: [set-public-provider, build-macos-x64, build-macos-arm64]
