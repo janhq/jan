@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
-import { Thread } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { AnimatePresence } from 'framer-motion'
 
@@ -34,14 +33,6 @@ const ThreadLeftPanel: React.FC = () => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
 
   const { data: assistants } = useAssistantQuery()
-
-  const [contextMenu, setContextMenu] = useState<{
-    visible: boolean
-    thread?: Thread
-  }>({
-    visible: false,
-    thread: undefined,
-  })
 
   const isCreatingThread = useRef(false)
 
@@ -81,21 +72,6 @@ const ThreadLeftPanel: React.FC = () => {
     if (!selectedModel) return
     createThread(selectedModel.id, assistants[0])
   }, [createThread, selectedModel, assistants])
-
-  const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
-    event.preventDefault()
-    setContextMenu({
-      visible: true,
-      thread,
-    })
-  }
-
-  const closeContextMenu = () => {
-    setContextMenu({
-      visible: false,
-      thread: undefined,
-    })
-  }
 
   return (
     <LeftPanelContainer>

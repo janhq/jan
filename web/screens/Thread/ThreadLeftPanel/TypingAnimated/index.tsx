@@ -20,7 +20,11 @@ const TypingAnimated: React.FC<Props> = ({ text, speed }) => {
     }
   }, [index, text, displayedText, speed])
 
-  return <span className="line-clamp-1">{displayedText}</span>
+  return (
+    <span className="line-clamp-1 group-hover/message:pr-6">
+      {displayedText}
+    </span>
+  )
 }
 
 export default TypingAnimated

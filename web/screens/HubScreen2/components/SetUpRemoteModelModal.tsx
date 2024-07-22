@@ -16,7 +16,7 @@ const SetUpRemoteModelModal: React.FC = () => {
   const navigateToSetUpApiKey = useSetAtom(navigateToSetUpApiKeyAtom)
   const { stage, metadata } = useAtomValue(setUpRemoteModelStageAtom)
 
-  const owner: string = (metadata?.owned_by ?? '') as string
+  const author: string = (metadata?.author ?? '') as string
   const logoUrl: string = (metadata?.logo ?? '') as string
   const description: string = (metadata?.description ?? '') as string
   const modelName: string = (metadata?.modelName ?? '') as string
@@ -36,11 +36,15 @@ const SetUpRemoteModelModal: React.FC = () => {
           />
           <ModelTitle
             className="text-[hsla(var(--text-secondary)] my-4"
-            name={owner}
+            name={author}
             image={logoUrl}
           />
 
-          {description && <span className="font-medium">{description}</span>}
+          {description && (
+            <span className="font-medium text-[hsla(var(--text-secondary))]">
+              {description}
+            </span>
+          )}
         </Fragment>
       }
     />
