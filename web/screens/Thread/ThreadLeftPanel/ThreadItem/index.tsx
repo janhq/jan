@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 import { Thread } from '@janhq/core'
 import { motion as m } from 'framer-motion'
@@ -31,6 +31,28 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
   )
   const setEditMessage = useSetAtom(editMessageAtom)
   const { setActiveThread } = useThreads()
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean
+    thread?: Thread
+  }>({
+    visible: false,
+    thread: undefined,
+  })
+
+  const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
+    event.preventDefault()
+    setContextMenu({
+      visible: true,
+      thread,
+    })
+  }
+
+  const closeContextMenu = () => {
+    setContextMenu({
+      visible: false,
+      thread: undefined,
+    })
+  }
 
   const onThreadClicked = useCallback(
     (thread: Thread) => {
@@ -49,16 +71,23 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
       transition={{ ease: 'linear', duration: 0.2 }}
       layoutId={thread.id}
       className={twMerge(
-        'group relative mt-1 flex h-[28px] cursor-pointer items-center justify-between rounded-lg pl-2 first:mt-0 hover:bg-[hsla(var(--left-panel-menu-hover))]',
-        `${activeThreadId === thread.id && 'text-primary bg-[hsla(var(--left-panel-icon-active-bg))] font-medium'}`
+        'group/message relative mt-1 flex h-[28px] cursor-pointer items-center justify-between rounded-lg pl-2 first:mt-0 hover:bg-[hsla(var(--left-panel-menu-hover))]',
+        activeThreadId === thread.id &&
+          'text-primary bg-[hsla(var(--left-panel-icon-active-bg))] font-medium'
       )}
       onClick={() => onThreadClicked(thread)}
+      onContextMenu={(e) => onContextMenu(e, thread)}
+      onMouseLeave={closeContextMenu}
     >
-      {getThreadIdsShouldAnimateTitle.includes(thread.id) ? (
-        <TypingAnimated text={thread.title} speed={20} />
-      ) : (
-        <span className="line-clamp-1">{thread.title}</span>
-      )}
+      <div className="relative z-10 break-all p-2">
+        {getThreadIdsShouldAnimateTitle.includes(thread.id) ? (
+          <TypingAnimated text={thread.title} speed={20} />
+        ) : (
+          <span className="line-clamp-1 group-hover/message:pr-6">
+            {thread.title}
+          </span>
+        )}
+      </div>
       <div
         className={twMerge(
           'absolute bottom-0 right-0 top-0 flex w-[42px] items-center justify-end rounded-r-md'
@@ -66,14 +95,31 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
       >
         <div
           className={twMerge(
-            'group/icon invisible mr-1 flex h-[20px] w-[20px] items-center justify-center rounded-md bg-[#0000000F] group-hover:visible'
+            `group/icon text-[hsla(var(--text-secondary)] invisible absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-md px-0.5 group-hover/message:visible`
           )}
         >
           <MoreHorizontalIcon size={18} />
-          <div className="shadow-lg invisible absolute right-3 top-5 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] group-hover/icon:visible">
-            <ModalEditTitleThread thread={thread} />
-            <ModalCleanThread threadId={thread.id} />
-            <ModalDeleteThread id={thread.id} title={thread.title} />
+          <div
+            className={twMerge(
+              'shadow-lg invisible absolute right-3 top-5 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] group-hover/icon:visible',
+              contextMenu.visible &&
+                contextMenu.thread?.id === thread.id &&
+                'visible'
+            )}
+          >
+            <ModalEditTitleThread
+              thread={thread}
+              closeContextMenu={closeContextMenu}
+            />
+            <ModalCleanThread
+              threadId={thread.id}
+              closeContextMenu={closeContextMenu}
+            />
+            <ModalDeleteThread
+              id={thread.id}
+              title={thread.title}
+              closeContextMenu={closeContextMenu}
+            />
           </div>
         </div>
       </div>
