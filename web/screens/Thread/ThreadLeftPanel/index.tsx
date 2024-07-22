@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { Button } from '@janhq/joi'
 import { AnimatePresence } from 'framer-motion'

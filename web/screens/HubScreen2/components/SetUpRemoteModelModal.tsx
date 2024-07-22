@@ -40,7 +40,11 @@ const SetUpRemoteModelModal: React.FC = () => {
             image={logoUrl}
           />
 
-          {description && <span className="font-medium">{description}</span>}
+          {description && (
+            <span className="font-medium text-[hsla(var(--text-secondary))]">
+              {description}
+            </span>
+          )}
         </Fragment>
       }
     />

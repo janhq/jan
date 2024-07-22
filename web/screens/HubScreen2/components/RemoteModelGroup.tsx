@@ -70,7 +70,6 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
           </Button>
         ) : (
           <Button
-            // className="ml-2 !bg-[#0000000F] px-3 py-2 text-xs text-[var(--text-primary)]"
             theme="ghost"
             size="small"
             className="bg-[hsla(var(--secondary-bg))]"
