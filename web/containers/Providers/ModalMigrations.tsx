@@ -91,11 +91,9 @@ const ModalMigrations = () => {
     } else {
       if (!threadsMessagesMigrationSuccess || !modelsMigrationSuccess) {
         setDidShowMigrationWarning(true)
-        setSkipMigration(false)
       } else {
         if (step !== 2) {
           setDidShowMigrationWarning(false)
-          setSkipMigration(true)
         }
       }
     }
