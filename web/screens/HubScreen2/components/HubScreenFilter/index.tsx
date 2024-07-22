@@ -1,3 +1,5 @@
+import BlankState from '@/containers/BlankState'
+
 import useModelHub from '@/hooks/useModelHub'
 
 import { HfModelEntry } from '@/utils/huggingface'
@@ -36,19 +38,30 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
     return model.name.toLowerCase().includes(queryText.toLowerCase())
   })
 
+  const isResultEmpty: boolean =
+    filteredBuiltInModels.length === 0 &&
+    filteredHuggingFaceModels.length === 0 &&
+    filteredRemoteModels.length === 0
+
   return (
     <div className="h-full w-full overflow-x-hidden rounded-lg bg-[hsla(var(--app-bg))]">
-      <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
-        {filteredBuiltInModels.map((model) => (
-          <BuiltInModelCard key={model.name} {...model} />
-        ))}
-        {filteredHuggingFaceModels.map((model) => (
-          <HuggingFaceModelCard key={model.id} {...model} />
-        ))}
-        {filteredRemoteModels.map((model) => (
-          <RemoteModelCard key={model.name} {...model} />
-        ))}
-      </div>
+      {isResultEmpty ? (
+        <div className="py-6">
+          <BlankState />
+        </div>
+      ) : (
+        <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
+          {filteredBuiltInModels.map((model) => (
+            <BuiltInModelCard key={model.name} {...model} />
+          ))}
+          {filteredHuggingFaceModels.map((model) => (
+            <HuggingFaceModelCard key={model.id} {...model} />
+          ))}
+          {filteredRemoteModels.map((model) => (
+            <RemoteModelCard key={model.name} {...model} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
