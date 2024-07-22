@@ -2,7 +2,7 @@ import React from 'react'
 
 const Discord: React.FC = () => (
   <svg
-    className="w- text-[hsla(var(--text-primary))]"
+    className="text-[hsla(var(--text-primary))]"
     stroke="currentColor"
     fill="currentColor"
     strokeWidth="0"

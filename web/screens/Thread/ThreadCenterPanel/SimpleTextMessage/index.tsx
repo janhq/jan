@@ -6,12 +6,14 @@ import { Tooltip } from '@janhq/joi'
 import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
-import { CircleUserRound, FolderOpenIcon } from 'lucide-react'
+import { FolderOpenIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import markedKatex from 'marked-katex-extension'
 
 import { twMerge } from 'tailwind-merge'
+
+import UserAvatar from '@/components/UserAvatar'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
@@ -160,11 +162,7 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
           !isUser && 'mt-2'
         )}
       >
-        {isUser ? (
-          <CircleUserRound size={32} color="#9CA3AF" />
-        ) : (
-          <LogoMark width={28} />
-        )}
+        {isUser ? <UserAvatar /> : <LogoMark width={32} height={32} />}
 
         <div
           className={twMerge(
