@@ -22,7 +22,7 @@ const HuggingFaceModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
 
   const models: HfModelEntry[] = (
     data.modelCategories.get('HuggingFace') ?? []
-  ).slice(0, 4)
+  ).slice(0, 6)
   if (models.length === 0) return null
 
   return (

@@ -92,7 +92,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
               {toGibibytes(model.metadata?.size) || '-'}
             </Badge>
 
-            <div className="flex items-center gap-x-4">
+            <div className="relative flex items-center gap-x-4">
               {isActive ? (
                 <Badge
                   theme="success"
@@ -123,7 +123,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                 </Button>
                 {more && (
                   <div
-                    className="shadow-lg absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]"
+                    className="shadow-lg absolute right-8 top-0 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]"
                     ref={setMenu}
                   >
                     <div

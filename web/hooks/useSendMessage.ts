@@ -481,6 +481,10 @@ const useSendMessage = () => {
             run_id: null,
           }
 
+          if (responseMessage) {
+            setIsGeneratingResponse(false)
+          }
+
           addNewMessage(responseMessage)
 
           for await (const chunk of stream) {
@@ -567,6 +571,10 @@ const useSendMessage = () => {
               content: responseMessage.content,
             })
 
+            if (responseMessage) {
+              setIsGeneratingResponse(false)
+            }
+
             addNewMessage(responseMessage)
           } catch (err) {
             console.error(err)
@@ -579,8 +587,6 @@ const useSendMessage = () => {
             }
           }
         }
-
-        setIsGeneratingResponse(false)
 
         if (!shouldSummarize) return
         // summarize if needed
