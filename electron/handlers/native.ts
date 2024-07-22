@@ -355,7 +355,7 @@ export function handleAppIPCs() {
 
   ipcMain.handle(
     NativeRoute.getAllLocalModels,
-    async (_event): Promise<any> => {
+    async (_event): Promise<boolean> => {
       const janModelsFolderPath = join(await getJanDataFolderPath(), 'models')
       // get children of thread folder
       const allModelsFolders = readdirSync(janModelsFolderPath)
@@ -373,9 +373,7 @@ export function handleAppIPCs() {
           console.error(err)
         }
       }
-      return {
-        hasLocalModels,
-      }
+      return hasLocalModels
     }
   )
 }

@@ -82,8 +82,6 @@ const ModalMigrations = () => {
         resultLocalModels.hasLocalModels
       ) {
         setDidShowMigrationWarning(true)
-      } else if (step !== 2) {
-        setDidShowMigrationWarning(false)
       } else {
         setDidShowMigrationWarning(false)
       }
@@ -91,20 +89,16 @@ const ModalMigrations = () => {
       setDidShowMigrationWarning(false)
       console.error(error)
     }
-  }, [
-    getJanLocalModels,
-    getJanThreadsAndMessages,
-    setDidShowMigrationWarning,
-    step,
-  ])
+  }, [getJanLocalModels, getJanThreadsAndMessages, setDidShowMigrationWarning])
 
   useEffect(() => {
-    getMigrationNotif()
+    console.log(skipMigration, 'skipMigration')
     if (skipMigration) {
       setDidShowMigrationWarning(false)
+    } else {
+      getMigrationNotif()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skipMigration])
+  }, [getMigrationNotif, setDidShowMigrationWarning, skipMigration])
 
   return (
     <Modal
@@ -151,7 +145,6 @@ const ModalMigrations = () => {
                   className="mt-4"
                   theme="ghost"
                   onClick={() => {
-                    console.log('skip')
                     setSkipMigration(true)
                   }}
                 >
