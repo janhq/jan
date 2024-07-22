@@ -27,7 +27,7 @@ export const vulkanEnabledAtom = atomWithStorage(VULKAN_ENABLED, false)
 export const quickAskEnabledAtom = atomWithStorage(QUICK_ASK_ENABLED, false)
 export const didShowMigrationWarningAtom = atomWithStorage(
   MIGRATION_WARNING,
-  true
+  false
 )
 export const threadsMessagesMigrationSuccessAtom = atomWithStorage(
   THREADS_MESSAGES_MIGRATION_SUCCESS,

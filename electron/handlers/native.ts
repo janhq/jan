@@ -352,4 +352,30 @@ export function handleAppIPCs() {
       }
     }
   )
+
+  ipcMain.handle(
+    NativeRoute.getAllLocalModels,
+    async (_event): Promise<any> => {
+      const janModelsFolderPath = join(await getJanDataFolderPath(), 'models')
+      // get children of thread folder
+      const allModelsFolders = readdirSync(janModelsFolderPath)
+      let hasLocalModels = false
+      for (const modelFolder of allModelsFolders) {
+        try {
+          const modelsFullPath = join(janModelsFolderPath, modelFolder)
+          const dir = readdirSync(modelsFullPath)
+          const ggufFile = dir.some((file) => file.endsWith('.gguf'))
+          if (ggufFile) {
+            hasLocalModels = true
+            break
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      return {
+        hasLocalModels,
+      }
+    }
+  )
 }
