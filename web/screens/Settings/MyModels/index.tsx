@@ -10,6 +10,8 @@ import { UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import BlankState from '@/containers/BlankState'
+
 import ModelSearch from '@/containers/ModelSearch'
 
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
@@ -88,31 +90,35 @@ const MyModels = () => {
             </Button> */}
           </div>
 
-          <div className="relative w-full">
-            {LlmEngines.map((engine) => {
-              const modelByEngine = filteredDownloadedModels.filter(
-                (x) => x.engine === engine
-              )
+          {!filteredDownloadedModels.length ? (
+            <BlankState />
+          ) : (
+            <div className="relative w-full">
+              {LlmEngines.map((engine) => {
+                const modelByEngine = filteredDownloadedModels.filter(
+                  (x) => x.engine === engine
+                )
 
-              if (modelByEngine.length === 0) return null
+                if (modelByEngine.length === 0) return null
 
-              return (
-                <div className="my-6" key={engine}>
-                  <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <h6 className="text-base font-semibold capitalize">
-                      {engine}
-                    </h6>
-                    {/* <SetupRemoteModel engine={engine} /> */}
+                return (
+                  <div className="my-6" key={engine}>
+                    <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <h6 className="text-base font-semibold capitalize">
+                        {engine}
+                      </h6>
+                      {/* <SetupRemoteModel engine={engine} /> */}
+                    </div>
+                    <div className="mt-2">
+                      {modelByEngine.map((model) => (
+                        <ModelItem key={model.id} model={model} />
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-2">
-                    {modelByEngine.map((model) => (
-                      <ModelItem key={model.id} model={model} />
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>
