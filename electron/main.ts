@@ -1,6 +1,9 @@
 import { app, BrowserWindow } from 'electron'
 
 import { join, resolve } from 'path'
+import { exec } from 'child_process'
+import { cortexPath } from './cortex-runner'
+
 /**
  * Managers
  **/
@@ -22,13 +25,11 @@ import { cleanUpAndQuit } from './utils/clean'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 
+import log from 'electron-log'
+
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
 const mainPath = join(rendererPath, 'index.html')
-
-import { start, stop } from 'cortexso'
-
-import log from 'electron-log'
 
 const mainUrl = 'http://localhost:3000'
 
@@ -57,7 +58,22 @@ Object.assign(console, log.functions)
 
 app
   .whenReady()
-  .then(() => start())
+  .then(() => {
+    log.info('Starting cortex with path:', cortexPath)
+    // init cortex
+    // running shell command cortex init -s
+    exec(`${cortexPath}`, (error, stdout, stderr) => {
+      if (error) {
+        log.error(`error: ${error.message}`)
+        return
+      }
+      if (stderr) {
+        log.error(`stderr: ${stderr}`)
+        return
+      }
+      log.info(`stdout: ${stdout}`)
+    })
+  })
   .then(() => {
     if (!gotTheLock) {
       app.quit()
@@ -117,7 +133,16 @@ app.once('window-all-closed', async () => {
 })
 
 async function stopApiServer() {
-  await stop()
+  try {
+    console.log('Stopping API server')
+    const response = await fetch('http://localhost:1337/v1/process', {
+      method: 'DELETE',
+    })
+
+    console.log('Response status:', response.status)
+  } catch (error) {
+    console.error('Error stopping API server:', error)
+  }
 }
 
 /**

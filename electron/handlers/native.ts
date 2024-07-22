@@ -315,7 +315,7 @@ export function handleAppIPCs() {
   ipcMain.handle(
     NativeRoute.getAllMessagesAndThreads,
     async (_event): Promise<any> => {
-      const janThreadFolderPath = join(await getJanDataFolderPath(), 'threads')
+      const janThreadFolderPath = join(getJanDataFolderPath(), 'threads')
       // get children of thread folder
       const allThreadFolders = readdirSync(janThreadFolderPath)
       const threads: any[] = []
