@@ -37,6 +37,13 @@ export const modelsMigrationSuccessAtom = atomWithStorage(
   MODELS_MIGRATION_SUCCESS,
   false
 )
-export const skipMigrationAtom = atomWithStorage(SKIP_MIGRATION, false)
+export const skipMigrationAtom = atomWithStorage(
+  SKIP_MIGRATION,
+  false,
+  undefined,
+  {
+    getOnInit: true,
+  }
+)
 
 export const hostAtom = atom('http://localhost:1337/v1')

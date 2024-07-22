@@ -79,7 +79,7 @@ const ModalMigrations = () => {
       if (
         resultThreadsAndMessages.threads.length > 0 ||
         resultThreadsAndMessages.messages.length > 0 ||
-        resultLocalModels.hasLocalModels
+        resultLocalModels
       ) {
         setDidShowMigrationWarning(true)
       } else {
@@ -92,13 +92,16 @@ const ModalMigrations = () => {
   }, [getJanLocalModels, getJanThreadsAndMessages, setDidShowMigrationWarning])
 
   useEffect(() => {
-    console.log(skipMigration, 'skipMigration')
-    if (skipMigration) {
-      setDidShowMigrationWarning(false)
+    if (
+      skipMigration ||
+      (threadsMessagesMigrationSuccess && modelsMigrationSuccess)
+    ) {
+      return setDidShowMigrationWarning(false)
     } else {
       getMigrationNotif()
     }
-  }, [getMigrationNotif, setDidShowMigrationWarning, skipMigration])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skipMigration, setDidShowMigrationWarning])
 
   return (
     <Modal
