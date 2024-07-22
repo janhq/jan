@@ -101,7 +101,7 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
           <MoreHorizontalIcon size={18} />
           <div
             className={twMerge(
-              'shadow-lg invisible absolute right-3 top-5 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] group-hover/icon:visible',
+              'shadow-lg invisible absolute right-0 top-0 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] group-hover/icon:visible',
               contextMenu.visible &&
                 contextMenu.thread?.id === thread.id &&
                 'visible'

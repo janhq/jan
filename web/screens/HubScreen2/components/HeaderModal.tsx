@@ -101,9 +101,9 @@ const HeaderModal: React.FC<Props> = ({
       />
       {isLocalModel ? null : (
         <Button
-          className="mr-6 px-4 py-2"
+          theme="ghost"
           onClick={onActionClick}
-          variant="solid"
+          className="mr-6 bg-[hsla(var(--secondary-bg))] px-4 py-2"
         >
           <span className="text-sm font-semibold">Set Up</span>
         </Button>
