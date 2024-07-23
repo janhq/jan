@@ -3,12 +3,14 @@ import { useCallback, useMemo, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 
 import { LlmEngines } from '@janhq/core'
-import { ScrollArea } from '@janhq/joi'
+import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
+
+import BlankState from '@/containers/BlankState'
 
 import ModelSearch from '@/containers/ModelSearch'
 
@@ -17,6 +19,7 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelItem from './ModelItem'
 
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const MyModels = () => {
@@ -49,6 +52,8 @@ const MyModels = () => {
   const onSearchChange = useCallback((input: string) => {
     setSearchText(input)
   }, [])
+
+  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   return (
     <div {...getRootProps()} className="h-full w-full">
@@ -88,31 +93,63 @@ const MyModels = () => {
             </Button> */}
           </div>
 
-          <div className="relative w-full">
-            {LlmEngines.map((engine) => {
-              const modelByEngine = filteredDownloadedModels.filter(
-                (x) => x.engine === engine
-              )
+          {!filteredDownloadedModels.length ? (
+            <>
+              {searchText.length > 0 ? (
+                <BlankState
+                  title="No search results found"
+                  description="You need to download model"
+                  action={
+                    <Button
+                      className="mt-4"
+                      onClick={() => setMainViewState(MainViewState.Hub)}
+                    >
+                      Explore The Hub
+                    </Button>
+                  }
+                />
+              ) : (
+                <BlankState
+                  title="Model not found"
+                  description="You need to download your first model"
+                  action={
+                    <Button
+                      className="mt-4"
+                      onClick={() => setMainViewState(MainViewState.Hub)}
+                    >
+                      Explore The Hub
+                    </Button>
+                  }
+                />
+              )}
+            </>
+          ) : (
+            <div className="relative w-full">
+              {LlmEngines.map((engine) => {
+                const modelByEngine = filteredDownloadedModels.filter(
+                  (x) => x.engine === engine
+                )
 
-              if (modelByEngine.length === 0) return null
+                if (modelByEngine.length === 0) return null
 
-              return (
-                <div className="my-6" key={engine}>
-                  <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <h6 className="text-base font-semibold capitalize">
-                      {engine}
-                    </h6>
-                    {/* <SetupRemoteModel engine={engine} /> */}
+                return (
+                  <div className="my-6" key={engine}>
+                    <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <h6 className="text-base font-semibold capitalize">
+                        {engine}
+                      </h6>
+                      {/* <SetupRemoteModel engine={engine} /> */}
+                    </div>
+                    <div className="mt-2">
+                      {modelByEngine.map((model) => (
+                        <ModelItem key={model.id} model={model} />
+                      ))}
+                    </div>
                   </div>
-                  <div className="mt-2">
-                    {modelByEngine.map((model) => (
-                      <ModelItem key={model.id} model={model} />
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>

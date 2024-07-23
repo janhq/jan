@@ -22,6 +22,7 @@ import RemoteModelGroup from './components/RemoteModelGroup'
 import SidebarFilter from './components/SidebarFilter'
 import Slider from './components/Slider'
 
+import { hubFilterAtom } from '@/helpers/atoms/Hub.atom'
 import { showSidbarFilterAtom } from '@/helpers/atoms/Setting.atom'
 
 export const ModelFilters = ['All', 'On-device', 'Cloud'] as const
@@ -29,7 +30,7 @@ export type ModelFilter = (typeof ModelFilters)[number]
 
 const HubScreen2: React.FC = () => {
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<ModelFilter>('All')
+  const [filter, setFilter] = useAtom(hubFilterAtom)
 
   const [showSidebarFilter, setShowSidebarFilter] =
     useAtom(showSidbarFilterAtom)

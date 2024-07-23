@@ -6,11 +6,15 @@ import Image from 'next/image'
 
 import { Button } from '@janhq/joi'
 
+import { useAtomValue } from 'jotai'
+
 import useModelHub from '@/hooks/useModelHub'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
 import BuiltInModelCard from './BuiltInModelCard'
+
+import { hubFilterAtom } from '@/helpers/atoms/Hub.atom'
 
 type Props = {
   onSeeAllClick: () => void
@@ -18,11 +22,13 @@ type Props = {
 
 const BuiltInModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
   const { data } = useModelHub()
+  const activeFilter = useAtomValue(hubFilterAtom)
+
   if (!data) return null
 
   const models: HfModelEntry[] = (
     data.modelCategories.get('BuiltInModels') ?? []
-  ).slice(0, 6)
+  ).slice(0, activeFilter === 'On-device' ? 6 : 4)
   if (models.length === 0) return null
 
   return (
