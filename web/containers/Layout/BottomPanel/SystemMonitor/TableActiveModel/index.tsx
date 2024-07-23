@@ -1,18 +1,29 @@
+import { Model } from '@janhq/core'
 import { Button, Badge } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
 import useModels from '@/hooks/useModels'
 
-import { toGibibytes } from '@/utils/converter'
+import {
+  activeModelsAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
-import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
-
-const Column = ['Name', 'Size', '']
+const Column = ['Name', 'Version', '']
 
 const TableActiveModel: React.FC = () => {
   const { stopModel } = useModels()
   const activeModels = useAtomValue(activeModelsAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
+  const models: Model[] = []
+  activeModels.forEach((m) => {
+    const model = downloadedModels.find((dm) => dm.id === m.model)
+    if (model) {
+      models.push(model)
+    }
+  })
 
   return (
     <div className="m-4 mr-0 w-1/2">
@@ -20,47 +31,41 @@ const TableActiveModel: React.FC = () => {
         <table className="w-full px-8">
           <thead className="w-full border-b border-[hsla(var(--app-border))]">
             <tr>
-              {Column.map((col, i) => {
-                return (
-                  <th
-                    key={i}
-                    className="px-4 py-2 text-left font-normal last:text-center"
-                  >
-                    {col}
-                  </th>
-                )
-              })}
+              {Column.map((col, i) => (
+                <th
+                  key={i}
+                  className="px-4 py-2 text-left font-normal last:text-center"
+                >
+                  {col}
+                </th>
+              ))}
             </tr>
           </thead>
-          {activeModels.map((model) => {
-            return (
-              <tbody key={model.model}>
-                <tr>
-                  <td
-                    className="max-w-[200px] px-4 py-2 font-bold"
-                    title={model.model}
+          {models.map((model) => (
+            <tbody key={model.id}>
+              <tr>
+                <td
+                  className="max-w-[200px] px-4 py-2 font-bold"
+                  title={model.name}
+                >
+                  <p className="line-clamp-2">{model.model}</p>
+                </td>
+                <td className="px-4 py-2">
+                  <Badge theme="secondary">
+                    {model.version == null ? '-' : `v${model.version}`}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2 text-center">
+                  <Button
+                    theme="destructive"
+                    onClick={() => stopModel(model.model)}
                   >
-                    <p className="line-clamp-2">{model.model}</p>
-                  </td>
-                  <td className="px-4 py-2">
-                    <Badge theme="secondary">
-                      {toGibibytes((model.metadata?.size ?? 0) as number)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <Button
-                      theme="destructive"
-                      onClick={() => {
-                        stopModel(model.model)
-                      }}
-                    >
-                      Stop
-                    </Button>
-                  </td>
-                </tr>
-              </tbody>
-            )
-          })}
+                    Stop
+                  </Button>
+                </td>
+              </tr>
+            </tbody>
+          ))}
         </table>
       </div>
     </div>

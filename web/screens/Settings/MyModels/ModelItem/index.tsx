@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 
-import { Model } from '@janhq/core'
+import { LocalEngines, Model } from '@janhq/core'
 import { Badge, Button, useClickOutside } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
@@ -58,6 +58,10 @@ const ModelItem: React.FC<Props> = ({ model }) => {
     [stopModel, deleteModel]
   )
 
+  const isLocalModel = LocalEngines.find(
+    (e) => model.engine != null && e === model.engine
+  )
+
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -86,10 +90,10 @@ const ModelItem: React.FC<Props> = ({ model }) => {
           </div>
         </div>
 
-        {model.engine === 'cortex.llamacpp' && (
+        {isLocalModel && (
           <div className="flex gap-x-4">
             <Badge theme="secondary" className="sm:mr-16">
-              {toGibibytes(model.metadata?.size) || '-'}
+              v{model.version || '-'}
             </Badge>
 
             <div className="relative flex items-center gap-x-4">

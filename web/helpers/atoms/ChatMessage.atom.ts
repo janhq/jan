@@ -3,10 +3,7 @@ import { atom } from 'jotai'
 
 import { getActiveThreadIdAtom } from './Thread.atom'
 
-/**
- * Stores all chat messages for all threads
- */
-export const chatMessages = atom<Record<string, Message[]>>({})
+const chatMessages = atom<Record<string, Message[]>>({})
 
 /**
  * Return the chat messages for the current active thread

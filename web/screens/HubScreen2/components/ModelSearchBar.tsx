@@ -1,7 +1,7 @@
 import React, { useCallback, useState } from 'react'
 
 import { Button, Input } from '@janhq/joi'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 import { SearchIcon } from 'lucide-react'
 import { FoldersIcon } from 'lucide-react'
 import { useDebouncedCallback } from 'use-debounce'
@@ -75,7 +75,7 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
       <Input
         className="w-full bg-[hsla(var(--app-bg))] md:w-[320px]"
         prefixIcon={<SearchIcon size={16} />}
-        placeholder="Search"
+        placeholder="Search or paste Hugging Face URL"
         value={searchText}
         onChange={onQueryChanged}
       />
