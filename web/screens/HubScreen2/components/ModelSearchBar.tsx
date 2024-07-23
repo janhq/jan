@@ -90,12 +90,6 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
         <FoldersIcon size={16} />
         <span>My models</span>
       </Button>
-      {/* <Button className="flex items-center gap-2"> */}
-      {/*   <Upload size={16} /> */}
-      {/*   <span className="hidden text-sm font-semibold md:block"> */}
-      {/*     Import model */}
-      {/*   </span> */}
-      {/* </Button> */}
     </div>
   )
 }
