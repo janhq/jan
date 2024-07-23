@@ -40,6 +40,11 @@ export interface Model extends OpenAiModel, ModelSettingParams, ModelRuntimePara
   version?: string
 
   /**
+   * Currently we only have 'embedding' | 'llm'
+   */
+  model_type?: string
+
+  /**
    * The model download source. It can be an external url or a local filepath.
    */
   files: string[] | ModelArtifact

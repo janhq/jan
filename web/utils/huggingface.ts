@@ -97,6 +97,7 @@ export const fetchCortexHubModels = async (): Promise<HfModelEntry[]> => {
 
       const model: Model = fulfillResult.value as Model
       if (model) {
+        if (model.model_type === 'embedding') continue
         modelEntries[i].model = model
         const isRemoteModel =
           RemoteEngines.find((engine) => model.engine === engine) != null

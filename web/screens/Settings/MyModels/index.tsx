@@ -138,7 +138,6 @@ const MyModels = () => {
                       <h6 className="text-base font-semibold capitalize">
                         {engine}
                       </h6>
-                      {/* <SetupRemoteModel engine={engine} /> */}
                     </div>
                     <div className="mt-2">
                       {modelByEngine.map((model) => (
