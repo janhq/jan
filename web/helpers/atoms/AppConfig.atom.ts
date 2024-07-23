@@ -27,7 +27,7 @@ export const vulkanEnabledAtom = atomWithStorage(VULKAN_ENABLED, false)
 export const quickAskEnabledAtom = atomWithStorage(QUICK_ASK_ENABLED, false)
 export const didShowMigrationWarningAtom = atomWithStorage(
   MIGRATION_WARNING,
-  true
+  false
 )
 export const threadsMessagesMigrationSuccessAtom = atomWithStorage(
   THREADS_MESSAGES_MIGRATION_SUCCESS,
@@ -37,6 +37,13 @@ export const modelsMigrationSuccessAtom = atomWithStorage(
   MODELS_MIGRATION_SUCCESS,
   false
 )
-export const skipMigrationAtom = atomWithStorage(SKIP_MIGRATION, false)
+export const skipMigrationAtom = atomWithStorage(
+  SKIP_MIGRATION,
+  false,
+  undefined,
+  {
+    getOnInit: true,
+  }
+)
 
 export const hostAtom = atom('http://localhost:1337/v1')

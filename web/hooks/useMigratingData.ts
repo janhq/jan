@@ -31,6 +31,12 @@ const useMigratingData = () => {
     return window?.electronAPI?.getAllMessagesAndThreads()
   }, [])
 
+  const getJanLocalModels = useCallback(async (): Promise<{
+    hasLocalModels: boolean
+  }> => {
+    return window?.electronAPI?.getAllLocalModels()
+  }, [])
+
   const migrateModels = useCallback(async () => {
     try {
       if (!modelsMigrationSuccess) {
@@ -113,7 +119,12 @@ const useMigratingData = () => {
     createMessage,
   ])
 
-  return { migrateModels, migrateThreadsAndMessages, getJanThreadsAndMessages }
+  return {
+    migrateModels,
+    migrateThreadsAndMessages,
+    getJanThreadsAndMessages,
+    getJanLocalModels,
+  }
 }
 
 export default useMigratingData
