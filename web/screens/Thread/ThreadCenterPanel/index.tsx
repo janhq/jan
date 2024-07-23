@@ -12,6 +12,7 @@ import { twMerge } from 'tailwind-merge'
 
 import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import GenerateResponse from '@/containers/Loader/GenerateResponse'
+import ModelStart from '@/containers/Loader/ModelStart'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { snackbar } from '@/containers/Toast'
 
@@ -23,9 +24,12 @@ import ChatInput from './ChatInput'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
-import { isGeneratingResponseAtom } from '@/helpers/atoms/Thread.atom'
+import {
+  isGeneratingResponseAtom,
+  activeThreadAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 const renderError = (code: string) => {
   switch (code) {
@@ -134,7 +138,7 @@ const ThreadCenterPanel: React.FC = () => {
   const [dragOver, setDragOver] = useState(false)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  // if (!downloadedModels.length) return <EmptyModel />
+  const activeModels = useAtomValue(activeModelsAtom)
 
   return (
     <CenterPanelContainer>
@@ -193,6 +197,11 @@ const ThreadCenterPanel: React.FC = () => {
           )} */}
 
           {isGeneratingResponse && <GenerateResponse />}
+
+          {activeModels.some(
+            (model) => model.status === 'starting' && <ModelStart />
+          )}
+
           {activeThread && (
             <ChatInput
               sendMessage={sendMessage}

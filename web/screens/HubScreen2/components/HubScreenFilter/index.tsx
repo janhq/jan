@@ -47,7 +47,7 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
     <div className="h-full w-full overflow-x-hidden rounded-lg bg-[hsla(var(--app-bg))]">
       {isResultEmpty ? (
         <div className="py-6">
-          <BlankState />
+          <BlankState title="No search results found" />
         </div>
       ) : (
         <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
