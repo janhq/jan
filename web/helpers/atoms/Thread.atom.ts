@@ -73,13 +73,13 @@ export const threadsAtom = atom<Thread[]>([])
 export const deleteThreadAtom = atom(null, (get, set, threadId: string) => {
   set(threadsAtom, (threads) => {
     // set active thread to the latest
-    const allThreads = get(threadsAtom)
+    const allThreads = threads.filter((c) => c.id !== threadId)
     if (allThreads.length > 0) {
       const latestThread = allThreads[0]
       set(activeThreadIdAtom, latestThread.id)
     }
 
-    return threads.filter((c) => c.id !== threadId)
+    return allThreads
   })
 })
 
