@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 
 import { LlmEngines } from '@janhq/core'
-import { ScrollArea } from '@janhq/joi'
+import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { UploadCloudIcon } from 'lucide-react'
@@ -19,6 +19,7 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelItem from './ModelItem'
 
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const MyModels = () => {
@@ -51,6 +52,8 @@ const MyModels = () => {
   const onSearchChange = useCallback((input: string) => {
     setSearchText(input)
   }, [])
+
+  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   return (
     <div {...getRootProps()} className="h-full w-full">
@@ -91,7 +94,35 @@ const MyModels = () => {
           </div>
 
           {!filteredDownloadedModels.length ? (
-            <BlankState />
+            <>
+              {searchText.length > 0 ? (
+                <BlankState
+                  title="No search results found"
+                  description="You need to download model"
+                  action={
+                    <Button
+                      className="mt-4"
+                      onClick={() => setMainViewState(MainViewState.Hub)}
+                    >
+                      Explore The Hub
+                    </Button>
+                  }
+                />
+              ) : (
+                <BlankState
+                  title="Model not found"
+                  description="You need to download your first model"
+                  action={
+                    <Button
+                      className="mt-4"
+                      onClick={() => setMainViewState(MainViewState.Hub)}
+                    >
+                      Explore The Hub
+                    </Button>
+                  }
+                />
+              )}
+            </>
           ) : (
             <div className="relative w-full">
               {LlmEngines.map((engine) => {

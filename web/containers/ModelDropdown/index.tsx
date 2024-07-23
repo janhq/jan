@@ -91,7 +91,7 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
       </div>
       <div
         className={twMerge(
-          'w=80 max-h-80 shadow-sm absolute right-0 z-20 mt-2 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+          'shadow-sm absolute right-0 z-20 mt-2 max-h-[320px] w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
           open ? 'flex' : 'hidden',
           chatInputMode && 'bottom-8 left-0 w-72'
         )}
