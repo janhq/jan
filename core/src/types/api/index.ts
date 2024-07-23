@@ -31,6 +31,7 @@ export enum NativeRoute {
 
   // used for migration. Please remove this later on.
   getAllMessagesAndThreads = 'getAllMessagesAndThreads',
+  getAllLocalModels = 'getAllLocalModels',
   syncModelFileToCortex = 'syncModelFileToCortex',
 
   openAppLog = 'openAppLog',
