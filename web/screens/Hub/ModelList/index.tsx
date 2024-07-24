@@ -23,9 +23,7 @@ const ModelList = ({ models }: Props) => {
     models.forEach((m) => {
       if (m.metadata?.tags?.includes('Featured')) {
         featuredModels.push(m)
-        // } else if (m.format === 'api') {
-        //   remoteModels.push(m)
-      } else if (downloadedModels.map((m) => m.id).includes(m.id)) {
+      } else if (downloadedModels.map((x) => x.model).includes(m.model)) {
         localModels.push(m)
       } else {
         remainingModels.push(m)
@@ -45,7 +43,9 @@ const ModelList = ({ models }: Props) => {
 
   return (
     <div className="relative h-full w-full flex-shrink-0">
-      {sortedModels?.map((model) => <ModelItem key={model.id} model={model} />)}
+      {sortedModels?.map((model) => (
+        <ModelItem key={model.model} model={model} />
+      ))}
     </div>
   )
 }

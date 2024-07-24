@@ -109,15 +109,30 @@ const DetailModelGroup: React.FC<Props> = ({ category, onBackClicked }) => {
                 <BlankState title="No search results found" />
               </div>
             ) : (
-              filteredModels.map((model) => {
+              filteredModels.map((hfModelEntry) => {
                 switch (category) {
                   case 'BuiltInModels':
-                    return <BuiltInModelCard key={model.name} {...model} />
+                    return (
+                      <BuiltInModelCard
+                        key={hfModelEntry.id}
+                        {...hfModelEntry}
+                      />
+                    )
 
                   case 'HuggingFace':
-                    return <HuggingFaceModelCard key={model.id} {...model} />
+                    return (
+                      <HuggingFaceModelCard
+                        key={hfModelEntry.id}
+                        {...hfModelEntry}
+                      />
+                    )
                   default:
-                    return <RemoteModelCard key={model.name} {...model} />
+                    return (
+                      <RemoteModelCard
+                        key={hfModelEntry.id}
+                        {...hfModelEntry}
+                      />
+                    )
                 }
               })
             )}

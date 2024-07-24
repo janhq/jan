@@ -1,17 +1,17 @@
-import { Fragment, useCallback } from 'react'
+import { Fragment } from 'react'
 
 import { DownloadItem } from '@janhq/core'
 import { Progress, Modal, Button } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
-import useCortex from '@/hooks/useCortex'
+import useAbortDownload from '@/hooks/useAbortDownload'
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
 const DownloadStatus: React.FC = () => {
   const downloadStates = useAtomValue(downloadStateListAtom)
-  const { abortDownload } = useCortex()
+  const { abortDownload } = useAbortDownload()
 
   const totalTransfferedSize = downloadStates.reduce(
     (partialSum: number, state) =>
@@ -39,13 +39,6 @@ const DownloadStatus: React.FC = () => {
     totalDownloadSize !== 0
       ? ((totalTransfferedSize / totalDownloadSize) * 100).toFixed(2)
       : 0
-
-  const onAbortDownloadClick = useCallback(
-    (downloadId: string) => {
-      abortDownload(downloadId)
-    },
-    [abortDownload]
-  )
 
   return (
     <Fragment>
@@ -107,7 +100,7 @@ const DownloadStatus: React.FC = () => {
                       </div>
                       <Button
                         theme="destructive"
-                        onClick={() => onAbortDownloadClick(item.id)}
+                        onClick={() => abortDownload(item.id)}
                       >
                         Cancel
                       </Button>

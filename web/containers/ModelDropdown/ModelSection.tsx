@@ -40,7 +40,7 @@ const ModelSection: React.FC<Props> = ({
       <ul className="pb-2">
         {models.map((model) => (
           <li
-            key={model.id}
+            key={model.model}
             className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
             onClick={() => onModelSelected(model)}
           >
@@ -53,7 +53,7 @@ const ModelSection: React.FC<Props> = ({
                 alt="logo"
               />
             )}
-            <p className="line-clamp-1">{model.name ?? model.id}</p>
+            <p className="line-clamp-1">{model.name ?? model.model}</p>
             <ModelLabel metadata={model.metadata} compact />
           </li>
         ))}

@@ -57,7 +57,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
         : engineData.find((e) => e.name === model.engine)?.status === 'ready'
 
     const isModelDownloaded = downloadedModels.find(
-      (m) => m.id === model!.model
+      (m) => m.model === model!.model
     )
 
     if (isEngineConfigured && isModelDownloaded) return 'Use'
@@ -81,7 +81,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
           : engineData.find((e) => e.name === model.engine)?.status === 'ready'
 
       const isModelDownloaded = downloadedModels.find(
-        (m) => m.id === model.model
+        (m) => m.model === model.model
       )
 
       if (isApiKeyAdded && isModelDownloaded) {
@@ -143,6 +143,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
     setLocalModelModalStage,
     name,
     model,
+    engineData,
     isLocalModel,
     downloadedModels,
     assistants,

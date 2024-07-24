@@ -1,12 +1,13 @@
 import { useCallback, useMemo } from 'react'
 
-import { HuggingFaceRepoData, Quantization } from '@janhq/core'
+import { Quantization } from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import useAbortDownload from '@/hooks/useAbortDownload'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useCortex from '@/hooks/useCortex'
@@ -68,11 +69,12 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
   fileName,
 }) => {
-  const { downloadModel, abortDownload } = useCortex()
+  const { downloadModel } = useCortex()
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
   const { createThread } = useThreads()
+  const { abortDownload } = useAbortDownload()
 
   const { data: assistants } = useAssistantQuery()
 
@@ -87,7 +89,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   const downloadState = allDownloadState.find((s) => s.id === persistModelId)
 
   const downloadedModel = useMemo(
-    () => downloadedModels.find((m) => m.id === persistModelId),
+    () => downloadedModels.find((m) => m.model === persistModelId),
     [downloadedModels, persistModelId]
   )
 

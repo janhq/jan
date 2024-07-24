@@ -16,7 +16,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
 
   return (
     <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-[hsla(var(--app-border))]">
-      {open === model.id && (
+      {open === model.model && (
         <div className="flex">
           <div className="flex w-full flex-col border-t border-[hsla(var(--app-border))] p-4 ">
             <div className="my-2 inline-flex items-center sm:hidden">
@@ -45,9 +45,9 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                 <span className="mb-1 font-semibold ">Model ID</span>
                 <p
                   className="mt-2 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]"
-                  title={model.id}
+                  title={model.model}
                 >
-                  {model.id}
+                  {model.model}
                 </p>
               </div>
               <div>

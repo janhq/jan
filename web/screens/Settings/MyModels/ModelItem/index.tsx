@@ -33,8 +33,8 @@ const ModelItem: React.FC<Props> = ({ model }) => {
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
   const isActive = useMemo(
-    () => activeModels.map((m) => m.model).includes(model.id),
-    [activeModels, model.id]
+    () => activeModels.map((m) => m.model).includes(model.model),
+    [activeModels, model.model]
   )
 
   const onModelActionClick = useCallback(
@@ -71,17 +71,17 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                 model.engine !== 'cortex.llamacpp' &&
                   'max-w-none text-[hsla(var(--text-secondary))]'
               )}
-              title={model.id}
+              title={model.model}
             >
-              {model.id}
+              {model.model}
             </h6>
             {model.engine === 'cortex.llamacpp' && (
               <div className="flex gap-x-8">
                 <p
                   className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
-                  title={model.id}
+                  title={model.model}
                 >
-                  {model.id}
+                  {model.model}
                 </p>
               </div>
             )}
@@ -133,7 +133,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                         'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]'
                       )}
                       onClick={() => {
-                        onModelActionClick(model.id)
+                        onModelActionClick(model.model)
                         setMore(false)
                       }}
                     >
@@ -157,7 +157,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                       className={twMerge(
                         'flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]'
                       )}
-                      onClick={() => onDeleteModelClicked(model.id)}
+                      onClick={() => onDeleteModelClicked(model.model)}
                     >
                       <Trash2Icon
                         size={16}

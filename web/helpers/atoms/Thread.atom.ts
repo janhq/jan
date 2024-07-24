@@ -44,13 +44,13 @@ export const setActiveThreadIdAtom = atom(
       return
     }
 
-    const activeModelId = get(getSelectedModelAtom)?.id
+    const activeModelId = get(getSelectedModelAtom)?.model
     if (activeModelId === modelId) {
       console.debug('Model already selected:', modelId)
       return
     }
 
-    const model = get(downloadedModelsAtom).find((m) => m.id === modelId)
+    const model = get(downloadedModelsAtom).find((m) => m.model === modelId)
     if (!model) {
       console.warn(`Model ${modelId} removed or deleted`)
       return

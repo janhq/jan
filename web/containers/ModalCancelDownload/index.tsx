@@ -1,21 +1,15 @@
-import { useCallback } from 'react'
-
 import { Model } from '@janhq/core'
 
 import { Modal, Button, ModalClose } from '@janhq/joi'
 
-import useCortex from '@/hooks/useCortex'
+import useAbortDownload from '@/hooks/useAbortDownload'
 
 type Props = {
   model: Model
 }
 
 const ModalCancelDownload: React.FC<Props> = ({ model }) => {
-  const { abortDownload } = useCortex()
-
-  const onAbortDownloadClick = useCallback(() => {
-    abortDownload(model.id)
-  }, [abortDownload, model.id])
+  const { abortDownload } = useAbortDownload()
 
   return (
     <Modal
@@ -51,7 +45,10 @@ const ModalCancelDownload: React.FC<Props> = ({ model }) => {
               <Button theme="ghost">No</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button theme="destructive" onClick={onAbortDownloadClick}>
+              <Button
+                theme="destructive"
+                onClick={() => abortDownload(model.model)}
+              >
                 Yes
               </Button>
             </ModalClose>

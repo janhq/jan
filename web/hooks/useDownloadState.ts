@@ -40,7 +40,7 @@ export const removeDownloadSuccessItemAtom = atom(
   null,
   (_get, set, downloadId: string) => {
     set(downloadStateListAtom, (old) =>
-      old.filter((state) => state.id !== downloadId)
+      old.filter((downloadState) => downloadState.id !== downloadId)
     )
   }
 )

@@ -35,7 +35,6 @@ const useGetModelsByEngine = () => {
           .filter((m) => {
             if (searchText.trim() === '') return true
             return (
-              m.id?.toLowerCase().includes(searchText) ||
               m.model?.toLowerCase().includes(searchText) ||
               m.name?.toLowerCase().includes(searchText)
             )
@@ -59,7 +58,6 @@ const useGetModelsByEngine = () => {
       return models.filter((m) => {
         if (searchText.trim() === '') return true
         return (
-          m.id?.toLowerCase().includes(searchText) ||
           m.model?.toLowerCase().includes(searchText) ||
           m.name?.toLowerCase().includes(searchText)
         )

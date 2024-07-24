@@ -5,6 +5,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import useAbortDownload from '@/hooks/useAbortDownload'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useCortex from '@/hooks/useCortex'
@@ -86,7 +87,8 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
   fileName,
 }) => {
-  const { downloadModel, abortDownload } = useCortex()
+  const { downloadModel } = useCortex()
+  const { abortDownload } = useAbortDownload()
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
@@ -105,7 +107,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   const downloadState = allDownloadState.find((s) => s.id === persistModelId)
 
   const downloadedModel = useMemo(
-    () => downloadedModels.find((m) => m.id === persistModelId),
+    () => downloadedModels.find((m) => m.model === persistModelId),
     [downloadedModels, persistModelId]
   )
 
@@ -138,10 +140,6 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     assistants,
   ])
 
-  const onAbortDownloadClick = useCallback(() => {
-    abortDownload(persistModelId)
-  }, [abortDownload, persistModelId])
-
   return (
     <div className="flex items-center justify-center">
       {downloadedModel ? (
@@ -155,7 +153,10 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
       ) : downloadState != null ? (
         <Button variant="soft">
           <div className="flex items-center space-x-2">
-            <span className="inline-block" onClick={onAbortDownloadClick}>
+            <span
+              className="inline-block"
+              onClick={() => abortDownload(persistModelId)}
+            >
               Cancel
             </span>
             <Progress

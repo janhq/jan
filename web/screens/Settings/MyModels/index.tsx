@@ -30,11 +30,10 @@ const MyModels = () => {
   const filteredDownloadedModels = useMemo(
     () =>
       downloadedModels
-        .filter((e) => {
-          const modelId = e.id ?? e.model ?? ''
-          return modelId.toLowerCase().includes(searchText.toLowerCase().trim())
-        })
-        .sort((a, b) => a.id.localeCompare(b.id)),
+        .filter((m) =>
+          m.model.toLowerCase().includes(searchText.toLowerCase().trim())
+        )
+        .sort((a, b) => a.model.localeCompare(b.model)),
     [downloadedModels, searchText]
   )
 
@@ -134,10 +133,7 @@ const MyModels = () => {
                     </div>
                     <div className="mt-2">
                       {modelByEngine.map((model) => (
-                        <ModelItem
-                          key={model.id ?? model.model}
-                          model={model}
-                        />
+                        <ModelItem key={model.model} model={model} />
                       ))}
                     </div>
                   </div>
