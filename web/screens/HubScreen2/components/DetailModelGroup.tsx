@@ -2,8 +2,12 @@ import { useCallback, useState } from 'react'
 
 import React from 'react'
 
-import { Input } from '@janhq/joi'
+import { Input, ScrollArea } from '@janhq/joi'
 import { ArrowLeft, Search } from 'lucide-react'
+
+import BlankState from '@/containers/BlankState'
+
+import CenterPanelContainer from '@/containers/CenterPanelContainer'
 
 import useModelHub, { ModelHubCategory } from '@/hooks/useModelHub'
 
@@ -64,29 +68,30 @@ const DetailModelGroup: React.FC<Props> = ({ category, onBackClicked }) => {
       : modelEntries
 
   return (
-    <div className="h-full w-full overflow-x-hidden rounded-lg bg-[hsla(var(--app-bg))]">
-      <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
-        <button
-          onClick={onBackClicked}
-          className="text- flex !w-fit items-center gap-1 !bg-transparent !text-[var(--text-secondary)]"
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
-        <GroupInfo
-          apiKeyUrl={apiKeyUrl}
-          imageUrl={refinedImageUrl}
-          category={category}
-        />
-        <div className="w-full md:w-1/2">
-          <Input
-            prefixIcon={<Search size={16} />}
-            placeholder="Search"
-            value={filter}
-            onChange={onFilterChange}
+    <CenterPanelContainer>
+      <ScrollArea className="h-full w-full">
+        <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 p-6">
+          <button
+            onClick={onBackClicked}
+            className="flex !w-fit items-center gap-1 !bg-transparent !text-[var(--text-secondary)]"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          <GroupInfo
+            apiKeyUrl={apiKeyUrl}
+            imageUrl={refinedImageUrl}
+            category={category}
           />
-        </div>
+          <div className="w-full md:w-1/2">
+            <Input
+              prefixIcon={<Search size={16} />}
+              placeholder="Search"
+              value={filter}
+              onChange={onFilterChange}
+            />
+          </div>
 
-        {/* <div>
+          {/* <div>
           <Select
             value={selectPopular}
             className="gap-1.5 px-4 py-2"
@@ -98,22 +103,28 @@ const DetailModelGroup: React.FC<Props> = ({ category, onBackClicked }) => {
           />
         </div> */}
 
-        <div className="flex flex-col">
-          {filteredModels.map((model) => {
-            switch (category) {
-              case 'BuiltInModels':
-                return <BuiltInModelCard key={model.name} {...model} />
+          <div className="flex flex-col">
+            {!filteredModels.length ? (
+              <div className="py-6">
+                <BlankState title="No search results found" />
+              </div>
+            ) : (
+              filteredModels.map((model) => {
+                switch (category) {
+                  case 'BuiltInModels':
+                    return <BuiltInModelCard key={model.name} {...model} />
 
-              case 'HuggingFace':
-                return <HuggingFaceModelCard key={model.id} {...model} />
-
-              default:
-                return <RemoteModelCard key={model.name} {...model} />
-            }
-          })}
+                  case 'HuggingFace':
+                    return <HuggingFaceModelCard key={model.id} {...model} />
+                  default:
+                    return <RemoteModelCard key={model.name} {...model} />
+                }
+              })
+            )}
+          </div>
         </div>
-      </div>
-    </div>
+      </ScrollArea>
+    </CenterPanelContainer>
   )
 }
 
