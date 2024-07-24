@@ -10,7 +10,7 @@ import {
   downloadedModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
-const Column = ['Name', 'Version', '']
+const Column = ['Name', 'Engine', '']
 
 const TableActiveModel: React.FC = () => {
   const { stopModel } = useModels()
@@ -52,7 +52,7 @@ const TableActiveModel: React.FC = () => {
                 </td>
                 <td className="px-4 py-2">
                   <Badge theme="secondary">
-                    {model.version == null ? '-' : `v${model.version}`}
+                    {!model.engine ? '-' : `${model.engine}`}
                   </Badge>
                 </td>
                 <td className="px-4 py-2 text-center">
