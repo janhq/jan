@@ -94,12 +94,10 @@ export default function AppearanceOptions() {
       <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
         <div className="w-full space-y-1 lg:w-3/4">
           <div className="flex gap-x-2">
-            <h6 className="font-semibold capitalize">Spell checking</h6>
+            <h6 className="font-semibold capitalize">Spell Check</h6>
           </div>
           <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Disable if you prefer to type without spell checking interruptions
-            or if you are using non-standard language/terminology that the spell
-            checker may not recognize.
+            Toggle to disable spell checking.
           </p>
         </div>
         <div className="flex-shrink-0">
