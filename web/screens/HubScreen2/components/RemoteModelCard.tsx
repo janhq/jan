@@ -7,10 +7,9 @@ import { toaster } from '@/containers/Toast'
 
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
-import useConfigQuery from '@/hooks/useConfigQuery'
-
 import useCortex from '@/hooks/useCortex'
 
+import useEngineQuery from '@/hooks/useEngineQuery'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
@@ -30,15 +29,17 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { data: assistants } = useAssistantQuery()
 
-  const { data: configData } = useConfigQuery()
+  const { data: engineData } = useEngineQuery()
 
   const modelDisplayName = model?.name ?? name
 
   const onClick = useCallback(async () => {
-    if (!model || !configData) return
-    const isApiKeyAdded =
-      // @ts-expect-error engine is not null
-      (configData[engine ?? '']?.apiKey ?? '').length > 0
+    if (!model || !engineData) return
+    const isApiKeyAdded: boolean =
+      engineData == null || model?.engine == null
+        ? false
+        : engineData.find((e) => e.name === model.engine)?.status === 'ready'
+
     const isModelDownloaded = downloadedModels.find((m) => m.id === model.model)
 
     if (isApiKeyAdded && isModelDownloaded) {
@@ -101,11 +102,10 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
     }
   }, [
     assistants,
-    configData,
+    engineData,
     createModel,
     createThread,
     downloadedModels,
-    engine,
     getModels,
     model,
     setMainViewState,

@@ -4,7 +4,6 @@ import { useEffect } from 'react'
 
 import useAssistantCreate, { janAssistant } from '@/hooks/useAssistantCreate'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
-import useConfigQuery from '@/hooks/useConfigQuery'
 import useEngineQuery from '@/hooks/useEngineQuery'
 import { useLoadTheme } from '@/hooks/useLoadTheme'
 import useModelHub from '@/hooks/useModelHub'
@@ -26,7 +25,6 @@ const DataLoader: React.FC = () => {
     }
   }, [assistants, assistantCreateMutation])
 
-  useConfigQuery()
   useModelHub()
   useLoadTheme()
   useEngineQuery()

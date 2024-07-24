@@ -56,9 +56,7 @@ const EngineSetting: React.FC = () => {
                   <TableCell className="text-center">
                     {engineStatus.version}
                   </TableCell>
-                  <TableCell>
-                    {engineStatus.initialized ? 'Installed' : 'Not Installed'}
-                  </TableCell>
+                  <TableCell>{engineStatus.status}</TableCell>
                 </TableRow>
               )
             })}

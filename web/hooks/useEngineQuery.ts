@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import useCortex from './useCortex'
 
-const engineQueryKey = ['getEngineStatuses']
+export const engineQueryKey = ['getEngineStatuses']
 
 const useEngineQuery = () => {
   const { getEngineStatuses } = useCortex()

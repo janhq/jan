@@ -18,17 +18,23 @@ import { Cortex } from 'cortexso-node'
 
 import { useAtomValue } from 'jotai'
 
-import { UpdateConfigMutationVariables } from './useConfigMutation'
+import { UpdateConfigMutationVariables } from './useEngineMutation'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
-import { CortexConfig } from '@/helpers/atoms/CortexConfig.atom'
+
+const EngineInitStatuses = [
+  'ready',
+  'not_initialized',
+  'missing_configuration',
+] as const
+export type EngineInitStatus = (typeof EngineInitStatuses)[number]
 
 export type EngineStatus = {
   name: LlmEngine
   description: string
   version: string
   productName: string
-  initialized: boolean
+  status: EngineInitStatus
 }
 
 const useCortex = () => {
@@ -284,8 +290,8 @@ const useCortex = () => {
     async (variables: UpdateConfigMutationVariables) => {
       try {
         const { engine, config } = variables
-        await fetch(`${host}/configs/${engine}`, {
-          method: 'POST',
+        await fetch(`${host}/engines/${engine}`, {
+          method: 'PATCH',
           headers: {
             'accept': 'application/json',
             // eslint-disable-next-line @typescript-eslint/naming-convention
@@ -315,17 +321,6 @@ const useCortex = () => {
     [host]
   )
 
-  const getCortexConfigs = useCallback(async (): Promise<CortexConfig> => {
-    const response = await fetch(`${host}/configs`, {
-      headers: {
-        'accept': 'application/json',
-        // eslint-disable-next-line @typescript-eslint/naming-convention
-        'Content-Type': 'application/json',
-      },
-    })
-    return response.json()
-  }, [host])
-
   return {
     fetchAssistants,
     fetchThreads,
@@ -350,7 +345,6 @@ const useCortex = () => {
     chatCompletionNonStreaming,
     registerEngineConfig,
     createModel,
-    getCortexConfigs,
     getEngineStatus,
     initializeEngine,
     getEngineStatuses,

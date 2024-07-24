@@ -8,7 +8,7 @@ import { useAtomValue } from 'jotai'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
-import useConfigQuery from './useConfigQuery'
+import useEngineQuery from './useEngineQuery'
 import { cortexHubModelsQueryKey } from './useModelHub'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -16,15 +16,14 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 const useGetModelsByEngine = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const queryClient = useQueryClient()
-  const { data: configData } = useConfigQuery()
+  const { data: engineData } = useEngineQuery()
 
   const hasApiKey = useCallback(
-    (engine: RemoteEngine): boolean => {
-      if (!configData) return false
-      // @ts-expect-error engine is not null
-      return (configData[engine ?? '']?.apiKey ?? '').length > 0
-    },
-    [configData]
+    (engine: RemoteEngine): boolean =>
+      engineData == null
+        ? false
+        : engineData.find((e) => e.name === engine)?.status === 'ready',
+    [engineData]
   )
 
   // TODO: this function needs to be clean up

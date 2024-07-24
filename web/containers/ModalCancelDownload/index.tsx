@@ -6,15 +6,12 @@ import { Modal, Button, ModalClose } from '@janhq/joi'
 
 import useCortex from '@/hooks/useCortex'
 
-import { formatDownloadPercentage } from '@/utils/converter'
-
 type Props = {
   model: Model
 }
 
 const ModalCancelDownload: React.FC<Props> = ({ model }) => {
   const { abortDownload } = useCortex()
-  const cancelText = `Cancel ${formatDownloadPercentage(0)}`
 
   const onAbortDownloadClick = useCallback(() => {
     abortDownload(model.id)

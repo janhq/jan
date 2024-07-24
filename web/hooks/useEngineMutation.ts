@@ -5,18 +5,18 @@ import { useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { cortexConfigQueryKey } from './useConfigQuery'
-
 import useCortex from './useCortex'
+
+import { engineQueryKey } from './useEngineQuery'
 
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 export type UpdateConfigMutationVariables = {
   engine: RemoteEngine
-  config: { key: string; value: string; name: string }
+  config: { config: string; value: string }
 }
 
-const useConfigMutation = () => {
+const useEngineMutation = () => {
   const { registerEngineConfig } = useCortex()
   const queryClient = useQueryClient()
 
@@ -25,14 +25,14 @@ const useConfigMutation = () => {
   return useMutation({
     mutationFn: registerEngineConfig,
 
-    onError: (err, variables, _context) => {
+    onError: (err, variables) => {
       console.error(
         `Failed to register engine with variables: ${variables}, err: ${err}`
       )
     },
 
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: cortexConfigQueryKey })
+      queryClient.invalidateQueries({ queryKey: engineQueryKey })
       setUpRemoteModelStage('NONE', undefined)
       toaster({
         title: 'Success!',
@@ -43,4 +43,4 @@ const useConfigMutation = () => {
   })
 }
 
-export default useConfigMutation
+export default useEngineMutation
