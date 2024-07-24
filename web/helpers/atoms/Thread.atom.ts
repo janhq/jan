@@ -40,7 +40,7 @@ export const setActiveThreadIdAtom = atom(
     set(activeThreadIdAtom, threadId)
     const modelId = thread.assistants[0]?.model
     if (!modelId) {
-      console.error('No model id found in thread', thread)
+      console.error(`No model id ${modelId} found in thread`, thread)
       return
     }
 

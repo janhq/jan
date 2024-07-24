@@ -116,15 +116,18 @@ export const ModelHubCategoryList = [
 ] as const
 export type ModelHubCategory = (typeof ModelHubCategoryList)[number]
 
+export const builtInModelsEntriesQueryKey = ['builtInModelsEntriesQueryKey']
+export const cortexHubModelsQueryKey = ['cortexHubModelsQueryKey']
+
 const useModelHub = () => {
   const results = useQueries({
     queries: [
       {
-        queryKey: ['getBuiltInModelEntries'],
+        queryKey: builtInModelsEntriesQueryKey,
         queryFn: getBuiltInModelEntries,
       },
       {
-        queryKey: ['fetchCortexHubModels'],
+        queryKey: cortexHubModelsQueryKey,
         queryFn: fetchCortexHubModels,
       },
     ],

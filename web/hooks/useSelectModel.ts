@@ -16,7 +16,11 @@ const useSelectModel = () => {
   const selectModel = useCallback(
     (model: Model) => {
       if (activeThread) {
-        activeThread.assistants[0].model = model.id
+        const modelId = model.id ?? model.model
+        console.debug(
+          `Set model id ${modelId} to active thread ${activeThread.id}`
+        )
+        activeThread.assistants[0].model = modelId
         updateThread(activeThread)
       }
 

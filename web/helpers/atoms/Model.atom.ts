@@ -110,12 +110,13 @@ export const getSelectedModelAtom = atom((get) => get(selectedModelAtom))
 export const updateSelectedModelAtom = atom(null, (get, set, model: Model) => {
   const activeThread = get(activeThreadAtom)
   if (activeThread) {
-    activeThread.assistants[0].model = model.id
+    const modelId = model.id ?? model.model
+    activeThread.assistants[0].model = modelId
     // update threadsAtom
     const allThreads = get(threadsAtom)
     allThreads.forEach((t) => {
       if (t.id === activeThread.id) {
-        t.assistants[0].model = model.id
+        t.assistants[0].model = modelId
       }
     })
     console.debug(

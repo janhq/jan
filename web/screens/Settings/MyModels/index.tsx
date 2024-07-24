@@ -15,7 +15,6 @@ import BlankState from '@/containers/BlankState'
 import ModelSearch from '@/containers/ModelSearch'
 
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
-import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelItem from './ModelItem'
 
@@ -23,8 +22,8 @@ import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const MyModels = () => {
+  const setMainViewState = useSetAtom(mainViewStateAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
   const [searchText, setSearchText] = useState('')
 
@@ -45,15 +44,9 @@ const MyModels = () => {
     onDrop: onDropModels,
   })
 
-  const onImportModelClick = useCallback(() => {
-    setImportModelStage('SELECTING_MODEL')
-  }, [setImportModelStage])
-
   const onSearchChange = useCallback((input: string) => {
     setSearchText(input)
   }, [])
-
-  const setMainViewState = useSetAtom(mainViewStateAtom)
 
   return (
     <div {...getRootProps()} className="h-full w-full">
@@ -141,7 +134,10 @@ const MyModels = () => {
                     </div>
                     <div className="mt-2">
                       {modelByEngine.map((model) => (
-                        <ModelItem key={model.id} model={model} />
+                        <ModelItem
+                          key={model.id ?? model.model}
+                          model={model}
+                        />
                       ))}
                     </div>
                   </div>
