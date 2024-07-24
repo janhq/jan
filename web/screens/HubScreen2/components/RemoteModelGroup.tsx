@@ -10,7 +10,7 @@ import { Button } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
 import { Settings } from 'lucide-react'
 
-import useConfigQuery from '@/hooks/useConfigQuery'
+import useEngineQuery from '@/hooks/useEngineQuery'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
@@ -27,7 +27,7 @@ type Props = {
 }
 
 const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
-  const { data: configData } = useConfigQuery()
+  const { data: engineData } = useEngineQuery()
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
 
   const engineLogo: string | undefined = data.find(
@@ -43,11 +43,13 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
   const showSeeAll = models.length < data.length
   const refinedTitle = getTitleByCategory(engine)
 
-  const isHasApiKey = useMemo(() => {
-    if (!configData) return false
-    // @ts-expect-error engine is not null
-    return (configData[engine ?? '']?.apiKey ?? '').length > 0
-  }, [configData, engine])
+  const isHasApiKey = useMemo(
+    () =>
+      engineData == null || engine == null
+        ? false
+        : engineData.find((e) => e.name === engine)?.status === 'ready',
+    [engineData, engine]
+  )
 
   const onSetUpClick = useCallback(() => {
     setUpRemoteModelStage('SETUP_API_KEY', engine, {

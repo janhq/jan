@@ -1,24 +1,18 @@
-import { useState } from 'react'
-
 import { LlmEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
-import { useSetAtom } from 'jotai'
 import { SettingsIcon } from 'lucide-react'
-
-import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   engine: LlmEngine
 }
 
 const SetupRemoteModel = ({ engine }: Props) => {
-  const setSelectedSetting = useSetAtom(selectedSettingAtom)
-  const setMainViewState = useSetAtom(mainViewStateAtom)
+  // const setSelectedSetting = useSetAtom(selectedSettingAtom)
+  // const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string; apiKey: string; provider: string }[]
-  >([])
+  // const [extensionHasSettings, setExtensionHasSettings] = useState<
+  //   { name?: string; setting: string; apiKey: string; provider: string }[]
+  // >([])
 
   // useEffect(() => {
   //   const getAllSettings = async () => {
@@ -59,22 +53,22 @@ const SetupRemoteModel = ({ engine }: Props) => {
   //   getAllSettings()
   // }, [])
 
-  const onSetupItemClick = (engine: LlmEngine) => {
-    setMainViewState(MainViewState.Settings)
-    setSelectedSetting(
-      extensionHasSettings.filter((x) =>
-        x.provider?.toLowerCase().includes(engine)
-      )[0]?.setting
-    )
-  }
+  // const onSetupItemClick = (engine: LlmEngine) => {
+  // setMainViewState(MainViewState.Settings)
+  // setSelectedSetting(
+  //   extensionHasSettings.filter((x) =>
+  //     x.provider?.toLowerCase().includes(engine)
+  //   )[0]?.setting
+  // )
+  // }
 
   return (
     <Button
       theme="icon"
       variant="outline"
-      onClick={() => {
-        onSetupItemClick(engine)
-      }}
+      // onClick={() => {
+      //   onSetupItemClick(engine)
+      // }}
     >
       <SettingsIcon
         size={14}

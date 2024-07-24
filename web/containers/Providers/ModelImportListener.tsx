@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react'
 
-import { ImportingModel, LocalImportModelEvent, Model } from '@janhq/core'
+import { ImportingModel, Model } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { snackbar } from '../Toast'

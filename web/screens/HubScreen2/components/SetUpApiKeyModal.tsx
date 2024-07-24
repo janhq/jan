@@ -6,17 +6,16 @@ import { Button, Input, Modal } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
 
-import useConfigMutation from '@/hooks/useConfigMutation'
-
-import useConfigQuery from '@/hooks/useConfigQuery'
+import useEngineMutation from '@/hooks/useEngineMutation'
+import useEngineQuery from '@/hooks/useEngineQuery'
 
 import { getTitleByCategory } from '@/utils/model-engine'
 
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const SetUpApiKeyModal: React.FC = () => {
-  const updateCortexConfig = useConfigMutation()
-  const { data: configData } = useConfigQuery()
+  const updateEngineConfig = useEngineMutation()
+  const { data: engineData } = useEngineQuery()
 
   const [{ stage, remoteEngine, metadata }, setUpRemoteModelStage] = useAtom(
     setUpRemoteModelStageAtom
@@ -24,25 +23,26 @@ const SetUpApiKeyModal: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>('')
 
   useEffect(() => {
-    if (!remoteEngine || !configData) return
-    // @ts-expect-error remoteEngine is not null
-    setApiKey(configData[remoteEngine ?? '']?.apiKey ?? '')
-  }, [remoteEngine, configData])
+    if (!remoteEngine || !engineData) return
+    const isEngineReady =
+      engineData.find((e) => e.name === remoteEngine)?.status === 'ready'
+    const fakeApiKey = '******************************************'
+    setApiKey(isEngineReady ? fakeApiKey : '')
+  }, [remoteEngine, engineData])
 
   const onSaveClicked = useCallback(async () => {
     if (!remoteEngine) {
       alert('Does not have engine')
       return
     }
-    updateCortexConfig.mutate({
+    updateEngineConfig.mutate({
       engine: remoteEngine,
       config: {
-        key: 'apiKey',
+        config: 'apiKey',
         value: apiKey,
-        name: remoteEngine,
       },
     })
-  }, [updateCortexConfig, apiKey, remoteEngine])
+  }, [updateEngineConfig, apiKey, remoteEngine])
 
   const onDismiss = useCallback(() => {
     setUpRemoteModelStage('NONE', undefined)

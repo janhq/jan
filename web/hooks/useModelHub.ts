@@ -45,7 +45,10 @@ const fetchBuiltInModels = async (): Promise<CuratedModelResponse> => {
   const data = (await response.json()) as CuratedModelResponse
 
   const getFileSizePromises: Promise<number>[] = data.quickstart_models.map(
-    (model) => getFileSize(model.url)
+    (model) => {
+      const directDownloadUrl = model.url.replace('/blob/', '/resolve/')
+      return getFileSize(directDownloadUrl)
+    }
   )
 
   const sizes = await Promise.all(getFileSizePromises)

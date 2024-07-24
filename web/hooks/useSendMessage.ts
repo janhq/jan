@@ -375,7 +375,7 @@ const useSendMessage = () => {
         console.error(`Cannot get engine status for ${engine}`)
         return
       }
-      if (!engineStatus.initialized) {
+      if (engineStatus.status !== 'ready') {
         toaster({
           title: 'Please wait for engine to initialize',
           description: `Please retry after engine ${engine} is installed.`,

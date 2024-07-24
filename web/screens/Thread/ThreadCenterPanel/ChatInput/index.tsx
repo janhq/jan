@@ -1,23 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import {
-  TextArea,
-  Button,
-  Tooltip,
-  useClickOutside,
-  Badge,
-  useMediaQuery,
-} from '@janhq/joi'
+import { TextArea, Button, useMediaQuery } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
-  ImageIcon,
   StopCircle,
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
-  ShapesIcon,
-  PaperclipIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -29,7 +19,6 @@ import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
@@ -56,11 +45,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
   const setActiveTabThreadRightPanel = useSetAtom(activeTabThreadRightPanelAtom)
@@ -70,7 +55,6 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
     setCurrentPrompt(e.target.value)
   }
 
-  const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
 
   const matches = useMediaQuery('(max-width: 880px)')
@@ -117,17 +101,17 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
    * Its to be used to display the extension file name of the selected file.
    * @param event - The change event object.
    */
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFileUpload([{ file: file, type: 'pdf' }])
-  }
+  // const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = event.target.files?.[0]
+  //   if (!file) return
+  //   setFileUpload([{ file: file, type: 'pdf' }])
+  // }
 
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFileUpload([{ file: file, type: 'image' }])
-  }
+  // const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = event.target.files?.[0]
+  //   if (!file) return
+  //   setFileUpload([{ file: file, type: 'image' }])
+  // }
 
   const renderPreview = (fileUpload: any) => {
     if (fileUpload.length > 0) {
