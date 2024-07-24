@@ -9,17 +9,17 @@ const availableHotkeys = [
   {
     combination: 'B',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
-    description: 'Toggle collapsible left panel',
+    description: 'Toggle left panel',
   },
   {
     combination: 'Shift B',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
-    description: 'Toggle collapsible right panel',
+    description: 'Toggle right panel',
   },
   {
     combination: ',',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
-    description: 'Navigate to setting page',
+    description: 'Navigate to settings',
   },
   {
     combination: 'Enter',

@@ -200,7 +200,7 @@ const Advanced = () => {
               <h6 className="font-semibold capitalize">Experimental Mode</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Enable experimental features that may be untested and unstable.
+              Enable new features that may be unstable.
             </p>
           </div>
           <Switch
