@@ -86,7 +86,7 @@ export default function AppearanceOptions() {
               variant={reduceTransparent ? 'outline' : 'solid'}
               onClick={() => setReduceTransparent(false)}
             >
-              Transparency
+              Translucent
             </Button>
           </div>
         </div>
