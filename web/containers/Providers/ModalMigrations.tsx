@@ -101,7 +101,12 @@ const ModalMigrations = () => {
       getMigrationNotif()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skipMigration, setDidShowMigrationWarning])
+  }, [
+    skipMigration,
+    setDidShowMigrationWarning,
+    threadsMessagesMigrationSuccess,
+    modelsMigrationSuccess,
+  ])
 
   return (
     <Modal
