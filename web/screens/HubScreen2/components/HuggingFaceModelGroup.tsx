@@ -51,8 +51,8 @@ const HuggingFaceModelGroup: React.FC<Props> = ({ onSeeAllClick }) => {
       </div>
 
       <div className="grid grid-cols-1 gap-x-20 md:grid-cols-2">
-        {models.map((model) => (
-          <HuggingFaceModelCard key={model.id} {...model} />
+        {models.map((hfModelEntry) => (
+          <HuggingFaceModelCard key={hfModelEntry.id} {...hfModelEntry} />
         ))}
       </div>
     </Fragment>

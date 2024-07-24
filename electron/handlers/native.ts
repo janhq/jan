@@ -54,15 +54,15 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.getThemes, async () => {
-    const folderPath = join(await getJanDataFolderPath(), 'themes')
-    const installedThemes = await readdirSync(folderPath)
+    const folderPath = join(getJanDataFolderPath(), 'themes')
+    const installedThemes = readdirSync(folderPath)
 
     const themesOptions = Promise.all(
       installedThemes
         .filter((x: string) => x !== '.DS_Store')
         .map(async (x: string) => {
-          const y = await join(folderPath, x, `theme.json`)
-          const c = JSON.parse(await readFileSync(y, 'utf-8'))
+          const y = join(folderPath, x, `theme.json`)
+          const c = JSON.parse(readFileSync(y, 'utf-8'))
           return { name: c?.displayName, value: c.id }
         })
     )
@@ -70,9 +70,9 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.readTheme, async (_event, themeId: string) => {
-    const folderPath = join(await getJanDataFolderPath(), 'themes')
-    const filePath = await join(folderPath, themeId, `theme.json`)
-    return JSON.parse(await readFileSync(filePath, 'utf-8'))
+    const folderPath = join(getJanDataFolderPath(), 'themes')
+    const filePath = join(folderPath, themeId, `theme.json`)
+    return JSON.parse(readFileSync(filePath, 'utf-8'))
   })
 
   /**
@@ -224,7 +224,7 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
-    const janModelFolderPath = join(await getJanDataFolderPath(), 'models')
+    const janModelFolderPath = join(getJanDataFolderPath(), 'models')
     const allModelFolders = readdirSync(janModelFolderPath)
 
     const cortexHomeDir = join(os.homedir(), 'cortex')
@@ -356,7 +356,7 @@ export function handleAppIPCs() {
   ipcMain.handle(
     NativeRoute.getAllLocalModels,
     async (_event): Promise<boolean> => {
-      const janModelsFolderPath = join(await getJanDataFolderPath(), 'models')
+      const janModelsFolderPath = join(getJanDataFolderPath(), 'models')
       // get children of thread folder
       const allModelsFolders = readdirSync(janModelsFolderPath)
       let hasLocalModels = false

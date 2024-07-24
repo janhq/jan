@@ -20,7 +20,7 @@ export const usePath = () => {
     //     break
     //   case 'Model':
     //     if (!selectedModel) return
-    //     filePath = await joinPath(['models', selectedModel.id])
+    //     filePath = await joinPath(['models', selectedModel.model])
     //     break
     //   case 'Tools':
     //   case 'Assistant':
@@ -54,7 +54,7 @@ export const usePath = () => {
     //     break
     //   case 'Model':
     //     if (!selectedModel) return
-    //     filePath = await joinPath(['models', selectedModel.id, 'model.json'])
+    //     filePath = await joinPath(['models', selectedModel.model, 'model.json'])
     //     break
     //   case 'Assistant':
     //   case 'Tools':

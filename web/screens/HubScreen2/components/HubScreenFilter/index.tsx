@@ -51,14 +51,14 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
         </div>
       ) : (
         <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
-          {filteredBuiltInModels.map((model) => (
-            <BuiltInModelCard key={model.name} {...model} />
+          {filteredBuiltInModels.map((hfModelEntry) => (
+            <BuiltInModelCard key={hfModelEntry.id} {...hfModelEntry} />
           ))}
-          {filteredHuggingFaceModels.map((model) => (
-            <HuggingFaceModelCard key={model.id} {...model} />
+          {filteredHuggingFaceModels.map((hfModelEntry) => (
+            <HuggingFaceModelCard key={hfModelEntry.id} {...hfModelEntry} />
           ))}
-          {filteredRemoteModels.map((model) => (
-            <RemoteModelCard key={model.name} {...model} />
+          {filteredRemoteModels.map((hfModelEntry) => (
+            <RemoteModelCard key={hfModelEntry.id} {...hfModelEntry} />
           ))}
         </div>
       )}

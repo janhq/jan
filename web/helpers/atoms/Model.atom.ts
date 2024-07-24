@@ -15,7 +15,7 @@ export const removeDownloadedModelAtom = atom(
 
     set(
       downloadedModelsAtom,
-      downloadedModels.filter((e) => e.id !== modelId)
+      downloadedModels.filter((m) => m.model !== modelId)
     )
   }
 )
@@ -110,13 +110,12 @@ export const getSelectedModelAtom = atom((get) => get(selectedModelAtom))
 export const updateSelectedModelAtom = atom(null, (get, set, model: Model) => {
   const activeThread = get(activeThreadAtom)
   if (activeThread) {
-    const modelId = model.id ?? model.model
-    activeThread.assistants[0].model = modelId
+    activeThread.assistants[0].model = model.model
     // update threadsAtom
     const allThreads = get(threadsAtom)
     allThreads.forEach((t) => {
       if (t.id === activeThread.id) {
-        t.assistants[0].model = modelId
+        t.assistants[0].model = model.model
       }
     })
     console.debug(

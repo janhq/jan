@@ -117,13 +117,13 @@ const ModelSettingContainer: React.FC = () => {
       }
 
       setSelectedModel(updatedModel as Model)
-      debounceUpdateModel(selectedModel.id, { ...updatedModel })
+      debounceUpdateModel(selectedModel.model, { ...updatedModel })
 
       const shouldStopModel =
         presetConfiguration[key]?.requireModelReload ?? true
 
       if (shouldStopModel) {
-        stopModel(selectedModel.id ?? selectedModel.model)
+        stopModel(selectedModel.model)
       }
     },
     [selectedModel, debounceUpdateModel, stopModel, setSelectedModel]

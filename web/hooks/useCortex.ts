@@ -123,9 +123,15 @@ const useCortex = () => {
   const fetchModels = useCallback(async () => {
     const models: Model[] = []
     for await (const model of cortex.models.list()) {
+      // @ts-expect-error model should not be empty
+      const modelId = model.model
+      if (!modelId || modelId.length === 0) {
+        console.debug('Model id is empty, skipping', model)
+        continue
+      }
       models.push({
         ...model,
-        model: model.id,
+        model: modelId,
         // @ts-expect-error each model must have associated files
         files: model['files'],
       })

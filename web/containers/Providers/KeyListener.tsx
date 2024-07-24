@@ -46,7 +46,7 @@ const KeyListener: React.FC = () => {
       return
     }
 
-    createThread(selectedModel.id, assistants[0])
+    createThread(selectedModel.model, assistants[0])
     setMainViewState(MainViewState.Thread)
   }, [selectedModel, createThread, assistants, setMainViewState])
 

@@ -56,7 +56,7 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
   const onModelSelected = useCallback(
     async (model: Model) => {
       const isModelAddedToCortex = downloadedModels.find(
-        (m) => m.id === model.id || m.model === model.model
+        (m) => m.model === model.model
       )
       if (!isModelAddedToCortex) {
         await createModel(model)
@@ -77,7 +77,7 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
 
   if (!activeThread) return null
 
-  const modelId = selectedModel?.id ?? selectedModel?.model ?? ''
+  const modelId = selectedModel?.model ?? ''
   const modelName = selectedModel?.name ?? modelId
 
   return (

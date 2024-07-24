@@ -131,9 +131,9 @@ const useSendMessage = () => {
       console.error('No selected model')
       return
     }
-    if (selectedModel.id !== activeThread.assistants[0].model) {
+    if (selectedModel.model !== activeThread.assistants[0].model) {
       alert(
-        `Selected model ${selectedModel.id} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
+        `Selected model ${selectedModel.model} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
       )
       return
     }
@@ -187,7 +187,7 @@ const useSendMessage = () => {
       if (selectedModel.stream === true) {
         const stream = await chatCompletionStreaming({
           messages,
-          model: selectedModel.id,
+          model: selectedModel.model,
           stream: true,
           max_tokens: selectedModel.max_tokens,
           stop: selectedModel.stop,
@@ -259,7 +259,7 @@ const useSendMessage = () => {
           const response = await chatCompletionNonStreaming(
             {
               messages,
-              model: selectedModel.id,
+              model: selectedModel.model,
               stream: false,
               max_tokens: selectedModel.max_tokens,
               stop: selectedModel.stop,
@@ -348,9 +348,9 @@ const useSendMessage = () => {
         console.error('No selected model')
         return
       }
-      if (selectedModel.id !== activeThread.assistants[0].model) {
+      if (selectedModel.model !== activeThread.assistants[0].model) {
         alert(
-          `Selected model ${selectedModel.id} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
+          `Selected model ${selectedModel.model} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
         )
         return
       }
@@ -358,10 +358,10 @@ const useSendMessage = () => {
       if (!engine) {
         toaster({
           title: 'Start model failed',
-          description: `Model ${selectedModel.id} does not have an engine`,
+          description: `Model ${selectedModel.model} does not have an engine`,
           type: 'error',
         })
-        console.error(`Model ${selectedModel.id} does not have an engine`)
+        console.error(`Model ${selectedModel.model} does not have an engine`)
         return
       }
 
@@ -448,7 +448,7 @@ const useSendMessage = () => {
         if (selectedModel.stream === true) {
           const stream = await chatCompletionStreaming({
             messages,
-            model: selectedModel.id,
+            model: selectedModel.model,
             stream: true,
             max_tokens: selectedModel.max_tokens,
             stop: selectedModel.stop,
@@ -524,7 +524,7 @@ const useSendMessage = () => {
             const response = await chatCompletionNonStreaming(
               {
                 messages,
-                model: selectedModel.id,
+                model: selectedModel.model,
                 stream: false,
                 max_tokens: selectedModel.max_tokens,
                 stop: selectedModel.stop,

@@ -38,19 +38,19 @@ const HubScreen = () => {
 
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
-  const filteredModels = downloadedModels.filter((x) => {
+  const filteredModels = downloadedModels.filter((model) => {
     if (sortSelected === 'downloaded') {
       return (
-        x.model?.toLowerCase().includes(searchValue.toLowerCase()) &&
-        downloadedModels.some((y) => y.id === x.id)
+        model.model?.toLowerCase().includes(searchValue.toLowerCase()) &&
+        downloadedModels.some((m) => m.model === model.model)
       )
     } else if (sortSelected === 'featured') {
       return (
-        x.model?.toLowerCase().includes(searchValue.toLowerCase()) &&
-        x.metadata?.tags.includes('Featured')
+        model.model?.toLowerCase().includes(searchValue.toLowerCase()) &&
+        model.metadata?.tags.includes('Featured')
       )
     } else {
-      return x.model?.toLowerCase().includes(searchValue.toLowerCase())
+      return model.model?.toLowerCase().includes(searchValue.toLowerCase())
     }
   })
 

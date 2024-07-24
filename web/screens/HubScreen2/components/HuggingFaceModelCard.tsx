@@ -6,8 +6,9 @@ import { CloudDownload } from 'lucide-react'
 
 import { toaster } from '@/containers/Toast'
 
+import useAbortDownload from '@/hooks/useAbortDownload'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
-import useCortex from '@/hooks/useCortex'
+
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
 import useHfModelFetchAndDownload from '@/hooks/useHfModelFetchAndDownload'
 import useThreads from '@/hooks/useThreads'
@@ -70,7 +71,7 @@ type DownloadContainerProps = {
 const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
 }) => {
-  const { abortDownload } = useCortex()
+  const { abortDownload } = useAbortDownload()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
   const setDownloadLocalModelModalStage = useSetAtom(localModelModalStageAtom)
@@ -87,7 +88,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   )
 
   const downloadedModel = useMemo(
-    () => downloadedModels.find((m) => m.id.startsWith(modelIdPrefix)),
+    () => downloadedModels.find((m) => m.model.startsWith(modelIdPrefix)),
     [downloadedModels, modelIdPrefix]
   )
 
@@ -109,9 +110,9 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
       })
       return
     }
-    await createThread(downloadedModel.id, {
+    await createThread(downloadedModel.model, {
       ...assistants[0],
-      model: downloadedModel.id,
+      model: downloadedModel.model,
     })
     setDownloadLocalModelModalStage('NONE', undefined)
     setMainViewState(MainViewState.Thread)

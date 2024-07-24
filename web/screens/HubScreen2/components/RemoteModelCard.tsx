@@ -19,7 +19,7 @@ import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
-const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
+const RemoteModelCard: React.FC<HfModelEntry> = ({ name, model }) => {
   const { createThread } = useThreads()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
@@ -40,7 +40,9 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, engine, model }) => {
         ? false
         : engineData.find((e) => e.name === model.engine)?.status === 'ready'
 
-    const isModelDownloaded = downloadedModels.find((m) => m.id === model.model)
+    const isModelDownloaded = downloadedModels.find(
+      (m) => m.model === model.model
+    )
 
     if (isApiKeyAdded && isModelDownloaded) {
       if (!assistants || assistants.length === 0) {

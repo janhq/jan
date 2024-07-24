@@ -45,7 +45,7 @@ const ThreadLeftPanel: React.FC = () => {
       if (isCreatingThread.current) return
       isCreatingThread.current = true
       // user have models but does not have any thread. Let's create one
-      await createThread(downloadedModels[0].id, assistants[0])
+      await createThread(downloadedModels[0].model, assistants[0])
       isCreatingThread.current = false
     }
     createThreadIfEmpty()
@@ -70,7 +70,7 @@ const ThreadLeftPanel: React.FC = () => {
       return
     }
     if (!selectedModel) return
-    createThread(selectedModel.id ?? selectedModel.model, assistants[0])
+    createThread(selectedModel.model, assistants[0])
   }, [createThread, selectedModel, assistants])
 
   return (

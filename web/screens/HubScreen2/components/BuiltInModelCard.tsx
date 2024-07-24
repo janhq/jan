@@ -6,6 +6,7 @@ import { CloudDownload } from 'lucide-react'
 
 import { toaster } from '@/containers/Toast'
 
+import useAbortDownload from '@/hooks/useAbortDownload'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useCortex from '@/hooks/useCortex'
 import {
@@ -72,7 +73,8 @@ type DownloadContainerProps = {
 const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
 }) => {
-  const { downloadModel, abortDownload } = useCortex()
+  const { downloadModel } = useCortex()
+  const { abortDownload } = useAbortDownload()
   const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
@@ -83,12 +85,11 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   const { data: assistants } = useAssistantQuery()
 
   const modelId = useMemo(() => `${modelHandle.split('/')[1]}`, [modelHandle])
-  const downloadState = allDownloadState.find((s) => s.id == modelId)
+  const downloadState = allDownloadState.find(
+    (downloadState) => downloadState.id == modelId
+  )
   const downloadedModel = useMemo(
-    () =>
-      downloadedModels.find((m) => {
-        return m.id.split(':')[0] === modelId
-      }),
+    () => downloadedModels.find((m) => m.model.split(':')[0] === modelId),
     [downloadedModels, modelId]
   )
 
@@ -120,10 +121,6 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     assistants,
   ])
 
-  const onAbortDownloadClick = useCallback(() => {
-    abortDownload(modelId)
-  }, [abortDownload, modelId])
-
   return (
     <div className="flex items-center justify-center">
       {downloadedModel ? (
@@ -144,7 +141,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
               className="inline-block"
               onClick={(e) => {
                 e.stopPropagation()
-                onAbortDownloadClick()
+                abortDownload(modelId)
               }}
             >
               Cancel
