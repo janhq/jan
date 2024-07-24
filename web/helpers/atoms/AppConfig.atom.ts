@@ -31,11 +31,19 @@ export const didShowMigrationWarningAtom = atomWithStorage(
 )
 export const threadsMessagesMigrationSuccessAtom = atomWithStorage(
   THREADS_MESSAGES_MIGRATION_SUCCESS,
-  false
+  false,
+  undefined,
+  {
+    getOnInit: true,
+  }
 )
 export const modelsMigrationSuccessAtom = atomWithStorage(
   MODELS_MIGRATION_SUCCESS,
-  false
+  false,
+  undefined,
+  {
+    getOnInit: true,
+  }
 )
 export const skipMigrationAtom = atomWithStorage(
   SKIP_MIGRATION,
