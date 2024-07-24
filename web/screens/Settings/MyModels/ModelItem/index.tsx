@@ -16,8 +16,6 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import useModels from '@/hooks/useModels'
 
-import { toGibibytes } from '@/utils/converter'
-
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
@@ -93,7 +91,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
         {isLocalModel && (
           <div className="flex gap-x-4">
             <Badge theme="secondary" className="sm:mr-16">
-              v{model.version || '-'}
+              {model.version != null ? `v${model.version}` : '-'}
             </Badge>
 
             <div className="relative flex items-center gap-x-4">

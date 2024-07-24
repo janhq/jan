@@ -8,11 +8,16 @@ import { useAtomValue } from 'jotai'
 import { ChevronDownIcon, XIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import useCortex from '@/hooks/useCortex'
+
 import useSelectModel from '@/hooks/useSelectModel'
 
 import ModelSection from './ModelSection'
 
-import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
+import {
+  downloadedModelsAtom,
+  getSelectedModelAtom,
+} from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
@@ -20,6 +25,7 @@ type Props = {
 }
 
 const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchFilter, setSearchFilter] = useState('all')
   const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
@@ -29,6 +35,7 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
   const activeThread = useAtomValue(activeThreadAtom)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const selectedModel = useAtomValue(getSelectedModelAtom)
+  const { createModel } = useCortex()
 
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
@@ -48,10 +55,17 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
 
   const onModelSelected = useCallback(
     async (model: Model) => {
+      const isModelAddedToCortex = downloadedModels.find(
+        (m) => m.id === model.id || m.model === model.model
+      )
+      if (!isModelAddedToCortex) {
+        await createModel(model)
+      }
+
       selectModel(model)
       setOpen(false)
     },
-    [selectModel]
+    [selectModel, createModel, downloadedModels]
   )
 
   const engines =
@@ -63,6 +77,9 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
 
   if (!activeThread) return null
 
+  const modelId = selectedModel?.id ?? selectedModel?.model ?? ''
+  const modelName = selectedModel?.name ?? modelId
+
   return (
     <div className="relative">
       <div ref={setToggle}>
@@ -72,11 +89,11 @@ const ModelDropdown: React.FC<Props> = ({ chatInputMode }) => {
             className="cursor-pointer"
             onClick={() => setOpen(!open)}
           >
-            <span className="line-clamp-1 ">{selectedModel?.id}</span>
+            <span className="line-clamp-1 ">{modelName}</span>
           </Badge>
         ) : (
           <Input
-            value={selectedModel?.id || ''}
+            value={modelName}
             className="cursor-pointer"
             readOnly
             suffixIcon={

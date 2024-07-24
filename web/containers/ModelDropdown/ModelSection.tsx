@@ -1,13 +1,14 @@
+import { useEffect, useState } from 'react'
+
 import Image from 'next/image'
 
 import { LlmEngine, Model } from '@janhq/core'
-import { useAtomValue } from 'jotai'
+
+import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 
 import { getTitleByCategory } from '@/utils/model-engine'
 
 import ModelLabel from '../ModelLabel'
-
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   engine: LlmEngine
@@ -20,15 +21,15 @@ const ModelSection: React.FC<Props> = ({
   searchText,
   onModelSelected,
 }) => {
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const modelByEngine = downloadedModels
-    .filter((x) => x.engine === engine)
-    .filter((x) => {
-      if (searchText.trim() === '') return true
-      return x.id.includes(searchText)
-    })
+  const [models, setModels] = useState<Model[]>([])
+  const { getModelsByEngine } = useGetModelsByEngine()
 
-  if (modelByEngine.length === 0) return null
+  useEffect(() => {
+    const matchedModels = getModelsByEngine(engine, searchText)
+    setModels(matchedModels)
+  }, [getModelsByEngine, engine, searchText])
+
+  if (models.length === 0) return null
   const engineName = getTitleByCategory(engine)
 
   return (
@@ -37,7 +38,7 @@ const ModelSection: React.FC<Props> = ({
         {engineName}
       </h6>
       <ul className="pb-2">
-        {modelByEngine.map((model) => (
+        {models.map((model) => (
           <li
             key={model.id}
             className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"

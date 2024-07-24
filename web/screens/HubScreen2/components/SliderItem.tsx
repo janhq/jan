@@ -17,7 +17,7 @@ import {
 import { QuickStartModel } from '@/hooks/useModelHub'
 import useThreads from '@/hooks/useThreads'
 
-import { formatDownloadPercentage } from '@/utils/converter'
+import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { downloadProgress } from '@/utils/download'
 
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -55,7 +55,10 @@ const SliderItem: React.FC<Props> = ({ model }) => {
           <span className="text-sm font-medium leading-4">{model.author}</span>
         </div>
       </div>
-      <div className="ml-auto mt-4">
+      <div className="mt-4 flex items-center justify-between">
+        <span className="text-xs font-medium leading-3">
+          {toGibibytes(model.size)}
+        </span>
         <DownloadContainer modelHandle={repoId} fileName={fileName} />
       </div>
     </div>

@@ -70,7 +70,7 @@ const ThreadLeftPanel: React.FC = () => {
       return
     }
     if (!selectedModel) return
-    createThread(selectedModel.id, assistants[0])
+    createThread(selectedModel.id ?? selectedModel.model, assistants[0])
   }, [createThread, selectedModel, assistants])
 
   return (
