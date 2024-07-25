@@ -260,30 +260,63 @@ const useCortex = () => {
   )
 
   const updateModel = useCallback(
-    async (modelId: string, options: Record<string, unknown>) =>
-      cortex.models.update(modelId, options),
-    [cortex.models]
+    async (modelId: string, options: Record<string, unknown>) => {
+      try {
+        return await fetch(`${host}/models/${modelId}`, {
+          method: 'PATCH',
+          headers: {
+            'accept': 'application/json',
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(options),
+        })
+      } catch (err) {
+        console.error(err)
+      }
+    },
+    [host]
   )
 
+  // TODO: put this into cortexso-node
   const downloadModel = useCallback(
     async (modelId: string, fileName?: string, persistedModelId?: string) => {
-      // TODO: clean this up in cortex-node. not sure why
-      /**
-       * query: {
+      try {
+        return await fetch(`${host}/models/pull/${modelId}`, {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
             fileName: fileName,
-          }, not work
-       */
-      if (!fileName) return cortex.models.download(modelId)
-      return cortex.models.download(
-        `${modelId}?fileName=${fileName}&persistedModelId=${persistedModelId}`
-      )
+            persistedModelId: persistedModelId,
+          }),
+        })
+      } catch (err) {
+        console.error(err)
+      }
     },
-    [cortex.models]
+    [host]
   )
 
   const abortDownload = useCallback(
-    async (downloadId: string) => cortex.models.abortDownload(downloadId),
-    [cortex.models]
+    async (downloadId: string) => {
+      try {
+        return await fetch(`${host}/models/pull/${downloadId}`, {
+          method: 'DELETE',
+          headers: {
+            'accept': 'application/json',
+            // eslint-disable-next-line @typescript-eslint/naming-convention
+            'Content-Type': 'application/json',
+          },
+        })
+      } catch (err) {
+        console.error(err)
+      }
+    },
+    [host]
   )
 
   const createAssistant = useCallback(

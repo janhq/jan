@@ -173,7 +173,7 @@ export const getEngineAndBranches = async (
       })
       continue
     }
-    if (branch.includes('tensorrtllm')) {
+    if (branch.includes('tensorrt-llm')) {
       const fileSize = await getFileSizeByRepoAndBranch(name, branch)
       engineToBranches.tensorrtllm.push({
         name: branch,
