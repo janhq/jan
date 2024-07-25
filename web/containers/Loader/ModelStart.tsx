@@ -33,7 +33,7 @@ export default function ModelStart() {
           style={{ width: `${loader}%` }}
           data-testid="model-loader"
         />
-        <span className="relative z-10">Starting Model</span>
+        <span className="relative z-10">Starting model...</span>
       </div>
     </div>
   )

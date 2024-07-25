@@ -16,12 +16,14 @@ import { toaster } from '../Toast'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
+import { isLoadingModelAtom } from '@/helpers/atoms/Thread.atom'
 
 function ModelEventListener() {
   const setActiveModels = useSetAtom(activeModelsAtom)
   const host = useAtomValue(hostAtom)
   const abortController = useRef<AbortController | null>(null)
   const removeDownloadSuccessItem = useSetAtom(removeDownloadSuccessItemAtom)
+  const setIsLoadingModel = useSetAtom(isLoadingModelAtom)
 
   const { getModels } = useModels()
 
@@ -29,7 +31,12 @@ function ModelEventListener() {
     (modelEvent: ModelEvent) => {
       console.log('Model event:', modelEvent.event)
       switch (modelEvent.event) {
+        case 'starting':
+          setIsLoadingModel(true)
+          break
+
         case 'started':
+          setIsLoadingModel(false)
           toaster({
             title: 'Success!',
             description: `Model ${modelEvent.model} has been started.`,
@@ -38,6 +45,7 @@ function ModelEventListener() {
           break
 
         case 'starting-failed':
+          setIsLoadingModel(false)
           toaster({
             title: 'Failed!',
             description: `Model ${modelEvent.model} failed to start.`,
@@ -46,6 +54,7 @@ function ModelEventListener() {
           break
 
         case 'stopped':
+          setIsLoadingModel(false)
           toaster({
             title: 'Success!',
             description: `Model ${modelEvent.model} has been stopped.`,
@@ -63,6 +72,7 @@ function ModelEventListener() {
           break
 
         case 'stopping-failed':
+          setIsLoadingModel(false)
           toaster({
             title: 'Failed!',
             description: `Model ${modelEvent.model} failed to stop.`,
@@ -74,7 +84,7 @@ function ModelEventListener() {
           break
       }
     },
-    [getModels, removeDownloadSuccessItem]
+    [getModels, removeDownloadSuccessItem, setIsLoadingModel]
   )
 
   const subscribeModelEvent = useCallback(async () => {

@@ -62,6 +62,7 @@ export const setActiveThreadIdAtom = atom(
 )
 
 export const waitingToSendMessage = atom<boolean | undefined>(undefined)
+export const isLoadingModelAtom = atom<boolean | undefined>(undefined)
 
 export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
 
