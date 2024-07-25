@@ -24,11 +24,10 @@ import ChatInput from './ChatInput'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 
-import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
-
 import {
   isGeneratingResponseAtom,
   activeThreadAtom,
+  isLoadingModelAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const renderError = (code: string) => {
@@ -53,7 +52,7 @@ const ThreadCenterPanel: React.FC = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-
+  const isLoadingModel = useAtomValue(isLoadingModelAtom)
   const isVisionModel = false // activeThread?.assistants[0].model?.settings.vision_model
 
   const acceptedFormat: Accept = isVisionModel
@@ -138,7 +137,6 @@ const ThreadCenterPanel: React.FC = () => {
   const [dragOver, setDragOver] = useState(false)
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const activeModels = useAtomValue(activeModelsAtom)
 
   return (
     <CenterPanelContainer>
@@ -185,18 +183,10 @@ const ThreadCenterPanel: React.FC = () => {
               <ChatBody />
             </div>
           )}
-          {/* {!engineParamsUpdate && <ModelStart />} */}
-          {/* {queuedMessage && (
-            <div className="mb-2 text-center">
-              <span className="text-[hsla(var(--text-secondary)]">
-                Message will be sent once the model has started
-              </span>
-            </div>
-          )} */}
+
           {isGeneratingResponse && <GenerateResponse />}
-          {activeModels.some(
-            (model) => model.status === 'starting' && <ModelStart />
-          )}
+          {isLoadingModel && <ModelStart />}
+
           {activeThread && (
             <ChatInput
               sendMessage={sendMessage}
