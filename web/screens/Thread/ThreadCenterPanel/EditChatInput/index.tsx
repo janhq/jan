@@ -8,7 +8,7 @@ import { twMerge } from 'tailwind-merge'
 
 import { editPromptAtom } from '@/containers/Providers/Jotai'
 
-import useCortex from '@/hooks/useCortex'
+import useMessageUpdateMutation from '@/hooks/useMessageUpdateMutation'
 
 import {
   editMessageAtom,
@@ -27,7 +27,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
   const updateMessageState = useSetAtom(updateMessageAtom)
-  const { updateMessage: updateCortexMessage } = useCortex()
+  const updateCortexMessage = useMessageUpdateMutation()
 
   const onPromptChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -59,7 +59,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
     }
   }, [setEditPrompt, message])
 
-  const updateMessage = useCallback(async () => {
+  const updateMessage = useCallback(() => {
     const updateMessage: TextContentBlock = {
       text: {
         annotations: [],
@@ -67,17 +67,20 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
       },
       type: 'text',
     }
-    updateCortexMessage(message.thread_id, message.id, {
-      content: [updateMessage],
-    }).then(() => {
-      updateMessageState(
-        message.id,
-        message.thread_id,
-        [updateMessage],
-        message.status
-      )
-      setEditMessage('')
+    updateCortexMessage.mutate({
+      threadId: message.thread_id,
+      messageId: message.id,
+      data: {
+        content: [updateMessage],
+      },
     })
+    updateMessageState(
+      message.id,
+      message.thread_id,
+      [updateMessage],
+      message.status
+    )
+    setEditMessage('')
   }, [
     updateMessageState,
     updateCortexMessage,

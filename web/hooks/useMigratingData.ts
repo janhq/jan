@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback } from 'react'
 
-import { MessageCreateParams } from '@janhq/core'
 import { useAtom } from 'jotai'
 
 import useAssistantQuery from './useAssistantQuery'
 
 import useCortex from './useCortex'
+import useMessageCreateMutation from './useMessageCreateMutation'
 import useThreads from './useThreads'
 
 import {
@@ -21,7 +21,8 @@ const useMigratingData = () => {
     modelsMigrationSuccessAtom
   )
   const { createThread } = useThreads()
-  const { updateThread, createMessage } = useCortex()
+  const { updateThread } = useCortex()
+  const createMessage = useMessageCreateMutation()
   const { data: assistants } = useAssistantQuery()
 
   const getJanThreadsAndMessages = useCallback(async (): Promise<{
@@ -92,13 +93,15 @@ const useMigratingData = () => {
           try {
             const messageContent: string =
               janMessage.content[0]?.text.value ?? ''
-            const createMessageParam: MessageCreateParams = {
-              content: messageContent,
-              role: janMessage.role,
-            }
+
             // can speed up here with Promise.allSettled
-            await createMessage(cortexThread.id, createMessageParam)
-            console.log('createMesage', cortexThread.id, createMessageParam)
+            await createMessage.mutateAsync({
+              threadId: cortexThread.id,
+              createMessageParams: {
+                content: messageContent,
+                role: janMessage.role,
+              },
+            })
           } catch (err) {
             console.error(err)
           }

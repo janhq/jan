@@ -19,6 +19,9 @@ import { toaster } from '@/containers/Toast'
 import { useActiveModel } from './useActiveModel'
 import useCortex from './useCortex'
 
+import useMessageCreateMutation from './useMessageCreateMutation'
+import useMessageUpdateMutation from './useMessageUpdateMutation'
+
 import {
   addNewMessageAtom,
   getCurrentChatMessagesAtom,
@@ -59,11 +62,11 @@ import {
 // }
 
 const useSendMessage = () => {
+  const createMessage = useMessageCreateMutation()
+  const updateMessage = useMessageUpdateMutation()
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const {
-    createMessage,
     chatCompletionStreaming,
-    updateMessage,
     chatCompletionNonStreaming,
     updateThread,
     getEngineStatus,
@@ -198,9 +201,12 @@ const useSendMessage = () => {
 
         abortControllerRef.current = stream.controller
 
-        const assistantMessage = await createMessage(activeThread.id, {
-          role: 'assistant',
-          content: '',
+        const assistantMessage = await createMessage.mutateAsync({
+          threadId: activeThread.id,
+          createMessageParams: {
+            role: 'assistant',
+            content: '',
+          },
         })
 
         const responseMessage: Message = {
@@ -250,8 +256,13 @@ const useSendMessage = () => {
           responseMessage.content,
           responseMessage.status
         )
-        updateMessage(activeThread.id, responseMessage.id, {
-          content: responseMessage.content,
+
+        updateMessage.mutateAsync({
+          threadId: activeThread.id,
+          messageId: responseMessage.id,
+          data: {
+            content: responseMessage.content,
+          },
         })
       } else {
         try {
@@ -273,9 +284,12 @@ const useSendMessage = () => {
           )
 
           assistantResponseMessage = response.choices[0].message.content ?? ''
-          const assistantMessage = await createMessage(activeThread.id, {
-            role: 'assistant',
-            content: assistantResponseMessage,
+          const assistantMessage = await createMessage.mutateAsync({
+            threadId: activeThread.id,
+            createMessageParams: {
+              role: 'assistant',
+              content: assistantResponseMessage,
+            },
           })
 
           const responseMessage: Message = {
@@ -302,10 +316,13 @@ const useSendMessage = () => {
             object: 'thread.message',
             run_id: null,
           }
-          updateMessage(activeThread.id, responseMessage.id, {
-            content: responseMessage.content,
+          updateMessage.mutate({
+            threadId: activeThread.id,
+            messageId: responseMessage.id,
+            data: {
+              content: responseMessage.content,
+            },
           })
-
           addNewMessage(responseMessage)
         } catch (err) {
           console.error(err)
@@ -391,9 +408,12 @@ const useSendMessage = () => {
       setCurrentPrompt('')
       setEditPrompt('')
 
-      const userMessage = await createMessage(activeThread.id, {
-        role: 'user',
-        content: message,
+      const userMessage = await createMessage.mutateAsync({
+        threadId: activeThread.id,
+        createMessageParams: {
+          role: 'user',
+          content: message,
+        },
       })
       // Push to states
       addNewMessage(userMessage)
@@ -459,9 +479,12 @@ const useSendMessage = () => {
 
           abortControllerRef.current = stream.controller
 
-          const assistantMessage = await createMessage(activeThread.id, {
-            role: 'assistant',
-            content: '',
+          const assistantMessage = await createMessage.mutateAsync({
+            threadId: activeThread.id,
+            createMessageParams: {
+              role: 'assistant',
+              content: '',
+            },
           })
 
           const responseMessage: Message = {
@@ -515,8 +538,12 @@ const useSendMessage = () => {
             responseMessage.content,
             responseMessage.status
           )
-          updateMessage(activeThread.id, responseMessage.id, {
-            content: responseMessage.content,
+          updateMessage.mutateAsync({
+            threadId: activeThread.id,
+            messageId: responseMessage.id,
+            data: {
+              content: responseMessage.content,
+            },
           })
         } else {
           try {
@@ -538,9 +565,12 @@ const useSendMessage = () => {
             )
 
             assistantResponseMessage = response.choices[0].message.content ?? ''
-            const assistantMessage = await createMessage(activeThread.id, {
-              role: 'assistant',
-              content: assistantResponseMessage,
+            const assistantMessage = await createMessage.mutateAsync({
+              threadId: activeThread.id,
+              createMessageParams: {
+                role: 'assistant',
+                content: assistantResponseMessage,
+              },
             })
 
             const responseMessage: Message = {
@@ -567,8 +597,12 @@ const useSendMessage = () => {
               object: 'thread.message',
               run_id: null,
             }
-            updateMessage(activeThread.id, responseMessage.id, {
-              content: responseMessage.content,
+            updateMessage.mutateAsync({
+              threadId: activeThread.id,
+              messageId: responseMessage.id,
+              data: {
+                content: responseMessage.content,
+              },
             })
 
             if (responseMessage) {
