@@ -11,18 +11,16 @@ import KeyListener from './KeyListener'
 import ModelEventListener from './ModelEventListener'
 import ModelImportListener from './ModelImportListener'
 
-const EventListenerWrapper: React.FC = () => {
-  return (
-    <Fragment>
-      <AppUpdateListener />
-      <KeyListener />
-      <DownloadEventListener />
-      <ModelEventListener />
-      <ClipboardListener />
-      <DeepLinkListener />
-      <ModelImportListener />
-    </Fragment>
-  )
-}
+const EventListenerWrapper: React.FC = () => (
+  <Fragment>
+    <AppUpdateListener />
+    <KeyListener />
+    <DownloadEventListener />
+    <ModelEventListener />
+    <ClipboardListener />
+    <DeepLinkListener />
+    <ModelImportListener />
+  </Fragment>
+)
 
 export default EventListenerWrapper
