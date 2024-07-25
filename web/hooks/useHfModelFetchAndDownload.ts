@@ -10,6 +10,7 @@ import { fetchHuggingFaceRepoData } from '@/utils/huggingface'
 import useCortex from './useCortex'
 import { addDownloadModelStateAtom } from './useDownloadState'
 import { fetchHuggingFaceRepoDataQueryKey } from './useHfRepoDataQuery'
+import { toaster } from '@/containers/Toast'
 
 /**
  * Fetches the data for a Hugging Face model and downloads it.
@@ -46,19 +47,43 @@ const useHfModelFetchAndDownload = () => {
     async (modelHandle: string) => {
       const repoData = await fetchData(modelHandle)
       if (!repoData) {
-        alert(`Could not fetch data for repo ${modelHandle}`)
         console.error(`Could not fetch data for repo ${modelHandle}`)
+        toaster({
+          title: `Failed to get data`,
+          description: `Could not get data for repo ${modelHandle}`,
+          type: 'error',
+        })
         return
       }
 
-      const recommendedModel = repoData.siblings.find(
-        (sibling) => sibling.quantization === 'Q4_K_S'
+      const recommendedQuant = 'Q4_K_S'
+      let recommendedModel = repoData.siblings.find(
+        (sibling) =>
+          sibling.quantization?.toLowerCase() === recommendedQuant.toLowerCase()
       )
 
       if (!recommendedModel) {
-        alert('Could not find model with quantization Q4_K_S')
+        console.debug('Q4_K_S model not found. Try with smallest model')
+        // get filesize min from repoData.siblings
+
+        repoData.siblings
+          .filter((sibling) => {
+            sibling.fileSize != null && sibling.quantization != null
+          })
+          .sort((a, b) => a.fileSize! - b.fileSize!)
+        recommendedModel = repoData.siblings[0]
+        console.debug('Min size recommended model:', recommendedModel)
+      }
+
+      if (!recommendedModel) {
+        toaster({
+          title: `Failed to get recommended model`,
+          description: `Could not get recommended model for repo ${modelHandle}. Please open the details page and select model manually!`,
+          type: 'error',
+        })
         return
       }
+
       const persistModelId = modelHandle
         .replaceAll('/', '_')
         .concat('_')
