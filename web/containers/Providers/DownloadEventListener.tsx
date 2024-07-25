@@ -6,6 +6,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
 
+import { waitingForCortexAtom } from '@/helpers/atoms/App.atom'
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 
 const DownloadEventListener: React.FC = () => {
@@ -13,6 +14,7 @@ const DownloadEventListener: React.FC = () => {
   const isRegistered = useRef(false)
   const abortController = useRef(new AbortController())
   const setDownloadStateList = useSetAtom(downloadStateListAtom)
+  const setWaitingForCortex = useSetAtom(waitingForCortexAtom)
 
   const subscribeDownloadEvent = useCallback(async () => {
     if (isRegistered.current) return
@@ -26,11 +28,19 @@ const DownloadEventListener: React.FC = () => {
           console.error(err)
         }
       },
+      onerror(err) {
+        if (err.message === 'Failed to fetch') {
+          setWaitingForCortex(true)
+        }
+      },
+      async onopen() {
+        setWaitingForCortex(false)
+      },
       signal: abortController.current.signal,
     })
     console.log('Download event subscribed')
     isRegistered.current = true
-  }, [host, setDownloadStateList])
+  }, [host, setDownloadStateList, setWaitingForCortex])
 
   const unsubscribeDownloadEvent = useCallback(() => {
     if (!isRegistered.current) return

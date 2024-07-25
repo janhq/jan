@@ -31,6 +31,8 @@ import LoadingModal from '../LoadingModal'
 
 import MainViewContainer from '../MainViewContainer'
 
+import WaitingForCortexModal from '../WaitingCortexModal'
+
 import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
 
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -72,6 +74,7 @@ const BaseLayout = () => {
         >
           <MainViewContainer />
         </m.div>
+        <WaitingForCortexModal />
         <LoadingModal />
         {importModelStage === 'SELECTING_MODEL' && <SelectingModelModal />}
         {importModelStage === 'MODEL_SELECTED' && <ImportModelOptionModal />}
