@@ -150,6 +150,7 @@ const ModelSettingContainer: React.FC = () => {
           <AccordionItem title="Model Parameters" value="Model Parameters">
             <PromptTemplateSetting
               componentData={modelSettings.promptTemplateSettings}
+              onValueChanged={onValueChanged}
             />
           </AccordionItem>
         )}

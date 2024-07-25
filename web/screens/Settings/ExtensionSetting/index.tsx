@@ -20,7 +20,7 @@ const ExtensionSetting = () => {
   useEffect(() => {
     const getExtensionSettings = async () => {
       if (!selectedExtensionName) return
-      const allSettings: SettingComponentProps[] = []
+      // const allSettings: SettingComponentProps[] = []
       // const baseExtension = extensionManager.getByName(selectedExtensionName)
       // if (!baseExtension) return
 
@@ -45,7 +45,7 @@ const ExtensionSetting = () => {
       if (setting.key !== key) return setting
       setting.controllerProps.value = value
 
-      const extensionName = setting.extensionName
+      // const extensionName = setting.extensionName
       // if (extensionName) {
       //   extensionManager.getByName(extensionName)?.updateSettings([setting])
       // }

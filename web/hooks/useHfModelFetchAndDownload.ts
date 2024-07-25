@@ -5,12 +5,13 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { useSetAtom } from 'jotai'
 
+import { toaster } from '@/containers/Toast'
+
 import { fetchHuggingFaceRepoData } from '@/utils/huggingface'
 
 import useCortex from './useCortex'
 import { addDownloadModelStateAtom } from './useDownloadState'
 import { fetchHuggingFaceRepoDataQueryKey } from './useHfRepoDataQuery'
-import { toaster } from '@/containers/Toast'
 
 /**
  * Fetches the data for a Hugging Face model and downloads it.

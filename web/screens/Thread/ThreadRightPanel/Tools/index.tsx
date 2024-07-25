@@ -26,6 +26,7 @@ const Tools = () => {
 
   const onRetrievalSwitchUpdate = useCallback(
     (enabled: boolean) => {
+      console.log('onRetrievalSwitchUpdate enabled', enabled)
       if (!activeThread) return
       // updateThreadMetadata({
       //   ...activeThread,
@@ -49,31 +50,31 @@ const Tools = () => {
     [activeThread]
   )
 
-  const onTimeWeightedRetrieverSwitchUpdate = useCallback(
-    (enabled: boolean) => {
-      if (!activeThread) return
-      // updateThreadMetadata({
-      //   ...activeThread,
-      //   assistants: [
-      //     {
-      //       ...activeThread.assistants[0],
-      //       tools: [
-      //         {
-      //           type: 'retrieval',
-      //           enabled: true,
-      //           useTimeWeightedRetriever: enabled,
-      //           settings:
-      //             (activeThread.assistants[0].tools &&
-      //               activeThread.assistants[0].tools[0]?.settings) ??
-      //             {},
-      //         },
-      //       ],
-      //     },
-      //   ],
-      // })
-    },
-    [activeThread]
-  )
+  // const onTimeWeightedRetrieverSwitchUpdate = useCallback(
+  //   (enabled: boolean) => {
+  //     if (!activeThread) return
+  //     updateThreadMetadata({
+  //       ...activeThread,
+  //       assistants: [
+  //         {
+  //           ...activeThread.assistants[0],
+  //           tools: [
+  //             {
+  //               type: 'retrieval',
+  //               enabled: true,
+  //               useTimeWeightedRetriever: enabled,
+  //               settings:
+  //                 (activeThread.assistants[0].tools &&
+  //                   activeThread.assistants[0].tools[0]?.settings) ??
+  //                 {},
+  //             },
+  //           ],
+  //         },
+  //       ],
+  //     })
+  //   },
+  //   [activeThread]
+  // )
 
   if (!experimentalFeature) return null
 

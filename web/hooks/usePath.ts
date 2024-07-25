@@ -1,14 +1,13 @@
 import { useAtomValue } from 'jotai'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
-
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const usePath = () => {
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
+  // const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
   const onRevealInFinder = async (type: string) => {
+    console.log('onRevealInFinder', type)
     // // TODO: this logic should be refactored.
     // if (type !== 'Model' && !activeThread) return
     // let filePath = undefined
@@ -39,6 +38,7 @@ export const usePath = () => {
   }
 
   const onViewJson = async (type: string) => {
+    console.log('onViewJson', type)
     // // TODO: this logic should be refactored.
     // if (type !== 'Model' && !activeThread) return
     // let filePath = undefined
@@ -71,7 +71,7 @@ export const usePath = () => {
 
   const onViewFile = async (id: string) => {
     if (!activeThread) return
-
+    console.log('onViewFile', id)
     // let filePath = undefined
 
     // id = await baseName(id)

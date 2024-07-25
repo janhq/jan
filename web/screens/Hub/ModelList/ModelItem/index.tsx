@@ -14,6 +14,8 @@ type Props = {
 const ModelItem: React.FC<Props> = ({ model }) => {
   const [open, setOpen] = useState('')
 
+  console.log('ModelItem', model, setOpen)
+
   return (
     <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-[hsla(var(--app-border))]">
       {open === model.model && (

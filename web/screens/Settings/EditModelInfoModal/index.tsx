@@ -38,7 +38,7 @@ const EditModelInfoModal = () => {
   const updateImportingModel = useSetAtom(updateImportingModelAtom)
   const { updateModelInfo } = useImportModel()
   const [modelPath, setModelPath] = useState<string>('')
-
+  console.log('EditModelInfoModal', setModelPath)
   const editingModel = importingModels.find(
     (model) => model.importId === editingModelId
   )
@@ -91,7 +91,7 @@ const EditModelInfoModal = () => {
 
   const onShowInFinderClick = useCallback(() => {
     // openFileExplorer(modelPath)
-  }, [modelPath])
+  }, [])
 
   if (!editingModel) {
     setImportModelStage('IMPORTING_MODEL')

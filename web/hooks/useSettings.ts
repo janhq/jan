@@ -47,6 +47,7 @@ export const useSettings = () => {
     gpusInUse?: string[] | undefined
     vulkan?: boolean | undefined
   }) => {
+    console.log('saveSettings', runMode, notify, gpusInUse, vulkan)
     // const settingsFile = await joinPath(['file://settings', 'settings.json'])
     // const settings = await readSettings()
     // if (runMode != null) settings.run_mode = runMode

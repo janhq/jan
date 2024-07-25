@@ -7,6 +7,7 @@ type Props = {
 }
 
 const SetupRemoteModel = ({ engine }: Props) => {
+  console.log('SetupRemoteModel', engine)
   // const setSelectedSetting = useSetAtom(selectedSettingAtom)
   // const setMainViewState = useSetAtom(mainViewStateAtom)
 

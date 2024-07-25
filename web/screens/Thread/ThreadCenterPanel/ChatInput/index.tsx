@@ -13,10 +13,7 @@ import {
 import { twMerge } from 'tailwind-merge'
 
 import ModelDropdown from '@/containers/ModelDropdown'
-import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
-
-import FileUploadPreview from '../FileUploadPreview'
-import ImageUploadPreview from '../ImageUploadPreview'
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -44,7 +41,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
+  // const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
@@ -113,24 +110,24 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   //   setFileUpload([{ file: file, type: 'image' }])
   // }
 
-  const renderPreview = (fileUpload: any) => {
-    if (fileUpload.length > 0) {
-      if (fileUpload[0].type === 'image') {
-        return <ImageUploadPreview file={fileUpload[0].file} />
-      } else {
-        return <FileUploadPreview />
-      }
-    }
-  }
+  // const renderPreview = (fileUpload: any) => {
+  //   if (fileUpload.length > 0) {
+  //     if (fileUpload[0].type === 'image') {
+  //       return <ImageUploadPreview file={fileUpload[0].file} />
+  //     } else {
+  //       return <FileUploadPreview />
+  //     }
+  //   }
+  // }
 
   return (
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
-        {renderPreview(fileUpload)}
+        {/* {renderPreview(fileUpload)} */}
         <TextArea
           className={twMerge(
             'relative max-h-[400px] resize-none  pr-20',
-            fileUpload.length && 'rounded-t-none',
+            // fileUpload.length && 'rounded-t-none',
             activeSetting && 'pb-14 pr-16'
           )}
           spellCheck={spellCheck}

@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // import { CoreRoutes } from '@janhq/core'
 
-import { safeJsonParse } from '@/utils/json'
-
 // Function to open an external URL in a new browser window
 export function openExternalUrl(url: string) {
   window?.open(url, '_blank')

@@ -1,14 +1,13 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { SelectFileOption } from '@janhq/core'
 import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
 
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
-import useImportModel, {
+import {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
@@ -17,7 +16,7 @@ const SelectingModelModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
-  const { sanitizeFilePaths } = useImportModel()
+  // const { sanitizeFilePaths } = useImportModel()
 
   const onSelectFileClick = useCallback(async () => {
     // const platform = (await systemInformation()).osInfo?.platform
@@ -34,7 +33,7 @@ const SelectingModelModal = () => {
     // const filePaths = await window.core?.api?.selectFiles(options)
     // if (!filePaths || filePaths.length === 0) return
     // sanitizeFilePaths(filePaths)
-  }, [sanitizeFilePaths, setImportModelStage])
+  }, [])
 
   const { isDragActive, getRootProps } = useDropzone({
     noClick: true,

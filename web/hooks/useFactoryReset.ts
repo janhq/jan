@@ -1,11 +1,6 @@
 import { useCallback } from 'react'
 
-import { AppConfiguration } from '@janhq/core'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
-
-import useModels from './useModels'
-
-import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
+import { atom, useSetAtom } from 'jotai'
 
 export enum FactoryResetState {
   Idle = 'idle',
@@ -19,13 +14,11 @@ export const factoryResetStateAtom = atom(FactoryResetState.Idle)
 
 const useFactoryReset = () => {
   // const defaultJanDataFolder = useAtomValue(defaultJanDataFolderAtom)
-  const activeModels = useAtomValue(activeModelsAtom)
-
-  const { stopModel } = useModels()
   const setFactoryResetState = useSetAtom(factoryResetStateAtom)
 
   const resetAll = useCallback(
     async (keepCurrentFolder?: boolean) => {
+      console.log('resetAll', keepCurrentFolder)
       setFactoryResetState(FactoryResetState.Starting)
       // read the place of jan data folder
       // const appConfiguration: AppConfiguration | undefined =
@@ -63,7 +56,7 @@ const useFactoryReset = () => {
 
       // await window.core?.api?.relaunch()
     },
-    [activeModels, stopModel, setFactoryResetState]
+    [setFactoryResetState]
   )
 
   return {

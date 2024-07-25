@@ -4,22 +4,11 @@ import { useEffect, useState, useCallback, ChangeEvent } from 'react'
 
 import { AppConfiguration } from '@janhq/core'
 
-import {
-  ScrollArea,
-  Switch,
-  Input,
-  Tooltip,
-  Checkbox,
-  useClickOutside,
-} from '@janhq/joi'
+import { ScrollArea, Switch, Input } from '@janhq/joi'
 
 import { useAtom, useAtomValue } from 'jotai'
-import { ChevronDownIcon } from 'lucide-react'
-import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
-import { twMerge } from 'tailwind-merge'
-
-import { snackbar, toaster } from '@/containers/Toast'
+import { toaster } from '@/containers/Toast'
 
 import useModels from '@/hooks/useModels'
 import { useSettings } from '@/hooks/useSettings'
@@ -34,11 +23,11 @@ import {
 } from '@/helpers/atoms/AppConfig.atom'
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
-type GPU = {
-  id: string
-  vram: number | null
-  name: string
-}
+// type GPU = {
+//   id: string
+//   vram: number | null
+//   name: string
+// }
 
 const Advanced = () => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
@@ -52,25 +41,25 @@ const Advanced = () => {
   const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
 
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
-  const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [gpuList, setGpuList] = useState<GPU[]>([])
-  const [gpusInUse, setGpusInUse] = useState<string[]>([])
-  const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
-    null
-  )
+  // const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
+  // const [gpuList, setGpuList] = useState<GPU[]>([])
+  // const [gpusInUse, setGpusInUse] = useState<string[]>([])
+  // const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
+  //   null
+  // )
 
-  const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
+  // const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
 
   const { readSettings, saveSettings } = useSettings()
   const activeModels = useAtomValue(activeModelsAtom)
-  const [open, setOpen] = useState(false)
+  // const [open, setOpen] = useState(false)
   const { stopModel } = useModels()
 
-  const selectedGpu = gpuList
-    .filter((x) => gpusInUse.includes(x.id))
-    .map((y) => {
-      return y['name']
-    })
+  // const selectedGpu = gpuList
+  //   .filter((x) => gpusInUse.includes(x.id))
+  //   .map((y) => {
+  //     return y['name']
+  //   })
 
   const onProxyChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -136,47 +125,47 @@ const Advanced = () => {
     //   }
     // }
     // setUseGpuIfPossible()
-  }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
+  }, [readSettings, setVulkanEnabled])
 
-  const clearLogs = async () => {
-    // try {
-    //   await fs.rm(`file://logs`)
-    // } catch (err) {
-    //   console.error('Error clearing logs: ', err)
-    // }
-    // toaster({
-    //   title: 'Logs cleared',
-    //   description: 'All logs have been cleared.',
-    //   type: 'success',
-    // })
-  }
+  // const clearLogs = async () => {
+  //   // try {
+  //   //   await fs.rm(`file://logs`)
+  //   // } catch (err) {
+  //   //   console.error('Error clearing logs: ', err)
+  //   // }
+  //   // toaster({
+  //   //   title: 'Logs cleared',
+  //   //   description: 'All logs have been cleared.',
+  //   //   type: 'success',
+  //   // })
+  // }
 
-  const handleGPUChange = (gpuId: string) => {
-    let updatedGpusInUse = [...gpusInUse]
-    if (updatedGpusInUse.includes(gpuId)) {
-      updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
-      if (gpuEnabled && updatedGpusInUse.length === 0) {
-        // Vulkan support only allow 1 active device at a time
-        if (vulkanEnabled) {
-          updatedGpusInUse = []
-        }
-        updatedGpusInUse.push(gpuId)
-      }
-    } else {
-      // Vulkan support only allow 1 active device at a time
-      if (vulkanEnabled) {
-        updatedGpusInUse = []
-      }
-      updatedGpusInUse.push(gpuId)
-    }
-    setGpusInUse(updatedGpusInUse)
-    saveSettings({ gpusInUse: updatedGpusInUse })
-  }
+  // const handleGPUChange = (gpuId: string) => {
+  //   let updatedGpusInUse = [...gpusInUse]
+  //   if (updatedGpusInUse.includes(gpuId)) {
+  //     updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
+  //     if (gpuEnabled && updatedGpusInUse.length === 0) {
+  //       // Vulkan support only allow 1 active device at a time
+  //       if (vulkanEnabled) {
+  //         updatedGpusInUse = []
+  //       }
+  //       updatedGpusInUse.push(gpuId)
+  //     }
+  //   } else {
+  //     // Vulkan support only allow 1 active device at a time
+  //     if (vulkanEnabled) {
+  //       updatedGpusInUse = []
+  //     }
+  //     updatedGpusInUse.push(gpuId)
+  //   }
+  //   setGpusInUse(updatedGpusInUse)
+  //   saveSettings({ gpusInUse: updatedGpusInUse })
+  // }
 
-  const gpuSelectionPlaceHolder =
-    gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
+  // const gpuSelectionPlaceHolder =
+  //   gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
 
-  useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
+  // useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
 
   return (
     <ScrollArea className="h-full w-full px-4">

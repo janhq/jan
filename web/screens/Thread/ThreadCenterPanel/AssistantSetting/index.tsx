@@ -22,6 +22,7 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
       if (!activeThread) return
+      console.log('onValueChanged', key, value)
       const shouldReloadModel =
         componentData.find((x) => x.key === key)?.requireModelReload ?? false
       if (shouldReloadModel) {

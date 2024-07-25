@@ -28,7 +28,7 @@ const ImportingModelModal = () => {
   useEffect(() => {
     const getModelPath = async () => {
       // const modelPath = await joinPath([janDataFolder, 'models'])
-      // setModelFolder(modelPath)
+      setModelFolder('')
     }
     getModelPath()
   }, [janDataFolder])
@@ -37,9 +37,14 @@ const ImportingModelModal = () => {
     (model) => model.status === 'IMPORTED'
   ).length
 
-  const onOpenModelFolderClick = useCallback(() => {
-    // openFileExplorer(modelFolder)
-  }, [modelFolder])
+  const onOpenModelFolderClick = useCallback(
+    () => {
+      // openFileExplorer(modelFolder)
+    },
+    [
+      /*modelFolder*/
+    ]
+  )
 
   return (
     <Modal
