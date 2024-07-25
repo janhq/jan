@@ -12,8 +12,8 @@ import {
 } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
-import useCortex from '@/hooks/useCortex'
 
+import useMessageDeleteMutation from '@/hooks/useMessageDeleteMutation'
 import useSendMessage from '@/hooks/useSendMessage'
 
 import {
@@ -31,11 +31,14 @@ const MessageToolbar: React.FC<Props> = ({ isLastMessage, message }) => {
   const setEditMessage = useSetAtom(editMessageAtom)
   const { resendMessage } = useSendMessage()
   const clipboard = useClipboard({ timeout: 1000 })
-  const { deleteMessage: deleteCortexMessage } = useCortex()
+  const deleteCortexMessage = useMessageDeleteMutation()
 
   const onDeleteClick = useCallback(
     async (threadId: string, messageId: string) => {
-      await deleteCortexMessage(threadId, messageId)
+      await deleteCortexMessage.mutateAsync({
+        threadId,
+        messageId,
+      })
       deleteMessage(messageId)
     },
     [deleteMessage, deleteCortexMessage]
@@ -53,7 +56,10 @@ const MessageToolbar: React.FC<Props> = ({ isLastMessage, message }) => {
   const onRegenerateClick = useCallback(async () => {
     // current message must be from assistant
     if (message.role !== 'assistant') return
-    await deleteCortexMessage(message.thread_id, message.id)
+    await deleteCortexMessage.mutateAsync({
+      threadId: message.thread_id,
+      messageId: message.id,
+    })
     deleteMessage(message.id)
     await resendMessage()
   }, [deleteCortexMessage, deleteMessage, resendMessage, message])

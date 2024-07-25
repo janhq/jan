@@ -6,7 +6,6 @@ import {
   Model,
   Message,
   Thread,
-  MessageCreateParams,
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
   AssistantCreateParams,
@@ -19,6 +18,9 @@ import { Cortex } from 'cortexso-node'
 import { useAtomValue } from 'jotai'
 
 import { UpdateConfigMutationVariables } from './useEngineMutation'
+import { MessageCreateMutationVariables } from './useMessageCreateMutation'
+import { MessageDeleteMutationVariables } from './useMessageDeleteMutation'
+import { MessageUpdateMutationVariables } from './useMessageUpdateMutation'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 
@@ -217,21 +219,26 @@ const useCortex = () => {
   )
 
   const deleteMessage = useCallback(
-    async (threadId: string, messageId: string) =>
-      cortex.beta.threads.messages.del(threadId, messageId),
+    async (params: MessageDeleteMutationVariables) => {
+      const { threadId, messageId } = params
+      return cortex.beta.threads.messages.del(threadId, messageId)
+    },
     [cortex.beta.threads]
   )
 
   const createMessage = useCallback(
-    async (threadId: string, createMessageParams: MessageCreateParams) => {
+    async (params: MessageCreateMutationVariables) => {
+      const { threadId, createMessageParams } = params
       return cortex.beta.threads.messages.create(threadId, createMessageParams)
     },
     [cortex.beta.threads]
   )
 
   const updateMessage = useCallback(
-    async (threadId: string, messageId: string, data: object) =>
-      cortex.beta.threads.messages.update(threadId, messageId, data),
+    async (params: MessageUpdateMutationVariables) => {
+      const { threadId, messageId, data } = params
+      return cortex.beta.threads.messages.update(threadId, messageId, data)
+    },
     [cortex.beta.threads]
   )
 

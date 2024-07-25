@@ -17,6 +17,7 @@ import UserAvatar from '@/components/UserAvatar'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 import { useClipboard } from '@/hooks/useClipboard'
 import { usePath } from '@/hooks/usePath'
 
@@ -27,11 +28,7 @@ import { openFileTitle } from '@/utils/titleUtils'
 import EditChatInput from '../EditChatInput'
 import MessageToolbar from '../MessageToolbar'
 
-import {
-  editMessageAtom,
-  getCurrentChatMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 type Props = {
   isLatestMessage: boolean
@@ -39,20 +36,30 @@ type Props = {
 }
 
 const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
-  let text = ''
-  const isUser = msg.role === 'user'
+  const [text, setText] = useState('')
+  const { data: assistants } = useAssistantQuery()
   const editMessage = useAtomValue(editMessageAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
-
-  if (msg.content && msg.content.length > 0) {
-    const message = msg.content[0]
-    if (message && message.type === 'text') {
-      const textBlockContent = message as TextContentBlock
-      text = textBlockContent.text.value
-    }
-  }
-
   const clipboard = useClipboard({ timeout: 1000 })
+
+  const senderName = useMemo(() => {
+    if (msg.role === 'user') return msg.role
+    const assistantId = msg.assistant_id
+    if (!assistantId) return msg.role
+    const assistant = assistants?.find(
+      (assistant) => assistant.id === assistantId
+    )
+    return assistant?.name ?? msg.role
+  }, [assistants, msg.assistant_id, msg.role])
+
+  useEffect(() => {
+    if (msg.content && msg.content.length > 0) {
+      const message = msg.content[0]
+      if (message && message.type === 'text') {
+        const textBlockContent = message as TextContentBlock
+        setText(textBlockContent.text.value)
+      }
+    }
+  }, [msg.content])
 
   const marked = useMemo(() => {
     const markedParser = new Marked(
@@ -71,11 +78,10 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
       }),
       {
         renderer: {
-          link: (href, title, text) => {
-            return Renderer.prototype.link
+          link: (href, title, text) =>
+            Renderer.prototype.link
               ?.apply(this, [href, title, text])
-              .replace('<a', "<a target='_blank'")
-          },
+              .replace('<a', "<a target='_blank'"),
           code(code, lang) {
             return `
           <div class="relative code-block group/item overflow-auto">
@@ -98,13 +104,12 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
     markedParser.use(markedKatex({ throwOnError: false }))
     return markedParser
   }, [clipboard.copied])
-
+  const isUser = msg.role === 'user'
   const { onViewFileContainer } = usePath()
   const parsedText = useMemo(() => marked.parse(text), [marked, text])
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const codeBlockCopyEvent = useRef((e: Event) => {
     const target: HTMLElement = e.target as HTMLElement
@@ -170,7 +175,7 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
             isUser && 'text-gray-500'
           )}
         >
-          {isUser ? msg.role : (activeThread?.assistants[0].name ?? msg.role)}
+          {senderName}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {displayDate(msg.created_at)}
@@ -178,14 +183,14 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
         <div
           className={twMerge(
             'absolute right-0 cursor-pointer transition-all',
-            messages[messages.length - 1]?.id === msg.id && !isUser
+            isLatestMessage && !isUser
               ? 'absolute -bottom-8 right-4'
               : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
           <MessageToolbar message={msg} isLastMessage={isLatestMessage} />
         </div>
-        {messages[messages.length - 1]?.id === msg.id &&
+        {isLatestMessage &&
           (msg.status === 'in_progress' || tokenSpeed > 0) && (
             <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
               Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
@@ -225,37 +230,6 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
             </div>
           )}
 
-          {/* {msg.content[0]?.type === ContentType.Pdf && (
-            <div className="group/file bg-secondary relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg p-4">
-              <div
-                className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 backdrop-blur-sm group-hover/file:inline-block"
-                onClick={() =>
-                  onViewFile(`${msg.id}.${msg.content[0]?.type}`)
-                }
-              />
-              <Tooltip
-                trigger={
-                  <div
-                    className="absolute right-2 top-2 z-20 hidden h-8 w-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--app-bg))] group-hover/file:flex"
-                    onClick={onViewFileContainer}
-                  >
-                    <FolderOpenIcon size={20} />
-                  </div>
-                }
-                content={<span>{openFileTitle()}</span>}
-              />
-              <Icon type={msg.content[0].type} />
-              <div className="w-full">
-                <h6 className="line-clamp-1 w-4/5 font-medium">
-                  {msg.content[0].text.name?.replaceAll(/[-._]/g, ' ')}
-                </h6>
-                <p className="text-[hsla(var(--text-secondary)]">
-                  {toGibibytes(Number(msg.content[0].text.size))}
-                </p>
-              </div>
-            </div>
-          )} */}
-
           {isUser ? (
             <Fragment>
               {editMessage === msg.id ? (
@@ -286,4 +260,4 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
   )
 }
 
-export default React.memo(SimpleTextMessage)
+export default SimpleTextMessage

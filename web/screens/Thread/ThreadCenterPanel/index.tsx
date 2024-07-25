@@ -185,9 +185,7 @@ const ThreadCenterPanel: React.FC = () => {
               <ChatBody />
             </div>
           )}
-
           {/* {!engineParamsUpdate && <ModelStart />} */}
-
           {/* {queuedMessage && (
             <div className="mb-2 text-center">
               <span className="text-[hsla(var(--text-secondary)]">
@@ -195,13 +193,10 @@ const ThreadCenterPanel: React.FC = () => {
               </span>
             </div>
           )} */}
-
           {isGeneratingResponse && <GenerateResponse />}
-
           {activeModels.some(
             (model) => model.status === 'starting' && <ModelStart />
           )}
-
           {activeThread && (
             <ChatInput
               sendMessage={sendMessage}
