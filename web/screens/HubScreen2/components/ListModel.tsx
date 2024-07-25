@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Button, Progress, Select } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import Spinner from '@/containers/Loader/Spinner'
 import { toaster } from '@/containers/Toast'
 
 import useAbortDownload from '@/hooks/useAbortDownload'
@@ -37,7 +38,7 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
   const [engineFilter, setEngineFilter] = useState<EngineType | undefined>(
     undefined
   )
-  const { data } = useHfEngineToBranchesQuery(modelHandle)
+  const { data, isLoading } = useHfEngineToBranchesQuery(modelHandle)
 
   const engineSelection: { name: string; value: string }[] = useMemo(() => {
     if (!data) return []
@@ -61,6 +62,13 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
     if (!branches || branches.length === 0) return
     modelBranches.push(...branches)
   }
+
+  if (isLoading)
+    return (
+      <div className="mb-4 mt-8 flex w-full justify-center">
+        <Spinner />
+      </div>
+    )
 
   return (
     <Fragment>

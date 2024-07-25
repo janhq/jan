@@ -3,6 +3,7 @@ import { Fragment, useCallback, useMemo } from 'react'
 import { Button, Progress } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import Spinner from '@/containers/Loader/Spinner'
 import { toaster } from '@/containers/Toast'
 
 import useAbortDownload from '@/hooks/useAbortDownload'
@@ -32,7 +33,7 @@ type Props = {
 }
 
 const HfListModel: React.FC<Props> = ({ modelHandle }) => {
-  const { data } = useHfRepoDataQuery(modelHandle)
+  const { data, isLoading } = useHfRepoDataQuery(modelHandle)
 
   const downloadableModels = useMemo(
     () =>
@@ -43,6 +44,13 @@ const HfListModel: React.FC<Props> = ({ modelHandle }) => {
       [],
     [data]
   )
+
+  if (isLoading)
+    return (
+      <div className="mb-4 mt-8 flex w-full justify-center">
+        <Spinner />
+      </div>
+    )
 
   return (
     <Fragment>
