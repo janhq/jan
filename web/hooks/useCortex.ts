@@ -28,6 +28,7 @@ const EngineInitStatuses = [
   'ready',
   'not_initialized',
   'missing_configuration',
+  'not_supported',
 ] as const
 export type EngineInitStatus = (typeof EngineInitStatuses)[number]
 
@@ -282,7 +283,7 @@ const useCortex = () => {
   const downloadModel = useCallback(
     async (modelId: string, fileName?: string, persistedModelId?: string) => {
       try {
-        return await fetch(`${host}/models/pull/${modelId}`, {
+        return await fetch(`${host}/models/${modelId}/pull`, {
           method: 'POST',
           headers: {
             'accept': 'application/json',

@@ -16,6 +16,7 @@ import {
   downloadStateListAtom,
 } from '@/hooks/useDownloadState'
 
+import useEngineQuery from '@/hooks/useEngineQuery'
 import useHfEngineToBranchesQuery from '@/hooks/useHfEngineToBranchesQuery'
 
 import useThreads from '@/hooks/useThreads'
@@ -35,26 +36,37 @@ type Props = {
 }
 
 const ListModel: React.FC<Props> = ({ modelHandle }) => {
+  const { data: engineData } = useEngineQuery()
   const [engineFilter, setEngineFilter] = useState<EngineType | undefined>(
     undefined
   )
   const { data, isLoading } = useHfEngineToBranchesQuery(modelHandle)
 
-  const engineSelection: { name: string; value: string }[] = useMemo(() => {
-    if (!data) return []
+  const engineSelections: { name: string; value: string }[] = useMemo(() => {
+    if (!data || !engineData) return []
+
+    const isSupportTensorRt =
+      engineData.find((engine) => engine.name === 'cortex.tensorrt-llm')
+        ?.status !== 'not_supported' ?? false
+
+    const isSupportOnnx =
+      engineData.find((engine) => engine.name === 'cortex.onnx')?.status !==
+        'not_supported' ?? false
+
     const result: { name: string; value: string }[] = []
     if (data.gguf.length > 0) result.push({ name: 'GGUF', value: 'gguf' })
-    if (data.onnx.length > 0) result.push({ name: 'ONNX', value: 'onnx' })
-    if (data.tensorrtllm.length > 0)
+    if (isSupportOnnx && data.onnx.length > 0)
+      result.push({ name: 'ONNX', value: 'onnx' })
+    if (isSupportTensorRt && data.tensorrtllm.length > 0)
       result.push({ name: 'TensorRT', value: 'tensorrtllm' })
 
     return result
-  }, [data])
+  }, [data, engineData])
 
   useEffect(() => {
-    if (engineSelection.length === 0) return
-    setEngineFilter(engineSelection[0].value as EngineType)
-  }, [engineSelection])
+    if (engineSelections.length === 0) return
+    setEngineFilter(engineSelections[0].value as EngineType)
+  }, [engineSelections])
 
   const modelBranches: CortexHubModel[] = []
   if (data) {
@@ -77,7 +89,7 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
         <Select
           value={engineFilter}
           className="gap-1.5 whitespace-nowrap px-4 py-2 font-semibold"
-          options={engineSelection}
+          options={engineSelections}
           onValueChange={(value) => setEngineFilter(value as EngineType)}
         />
       </div>
