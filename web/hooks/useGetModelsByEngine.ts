@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { LlmEngine, LocalEngines, Model, RemoteEngine } from '@janhq/core'
+import { LlmEngine, LocalEngines, Model } from '@janhq/core'
 
 import { useQueryClient } from '@tanstack/react-query'
 
@@ -8,7 +8,6 @@ import { useAtomValue } from 'jotai'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
-import useEngineQuery from './useEngineQuery'
 import { cortexHubModelsQueryKey } from './useModelHub'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -16,15 +15,6 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 const useGetModelsByEngine = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const queryClient = useQueryClient()
-  const { data: engineData } = useEngineQuery()
-
-  const hasApiKey = useCallback(
-    (engine: RemoteEngine): boolean =>
-      engineData == null
-        ? false
-        : engineData.find((e) => e.name === engine)?.status === 'ready',
-    [engineData]
-  )
 
   // TODO: this function needs to be clean up
   const getModelsByEngine = useCallback(
@@ -40,10 +30,6 @@ const useGetModelsByEngine = () => {
             )
           })
       }
-
-      // if remote, we need to check if models have been configured
-      const isConfigured = hasApiKey(engine as RemoteEngine)
-      if (!isConfigured) return []
 
       const data = queryClient.getQueryData(cortexHubModelsQueryKey)
       if (!data) return []
@@ -63,7 +49,7 @@ const useGetModelsByEngine = () => {
         )
       })
     },
-    [queryClient, downloadedModels, hasApiKey]
+    [queryClient, downloadedModels]
   )
 
   return { getModelsByEngine }
