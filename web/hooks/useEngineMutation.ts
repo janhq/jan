@@ -31,8 +31,8 @@ const useEngineMutation = () => {
       )
     },
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: engineQueryKey })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: engineQueryKey })
       setUpRemoteModelStage('NONE', undefined)
       toaster({
         title: 'Success!',

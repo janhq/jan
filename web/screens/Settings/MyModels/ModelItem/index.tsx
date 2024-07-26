@@ -12,8 +12,7 @@ import {
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-
+import useModelStart from '@/hooks/useModelStart'
 import useModels from '@/hooks/useModels'
 
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -24,7 +23,7 @@ type Props = {
 
 const ModelItem: React.FC<Props> = ({ model }) => {
   const activeModels = useAtomValue(activeModelsAtom)
-  const { startModel } = useActiveModel()
+  const startModel = useModelStart()
   const [more, setMore] = useState(false)
   const { stopModel, deleteModel } = useModels()
 
@@ -42,7 +41,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
       if (isActive) {
         stopModel(modelId)
       } else {
-        startModel(modelId)
+        startModel.mutate(modelId)
       }
     },
     [isActive, startModel, stopModel]

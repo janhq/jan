@@ -6,6 +6,7 @@ import {
   LocalEngines,
   Message,
   MessageContent,
+  RemoteEngines,
   TextContentBlock,
   Thread,
 } from '@janhq/core'
@@ -16,11 +17,14 @@ import { currentPromptAtom, editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { useActiveModel } from './useActiveModel'
 import useCortex from './useCortex'
 
+import useEngineInit from './useEngineInit'
+import useEngineQuery from './useEngineQuery'
 import useMessageCreateMutation from './useMessageCreateMutation'
 import useMessageUpdateMutation from './useMessageUpdateMutation'
+
+import useModelStart from './useModelStart'
 
 import {
   addNewMessageAtom,
@@ -64,14 +68,10 @@ import {
 const useSendMessage = () => {
   const createMessage = useMessageCreateMutation()
   const updateMessage = useMessageUpdateMutation()
+  const initializeEngine = useEngineInit()
   const addNewMessage = useSetAtom(addNewMessageAtom)
-  const {
-    chatCompletionStreaming,
-    chatCompletionNonStreaming,
-    updateThread,
-    getEngineStatus,
-    initializeEngine,
-  } = useCortex()
+  const { chatCompletionStreaming, chatCompletionNonStreaming, updateThread } =
+    useCortex()
   const updateMessageState = useSetAtom(updateMessageAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
@@ -80,13 +80,118 @@ const useSendMessage = () => {
   const addThreadIdShouldAnimateTitle = useSetAtom(
     addThreadIdShouldAnimateTitleAtom
   )
+  const { data: engineData } = useEngineQuery()
 
   const activeThread = useAtomValue(activeThreadAtom)
   const activeModels = useAtomValue(activeModelsAtom)
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const selectedModel = useAtomValue(getSelectedModelAtom)
-  const { startModel } = useActiveModel()
+  const startModel = useModelStart()
+
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
+
+  const validatePrerequisite = useCallback(async (): Promise<boolean> => {
+    const errorTitle = 'Failed to send message'
+    if (!activeThread) {
+      toaster({
+        title: errorTitle,
+        description: 'No active thread! Please select a thread!',
+        type: 'error',
+      })
+      return false
+    }
+    if (!selectedModel) {
+      toaster({
+        title: errorTitle,
+        description: 'No model selected! Please select a model!',
+        type: 'error',
+      })
+      return false
+    }
+    if (!engineData) {
+      toaster({
+        title: errorTitle,
+        description:
+          'Jan failed to fetch available engine data! Please try restart the app!',
+        type: 'error',
+      })
+      return false
+    }
+
+    try {
+      if (selectedModel.model !== activeThread.assistants[0].model) {
+        activeThread.assistants[0].model = selectedModel.model
+        await updateThread(activeThread)
+      }
+    } catch (err) {
+      toaster({
+        title: errorTitle,
+        description: 'Please try select model for this thread again!',
+        type: 'error',
+      })
+      console.error(`Failed to update thread ${activeThread.id}, error: ${err}`)
+      return false
+    }
+
+    if (!selectedModel.engine) {
+      toaster({
+        title: errorTitle,
+        description: `Model ${selectedModel.model} does not have an engine`,
+        type: 'error',
+      })
+      console.error(`Model ${selectedModel.model} does not have an engine`)
+      return false
+    }
+
+    const engineStatus = engineData.find((e) => e.name === selectedModel.engine)
+    if (!engineStatus) {
+      toaster({
+        title: errorTitle,
+        description: `Engine ${selectedModel.engine} is not available`,
+        type: 'error',
+      })
+      console.error(`Engine ${selectedModel.engine} is not available`)
+      return false
+    }
+
+    if (
+      RemoteEngines.find((e) => e === selectedModel.engine) != null &&
+      engineStatus.status === 'missing_configuration'
+    ) {
+      toaster({
+        title: errorTitle,
+        description: `Engine ${engineStatus.name} is missing configuration`,
+        type: 'error',
+      })
+      console.error(`Engine ${engineStatus.name} is missing configuration`)
+      return false
+    }
+
+    if (
+      LocalEngines.find((e) => e === selectedModel.engine) != null &&
+      engineStatus.status === 'not_initialized'
+    ) {
+      toaster({
+        title: 'Please wait for engine to initialize',
+        description: `Please retry after engine ${engineStatus.name} is installed.`,
+        type: 'default',
+      })
+      initializeEngine.mutate(selectedModel.engine)
+      return false
+    }
+
+    if (engineStatus.status !== 'ready') {
+      toaster({
+        title: errorTitle,
+        description: `Engine ${engineStatus.name} is not ready`,
+        type: 'error',
+      })
+      console.error(`Engine ${engineStatus.name} is not ready`)
+      return false
+    }
+
+    return true
+  }, [activeThread, selectedModel, engineData, initializeEngine, updateThread])
 
   const stopInference = useCallback(() => {
     abortControllerRef.current?.abort()
@@ -126,36 +231,17 @@ const useSendMessage = () => {
   )
 
   const resendMessage = useCallback(async () => {
-    if (!activeThread) {
-      console.error('No active thread')
-      return
-    }
-    if (!selectedModel) {
-      console.error('No selected model')
-      return
-    }
-    try {
-      if (selectedModel.model !== activeThread.assistants[0].model) {
-        activeThread.assistants[0].model = selectedModel.model
-        await updateThread(activeThread)
-      }
-    } catch (err) {
-      console.error(`Failed to update thread ${activeThread.id}, error: ${err}`)
-      toaster({
-        title: 'Failed to update thread',
-        description: 'Please try select model for this thread again!',
-        type: 'error',
-      })
-    }
+    const isValid = await validatePrerequisite()
+    if (!isValid) return
 
-    const modelId = activeThread.assistants[0].model
+    const modelId = activeThread!.assistants[0].model
 
     try {
       // start model if not yet started
-      if (LocalEngines.find((e) => e === selectedModel.engine) != null) {
+      if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
         // start model if local and not started
         if (!activeModels.map((model) => model.model).includes(modelId)) {
-          await startModel(modelId)
+          await startModel.mutateAsync(modelId)
         }
       }
     } catch (err) {
@@ -172,7 +258,7 @@ const useSendMessage = () => {
     // building messages
     const systemMessage: ChatCompletionMessageParam = {
       role: 'system',
-      content: activeThread.assistants[0].instructions ?? '',
+      content: activeThread!.assistants[0].instructions ?? '',
     }
 
     const messages: ChatCompletionMessageParam[] = currentMessages
@@ -194,30 +280,30 @@ const useSendMessage = () => {
     messages.unshift(systemMessage)
 
     const modelOptions: Record<string, string | number> = {}
-    if (selectedModel.frequency_penalty) {
-      modelOptions.frequency_penalty = selectedModel.frequency_penalty
+    if (selectedModel!.frequency_penalty) {
+      modelOptions.frequency_penalty = selectedModel!.frequency_penalty
     }
-    if (selectedModel.presence_penalty) {
-      modelOptions.presence_penalty = selectedModel.presence_penalty
+    if (selectedModel!.presence_penalty) {
+      modelOptions.presence_penalty = selectedModel!.presence_penalty
     }
     try {
       let assistantResponseMessage = ''
-      if (selectedModel.stream === true) {
+      if (selectedModel!.stream === true) {
         const stream = await chatCompletionStreaming({
           messages,
-          model: selectedModel.model,
+          model: selectedModel!.model,
           stream: true,
-          max_tokens: selectedModel.max_tokens,
-          stop: selectedModel.stop,
-          temperature: selectedModel.temperature ?? 1,
-          top_p: selectedModel.top_p ?? 1,
+          max_tokens: selectedModel!.max_tokens,
+          stop: selectedModel!.stop,
+          temperature: selectedModel!.temperature ?? 1,
+          top_p: selectedModel!.top_p ?? 1,
           ...modelOptions,
         })
 
         abortControllerRef.current = stream.controller
 
         const assistantMessage = await createMessage.mutateAsync({
-          threadId: activeThread.id,
+          threadId: activeThread!.id,
           createMessageParams: {
             role: 'assistant',
             content: '',
@@ -226,8 +312,8 @@ const useSendMessage = () => {
 
         const responseMessage: Message = {
           id: assistantMessage.id,
-          thread_id: activeThread.id,
-          assistant_id: activeThread.id,
+          thread_id: activeThread!.id,
+          assistant_id: activeThread!.id,
           role: 'assistant',
           content: [],
           status: 'in_progress',
@@ -273,7 +359,7 @@ const useSendMessage = () => {
         )
 
         updateMessage.mutateAsync({
-          threadId: activeThread.id,
+          threadId: activeThread!.id,
           messageId: responseMessage.id,
           data: {
             content: responseMessage.content,
@@ -284,12 +370,12 @@ const useSendMessage = () => {
         const response = await chatCompletionNonStreaming(
           {
             messages,
-            model: selectedModel.model,
+            model: selectedModel!.model,
             stream: false,
-            max_tokens: selectedModel.max_tokens,
-            stop: selectedModel.stop,
-            temperature: selectedModel.temperature ?? 1,
-            top_p: selectedModel.top_p ?? 1,
+            max_tokens: selectedModel!.max_tokens,
+            stop: selectedModel!.stop,
+            temperature: selectedModel!.temperature ?? 1,
+            top_p: selectedModel!.top_p ?? 1,
             ...modelOptions,
           },
           {
@@ -299,7 +385,7 @@ const useSendMessage = () => {
 
         assistantResponseMessage = response.choices[0].message.content ?? ''
         const assistantMessage = await createMessage.mutateAsync({
-          threadId: activeThread.id,
+          threadId: activeThread!.id,
           createMessageParams: {
             role: 'assistant',
             content: assistantResponseMessage,
@@ -308,8 +394,8 @@ const useSendMessage = () => {
 
         const responseMessage: Message = {
           id: assistantMessage.id,
-          thread_id: activeThread.id,
-          assistant_id: activeThread.id,
+          thread_id: activeThread!.id,
+          assistant_id: activeThread!.id,
           role: 'assistant',
           content: [
             {
@@ -331,7 +417,7 @@ const useSendMessage = () => {
           run_id: null,
         }
         updateMessage.mutate({
-          threadId: activeThread.id,
+          threadId: activeThread!.id,
           messageId: responseMessage.id,
           data: {
             content: responseMessage.content,
@@ -356,10 +442,10 @@ const useSendMessage = () => {
     selectedModel,
     updateMessage,
     createMessage,
+    validatePrerequisite,
     startModel,
     updateMessageState,
     addNewMessage,
-    updateThread,
     chatCompletionNonStreaming,
     chatCompletionStreaming,
     setIsGeneratingResponse,
@@ -367,58 +453,19 @@ const useSendMessage = () => {
 
   const sendMessage = useCallback(
     async (message: string) => {
-      if (!activeThread) {
-        console.error('No active thread')
-        return
-      }
-      if (!selectedModel) {
-        console.error('No selected model')
-        return
-      }
-      if (selectedModel.model !== activeThread.assistants[0].model) {
-        activeThread.assistants[0].model = selectedModel.model
-        await updateThread(activeThread)
-      }
-      const engine = selectedModel.engine
-      if (!engine) {
-        toaster({
-          title: 'Start model failed',
-          description: `Model ${selectedModel.model} does not have an engine`,
-          type: 'error',
-        })
-        console.error(`Model ${selectedModel.model} does not have an engine`)
-        return
-      }
-
-      const engineStatus = await getEngineStatus(engine)
-      if (!engineStatus) {
-        toaster({
-          title: 'Start model failed',
-          description: `Cannot get engine status for ${engine}`,
-          type: 'error',
-        })
-        console.error(`Cannot get engine status for ${engine}`)
-        return
-      }
-      if (engineStatus.status !== 'ready') {
-        toaster({
-          title: 'Please wait for engine to initialize',
-          description: `Please retry after engine ${engine} is installed.`,
-          type: 'default',
-        })
-        initializeEngine(engine)
-        return
-      }
+      const isValid = await validatePrerequisite()
+      if (!isValid) return
 
       let shouldSummarize =
-        activeThread.title === 'New Thread' || activeThread.title.trim() === ''
-      const modelId = activeThread.assistants[0].model
+        activeThread!.title === 'New Thread' ||
+        activeThread!.title.trim() === ''
+      const modelId = activeThread!.assistants[0].model
 
       setCurrentPrompt('')
       setEditPrompt('')
 
       const userMessage = await createMessage.mutateAsync({
-        threadId: activeThread.id,
+        threadId: activeThread!.id,
         createMessageParams: {
           role: 'user',
           content: message,
@@ -429,14 +476,15 @@ const useSendMessage = () => {
 
       try {
         // start model if not yet started
-        if (LocalEngines.find((e) => e === selectedModel.engine) != null) {
+        if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
           // start model if local and not started
           if (!activeModels.map((model) => model.model).includes(modelId)) {
-            await startModel(modelId)
+            await startModel.mutateAsync(modelId)
           }
         }
       } catch (err) {
         console.error(`Failed to start model ${modelId}, error: ${err}`)
+        return
       }
 
       setIsGeneratingResponse(true)
@@ -444,7 +492,7 @@ const useSendMessage = () => {
       // building messages
       const systemMessage: ChatCompletionMessageParam = {
         role: 'system',
-        content: activeThread.assistants[0].instructions ?? '',
+        content: activeThread!.assistants[0].instructions ?? '',
       }
 
       const messages: ChatCompletionMessageParam[] = currentMessages
@@ -469,30 +517,30 @@ const useSendMessage = () => {
       })
       messages.unshift(systemMessage)
       const modelOptions: Record<string, string | number> = {}
-      if (selectedModel.frequency_penalty) {
-        modelOptions.frequency_penalty = selectedModel.frequency_penalty
+      if (selectedModel!.frequency_penalty) {
+        modelOptions.frequency_penalty = selectedModel!.frequency_penalty
       }
-      if (selectedModel.presence_penalty) {
-        modelOptions.presence_penalty = selectedModel.presence_penalty
+      if (selectedModel!.presence_penalty) {
+        modelOptions.presence_penalty = selectedModel!.presence_penalty
       }
       let assistantResponseMessage = ''
       try {
-        if (selectedModel.stream === true) {
+        if (selectedModel!.stream === true) {
           const stream = await chatCompletionStreaming({
             messages,
-            model: selectedModel.model,
+            model: selectedModel!.model,
             stream: true,
-            max_tokens: selectedModel.max_tokens,
-            stop: selectedModel.stop,
-            temperature: selectedModel.temperature ?? 1,
-            top_p: selectedModel.top_p ?? 1,
+            max_tokens: selectedModel!.max_tokens,
+            stop: selectedModel!.stop,
+            temperature: selectedModel!.temperature ?? 1,
+            top_p: selectedModel!.top_p ?? 1,
             ...modelOptions,
           })
 
           abortControllerRef.current = stream.controller
 
           const assistantMessage = await createMessage.mutateAsync({
-            threadId: activeThread.id,
+            threadId: activeThread!.id,
             createMessageParams: {
               role: 'assistant',
               content: '',
@@ -501,8 +549,8 @@ const useSendMessage = () => {
 
           const responseMessage: Message = {
             id: assistantMessage.id,
-            thread_id: activeThread.id,
-            assistant_id: activeThread.id,
+            thread_id: activeThread!.id,
+            assistant_id: activeThread!.id,
             role: 'assistant',
             content: [],
             status: 'in_progress',
@@ -551,7 +599,7 @@ const useSendMessage = () => {
             responseMessage.status
           )
           updateMessage.mutateAsync({
-            threadId: activeThread.id,
+            threadId: activeThread!.id,
             messageId: responseMessage.id,
             data: {
               content: responseMessage.content,
@@ -562,12 +610,12 @@ const useSendMessage = () => {
           const response = await chatCompletionNonStreaming(
             {
               messages,
-              model: selectedModel.model,
+              model: selectedModel!.model,
               stream: false,
-              max_tokens: selectedModel.max_tokens,
-              stop: selectedModel.stop,
-              temperature: selectedModel.temperature ?? 1,
-              top_p: selectedModel.top_p ?? 1,
+              max_tokens: selectedModel!.max_tokens,
+              stop: selectedModel!.stop,
+              temperature: selectedModel!.temperature ?? 1,
+              top_p: selectedModel!.top_p ?? 1,
               ...modelOptions,
             },
             {
@@ -577,7 +625,7 @@ const useSendMessage = () => {
 
           assistantResponseMessage = response.choices[0].message.content ?? ''
           const assistantMessage = await createMessage.mutateAsync({
-            threadId: activeThread.id,
+            threadId: activeThread!.id,
             createMessageParams: {
               role: 'assistant',
               content: assistantResponseMessage,
@@ -586,8 +634,8 @@ const useSendMessage = () => {
 
           const responseMessage: Message = {
             id: assistantMessage.id,
-            thread_id: activeThread.id,
-            assistant_id: activeThread.id,
+            thread_id: activeThread!.id,
+            assistant_id: activeThread!.id,
             role: 'assistant',
             content: [
               {
@@ -609,7 +657,7 @@ const useSendMessage = () => {
             run_id: null,
           }
           updateMessage.mutateAsync({
-            threadId: activeThread.id,
+            threadId: activeThread!.id,
             messageId: responseMessage.id,
             data: {
               content: responseMessage.content,
@@ -642,7 +690,7 @@ const useSendMessage = () => {
           })
           .filter((msg) => msg != null) as string[]
         textMessages.push(assistantResponseMessage)
-        summarizeThread(textMessages, modelId, activeThread)
+        summarizeThread(textMessages, modelId, activeThread!)
       } catch (err) {
         console.error(`Failed to summarize thread: ${err}`)
       }
@@ -654,7 +702,7 @@ const useSendMessage = () => {
       selectedModel,
       updateMessage,
       createMessage,
-      updateThread,
+      validatePrerequisite,
       setCurrentPrompt,
       setEditPrompt,
       setIsGeneratingResponse,
@@ -664,8 +712,6 @@ const useSendMessage = () => {
       chatCompletionNonStreaming,
       chatCompletionStreaming,
       summarizeThread,
-      getEngineStatus,
-      initializeEngine,
     ]
   )
 
