@@ -134,58 +134,73 @@ const useSendMessage = () => {
       console.error('No selected model')
       return
     }
-    if (selectedModel.model !== activeThread.assistants[0].model) {
-      alert(
-        `Selected model ${selectedModel.model} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
-      )
-      return
+    try {
+      if (selectedModel.model !== activeThread.assistants[0].model) {
+        activeThread.assistants[0].model = selectedModel.model
+        await updateThread(activeThread)
+      }
+    } catch (err) {
+      console.error(`Failed to update thread ${activeThread.id}, error: ${err}`)
+      toaster({
+        title: 'Failed to update thread',
+        description: 'Please try select model for this thread again!',
+        type: 'error',
+      })
     }
+
     const modelId = activeThread.assistants[0].model
 
     try {
       // start model if not yet started
-      // TODO: Handle case model is starting up
       if (LocalEngines.find((e) => e === selectedModel.engine) != null) {
         // start model if local and not started
         if (!activeModels.map((model) => model.model).includes(modelId)) {
           await startModel(modelId)
         }
       }
+    } catch (err) {
+      console.error(`Failed to start model ${modelId}, error: ${err}`)
+      toaster({
+        title: 'Failed to start model',
+        description: `Failed to start model ${modelId}`,
+        type: 'error',
+      })
+    }
 
-      setIsGeneratingResponse(true)
+    setIsGeneratingResponse(true)
 
-      // building messages
-      const systemMessage: ChatCompletionMessageParam = {
-        role: 'system',
-        content: activeThread.assistants[0].instructions ?? '',
-      }
+    // building messages
+    const systemMessage: ChatCompletionMessageParam = {
+      role: 'system',
+      content: activeThread.assistants[0].instructions ?? '',
+    }
 
-      const messages: ChatCompletionMessageParam[] = currentMessages
-        .map((msg) => {
-          switch (msg.role) {
-            case 'user':
-            case 'assistant':
-              return {
-                role: msg.role,
-                content: (msg.content[0] as TextContentBlock).text.value,
-              }
+    const messages: ChatCompletionMessageParam[] = currentMessages
+      .map((msg) => {
+        switch (msg.role) {
+          case 'user':
+          case 'assistant':
+            return {
+              role: msg.role,
+              content: (msg.content[0] as TextContentBlock).text.value,
+            }
 
-            // we will need to support other roles in the future
-            default:
-              break
-          }
-        })
-        .filter((msg) => msg != null) as ChatCompletionMessageParam[]
-      messages.unshift(systemMessage)
+          // we will need to support other roles in the future
+          default:
+            break
+        }
+      })
+      .filter((msg) => msg != null) as ChatCompletionMessageParam[]
+    messages.unshift(systemMessage)
 
-      const modelOptions: Record<string, string | number> = {}
-      if (selectedModel.frequency_penalty) {
-        modelOptions.frequency_penalty = selectedModel.frequency_penalty
-      }
-      if (selectedModel.presence_penalty) {
-        modelOptions.presence_penalty = selectedModel.presence_penalty
-      }
-
+    const modelOptions: Record<string, string | number> = {}
+    if (selectedModel.frequency_penalty) {
+      modelOptions.frequency_penalty = selectedModel.frequency_penalty
+    }
+    if (selectedModel.presence_penalty) {
+      modelOptions.presence_penalty = selectedModel.presence_penalty
+    }
+    try {
       let assistantResponseMessage = ''
       if (selectedModel.stream === true) {
         const stream = await chatCompletionStreaming({
@@ -265,91 +280,86 @@ const useSendMessage = () => {
           },
         })
       } else {
-        try {
-          const abortController = new AbortController()
-          const response = await chatCompletionNonStreaming(
-            {
-              messages,
-              model: selectedModel.model,
-              stream: false,
-              max_tokens: selectedModel.max_tokens,
-              stop: selectedModel.stop,
-              temperature: selectedModel.temperature ?? 1,
-              top_p: selectedModel.top_p ?? 1,
-              ...modelOptions,
-            },
-            {
-              signal: abortController.signal,
-            }
-          )
+        const abortController = new AbortController()
+        const response = await chatCompletionNonStreaming(
+          {
+            messages,
+            model: selectedModel.model,
+            stream: false,
+            max_tokens: selectedModel.max_tokens,
+            stop: selectedModel.stop,
+            temperature: selectedModel.temperature ?? 1,
+            top_p: selectedModel.top_p ?? 1,
+            ...modelOptions,
+          },
+          {
+            signal: abortController.signal,
+          }
+        )
 
-          assistantResponseMessage = response.choices[0].message.content ?? ''
-          const assistantMessage = await createMessage.mutateAsync({
-            threadId: activeThread.id,
-            createMessageParams: {
-              role: 'assistant',
-              content: assistantResponseMessage,
-            },
-          })
-
-          const responseMessage: Message = {
-            id: assistantMessage.id,
-            thread_id: activeThread.id,
-            assistant_id: activeThread.id,
+        assistantResponseMessage = response.choices[0].message.content ?? ''
+        const assistantMessage = await createMessage.mutateAsync({
+          threadId: activeThread.id,
+          createMessageParams: {
             role: 'assistant',
-            content: [
-              {
-                type: 'text',
-                text: {
-                  value: assistantResponseMessage,
-                  annotations: [],
-                },
-              },
-            ],
-            status: 'completed',
-            created_at: assistantMessage.created_at,
-            metadata: undefined,
-            attachments: null,
-            completed_at: Date.now(),
-            incomplete_at: null,
-            incomplete_details: null,
-            object: 'thread.message',
-            run_id: null,
-          }
-          updateMessage.mutate({
-            threadId: activeThread.id,
-            messageId: responseMessage.id,
-            data: {
-              content: responseMessage.content,
-            },
-          })
-          addNewMessage(responseMessage)
-        } catch (err) {
-          console.error(err)
-          if (err instanceof Error) {
-            toaster({
-              title: 'Failed to generate response',
-              description: err.message,
-              type: 'error',
-            })
-          }
-        }
-      }
+            content: assistantResponseMessage,
+          },
+        })
 
-      setIsGeneratingResponse(false)
+        const responseMessage: Message = {
+          id: assistantMessage.id,
+          thread_id: activeThread.id,
+          assistant_id: activeThread.id,
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: {
+                value: assistantResponseMessage,
+                annotations: [],
+              },
+            },
+          ],
+          status: 'completed',
+          created_at: assistantMessage.created_at,
+          metadata: undefined,
+          attachments: null,
+          completed_at: Date.now(),
+          incomplete_at: null,
+          incomplete_details: null,
+          object: 'thread.message',
+          run_id: null,
+        }
+        updateMessage.mutate({
+          threadId: activeThread.id,
+          messageId: responseMessage.id,
+          data: {
+            content: responseMessage.content,
+          },
+        })
+        addNewMessage(responseMessage)
+      }
     } catch (err) {
       console.error(err)
+
+      toaster({
+        title: 'Failed to generate response',
+        type: 'error',
+      })
     }
+
+    setIsGeneratingResponse(false)
   }, [
     activeThread,
     activeModels,
     currentMessages,
     selectedModel,
-    startModel,
     updateMessage,
+    createMessage,
+    startModel,
     updateMessageState,
     addNewMessage,
-    createMessage,
+    updateThread,
     chatCompletionNonStreaming,
     chatCompletionStreaming,
     setIsGeneratingResponse,
@@ -366,10 +376,8 @@ const useSendMessage = () => {
         return
       }
       if (selectedModel.model !== activeThread.assistants[0].model) {
-        alert(
-          `Selected model ${selectedModel.model} doesn't match active thread assistant model ${activeThread.assistants[0].model}.`
-        )
-        return
+        activeThread.assistants[0].model = selectedModel.model
+        await updateThread(activeThread)
       }
       const engine = selectedModel.engine
       if (!engine) {
@@ -402,7 +410,8 @@ const useSendMessage = () => {
         return
       }
 
-      const shouldSummarize = activeThread.title === 'New Thread'
+      let shouldSummarize =
+        activeThread.title === 'New Thread' || activeThread.title.trim() === ''
       const modelId = activeThread.assistants[0].model
 
       setCurrentPrompt('')
@@ -420,51 +429,54 @@ const useSendMessage = () => {
 
       try {
         // start model if not yet started
-        // TODO: Handle case model is starting up
         if (LocalEngines.find((e) => e === selectedModel.engine) != null) {
           // start model if local and not started
           if (!activeModels.map((model) => model.model).includes(modelId)) {
             await startModel(modelId)
           }
         }
+      } catch (err) {
+        console.error(`Failed to start model ${modelId}, error: ${err}`)
+      }
 
-        setIsGeneratingResponse(true)
+      setIsGeneratingResponse(true)
 
-        // building messages
-        const systemMessage: ChatCompletionMessageParam = {
-          role: 'system',
-          content: activeThread.assistants[0].instructions ?? '',
-        }
+      // building messages
+      const systemMessage: ChatCompletionMessageParam = {
+        role: 'system',
+        content: activeThread.assistants[0].instructions ?? '',
+      }
 
-        const messages: ChatCompletionMessageParam[] = currentMessages
-          .map((msg) => {
-            switch (msg.role) {
-              case 'user':
-              case 'assistant':
-                return {
-                  role: msg.role,
-                  content: (msg.content[0] as TextContentBlock).text.value,
-                }
+      const messages: ChatCompletionMessageParam[] = currentMessages
+        .map((msg) => {
+          switch (msg.role) {
+            case 'user':
+            case 'assistant':
+              return {
+                role: msg.role,
+                content: (msg.content[0] as TextContentBlock).text.value,
+              }
 
-              // we will need to support other roles in the future
-              default:
-                break
-            }
-          })
-          .filter((msg) => msg != null) as ChatCompletionMessageParam[]
-        messages.push({
-          role: 'user',
-          content: message,
+            // we will need to support other roles in the future
+            default:
+              break
+          }
         })
-        messages.unshift(systemMessage)
-        const modelOptions: Record<string, string | number> = {}
-        if (selectedModel.frequency_penalty) {
-          modelOptions.frequency_penalty = selectedModel.frequency_penalty
-        }
-        if (selectedModel.presence_penalty) {
-          modelOptions.presence_penalty = selectedModel.presence_penalty
-        }
-        let assistantResponseMessage = ''
+        .filter((msg) => msg != null) as ChatCompletionMessageParam[]
+      messages.push({
+        role: 'user',
+        content: message,
+      })
+      messages.unshift(systemMessage)
+      const modelOptions: Record<string, string | number> = {}
+      if (selectedModel.frequency_penalty) {
+        modelOptions.frequency_penalty = selectedModel.frequency_penalty
+      }
+      if (selectedModel.presence_penalty) {
+        modelOptions.presence_penalty = selectedModel.presence_penalty
+      }
+      let assistantResponseMessage = ''
+      try {
         if (selectedModel.stream === true) {
           const stream = await chatCompletionStreaming({
             messages,
@@ -546,82 +558,82 @@ const useSendMessage = () => {
             },
           })
         } else {
-          try {
-            const abortController = new AbortController()
-            const response = await chatCompletionNonStreaming(
-              {
-                messages,
-                model: selectedModel.model,
-                stream: false,
-                max_tokens: selectedModel.max_tokens,
-                stop: selectedModel.stop,
-                temperature: selectedModel.temperature ?? 1,
-                top_p: selectedModel.top_p ?? 1,
-                ...modelOptions,
-              },
-              {
-                signal: abortController.signal,
-              }
-            )
+          const abortController = new AbortController()
+          const response = await chatCompletionNonStreaming(
+            {
+              messages,
+              model: selectedModel.model,
+              stream: false,
+              max_tokens: selectedModel.max_tokens,
+              stop: selectedModel.stop,
+              temperature: selectedModel.temperature ?? 1,
+              top_p: selectedModel.top_p ?? 1,
+              ...modelOptions,
+            },
+            {
+              signal: abortController.signal,
+            }
+          )
 
-            assistantResponseMessage = response.choices[0].message.content ?? ''
-            const assistantMessage = await createMessage.mutateAsync({
-              threadId: activeThread.id,
-              createMessageParams: {
-                role: 'assistant',
-                content: assistantResponseMessage,
-              },
-            })
-
-            const responseMessage: Message = {
-              id: assistantMessage.id,
-              thread_id: activeThread.id,
-              assistant_id: activeThread.id,
+          assistantResponseMessage = response.choices[0].message.content ?? ''
+          const assistantMessage = await createMessage.mutateAsync({
+            threadId: activeThread.id,
+            createMessageParams: {
               role: 'assistant',
-              content: [
-                {
-                  type: 'text',
-                  text: {
-                    value: assistantResponseMessage,
-                    annotations: [],
-                  },
+              content: assistantResponseMessage,
+            },
+          })
+
+          const responseMessage: Message = {
+            id: assistantMessage.id,
+            thread_id: activeThread.id,
+            assistant_id: activeThread.id,
+            role: 'assistant',
+            content: [
+              {
+                type: 'text',
+                text: {
+                  value: assistantResponseMessage,
+                  annotations: [],
                 },
-              ],
-              status: 'completed',
-              created_at: assistantMessage.created_at,
-              metadata: undefined,
-              attachments: null,
-              completed_at: Date.now(),
-              incomplete_at: null,
-              incomplete_details: null,
-              object: 'thread.message',
-              run_id: null,
-            }
-            updateMessage.mutateAsync({
-              threadId: activeThread.id,
-              messageId: responseMessage.id,
-              data: {
-                content: responseMessage.content,
               },
-            })
-
-            if (responseMessage) {
-              setIsGeneratingResponse(false)
-            }
-
-            addNewMessage(responseMessage)
-          } catch (err) {
-            console.error(err)
-            if (err instanceof Error) {
-              toaster({
-                title: 'Failed to generate response',
-                description: err.message,
-                type: 'error',
-              })
-            }
+            ],
+            status: 'completed',
+            created_at: assistantMessage.created_at,
+            metadata: undefined,
+            attachments: null,
+            completed_at: Date.now(),
+            incomplete_at: null,
+            incomplete_details: null,
+            object: 'thread.message',
+            run_id: null,
           }
-        }
+          updateMessage.mutateAsync({
+            threadId: activeThread.id,
+            messageId: responseMessage.id,
+            data: {
+              content: responseMessage.content,
+            },
+          })
 
+          if (responseMessage) {
+            setIsGeneratingResponse(false)
+          }
+
+          addNewMessage(responseMessage)
+        }
+      } catch (err) {
+        console.error(err)
+        setIsGeneratingResponse(false)
+        shouldSummarize = false
+
+        toaster({
+          title: 'Failed to generate response',
+          type: 'error',
+        })
+      }
+
+      try {
         if (!shouldSummarize) return
         // summarize if needed
         const textMessages: string[] = messages
@@ -632,7 +644,7 @@ const useSendMessage = () => {
         textMessages.push(assistantResponseMessage)
         summarizeThread(textMessages, modelId, activeThread)
       } catch (err) {
-        console.error(err)
+        console.error(`Failed to summarize thread: ${err}`)
       }
     },
     [
@@ -640,13 +652,14 @@ const useSendMessage = () => {
       activeModels,
       currentMessages,
       selectedModel,
+      updateMessage,
+      createMessage,
+      updateThread,
       setCurrentPrompt,
       setEditPrompt,
       setIsGeneratingResponse,
-      updateMessage,
       updateMessageState,
       addNewMessage,
-      createMessage,
       startModel,
       chatCompletionNonStreaming,
       chatCompletionStreaming,
