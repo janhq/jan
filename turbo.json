@@ -1,6 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "pipeline": {
+  "tasks": {
     "build": {
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
@@ -26,18 +26,12 @@
     },
     "jan#build": {
       "outputs": ["dist/**"],
-      "dependsOn": [
-        "@janhq/core#build",
-        "@janhq/web#build"
-      ]
+      "dependsOn": ["@janhq/core#build", "@janhq/web#build"]
     },
     "jan#build:test": {
       "outputs": ["dist/**"],
       "cache": false,
-      "dependsOn": [
-        "@janhq/core#build",
-        "@janhq/web#build"
-      ]
+      "dependsOn": ["@janhq/core#build", "@janhq/web#build"]
     },
     "type-check": {}
   }
