@@ -1,7 +1,10 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
+import { ResourceStatus } from '@janhq/core'
 import { Progress } from '@janhq/joi'
 import { useClickOutside } from '@janhq/joi'
+
+import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   MonitorIcon,
@@ -13,15 +16,12 @@ import {
 
 import { twMerge } from 'tailwind-merge'
 
-import useGetSystemResources from '@/hooks/useGetSystemResources'
-
-import { usePath } from '@/hooks/usePath'
-
 import { toGibibytes } from '@/utils/converter'
 
 import TableActiveModel from './TableActiveModel'
 
 import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
+import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import {
   cpuUsageAtom,
@@ -31,12 +31,13 @@ import {
   usedRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
-const SystemMonitor = () => {
-  const totalRam = useAtomValue(totalRamAtom)
-  const usedRam = useAtomValue(usedRamAtom)
-  const cpuUsage = useAtomValue(cpuUsageAtom)
+const SystemMonitor: React.FC = () => {
+  const host = useAtomValue(hostAtom)
+  const [usedRam, setUsedRam] = useAtom(usedRamAtom)
+  const [totalRam, setTotalRam] = useAtom(totalRamAtom)
+  const [cpuUsage, setCpuUsage] = useAtom(cpuUsageAtom)
   const gpus = useAtomValue(gpusAtom)
-  const { onRevealInFinder } = usePath()
+
   const [showFullScreen, setShowFullScreen] = useState(false)
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
@@ -47,8 +48,37 @@ const SystemMonitor = () => {
     null
   )
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
-  const { watch, stopWatching } = useGetSystemResources()
+  const onOpenAppLogClick = useCallback(() => {
+    window?.electronAPI?.openAppLog()
+  }, [])
+
+  const register = useCallback(async () => {
+    if (abortControllerRef.current) return
+    abortControllerRef.current = new AbortController()
+    await fetchEventSource(`${host}/events/resources`, {
+      onmessage(ev) {
+        if (!ev.data || ev.data === '') return
+        try {
+          const resourceEvent = JSON.parse(ev.data) as ResourceStatus
+          setUsedRam(resourceEvent.mem.used)
+          setTotalRam(resourceEvent.mem.total)
+          setCpuUsage(resourceEvent.cpu.usage)
+        } catch (err) {
+          console.error(err)
+        }
+      },
+      signal: abortControllerRef.current.signal,
+    })
+  }, [host, setTotalRam, setUsedRam, setCpuUsage])
+
+  const unregister = useCallback(() => {
+    if (!abortControllerRef.current) return
+    abortControllerRef.current.abort()
+    abortControllerRef.current = null
+  }, [])
+
   useClickOutside(
     () => {
       setShowSystemMonitorPanel(false)
@@ -59,14 +89,11 @@ const SystemMonitor = () => {
   )
 
   useEffect(() => {
-    // Watch for resource update
-    watch()
-
+    register()
     return () => {
-      stopWatching()
+      unregister()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [register, unregister])
 
   return (
     <Fragment>
@@ -100,7 +127,7 @@ const SystemMonitor = () => {
             <div className="unset-drag flex cursor-pointer items-center gap-x-2">
               <div
                 className="flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]"
-                onClick={() => onRevealInFinder('Logs')}
+                onClick={() => onOpenAppLogClick()}
               >
                 <FolderOpenIcon size={12} /> App Log
               </div>

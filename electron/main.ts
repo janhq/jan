@@ -1,16 +1,17 @@
 import { app, BrowserWindow } from 'electron'
 
 import { join, resolve } from 'path'
+import { exec } from 'child_process'
+import { cortexPath } from './cortex-runner'
+
 /**
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { getAppConfigurations, log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
  **/
-import { injectHandler } from './handlers/common'
 import { handleAppUpdates } from './handlers/update'
 import { handleAppIPCs } from './handlers/native'
 
@@ -21,21 +22,16 @@ import { setupMenu } from './utils/menu'
 import { createUserSpace } from './utils/path'
 import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
-import { setupExtensions } from './utils/extension'
 import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 
-import { trayManager } from './managers/tray'
-import { logSystemInfo } from './utils/system'
-import { registerGlobalShortcuts } from './utils/shortcut'
+import log from 'electron-log'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
-const quickAskPath = join(rendererPath, 'search.html')
 const mainPath = join(rendererPath, 'index.html')
 
 const mainUrl = 'http://localhost:3000'
-const quickAskUrl = `${mainUrl}/search`
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -54,8 +50,30 @@ const createMainWindow = () => {
   windowManager.createMainWindow(preloadPath, startUrl)
 }
 
+log.initialize()
+log.info('Log from the main process')
+
+// replace all console.log to log
+Object.assign(console, log.functions)
+
 app
   .whenReady()
+  .then(() => {
+    log.info('Starting cortex with path:', cortexPath)
+    // init cortex
+    // running shell command cortex init -s
+    exec(`${cortexPath}`, (error, stdout, stderr) => {
+      if (error) {
+        log.error(`error: ${error.message}`)
+        return
+      }
+      if (stderr) {
+        log.error(`stderr: ${stderr}`)
+        return
+      }
+      log.info(`stdout: ${stdout}`)
+    })
+  })
   .then(() => {
     if (!gotTheLock) {
       app.quit()
@@ -80,21 +98,16 @@ app
   .then(setupCore)
   .then(createUserSpace)
   .then(migrate)
-  .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
   .then(handleAppUpdates)
-  .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
-  .then(registerGlobalShortcuts)
   .then(() => {
     if (!app.isPackaged) {
       setupReactDevTool()
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
-  .then(logSystemInfo)
   .then(() => {
     app.on('activate', () => {
       if (!BrowserWindow.getAllWindows().length) {
@@ -109,29 +122,27 @@ app.on('open-url', (_event, url) => {
   windowManager.sendMainAppDeepLink(url)
 })
 
-app.on('before-quit', function (_event) {
-  trayManager.destroyCurrentTray()
-})
-
-app.once('quit', () => {
+app.once('quit', async () => {
+  await stopApiServer()
   cleanUpAndQuit()
 })
 
-app.once('window-all-closed', () => {
-  // Feature Toggle for Quick Ask
-  if (
-    getAppConfigurations().quick_ask &&
-    !windowManager.isQuickAskWindowDestroyed()
-  )
-    return
+app.once('window-all-closed', async () => {
+  await stopApiServer()
   cleanUpAndQuit()
 })
 
-function createQuickAskWindow() {
-  // Feature Toggle for Quick Ask
-  if (!getAppConfigurations().quick_ask) return
-  const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
-  windowManager.createQuickAskWindow(preloadPath, startUrl)
+async function stopApiServer() {
+  try {
+    console.log('Stopping API server')
+    const response = await fetch('http://localhost:1337/v1/process', {
+      method: 'DELETE',
+    })
+
+    console.log('Response status:', response.status)
+  } catch (error) {
+    console.error('Error stopping API server:', error)
+  }
 }
 
 /**
@@ -139,15 +150,13 @@ function createQuickAskWindow() {
  */
 function handleIPCs() {
   // Inject core handlers for IPCs
-  injectHandler()
-
   // Handle native IPCs
   handleAppIPCs()
 }
 
-/*
- ** Suppress Node error messages
+/**
+ * Suppress Node error messages
  */
 process.on('uncaughtException', function (err) {
-  log(`Error: ${err}`)
+  log.error(`Error: ${err}`)
 })

@@ -1,30 +1,27 @@
 import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
-import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
-  ModuleManager,
-  getJanDataFolderPath,
-  getJanExtensionsPath,
-  init,
   AppEvent,
   NativeRoute,
   SelectFileProp,
+  SelectFileOption,
 } from '@janhq/core/node'
-import { SelectFileOption } from '@janhq/core'
 import { menu } from '../utils/menu'
+import { join } from 'path'
+import { getJanDataFolderPath } from './../utils/path'
+import {
+  readdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  mkdirSync,
+} from 'fs'
+import { dump } from 'js-yaml'
+import os from 'os'
 
 const isMac = process.platform === 'darwin'
 
 export function handleAppIPCs() {
-  /**
-   * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
-   * The `shell.openPath` method is used to open the directory in the user's default file explorer.
-   * @param _event - The IPC event object.
-   */
-  ipcMain.handle(NativeRoute.openAppDirectory, async (_event) => {
-    shell.openPath(getJanDataFolderPath())
-  })
-
   /**
    * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
    * This will change the appearance of the app to the light theme.
@@ -41,12 +38,41 @@ export function handleAppIPCs() {
     windowManager.mainWindow?.minimize()
   })
 
+  ipcMain.handle(NativeRoute.homePath, () => {
+    // Handles the 'get jan home path' IPC event. This event is triggered to get the default jan home path.
+    return join(
+      process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'] ?? '',
+      'jan'
+    )
+  })
   ipcMain.handle(NativeRoute.setMaximizeApp, async (_event) => {
     if (windowManager.mainWindow?.isMaximized()) {
       windowManager.mainWindow.unmaximize()
     } else {
       windowManager.mainWindow?.maximize()
     }
+  })
+
+  ipcMain.handle(NativeRoute.getThemes, async () => {
+    const folderPath = join(getJanDataFolderPath(), 'themes')
+    const installedThemes = readdirSync(folderPath)
+
+    const themesOptions = Promise.all(
+      installedThemes
+        .filter((x: string) => x !== '.DS_Store')
+        .map(async (x: string) => {
+          const y = join(folderPath, x, `theme.json`)
+          const c = JSON.parse(readFileSync(y, 'utf-8'))
+          return { name: c?.displayName, value: c.id }
+        })
+    )
+    return themesOptions
+  })
+
+  ipcMain.handle(NativeRoute.readTheme, async (_event, themeId: string) => {
+    const folderPath = join(getJanDataFolderPath(), 'themes')
+    const filePath = join(folderPath, themeId, `theme.json`)
+    return JSON.parse(readFileSync(filePath, 'utf-8'))
   })
 
   /**
@@ -81,27 +107,8 @@ export function handleAppIPCs() {
    * @param url - The URL to reload.
    */
   ipcMain.handle(NativeRoute.relaunch, async (_event) => {
-    ModuleManager.instance.clearImportedModules()
-
-    if (app.isPackaged) {
-      app.relaunch()
-      app.exit()
-    } else {
-      for (const modulePath in ModuleManager.instance.requiredModules) {
-        delete require.cache[
-          require.resolve(join(getJanExtensionsPath(), modulePath))
-        ]
-      }
-      init({
-        // Function to check from the main process that user wants to install a extension
-        confirmInstall: async (_extensions: string[]) => {
-          return true
-        },
-        // Path to install extension to
-        extensionsPath: getJanExtensionsPath(),
-      })
-      windowManager.mainWindow?.reload()
-    }
+    app.relaunch()
+    app.exit()
   })
 
   ipcMain.handle(NativeRoute.selectDirectory, async () => {
@@ -200,4 +207,173 @@ export function handleAppIPCs() {
   ipcMain.handle(NativeRoute.ackDeepLink, async (_event): Promise<void> => {
     windowManager.ackDeepLink()
   })
+
+  ipcMain.handle(NativeRoute.openAppLog, async (_event): Promise<void> => {
+    const cortexHomeDir = join(os.homedir(), 'cortex')
+
+    try {
+      const errorMessage = await shell.openPath(join(cortexHomeDir))
+      if (errorMessage) {
+        console.error(`An error occurred: ${errorMessage}`)
+      } else {
+        console.log('Path opened successfully')
+      }
+    } catch (error) {
+      console.error(`Failed to open path: ${error}`)
+    }
+  })
+
+  ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
+    const janModelFolderPath = join(getJanDataFolderPath(), 'models')
+    const allModelFolders = readdirSync(janModelFolderPath)
+
+    const cortexHomeDir = join(os.homedir(), 'cortex')
+    const cortexModelFolderPath = join(cortexHomeDir, 'models')
+    console.log('cortexModelFolderPath', cortexModelFolderPath)
+    const reflect = require('@alumna/reflect')
+
+    for (const modelName of allModelFolders) {
+      const modelFolderPath = join(janModelFolderPath, modelName)
+      const filesInModelFolder = readdirSync(modelFolderPath)
+      if (filesInModelFolder.length <= 1) {
+        // if only have model.json file or empty folder, we skip it
+        continue
+      }
+
+      const destinationPath = join(cortexModelFolderPath, modelName)
+
+      // create folder if not exist
+      if (!existsSync(destinationPath)) {
+        mkdirSync(destinationPath, { recursive: true })
+      }
+
+      try {
+        const modelJsonFullPath = join(
+          janModelFolderPath,
+          modelName,
+          'model.json'
+        )
+
+        const model = JSON.parse(readFileSync(modelJsonFullPath, 'utf-8'))
+        const fileNames: string[] = model.sources.map((x: any) => x.filename)
+        // prepend fileNames with cortexModelFolderPath
+        const files = fileNames.map((x: string) =>
+          join(cortexModelFolderPath, model.id, x)
+        )
+
+        const engine = 'cortex.llamacpp'
+
+        const updatedModelFormat = {
+          id: model.id,
+          name: model.id,
+          model: model.id,
+          version: Number(model.version),
+          files: files ?? [],
+          created: Date.now(),
+          object: 'model',
+          owned_by: model.metadata?.author ?? '',
+
+          // settings
+          ngl: model.settings?.ngl,
+          ctx_len: model.settings?.ctx_len ?? 2048,
+          engine: engine,
+          prompt_template: model.settings?.prompt_template ?? '',
+
+          // parameters
+          stop: model.parameters?.stop ?? [],
+          top_p: model.parameters?.top_p,
+          temperature: model.parameters?.temperature,
+          frequency_penalty: model.parameters?.frequency_penalty,
+          presence_penalty: model.parameters?.presence_penalty,
+          max_tokens: model.parameters?.max_tokens ?? 2048,
+          stream: model.parameters?.stream ?? true,
+        }
+
+        const { err } = await reflect({
+          src: modelFolderPath,
+          dest: destinationPath,
+          recursive: true,
+          exclude: ['model.json'],
+          delete: false,
+          overwrite: true,
+          errorOnExist: false,
+        })
+        if (err) console.error(err)
+        else {
+          // create the model.yml file
+          const modelYamlData = dump(updatedModelFormat)
+          const modelYamlPath = join(cortexModelFolderPath, `${modelName}.yaml`)
+
+          writeFileSync(modelYamlPath, modelYamlData)
+        }
+      } catch (err) {
+        console.error(err)
+      }
+    }
+  })
+
+  ipcMain.handle(
+    NativeRoute.getAllMessagesAndThreads,
+    async (_event): Promise<any> => {
+      const janThreadFolderPath = join(getJanDataFolderPath(), 'threads')
+      // get children of thread folder
+      const allThreadFolders = readdirSync(janThreadFolderPath)
+      const threads: any[] = []
+      const messages: any[] = []
+      for (const threadFolder of allThreadFolders) {
+        try {
+          const threadJsonFullPath = join(
+            janThreadFolderPath,
+            threadFolder,
+            'thread.json'
+          )
+          const thread = JSON.parse(readFileSync(threadJsonFullPath, 'utf-8'))
+          threads.push(thread)
+
+          const messageFullPath = join(
+            janThreadFolderPath,
+            threadFolder,
+            'messages.jsonl'
+          )
+          const lines = readFileSync(messageFullPath, 'utf-8')
+            .toString()
+            .split('\n')
+            .filter((line: any) => line !== '')
+          for (const line of lines) {
+            messages.push(JSON.parse(line))
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      return {
+        threads,
+        messages,
+      }
+    }
+  )
+
+  ipcMain.handle(
+    NativeRoute.getAllLocalModels,
+    async (_event): Promise<boolean> => {
+      const janModelsFolderPath = join(getJanDataFolderPath(), 'models')
+      // get children of thread folder
+      const allModelsFolders = readdirSync(janModelsFolderPath)
+      let hasLocalModels = false
+      for (const modelFolder of allModelsFolders) {
+        try {
+          const modelsFullPath = join(janModelsFolderPath, modelFolder)
+          const dir = readdirSync(modelsFullPath)
+          const ggufFile = dir.some((file) => file.endsWith('.gguf'))
+          if (ggufFile) {
+            hasLocalModels = true
+            break
+          }
+        } catch (err) {
+          console.error(err)
+        }
+      }
+      return hasLocalModels
+    }
+  )
 }

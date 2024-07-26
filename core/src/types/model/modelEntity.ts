@@ -1,119 +1,85 @@
-/**
- * Represents the information about a model.
- * @stored
- */
-export type ModelInfo = {
-  id: string
-  settings: ModelSettingParams
-  parameters: ModelRuntimeParams
-  engine?: InferenceEngine
-}
+import { Model as OpenAiModel } from 'openai/resources'
 
-/**
- * Represents the inference engine.
- * @stored
- */
+export const LocalEngines = ['cortex.llamacpp', 'cortex.onnx', 'cortex.tensorrt-llm'] as const
 
-export enum InferenceEngine {
-  anthropic = 'anthropic',
-  mistral = 'mistral',
-  martian = 'martian',
-  openrouter = 'openrouter',
-  nitro = 'nitro',
-  openai = 'openai',
-  groq = 'groq',
-  triton_trtllm = 'triton_trtllm',
-  nitro_tensorrt_llm = 'nitro-tensorrt-llm',
-  cohere = 'cohere',
-}
+export const RemoteEngines = [
+  'anthropic',
+  'mistral',
+  'martian',
+  'openrouter',
+  'openai',
+  'groq',
+  'triton_trtllm',
+  'cohere',
+] as const
+
+export const LlmEngines = [...LocalEngines, ...RemoteEngines] as const
+export type LlmEngine = (typeof LlmEngines)[number]
+export type LocalEngine = (typeof LocalEngines)[number]
+export type RemoteEngine = (typeof RemoteEngines)[number]
 
 export type ModelArtifact = {
   filename: string
   url: string
 }
 
-/**
- * Model type defines the shape of a model object.
- * @stored
- */
-export type Model = {
+export interface Model extends OpenAiModel, ModelSettingParams, ModelRuntimeParams {
   /**
-   * The type of the object.
-   * Default: "model"
+   * Model identifier.
    */
-  object: string
+  model: string
 
   /**
-   * The version of the model.
+   * GGUF metadata: general.name
    */
-  version: string
+  name?: string
 
   /**
-   * The format of the model.
+   * GGUF metadata: version
    */
-  format: string
+  version?: string
+
+  /**
+   * Currently we only have 'embedding' | 'llm'
+   */
+  model_type?: string
 
   /**
    * The model download source. It can be an external url or a local filepath.
    */
-  sources: ModelArtifact[]
+  files: string[] | ModelArtifact
 
-  /**
-   * The model identifier, which can be referenced in the API endpoints.
-   */
-  id: string
-
-  /**
-   * Human-readable name that is used for UI.
-   */
-  name: string
-
-  /**
-   * The Unix timestamp (in seconds) for when the model was created
-   */
-  created: number
-
-  /**
-   * Default: "A cool model from Huggingface"
-   */
-  description: string
-
-  /**
-   * The model settings.
-   */
-  settings: ModelSettingParams
-
-  /**
-   * The model runtime parameters.
-   */
-  parameters: ModelRuntimeParams
-
-  /**
-   * Metadata of the model.
-   */
-  metadata: ModelMetadata
-  /**
-   * The model engine.
-   */
-  engine: InferenceEngine
-}
-
-export type ModelMetadata = {
-  author: string
-  tags: string[]
-  size: number
-  cover?: string
+  metadata?: Record<string, any>
 }
 
 /**
  * The available model settings.
  */
-export type ModelSettingParams = {
+export interface ModelSettingParams {
+  /**
+   * The context length for model operations varies; the maximum depends on the specific model used.
+   */
   ctx_len?: number
+
+  /**
+   * The number of layers to load onto the GPU for acceleration.
+   */
   ngl?: number
   embedding?: boolean
+
+  /**
+   * Number of parallel sequences to decode
+   */
   n_parallel?: number
+
+  /**
+   * Determines CPU inference threads, limited by hardware and OS. (Maximum determined by system)
+   */
   cpu_threads?: number
+
+  /**
+   * GGUF metadata: tokenizer.chat_template
+   */
   prompt_template?: string
   system_prompt?: string
   ai_prompt?: string
@@ -121,26 +87,139 @@ export type ModelSettingParams = {
   llama_model_path?: string
   mmproj?: string
   cont_batching?: boolean
-  vision_model?: boolean
-  text_model?: boolean
+
+  /**
+   * The model engine.
+   */
+  engine?: LlmEngine
+
+  /**
+   * The prompt to use for internal configuration
+   */
+  pre_prompt?: string
+
+  /**
+   * The batch size for prompt eval step
+   */
+  n_batch?: number
+
+  /**
+   * To enable prompt caching or not
+   */
+  caching_enabled?: boolean
+
+  /**
+   * Group attention factor in self-extend
+   */
+  grp_attn_n?: number
+
+  /**
+   * Group attention width in self-extend
+   */
+  grp_attn_w?: number
+
+  /**
+   * Prevent system swapping of the model to disk in macOS
+   */
+  mlock?: boolean
+
+  /**
+   * You can constrain the sampling using GBNF grammars by providing path to a grammar file
+   */
+  grammar_file?: string
+
+  /**
+   * To enable Flash Attention, default is true
+   */
+  flash_attn?: boolean
+
+  /**
+   * KV cache type: f16, q8_0, q4_0, default is f16
+   */
+  cache_type?: string
+
+  /**
+   * To enable mmap, default is true
+   */
+  use_mmap?: boolean
 }
+type ModelSettingParamsKeys = keyof ModelSettingParams
+export const modelSettingParamsKeys: ModelSettingParamsKeys[] = [
+  'ctx_len',
+  'ngl',
+  'embedding',
+  'n_parallel',
+  'cpu_threads',
+  'prompt_template',
+  'system_prompt',
+  'ai_prompt',
+  'user_prompt',
+  'llama_model_path',
+  'mmproj',
+  'cont_batching',
+  'engine',
+  'pre_prompt',
+  'n_batch',
+  'caching_enabled',
+  'grp_attn_n',
+  'grp_attn_w',
+  'mlock',
+  'grammar_file',
+  'flash_attn',
+  'cache_type',
+  'use_mmap',
+]
 
 /**
  * The available model runtime parameters.
  */
-export type ModelRuntimeParams = {
+export interface ModelRuntimeParams {
+  /**
+   * Controls the randomness of the model’s output.
+   */
   temperature?: number
   token_limit?: number
   top_k?: number
-  top_p?: number
-  stream?: boolean
-  max_tokens?: number
-  stop?: string[]
-  frequency_penalty?: number
-  presence_penalty?: number
-  engine?: string
-}
 
-export type ModelInitFailed = Model & {
-  error: Error
+  /**
+   * Set probability threshold for more relevant outputs.
+   */
+  top_p?: number
+
+  /**
+   * Enable real-time data processing for faster predictions.
+   */
+  stream?: boolean
+
+  /*
+   * The maximum number of tokens the model will generate in a single response.
+   */
+  max_tokens?: number
+
+  /**
+   * Defines specific tokens or phrases at which the model will stop generating further output.
+   */
+  stop?: string[]
+
+  /**
+   * Adjusts the likelihood of the model repeating words or phrases in its output.
+   */
+  frequency_penalty?: number
+
+  /**
+   * Influences the generation of new and varied concepts in the model’s output.
+   */
+  presence_penalty?: number
 }
+type ModelRuntimeParamsKeys = keyof ModelRuntimeParams
+export const modelRuntimeParamsKeys: ModelRuntimeParamsKeys[] = [
+  'temperature',
+  'token_limit',
+  'top_k',
+  'top_p',
+  'stream',
+  'max_tokens',
+  'stop',
+  'frequency_penalty',
+  'presence_penalty',
+]

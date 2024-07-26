@@ -1,70 +1,41 @@
 'use client'
 
-import { Fragment, ReactNode, useEffect } from 'react'
+import { useEffect } from 'react'
 
-import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
-import { useSetAtom } from 'jotai'
-
-import useAssistants from '@/hooks/useAssistants'
-import useGetSystemResources from '@/hooks/useGetSystemResources'
+import useAssistantCreate, { janAssistant } from '@/hooks/useAssistantCreate'
+import useAssistantQuery from '@/hooks/useAssistantQuery'
+import useEngineQuery from '@/hooks/useEngineQuery'
 import { useLoadTheme } from '@/hooks/useLoadTheme'
+import useModelHub from '@/hooks/useModelHub'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
-import { SettingScreenList } from '@/screens/Settings'
-
-import { defaultJanDataFolderAtom } from '@/helpers/atoms/App.atom'
-import {
-  janDataFolderPathAtom,
-  quickAskEnabledAtom,
-} from '@/helpers/atoms/AppConfig.atom'
-import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
-
-type Props = {
-  children: ReactNode
-}
-
-const DataLoader: React.FC<Props> = ({ children }) => {
-  const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
-  const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
-  const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
-  const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
-
-  useModels()
-  useThreads()
-  useAssistants()
-  useGetSystemResources()
-  useLoadTheme()
+const DataLoader: React.FC = () => {
+  const { getThreadList } = useThreads()
+  const { getModels } = useModels()
+  const { data: assistants } = useAssistantQuery()
+  const assistantCreateMutation = useAssistantCreate()
 
   useEffect(() => {
-    window.core?.api
-      ?.getAppConfigurations()
-      ?.then((appConfig: AppConfiguration) => {
-        setJanDataFolderPath(appConfig.data_folder)
-        setQuickAskEnabled(appConfig.quick_ask)
-      })
-  }, [setJanDataFolderPath, setQuickAskEnabled])
-
-  useEffect(() => {
-    async function getDefaultJanDataFolder() {
-      const homePath = await getUserHomePath()
-      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
-
-      setJanDefaultDataFolder(defaultJanDataFolder)
+    if (!assistants) return
+    if (assistants.length === 0 && assistantCreateMutation.isIdle) {
+      // empty assistant. create new one
+      console.debug('Empty assistants received. Create Jan Assistant...')
+      assistantCreateMutation.mutate(janAssistant)
     }
-    getDefaultJanDataFolder()
-  }, [setJanDefaultDataFolder])
+  }, [assistants, assistantCreateMutation])
+
+  useModelHub()
+  useLoadTheme()
+  useEngineQuery()
 
   useEffect(() => {
-    const janSettingScreen = SettingScreenList.filter(
-      (screen) => window.electronAPI || screen !== 'Extensions'
-    )
-    setJanSettingScreen(janSettingScreen)
-  }, [setJanSettingScreen])
+    getThreadList()
+    getModels()
+  }, [getThreadList, getModels])
 
   console.debug('Load Data...')
-
-  return <Fragment>{children}</Fragment>
+  return null
 }
 
 export default DataLoader

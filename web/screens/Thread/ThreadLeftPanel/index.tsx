@@ -1,205 +1,98 @@
-import { useCallback, useEffect, useState } from 'react'
-
-import { Thread } from '@janhq/core'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { Button } from '@janhq/joi'
-import { motion as m } from 'framer-motion'
-import { useAtomValue, useSetAtom } from 'jotai'
-import {
-  GalleryHorizontalEndIcon,
-  MoreHorizontalIcon,
-  PenSquareIcon,
-} from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
+
+import { useAtomValue } from 'jotai'
+import { PenSquareIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 import { toaster } from '@/containers/Toast'
 
-import { useCreateNewThread } from '@/hooks/useCreateNewThread'
-import useRecommendedModel from '@/hooks/useRecommendedModel'
-import useSetActiveThread from '@/hooks/useSetActiveThread'
+import useAssistantQuery from '@/hooks/useAssistantQuery'
 
-import ModalCleanThread from './ModalCleanThread'
-import ModalDeleteThread from './ModalDeleteThread'
-import ModalEditTitleThread from './ModalEditTitleThread'
+import useThreads from '@/hooks/useThreads'
 
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
-import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
+import ThreadItem from './ThreadItem'
 
 import {
-  getActiveThreadIdAtom,
-  threadDataReadyAtom,
-  threadsAtom,
-} from '@/helpers/atoms/Thread.atom'
+  downloadedModelsAtom,
+  getSelectedModelAtom,
+} from '@/helpers/atoms/Model.atom'
+import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
+import { getActiveThreadIdAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
-const ThreadLeftPanel = () => {
+const ThreadLeftPanel: React.FC = () => {
+  const { createThread, setActiveThread } = useThreads()
+  const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
-  const { setActiveThread } = useSetActiveThread()
-  const assistants = useAtomValue(assistantsAtom)
-  const threadDataReady = useAtomValue(threadDataReadyAtom)
-  const { requestCreateNewThread } = useCreateNewThread()
-  const setEditMessage = useSetAtom(editMessageAtom)
-  const { recommendedModel, downloadedModels } = useRecommendedModel()
 
-  const [contextMenu, setContextMenu] = useState<{
-    visible: boolean
-    thread?: Thread
-  }>({
-    visible: false,
-    thread: undefined,
-  })
+  const { data: assistants } = useAssistantQuery()
 
-  const onThreadClick = useCallback(
-    (thread: Thread) => {
-      setActiveThread(thread)
-      setEditMessage('')
-    },
-    [setActiveThread, setEditMessage]
-  )
+  const isCreatingThread = useRef(false)
 
-  /**
-   * Auto create thread
-   * This will create a new thread if there are assistants available
-   * and there are no threads available
-   */
   useEffect(() => {
-    if (
-      threadDataReady &&
-      assistants.length > 0 &&
-      threads.length === 0 &&
-      (recommendedModel || downloadedModels[0])
-    ) {
-      const model = recommendedModel || downloadedModels[0]
-      requestCreateNewThread(assistants[0], model)
-    } else if (threadDataReady && !activeThreadId) {
-      setActiveThread(threads[0])
+    // if user does not have any threads, we should create one
+    const createThreadIfEmpty = async () => {
+      if (!assistants || assistants.length === 0) return
+      if (downloadedModels.length === 0) return
+      if (threads.length > 0) return
+      if (isCreatingThread.current) return
+      isCreatingThread.current = true
+      // user have models but does not have any thread. Let's create one
+      await createThread(downloadedModels[0].model, assistants[0])
+      isCreatingThread.current = false
     }
-  }, [
-    assistants,
-    threads,
-    threadDataReady,
-    requestCreateNewThread,
-    activeThreadId,
-    setActiveThread,
-    recommendedModel,
-    downloadedModels,
-  ])
+    createThreadIfEmpty()
+  }, [threads, assistants, downloadedModels, createThread])
 
-  const onCreateConversationClick = async () => {
-    if (assistants.length === 0) {
+  useEffect(() => {
+    const setActiveThreadIfNone = () => {
+      if (activeThreadId) return
+      if (threads.length === 0) return
+      setActiveThread(threads[0].id)
+    }
+    setActiveThreadIfNone()
+  }, [activeThreadId, setActiveThread, threads])
+
+  const onCreateThreadClicked = useCallback(async () => {
+    if (!assistants || assistants.length === 0) {
       toaster({
         title: 'No assistant available.',
         description: `Could not create a new thread. Please add an assistant.`,
         type: 'error',
       })
-    } else {
-      requestCreateNewThread(assistants[0])
+      return
     }
-  }
-
-  const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
-    event.preventDefault()
-    setContextMenu({
-      visible: true,
-      thread,
-    })
-  }
-
-  const closeContextMenu = () => {
-    setContextMenu({
-      visible: false,
-      thread: undefined,
-    })
-  }
+    if (!selectedModel) return
+    createThread(selectedModel.model, assistants[0])
+  }, [createThread, selectedModel, assistants])
 
   return (
     <LeftPanelContainer>
-      {threads.length === 0 ? (
-        <div className="p-2 text-center">
-          <GalleryHorizontalEndIcon
+      <div className={twMerge('pl-1.5 pt-3', reduceTransparent && 'pr-1.5')}>
+        <Button
+          className="mb-2"
+          data-testid="btn-create-thread"
+          onClick={onCreateThreadClicked}
+          theme="icon"
+        >
+          <PenSquareIcon
             size={16}
-            className="text-[hsla(var(--text-secondary)] mx-auto mb-3"
+            className="cursor-pointer text-[hsla(var(--text-secondary))]"
           />
-          <h2 className="font-medium">No Thread History</h2>
-        </div>
-      ) : (
-        <div className="p-3">
-          <Button
-            className="mb-2"
-            data-testid="btn-create-thread"
-            onClick={onCreateConversationClick}
-            theme="icon"
-          >
-            <PenSquareIcon
-              size={16}
-              className="cursor-pointer text-[hsla(var(--text-secondary))]"
-            />
-          </Button>
-
+        </Button>
+        <AnimatePresence>
           {threads.map((thread) => (
-            <div
-              key={thread.id}
-              className={twMerge(
-                `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-[hsla(var(--left-panel-menu-hover))]`
-              )}
-              onClick={() => {
-                onThreadClick(thread)
-              }}
-              onContextMenu={(e) => onContextMenu(e, thread)}
-              onMouseLeave={closeContextMenu}
-            >
-              <div className="relative z-10 break-all p-2">
-                <h1
-                  className={twMerge(
-                    'line-clamp-1 pr-2 font-medium group-hover/message:pr-6',
-                    activeThreadId && 'font-medium'
-                  )}
-                >
-                  {thread.title}
-                </h1>
-              </div>
-              <div
-                className={twMerge(
-                  `group/icon text-[hsla(var(--text-secondary)] invisible absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-md px-0.5 group-hover/message:visible`
-                )}
-              >
-                <Button theme="icon" className="mt-2">
-                  <MoreHorizontalIcon />
-                </Button>
-                <div
-                  className={twMerge(
-                    'invisible absolute -right-1 z-50 w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg group-hover/icon:visible',
-                    contextMenu.visible &&
-                      contextMenu.thread?.id === thread.id &&
-                      'visible'
-                  )}
-                >
-                  <ModalEditTitleThread
-                    thread={thread}
-                    closeContextMenu={closeContextMenu}
-                  />
-                  <ModalCleanThread
-                    threadId={thread.id}
-                    closeContextMenu={closeContextMenu}
-                  />
-                  <ModalDeleteThread
-                    threadId={thread.id}
-                    closeContextMenu={closeContextMenu}
-                  />
-                </div>
-              </div>
-              {activeThreadId === thread.id && (
-                <m.div
-                  className="absolute inset-0 left-0 h-full w-full rounded-lg bg-[hsla(var(--left-panel-icon-active-bg))]"
-                  layoutId="active-thread"
-                />
-              )}
-            </div>
+            <ThreadItem key={thread.id} thread={thread} />
           ))}
-        </div>
-      )}
+        </AnimatePresence>
+      </div>
     </LeftPanelContainer>
   )
 }

@@ -1,1 +1,0 @@
-export { extensionManager } from './ExtensionManager'

@@ -23,13 +23,13 @@ export const getConfigurationsData = (
           switch (key) {
             case 'max_tokens':
               componentSetting.controllerProps.max =
-                selectedModel?.parameters.max_tokens ||
+                selectedModel?.max_tokens ||
                 componentSetting.controllerProps.max ||
                 4096
               break
             case 'ctx_len':
               componentSetting.controllerProps.max =
-                selectedModel?.settings.ctx_len ||
+                selectedModel?.ctx_len ||
                 componentSetting.controllerProps.max ||
                 2048
               break

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { joinPath, openFileExplorer } from '@janhq/core'
 import { Button, Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
@@ -28,8 +27,8 @@ const ImportingModelModal = () => {
 
   useEffect(() => {
     const getModelPath = async () => {
-      const modelPath = await joinPath([janDataFolder, 'models'])
-      setModelFolder(modelPath)
+      // const modelPath = await joinPath([janDataFolder, 'models'])
+      setModelFolder('')
     }
     getModelPath()
   }, [janDataFolder])
@@ -38,9 +37,14 @@ const ImportingModelModal = () => {
     (model) => model.status === 'IMPORTED'
   ).length
 
-  const onOpenModelFolderClick = useCallback(() => {
-    openFileExplorer(modelFolder)
-  }, [modelFolder])
+  const onOpenModelFolderClick = useCallback(
+    () => {
+      // openFileExplorer(modelFolder)
+    },
+    [
+      /*modelFolder*/
+    ]
+  )
 
   return (
     <Modal

@@ -1,17 +1,14 @@
 import { useCallback } from 'react'
 
 import { SettingComponentProps } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue } from 'jotai'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
-import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import useModels from '@/hooks/useModels'
 
 import SettingComponentBuilder from '../../../../containers/ModelSetting/SettingComponent'
 
-import {
-  activeThreadAtom,
-  engineParamsUpdateAtom,
-} from '@/helpers/atoms/Thread.atom'
+import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   componentData: SettingComponentProps[]
@@ -19,70 +16,47 @@ type Props = {
 
 const AssistantSetting: React.FC<Props> = ({ componentData }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { updateThreadMetadata } = useCreateNewThread()
-  const { stopModel } = useActiveModel()
-  const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
+  const activeModels = useAtomValue(activeModelsAtom)
+  const { stopModel } = useModels()
 
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
       if (!activeThread) return
+      console.log('onValueChanged', key, value)
       const shouldReloadModel =
         componentData.find((x) => x.key === key)?.requireModelReload ?? false
       if (shouldReloadModel) {
-        setEngineParamsUpdate(true)
-        stopModel()
+        const model = activeModels.find(
+          (model) => activeThread.assistants[0]?.model === model.model
+        )
+        if (model) stopModel(model.model)
       }
 
-      if (
-        activeThread.assistants[0].tools &&
-        (key === 'chunk_overlap' || key === 'chunk_size')
-      ) {
-        if (
-          activeThread.assistants[0].tools[0]?.settings.chunk_size <
-          activeThread.assistants[0].tools[0]?.settings.chunk_overlap
-        ) {
-          activeThread.assistants[0].tools[0].settings.chunk_overlap =
-            activeThread.assistants[0].tools[0].settings.chunk_size
-        }
-        if (
-          key === 'chunk_size' &&
-          value < activeThread.assistants[0].tools[0].settings.chunk_overlap
-        ) {
-          activeThread.assistants[0].tools[0].settings.chunk_overlap = value
-        } else if (
-          key === 'chunk_overlap' &&
-          value > activeThread.assistants[0].tools[0].settings.chunk_size
-        ) {
-          activeThread.assistants[0].tools[0].settings.chunk_size = value
-        }
-      }
-      updateThreadMetadata({
-        ...activeThread,
-        assistants: [
-          {
-            ...activeThread.assistants[0],
-            tools: [
-              {
-                type: 'retrieval',
-                enabled: true,
-                settings: {
-                  ...(activeThread.assistants[0].tools &&
-                    activeThread.assistants[0].tools[0]?.settings),
-                  [key]: value,
-                },
-              },
-            ],
-          },
-        ],
-      })
+      // if (
+      //   activeThread.assistants[0].tools &&
+      //   (key === 'chunk_overlap' || key === 'chunk_size')
+      // ) {
+      //   if (
+      //     activeThread.assistants[0].tools[0]?.settings.chunk_size <
+      //     activeThread.assistants[0].tools[0]?.settings.chunk_overlap
+      //   ) {
+      //     activeThread.assistants[0].tools[0].settings.chunk_overlap =
+      //       activeThread.assistants[0].tools[0].settings.chunk_size
+      //   }
+      //   if (
+      //     key === 'chunk_size' &&
+      //     value < activeThread.assistants[0].tools[0].settings.chunk_overlap
+      //   ) {
+      //     activeThread.assistants[0].tools[0].settings.chunk_overlap = value
+      //   } else if (
+      //     key === 'chunk_overlap' &&
+      //     value > activeThread.assistants[0].tools[0].settings.chunk_size
+      //   ) {
+      //     activeThread.assistants[0].tools[0].settings.chunk_size = value
+      //   }
+      // }
     },
-    [
-      activeThread,
-      componentData,
-      setEngineParamsUpdate,
-      stopModel,
-      updateThreadMetadata,
-    ]
+    [activeModels, activeThread, componentData, stopModel]
   )
 
   if (!activeThread) return null

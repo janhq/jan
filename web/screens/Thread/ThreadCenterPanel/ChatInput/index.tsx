@@ -1,86 +1,55 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { MessageStatus } from '@janhq/core'
-
-import {
-  TextArea,
-  Button,
-  Tooltip,
-  useClickOutside,
-  Badge,
-  useMediaQuery,
-} from '@janhq/joi'
+import { TextArea, Button, useMediaQuery } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
-  FileTextIcon,
-  ImageIcon,
   StopCircle,
-  PaperclipIcon,
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
-  ShapesIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import ModelDropdown from '@/containers/ModelDropdown'
-import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
-
-import { useActiveModel } from '@/hooks/useActiveModel'
-
-import useSendChatMessage from '@/hooks/useSendChatMessage'
-
-import FileUploadPreview from '../FileUploadPreview'
-import ImageUploadPreview from '../ImageUploadPreview'
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
   isGeneratingResponseAtom,
-  threadStatesAtom,
   waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
-const ChatInput = () => {
+type Props = {
+  sendMessage: (message: string) => void
+  stopInference: () => void
+}
+
+const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   const activeThread = useAtomValue(activeThreadAtom)
-  const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const [activeSetting, setActiveSetting] = useState(false)
   const spellCheck = useAtomValue(spellCheckAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
-  const { sendChatMessage } = useSendChatMessage()
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
-  const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  // const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
-  const { stopInference } = useActiveModel()
 
   const setActiveTabThreadRightPanel = useSetAtom(activeTabThreadRightPanelAtom)
-
-  const isStreamingResponse = Object.values(threadStates).some(
-    (threadState) => threadState.waitingForResponse
-  )
 
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setCurrentPrompt(e.target.value)
   }
 
-  const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
 
   const matches = useMediaQuery('(max-width: 880px)')
@@ -88,14 +57,14 @@ const ChatInput = () => {
   useEffect(() => {
     if (isWaitingToSend && activeThreadId) {
       setIsWaitingToSend(false)
-      sendChatMessage(currentPrompt)
+      sendMessage(currentPrompt)
     }
   }, [
     activeThreadId,
     isWaitingToSend,
     currentPrompt,
     setIsWaitingToSend,
-    sendChatMessage,
+    sendMessage,
   ])
 
   useEffect(() => {
@@ -116,14 +85,11 @@ const ChatInput = () => {
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
-      if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
-        sendChatMessage(currentPrompt)
-      else onStopInferenceClick()
+      if (isGeneratingResponse) return
+      if (messages[messages.length - 1]?.status !== 'in_progress')
+        sendMessage(currentPrompt)
+      else stopInference()
     }
-  }
-
-  const onStopInferenceClick = async () => {
-    stopInference()
   }
 
   /**
@@ -131,37 +97,36 @@ const ChatInput = () => {
    * Its to be used to display the extension file name of the selected file.
    * @param event - The change event object.
    */
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFileUpload([{ file: file, type: 'pdf' }])
-  }
+  // const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = event.target.files?.[0]
+  //   if (!file) return
+  //   setFileUpload([{ file: file, type: 'pdf' }])
+  // }
 
-  const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setFileUpload([{ file: file, type: 'image' }])
-  }
+  // const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  //   const file = event.target.files?.[0]
+  //   if (!file) return
+  //   setFileUpload([{ file: file, type: 'image' }])
+  // }
 
-  const renderPreview = (fileUpload: any) => {
-    if (fileUpload.length > 0) {
-      if (fileUpload[0].type === 'image') {
-        return <ImageUploadPreview file={fileUpload[0].file} />
-      } else {
-        return <FileUploadPreview />
-      }
-    }
-  }
+  // const renderPreview = (fileUpload: any) => {
+  //   if (fileUpload.length > 0) {
+  //     if (fileUpload[0].type === 'image') {
+  //       return <ImageUploadPreview file={fileUpload[0].file} />
+  //     } else {
+  //       return <FileUploadPreview />
+  //     }
+  //   }
+  // }
 
   return (
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
-        {renderPreview(fileUpload)}
+        {/* {renderPreview(fileUpload)} */}
         <TextArea
           className={twMerge(
             'relative max-h-[400px] resize-none  pr-20',
-            fileUpload.length && 'rounded-t-none',
-            experimentalFeature && 'pl-10',
+            // fileUpload.length && 'rounded-t-none',
             activeSetting && 'pb-14 pr-16'
           )}
           spellCheck={spellCheck}
@@ -170,11 +135,11 @@ const ChatInput = () => {
           ref={textareaRef}
           onKeyDown={onKeyDown}
           placeholder="Ask me anything"
-          disabled={stateModel.loading || !activeThread}
+          disabled={!activeThread}
           value={currentPrompt}
           onChange={onPromptChange}
         />
-        {experimentalFeature && (
+        {/* {experimentalFeature && (
           <Tooltip
             trigger={
               <Button
@@ -185,7 +150,7 @@ const ChatInput = () => {
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
                       !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings.vision_model)
+                      !isVisionModel)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -208,8 +173,7 @@ const ChatInput = () => {
                 {fileUpload.length > 0 ||
                   (activeThread?.assistants[0].tools &&
                     !activeThread?.assistants[0].tools[0]?.enabled &&
-                    !activeThread?.assistants[0].model.settings
-                      .vision_model && (
+                    !isVisionModel && (
                       <>
                         {fileUpload.length !== 0 && (
                           <span>
@@ -230,93 +194,7 @@ const ChatInput = () => {
               </>
             }
           />
-        )}
-
-        {showAttacmentMenus && (
-          <div
-            ref={refAttachmentMenus}
-            className={twMerge(
-              'absolute bottom-14 left-0 z-30 w-36 cursor-pointer rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] py-1 shadow-sm',
-              activeSetting && 'bottom-28'
-            )}
-          >
-            <ul>
-              <Tooltip
-                trigger={
-                  <li
-                    className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.vision_model
-                        ? 'cursor-pointer'
-                        : 'cursor-not-allowed opacity-50'
-                    )}
-                    onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings.vision_model
-                      ) {
-                        imageInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <ImageIcon size={16} />
-                    <span className="font-medium">Image</span>
-                  </li>
-                }
-                content="This feature only supports multimodal models."
-                disabled={
-                  activeThread?.assistants[0].model.settings.vision_model
-                }
-              />
-              <Tooltip
-                side="bottom"
-                trigger={
-                  <li
-                    className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.text_model ===
-                        false
-                        ? 'cursor-not-allowed opacity-50'
-                        : 'cursor-pointer'
-                    )}
-                    onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings
-                          .text_model !== false
-                      ) {
-                        fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <FileTextIcon size={16} />
-                    <span className="font-medium">Document</span>
-                  </li>
-                }
-                content={
-                  (!activeThread?.assistants[0].tools ||
-                    !activeThread?.assistants[0].tools[0]?.enabled ||
-                    activeThread?.assistants[0].model.settings.text_model ===
-                      false) && (
-                    <>
-                      {activeThread?.assistants[0].model.settings.text_model ===
-                      false ? (
-                        <span>
-                          This model does not support text-based retrieval.
-                        </span>
-                      ) : (
-                        <span>
-                          Turn on Retrieval in Assistant Settings to use this
-                          feature.
-                        </span>
-                      )}
-                    </>
-                  )
-                }
-              />
-            </ul>
-          </div>
-        )}
+        )} */}
 
         <div className={twMerge('absolute right-3 top-1.5')}>
           <div className="flex items-center gap-x-4">
@@ -335,20 +213,25 @@ const ChatInput = () => {
                 </Button>
               </div>
             )}
-            {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
-            !isGeneratingResponse &&
-            !isStreamingResponse ? (
+            {messages[messages.length - 1]?.status !== 'in_progress' &&
+            isGeneratingResponse ? (
+              <Button
+                theme="destructive"
+                onClick={stopInference}
+                className="h-8 w-8 rounded-lg p-0"
+              >
+                <StopCircle size={20} />
+              </Button>
+            ) : (
               <>
                 {currentPrompt.length !== 0 && (
                   <Button
                     disabled={
-                      stateModel.loading ||
-                      !activeThread ||
-                      currentPrompt.trim().length === 0
+                      !activeThread || currentPrompt.trim().length === 0
                     }
                     className="h-8 w-8 rounded-lg p-0"
                     data-testid="btn-send-chat"
-                    onClick={() => sendChatMessage(currentPrompt)}
+                    onClick={() => sendMessage(currentPrompt)}
                   >
                     <svg
                       width="16"
@@ -366,14 +249,6 @@ const ChatInput = () => {
                   </Button>
                 )}
               </>
-            ) : (
-              <Button
-                theme="destructive"
-                onClick={onStopInferenceClick}
-                className="h-8 w-8 rounded-lg p-0"
-              >
-                <StopCircle size={20} />
-              </Button>
             )}
           </div>
         </div>
@@ -382,8 +257,7 @@ const ChatInput = () => {
           <div
             className={twMerge(
               'absolute bottom-[6px] left-[1px] flex w-[calc(100%-2px)] items-center justify-between rounded-lg bg-[hsla(var(--textarea-bg))] p-3',
-              !activeThread && 'bg-transparent',
-              stateModel.loading && 'bg-transparent'
+              !activeThread && 'bg-transparent'
             )}
           >
             <div className="flex items-center gap-x-3">
@@ -404,7 +278,7 @@ const ChatInput = () => {
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
               </Button>
-              {experimentalFeature && (
+              {/* {experimentalFeature && (
                 <Badge
                   className="flex cursor-pointer items-center gap-x-1"
                   theme="secondary"
@@ -423,7 +297,7 @@ const ChatInput = () => {
                   />
                   <span>Tools</span>
                 </Badge>
-              )}
+              )} */}
             </div>
             <Button theme="icon" onClick={() => setActiveSetting(false)}>
               <ChevronUpIcon
@@ -434,24 +308,6 @@ const ChatInput = () => {
           </div>
         )}
       </div>
-
-      <input
-        type="file"
-        className="hidden"
-        ref={imageInputRef}
-        value=""
-        onChange={handleImageChange}
-        accept="image/png, image/jpeg, image/jpg"
-      />
-
-      <input
-        type="file"
-        className="hidden"
-        ref={fileInputRef}
-        value=""
-        onChange={handleFileChange}
-        accept="application/pdf"
-      />
     </div>
   )
 }

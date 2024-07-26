@@ -1,34 +1,10 @@
-import { ImportingModel, Model } from '@janhq/core'
+import { ImportingModel, Model, ModelStatus } from '@janhq/core'
 import { atom } from 'jotai'
+
+import { activeThreadAtom, threadsAtom } from './Thread.atom'
 
 export const stateModel = atom({ state: 'start', loading: false, model: '' })
 export const activeAssistantModelAtom = atom<Model | undefined>(undefined)
-
-/**
- * Stores the list of models which are being downloaded.
- */
-const downloadingModelsAtom = atom<Model[]>([])
-
-export const getDownloadingModelAtom = atom((get) => get(downloadingModelsAtom))
-
-export const addDownloadingModelAtom = atom(null, (get, set, model: Model) => {
-  const downloadingModels = get(downloadingModelsAtom)
-  if (!downloadingModels.find((e) => e.id === model.id)) {
-    set(downloadingModelsAtom, [...downloadingModels, model])
-  }
-})
-
-export const removeDownloadingModelAtom = atom(
-  null,
-  (get, set, modelId: string) => {
-    const downloadingModels = get(downloadingModelsAtom)
-
-    set(
-      downloadingModelsAtom,
-      downloadingModels.filter((e) => e.id !== modelId)
-    )
-  }
-)
 
 export const downloadedModelsAtom = atom<Model[]>([])
 
@@ -39,14 +15,10 @@ export const removeDownloadedModelAtom = atom(
 
     set(
       downloadedModelsAtom,
-      downloadedModels.filter((e) => e.id !== modelId)
+      downloadedModels.filter((m) => m.model !== modelId)
     )
   }
 )
-
-export const configuredModelsAtom = atom<Model[]>([])
-
-export const defaultModelAtom = atom<Model | undefined>(undefined)
 
 /// TODO: move this part to another atom
 // store the paths of the models that are being imported
@@ -131,4 +103,28 @@ export const updateImportingModelAtom = atom(
   }
 )
 
-export const selectedModelAtom = atom<Model | undefined>(undefined)
+const selectedModelAtom = atom<Model | undefined>(undefined)
+
+export const getSelectedModelAtom = atom((get) => get(selectedModelAtom))
+
+export const updateSelectedModelAtom = atom(null, (get, set, model: Model) => {
+  const activeThread = get(activeThreadAtom)
+  if (activeThread) {
+    activeThread.assistants[0].model = model.model
+    // update threadsAtom
+    const allThreads = get(threadsAtom)
+    allThreads.forEach((t) => {
+      if (t.id === activeThread.id) {
+        t.assistants[0].model = model.model
+      }
+    })
+    console.debug(
+      `Update threads state list: ${JSON.stringify(allThreads, null, 2)}`
+    )
+    set(threadsAtom, allThreads)
+  }
+  console.debug('Set selected model:', JSON.stringify(model, null, 2))
+  set(selectedModelAtom, model)
+})
+
+export const activeModelsAtom = atom<ModelStatus[]>([])

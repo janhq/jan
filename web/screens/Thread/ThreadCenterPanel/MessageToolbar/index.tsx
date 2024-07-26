@@ -1,146 +1,111 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
-import {
-  MessageStatus,
-  ExtensionTypeEnum,
-  ThreadMessage,
-  ChatCompletionRole,
-  ConversationalExtension,
-  ContentType,
-  Thread,
-} from '@janhq/core'
+import { Message, TextContentBlock } from '@janhq/core'
 import { Tooltip } from '@janhq/joi'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 import {
-  RefreshCcw,
   CopyIcon,
   Trash2Icon,
   CheckIcon,
   PencilIcon,
+  RefreshCcw,
 } from 'lucide-react'
 
 import { useClipboard } from '@/hooks/useClipboard'
-import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { extensionManager } from '@/extension'
+import useMessageDeleteMutation from '@/hooks/useMessageDeleteMutation'
+import useSendMessage from '@/hooks/useSendMessage'
+
 import {
   deleteMessageAtom,
   editMessageAtom,
-  getCurrentChatMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import {
-  activeThreadAtom,
-  updateThreadAtom,
-  updateThreadStateLastMessageAtom,
-} from '@/helpers/atoms/Thread.atom'
 
-const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
+type Props = {
+  isLastMessage: boolean
+  message: Message
+}
+
+const MessageToolbar: React.FC<Props> = ({ isLastMessage, message }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const thread = useAtomValue(activeThreadAtom)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const { resendChatMessage } = useSendChatMessage()
+  const { resendMessage } = useSendMessage()
   const clipboard = useClipboard({ timeout: 1000 })
-  const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
-  const updateThread = useSetAtom(updateThreadAtom)
+  const deleteCortexMessage = useMessageDeleteMutation()
 
-  const onDeleteClick = useCallback(async () => {
-    deleteMessage(message.id ?? '')
+  const onDeleteClick = useCallback(
+    async (threadId: string, messageId: string) => {
+      await deleteCortexMessage.mutateAsync({
+        threadId,
+        messageId,
+      })
+      deleteMessage(messageId)
+    },
+    [deleteMessage, deleteCortexMessage]
+  )
 
-    const lastResponse = messages
-      .filter(
-        (msg) =>
-          msg.id !== message.id && msg.role === ChatCompletionRole.Assistant
-      )
-      .slice(-1)[0]
-
-    if (thread) {
-      // Should also delete error messages to clear out the error state
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          thread.id,
-          messages.filter(
-            (msg) => msg.id !== message.id && msg.status !== MessageStatus.Error
-          )
-        )
-
-      const updatedThread: Thread = {
-        ...thread,
-        metadata: {
-          ...thread.metadata,
-          lastMessage: messages.filter(
-            (msg) => msg.role === ChatCompletionRole.Assistant
-          )[
-            messages.filter((msg) => msg.role === ChatCompletionRole.Assistant)
-              .length - 1
-          ]?.content[0].text.value,
-        },
-      }
-
-      updateThreadLastMessage(thread.id, lastResponse?.content)
-
-      updateThread(updatedThread)
+  const onCopyClick = useCallback(() => {
+    const messageContent = message.content[0]
+    if (!messageContent) return
+    if (messageContent.type === 'text') {
+      const textContentBlock = messageContent as TextContentBlock
+      clipboard.copy(textContentBlock.text.value)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages])
+  }, [clipboard, message])
 
-  const onEditClick = async () => {
-    setEditMessage(message.id ?? '')
-  }
+  const onRegenerateClick = useCallback(async () => {
+    // current message must be from assistant
+    if (message.role !== 'assistant') return
+    await deleteCortexMessage.mutateAsync({
+      threadId: message.thread_id,
+      messageId: message.id,
+    })
+    deleteMessage(message.id)
+    await resendMessage()
+  }, [deleteCortexMessage, deleteMessage, resendMessage, message])
 
-  const onRegenerateClick = async () => {
-    resendChatMessage(message)
-  }
+  const allowRegenerate = useMemo(
+    () => isLastMessage && message.role === 'assistant',
+    [isLastMessage, message]
+  )
 
-  if (message.status === MessageStatus.Pending) return null
+  const allowEditMessage = useMemo(
+    () => message.role === 'user' && message.content[0]?.type === 'text',
+    [message]
+  )
+
+  if (message.status === 'in_progress') return null
 
   return (
     <div className="flex flex-row items-center">
       <div className="flex gap-1 bg-[hsla(var(--app-bg))]">
-        {message.role === ChatCompletionRole.User &&
-          message.content[0]?.type === ContentType.Text && (
-            <div
-              className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onEditClick}
-            >
-              <Tooltip
-                trigger={
-                  <PencilIcon
-                    size={14}
-                    className="text-[hsla(var(--text-secondary))]"
-                  />
-                }
-                content="Edit"
-              />
-            </div>
-          )}
+        {allowEditMessage && (
+          <div
+            className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
+            onClick={() => setEditMessage(message.id)}
+          >
+            <PencilIcon
+              size={14}
+              className="text-[hsla(var(--text-secondary))]"
+            />
+          </div>
+        )}
 
-        {message.id === messages[messages.length - 1]?.id &&
-          messages[messages.length - 1].status !== MessageStatus.Error &&
-          messages[messages.length - 1].content[0]?.type !==
-            ContentType.Pdf && (
-            <div
-              className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onRegenerateClick}
-            >
-              <Tooltip
-                trigger={
-                  <RefreshCcw
-                    size={14}
-                    className="text-[hsla(var(--text-secondary))]"
-                  />
-                }
-                content="Regenerate"
-              />
-            </div>
-          )}
+        {allowRegenerate && (
+          <div
+            className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
+            onClick={onRegenerateClick}
+          >
+            <RefreshCcw
+              size={14}
+              className="text-[hsla(var(--text-secondary))]"
+            />
+          </div>
+        )}
 
         <div
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-          onClick={() => {
-            clipboard.copy(message.content[0]?.text?.value ?? '')
-          }}
+          onClick={onCopyClick}
         >
           {clipboard.copied ? (
             <CheckIcon size={14} className="text-[hsla(var(--success-bg))]" />
@@ -158,7 +123,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
         </div>
         <div
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-          onClick={onDeleteClick}
+          onClick={() => onDeleteClick(message.thread_id, message.id)}
         >
           <Tooltip
             trigger={

@@ -1,12 +1,6 @@
-import { Fragment, PropsWithChildren, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
-import {
-  ImportingModel,
-  LocalImportModelEvent,
-  Model,
-  ModelEvent,
-  events,
-} from '@janhq/core'
+import { ImportingModel, Model } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import { snackbar } from '../Toast'
@@ -17,7 +11,7 @@ import {
   updateImportingModelProgressAtom,
 } from '@/helpers/atoms/Model.atom'
 
-const ModelImportListener = ({ children }: PropsWithChildren) => {
+const ModelImportListener: React.FC = () => {
   const updateImportingModelProgress = useSetAtom(
     updateImportingModelProgressAtom
   )
@@ -43,7 +37,7 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
   const onImportModelSuccess = useCallback(
     (state: ImportingModel) => {
       if (!state.modelId) return
-      events.emit(ModelEvent.OnModelsUpdate, {})
+      // events.emit(ModelEvent.OnModelsUpdate, {})
       setImportingModelSuccess(state.importId, state.modelId)
     },
     [setImportingModelSuccess]
@@ -60,42 +54,42 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     console.debug('ModelImportListener: registering event listeners..')
 
-    events.on(
-      LocalImportModelEvent.onLocalImportModelUpdate,
-      onImportModelUpdate
-    )
-    events.on(
-      LocalImportModelEvent.onLocalImportModelSuccess,
-      onImportModelSuccess
-    )
-    events.on(
-      LocalImportModelEvent.onLocalImportModelFinished,
-      onImportModelFinished
-    )
-    events.on(
-      LocalImportModelEvent.onLocalImportModelFailed,
-      onImportModelFailed
-    )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelUpdate,
+    //   onImportModelUpdate
+    // )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelSuccess,
+    //   onImportModelSuccess
+    // )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelFinished,
+    //   onImportModelFinished
+    // )
+    // events.on(
+    //   LocalImportModelEvent.onLocalImportModelFailed,
+    //   onImportModelFailed
+    // )
 
-    return () => {
-      console.debug('ModelImportListener: unregistering event listeners...')
-      events.off(
-        LocalImportModelEvent.onLocalImportModelUpdate,
-        onImportModelUpdate
-      )
-      events.off(
-        LocalImportModelEvent.onLocalImportModelSuccess,
-        onImportModelSuccess
-      )
-      events.off(
-        LocalImportModelEvent.onLocalImportModelFinished,
-        onImportModelFinished
-      )
-      events.off(
-        LocalImportModelEvent.onLocalImportModelFailed,
-        onImportModelFailed
-      )
-    }
+    // return () => {
+    //   console.debug('ModelImportListener: unregistering event listeners...')
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelUpdate,
+    //     onImportModelUpdate
+    //   )
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelSuccess,
+    //     onImportModelSuccess
+    //   )
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelFinished,
+    //     onImportModelFinished
+    //   )
+    //   events.off(
+    //     LocalImportModelEvent.onLocalImportModelFailed,
+    //     onImportModelFailed
+    //   )
+    // }
   }, [
     onImportModelUpdate,
     onImportModelSuccess,
@@ -103,7 +97,7 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
     onImportModelFailed,
   ])
 
-  return <Fragment>{children}</Fragment>
+  return null
 }
 
 export default ModelImportListener

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 
-import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -38,8 +38,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     async function getDefaultJanDataFolder() {
-      const homePath = await getUserHomePath()
-      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
+      const defaultJanDataFolder = await window?.electronAPI.homePath()
 
       setJanDefaultDataFolder(defaultJanDataFolder)
     }
@@ -53,9 +52,8 @@ export default function RootLayout() {
       <body className="font-sans antialiased">
         <JotaiWrapper>
           <ThemeWrapper>
-            <ClipboardListener>
-              <Search />
-            </ClipboardListener>
+            <ClipboardListener />
+            <Search />
           </ThemeWrapper>
         </JotaiWrapper>
       </body>

@@ -1,8 +1,9 @@
 import { useCallback, useEffect } from 'react'
 
-import { abortDownload } from '@janhq/core'
 import { Button, Modal, Progress } from '@janhq/joi'
 import { atom, useAtom, useAtomValue } from 'jotai'
+
+import useAbortDownload from '@/hooks/useAbortDownload'
 
 import {
   formatDownloadPercentage,
@@ -20,6 +21,7 @@ const InstallingExtensionModal = () => {
   const [showInstallingExtensionModal, setShowInstallingExtensionModal] =
     useAtom(showInstallingExtensionModalAtom)
   const installingExtensions = useAtomValue(installingExtensionAtom)
+  const { abortDownload } = useAbortDownload()
 
   useEffect(() => {
     if (installingExtensions.length === 0) {
@@ -33,7 +35,7 @@ const InstallingExtensionModal = () => {
         abortDownload(item.localPath)
       }
     },
-    []
+    [abortDownload]
   )
 
   return (

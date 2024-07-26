@@ -22,12 +22,11 @@ export default function GenerateResponse() {
     } else {
       setLoader(loader + 1)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loader])
 
   return (
-    <div className=" mb-1 mt-2 py-2 text-center">
-      <div className="relative inline-block overflow-hidden rounded-lg bg-[hsla(var(--loader-bg))] px-4 py-2 font-semibold text-[hsla(var(--loader-fg))] shadow-lg">
+    <div className="mb-1 mt-2 py-2 text-center">
+      <div className="shadow-lg relative inline-block overflow-hidden rounded-lg bg-[hsla(var(--loader-bg))] px-4 py-2 font-semibold text-[hsla(var(--loader-fg))]">
         <div
           className="absolute left-0 top-0 h-full bg-[hsla(var(--loader-active-bg))]"
           style={{ width: `${loader}%` }}
