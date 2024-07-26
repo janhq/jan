@@ -160,7 +160,13 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
   }, [msg.content])
 
   return (
-    <div className="group relative mx-auto p-4">
+    // <div className="group relative mx-auto p-4  ">
+    <div
+      className={twMerge(
+        'group relative mx-auto p-4',
+        isUser && 'bg-gray-100 border border-gray-100 rounded-lg shadow-lg'
+      )}
+    >
       <div
         className={twMerge(
           'mb-2 flex items-center justify-start gap-x-2',
