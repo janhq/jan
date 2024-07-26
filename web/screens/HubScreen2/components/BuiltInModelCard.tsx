@@ -47,7 +47,7 @@ const BuiltInModelCard: React.FC<HfModelEntry> = ({
     >
       <div className="flex flex-col gap-2">
         <span className="text-sm font-medium leading-4 group-hover:underline">
-          {name}
+          {name.replaceAll('cortexso/', '')}
         </span>
         <ModelTitle
           className="text-[hsla(var(--text-secondary)]"
