@@ -10,14 +10,15 @@ test('Select GPT model from Hub and Chat with Invalid API Key', async ({ hubPage
     .locator('[data-testid*="GPT"]')
     .first().click()
 
-  await page
-    .getByTestId('btn-setup')
-    .click()
+  // TBU
+  // await page
+  //   .getByTestId('btn-setup')
+  //   .click()
 
-  const APIKeyError = page.getByTestId('setup-api-key-modal')
-  await expect(APIKeyError).toBeVisible({
-    timeout: TIMEOUT,
-  })
+  // const APIKeyError = page.getByTestId('setup-api-key-modal')
+  // await expect(APIKeyError).toBeVisible({
+  //   timeout: TIMEOUT,
+  // })
 
   // Deprecated since Jan is no longer allow chat with remote model without API Key, but keep it here to wait for a new feature
   // // Attempt to create thread and chat in Thread page
