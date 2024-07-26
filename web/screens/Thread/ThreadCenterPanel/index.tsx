@@ -179,7 +179,7 @@ const ThreadCenterPanel: React.FC = () => {
         )}
         <div className="flex h-full w-full flex-col justify-between">
           {activeThread && (
-            <div className="flex h-full w-full overflow-x-hidden">
+            <div className="mx-auto flex h-full w-full overflow-x-hidden xl:max-w-[700px]">
               <ChatBody />
             </div>
           )}
