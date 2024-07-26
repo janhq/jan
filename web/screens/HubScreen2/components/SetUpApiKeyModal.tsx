@@ -57,6 +57,7 @@ const SetUpApiKeyModal: React.FC = () => {
 
   return (
     <Modal
+      data-testid="setup-api-key-modal"
       onOpenChange={onDismiss}
       open={stage === 'SETUP_API_KEY'}
       content={

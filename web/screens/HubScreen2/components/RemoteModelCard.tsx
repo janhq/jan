@@ -117,6 +117,7 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, model }) => {
 
   return (
     <div
+      data-testid={modelDisplayName}
       onClick={onClick}
       className="group flex h-[46px] cursor-pointer flex-col justify-center border-b-[1px] border-[hsla(var(--app-border))]"
     >

@@ -101,6 +101,7 @@ const HeaderModal: React.FC<Props> = ({
       />
       {isLocalModel ? null : (
         <Button
+          data-testid="btn-setup"
           theme="ghost"
           onClick={onActionClick}
           className="mr-6 bg-[hsla(var(--secondary-bg))] px-4 py-2"
