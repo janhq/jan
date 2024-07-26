@@ -64,7 +64,7 @@ const HubScreen2: React.FC = () => {
 
   return (
     <CenterPanelContainer>
-      <ScrollArea className="h-full w-full">
+      <ScrollArea data-testid="hub-container-test-id" className="h-full w-full">
         {showSidebarFilter && <SidebarFilter />}
         <ModelSearchBar onSearchChanged={setQuery} />
         {query.length > 0 ? (
@@ -72,7 +72,7 @@ const HubScreen2: React.FC = () => {
         ) : (
           <Fragment>
             <Slider />
-            <div className="mx-4 px-4 md:px-12">
+            <div data-testid="hub-search-bar" className="mx-4 px-4 md:px-12">
               <Filter
                 currentFilter={filter}
                 callback={() => setShowSidebarFilter(!showSidebarFilter)}

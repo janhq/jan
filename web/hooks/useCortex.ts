@@ -282,7 +282,7 @@ const useCortex = () => {
   const downloadModel = useCallback(
     async (modelId: string, fileName?: string, persistedModelId?: string) => {
       try {
-        return await fetch(`${host}/models/pull/${modelId}`, {
+        return await fetch(`${host}/models/${modelId}/pull`, {
           method: 'POST',
           headers: {
             'accept': 'application/json',
@@ -304,7 +304,7 @@ const useCortex = () => {
   const abortDownload = useCallback(
     async (downloadId: string) => {
       try {
-        return await fetch(`${host}/models/pull/${downloadId}`, {
+        return await fetch(`${host}/models/${downloadId}/pull`, {
           method: 'DELETE',
           headers: {
             'accept': 'application/json',
