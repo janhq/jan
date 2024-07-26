@@ -20,7 +20,7 @@ const Filter: React.FC<Props> = ({ currentFilter, onFilterClicked }) => (
         variant="outline"
         className={twMerge(
           currentFilter === filter &&
-            '!border-none !bg-[hsla(var(--secondary-bg))]'
+            '!border-transparent !bg-[hsla(var(--secondary-bg))] transition-all'
         )}
         onClick={() => onFilterClicked(filter)}
       >

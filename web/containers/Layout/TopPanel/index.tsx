@@ -23,6 +23,7 @@ import {
   showLeftPanelAtom,
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   reduceTransparentAtom,
   selectedSettingAtom,
@@ -34,6 +35,7 @@ const TopPanel = () => {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
   return (
     <div
@@ -57,23 +59,25 @@ const TopPanel = () => {
               <MenuIcon size={16} />
             </Button>
           )}
-          {mainViewState !== MainViewState.Hub && (
-            <Fragment>
-              {showLeftPanel ? (
-                <Button theme="icon" onClick={() => setShowLeftPanel(false)}>
-                  <PanelLeftCloseIcon size={16} />
-                </Button>
-              ) : (
-                <Button theme="icon" onClick={() => setShowLeftPanel(true)}>
-                  <PanelLeftOpenIcon size={16} />
-                </Button>
-              )}
-            </Fragment>
-          )}
+          {mainViewState !== MainViewState.Hub &&
+            downloadedModels.length > 0 && (
+              <Fragment>
+                {showLeftPanel ? (
+                  <Button theme="icon" onClick={() => setShowLeftPanel(false)}>
+                    <PanelLeftCloseIcon size={16} />
+                  </Button>
+                ) : (
+                  <Button theme="icon" onClick={() => setShowLeftPanel(true)}>
+                    <PanelLeftOpenIcon size={16} />
+                  </Button>
+                )}
+              </Fragment>
+            )}
         </div>
         <div className="unset-drag flex items-center gap-x-2">
           {mainViewState !== MainViewState.Hub &&
-            mainViewState !== MainViewState.Settings && (
+            mainViewState !== MainViewState.Settings &&
+            downloadedModels.length > 0 && (
               <Fragment>
                 {showRightPanel ? (
                   <Button theme="icon" onClick={() => setShowRightPanel(false)}>
