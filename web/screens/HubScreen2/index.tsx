@@ -70,7 +70,7 @@ const HubScreen2: React.FC = () => {
         {query.length > 0 ? (
           <HubScreenFilter queryText={query} />
         ) : (
-          <Fragment>
+          <div className="mx-auto max-w-6xl">
             <Slider />
             <div data-testid="hub-search-bar" className="mx-4 px-4 md:px-12">
               <Filter
@@ -102,7 +102,7 @@ const HubScreen2: React.FC = () => {
                   />
                 ))}
             </div>
-          </Fragment>
+          </div>
         )}
       </ScrollArea>
     </CenterPanelContainer>
