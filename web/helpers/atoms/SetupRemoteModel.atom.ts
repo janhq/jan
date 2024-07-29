@@ -1,8 +1,11 @@
 import { RemoteEngine } from '@janhq/core'
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 
 export type SetupRemoteModelStage = 'NONE' | 'SETUP_INTRO' | 'SETUP_API_KEY'
+const SOME_API_KEY_ADDED = 'someApiKeyAdded'
 
+export const isSomeApiKeyAddedAtom = atomWithStorage(SOME_API_KEY_ADDED, false)
 const remoteModelSetUpStageAtom = atom<SetupRemoteModelStage>('NONE')
 const engineBeingSetUpAtom = atom<RemoteEngine | undefined>(undefined)
 const remoteEngineBeingSetUpMetadataAtom = atom<

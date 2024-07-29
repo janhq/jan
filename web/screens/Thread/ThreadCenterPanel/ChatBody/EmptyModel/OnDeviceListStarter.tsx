@@ -2,17 +2,16 @@ import React, { Fragment, useCallback, useState } from 'react'
 
 import Image from 'next/image'
 
-import { RemoteEngine, RemoteEngines } from '@janhq/core'
-import { Button, Input, ScrollArea } from '@janhq/joi'
+import { Model, RemoteEngine, RemoteEngines } from '@janhq/core'
+import { Input } from '@janhq/joi'
 
-import { useAtom, useSetAtom } from 'jotai'
-import { SearchIcon, PlusIcon, ImageIcon } from 'lucide-react'
+import { useSetAtom } from 'jotai'
+import { SearchIcon, PlusIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import Spinner from '@/containers/Loader/Spinner'
 
-import useEngineQuery from '@/hooks/useEngineQuery'
 import useModelHub from '@/hooks/useModelHub'
 
 import BuiltInModelCard from '@/screens/HubScreen2/components/BuiltInModelCard'
@@ -33,9 +32,6 @@ const OnDeviceStarterScreen = () => {
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const setFilter = useSetAtom(hubFilterAtom)
-  const { data: engineData } = useEngineQuery()
-
-  // console.log(engineData)
 
   const onItemClick = useCallback(
     (name: string) => {
@@ -72,7 +68,7 @@ const OnDeviceStarterScreen = () => {
   })
 
   return (
-    <div>
+    <Fragment>
       <div className="relative">
         <Input
           value={searchValue}
@@ -95,7 +91,7 @@ const OnDeviceStarterScreen = () => {
           ) : (
             filteredModels.map((model) => (
               <div
-                className="cursor-pointer p-2 text-left transition-all hover:bg-[hsla(var(--secondary-bg))]"
+                className="cursor-pointer p-2 text-left transition-all hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
                 key={model.id}
                 onClick={() => onItemClick(model.name)}
               >
@@ -108,7 +104,7 @@ const OnDeviceStarterScreen = () => {
         </div>
       </div>
       <div className="mb-4 mt-8 flex items-center justify-between">
-        <h2 className="text-[hsla(var(--text-secondary))]">Built-In Models</h2>
+        <h2 className="text-[hsla(var(--text-secondary))]">On-device Models</h2>
         <p
           className="cursor-pointer text-sm text-[hsla(var(--app-link))]"
           onClick={() => {
@@ -137,6 +133,9 @@ const OnDeviceStarterScreen = () => {
             const apiKeyUrl: string | undefined = models.find(
               (entry) => entry.model?.metadata?.api_key_url != null
             )?.model?.metadata?.api_key_url
+            const defaultModel: Model | undefined = models.find(
+              (entry) => entry.model != null
+            )?.model
             return (
               <div
                 className="flex cursor-pointer flex-col items-center justify-center gap-2"
@@ -148,6 +147,7 @@ const OnDeviceStarterScreen = () => {
                     {
                       logo: engineLogo,
                       api_key_url: apiKeyUrl,
+                      model: defaultModel,
                     }
                   )
                 }}
@@ -161,12 +161,7 @@ const OnDeviceStarterScreen = () => {
                     className="rounded-full"
                   />
                 ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[hsla(var(--app-border))]">
-                    <ImageIcon
-                      className="text-[hsla(var(--text-secondary))]"
-                      size={18}
-                    />
-                  </div>
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[hsla(var(--app-border))] bg-gradient-to-r from-cyan-500 to-blue-500"></div>
                 )}
                 <p>{getTitleByCategory(engine as unknown as RemoteEngine)}</p>
               </div>
@@ -186,7 +181,7 @@ const OnDeviceStarterScreen = () => {
           <p>See All</p>
         </div>
       </div>
-    </div>
+    </Fragment>
   )
 }
 
