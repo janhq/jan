@@ -11,13 +11,13 @@ import useEngineQuery from '@/hooks/useEngineQuery'
 
 import { getTitleByCategory } from '@/utils/model-engine'
 
-import { isSomeApiKeyAddedAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
+import { isAnyRemoteModelConfiguredAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const SetUpApiKeyModal: React.FC = () => {
   const updateEngineConfig = useEngineMutation()
-  const isSomeApiKeyAdded = useSetAtom(isSomeApiKeyAddedAtom)
+  const isAnyRemoteModelConfigured = useSetAtom(isAnyRemoteModelConfiguredAtom)
   const { data: engineData } = useEngineQuery()
 
   const [{ stage, remoteEngine, metadata }, setUpRemoteModelStage] = useAtom(
@@ -45,8 +45,8 @@ const SetUpApiKeyModal: React.FC = () => {
         value: apiKey,
       },
     })
-    isSomeApiKeyAdded(true)
-  }, [remoteEngine, updateEngineConfig, apiKey, isSomeApiKeyAdded])
+    isAnyRemoteModelConfigured(true)
+  }, [remoteEngine, updateEngineConfig, apiKey, isAnyRemoteModelConfigured])
 
   const onDismiss = useCallback(() => {
     setUpRemoteModelStage('NONE', undefined)
