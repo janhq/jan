@@ -57,7 +57,7 @@ const SystemMonitor: React.FC = () => {
   const register = useCallback(async () => {
     if (abortControllerRef.current) return
     abortControllerRef.current = new AbortController()
-    await fetchEventSource(`${host}/events/resources`, {
+    await fetchEventSource(`${host}/system/events/resources`, {
       onmessage(ev) {
         if (!ev.data || ev.data === '') return
         try {
