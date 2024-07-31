@@ -13,8 +13,6 @@ import ThemeWrapper from '@/containers/Providers/Theme'
 
 import { setupCoreServices } from '@/services/coreService'
 
-import Umami from '@/utils/umami'
-
 import DataLoader from './DataLoader'
 import ModalMigrations from './ModalMigrations'
 
@@ -35,7 +33,7 @@ const Providers = ({ children }: PropsWithChildren) => {
     <ThemeWrapper>
       <JotaiWrapper>
         <QueryClientProvider client={queryClient}>
-          <Umami />
+          {/* <Umami /> */}
           {setupCore && (
             <Fragment>
               <DataLoader />
