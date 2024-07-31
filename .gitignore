@@ -39,6 +39,13 @@ extensions/*-extension/bin/*.tar.gz
 extensions/*-extension/bin/vulkaninfoSDK.exe
 extensions/*-extension/bin/vulkaninfo
 
-
 # Turborepo
 .turbo
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions

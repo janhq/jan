@@ -13,7 +13,7 @@ all:
 # Builds the UI kit
 build-joi:
 ifeq ($(OS),Windows_NT)
-	cd joi && yarn config set network-timeout 300000 && yarn install && yarn build
+	cd joi && yarn config set httpTimeout 300000 && yarn install && yarn build
 else
 	cd joi && yarn install && yarn build
 endif
@@ -21,9 +21,8 @@ endif
 # Installs yarn dependencies and builds core
 install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
-	yarn config set network-timeout 300000
+	yarn config set httpTimeout 300000
 endif
-	yarn global add turbo@1.13.2
 	yarn build:core
 	yarn install
 
