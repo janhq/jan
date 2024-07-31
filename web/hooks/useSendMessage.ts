@@ -89,6 +89,7 @@ const useSendMessage = () => {
   const startModel = useModelStart()
 
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
+  const didUserAborted = useRef<boolean>(false)
 
   const validatePrerequisite = useCallback(async (): Promise<boolean> => {
     const errorTitle = 'Failed to send message'
@@ -195,10 +196,17 @@ const useSendMessage = () => {
 
   const stopInference = useCallback(() => {
     abortControllerRef.current?.abort()
+    didUserAborted.current = true
   }, [])
 
   const summarizeThread = useCallback(
     async (messages: string[], modelId: string, thread: Thread) => {
+      // if its a local model, and is not started, skip summarization
+      if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
+        if (!activeModels.map((model) => model.model).includes(modelId)) {
+          return
+        }
+      }
       const maxWordForThreadTitle = 10
       const summarizeMessages: ChatCompletionMessageParam[] = [
         {
@@ -223,6 +231,8 @@ const useSendMessage = () => {
       updateThreadTitle(thread.id, summarizedText)
     },
     [
+      activeModels,
+      selectedModel,
       addThreadIdShouldAnimateTitle,
       chatCompletionNonStreaming,
       updateThreadTitle,
@@ -303,6 +313,7 @@ const useSendMessage = () => {
           ...modelOptions,
         })
 
+        didUserAborted.current = false
         abortControllerRef.current = stream.controller
 
         const assistantMessage = await createMessage.mutateAsync({
@@ -369,6 +380,7 @@ const useSendMessage = () => {
           },
         })
       } else {
+        didUserAborted.current = false
         const abortController = new AbortController()
         const response = await chatCompletionNonStreaming(
           {
@@ -542,7 +554,7 @@ const useSendMessage = () => {
             top_p: selectedModel!.top_p ?? 1,
             ...modelOptions,
           })
-
+          didUserAborted.current = false
           abortControllerRef.current = stream.controller
 
           const assistantMessage = await createMessage.mutateAsync({
@@ -612,6 +624,7 @@ const useSendMessage = () => {
             },
           })
         } else {
+          didUserAborted.current = false
           const abortController = new AbortController()
           abortControllerRef.current = abortController
 
@@ -690,7 +703,7 @@ const useSendMessage = () => {
       }
 
       try {
-        if (!shouldSummarize) return
+        if (!shouldSummarize || didUserAborted.current === true) return
         // summarize if needed
         const textMessages: string[] = messages
           .map((msg) => {

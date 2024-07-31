@@ -32,6 +32,7 @@ class WindowManager {
       x: bounds.x,
       y: bounds.y,
       webPreferences: {
+        allowRunningInsecureContent: true,
         nodeIntegration: true,
         preload: preloadPath,
         webSecurity: false,
