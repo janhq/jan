@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 
 import Image from 'next/image'
 
-import { LlmEngine, Model } from '@janhq/core'
+import { LlmEngine, Model, RemoteEngine } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
+import { useSetAtom } from 'jotai'
 import { SettingsIcon } from 'lucide-react'
 
 import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
@@ -12,6 +13,8 @@ import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 import { getTitleByCategory } from '@/utils/model-engine'
 
 import ModelLabel from '../ModelLabel'
+
+import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 type Props = {
   engine: LlmEngine
@@ -26,6 +29,17 @@ const ModelSection: React.FC<Props> = ({
 }) => {
   const [models, setModels] = useState<Model[]>([])
   const { getModelsByEngine } = useGetModelsByEngine()
+  const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
+
+  console.log(models)
+
+  const engineLogo: string | undefined = models.find(
+    (entry) => entry?.metadata?.logo != null
+  )?.metadata?.logo
+
+  const apiKeyUrl: string | undefined = models.find(
+    (entry) => entry?.metadata?.api_key_url != null
+  )?.metadata?.api_key_url
 
   useEffect(() => {
     const matchedModels = getModelsByEngine(engine, searchText)
@@ -63,7 +77,19 @@ const ModelSection: React.FC<Props> = ({
             <div className="flex w-full items-center justify-between">
               <p className="line-clamp-1">{model.name ?? model.model}</p>
               {!model.engine?.includes('cortex.') && (
-                <Button theme="icon">
+                <Button
+                  theme="icon"
+                  onClick={() => {
+                    return setUpRemoteModelStage(
+                      'SETUP_API_KEY',
+                      engine as unknown as RemoteEngine,
+                      {
+                        logo: engineLogo,
+                        api_key_url: apiKeyUrl,
+                      }
+                    )
+                  }}
+                >
                   <SettingsIcon
                     size={14}
                     className="text-[hsla(var(--text-secondary))]"
