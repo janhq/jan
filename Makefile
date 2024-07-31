@@ -34,11 +34,11 @@ else
 	@tgz_count=$$(find pre-install -type f -name "*.tgz" | wc -l); dir_count=$$(find extensions -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/package.json' \; -print | wc -l); if [ $$tgz_count -ne $$dir_count ]; then echo "Number of .tgz files in pre-install ($$tgz_count) does not match the number of subdirectories in extension ($$dir_count)"; exit 1; else echo "Extension build successful"; fi
 endif
 
-dev: check-file-counts
+dev: install-and-build
 	yarn dev
 
 # Linting
-lint: check-file-counts
+lint: install-and-build
 	yarn lint
 
 update-playwright-config:
@@ -106,11 +106,11 @@ test: lint
 	yarn test
 
 # Builds and publishes the app
-build-and-publish: check-file-counts
+build-and-publish: install-and-build
 	yarn build:publish
 
 # Build
-build: check-file-counts
+build: install-and-build
 	yarn build
 
 clean:

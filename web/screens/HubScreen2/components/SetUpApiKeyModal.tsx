@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import Image from 'next/image'
 
 import { Button, Input, Modal } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
 
 import useEngineMutation from '@/hooks/useEngineMutation'
@@ -11,10 +11,13 @@ import useEngineQuery from '@/hooks/useEngineQuery'
 
 import { getTitleByCategory } from '@/utils/model-engine'
 
+import { isAnyRemoteModelConfiguredAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
+
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const SetUpApiKeyModal: React.FC = () => {
   const updateEngineConfig = useEngineMutation()
+  const isAnyRemoteModelConfigured = useSetAtom(isAnyRemoteModelConfiguredAtom)
   const { data: engineData } = useEngineQuery()
 
   const [{ stage, remoteEngine, metadata }, setUpRemoteModelStage] = useAtom(
@@ -42,7 +45,8 @@ const SetUpApiKeyModal: React.FC = () => {
         value: apiKey,
       },
     })
-  }, [updateEngineConfig, apiKey, remoteEngine])
+    isAnyRemoteModelConfigured(true)
+  }, [remoteEngine, updateEngineConfig, apiKey, isAnyRemoteModelConfigured])
 
   const onDismiss = useCallback(() => {
     setUpRemoteModelStage('NONE', undefined)
