@@ -4,6 +4,9 @@ import Image from 'next/image'
 
 import { LlmEngine, Model } from '@janhq/core'
 
+import { Button } from '@janhq/joi'
+import { SettingsIcon } from 'lucide-react'
+
 import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 
 import { getTitleByCategory } from '@/utils/model-engine'
@@ -44,7 +47,7 @@ const ModelSection: React.FC<Props> = ({
             className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
             onClick={() => onModelSelected(model)}
           >
-            {model.metadata?.logo && (
+            {model.metadata?.logo ? (
               <Image
                 className="rounded-full object-cover"
                 width={20}
@@ -52,8 +55,22 @@ const ModelSection: React.FC<Props> = ({
                 src={model.metadata?.logo}
                 alt="logo"
               />
+            ) : (
+              !model.engine?.includes('cortex.') && (
+                <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[hsla(var(--app-border))] bg-gradient-to-r from-cyan-500 to-blue-500"></div>
+              )
             )}
-            <p className="line-clamp-1">{model.name ?? model.model}</p>
+            <div className="flex w-full items-center justify-between">
+              <p className="line-clamp-1">{model.name ?? model.model}</p>
+              {!model.engine?.includes('cortex.') && (
+                <Button theme="icon">
+                  <SettingsIcon
+                    size={14}
+                    className="text-[hsla(var(--text-secondary))]"
+                  />
+                </Button>
+              )}
+            </div>
             <ModelLabel metadata={model.metadata} compact />
           </li>
         ))}
