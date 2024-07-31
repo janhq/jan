@@ -613,6 +613,8 @@ const useSendMessage = () => {
           })
         } else {
           const abortController = new AbortController()
+          abortControllerRef.current = abortController
+
           const response = await chatCompletionNonStreaming(
             {
               messages,
@@ -669,7 +671,7 @@ const useSendMessage = () => {
               content: responseMessage.content,
             },
           })
-
+          abortControllerRef.current = undefined
           if (responseMessage) {
             setIsGeneratingResponse(false)
           }
