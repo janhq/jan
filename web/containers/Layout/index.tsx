@@ -16,6 +16,7 @@ import TopPanel from '@/containers/Layout/TopPanel'
 import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
 import DownloadLocalModelModal from '@/screens/HubScreen2/components/DownloadLocalModelModal'
+import InferenceErrorModal from '@/screens/HubScreen2/components/InferenceErrorModal'
 import SetUpApiKeyModal from '@/screens/HubScreen2/components/SetUpApiKeyModal'
 import SetUpRemoteModelModal from '@/screens/HubScreen2/components/SetUpRemoteModelModal'
 import WarningMultipleModelModal from '@/screens/HubScreen2/components/WarningMultipleModelModal'
@@ -83,6 +84,7 @@ const BaseLayout = () => {
         {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
         {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
 
+        <InferenceErrorModal />
         <WarningMultipleModelModal />
         <DownloadLocalModelModal />
         <SetUpRemoteModelModal />

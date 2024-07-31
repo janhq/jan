@@ -17,6 +17,8 @@ import { currentPromptAtom, editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { inferenceErrorAtom } from '@/screens/HubScreen2/components/InferenceErrorModal'
+
 import useCortex from './useCortex'
 
 import useEngineInit from './useEngineInit'
@@ -90,6 +92,7 @@ const useSendMessage = () => {
 
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
   const didUserAborted = useRef<boolean>(false)
+  const setInferenceErrorAtom = useSetAtom(inferenceErrorAtom)
 
   const validatePrerequisite = useCallback(async (): Promise<boolean> => {
     const errorTitle = 'Failed to send message'
@@ -442,9 +445,18 @@ const useSendMessage = () => {
       }
     } catch (err) {
       console.error(err)
+      // @ts-expect-error error message should be there
+      const errorMessage = err['message']
+      if (errorMessage != null) {
+        setInferenceErrorAtom({
+          engine: selectedModel!.engine,
+          message: errorMessage,
+        })
+      }
 
       toaster({
-        title: 'Failed to generate response',
+        title: `Error with ${selectedModel!.model}`,
+        description: 'Failed to generate response',
         type: 'error',
       })
     }
@@ -457,8 +469,9 @@ const useSendMessage = () => {
     selectedModel,
     updateMessage,
     createMessage,
-    validatePrerequisite,
     startModel,
+    setInferenceErrorAtom,
+    validatePrerequisite,
     updateMessageState,
     addNewMessage,
     chatCompletionNonStreaming,
@@ -693,11 +706,21 @@ const useSendMessage = () => {
         }
       } catch (err) {
         console.error(err)
+        // @ts-expect-error error message should be there
+        const errorMessage = err['message']
+        if (errorMessage != null) {
+          setInferenceErrorAtom({
+            engine: selectedModel!.engine,
+            message: errorMessage,
+          })
+        }
+
         setIsGeneratingResponse(false)
         shouldSummarize = false
 
         toaster({
-          title: 'Failed to generate response',
+          title: `Error with ${selectedModel!.model}`,
+          description: 'Failed to generate response',
           type: 'error',
         })
       }
@@ -723,6 +746,7 @@ const useSendMessage = () => {
       selectedModel,
       updateMessage,
       createMessage,
+      setInferenceErrorAtom,
       validatePrerequisite,
       setCurrentPrompt,
       setEditPrompt,
