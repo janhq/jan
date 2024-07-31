@@ -7,8 +7,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import useSendMessage from '@/hooks/useSendMessage'
-
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
@@ -19,10 +17,13 @@ import {
 
 type Props = {
   isSettingActive: boolean
+  onSendMessageClick: (message: string) => void
 }
 
-const ChatTextInput: React.FC<Props> = ({ isSettingActive }) => {
-  const { sendMessage } = useSendMessage()
+const ChatTextInput: React.FC<Props> = ({
+  isSettingActive,
+  onSendMessageClick,
+}) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -64,12 +65,12 @@ const ChatTextInput: React.FC<Props> = ({ isSettingActive }) => {
         if (isGeneratingResponse) return
         const lastMessage = messages[messages.length - 1]
         if (!lastMessage || lastMessage.status !== 'in_progress') {
-          sendMessage(currentPrompt)
+          onSendMessageClick(currentPrompt)
           return
         }
       }
     },
-    [messages, isGeneratingResponse, currentPrompt, sendMessage]
+    [messages, isGeneratingResponse, currentPrompt, onSendMessageClick]
   )
 
   return (

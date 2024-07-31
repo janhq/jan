@@ -9,7 +9,15 @@ import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import { isGeneratingResponseAtom } from '@/helpers/atoms/Thread.atom'
 
-const ChatActionButton: React.FC = () => {
+type Props = {
+  onStopInferenceClick: () => void
+  onSendMessageClick: (message: string) => void
+}
+
+const ChatActionButton: React.FC<Props> = ({
+  onStopInferenceClick,
+  onSendMessageClick,
+}) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
@@ -23,10 +31,10 @@ const ChatActionButton: React.FC = () => {
   }, [isGeneratingResponse, messages])
 
   if (showStopButton) {
-    return <StopInferenceButton />
+    return <StopInferenceButton onStopInferenceClick={onStopInferenceClick} />
   }
 
-  return <SendMessageButton />
+  return <SendMessageButton onSendMessageClick={onSendMessageClick} />
 }
 
 export default ChatActionButton

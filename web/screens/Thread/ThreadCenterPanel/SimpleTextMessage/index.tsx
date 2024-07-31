@@ -33,9 +33,14 @@ import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 type Props = {
   isLatestMessage: boolean
   msg: Message
+  onResendMessage: () => void
 }
 
-const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
+const SimpleTextMessage: React.FC<Props> = ({
+  isLatestMessage,
+  msg,
+  onResendMessage,
+}) => {
   const [text, setText] = useState('')
   const { data: assistants } = useAssistantQuery()
   const editMessage = useAtomValue(editMessageAtom)
@@ -188,7 +193,11 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
               : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
-          <MessageToolbar message={msg} isLastMessage={isLatestMessage} />
+          <MessageToolbar
+            message={msg}
+            isLastMessage={isLatestMessage}
+            onResendMessage={onResendMessage}
+          />
         </div>
         {isLatestMessage &&
           (msg.status === 'in_progress' || tokenSpeed > 0) && (
@@ -204,7 +213,7 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
           !isUser && !text.includes(' ') && 'break-all'
         )}
       >
-        <>
+        <Fragment>
           {msg.content[0]?.type === 'image_file' && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
               <div className="left-0 top-0 z-20 h-full w-full group-hover/image:inline-block">
@@ -254,7 +263,7 @@ const SimpleTextMessage: React.FC<Props> = ({ isLatestMessage, msg }) => {
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />
           )}
-        </>
+        </Fragment>
       </div>
     </div>
   )

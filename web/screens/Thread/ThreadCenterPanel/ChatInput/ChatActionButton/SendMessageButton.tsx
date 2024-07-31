@@ -7,10 +7,11 @@ import { useAtomValue } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
-import useSendMessage from '@/hooks/useSendMessage'
+type Props = {
+  onSendMessageClick: (message: string) => void
+}
 
-const SendMessageButton: React.FC = () => {
-  const { sendMessage } = useSendMessage()
+const SendMessageButton: React.FC<Props> = ({ onSendMessageClick }) => {
   const currentPrompt = useAtomValue(currentPromptAtom)
 
   const showSendButton = useMemo(() => {
@@ -24,7 +25,7 @@ const SendMessageButton: React.FC = () => {
     <Button
       className="h-8 w-8 rounded-lg p-0"
       data-testid="btn-send-chat"
-      onClick={() => sendMessage(currentPrompt)}
+      onClick={() => onSendMessageClick(currentPrompt)}
     >
       <svg
         width="16"

@@ -16,7 +16,12 @@ import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { getActiveThreadIdAtom } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
-const ChatInput: React.FC = () => {
+type Props = {
+  sendMessage: (message: string) => void
+  stopInference: () => void
+}
+
+const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   const setActiveTabThreadRightPanel = useSetAtom(activeTabThreadRightPanelAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [activeSetting, setActiveSetting] = useState(false)
@@ -27,7 +32,10 @@ const ChatInput: React.FC = () => {
   return (
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
-        <ChatTextInput isSettingActive={activeSetting} />
+        <ChatTextInput
+          isSettingActive={activeSetting}
+          onSendMessageClick={sendMessage}
+        />
 
         <div className={twMerge('absolute right-3 top-1.5')}>
           <div className="flex items-center gap-x-4">
@@ -44,7 +52,10 @@ const ChatInput: React.FC = () => {
                 </Button>
               </div>
             )}
-            <ChatActionButton />
+            <ChatActionButton
+              onStopInferenceClick={stopInference}
+              onSendMessageClick={sendMessage}
+            />
           </div>
         </div>
 

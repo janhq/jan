@@ -14,7 +14,6 @@ import {
 import { useClipboard } from '@/hooks/useClipboard'
 
 import useMessageDeleteMutation from '@/hooks/useMessageDeleteMutation'
-import useSendMessage from '@/hooks/useSendMessage'
 
 import {
   deleteMessageAtom,
@@ -24,12 +23,16 @@ import {
 type Props = {
   isLastMessage: boolean
   message: Message
+  onResendMessage: () => void
 }
 
-const MessageToolbar: React.FC<Props> = ({ isLastMessage, message }) => {
+const MessageToolbar: React.FC<Props> = ({
+  isLastMessage,
+  message,
+  onResendMessage,
+}) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const { resendMessage } = useSendMessage()
   const clipboard = useClipboard({ timeout: 1000 })
   const deleteCortexMessage = useMessageDeleteMutation()
 
@@ -61,8 +64,8 @@ const MessageToolbar: React.FC<Props> = ({ isLastMessage, message }) => {
       messageId: message.id,
     })
     deleteMessage(message.id)
-    await resendMessage()
-  }, [deleteCortexMessage, deleteMessage, resendMessage, message])
+    onResendMessage()
+  }, [deleteCortexMessage, deleteMessage, onResendMessage, message])
 
   const allowRegenerate = useMemo(
     () => isLastMessage && message.role === 'assistant',

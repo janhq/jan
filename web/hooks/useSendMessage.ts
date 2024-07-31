@@ -268,7 +268,10 @@ const useSendMessage = () => {
           case 'assistant':
             return {
               role: msg.role,
-              content: (msg.content[0] as TextContentBlock).text.value,
+              content:
+                msg.content[0] != null
+                  ? (msg.content[0] as TextContentBlock).text.value
+                  : '',
             }
 
           // we will need to support other roles in the future
@@ -502,7 +505,10 @@ const useSendMessage = () => {
             case 'assistant':
               return {
                 role: msg.role,
-                content: (msg.content[0] as TextContentBlock).text.value,
+                content:
+                  msg.content[0] != null
+                    ? (msg.content[0] as TextContentBlock).text.value
+                    : '',
               }
 
             // we will need to support other roles in the future

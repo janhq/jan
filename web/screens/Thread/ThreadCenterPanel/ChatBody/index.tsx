@@ -8,7 +8,11 @@ import EmptyThread from './EmptyThread'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
-const ChatBody: React.FC = () => {
+type Props = {
+  onResendMessage: () => void
+}
+
+const ChatBody: React.FC<Props> = ({ onResendMessage }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   if (!messages.length) return <EmptyThread />
@@ -22,6 +26,7 @@ const ChatBody: React.FC = () => {
             key={message.id}
             msg={message}
             isLatestMessage={isLatestMessage}
+            onResendMessage={onResendMessage}
           />
         )
       })}
