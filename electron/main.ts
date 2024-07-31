@@ -135,7 +135,7 @@ app.once('window-all-closed', async () => {
 async function stopApiServer() {
   try {
     console.log('Stopping API server')
-    const response = await fetch('http://localhost:1337/v1/process', {
+    const response = await fetch('http://localhost:1337/v1/system', {
       method: 'DELETE',
     })
 

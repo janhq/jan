@@ -10,7 +10,7 @@ import { useAtom, useAtomValue } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import useModels from '@/hooks/useModels'
+import useModelStop from '@/hooks/useModelStop'
 import { useSettings } from '@/hooks/useSettings'
 
 import {
@@ -53,7 +53,7 @@ const Advanced = () => {
   const { readSettings, saveSettings } = useSettings()
   const activeModels = useAtomValue(activeModelsAtom)
   // const [open, setOpen] = useState(false)
-  const { stopModel } = useModels()
+  const stopModel = useModelStop()
 
   // const selectedGpu = gpuList
   //   .filter((x) => gpusInUse.includes(x.id))
@@ -92,7 +92,7 @@ const Advanced = () => {
     })
 
     for (const model of activeModels) {
-      await stopModel(model.model)
+      await stopModel.mutateAsync(model.model)
     }
 
     setVulkanEnabled(e)

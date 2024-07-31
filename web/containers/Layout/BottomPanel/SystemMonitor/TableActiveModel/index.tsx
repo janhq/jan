@@ -1,9 +1,11 @@
+import { useCallback } from 'react'
+
 import { Model } from '@janhq/core'
 import { Button, Badge } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
-import useModels from '@/hooks/useModels'
+import useModelStop from '@/hooks/useModelStop'
 
 import {
   activeModelsAtom,
@@ -13,7 +15,7 @@ import {
 const Column = ['Name', 'Engine', '']
 
 const TableActiveModel: React.FC = () => {
-  const { stopModel } = useModels()
+  const stopModelMutation = useModelStop()
   const activeModels = useAtomValue(activeModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
 
@@ -24,6 +26,13 @@ const TableActiveModel: React.FC = () => {
       models.push(model)
     }
   })
+
+  const onStopModelClick = useCallback(
+    (modelId: string) => {
+      stopModelMutation.mutate(modelId)
+    },
+    [stopModelMutation]
+  )
 
   return (
     <div className="m-4 mr-0 w-1/2">
@@ -58,7 +67,7 @@ const TableActiveModel: React.FC = () => {
                 <td className="px-4 py-2 text-center">
                   <Button
                     theme="destructive"
-                    onClick={() => stopModel(model.model)}
+                    onClick={() => onStopModelClick(model.model)}
                   >
                     Stop
                   </Button>

@@ -9,6 +9,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import EngineSetting from '@/containers/EngineSetting'
 import ModelSetting from '@/containers/ModelSetting'
 
+import useModelStop from '@/hooks/useModelStop'
 import useModels from '@/hooks/useModels'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -24,7 +25,8 @@ import {
 } from '@/helpers/atoms/Model.atom'
 
 const ModelSettingContainer: React.FC = () => {
-  const { stopModel, updateModel } = useModels()
+  const stopModel = useModelStop()
+  const { updateModel } = useModels()
   const setSelectedModel = useSetAtom(updateSelectedModelAtom)
 
   const selectedModel = useAtomValue(getSelectedModelAtom)
@@ -123,7 +125,7 @@ const ModelSettingContainer: React.FC = () => {
         presetConfiguration[key]?.requireModelReload ?? true
 
       if (shouldStopModel) {
-        stopModel(selectedModel.model)
+        stopModel.mutate(selectedModel.model)
       }
     },
     [selectedModel, debounceUpdateModel, stopModel, setSelectedModel]
