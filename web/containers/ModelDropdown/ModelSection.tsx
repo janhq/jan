@@ -31,8 +31,6 @@ const ModelSection: React.FC<Props> = ({
   const { getModelsByEngine } = useGetModelsByEngine()
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
 
-  console.log(models)
-
   const engineLogo: string | undefined = models.find(
     (entry) => entry?.metadata?.logo != null
   )?.metadata?.logo
