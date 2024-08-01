@@ -319,6 +319,15 @@ const useCortex = () => {
     [host]
   )
 
+  const isSystemAlive = useCallback(async () => {
+    try {
+      await cortex.system.status();
+      return true;
+    } catch { 
+      return false; 
+    }
+  }, [host])
+
   return {
     fetchAssistants,
     fetchThreads,
@@ -345,6 +354,7 @@ const useCortex = () => {
     createModel,
     initializeEngine,
     getEngineStatuses,
+    isSystemAlive
   }
 }
 
