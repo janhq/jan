@@ -1,18 +1,22 @@
 import { useCallback } from 'react'
 
-import { SelectFileOption } from '@janhq/core'
+import { ImportingModel, SelectFileOption } from '@janhq/core'
 import { Button, Modal } from '@janhq/joi'
 import { useSetAtom, useAtomValue } from 'jotai'
 
-import useImportModel, {
+import { snackbar } from '@/containers/Toast'
+
+import {
   setImportModelStageAtom,
   getImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
+import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+
 const ChooseWhatToImportModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
+  const setImportingModels = useSetAtom(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
-  const { sanitizeFilePaths } = useImportModel()
 
   const onImportFileClick = useCallback(async () => {
     const options: SelectFileOption = {
@@ -24,10 +28,36 @@ const ChooseWhatToImportModal = () => {
         { name: 'All Files', extensions: ['*'] },
       ],
     }
-    const filePaths = await window.core?.api?.selectFiles(options)
+    const filePaths: string[] = await window.core?.api?.selectFiles(options)
     if (!filePaths || filePaths.length === 0) return
-    sanitizeFilePaths(filePaths)
-  }, [sanitizeFilePaths])
+
+    const importingModels: ImportingModel[] = filePaths
+      .filter((path) => path.endsWith('.gguf'))
+      .map((path) => {
+        const normalizedPath = isWindows ? path.replace(/\\/g, '/') : path
+
+        return {
+          importId: normalizedPath,
+          modelId: undefined,
+          name: normalizedPath.replace('.gguf', ''),
+          description: '',
+          path: path,
+          tags: [],
+          size: 0,
+          status: 'PREPARING',
+          format: 'gguf',
+        }
+      })
+    if (importingModels.length < 1) {
+      snackbar({
+        description: `Only files with .gguf extension can be imported.`,
+        type: 'error',
+      })
+      return
+    }
+    setImportingModels(importingModels)
+    setImportModelStage('MODEL_SELECTED')
+  }, [setImportingModels, setImportModelStage])
 
   const onImportFolderClick = useCallback(async () => {
     const options: SelectFileOption = {
@@ -36,10 +66,37 @@ const ChooseWhatToImportModal = () => {
       allowMultiple: true,
       selectDirectory: true,
     }
-    const filePaths = await window.core?.api?.selectFiles(options)
+    const filePaths: string[] = await window.core?.api?.selectFiles(options)
     if (!filePaths || filePaths.length === 0) return
-    sanitizeFilePaths(filePaths)
-  }, [sanitizeFilePaths])
+
+    console.log('filePaths folder', filePaths)
+    const importingModels: ImportingModel[] = filePaths
+      .filter((path) => path.endsWith('.gguf'))
+      .map((path) => {
+        const normalizedPath = isWindows ? path.replace(/\\/g, '/') : path
+
+        return {
+          importId: normalizedPath,
+          modelId: undefined,
+          name: normalizedPath.replace('.gguf', ''),
+          description: '',
+          path: path,
+          tags: [],
+          size: 0,
+          status: 'PREPARING',
+          format: 'gguf',
+        }
+      })
+    if (importingModels.length < 1) {
+      snackbar({
+        description: `Only files with .gguf extension can be imported.`,
+        type: 'error',
+      })
+      return
+    }
+    setImportingModels(importingModels)
+    setImportModelStage('MODEL_SELECTED')
+  }, [setImportingModels, setImportModelStage])
 
   return (
     <Modal

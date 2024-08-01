@@ -59,10 +59,11 @@ Object.assign(console, log.functions)
 app
   .whenReady()
   .then(() => {
-    log.info('Starting cortex with path:', cortexPath)
+    const command = `${cortexPath} -a 127.0.0.1 -p 1337`
+
+    log.info('Starting cortex with command:', command)
     // init cortex
-    // running shell command cortex init -s
-    exec(`${cortexPath}`, (error, stdout, stderr) => {
+    exec(`${command}`, (error, stdout, stderr) => {
       if (error) {
         log.error(`error: ${error.message}`)
         return
