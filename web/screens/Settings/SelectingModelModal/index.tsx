@@ -22,10 +22,51 @@ const SelectingModelModal: React.FC = () => {
   const setImportingModels = useSetAtom(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
+
+  const onImportFileWindowsClick = useCallback(async () => {
+    const options: SelectFileOption = {
+      title: 'Select model files',
+      buttonLabel: 'Select',
+      allowMultiple: true,
+      filters: [
+        { name: 'GGUF Files', extensions: ['gguf'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    }
+    const filePaths: string[] = await window.core?.api?.selectFiles(options)
+    if (!filePaths || filePaths.length === 0) return
+
+    const importingModels: ImportingModel[] = filePaths
+      .filter((path) => path.endsWith('.gguf'))
+      .map((path) => {
+        const normalizedPath = isWindows ? path.replace(/\\/g, '/') : path
+
+        return {
+          importId: normalizedPath,
+          modelId: undefined,
+          name: normalizedPath.replace('.gguf', ''),
+          description: '',
+          path: path,
+          tags: [],
+          size: 0,
+          status: 'PREPARING',
+          format: 'gguf',
+        }
+      })
+    if (importingModels.length < 1) {
+      snackbar({
+        description: `Only files with .gguf extension can be imported.`,
+        type: 'error',
+      })
+      return
+    }
+    setImportingModels(importingModels)
+    setImportModelStage('MODEL_SELECTED')
+  }, [setImportingModels, setImportModelStage])
+
   const onSelectFileClick = useCallback(async () => {
     if (isWindows) {
-      setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
-      return
+      return onImportFileWindowsClick()
     }
     const options: SelectFileOption = {
       title: 'Select model folders',
@@ -38,17 +79,21 @@ const SelectingModelModal: React.FC = () => {
 
     const importingModels: ImportingModel[] = filePaths
       .filter((path) => path.endsWith('.gguf'))
-      .map((path) => ({
-        importId: path,
-        modelId: undefined,
-        name: path.replace('.gguf', ''),
-        description: '',
-        path: path,
-        tags: [],
-        size: 0,
-        status: 'PREPARING',
-        format: 'gguf',
-      }))
+      .map((path) => {
+        const normalizedPath = isWindows ? path.replace(/\\/g, '/') : path
+
+        return {
+          importId: normalizedPath,
+          modelId: undefined,
+          name: normalizedPath.replace('.gguf', ''),
+          description: '',
+          path: path,
+          tags: [],
+          size: 0,
+          status: 'PREPARING',
+          format: 'gguf',
+        }
+      })
     if (importingModels.length < 1) {
       snackbar({
         description: `Only files with .gguf extension can be imported.`,

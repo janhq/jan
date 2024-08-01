@@ -54,6 +54,7 @@ const DownloadEventListener: React.FC = () => {
           const localImportEvents: DownloadState2[] = []
           // filter out the import local events
           for (const event of downloadEvents) {
+            console.debug('Receiving event', event)
             if (
               isAbsolutePath(event.id) &&
               event.type === 'model' &&
