@@ -35,21 +35,17 @@ const ModelSettingContainer: React.FC = () => {
     if (!selectedModel) return
     // runtime setting
     const modelRuntimeParams = toRuntimeParams(selectedModel)
-    const componentDataRuntimeSetting = getConfigurationsData(
-      modelRuntimeParams,
-      selectedModel
-    )
+    const componentDataRuntimeSetting =
+      getConfigurationsData(modelRuntimeParams)
 
     // engine setting
     const modelEngineParams = toSettingParams(selectedModel)
     const componentDataEngineSetting = getConfigurationsData(
-      modelEngineParams,
-      selectedModel
+      modelEngineParams
     ).filter((x) => x.key !== 'prompt_template' && x.key !== 'embedding')
 
     const promptTemplateSettings = getConfigurationsData(
-      modelEngineParams,
-      selectedModel
+      modelEngineParams
     ).filter((x) => x.key === 'prompt_template')
 
     // the max value of max token has to follow context length
@@ -59,6 +55,7 @@ const ModelSettingContainer: React.FC = () => {
     const contextLength = componentDataEngineSetting.find(
       (x) => x.key === 'ctx_len'
     )
+
     if (maxTokens && contextLength) {
       // replace maxToken to componentDataRuntimeSetting
       const updatedComponentDataRuntimeSetting: SettingComponentProps[] =
