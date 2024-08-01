@@ -14,7 +14,7 @@ import {
   writeFileSync,
   readFileSync,
   existsSync,
-  mkdirSync,
+  mkdirSync
 } from 'fs'
 import { dump } from 'js-yaml'
 import os from 'os'
@@ -229,25 +229,20 @@ export function handleAppIPCs() {
 
     const cortexHomeDir = join(os.homedir(), 'cortex')
     const cortexModelFolderPath = join(cortexHomeDir, 'models')
+
+    if(!existsSync(cortexModelFolderPath))
+      mkdirSync(cortexModelFolderPath)
     console.log('cortexModelFolderPath', cortexModelFolderPath)
     const reflect = require('@alumna/reflect')
 
     for (const modelName of allModelFolders) {
       const modelFolderPath = join(janModelFolderPath, modelName)
-      const filesInModelFolder = readdirSync(modelFolderPath)
-      if (filesInModelFolder.length <= 1) {
-        // if only have model.json file or empty folder, we skip it
-        continue
-      }
-
-      const destinationPath = join(cortexModelFolderPath, modelName)
-
-      // create folder if not exist
-      if (!existsSync(destinationPath)) {
-        mkdirSync(destinationPath, { recursive: true })
-      }
-
       try {
+
+        const filesInModelFolder = readdirSync(modelFolderPath)
+
+        const destinationPath = join(cortexModelFolderPath, modelName)
+
         const modelJsonFullPath = join(
           janModelFolderPath,
           modelName,
@@ -256,12 +251,25 @@ export function handleAppIPCs() {
 
         const model = JSON.parse(readFileSync(modelJsonFullPath, 'utf-8'))
         const fileNames: string[] = model.sources.map((x: any) => x.filename)
-        // prepend fileNames with cortexModelFolderPath
-        const files = fileNames.map((x: string) =>
-          join(cortexModelFolderPath, model.id, x)
-        )
+        let files: string[] = []
 
-        const engine = 'cortex.llamacpp'
+        if(filesInModelFolder.length > 1) {
+          // prepend fileNames with cortexModelFolderPath
+          files = fileNames.map((x: string) =>
+            join(cortexModelFolderPath, model.id, x)
+          )
+        } else if(model.sources.length && !/^(http|https):\/\/[^/]+\/.*/.test(model.sources[0].url)) {
+          // Symlink case
+          files = [ model.sources[0].url ]
+        } else continue;
+
+        // create folder if not exist
+        // only for local model files
+        if (!existsSync(destinationPath) && filesInModelFolder.length > 1) {
+          mkdirSync(destinationPath, { recursive: true })
+        }
+
+        const engine = (model.engine === 'nitro' || model.engine === 'cortex') ? 'cortex.llamacpp' : (model.engine ?? 'cortex.llamacpp')
 
         const updatedModelFormat = {
           id: model.id,
@@ -288,24 +296,27 @@ export function handleAppIPCs() {
           max_tokens: model.parameters?.max_tokens ?? 2048,
           stream: model.parameters?.stream ?? true,
         }
+        if(filesInModelFolder.length > 1 ) {
+          const { err } = await reflect({
+            src: modelFolderPath,
+            dest: destinationPath,
+            recursive: true,
+            exclude: ['model.json'],
+            delete: false,
+            overwrite: true,
+            errorOnExist: false,
+          })
 
-        const { err } = await reflect({
-          src: modelFolderPath,
-          dest: destinationPath,
-          recursive: true,
-          exclude: ['model.json'],
-          delete: false,
-          overwrite: true,
-          errorOnExist: false,
-        })
-        if (err) console.error(err)
-        else {
-          // create the model.yml file
-          const modelYamlData = dump(updatedModelFormat)
-          const modelYamlPath = join(cortexModelFolderPath, `${modelName}.yaml`)
-
-          writeFileSync(modelYamlPath, modelYamlData)
+          if (err) { 
+            console.error(err);
+            continue;
+          }
         }
+        // create the model.yml file
+        const modelYamlData = dump(updatedModelFormat)
+        const modelYamlPath = join(cortexModelFolderPath, `${modelName}.yaml`)
+
+        writeFileSync(modelYamlPath, modelYamlData)
       } catch (err) {
         console.error(err)
       }
@@ -335,10 +346,12 @@ export function handleAppIPCs() {
             threadFolder,
             'messages.jsonl'
           )
+
+          if(!existsSync(messageFullPath)) continue;
           const lines = readFileSync(messageFullPath, 'utf-8')
-            .toString()
-            .split('\n')
-            .filter((line: any) => line !== '')
+          .toString()
+          .split('\n')
+          .filter((line: any) => line !== '')
           for (const line of lines) {
             messages.push(JSON.parse(line))
           }
