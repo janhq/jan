@@ -103,7 +103,7 @@ const SelectingModelModal: React.FC = () => {
     }
     setImportingModels(importingModels)
     setImportModelStage('MODEL_SELECTED')
-  }, [setImportModelStage, setImportingModels])
+  }, [setImportModelStage, setImportingModels, onImportFileWindowsClick])
 
   const { isDragActive, getRootProps } = useDropzone({
     noClick: true,
