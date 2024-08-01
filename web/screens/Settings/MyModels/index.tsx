@@ -6,7 +6,7 @@ import { LlmEngines } from '@janhq/core'
 import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { UploadCloudIcon } from 'lucide-react'
+import { ImportIcon, UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -15,6 +15,8 @@ import BlankState from '@/containers/BlankState'
 import ModelSearch from '@/containers/ModelSearch'
 
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
+
+import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelItem from './ModelItem'
 
@@ -26,6 +28,11 @@ const MyModels = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { onDropModels } = useDropModelBinaries()
   const [searchText, setSearchText] = useState('')
+  const setImportModelStage = useSetAtom(setImportModelStageAtom)
+
+  const onImportModelClick = useCallback(() => {
+    setImportModelStage('SELECTING_MODEL')
+  }, [setImportModelStage])
 
   const filteredDownloadedModels = useMemo(
     () =>
@@ -75,14 +82,14 @@ const MyModels = () => {
             <div className="w-full sm:w-[300px]">
               <ModelSearch onSearchLocal={onSearchChange} />
             </div>
-            {/* <Button
+            <Button
               variant="outline"
               theme="ghost"
               onClick={onImportModelClick}
             >
-              <UploadIcon size={16} className="mr-2" />
+              <ImportIcon size={16} className="mr-2" />
               <p>Import Model</p>
-            </Button> */}
+            </Button>
           </div>
 
           {!filteredDownloadedModels.length ? (
