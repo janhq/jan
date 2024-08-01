@@ -12,6 +12,7 @@ import ThreadCenterPanel from './ThreadCenterPanel'
 import EmptyModel from './ThreadCenterPanel/ChatBody/EmptyModel'
 import ThreadRightPanel from './ThreadRightPanel'
 
+import { waitingForCortexAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   isAnyRemoteModelConfiguredAtom,
@@ -20,6 +21,7 @@ import {
 
 const ThreadScreen = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const waitingForCortex = useAtomValue(waitingForCortexAtom)
   const isAnyRemoteModelConfigured = useAtomValue(
     isAnyRemoteModelConfiguredAtom
   )
@@ -35,6 +37,8 @@ const ThreadScreen = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAnyRemoteModelConfigured])
+
+  if (waitingForCortex) return null
 
   return (
     <div className="relative flex h-full w-full flex-1 overflow-x-hidden">
