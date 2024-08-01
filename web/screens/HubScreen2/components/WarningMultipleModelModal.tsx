@@ -17,7 +17,7 @@ const WarningMultipleModelModal: React.FC = () => {
   }, [setShowWarningMultipleModelModal])
 
   const title = useMemo(
-    () => `${activeModels.length} models is running`,
+    () => `${activeModels.length} models running`,
     [activeModels]
   )
 

@@ -20,12 +20,12 @@ const importOptions: ModelImportOption[] = [
     description:
       'You maintain your model files outside of Jan. Keeping your files where they are, and Jan will create a smart link to them.',
   },
-  {
-    type: 'MOVE_BINARY_FILE',
-    title: 'Move model binary file',
-    description:
-      'Jan will move your model binary file from your current folder into Jan Data Folder.',
-  },
+  // {
+  //   type: 'MOVE_BINARY_FILE',
+  //   title: 'Move model binary file',
+  //   description:
+  //     'Jan will move your model binary file from your current folder into Jan Data Folder.',
+  // },
 ]
 
 const ImportModelOptionModal = () => {

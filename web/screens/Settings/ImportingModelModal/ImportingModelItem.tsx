@@ -1,15 +1,11 @@
 import { useCallback, useMemo } from 'react'
 
 import { ImportingModel } from '@janhq/core'
-import { useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
 
-import { setImportModelStageAtom } from '@/hooks/useImportModel'
-
 import { toGibibytes } from '@/utils/converter'
 
-import { editingModelIdAtom } from '../EditModelInfoModal'
 import ImportInProgressIcon from '../ImportInProgressIcon'
 import ImportSuccessIcon from '../ImportSuccessIcon'
 
@@ -18,16 +14,13 @@ type Props = {
 }
 
 const ImportingModelItem = ({ model }: Props) => {
-  const setImportModelStage = useSetAtom(setImportModelStageAtom)
-  const setEditingModelId = useSetAtom(editingModelIdAtom)
-
   const onEditModelInfoClick = useCallback(() => {
-    setEditingModelId(model.importId)
-    setImportModelStage('EDIT_MODEL_INFO')
-  }, [setImportModelStage, setEditingModelId, model.importId])
+    // setEditingModelId(model.importId)
+    // setImportModelStage('EDIT_MODEL_INFO')
+  }, [])
 
   const onDeleteModelClick = useCallback(() => {}, [])
-
+  console.log('namh model', model)
   const displayStatus = useMemo(() => {
     if (model.status === 'FAILED') {
       return 'Failed'

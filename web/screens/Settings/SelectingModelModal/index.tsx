@@ -1,10 +1,13 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
+import { ImportingModel, SelectFileOption } from '@janhq/core'
 import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
+
+import { snackbar } from '@/containers/Toast'
 
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import {
@@ -12,28 +15,50 @@ import {
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-const SelectingModelModal = () => {
+import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+
+const SelectingModelModal: React.FC = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
+  const setImportingModels = useSetAtom(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
-  // const { sanitizeFilePaths } = useImportModel()
-
   const onSelectFileClick = useCallback(async () => {
-    // const platform = (await systemInformation()).osInfo?.platform
-    // if (platform === 'win32') {
-    //   setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
-    //   return
-    // }
-    // const options: SelectFileOption = {
-    //   title: 'Select model folders',
-    //   buttonLabel: 'Select',
-    //   allowMultiple: true,
-    //   selectDirectory: true,
-    // }
-    // const filePaths = await window.core?.api?.selectFiles(options)
-    // if (!filePaths || filePaths.length === 0) return
-    // sanitizeFilePaths(filePaths)
-  }, [])
+    if (isWindows) {
+      setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
+      return
+    }
+    const options: SelectFileOption = {
+      title: 'Select model folders',
+      buttonLabel: 'Select',
+      allowMultiple: true,
+      selectDirectory: true,
+    }
+    const filePaths: string[] = await window.core?.api?.selectFiles(options)
+    if (!filePaths || filePaths.length === 0) return
+
+    const importingModels: ImportingModel[] = filePaths
+      .filter((path) => path.endsWith('.gguf'))
+      .map((path) => ({
+        importId: path,
+        modelId: undefined,
+        name: path.replace('.gguf', ''),
+        description: '',
+        path: path,
+        tags: [],
+        size: 0,
+        status: 'PREPARING',
+        format: 'gguf',
+      }))
+    if (importingModels.length < 1) {
+      snackbar({
+        description: `Only files with .gguf extension can be imported.`,
+        type: 'error',
+      })
+      return
+    }
+    setImportingModels(importingModels)
+    setImportModelStage('MODEL_SELECTED')
+  }, [setImportModelStage, setImportingModels])
 
   const { isDragActive, getRootProps } = useDropzone({
     noClick: true,
@@ -52,9 +77,7 @@ const SelectingModelModal = () => {
   return (
     <Modal
       open={importModelStage === 'SELECTING_MODEL'}
-      onOpenChange={() => {
-        setImportModelStage('NONE')
-      }}
+      onOpenChange={() => setImportModelStage('NONE')}
       title="Import Model"
       content={
         <div>

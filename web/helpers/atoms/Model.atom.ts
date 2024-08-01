@@ -61,14 +61,14 @@ export const setImportingModelErrorAtom = atom(
 
 export const setImportingModelSuccessAtom = atom(
   null,
-  (get, set, importId: string, modelId: string) => {
+  (get, set, importId: string) => {
     const model = get(importingModelsAtom).find((x) => x.importId === importId)
     if (!model) return
     const newModel: ImportingModel = {
       ...model,
-      modelId,
+      modelId: undefined,
       status: 'IMPORTED',
-      percentage: 1,
+      percentage: 100,
     }
     const newList = get(importingModelsAtom).map((x) =>
       x.importId === importId ? newModel : x

@@ -19,6 +19,9 @@ import { toaster } from '@/containers/Toast'
 
 import { inferenceErrorAtom } from '@/screens/HubScreen2/components/InferenceErrorModal'
 
+import { showWarningMultipleModelModalAtom } from '@/screens/HubScreen2/components/WarningMultipleModelModal'
+import { concurrentModelWarningThreshold } from '@/screens/Settings/MyModels/ModelItem'
+
 import useCortex from './useCortex'
 
 import useEngineInit from './useEngineInit'
@@ -93,6 +96,9 @@ const useSendMessage = () => {
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
   const didUserAborted = useRef<boolean>(false)
   const setInferenceErrorAtom = useSetAtom(inferenceErrorAtom)
+  const setShowWarningMultipleModelModal = useSetAtom(
+    showWarningMultipleModelModalAtom
+  )
 
   const validatePrerequisite = useCallback(async (): Promise<boolean> => {
     const errorTitle = 'Failed to send message'
@@ -254,6 +260,11 @@ const useSendMessage = () => {
       if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
         // start model if local and not started
         if (!activeModels.map((model) => model.model).includes(modelId)) {
+          if (activeModels.length >= concurrentModelWarningThreshold) {
+            // if max concurrent models reached, stop the first model
+            // display popup
+            setShowWarningMultipleModelModal(true)
+          }
           await startModel.mutateAsync(modelId)
         }
       }
@@ -477,6 +488,7 @@ const useSendMessage = () => {
     chatCompletionNonStreaming,
     chatCompletionStreaming,
     setIsGeneratingResponse,
+    setShowWarningMultipleModelModal,
   ])
 
   const sendMessage = useCallback(
@@ -507,6 +519,11 @@ const useSendMessage = () => {
         if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
           // start model if local and not started
           if (!activeModels.map((model) => model.model).includes(modelId)) {
+            if (activeModels.length >= concurrentModelWarningThreshold) {
+              // if max concurrent models reached, stop the first model
+              // display popup
+              setShowWarningMultipleModelModal(true)
+            }
             await startModel.mutateAsync(modelId)
           }
         }
@@ -746,6 +763,7 @@ const useSendMessage = () => {
       selectedModel,
       updateMessage,
       createMessage,
+      startModel,
       setInferenceErrorAtom,
       validatePrerequisite,
       setCurrentPrompt,
@@ -753,10 +771,10 @@ const useSendMessage = () => {
       setIsGeneratingResponse,
       updateMessageState,
       addNewMessage,
-      startModel,
       chatCompletionNonStreaming,
       chatCompletionStreaming,
       summarizeThread,
+      setShowWarningMultipleModelModal,
     ]
   )
 

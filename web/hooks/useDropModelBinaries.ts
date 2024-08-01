@@ -3,8 +3,6 @@ import { useCallback } from 'react'
 import { ImportingModel } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
-import { v4 as uuidv4 } from 'uuid'
-
 import { snackbar } from '@/containers/Toast'
 
 import { getFileInfoFromFile } from '@/utils/file'
@@ -27,7 +25,7 @@ export default function useDropModelBinaries() {
       const supportedFiles = files.filter((file) => file.path.endsWith('.gguf'))
 
       const importingModels: ImportingModel[] = supportedFiles.map((file) => ({
-        importId: uuidv4(),
+        importId: file.path,
         modelId: undefined,
         name: file.name.replace('.gguf', ''),
         description: '',

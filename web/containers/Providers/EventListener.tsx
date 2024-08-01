@@ -9,7 +9,6 @@ import DownloadEventListener from './DownloadEventListener'
 
 import KeyListener from './KeyListener'
 import ModelEventListener from './ModelEventListener'
-import ModelImportListener from './ModelImportListener'
 
 const EventListenerWrapper: React.FC = () => (
   <Fragment>
@@ -19,7 +18,6 @@ const EventListenerWrapper: React.FC = () => (
     <ModelEventListener />
     <ClipboardListener />
     <DeepLinkListener />
-    <ModelImportListener />
   </Fragment>
 )
 

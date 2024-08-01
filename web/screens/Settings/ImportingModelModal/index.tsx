@@ -1,50 +1,47 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
-import { Button, Modal } from '@janhq/joi'
+import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
 
+import useCortex from '@/hooks/useCortex'
 import {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import { openFileTitle } from '@/utils/titleUtils'
-
 import ImportingModelItem from './ImportingModelItem'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ImportingModelModal = () => {
+  const { downloadModel } = useCortex()
+  const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const importingModels = useAtomValue(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
-  const setImportModelStage = useSetAtom(setImportModelStageAtom)
-  const janDataFolder = useAtomValue(janDataFolderPathAtom)
-
-  const [modelFolder, setModelFolder] = useState('')
-
-  useEffect(() => {
-    const getModelPath = async () => {
-      // const modelPath = await joinPath([janDataFolder, 'models'])
-      setModelFolder('')
-    }
-    getModelPath()
-  }, [janDataFolder])
 
   const finishedImportModel = importingModels.filter(
     (model) => model.status === 'IMPORTED'
   ).length
 
-  const onOpenModelFolderClick = useCallback(
-    () => {
-      // openFileExplorer(modelFolder)
-    },
-    [
-      /*modelFolder*/
-    ]
-  )
+  useEffect(() => {
+    const importModels = async () => {
+      for (const model of importingModels) {
+        await downloadModel(model.path)
+        // const parsedResult = await result?.json()
+        // if (
+        //   parsedResult['message'] &&
+        //   parsedResult['message'] === 'Download model started successfully.'
+        // ) {
+        //   // update importingModels
+        // }
+        // console.log(`NamH result ${JSON.stringify(parsedResult)}`)
+      }
+    }
+    importModels()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [downloadModel])
 
   return (
     <Modal
@@ -54,7 +51,7 @@ const ImportingModelModal = () => {
       content={
         <div>
           <div className="flex flex-row items-center space-x-2 pb-3">
-            <label className="text-[hsla(var(--text-secondary)] text-xs">
+            {/* <label className="text-[hsla(var(--text-secondary)] text-xs">
               {modelFolder}
             </label>
             <Button
@@ -64,10 +61,10 @@ const ImportingModelModal = () => {
               onClick={onOpenModelFolderClick}
             >
               {openFileTitle()}
-            </Button>
+            </Button> */}
           </div>
 
-          <div className="space-y-3">
+          <div className="mb-2 space-y-3">
             {importingModels.map((model) => (
               <ImportingModelItem key={model.importId} model={model} />
             ))}
