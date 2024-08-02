@@ -327,6 +327,13 @@ export function handleAppIPCs() {
     NativeRoute.getAllMessagesAndThreads,
     async (_event): Promise<any> => {
       const janThreadFolderPath = join(getJanDataFolderPath(), 'threads')
+      // check if exist
+      if (!existsSync(janThreadFolderPath)) {
+        return {
+          threads: [],
+          messages: [],
+        }
+      }
       // get children of thread folder
       const allThreadFolders = readdirSync(janThreadFolderPath)
       const threads: any[] = []
@@ -370,6 +377,10 @@ export function handleAppIPCs() {
     NativeRoute.getAllLocalModels,
     async (_event): Promise<boolean> => {
       const janModelsFolderPath = join(getJanDataFolderPath(), 'models')
+
+      if (!existsSync(janModelsFolderPath)) {
+        return false
+      }
       // get children of thread folder
       const allModelsFolders = readdirSync(janModelsFolderPath)
       let hasLocalModels = false
