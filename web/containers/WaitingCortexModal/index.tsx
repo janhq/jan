@@ -1,5 +1,9 @@
+import { useCallback, useEffect } from 'react'
+
 import { Modal } from '@janhq/joi'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
+
+import useCortex from '@/hooks/useCortex'
 
 import Spinner from '../Loader/Spinner'
 
@@ -8,12 +12,22 @@ import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 
 const WaitingForCortexModal: React.FC = () => {
   const host = useAtomValue(hostAtom)
-  const open = useAtomValue(waitingForCortexAtom)
+  const [waitingForCortex, setWaitingForCortex] = useAtom(waitingForCortexAtom)
+  const { isSystemAlive } = useCortex()
+
+  const checkSystemAlive = useCallback(async () => {
+    setWaitingForCortex(!(await isSystemAlive()))
+  }, [setWaitingForCortex, isSystemAlive])
+
+  // Check health for the first time on mount
+  useEffect(() => {
+    checkSystemAlive()
+  }, [checkSystemAlive])
 
   return (
     <Modal
       hideClose
-      open={open}
+      open={waitingForCortex}
       title={'Waiting for cortex'}
       content={
         <div className="flex gap-x-2">

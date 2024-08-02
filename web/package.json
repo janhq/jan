@@ -17,7 +17,7 @@
     "yaml": "^2.4.5",
     "@huggingface/hub": "^0.15.1",
     "embla-carousel-react": "^8.1.5",
-    "cortexso-node": "^0.0.4",
+    "@cortexso/cortex.js": "^0.1.6",
     "@microsoft/fetch-event-source": "^2.0.1",
     "@janhq/core": "link:./core",
     "@janhq/joi": "link:./joi",
@@ -44,7 +44,6 @@
     "sass": "^1.69.4",
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "3.3.5",
-    "uuid": "^9.0.1",
     "use-debounce": "^10.0.0"
   },
   "devDependencies": {

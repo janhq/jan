@@ -70,6 +70,11 @@ export interface DownloadState2 {
   type: DownloadType2
 
   /**
+   * Percentage of the download.
+   */
+  progress: number
+
+  /**
    * The status of the download.
    */
   status: DownloadStatus

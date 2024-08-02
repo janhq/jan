@@ -3,7 +3,7 @@ import { memo, useCallback, useMemo, useState } from 'react'
 import { LocalEngines, Model } from '@janhq/core'
 import { Badge, Button, useClickOutside } from '@janhq/joi'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import {
   MoreVerticalIcon,
   PlayIcon,
@@ -13,7 +13,10 @@ import {
 import { twMerge } from 'tailwind-merge'
 
 import useModelStart from '@/hooks/useModelStart'
+import useModelStop from '@/hooks/useModelStop'
 import useModels from '@/hooks/useModels'
+
+import { showWarningMultipleModelModalAtom } from '@/screens/HubScreen2/components/WarningMultipleModelModal'
 
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
@@ -21,14 +24,21 @@ type Props = {
   model: Model
 }
 
+// If more than this number of models are running, show a warning modal.
+export const concurrentModelWarningThreshold = 2
+
 const ModelItem: React.FC<Props> = ({ model }) => {
   const activeModels = useAtomValue(activeModelsAtom)
   const startModel = useModelStart()
+  const stopModel = useModelStop()
   const [more, setMore] = useState(false)
-  const { stopModel, deleteModel } = useModels()
+  const { deleteModel } = useModels()
 
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
+  const setShowWarningMultipleModelModal = useSetAtom(
+    showWarningMultipleModelModalAtom
+  )
   useClickOutside(() => setMore(false), null, [menu, toggle])
 
   const isActive = useMemo(
@@ -39,17 +49,30 @@ const ModelItem: React.FC<Props> = ({ model }) => {
   const onModelActionClick = useCallback(
     (modelId: string) => {
       if (isActive) {
-        stopModel(modelId)
-      } else {
-        startModel.mutate(modelId)
+        // if model already active, stop it
+        stopModel.mutate(modelId)
+        return
       }
+
+      if (activeModels.length >= concurrentModelWarningThreshold) {
+        // if max concurrent models reached, stop the first model
+        // display popup
+        setShowWarningMultipleModelModal(true)
+      }
+      startModel.mutate(modelId)
     },
-    [isActive, startModel, stopModel]
+    [
+      isActive,
+      startModel,
+      stopModel,
+      activeModels.length,
+      setShowWarningMultipleModelModal,
+    ]
   )
 
   const onDeleteModelClicked = useCallback(
     async (modelId: string) => {
-      await stopModel(modelId)
+      await stopModel.mutateAsync(modelId)
       await deleteModel(modelId)
     },
     [stopModel, deleteModel]

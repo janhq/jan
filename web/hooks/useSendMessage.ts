@@ -17,6 +17,11 @@ import { currentPromptAtom, editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { inferenceErrorAtom } from '@/screens/HubScreen2/components/InferenceErrorModal'
+
+import { showWarningMultipleModelModalAtom } from '@/screens/HubScreen2/components/WarningMultipleModelModal'
+import { concurrentModelWarningThreshold } from '@/screens/Settings/MyModels/ModelItem'
+
 import useCortex from './useCortex'
 
 import useEngineInit from './useEngineInit'
@@ -89,6 +94,11 @@ const useSendMessage = () => {
   const startModel = useModelStart()
 
   const abortControllerRef = useRef<AbortController | undefined>(undefined)
+  const didUserAborted = useRef<boolean>(false)
+  const setInferenceErrorAtom = useSetAtom(inferenceErrorAtom)
+  const setShowWarningMultipleModelModal = useSetAtom(
+    showWarningMultipleModelModalAtom
+  )
 
   const validatePrerequisite = useCallback(async (): Promise<boolean> => {
     const errorTitle = 'Failed to send message'
@@ -195,10 +205,17 @@ const useSendMessage = () => {
 
   const stopInference = useCallback(() => {
     abortControllerRef.current?.abort()
+    didUserAborted.current = true
   }, [])
 
   const summarizeThread = useCallback(
     async (messages: string[], modelId: string, thread: Thread) => {
+      // if its a local model, and is not started, skip summarization
+      if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
+        if (!activeModels.map((model) => model.model).includes(modelId)) {
+          return
+        }
+      }
       const maxWordForThreadTitle = 10
       const summarizeMessages: ChatCompletionMessageParam[] = [
         {
@@ -223,6 +240,8 @@ const useSendMessage = () => {
       updateThreadTitle(thread.id, summarizedText)
     },
     [
+      activeModels,
+      selectedModel,
       addThreadIdShouldAnimateTitle,
       chatCompletionNonStreaming,
       updateThreadTitle,
@@ -241,6 +260,11 @@ const useSendMessage = () => {
       if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
         // start model if local and not started
         if (!activeModels.map((model) => model.model).includes(modelId)) {
+          if (activeModels.length >= concurrentModelWarningThreshold) {
+            // if max concurrent models reached, stop the first model
+            // display popup
+            setShowWarningMultipleModelModal(true)
+          }
           await startModel.mutateAsync(modelId)
         }
       }
@@ -268,7 +292,10 @@ const useSendMessage = () => {
           case 'assistant':
             return {
               role: msg.role,
-              content: (msg.content[0] as TextContentBlock).text.value,
+              content:
+                msg.content[0] != null
+                  ? (msg.content[0] as TextContentBlock).text.value
+                  : '',
             }
 
           // we will need to support other roles in the future
@@ -300,6 +327,7 @@ const useSendMessage = () => {
           ...modelOptions,
         })
 
+        didUserAborted.current = false
         abortControllerRef.current = stream.controller
 
         const assistantMessage = await createMessage.mutateAsync({
@@ -366,6 +394,7 @@ const useSendMessage = () => {
           },
         })
       } else {
+        didUserAborted.current = false
         const abortController = new AbortController()
         const response = await chatCompletionNonStreaming(
           {
@@ -427,9 +456,18 @@ const useSendMessage = () => {
       }
     } catch (err) {
       console.error(err)
+      // @ts-expect-error error message should be there
+      const errorMessage = err['message']
+      if (errorMessage != null) {
+        setInferenceErrorAtom({
+          engine: selectedModel!.engine,
+          message: errorMessage,
+        })
+      }
 
       toaster({
-        title: 'Failed to generate response',
+        title: `Error with ${selectedModel!.model}`,
+        description: 'Failed to generate response',
         type: 'error',
       })
     }
@@ -442,13 +480,15 @@ const useSendMessage = () => {
     selectedModel,
     updateMessage,
     createMessage,
-    validatePrerequisite,
     startModel,
+    setInferenceErrorAtom,
+    validatePrerequisite,
     updateMessageState,
     addNewMessage,
     chatCompletionNonStreaming,
     chatCompletionStreaming,
     setIsGeneratingResponse,
+    setShowWarningMultipleModelModal,
   ])
 
   const sendMessage = useCallback(
@@ -479,6 +519,11 @@ const useSendMessage = () => {
         if (LocalEngines.find((e) => e === selectedModel!.engine) != null) {
           // start model if local and not started
           if (!activeModels.map((model) => model.model).includes(modelId)) {
+            if (activeModels.length >= concurrentModelWarningThreshold) {
+              // if max concurrent models reached, stop the first model
+              // display popup
+              setShowWarningMultipleModelModal(true)
+            }
             await startModel.mutateAsync(modelId)
           }
         }
@@ -502,7 +547,10 @@ const useSendMessage = () => {
             case 'assistant':
               return {
                 role: msg.role,
-                content: (msg.content[0] as TextContentBlock).text.value,
+                content:
+                  msg.content[0] != null
+                    ? (msg.content[0] as TextContentBlock).text.value
+                    : '',
               }
 
             // we will need to support other roles in the future
@@ -536,7 +584,7 @@ const useSendMessage = () => {
             top_p: selectedModel!.top_p ?? 1,
             ...modelOptions,
           })
-
+          didUserAborted.current = false
           abortControllerRef.current = stream.controller
 
           const assistantMessage = await createMessage.mutateAsync({
@@ -606,7 +654,10 @@ const useSendMessage = () => {
             },
           })
         } else {
+          didUserAborted.current = false
           const abortController = new AbortController()
+          abortControllerRef.current = abortController
+
           const response = await chatCompletionNonStreaming(
             {
               messages,
@@ -663,7 +714,7 @@ const useSendMessage = () => {
               content: responseMessage.content,
             },
           })
-
+          abortControllerRef.current = undefined
           if (responseMessage) {
             setIsGeneratingResponse(false)
           }
@@ -672,17 +723,27 @@ const useSendMessage = () => {
         }
       } catch (err) {
         console.error(err)
+        // @ts-expect-error error message should be there
+        const errorMessage = err['message']
+        if (errorMessage != null) {
+          setInferenceErrorAtom({
+            engine: selectedModel!.engine,
+            message: errorMessage,
+          })
+        }
+
         setIsGeneratingResponse(false)
         shouldSummarize = false
 
         toaster({
-          title: 'Failed to generate response',
+          title: `Error with ${selectedModel!.model}`,
+          description: 'Failed to generate response',
           type: 'error',
         })
       }
 
       try {
-        if (!shouldSummarize) return
+        if (!shouldSummarize || didUserAborted.current === true) return
         // summarize if needed
         const textMessages: string[] = messages
           .map((msg) => {
@@ -702,16 +763,18 @@ const useSendMessage = () => {
       selectedModel,
       updateMessage,
       createMessage,
+      startModel,
+      setInferenceErrorAtom,
       validatePrerequisite,
       setCurrentPrompt,
       setEditPrompt,
       setIsGeneratingResponse,
       updateMessageState,
       addNewMessage,
-      startModel,
       chatCompletionNonStreaming,
       chatCompletionStreaming,
       summarizeThread,
+      setShowWarningMultipleModelModal,
     ]
   )
 

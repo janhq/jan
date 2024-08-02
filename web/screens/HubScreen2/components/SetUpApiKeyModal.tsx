@@ -38,6 +38,9 @@ const SetUpApiKeyModal: React.FC = () => {
       alert('Does not have engine')
       return
     }
+    const normalizedApiKey = apiKey.trim().replaceAll('*', '')
+    if (normalizedApiKey.length === 0) return
+
     updateEngineConfig.mutate({
       engine: remoteEngine,
       config: {

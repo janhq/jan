@@ -13,6 +13,11 @@ import useEngineQuery from '@/hooks/useEngineQuery'
 
 import LoadingIndicator from '@/screens/HubScreen2/components/LoadingIndicator'
 
+const getStatusTitle = (status: string) => {
+  const normalized = status.charAt(0).toUpperCase() + status.slice(1)
+  return normalized.replaceAll('_', ' ')
+}
+
 const EngineSetting: React.FC = () => {
   const { isLoading, data } = useEngineQuery()
 
@@ -56,7 +61,7 @@ const EngineSetting: React.FC = () => {
                   <TableCell className="text-center">
                     {engineStatus.version}
                   </TableCell>
-                  <TableCell>{engineStatus.status}</TableCell>
+                  <TableCell>{getStatusTitle(engineStatus.status)}</TableCell>
                 </TableRow>
               )
             })}

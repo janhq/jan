@@ -11,7 +11,7 @@ export const mainViewStateAtom = atom<MainViewState>(MainViewState.Thread)
 
 export const defaultJanDataFolderAtom = atom<string>('')
 
-export const waitingForCortexAtom = atom<boolean>(false)
+export const waitingForCortexAtom = atom<boolean>(true)
 
 // Store panel atom
 export const showLeftPanelAtom = atom<boolean>(true)

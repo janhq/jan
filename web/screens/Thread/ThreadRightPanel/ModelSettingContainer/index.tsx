@@ -9,6 +9,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import EngineSetting from '@/containers/EngineSetting'
 import ModelSetting from '@/containers/ModelSetting'
 
+import useModelStop from '@/hooks/useModelStop'
 import useModels from '@/hooks/useModels'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -24,7 +25,8 @@ import {
 } from '@/helpers/atoms/Model.atom'
 
 const ModelSettingContainer: React.FC = () => {
-  const { stopModel, updateModel } = useModels()
+  const stopModel = useModelStop()
+  const { updateModel } = useModels()
   const setSelectedModel = useSetAtom(updateSelectedModelAtom)
 
   const selectedModel = useAtomValue(getSelectedModelAtom)
@@ -33,21 +35,17 @@ const ModelSettingContainer: React.FC = () => {
     if (!selectedModel) return
     // runtime setting
     const modelRuntimeParams = toRuntimeParams(selectedModel)
-    const componentDataRuntimeSetting = getConfigurationsData(
-      modelRuntimeParams,
-      selectedModel
-    )
+    const componentDataRuntimeSetting =
+      getConfigurationsData(modelRuntimeParams)
 
     // engine setting
     const modelEngineParams = toSettingParams(selectedModel)
     const componentDataEngineSetting = getConfigurationsData(
-      modelEngineParams,
-      selectedModel
+      modelEngineParams
     ).filter((x) => x.key !== 'prompt_template' && x.key !== 'embedding')
 
     const promptTemplateSettings = getConfigurationsData(
-      modelEngineParams,
-      selectedModel
+      modelEngineParams
     ).filter((x) => x.key === 'prompt_template')
 
     // the max value of max token has to follow context length
@@ -57,6 +55,7 @@ const ModelSettingContainer: React.FC = () => {
     const contextLength = componentDataEngineSetting.find(
       (x) => x.key === 'ctx_len'
     )
+
     if (maxTokens && contextLength) {
       // replace maxToken to componentDataRuntimeSetting
       const updatedComponentDataRuntimeSetting: SettingComponentProps[] =
@@ -123,7 +122,7 @@ const ModelSettingContainer: React.FC = () => {
         presetConfiguration[key]?.requireModelReload ?? true
 
       if (shouldStopModel) {
-        stopModel(selectedModel.model)
+        stopModel.mutate(selectedModel.model)
       }
     },
     [selectedModel, debounceUpdateModel, stopModel, setSelectedModel]

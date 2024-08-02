@@ -3,7 +3,7 @@ import { useCallback } from 'react'
 import { SettingComponentProps } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
-import useModels from '@/hooks/useModels'
+import useModelStop from '@/hooks/useModelStop'
 
 import SettingComponentBuilder from '../../../../containers/ModelSetting/SettingComponent'
 
@@ -17,7 +17,7 @@ type Props = {
 const AssistantSetting: React.FC<Props> = ({ componentData }) => {
   const activeThread = useAtomValue(activeThreadAtom)
   const activeModels = useAtomValue(activeModelsAtom)
-  const { stopModel } = useModels()
+  const stopModel = useModelStop()
 
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
@@ -29,7 +29,7 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
         const model = activeModels.find(
           (model) => activeThread.assistants[0]?.model === model.model
         )
-        if (model) stopModel(model.model)
+        if (model) stopModel.mutate(model.model)
       }
 
       // if (

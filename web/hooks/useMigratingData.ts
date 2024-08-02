@@ -68,13 +68,12 @@ const useMigratingData = () => {
           continue
         }
         const threadTitle: string = thread.title ?? 'New Thread'
-        const instruction: string = thread.assistants[0]?.instruction ?? ''
-
+        const instructions: string = thread.assistants[0]?.instructions ?? ''
         // currently, we don't have api support for creating thread with messages
         const cortexThread = await createThread(modelId, assistants[0])
         console.log('createThread', cortexThread)
         // update instruction
-        cortexThread.assistants[0].instructions = instruction
+        cortexThread.assistants[0].instructions = instructions
         cortexThread.title = threadTitle
 
         // update thread name

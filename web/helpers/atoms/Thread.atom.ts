@@ -61,17 +61,16 @@ export const setActiveThreadIdAtom = atom(
   }
 )
 
-export const waitingToSendMessage = atom<boolean | undefined>(undefined)
 export const isLoadingModelAtom = atom<boolean | undefined>(undefined)
 
-export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
+export const isGeneratingResponseAtom = atom<boolean>(false)
 
 /**
  * Stores all threads for the current user
  */
 export const threadsAtom = atom<Thread[]>([])
 
-export const deleteThreadAtom = atom(null, (get, set, threadId: string) => {
+export const deleteThreadAtom = atom(null, (_get, set, threadId: string) => {
   set(threadsAtom, (threads) => {
     // set active thread to the latest
     const allThreads = threads.filter((c) => c.id !== threadId)

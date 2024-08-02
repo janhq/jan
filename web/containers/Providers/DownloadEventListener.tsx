@@ -6,8 +6,14 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
 
+import useModels from '@/hooks/useModels'
+
 import { waitingForCortexAtom } from '@/helpers/atoms/App.atom'
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
+import {
+  setImportingModelSuccessAtom,
+  updateImportingModelProgressAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const DownloadEventListener: React.FC = () => {
   const host = useAtomValue(hostAtom)
@@ -15,15 +21,52 @@ const DownloadEventListener: React.FC = () => {
   const abortController = useRef(new AbortController())
   const setDownloadStateList = useSetAtom(downloadStateListAtom)
   const setWaitingForCortex = useSetAtom(waitingForCortexAtom)
+  const { getModels } = useModels()
+
+  const updateImportingModelProgress = useSetAtom(
+    updateImportingModelProgressAtom
+  )
+  const setImportingModelSuccess = useSetAtom(setImportingModelSuccessAtom)
+
+  const handleLocalImportModels = useCallback(
+    (events: DownloadState2[]) => {
+      if (events.length === 0) return
+      for (const event of events) {
+        if (event.progress === 100) {
+          setImportingModelSuccess(event.id)
+        } else {
+          updateImportingModelProgress(event.id, event.progress)
+        }
+      }
+      getModels()
+    },
+    [setImportingModelSuccess, updateImportingModelProgress, getModels]
+  )
 
   const subscribeDownloadEvent = useCallback(async () => {
     if (isRegistered.current) return
-    await fetchEventSource(`${host}/events/download`, {
+    await fetchEventSource(`${host}/system/events/download`, {
       onmessage(ev) {
         if (!ev.data || ev.data === '') return
         try {
-          const downloadEvent = JSON.parse(ev.data) as DownloadState2[]
-          setDownloadStateList(downloadEvent)
+          const downloadEvents = JSON.parse(ev.data) as DownloadState2[]
+          const remoteDownloadEvents: DownloadState2[] = []
+          const localImportEvents: DownloadState2[] = []
+          // filter out the import local events
+          for (const event of downloadEvents) {
+            console.debug('Receiving event', event)
+            if (
+              isAbsolutePath(event.id) &&
+              event.type === 'model' &&
+              event.children.length === 0
+            ) {
+              localImportEvents.push(event)
+            } else {
+              remoteDownloadEvents.push(event)
+            }
+          }
+          handleLocalImportModels(localImportEvents)
+          setDownloadStateList(remoteDownloadEvents)
         } catch (err) {
           console.error(err)
         }
@@ -40,7 +83,7 @@ const DownloadEventListener: React.FC = () => {
     })
     console.log('Download event subscribed')
     isRegistered.current = true
-  }, [host, setDownloadStateList, setWaitingForCortex])
+  }, [host, setDownloadStateList, setWaitingForCortex, handleLocalImportModels])
 
   const unsubscribeDownloadEvent = useCallback(() => {
     if (!isRegistered.current) return
@@ -58,6 +101,24 @@ const DownloadEventListener: React.FC = () => {
   }, [subscribeDownloadEvent, unsubscribeDownloadEvent])
 
   return null
+}
+
+const isAbsolutePath = (path: string): boolean => {
+  // Trim any leading or trailing whitespace
+  const trimmedPath = path.trim()
+
+  // Check for Unix-like absolute path
+  if (trimmedPath.startsWith('/')) {
+    return true
+  }
+
+  // Check for Windows absolute path (with drive letter)
+  if (/^[A-Za-z]:[/\\]/.test(trimmedPath)) {
+    return true
+  }
+
+  // All other paths are not considered absolute local paths
+  return false
 }
 
 export default DownloadEventListener

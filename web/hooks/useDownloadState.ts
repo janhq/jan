@@ -10,6 +10,7 @@ export const addDownloadModelStateAtom = atom(
       id: modelId,
       title: modelId,
       type: DownloadType2.Model,
+      progress: 0,
       status: DownloadStatus.Downloading,
       children: [
         {
