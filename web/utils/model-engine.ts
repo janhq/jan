@@ -1,7 +1,7 @@
 import { ModelHubCategory } from '@/hooks/useModelHub'
 
 export const getTitleByCategory = (category: ModelHubCategory) => {
-  if (!category) return ''
+  if (!category || !category.length) return ''
   switch (category) {
     case 'BuiltInModels':
       return 'Built-in Models'
