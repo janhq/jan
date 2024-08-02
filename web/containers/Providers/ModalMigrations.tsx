@@ -38,7 +38,7 @@ const ModalMigrations = () => {
 
       default:
         return loaderThreads || loaderModels
-          ? 'Migration In Progressed'
+          ? 'Migration In Progress'
           : 'Migration Completed'
     }
   }
