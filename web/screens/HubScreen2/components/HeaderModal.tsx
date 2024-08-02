@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 
 import Image from 'next/image'
 
@@ -10,33 +10,68 @@ import { twMerge } from 'tailwind-merge'
 import DropdownModal from './DropdownModal'
 
 type Props = {
-  modelIdVariants: string[]
-  modelId: string
   name: string
+  modelHandle?: string
+  availableModels: string[]
   onActionClick: () => void
   isLocalModel?: boolean
 }
 
 const HeaderModal: React.FC<Props> = ({
-  modelIdVariants,
-  modelId,
   name,
+  modelHandle,
+  availableModels,
   onActionClick,
   isLocalModel = false,
 }) => {
-  const [selectedVariant, setSelectedVariant] = useState<string>(modelId)
+  const [options, setOptions] = useState<{ name: string; value: string }[]>([])
+  const [selectedVariant, setSelectedVariant] = useState<string | undefined>()
   const textRef = useRef<HTMLDivElement>(null)
 
-  const options = modelIdVariants.map((variant) => ({
-    name: variant,
-    value: variant,
-  }))
+  useEffect(() => {
+    const isFromCortexHub = modelHandle?.includes('cortexso') ?? false
+    if (!isLocalModel) {
+      setOptions(
+        availableModels.map((variant) => ({
+          name: variant,
+          value: variant,
+        }))
+      )
+      if (availableModels.length > 0) {
+        setSelectedVariant(availableModels[0])
+      }
+      return
+    }
+
+    if (isLocalModel && !isFromCortexHub) {
+      setOptions([
+        {
+          name: modelHandle ?? '',
+          value: modelHandle ?? '',
+        },
+      ])
+      setSelectedVariant(modelHandle)
+      return
+    }
+
+    setOptions(
+      availableModels.map((variant) => ({
+        name: `${name}:${variant}`,
+        value: `${name}:${variant}`,
+      }))
+    )
+    if (availableModels.length > 0) {
+      setSelectedVariant(`${name}:${availableModels[0]}`)
+    }
+  }, [availableModels, name, modelHandle, isLocalModel])
 
   const onCopyClicked = useCallback(() => {
     navigator.clipboard.writeText(textRef.current?.innerText ?? '')
   }, [])
 
   const title = name.charAt(0).toUpperCase() + name.slice(1)
+
+  if (!selectedVariant) return null
 
   return (
     <div className="flex items-center">

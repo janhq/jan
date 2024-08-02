@@ -33,14 +33,16 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   modelHandle: string
+  onBranchSelected?: (availableSelections: string[]) => void
 }
 
-const ListModel: React.FC<Props> = ({ modelHandle }) => {
+const ListModel: React.FC<Props> = ({ modelHandle, onBranchSelected }) => {
   const { data: engineData } = useEngineQuery()
+  const { data, isLoading } = useHfEngineToBranchesQuery(modelHandle)
+
   const [engineFilter, setEngineFilter] = useState<EngineType | undefined>(
     undefined
   )
-  const { data, isLoading } = useHfEngineToBranchesQuery(modelHandle)
 
   const engineSelections: { name: string; value: string }[] = useMemo(() => {
     if (!data || !engineData) return []
@@ -63,17 +65,26 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
     return result
   }, [data, engineData])
 
+  const modelBranches: CortexHubModel[] = useMemo((): CortexHubModel[] => {
+    if (!data) return []
+    return (data[engineFilter as EngineType] as CortexHubModel[]) ?? []
+  }, [data, engineFilter])
+
   useEffect(() => {
     if (engineSelections.length === 0) return
     setEngineFilter(engineSelections[0].value as EngineType)
-  }, [engineSelections])
+    const models = modelBranches.map((m) => m.name)
+    onBranchSelected?.(models)
+  }, [engineSelections, modelBranches, onBranchSelected])
 
-  const modelBranches: CortexHubModel[] = []
-  if (data) {
-    const branches = data[engineFilter as EngineType] as CortexHubModel[]
-    if (!branches || branches.length === 0) return
-    modelBranches.push(...branches)
-  }
+  const onSelectionChanged = useCallback(
+    (selectionValue: string) => {
+      setEngineFilter(selectionValue as EngineType)
+      const models = modelBranches.map((m) => m.name)
+      onBranchSelected?.(models)
+    },
+    [setEngineFilter, onBranchSelected, modelBranches]
+  )
 
   if (isLoading)
     return (
@@ -90,7 +101,7 @@ const ListModel: React.FC<Props> = ({ modelHandle }) => {
           value={engineFilter}
           className="gap-1.5 whitespace-nowrap px-4 py-2 font-semibold"
           options={engineSelections}
-          onValueChange={(value) => setEngineFilter(value as EngineType)}
+          onValueChange={onSelectionChanged}
         />
       </div>
       <div className="mt-3 w-full overflow-hidden rounded-md border border-[hsla(var(--app-border))]">

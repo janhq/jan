@@ -29,14 +29,6 @@ const ImportingModelModal = () => {
     const importModels = async () => {
       for (const model of importingModels) {
         await downloadModel(model.path)
-        // const parsedResult = await result?.json()
-        // if (
-        //   parsedResult['message'] &&
-        //   parsedResult['message'] === 'Download model started successfully.'
-        // ) {
-        //   // update importingModels
-        // }
-        // console.log(`NamH result ${JSON.stringify(parsedResult)}`)
       }
     }
     importModels()
