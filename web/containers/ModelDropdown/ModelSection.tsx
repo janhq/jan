@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import Image from 'next/image'
 
@@ -39,6 +39,13 @@ const ModelSection: React.FC<Props> = ({
     (entry) => entry?.metadata?.api_key_url != null
   )?.metadata?.api_key_url
 
+  const onSettingClick = useCallback(() => {
+    setUpRemoteModelStage('SETUP_API_KEY', engine as unknown as RemoteEngine, {
+      logo: engineLogo,
+      api_key_url: apiKeyUrl,
+    })
+  }, [apiKeyUrl, engine, engineLogo, setUpRemoteModelStage])
+
   useEffect(() => {
     const matchedModels = getModelsByEngine(engine, searchText)
     setModels(matchedModels)
@@ -75,19 +82,7 @@ const ModelSection: React.FC<Props> = ({
             <div className="flex w-full items-center justify-between">
               <p className="line-clamp-1">{model.name ?? model.model}</p>
               {!model.engine?.includes('cortex.') && (
-                <Button
-                  theme="icon"
-                  onClick={() => {
-                    return setUpRemoteModelStage(
-                      'SETUP_API_KEY',
-                      engine as unknown as RemoteEngine,
-                      {
-                        logo: engineLogo,
-                        api_key_url: apiKeyUrl,
-                      }
-                    )
-                  }}
-                >
+                <Button theme="icon" onClick={onSettingClick}>
                   <SettingsIcon
                     size={14}
                     className="text-[hsla(var(--text-secondary))]"
