@@ -8,7 +8,6 @@ import {
   fetchCortexHubModels,
 } from '@/utils/huggingface'
 
-// TODO: change curated models to built in models
 type CuratedModelResponse = {
   quickstart_models: QuickStartModel[]
   popular_models: CuratedModel[]

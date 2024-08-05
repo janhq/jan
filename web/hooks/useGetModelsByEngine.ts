@@ -31,14 +31,21 @@ const useGetModelsByEngine = () => {
           })
       }
 
+      const availableModels = downloadedModels.filter(
+        (m) => m.engine === engine
+      )
+      // engine is remote engine
       const data = queryClient.getQueryData(cortexHubModelsQueryKey)
-      if (!data) return []
+      if (!data) return availableModels
+
       const modelEntries = data as HfModelEntry[]
-      const models: Model[] = []
+      const models: Model[] = [...availableModels]
       for (const entry of modelEntries) {
-        if (entry.model && entry.engine === engine) {
-          models.push(entry.model)
-        }
+        const entryModel = entry.model
+        if (!entryModel) continue
+        if (entry.engine !== engine) continue
+        if (models.some((m) => m.model === entryModel.model)) continue
+        models.push(entryModel)
       }
 
       return models.filter((m) => {
