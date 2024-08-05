@@ -61,7 +61,9 @@ const SimpleTextMessage: React.FC<Props> = ({
       const message = msg.content[0]
       if (message && message.type === 'text') {
         const textBlockContent = message as TextContentBlock
-        setText(textBlockContent.text.value)
+        // Check for compatible message object type - There was a problem with legacy message object compatibility, which broke the app.
+        if (typeof textBlockContent.text.value === 'string')
+          setText(textBlockContent.text.value)
       }
     }
   }, [msg.content])
