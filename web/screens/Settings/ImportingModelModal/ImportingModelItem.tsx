@@ -20,7 +20,6 @@ const ImportingModelItem = ({ model }: Props) => {
   }, [])
 
   const onDeleteModelClick = useCallback(() => {}, [])
-  console.log('namh model', model)
   const displayStatus = useMemo(() => {
     if (model.status === 'FAILED') {
       return 'Failed'

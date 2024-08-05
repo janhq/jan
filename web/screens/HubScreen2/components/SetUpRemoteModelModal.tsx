@@ -31,8 +31,7 @@ const SetUpRemoteModelModal: React.FC = () => {
           <HeaderModal
             name={modelName}
             onActionClick={navigateToSetUpApiKey}
-            modelId={modelId}
-            modelIdVariants={[modelId]}
+            availableModels={[modelId]}
           />
           <ModelTitle
             className="text-[hsla(var(--text-secondary)] my-4"

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useState, useCallback } from 'react'
 
 import { Modal } from '@janhq/joi'
 import { useAtom } from 'jotai'
@@ -13,6 +13,7 @@ import Tab, { ModelTab } from './Tab'
 import { localModelModalStageAtom } from '@/helpers/atoms/DownloadLocalModel.atom'
 
 const DownloadLocalModelModal: React.FC = () => {
+  const [availableModels, setAvailableModels] = useState<string[]>([])
   const [{ stage, modelHandle }, setLocalModelModalStage] = useAtom(
     localModelModalStageAtom
   )
@@ -31,9 +32,21 @@ const DownloadLocalModelModal: React.FC = () => {
   }, [])
 
   const modelName = modelHandle?.split('/')[1] ?? ''
-  if (!modelHandle) return null
+  const isFromCortexHub = modelHandle?.includes('cortexso') ?? false
 
-  const isFromCortexHub = modelHandle.includes('cortexso')
+  const onModelBranchChanged = useCallback(
+    (models: string[]) => {
+      const isFromCortexHub = modelHandle?.includes('cortexso') ?? false
+      if (isFromCortexHub) {
+        setAvailableModels(models)
+      } else {
+        setAvailableModels(modelHandle != null ? [modelHandle] : [])
+      }
+    },
+    [modelHandle]
+  )
+
+  if (!modelHandle) return null
 
   return (
     <Modal
@@ -43,11 +56,11 @@ const DownloadLocalModelModal: React.FC = () => {
       content={
         <Fragment>
           <HeaderModal
-            modelId={modelHandle}
+            modelHandle={modelHandle}
             name={modelName}
             onActionClick={() => {}}
-            modelIdVariants={[modelHandle]}
             isLocalModel={true}
+            availableModels={availableModels}
           />
           <Tab
             tab={tab}
@@ -55,7 +68,10 @@ const DownloadLocalModelModal: React.FC = () => {
           />
           {tab === 'Versions' &&
             (isFromCortexHub ? (
-              <ListModel modelHandle={modelHandle} />
+              <ListModel
+                modelHandle={modelHandle}
+                onBranchSelected={onModelBranchChanged}
+              />
             ) : (
               <HfListModel modelHandle={modelHandle} />
             ))}
