@@ -173,7 +173,7 @@ async function stopCortexService() {
 async function stopApiServer() {
   // this function is not meant to be success. It will throw an error.
   try {
-    await fetch(`http://localhost:${cortexJsPort}/v1/system`, {
+    await fetch(`http://${host}:${cortexJsPort}/v1/system`, {
       method: 'DELETE',
     })
   } catch (error) {
