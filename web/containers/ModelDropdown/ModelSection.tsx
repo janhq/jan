@@ -76,7 +76,7 @@ const ModelSection: React.FC<Props> = ({
               />
             ) : (
               !model.engine?.includes('cortex.') && (
-                <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[hsla(var(--app-border))] bg-gradient-to-r from-cyan-500 to-blue-500"></div>
+                <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[hsla(var(--app-border))] bg-gradient-to-r from-cyan-500 to-blue-500" />
               )
             )}
             <div className="flex w-full items-center justify-between">
