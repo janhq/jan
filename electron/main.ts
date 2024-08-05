@@ -19,7 +19,7 @@ import { handleAppIPCs } from './handlers/native'
  * Utils
  **/
 import { setupMenu } from './utils/menu'
-import { createUserSpace } from './utils/path'
+import { createUserSpace, getAppConfigurations } from './utils/path'
 import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupCore } from './utils/setup'
@@ -63,8 +63,10 @@ app
   .then(() => killProcessesOnPort(3929))
   .then(() => killProcessesOnPort(1337))
   .then(() => {
-    const command = `${cortexPath} -a 127.0.0.1 -p 1337`
+    const appConfiguration = getAppConfigurations()
+    const janDataFolder = appConfiguration.data_folder
 
+    const command = `${cortexPath} -a 127.0.0.1 -p 1337 --dataFolder ${janDataFolder}`
     log.info('Starting cortex with command:', command)
     // init cortex
     cortexService = exec(`${command}`, (error, stdout, stderr) => {
