@@ -8,10 +8,6 @@ const IGNORE_SSL = 'ignoreSSLFeature'
 const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
 const QUICK_ASK_ENABLED = 'quickAskEnabled'
 const MIGRATION_WARNING = 'didShowMigrationWarning'
-const THREADS_MESSAGES_MIGRATION_SUCCESS = 'threadsMessagesMigrationSuccess'
-const MODELS_MIGRATION_SUCCESS = 'modelsMigrationSuccess'
-const SKIP_MIGRATION = 'skipMigration'
-
 export const janDataFolderPathAtom = atom('')
 
 export const experimentalFeatureEnabledAtom = atomWithStorage(
@@ -27,26 +23,6 @@ export const vulkanEnabledAtom = atomWithStorage(VULKAN_ENABLED, false)
 export const quickAskEnabledAtom = atomWithStorage(QUICK_ASK_ENABLED, false)
 export const didShowMigrationWarningAtom = atomWithStorage(
   MIGRATION_WARNING,
-  false
-)
-export const threadsMessagesMigrationSuccessAtom = atomWithStorage(
-  THREADS_MESSAGES_MIGRATION_SUCCESS,
-  false,
-  undefined,
-  {
-    getOnInit: true,
-  }
-)
-export const modelsMigrationSuccessAtom = atomWithStorage(
-  MODELS_MIGRATION_SUCCESS,
-  false,
-  undefined,
-  {
-    getOnInit: true,
-  }
-)
-export const skipMigrationAtom = atomWithStorage(
-  SKIP_MIGRATION,
   false,
   undefined,
   {

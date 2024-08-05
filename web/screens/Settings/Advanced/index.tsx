@@ -13,6 +13,8 @@ import { toaster } from '@/containers/Toast'
 import useModelStop from '@/hooks/useModelStop'
 import { useSettings } from '@/hooks/useSettings'
 
+import DataMigration from './FactoryReset/components/DataMigration'
+
 import {
   experimentalFeatureEnabledAtom,
   ignoreSslAtom,
@@ -21,6 +23,7 @@ import {
   vulkanEnabledAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
+
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
 // type GPU = {
@@ -459,6 +462,7 @@ const Advanced = () => {
 
         {/* Factory Reset */}
         {/* <FactoryReset /> */}
+        {experimentalEnabled && <DataMigration />}
       </div>
     </ScrollArea>
   )

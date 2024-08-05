@@ -177,7 +177,7 @@ export function handleAppIPCs() {
     }
   )
 
-  ipcMain.handle(NativeRoute.showOpenMenu, function (e, args) {
+  ipcMain.handle(NativeRoute.showOpenMenu, function (_e, args) {
     if (!isMac && windowManager.mainWindow) {
       menu.popup({
         window: windowManager.mainWindow,
@@ -383,8 +383,10 @@ export function handleAppIPCs() {
       const janModelsFolderPath = join(getJanDataFolderPath(), 'models')
 
       if (!existsSync(janModelsFolderPath)) {
+        console.debug('No local models found')
         return false
       }
+
       // get children of thread folder
       const allModelsFolders = readdirSync(janModelsFolderPath)
       let hasLocalModels = false
