@@ -17,7 +17,6 @@ import {
   mkdirSync,
 } from 'fs'
 import { dump } from 'js-yaml'
-import os from 'os'
 
 const isMac = process.platform === 'darwin'
 

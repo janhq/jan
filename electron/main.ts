@@ -58,15 +58,32 @@ Object.assign(console, log.functions)
 
 let cortexService: ChildProcess | undefined = undefined
 
+const cortexJsPort = 1338
+const cortexCppPort = 3940
+const host = '127.0.0.1'
+
 app
   .whenReady()
-  .then(() => killProcessesOnPort(3929))
-  .then(() => killProcessesOnPort(1337))
+  .then(() => killProcessesOnPort(cortexCppPort))
+  .then(() => killProcessesOnPort(cortexJsPort))
   .then(() => {
     const appConfiguration = getAppConfigurations()
     const janDataFolder = appConfiguration.data_folder
 
-    const command = `${cortexPath} -a 127.0.0.1 -p 1337 --dataFolder ${janDataFolder}`
+    const cortexParams: Record<string, string> = {
+      '-n': 'jan',
+      '-a': host,
+      '-p': cortexJsPort.toString(),
+      '-ep': cortexCppPort.toString(),
+      '--dataFolder': janDataFolder,
+    }
+
+    // add cortex parameters to the command
+    const command = Object.entries(cortexParams).reduce(
+      (acc, [key, value]) => `${acc} ${key} ${value}`,
+      `${cortexPath}`
+    )
+
     log.info('Starting cortex with command:', command)
     // init cortex
     cortexService = exec(`${command}`, (error, stdout, stderr) => {
@@ -156,7 +173,7 @@ async function stopCortexService() {
 async function stopApiServer() {
   // this function is not meant to be success. It will throw an error.
   try {
-    await fetch('http://localhost:1337/v1/system', {
+    await fetch(`http://localhost:${cortexJsPort}/v1/system`, {
       method: 'DELETE',
     })
   } catch (error) {
