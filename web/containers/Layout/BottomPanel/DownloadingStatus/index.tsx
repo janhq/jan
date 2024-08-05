@@ -54,7 +54,7 @@ const DownloadStatus: React.FC = () => {
             <div className="flex cursor-pointer items-center gap-2">
               <Button size="small" theme="ghost">
                 <span className="font-medium">
-                  Downloading model{' '}
+                  {downloadTitle}{' '}
                   {Object.values(downloadStates).length > 1 &&
                     `1/${Object.values(downloadStates).length}`}
                 </span>

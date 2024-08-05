@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -13,11 +13,15 @@ import {
 
 import ImportingModelItem from './ImportingModelItem'
 
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  importingModelsAtom,
+  setImportingModelErrorAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const ImportingModelModal = () => {
   const { downloadModel } = useCortex()
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
+  const setImportModelError = useSetAtom(setImportingModelErrorAtom)
   const importingModels = useAtomValue(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
 
@@ -28,7 +32,16 @@ const ImportingModelModal = () => {
   useEffect(() => {
     const importModels = async () => {
       for (const model of importingModels) {
-        await downloadModel(model.path)
+        try {
+          await downloadModel(model.path)
+        } catch (error) {
+          let errorMessage = String(error)
+          if (error instanceof Error) {
+            errorMessage = error.message
+          }
+
+          setImportModelError(model.path, errorMessage)
+        }
       }
     }
     importModels()
@@ -41,21 +54,7 @@ const ImportingModelModal = () => {
       onOpenChange={() => setImportModelStage('NONE')}
       title={`Importing model (${finishedImportModel}/${importingModels.length})`}
       content={
-        <div>
-          <div className="flex flex-row items-center space-x-2 pb-3">
-            {/* <label className="text-[hsla(var(--text-secondary)] text-xs">
-              {modelFolder}
-            </label>
-            <Button
-              theme="ghost"
-              size="small"
-              variant="outline"
-              onClick={onOpenModelFolderClick}
-            >
-              {openFileTitle()}
-            </Button> */}
-          </div>
-
+        <Fragment>
           <div className="mb-2 space-y-3">
             {importingModels.map((model) => (
               <ImportingModelItem key={model.importId} model={model} />
@@ -75,7 +74,7 @@ const ImportingModelModal = () => {
               </p>
             </div>
           </div>
-        </div>
+        </Fragment>
       }
     />
   )
