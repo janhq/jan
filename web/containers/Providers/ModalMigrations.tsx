@@ -48,7 +48,7 @@ const ModalMigrations = () => {
     try {
       await migrateThreadsAndMessages()
       setThreadAndMessageMigrationState('success')
-      console.error('Migrating threads and messages successfully!')
+      console.debug('Migrating threads and messages successfully!')
     } catch (err) {
       console.error('Migrating threads and messages error', err)
       setThreadAndMessageMigrationState('failed')
@@ -60,7 +60,7 @@ const ModalMigrations = () => {
     try {
       await migrateModels()
       setModelMigrationState('success')
-      console.error('Migrating models successfully!')
+      console.debug('Migrating models successfully!')
     } catch (err) {
       console.error('Migrating models error', err)
       setModelMigrationState('failed')
@@ -74,6 +74,7 @@ const ModalMigrations = () => {
   }, [migratingModels, migrationThreadsAndMessages])
 
   const onDismiss = useCallback(() => {
+    setStep(1)
     setShowMigrationModal(false)
     setDidShowMigrationModal(true)
   }, [setDidShowMigrationModal, setShowMigrationModal])
@@ -91,7 +92,7 @@ const ModalMigrations = () => {
       hideClose
       title={getStepTitle()}
       content={
-        <>
+        <Fragment>
           {step === 1 && (
             <Fragment>
               <p className="text-[hsla(var(--text-secondary))]">
@@ -219,7 +220,7 @@ const ModalMigrations = () => {
               </div>
             </Fragment>
           )}
-        </>
+        </Fragment>
       }
     />
   )
