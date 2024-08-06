@@ -1,4 +1,6 @@
+import { LlmEngine } from '@janhq/core/.'
 import {
+  Button,
   ScrollArea,
   Table,
   TableBody,
@@ -9,6 +11,7 @@ import {
   TableRow,
 } from '@janhq/joi'
 
+import useEngineInit from '@/hooks/useEngineInit'
 import useEngineQuery from '@/hooks/useEngineQuery'
 
 import LoadingIndicator from '@/screens/HubScreen2/components/LoadingIndicator'
@@ -20,6 +23,8 @@ const getStatusTitle = (status: string) => {
 
 const EngineSetting: React.FC = () => {
   const { isLoading, data } = useEngineQuery()
+
+  const initializeEngine = useEngineInit()
 
   if (isLoading) {
     return (
@@ -48,6 +53,7 @@ const EngineSetting: React.FC = () => {
               <TableHead>Description</TableHead>
               <TableHead>Version</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Install</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -62,6 +68,28 @@ const EngineSetting: React.FC = () => {
                     {engineStatus.version}
                   </TableCell>
                   <TableCell>{getStatusTitle(engineStatus.status)}</TableCell>
+                  <TableCell>
+                    {['ready', 'not_initialized'].includes(
+                      engineStatus.status
+                    ) ? (
+                      <Button
+                        theme="primary"
+                        onClick={() =>
+                          initializeEngine.mutate(
+                            engineStatus.name as LlmEngine
+                          )
+                        }
+                      >
+                        {engineStatus.status === 'ready'
+                          ? 'Reinstall'
+                          : 'Install'}
+                      </Button>
+                    ) : (
+                      <Button theme="ghost" disabled>
+                        N/A
+                      </Button>
+                    )}
+                  </TableCell>
                 </TableRow>
               )
             })}
