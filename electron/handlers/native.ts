@@ -308,7 +308,6 @@ export function handleAppIPCs() {
             src: modelFolderPath,
             dest: destinationPath,
             recursive: true,
-            exclude: ['model.json'],
             delete: false,
             overwrite: true,
             errorOnExist: false,
