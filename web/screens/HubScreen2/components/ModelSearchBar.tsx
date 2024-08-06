@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react'
 
 import { Button, Input } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
-import { ImportIcon, SearchIcon } from 'lucide-react'
+import { SearchIcon } from 'lucide-react'
 import { FoldersIcon } from 'lucide-react'
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -10,7 +10,7 @@ import { toaster } from '@/containers/Toast'
 
 import { useGetHFRepoData } from '@/hooks/useGetHFRepoData'
 
-import { setImportModelStageAtom } from '@/hooks/useImportModel'
+// import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
@@ -28,7 +28,7 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
   const { getHfRepoData } = useGetHFRepoData()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
-  const setImportModelStage = useSetAtom(setImportModelStageAtom)
+  // const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
   const setImportingHuggingFaceRepoData = useSetAtom(
     importingHuggingFaceRepoDataAtom
@@ -37,9 +37,9 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
     importHuggingFaceModelStageAtom
   )
 
-  const onImportModelClick = useCallback(() => {
-    setImportModelStage('SELECTING_MODEL')
-  }, [setImportModelStage])
+  // const onImportModelClick = useCallback(() => {
+  //   setImportModelStage('SELECTING_MODEL')
+  // }, [setImportModelStage])
 
   const debounced = useDebouncedCallback(async (searchText: string) => {
     if (searchText.indexOf('/') === -1) {
@@ -97,14 +97,15 @@ const ModelSearchBar: React.FC<Props> = ({ onSearchChanged }) => {
         <FoldersIcon size={16} />
         <span>My models</span>
       </Button>
-      <Button
+      {/* Temporary hidden button import model */}
+      {/* <Button
         className="flex gap-2 bg-[hsla(var(--app-bg))] text-[hsla(var(--text-primary))]"
         theme="ghost"
         onClick={onImportModelClick}
       >
         <ImportIcon size={16} />
         <span>Import model</span>
-      </Button>
+      </Button> */}
     </div>
   )
 }
