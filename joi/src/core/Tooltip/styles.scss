@@ -10,7 +10,7 @@
     animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
     will-change: transform, opacity;
     font-weight: 500;
-    z-index: 100;
+    z-index: 999999999;
     max-width: 240px;
     @apply text-sm leading-normal;
   }
