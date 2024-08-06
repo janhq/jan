@@ -64,6 +64,27 @@ const host = '127.0.0.1'
 
 app
   .whenReady()
+  .then(() => {
+    if (!gotTheLock) {
+      app.quit()
+      throw new Error('Another instance of the app is already running')
+    } else {
+      app.on(
+        'second-instance',
+        (_event, commandLine, _workingDirectory): void => {
+          if (process.platform === 'win32' || process.platform === 'linux') {
+            // this is for handling deeplink on windows and linux
+            // since those OS will emit second-instance instead of open-url
+            const url = commandLine.pop()
+            if (url) {
+              windowManager.sendMainAppDeepLink(url)
+            }
+          }
+          windowManager.showMainWindow()
+        }
+      )
+    }
+  })
   .then(() => killProcessesOnPort(cortexCppPort))
   .then(() => killProcessesOnPort(cortexJsPort))
   .then(() => {
@@ -97,27 +118,6 @@ app
       }
       log.info(`stdout: ${stdout}`)
     })
-  })
-  .then(() => {
-    if (!gotTheLock) {
-      app.quit()
-      throw new Error('Another instance of the app is already running')
-    } else {
-      app.on(
-        'second-instance',
-        (_event, commandLine, _workingDirectory): void => {
-          if (process.platform === 'win32' || process.platform === 'linux') {
-            // this is for handling deeplink on windows and linux
-            // since those OS will emit second-instance instead of open-url
-            const url = commandLine.pop()
-            if (url) {
-              windowManager.sendMainAppDeepLink(url)
-            }
-          }
-          windowManager.showMainWindow()
-        }
-      )
-    }
   })
   .then(setupCore)
   .then(createUserSpace)
