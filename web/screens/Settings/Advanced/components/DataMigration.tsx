@@ -43,10 +43,13 @@ const DataMigration: React.FC = () => {
     <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
       <div className="flex-shrink-0 space-y-1">
         <div className="flex gap-x-2">
-          <h6 className="font-semibold capitalize">Clear logs</h6>
+          <h6 className="font-semibold capitalize">
+            Migrate data from old version of Jan app
+          </h6>
         </div>
         <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-          Clear all logs from Jan app.
+          Migrate multiple times can cause duplicate threads, please consider
+          using the remove threads button to clean up existing threads data
         </p>
       </div>
       <div className="flex flex-row gap-x-2">

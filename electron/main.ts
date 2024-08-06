@@ -64,6 +64,7 @@ const host = '127.0.0.1'
 
 app
   .whenReady()
+  .then(setupCore)
   .then(() => {
     if (!gotTheLock) {
       app.quit()
@@ -119,7 +120,6 @@ app
       log.info(`stdout: ${stdout}`)
     })
   })
-  .then(setupCore)
   .then(createUserSpace)
   .then(migrate)
   .then(setupMenu)

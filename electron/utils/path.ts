@@ -4,7 +4,6 @@ import { join } from 'path'
 import { AppConfiguration } from '@janhq/core/node'
 import os from 'os'
 
-
 const configurationFileName = 'settings.json'
 
 const defaultJanDataFolder = join(os.homedir(), 'jan')
@@ -60,6 +59,7 @@ export const getAppConfigurations = (): AppConfiguration => {
   // Retrieve Application Support folder path
   // Fallback to user home directory if not found
   const configurationFile = getConfigurationFilePath()
+  console.debug('getAppConfiguration file path', configurationFile)
 
   if (!existsSync(configurationFile)) {
     // create default app config if we don't have one
@@ -74,6 +74,7 @@ export const getAppConfigurations = (): AppConfiguration => {
     const appConfigurations: AppConfiguration = JSON.parse(
       readFileSync(configurationFile, 'utf-8')
     )
+    console.debug('app config', JSON.stringify(appConfigurations))
     return appConfigurations
   } catch (err) {
     console.error(
@@ -86,7 +87,7 @@ export const getAppConfigurations = (): AppConfiguration => {
 const getConfigurationFilePath = () =>
   join(
     global.core?.appPath() ||
-    process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'],
+      process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'],
     configurationFileName
   )
 
