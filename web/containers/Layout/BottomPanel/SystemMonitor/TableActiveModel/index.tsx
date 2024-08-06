@@ -38,7 +38,7 @@ const TableActiveModel: React.FC = () => {
     <div className="m-4 mr-0 w-1/2">
       <div className="overflow-hidden rounded-lg border border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          <thead className="w-full border-b border-[hsla(var(--app-border))]">
+          <thead className="w-full border-b border-[hsla(var(--app-border))] first:border-none">
             <tr>
               {Column.map((col, i) => (
                 <th

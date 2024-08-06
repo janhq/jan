@@ -39,11 +39,12 @@ const HuggingFaceRepoDetailModal = () => {
       title={importingHuggingFaceRepoData.id}
       fullPage
       content={
-        <div className="flex h-full w-full flex-col">
-          <div className="flex">
+        <div className="flex h-full max-h-[600px] w-full flex-col overflow-x-hidden lg:max-h-[auto]">
+          <div className="flex h-full flex-col justify-between gap-4 lg:flex-row">
             <ModelSegmentInfo />
-            <div className="mx-6 h-full border border-[hsla(var(--app-border))]" />
-            <ModelDownloadList />
+            <div className="w-full">
+              <ModelDownloadList />
+            </div>
           </div>
         </div>
       }

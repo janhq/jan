@@ -42,7 +42,7 @@ const ModelDownloadRow: React.FC<Props> = ({
   quantization,
 }) => {
   return (
-    <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
+    <div className="flex flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
       <div className="flex">
         {quantization && (
           <Badge variant="soft" className="mr-1">
