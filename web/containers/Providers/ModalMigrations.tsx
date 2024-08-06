@@ -11,6 +11,8 @@ import Spinner from '@/containers/Loader/Spinner'
 
 import useMigratingData from '@/hooks/useMigratingData'
 
+import useModels from '@/hooks/useModels'
+
 import { didShowMigrationWarningAtom } from '@/helpers/atoms/AppConfig.atom'
 
 export const showMigrationModalAtom = atom<boolean>(false)
@@ -29,6 +31,7 @@ const ModalMigrations = () => {
     useState<MigrationState>('idle')
   const [modelMigrationState, setModelMigrationState] =
     useState<MigrationState>('idle')
+  const { getModels } = useModels()
 
   const getStepTitle = () => {
     switch (step) {
@@ -71,7 +74,8 @@ const ModalMigrations = () => {
     setStep(2)
     await migratingModels()
     await migrationThreadsAndMessages()
-  }, [migratingModels, migrationThreadsAndMessages])
+    getModels()
+  }, [migratingModels, migrationThreadsAndMessages, getModels])
 
   const onDismiss = useCallback(() => {
     setStep(1)

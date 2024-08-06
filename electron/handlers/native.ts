@@ -231,7 +231,10 @@ export function handleAppIPCs() {
     const destinationFolderPath = join(configration.data_folder, 'models')
 
     if (!existsSync(destinationFolderPath)) mkdirSync(destinationFolderPath)
-    console.log('destinationFolderPath', destinationFolderPath)
+
+    console.log(
+      `Syncing model from ${allModelFolders} to ${destinationFolderPath}`
+    )
     const reflect = require('@alumna/reflect')
 
     for (const modelName of allModelFolders) {
@@ -305,7 +308,6 @@ export function handleAppIPCs() {
             src: modelFolderPath,
             dest: destinationPath,
             recursive: true,
-            exclude: ['model.json'],
             delete: false,
             overwrite: true,
             errorOnExist: false,
