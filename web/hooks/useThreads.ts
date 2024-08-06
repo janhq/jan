@@ -49,8 +49,11 @@ const useThreads = () => {
   )
 
   const createNewThread = useCallback(
-    async (modelId: string, assistant: Assistant) => {
+    async (modelId: string, assistant: Assistant, instructions?: string) => {
       assistant.model = modelId
+      if (instructions) {
+        assistant.instructions = instructions
+      }
       const thread = await createThread(assistant)
       log.info('Create new thread result', thread)
       setThreads((threads) => [thread, ...threads])
