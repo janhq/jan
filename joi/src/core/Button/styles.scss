@@ -1,11 +1,6 @@
 .btn {
   @apply inline-flex items-center justify-center px-4 font-semibold transition-all;
 
-  &:focus,
-  &:focus-within {
-    @apply outline-none;
-  }
-
   &:hover {
     filter: brightness(95%);
   }
