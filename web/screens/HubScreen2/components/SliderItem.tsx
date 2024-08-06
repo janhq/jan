@@ -53,11 +53,13 @@ const SliderItem: React.FC<Props> = ({ model }) => {
           {shouldShowOwnerLogo && (
             <Image width={20} height={20} src={model.logo} alt={model.author} />
           )}
-          <span className="text-sm font-medium leading-4">{model.author}</span>
+          <span className="text-sm font-medium leading-4 text-[hsla(var(--text-secondary))]">
+            {model.author}
+          </span>
         </div>
       </div>
       <div className="mt-4 flex items-center justify-between">
-        <span className="text-xs font-medium leading-3">
+        <span className="text-xs font-medium leading-3 text-[hsla(var(--text-secondary))]">
           {toGibibytes(model.size)}
         </span>
         <DownloadContainer modelHandle={repoId} fileName={fileName} />

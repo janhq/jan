@@ -172,7 +172,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
         >
           {actionLabel}
         </Button>
-        <span className="flex items-center gap-1 text-sm font-medium leading-3">
+        <span className="flex items-center gap-1 text-sm font-medium leading-3 text-[hsla(var(--text-secondary))]">
           {addThousandSeparator(downloads)}
           <CloudDownload size={14} />
         </span>
