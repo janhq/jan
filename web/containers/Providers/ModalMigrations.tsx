@@ -1,8 +1,8 @@
-import React, { Fragment, useCallback, useEffect } from 'react'
+import React, { Fragment, useCallback, useMemo, useState } from 'react'
 
 import { Button, Modal, Badge } from '@janhq/joi'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useSetAtom } from 'jotai'
 import { AlertTriangleIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -11,25 +11,24 @@ import Spinner from '@/containers/Loader/Spinner'
 
 import useMigratingData from '@/hooks/useMigratingData'
 
-import {
-  didShowMigrationWarningAtom,
-  modelsMigrationSuccessAtom,
-  threadsMessagesMigrationSuccessAtom,
-  skipMigrationAtom,
-} from '@/helpers/atoms/AppConfig.atom'
+import { didShowMigrationWarningAtom } from '@/helpers/atoms/AppConfig.atom'
+
+export const showMigrationModalAtom = atom<boolean>(false)
+
+const MigrationStates = ['idle', 'in_progress', 'failed', 'success'] as const
+type MigrationState = (typeof MigrationStates)[number]
 
 const ModalMigrations = () => {
-  const [didShowMigrationWarning, setDidShowMigrationWarning] = useAtom(
-    didShowMigrationWarningAtom
-  )
-  const [skipMigration, setSkipMigration] = useAtom(skipMigrationAtom)
-  const modelsMigrationSuccess = useAtomValue(modelsMigrationSuccessAtom)
-  const threadsMessagesMigrationSuccess = useAtomValue(
-    threadsMessagesMigrationSuccessAtom
+  const setDidShowMigrationModal = useSetAtom(didShowMigrationWarningAtom)
+  const [showMigrationModal, setShowMigrationModal] = useAtom(
+    showMigrationModalAtom
   )
   const [step, setStep] = React.useState(1)
-  const [loaderThreads, setLoaderThreads] = React.useState(false)
-  const [loaderModels, setLoaderModels] = React.useState(false)
+  const { migrateModels, migrateThreadsAndMessages } = useMigratingData()
+  const [threadAndMessageMigrationState, setThreadAndMessageMigrationState] =
+    useState<MigrationState>('idle')
+  const [modelMigrationState, setModelMigrationState] =
+    useState<MigrationState>('idle')
 
   const getStepTitle = () => {
     switch (step) {
@@ -37,84 +36,63 @@ const ModalMigrations = () => {
         return 'Important Update: Data Migration Needed'
 
       default:
-        return loaderThreads || loaderModels
-          ? 'Migration In Progress'
+        return threadAndMessageMigrationState === 'in_progress' ||
+          modelMigrationState === 'in_progress'
+          ? 'Migrating'
           : 'Migration Completed'
     }
   }
 
-  const handleStartMigration = async () => {
-    setStep(2)
-    await handleStartMigrationModels()
-    await handleStartMigrationThreads()
-  }
-
-  const handleStartMigrationThreads = async () => {
-    setLoaderThreads(true)
-    await migrateThreadsAndMessages()
-    setTimeout(() => {
-      setLoaderThreads(false)
-    }, 1200)
-  }
-
-  const handleStartMigrationModels = async () => {
-    setLoaderModels(true)
-    await migrateModels()
-    setTimeout(() => {
-      setLoaderModels(false)
-    }, 1200)
-  }
-
-  const {
-    getJanThreadsAndMessages,
-    migrateModels,
-    migrateThreadsAndMessages,
-    getJanLocalModels,
-  } = useMigratingData()
-
-  const getMigrationNotif = useCallback(async () => {
+  const migrationThreadsAndMessages = useCallback(async () => {
+    setThreadAndMessageMigrationState('in_progress')
     try {
-      const resultThreadsAndMessages = await getJanThreadsAndMessages()
-      const resultLocalModels = await getJanLocalModels()
-      if (
-        resultThreadsAndMessages.threads.length > 0 ||
-        resultThreadsAndMessages.messages.length > 0 ||
-        resultLocalModels
-      ) {
-        setDidShowMigrationWarning(true)
-      } else {
-        setDidShowMigrationWarning(false)
-      }
-    } catch (error) {
-      setDidShowMigrationWarning(false)
-      console.error(error)
+      await migrateThreadsAndMessages()
+      setThreadAndMessageMigrationState('success')
+      console.debug('Migrating threads and messages successfully!')
+    } catch (err) {
+      console.error('Migrating threads and messages error', err)
+      setThreadAndMessageMigrationState('failed')
     }
-  }, [getJanLocalModels, getJanThreadsAndMessages, setDidShowMigrationWarning])
+  }, [setThreadAndMessageMigrationState, migrateThreadsAndMessages])
 
-  useEffect(() => {
-    if (
-      skipMigration ||
-      (threadsMessagesMigrationSuccess && modelsMigrationSuccess)
-    ) {
-      return setDidShowMigrationWarning(false)
-    } else {
-      getMigrationNotif()
+  const migratingModels = useCallback(async () => {
+    setModelMigrationState('in_progress')
+    try {
+      await migrateModels()
+      setModelMigrationState('success')
+      console.debug('Migrating models successfully!')
+    } catch (err) {
+      console.error('Migrating models error', err)
+      setModelMigrationState('failed')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    skipMigration,
-    setDidShowMigrationWarning,
-    threadsMessagesMigrationSuccess,
-    modelsMigrationSuccess,
-  ])
+  }, [migrateModels, setModelMigrationState])
+
+  const onStartMigrationClick = useCallback(async () => {
+    setStep(2)
+    await migratingModels()
+    await migrationThreadsAndMessages()
+  }, [migratingModels, migrationThreadsAndMessages])
+
+  const onDismiss = useCallback(() => {
+    setStep(1)
+    setShowMigrationModal(false)
+    setDidShowMigrationModal(true)
+  }, [setDidShowMigrationModal, setShowMigrationModal])
+
+  const disableDismissButton = useMemo(
+    () =>
+      threadAndMessageMigrationState === 'in_progress' ||
+      modelMigrationState === 'in_progress',
+    [threadAndMessageMigrationState, modelMigrationState]
+  )
 
   return (
     <Modal
-      open={didShowMigrationWarning}
+      open={showMigrationModal}
       hideClose
       title={getStepTitle()}
       content={
-        <>
+        <Fragment>
           {step === 1 && (
             <Fragment>
               <p className="text-[hsla(var(--text-secondary))]">
@@ -149,19 +127,10 @@ const ModalMigrations = () => {
               </div>
 
               <div className="flex justify-end">
-                <Button
-                  className="mt-4"
-                  theme="ghost"
-                  onClick={() => {
-                    setSkipMigration(true)
-                  }}
-                >
+                <Button className="mt-4" theme="ghost" onClick={onDismiss}>
                   Skip
                 </Button>
-                <Button
-                  className="ml-2 mt-4"
-                  onClick={() => handleStartMigration()}
-                >
+                <Button className="ml-2 mt-4" onClick={onStartMigrationClick}>
                   Migrate Now
                 </Button>
               </div>
@@ -172,16 +141,17 @@ const ModalMigrations = () => {
               <div
                 className={twMerge(
                   'mb-2 mt-4 flex justify-between rounded-lg border border-[hsla(var(--app-border))] p-3',
-                  threadsMessagesMigrationSuccess
+                  threadAndMessageMigrationState === 'success'
                     ? 'bg-[hsla(var(--success-bg-soft))]'
                     : 'bg-[hsla(var(--destructive-bg-soft))]',
-                  loaderThreads && 'bg-trasparent'
+                  threadAndMessageMigrationState === 'in_progress' &&
+                    'bg-trasparent'
                 )}
               >
                 <div className="flex items-center gap-x-1.5">
-                  {!loaderThreads && (
+                  {threadAndMessageMigrationState !== 'in_progress' && (
                     <>
-                      {threadsMessagesMigrationSuccess ? (
+                      {threadAndMessageMigrationState === 'success' ? (
                         <Badge theme="success">Success</Badge>
                       ) : (
                         <Badge theme="destructive">Failed</Badge>
@@ -190,14 +160,14 @@ const ModalMigrations = () => {
                   )}
                   <p className="font-bold">Threads</p>
                 </div>
-                {loaderThreads ? (
+                {threadAndMessageMigrationState === 'in_progress' ? (
                   <Spinner />
                 ) : (
-                  !threadsMessagesMigrationSuccess && (
+                  threadAndMessageMigrationState !== 'success' && (
                     <Button
                       size="small"
                       theme="ghost"
-                      onClick={() => handleStartMigrationThreads()}
+                      onClick={migrateThreadsAndMessages}
                     >
                       Retry
                     </Button>
@@ -207,16 +177,16 @@ const ModalMigrations = () => {
               <div
                 className={twMerge(
                   'my-2 flex justify-between rounded-lg border border-[hsla(var(--app-border))] p-3',
-                  modelsMigrationSuccess
+                  modelMigrationState === 'success'
                     ? 'bg-[hsla(var(--success-bg-soft))]'
                     : 'bg-[hsla(var(--destructive-bg-soft))]',
-                  loaderModels && 'bg-trasparent'
+                  modelMigrationState === 'in_progress' && 'bg-trasparent'
                 )}
               >
                 <div className="flex items-center gap-x-1.5">
-                  {!loaderModels && (
+                  {modelMigrationState !== 'in_progress' && (
                     <>
-                      {modelsMigrationSuccess ? (
+                      {modelMigrationState === 'success' ? (
                         <Badge theme="success">Success</Badge>
                       ) : (
                         <Badge theme="destructive">Failed</Badge>
@@ -225,14 +195,14 @@ const ModalMigrations = () => {
                   )}
                   <p className="font-bold">Models</p>
                 </div>
-                {loaderModels ? (
+                {modelMigrationState === 'in_progress' ? (
                   <Spinner />
                 ) : (
-                  !modelsMigrationSuccess && (
+                  modelMigrationState === 'failed' && (
                     <Button
                       size="small"
                       theme="ghost"
-                      onClick={() => handleStartMigrationModels()}
+                      onClick={migratingModels}
                     >
                       Retry
                     </Button>
@@ -242,17 +212,15 @@ const ModalMigrations = () => {
               <div className="flex justify-end">
                 <Button
                   className="mt-2"
-                  disabled={loaderThreads || loaderModels}
-                  onClick={() => {
-                    setDidShowMigrationWarning(false)
-                  }}
+                  disabled={disableDismissButton}
+                  onClick={onDismiss}
                 >
                   Done
                 </Button>
               </div>
             </Fragment>
           )}
-        </>
+        </Fragment>
       }
     />
   )

@@ -19,7 +19,7 @@ import { handleAppIPCs } from './handlers/native'
  * Utils
  **/
 import { setupMenu } from './utils/menu'
-import { createUserSpace } from './utils/path'
+import { createUserSpace, getAppConfigurations } from './utils/path'
 import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupCore } from './utils/setup'
@@ -58,12 +58,31 @@ Object.assign(console, log.functions)
 
 let cortexService: ChildProcess | undefined = undefined
 
+const cortexJsPort = 1338
+const cortexCppPort = 3940
+const host = '127.0.0.1'
+
 app
   .whenReady()
-  .then(() => killProcessesOnPort(3929))
-  .then(() => killProcessesOnPort(1337))
+  .then(() => killProcessesOnPort(cortexCppPort))
+  .then(() => killProcessesOnPort(cortexJsPort))
   .then(() => {
-    const command = `${cortexPath} -a 127.0.0.1 -p 1337`
+    const appConfiguration = getAppConfigurations()
+    const janDataFolder = appConfiguration.data_folder
+
+    const cortexParams: Record<string, string> = {
+      '-n': 'jan',
+      '-a': host,
+      '-p': cortexJsPort.toString(),
+      '-ep': cortexCppPort.toString(),
+      '--dataFolder': janDataFolder,
+    }
+
+    // add cortex parameters to the command
+    const command = Object.entries(cortexParams).reduce(
+      (acc, [key, value]) => `${acc} ${key} ${value}`,
+      `${cortexPath}`
+    )
 
     log.info('Starting cortex with command:', command)
     // init cortex
@@ -154,7 +173,7 @@ async function stopCortexService() {
 async function stopApiServer() {
   // this function is not meant to be success. It will throw an error.
   try {
-    await fetch('http://localhost:1337/v1/system', {
+    await fetch(`http://${host}:${cortexJsPort}/v1/system`, {
       method: 'DELETE',
     })
   } catch (error) {

@@ -8,16 +8,15 @@ import {
 } from '@janhq/core/node'
 import { menu } from '../utils/menu'
 import { join } from 'path'
-import { getJanDataFolderPath } from './../utils/path'
+import { getAppConfigurations, getJanDataFolderPath } from './../utils/path'
 import {
   readdirSync,
   writeFileSync,
   readFileSync,
   existsSync,
-  mkdirSync
+  mkdirSync,
 } from 'fs'
 import { dump } from 'js-yaml'
-import os from 'os'
 
 const isMac = process.platform === 'darwin'
 
@@ -178,7 +177,7 @@ export function handleAppIPCs() {
     }
   )
 
-  ipcMain.handle(NativeRoute.showOpenMenu, function (e, args) {
+  ipcMain.handle(NativeRoute.showOpenMenu, function (_e, args) {
     if (!isMac && windowManager.mainWindow) {
       menu.popup({
         window: windowManager.mainWindow,
@@ -209,10 +208,11 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.openAppLog, async (_event): Promise<void> => {
-    const cortexHomeDir = join(os.homedir(), 'cortex')
+    const configuration = getAppConfigurations()
+    const dataFolder = configuration.data_folder
 
     try {
-      const errorMessage = await shell.openPath(join(cortexHomeDir))
+      const errorMessage = await shell.openPath(join(dataFolder))
       if (errorMessage) {
         console.error(`An error occurred: ${errorMessage}`)
       } else {
@@ -227,21 +227,19 @@ export function handleAppIPCs() {
     const janModelFolderPath = join(getJanDataFolderPath(), 'models')
     const allModelFolders = readdirSync(janModelFolderPath)
 
-    const cortexHomeDir = join(os.homedir(), 'cortex')
-    const cortexModelFolderPath = join(cortexHomeDir, 'models')
+    const configration = getAppConfigurations()
+    const destinationFolderPath = join(configration.data_folder, 'models')
 
-    if(!existsSync(cortexModelFolderPath))
-      mkdirSync(cortexModelFolderPath)
-    console.log('cortexModelFolderPath', cortexModelFolderPath)
+    if (!existsSync(destinationFolderPath)) mkdirSync(destinationFolderPath)
+    console.log('destinationFolderPath', destinationFolderPath)
     const reflect = require('@alumna/reflect')
 
     for (const modelName of allModelFolders) {
       const modelFolderPath = join(janModelFolderPath, modelName)
       try {
-
         const filesInModelFolder = readdirSync(modelFolderPath)
 
-        const destinationPath = join(cortexModelFolderPath, modelName)
+        const destinationPath = join(destinationFolderPath, modelName)
 
         const modelJsonFullPath = join(
           janModelFolderPath,
@@ -253,15 +251,18 @@ export function handleAppIPCs() {
         const fileNames: string[] = model.sources.map((x: any) => x.filename)
         let files: string[] = []
 
-        if(filesInModelFolder.length > 1) {
-          // prepend fileNames with cortexModelFolderPath
+        if (filesInModelFolder.length > 1) {
+          // prepend fileNames with model folder path
           files = fileNames.map((x: string) =>
-            join(cortexModelFolderPath, model.id, x)
+            join(destinationFolderPath, model.id, x)
           )
-        } else if(model.sources.length && !/^(http|https):\/\/[^/]+\/.*/.test(model.sources[0].url)) {
+        } else if (
+          model.sources.length &&
+          !/^(http|https):\/\/[^/]+\/.*/.test(model.sources[0].url)
+        ) {
           // Symlink case
-          files = [ model.sources[0].url ]
-        } else continue;
+          files = [model.sources[0].url]
+        } else continue
 
         // create folder if not exist
         // only for local model files
@@ -269,7 +270,10 @@ export function handleAppIPCs() {
           mkdirSync(destinationPath, { recursive: true })
         }
 
-        const engine = (model.engine === 'nitro' || model.engine === 'cortex') ? 'cortex.llamacpp' : (model.engine ?? 'cortex.llamacpp')
+        const engine =
+          model.engine === 'nitro' || model.engine === 'cortex'
+            ? 'cortex.llamacpp'
+            : (model.engine ?? 'cortex.llamacpp')
 
         const updatedModelFormat = {
           id: model.id,
@@ -296,7 +300,7 @@ export function handleAppIPCs() {
           max_tokens: model.parameters?.max_tokens ?? 2048,
           stream: model.parameters?.stream ?? true,
         }
-        if(filesInModelFolder.length > 1 ) {
+        if (filesInModelFolder.length > 1) {
           const { err } = await reflect({
             src: modelFolderPath,
             dest: destinationPath,
@@ -307,14 +311,14 @@ export function handleAppIPCs() {
             errorOnExist: false,
           })
 
-          if (err) { 
-            console.error(err);
-            continue;
+          if (err) {
+            console.error(err)
+            continue
           }
         }
         // create the model.yml file
         const modelYamlData = dump(updatedModelFormat)
-        const modelYamlPath = join(cortexModelFolderPath, `${modelName}.yaml`)
+        const modelYamlPath = join(destinationFolderPath, `${modelName}.yaml`)
 
         writeFileSync(modelYamlPath, modelYamlData)
       } catch (err) {
@@ -354,11 +358,11 @@ export function handleAppIPCs() {
             'messages.jsonl'
           )
 
-          if(!existsSync(messageFullPath)) continue;
+          if (!existsSync(messageFullPath)) continue
           const lines = readFileSync(messageFullPath, 'utf-8')
-          .toString()
-          .split('\n')
-          .filter((line: any) => line !== '')
+            .toString()
+            .split('\n')
+            .filter((line: any) => line !== '')
           for (const line of lines) {
             messages.push(JSON.parse(line))
           }
@@ -379,8 +383,10 @@ export function handleAppIPCs() {
       const janModelsFolderPath = join(getJanDataFolderPath(), 'models')
 
       if (!existsSync(janModelsFolderPath)) {
+        console.debug('No local models found')
         return false
       }
+
       // get children of thread folder
       const allModelsFolders = readdirSync(janModelsFolderPath)
       let hasLocalModels = false

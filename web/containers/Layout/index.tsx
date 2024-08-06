@@ -15,6 +15,8 @@ import TopPanel from '@/containers/Layout/TopPanel'
 
 import { getImportModelStageAtom } from '@/hooks/useImportModel'
 
+import useMigratingData from '@/hooks/useMigratingData'
+
 import DownloadLocalModelModal from '@/screens/HubScreen2/components/DownloadLocalModelModal'
 import InferenceErrorModal from '@/screens/HubScreen2/components/InferenceErrorModal'
 import SetUpApiKeyModal from '@/screens/HubScreen2/components/SetUpApiKeyModal'
@@ -33,23 +35,53 @@ import LoadingModal from '../LoadingModal'
 
 import MainViewContainer from '../MainViewContainer'
 
+import ModalMigrations, {
+  showMigrationModalAtom,
+} from '../Providers/ModalMigrations'
 import WaitingForCortexModal from '../WaitingCortexModal'
 
 import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
 
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { didShowMigrationWarningAtom } from '@/helpers/atoms/AppConfig.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
 const BaseLayout = () => {
+  const didShowMigrationWarning = useAtomValue(didShowMigrationWarningAtom)
+  const setShowMigrationModal = useSetAtom(showMigrationModalAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const { getJanThreadsAndMessages, getJanLocalModels } = useMigratingData()
 
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setMainViewState(MainViewState.Settings)
     }
   }, [setMainViewState])
+
+  useEffect(() => {
+    if (didShowMigrationWarning) return
+
+    const isUserHaveData = async (): Promise<boolean> => {
+      const threadAndMessageData = await getJanThreadsAndMessages()
+      const isUserHaveAnyModel = await getJanLocalModels()
+      return threadAndMessageData.threads.length > 0 || isUserHaveAnyModel
+    }
+
+    isUserHaveData()
+      .then((isUserHaveData) => {
+        if (isUserHaveData === true) {
+          setShowMigrationModal(true)
+        }
+      })
+      .catch((e) => console.error('Error checking user data', e))
+  }, [
+    didShowMigrationWarning,
+    getJanThreadsAndMessages,
+    getJanLocalModels,
+    setShowMigrationModal,
+  ])
 
   return (
     <div
@@ -92,6 +124,7 @@ const BaseLayout = () => {
         <ChooseWhatToImportModal />
         <InstallingExtensionModal />
         <HuggingFaceRepoDetailModal />
+        <ModalMigrations />
       </div>
       <BottomPanel />
     </div>

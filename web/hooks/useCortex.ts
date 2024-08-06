@@ -247,22 +247,24 @@ const useCortex = () => {
 
   const downloadModel = useCallback(
     async (modelId: string, fileName?: string, persistedModelId?: string) => {
-      try {
-        // return await cortex.models.download(modelId)
-        return await fetch(`${host}/models/${modelId}/pull`, {
-          method: 'POST',
-          headers: {
-            'accept': 'application/json',
-            // eslint-disable-next-line @typescript-eslint/naming-convention
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            fileName: fileName,
-            persistedModelId: persistedModelId,
-          }),
-        })
-      } catch (err) {
-        console.error(err)
+      const response = await fetch(`${host}/models/${modelId}/pull`, {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          // eslint-disable-next-line @typescript-eslint/naming-convention
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileName: fileName,
+          persistedModelId: persistedModelId,
+        }),
+      })
+      if (!response.ok) {
+        const responseJson = await response.json()
+        const errorMessage: string =
+          (responseJson.error?.message as string) ??
+          `Failed to download model ${modelId}`
+        throw new Error(errorMessage)
       }
     },
     [host]

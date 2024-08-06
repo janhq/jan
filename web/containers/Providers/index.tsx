@@ -14,7 +14,6 @@ import ThemeWrapper from '@/containers/Providers/Theme'
 import { setupCoreServices } from '@/services/coreService'
 
 import DataLoader from './DataLoader'
-import ModalMigrations from './ModalMigrations'
 
 import Responsive from './Responsive'
 
@@ -42,7 +41,6 @@ const Providers = ({ children }: PropsWithChildren) => {
               <Toaster />
             </Fragment>
           )}
-          <ModalMigrations />
         </QueryClientProvider>
       </JotaiWrapper>
     </ThemeWrapper>

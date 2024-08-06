@@ -40,16 +40,21 @@ const DownloadStatus: React.FC = () => {
       ? ((totalTransfferedSize / totalDownloadSize) * 100).toFixed(2)
       : 0
 
+  const downloadTitle = `Downloading ${downloadStates
+    .map((state) => state.type)
+    .join(', ')
+    .trim()}`
+
   return (
     <Fragment>
       {Object.values(downloadStates)?.length > 0 && (
         <Modal
-          title="Downloading model"
+          title={downloadTitle}
           trigger={
             <div className="flex cursor-pointer items-center gap-2">
               <Button size="small" theme="ghost">
                 <span className="font-medium">
-                  Downloading model{' '}
+                  {downloadTitle}{' '}
                   {Object.values(downloadStates).length > 1 &&
                     `1/${Object.values(downloadStates).length}`}
                 </span>
