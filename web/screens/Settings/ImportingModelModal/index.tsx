@@ -5,6 +5,8 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
 
+import { toaster } from '@/containers/Toast'
+
 import useCortex from '@/hooks/useCortex'
 import {
   getImportModelStageAtom,
@@ -41,6 +43,11 @@ const ImportingModelModal = () => {
           }
 
           setImportModelError(model.path, errorMessage)
+          toaster({
+            title: 'Import failed',
+            description: errorMessage,
+            type: 'error',
+          })
         }
       }
     }
