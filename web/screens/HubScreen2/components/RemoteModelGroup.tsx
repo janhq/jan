@@ -62,7 +62,13 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
     <Fragment>
       <div className="mt-12 flex items-center gap-2 first:mt-0">
         {engineLogo && (
-          <Image width={24} height={24} src={engineLogo} alt="Engine logo" />
+          <Image
+            width={24}
+            height={24}
+            src={engineLogo}
+            alt="Engine logo"
+            className="rounded-full"
+          />
         )}
         <h1 className="text-lg font-semibold">{refinedTitle}</h1>
 
