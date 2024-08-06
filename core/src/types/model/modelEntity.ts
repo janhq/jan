@@ -11,6 +11,7 @@ export const RemoteEngines = [
   'groq',
   'triton_trtllm',
   'cohere',
+  'nvidia',
 ] as const
 
 export const LlmEngines = [...LocalEngines, ...RemoteEngines] as const
