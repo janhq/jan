@@ -1,3 +1,7 @@
+import { Fragment } from 'react'
+
+import Image from 'next/image'
+
 import BlankState from '@/containers/BlankState'
 
 import useModelHub from '@/hooks/useModelHub'
@@ -43,6 +47,9 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
     filteredHuggingFaceModels.length === 0 &&
     filteredRemoteModels.length === 0
 
+  const isOnDevice =
+    filteredBuiltInModels.length > 0 || filteredHuggingFaceModels.length > 0
+
   return (
     <div className="h-full w-full overflow-x-hidden rounded-lg bg-[hsla(var(--app-bg))]">
       {isResultEmpty ? (
@@ -50,16 +57,44 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
           <BlankState title="No search results found" />
         </div>
       ) : (
-        <div className="mx-auto flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
-          {filteredBuiltInModels.map((hfModelEntry) => (
-            <BuiltInModelCard key={hfModelEntry.id} {...hfModelEntry} />
-          ))}
-          {filteredHuggingFaceModels.map((hfModelEntry) => (
-            <HuggingFaceModelCard key={hfModelEntry.id} {...hfModelEntry} />
-          ))}
-          {filteredRemoteModels.map((hfModelEntry) => (
-            <RemoteModelCard key={hfModelEntry.id} {...hfModelEntry} />
-          ))}
+        <div className="mx-auto mt-6 flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
+          {isOnDevice && (
+            <Fragment>
+              <div className="mt-4 flex items-center gap-2 first:mt-0">
+                <Image
+                  width={24}
+                  height={24}
+                  src="icons/app_icon.svg"
+                  alt="Built-In Models"
+                />
+                <h1 className="text-lg font-semibold">On-Device Models</h1>
+              </div>
+              <div className="w-full">
+                {filteredBuiltInModels.map((hfModelEntry) => (
+                  <BuiltInModelCard key={hfModelEntry.id} {...hfModelEntry} />
+                ))}
+                {filteredHuggingFaceModels.map((hfModelEntry) => (
+                  <HuggingFaceModelCard
+                    key={hfModelEntry.id}
+                    {...hfModelEntry}
+                  />
+                ))}
+              </div>
+            </Fragment>
+          )}
+
+          {filteredRemoteModels.length > 0 && (
+            <Fragment>
+              <div className="mt-4 flex items-center gap-2 first:mt-0">
+                <h1 className="text-lg font-semibold">Cloud Models</h1>
+              </div>
+              <div className="w-full">
+                {filteredRemoteModels.map((hfModelEntry) => (
+                  <RemoteModelCard key={hfModelEntry.id} {...hfModelEntry} />
+                ))}
+              </div>
+            </Fragment>
+          )}
         </div>
       )}
     </div>
