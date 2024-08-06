@@ -15,6 +15,8 @@ import useAssistantQuery from '@/hooks/useAssistantQuery'
 
 import useThreads from '@/hooks/useThreads'
 
+import { copyOverInstructionEnabledAtom } from '@/screens/Settings/Advanced/components/CopyOverInstruction'
+
 import ThreadItem from './ThreadItem'
 
 import {
@@ -22,7 +24,7 @@ import {
   getSelectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
-import { getActiveThreadIdAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
+import { activeThreadAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const ThreadLeftPanel: React.FC = () => {
   const { createThread, setActiveThread } = useThreads()
@@ -30,11 +32,13 @@ const ThreadLeftPanel: React.FC = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
-  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
 
+  const activeThread = useAtomValue(activeThreadAtom)
   const { data: assistants } = useAssistantQuery()
-
   const isCreatingThread = useRef(false)
+  const copyOverInstructionEnabled = useAtomValue(
+    copyOverInstructionEnabledAtom
+  )
 
   useEffect(() => {
     // if user does not have any threads, we should create one
@@ -52,13 +56,10 @@ const ThreadLeftPanel: React.FC = () => {
   }, [threads, assistants, downloadedModels, createThread])
 
   useEffect(() => {
-    const setActiveThreadIfNone = () => {
-      if (activeThreadId) return
-      if (threads.length === 0) return
-      setActiveThread(threads[0].id)
-    }
-    setActiveThreadIfNone()
-  }, [activeThreadId, setActiveThread, threads])
+    if (activeThread?.id) return
+    if (threads.length === 0) return
+    setActiveThread(threads[0].id)
+  }, [activeThread?.id, setActiveThread, threads])
 
   const onCreateThreadClicked = useCallback(async () => {
     if (!assistants || assistants.length === 0) {
@@ -70,8 +71,18 @@ const ThreadLeftPanel: React.FC = () => {
       return
     }
     if (!selectedModel) return
-    createThread(selectedModel.model, assistants[0])
-  }, [createThread, selectedModel, assistants])
+    let instructions: string | undefined = undefined
+    if (copyOverInstructionEnabled) {
+      instructions = activeThread?.assistants[0]?.instructions ?? undefined
+    }
+    createThread(selectedModel.model, assistants[0], instructions)
+  }, [
+    createThread,
+    selectedModel,
+    assistants,
+    activeThread,
+    copyOverInstructionEnabled,
+  ])
 
   return (
     <LeftPanelContainer>

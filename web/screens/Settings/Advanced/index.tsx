@@ -13,7 +13,9 @@ import { toaster } from '@/containers/Toast'
 import useModelStop from '@/hooks/useModelStop'
 import { useSettings } from '@/hooks/useSettings'
 
-import DataMigration from './FactoryReset/components/DataMigration'
+import CopyOverInstructionItem from './components/CopyOverInstruction'
+
+import DataMigration from './components/DataMigration'
 
 import {
   experimentalFeatureEnabledAtom,
@@ -25,12 +27,6 @@ import {
 } from '@/helpers/atoms/AppConfig.atom'
 
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
-
-// type GPU = {
-//   id: string
-//   vram: number | null
-//   name: string
-// }
 
 const Advanced = () => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
@@ -462,6 +458,7 @@ const Advanced = () => {
 
         {/* Factory Reset */}
         {/* <FactoryReset /> */}
+        {experimentalEnabled && <CopyOverInstructionItem />}
         {experimentalEnabled && <DataMigration />}
       </div>
     </ScrollArea>
