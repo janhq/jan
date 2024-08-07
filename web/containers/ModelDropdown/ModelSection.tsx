@@ -56,9 +56,28 @@ const ModelSection: React.FC<Props> = ({
 
   return (
     <div className="w-full pt-2">
-      <h6 className="mb-1 px-3 font-medium text-[hsla(var(--text-secondary))]">
-        {engineName}
-      </h6>
+      <div className="flex justify-between pr-2">
+        <div className="flex gap-2 pl-3">
+          {engineLogo && (
+            <Image
+              className="h-5 w-5 flex-shrink-0 rounded-full object-cover"
+              width={40}
+              height={40}
+              src={engineLogo}
+              alt="logo"
+            />
+          )}
+          <h6 className="mb-1 pr-3 font-medium text-[hsla(var(--text-secondary))]">
+            {engineName}
+          </h6>
+        </div>
+        <Button theme="icon" onClick={onSettingClick}>
+          <SettingsIcon
+            size={14}
+            className="text-[hsla(var(--text-secondary))]"
+          />
+        </Button>
+      </div>
       <ul className="pb-2">
         {models.map((model) => (
           <li
@@ -66,29 +85,8 @@ const ModelSection: React.FC<Props> = ({
             className="flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
             onClick={() => onModelSelected(model)}
           >
-            {model.metadata?.logo ? (
-              <Image
-                className="rounded-full object-cover"
-                width={20}
-                height={20}
-                src={model.metadata?.logo}
-                alt="logo"
-              />
-            ) : (
-              !model.engine?.includes('cortex.') && (
-                <div className="flex h-5 w-5 items-center justify-center rounded-full border border-[hsla(var(--app-border))] bg-gradient-to-r from-cyan-500 to-blue-500" />
-              )
-            )}
             <div className="flex w-full items-center justify-between">
               <p className="line-clamp-1">{model.name ?? model.model}</p>
-              {!model.engine?.includes('cortex.') && (
-                <Button theme="icon" onClick={onSettingClick}>
-                  <SettingsIcon
-                    size={14}
-                    className="text-[hsla(var(--text-secondary))]"
-                  />
-                </Button>
-              )}
             </div>
             <ModelLabel metadata={model.metadata} compact />
           </li>
