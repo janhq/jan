@@ -5,13 +5,13 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
 
-import { toaster } from '@/containers/Toast'
-
 import useCortex from '@/hooks/useCortex'
 import {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
+
+import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
 
 import ImportingModelItem from './ImportingModelItem'
 
@@ -20,7 +20,8 @@ import {
   setImportingModelErrorAtom,
 } from '@/helpers/atoms/Model.atom'
 
-const ImportingModelModal = () => {
+const ImportingModelModal: React.FC = () => {
+  const downloadModelMutation = useModelDownloadMutation()
   const { downloadModel } = useCortex()
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const setImportModelError = useSetAtom(setImportingModelErrorAtom)
@@ -35,7 +36,9 @@ const ImportingModelModal = () => {
     const importModels = async () => {
       for (const model of importingModels) {
         try {
-          await downloadModel(model.path)
+          await downloadModelMutation.mutateAsync({
+            modelId: model.path,
+          })
         } catch (error) {
           let errorMessage = String(error)
           if (error instanceof Error) {
@@ -43,11 +46,6 @@ const ImportingModelModal = () => {
           }
 
           setImportModelError(model.importId, errorMessage)
-          toaster({
-            title: 'Import failed',
-            description: errorMessage,
-            type: 'error',
-          })
         }
       }
     }

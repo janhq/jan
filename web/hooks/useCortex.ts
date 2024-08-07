@@ -21,6 +21,7 @@ import { UpdateConfigMutationVariables } from './useEngineMutation'
 import { MessageCreateMutationVariables } from './useMessageCreateMutation'
 import { MessageDeleteMutationVariables } from './useMessageDeleteMutation'
 import { MessageUpdateMutationVariables } from './useMessageUpdateMutation'
+import { DownloadModelMutationVariables } from './useModelDownloadMutation'
 
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 
@@ -246,7 +247,8 @@ const useCortex = () => {
   )
 
   const downloadModel = useCallback(
-    async (modelId: string, fileName?: string, persistedModelId?: string) => {
+    async (variables: DownloadModelMutationVariables) => {
+      const { modelId, fileName, persistedModelId } = variables
       const response = await fetch(`${host}/models/${modelId}/pull`, {
         method: 'POST',
         headers: {

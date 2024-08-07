@@ -3,15 +3,12 @@ import { useCallback } from 'react'
 import { HuggingFaceRepoData } from '@janhq/core'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { useSetAtom } from 'jotai'
-
 import { toaster } from '@/containers/Toast'
 
 import { fetchHuggingFaceRepoData } from '@/utils/huggingface'
 
-import useCortex from './useCortex'
-import { addDownloadModelStateAtom } from './useDownloadState'
 import { fetchHuggingFaceRepoDataQueryKey } from './useHfRepoDataQuery'
+import useModelDownloadMutation from './useModelDownloadMutation'
 
 /**
  * Fetches the data for a Hugging Face model and downloads it.
@@ -21,8 +18,7 @@ import { fetchHuggingFaceRepoDataQueryKey } from './useHfRepoDataQuery'
  * @param modelHandle The model handle to fetch and download. E.g: "NousResearch/Hermes-2-Theta-Llama-3-8B-GGUF"
  */
 const useHfModelFetchAndDownload = () => {
-  const addDownloadState = useSetAtom(addDownloadModelStateAtom)
-  const { downloadModel } = useCortex()
+  const downloadModelMutation = useModelDownloadMutation()
   const queryClient = useQueryClient()
 
   const fetchData = useCallback(
@@ -90,15 +86,14 @@ const useHfModelFetchAndDownload = () => {
         .concat('_')
         .concat(recommendedModel.rfilename)
 
-      addDownloadState(persistModelId)
-      await downloadModel(
-        modelHandle,
-        recommendedModel.rfilename,
-        persistModelId
-      )
+      downloadModelMutation.mutate({
+        modelId: modelHandle,
+        fileName: recommendedModel.rfilename,
+        persistedModelId: persistModelId,
+      })
     },
 
-    [addDownloadState, downloadModel, fetchData]
+    [fetchData, downloadModelMutation]
   )
 
   return { fetchDataAndDownload }
