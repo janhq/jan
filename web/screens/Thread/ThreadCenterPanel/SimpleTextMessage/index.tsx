@@ -28,6 +28,8 @@ import { openFileTitle } from '@/utils/titleUtils'
 import EditChatInput from '../EditChatInput'
 import MessageToolbar from '../MessageToolbar'
 
+import TokenCount from './components/TokenCount'
+
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 type Props = {
@@ -114,9 +116,6 @@ const SimpleTextMessage: React.FC<Props> = ({
   const isUser = msg.role === 'user'
   const { onViewFileContainer } = usePath()
   const parsedText = useMemo(() => marked.parse(text), [marked, text])
-  const [tokenCount, setTokenCount] = useState(0)
-  const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
-  const [tokenSpeed, setTokenSpeed] = useState(0)
 
   const codeBlockCopyEvent = useRef((e: Event) => {
     const target: HTMLElement = e.target as HTMLElement
@@ -138,34 +137,6 @@ const SimpleTextMessage: React.FC<Props> = ({
     }
   }, [])
 
-  useEffect(() => {
-    if (msg.status !== 'in_progress') {
-      return
-    }
-    const currentTimestamp = new Date().getTime() // Get current time in milliseconds
-    if (!lastTimestamp) {
-      // If this is the first update, just set the lastTimestamp and return
-      if (msg.content && msg.content.length > 0) {
-        const message = msg.content[0]
-        if (message && message.type === 'text') {
-          const textContentBlock = message as TextContentBlock
-          if (textContentBlock.text.value !== '') {
-            setLastTimestamp(currentTimestamp)
-          }
-        }
-      }
-      return
-    }
-
-    const timeDiffInSeconds = (currentTimestamp - lastTimestamp) / 1000 // Time difference in seconds
-    const totalTokenCount = tokenCount + 1
-    const averageTokenSpeed = totalTokenCount / timeDiffInSeconds // Calculate average token speed
-
-    setTokenSpeed(averageTokenSpeed)
-    setTokenCount(totalTokenCount)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [msg.content])
-
   return (
     <div className="group relative mx-auto max-w-[700px] p-4">
       <div
@@ -175,7 +146,6 @@ const SimpleTextMessage: React.FC<Props> = ({
         )}
       >
         {isUser ? <UserAvatar /> : <LogoMark width={32} height={32} />}
-
         <div
           className={twMerge(
             'font-extrabold capitalize',
@@ -201,12 +171,7 @@ const SimpleTextMessage: React.FC<Props> = ({
             onResendMessage={onResendMessage}
           />
         </div>
-        {isLatestMessage &&
-          (msg.status === 'in_progress' || tokenSpeed > 0) && (
-            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
-            </p>
-          )}
+        {isLatestMessage && <TokenCount message={msg} />}
       </div>
 
       <div
@@ -218,15 +183,6 @@ const SimpleTextMessage: React.FC<Props> = ({
         <Fragment>
           {msg.content[0]?.type === 'image_file' && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
-              <div className="left-0 top-0 z-20 h-full w-full group-hover/image:inline-block">
-                {/* <RelativeImage */}
-                {/*   src={msg.content[0]?.text.annotations[0]} */}
-                {/*   id={msg.id} */}
-                {/*   onClick={() => */}
-                {/*     onViewFile(`${msg.content[0]?.text.annotations[0]}`) */}
-                {/*   } */}
-                {/* /> */}
-              </div>
               <Tooltip
                 trigger={
                   <div
