@@ -42,7 +42,7 @@ const ImportingModelModal = () => {
             errorMessage = error.message
           }
 
-          setImportModelError(model.path, errorMessage)
+          setImportModelError(model.importId, errorMessage)
           toaster({
             title: 'Import failed',
             description: errorMessage,
@@ -68,18 +68,16 @@ const ImportingModelModal = () => {
             ))}
           </div>
 
-          <div>
-            <div className="flex flex-row gap-2 rounded-b-lg border-t border-[hsla(var(--app-border))] py-2">
-              <AlertCircle
-                size={16}
-                className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
-              />
-              <p className="text-[hsla(var(--text-secondary)] font-semibold">
-                Own your model configurations, use at your own risk.
-                Misconfigurations may result in lower quality or unexpected
-                outputs.
-              </p>
-            </div>
+          <div className="flex flex-row gap-2 rounded-b-lg border-t border-[hsla(var(--app-border))] py-2">
+            <AlertCircle
+              size={16}
+              className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
+            />
+            <p className="text-[hsla(var(--text-secondary)] font-semibold">
+              Own your model configurations, use at your own risk.
+              Misconfigurations may result in lower quality or unexpected
+              outputs.
+            </p>
           </div>
         </Fragment>
       }
