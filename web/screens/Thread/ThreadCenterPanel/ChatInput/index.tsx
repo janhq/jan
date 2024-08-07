@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Button, useMediaQuery } from '@janhq/joi'
+import { Button } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { SettingsIcon, ChevronUpIcon, Settings2Icon } from 'lucide-react'
 
@@ -26,8 +26,6 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [activeSetting, setActiveSetting] = useState(false)
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
-
-  const matches = useMediaQuery('(max-width: 880px)')
 
   return (
     <div className="relative p-4 pb-2">
