@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { HuggingFaceRepoData } from '@janhq/core/.'
+import { HuggingFaceRepoData } from '@janhq/core'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { useSetAtom } from 'jotai'

@@ -4,7 +4,7 @@ import React from 'react'
 
 import Image from 'next/image'
 
-import { RemoteEngine } from '@janhq/core'
+import { EngineStatus, RemoteEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
 
 import { useSetAtom } from 'jotai'
@@ -47,7 +47,8 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
     () =>
       engineData == null || engine == null
         ? false
-        : engineData.find((e) => e.name === engine)?.status === 'ready',
+        : engineData.find((e) => e.name === engine)?.status ===
+          EngineStatus.Ready,
     [engineData, engine]
   )
 

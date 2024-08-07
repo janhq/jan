@@ -1,4 +1,4 @@
-import { HuggingFaceRepoData } from '@janhq/core/.'
+import { HuggingFaceRepoData } from '@janhq/core'
 import { atom } from 'jotai'
 
 // modals

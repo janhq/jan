@@ -1,4 +1,5 @@
 import { Engine } from '@cortexso/cortex.js/resources'
+import { EngineStatus } from '@janhq/core'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import useCortex from './useCortex'
@@ -22,7 +23,7 @@ const useEngineInit = () => {
       const engineStatuses = queryCacheData as Engine[]
       engineStatuses.forEach((engine) => {
         if (engine.name === engineName) {
-          engine.status = 'ready'
+          engine.status = EngineStatus.Ready
         }
       })
       console.debug(`Updated engine status: ${engineStatuses}`)

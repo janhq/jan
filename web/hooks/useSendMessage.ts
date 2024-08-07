@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react'
 import {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
+  EngineStatus,
   LocalEngines,
   Message,
   MessageContent,
@@ -193,7 +194,7 @@ const useSendMessage = () => {
       return false
     }
 
-    if (engineStatus.status !== 'ready') {
+    if (engineStatus.status !== EngineStatus.Ready) {
       toaster({
         title: errorTitle,
         description: `Engine ${engineStatus.name} is not ready`,

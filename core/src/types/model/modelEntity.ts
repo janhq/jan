@@ -19,6 +19,17 @@ export type LlmEngine = (typeof LlmEngines)[number]
 export type LocalEngine = (typeof LocalEngines)[number]
 export type RemoteEngine = (typeof RemoteEngines)[number]
 
+/**
+ * The available engine statuses.
+ */
+export enum EngineStatus  {
+  Ready = 'ready',
+  MissingConfiguration = 'missing_configuration',
+  NotInitialized = 'not_initialized',
+  NotSupported = 'not_supported',
+  Error = 'error',
+} 
+
 export type ModelArtifact = {
   filename: string
   url: string
