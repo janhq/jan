@@ -42,6 +42,7 @@ const DownloadStatus: React.FC = () => {
 
   const downloadTitle = `Downloading ${downloadStates
     .map((state) => state.type)
+    .filter((value, index, self) => self.indexOf(value) === index)
     .join(', ')
     .trim()}`
 
