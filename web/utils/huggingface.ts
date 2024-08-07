@@ -174,11 +174,22 @@ export const getEngineAndBranches = async (
       continue
     }
     if (branch.includes('tensorrt-llm')) {
-      const fileSize = await getFileSizeByRepoAndBranch(name, branch)
-      engineToBranches.tensorrtllm.push({
-        name: branch,
-        fileSize: fileSize,
-      })
+      const mergedBranchName = branch.split('-').slice(0, -2).join('-')
+      let isAlreadyAdded = false
+      // check if the branch is already added
+      for (const branch of engineToBranches.tensorrtllm) {
+        if (branch.name.includes(mergedBranchName)) {
+          isAlreadyAdded = true
+          break
+        }
+      }
+      if (!isAlreadyAdded) {
+        const fileSize = await getFileSizeByRepoAndBranch(name, branch)
+        engineToBranches.tensorrtllm.push({
+          name: mergedBranchName,
+          fileSize: fileSize,
+        })
+      }
       continue
     }
   }
