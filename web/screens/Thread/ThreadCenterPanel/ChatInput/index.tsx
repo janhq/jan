@@ -72,11 +72,7 @@ const ChatInput: React.FC<Props> = ({ sendMessage, stopInference }) => {
                 theme="icon"
                 onClick={() => {
                   setActiveTabThreadRightPanel('model')
-                  if (matches) {
-                    setShowRightPanel(!showRightPanel)
-                  } else if (!showRightPanel) {
-                    setShowRightPanel(true)
-                  }
+                  setShowRightPanel(!showRightPanel)
                 }}
               >
                 <Settings2Icon
