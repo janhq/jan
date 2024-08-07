@@ -73,9 +73,12 @@ const ListModel: React.FC<Props> = ({ modelHandle, onBranchSelected }) => {
   useEffect(() => {
     if (engineSelections.length === 0) return
     setEngineFilter(engineSelections[0].value as EngineType)
+  }, [engineSelections])
+
+  useEffect(() => {
     const models = modelBranches.map((m) => m.name)
     onBranchSelected?.(models)
-  }, [engineSelections, modelBranches, onBranchSelected])
+  }, [modelBranches, onBranchSelected])
 
   const onSelectionChanged = useCallback(
     (selectionValue: string) => {
