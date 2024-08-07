@@ -5,13 +5,13 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
 
-import { toaster } from '@/containers/Toast'
-
 import useCortex from '@/hooks/useCortex'
 import {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
+
+import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
 
 import ImportingModelItem from './ImportingModelItem'
 
@@ -20,7 +20,8 @@ import {
   setImportingModelErrorAtom,
 } from '@/helpers/atoms/Model.atom'
 
-const ImportingModelModal = () => {
+const ImportingModelModal: React.FC = () => {
+  const downloadModelMutation = useModelDownloadMutation()
   const { downloadModel } = useCortex()
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const setImportModelError = useSetAtom(setImportingModelErrorAtom)
@@ -35,19 +36,16 @@ const ImportingModelModal = () => {
     const importModels = async () => {
       for (const model of importingModels) {
         try {
-          await downloadModel(model.path)
+          await downloadModelMutation.mutateAsync({
+            modelId: model.path,
+          })
         } catch (error) {
           let errorMessage = String(error)
           if (error instanceof Error) {
             errorMessage = error.message
           }
 
-          setImportModelError(model.path, errorMessage)
-          toaster({
-            title: 'Import failed',
-            description: errorMessage,
-            type: 'error',
-          })
+          setImportModelError(model.importId, errorMessage)
         }
       }
     }
@@ -68,18 +66,16 @@ const ImportingModelModal = () => {
             ))}
           </div>
 
-          <div>
-            <div className="flex flex-row gap-2 rounded-b-lg border-t border-[hsla(var(--app-border))] py-2">
-              <AlertCircle
-                size={16}
-                className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
-              />
-              <p className="text-[hsla(var(--text-secondary)] font-semibold">
-                Own your model configurations, use at your own risk.
-                Misconfigurations may result in lower quality or unexpected
-                outputs.
-              </p>
-            </div>
+          <div className="flex flex-row gap-2 rounded-b-lg border-t border-[hsla(var(--app-border))] py-2">
+            <AlertCircle
+              size={16}
+              className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
+            />
+            <p className="text-[hsla(var(--text-secondary)] font-semibold">
+              Own your model configurations, use at your own risk.
+              Misconfigurations may result in lower quality or unexpected
+              outputs.
+            </p>
           </div>
         </Fragment>
       }

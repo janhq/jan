@@ -8,11 +8,8 @@ import { toaster } from '@/containers/Toast'
 
 import useAbortDownload from '@/hooks/useAbortDownload'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
-import useCortex from '@/hooks/useCortex'
-import {
-  addDownloadModelStateAtom,
-  downloadStateListAtom,
-} from '@/hooks/useDownloadState'
+import { downloadStateListAtom } from '@/hooks/useDownloadState'
+import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
 import useThreads from '@/hooks/useThreads'
 
 import { formatDownloadPercentage } from '@/utils/converter'
@@ -73,9 +70,8 @@ type DownloadContainerProps = {
 const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
 }) => {
-  const { downloadModel } = useCortex()
+  const downloadModelMutation = useModelDownloadMutation()
   const { abortDownload } = useAbortDownload()
-  const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
   const setDownloadLocalModelModalStage = useSetAtom(localModelModalStageAtom)
@@ -93,10 +89,9 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
     [downloadedModels, modelId]
   )
 
-  const onDownloadClick = useCallback(async () => {
-    addDownloadState(modelId)
-    await downloadModel(modelId)
-  }, [downloadModel, addDownloadState, modelId])
+  const onDownloadClick = useCallback(() => {
+    downloadModelMutation.mutate({ modelId })
+  }, [downloadModelMutation, modelId])
 
   const onUseModelClick = useCallback(async () => {
     if (!assistants || assistants.length === 0) {

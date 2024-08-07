@@ -503,6 +503,7 @@ const useSendMessage = () => {
     chatCompletionStreaming,
     setIsGeneratingResponse,
     setShowWarningMultipleModelModal,
+    setChunkCount,
   ])
 
   const sendMessage = useCallback(
