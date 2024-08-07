@@ -5,6 +5,10 @@ import { getActiveThreadIdAtom } from './Thread.atom'
 
 const chatMessages = atom<Record<string, Message[]>>({})
 
+export const disableStopInferenceAtom = atom(false)
+
+export const chunkCountAtom = atom<Record<string, number>>({})
+
 /**
  * Return the chat messages for the current active thread
  */

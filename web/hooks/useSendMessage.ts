@@ -36,6 +36,8 @@ import useModelStart from './useModelStart'
 
 import {
   addNewMessageAtom,
+  chunkCountAtom,
+  disableStopInferenceAtom,
   getCurrentChatMessagesAtom,
   updateMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
@@ -103,6 +105,9 @@ const useSendMessage = () => {
   const setShowWarningMultipleModelModal = useSetAtom(
     showWarningMultipleModelModalAtom
   )
+
+  const setDisableStopInference = useSetAtom(disableStopInferenceAtom)
+  const setChunkCount = useSetAtom(chunkCountAtom)
 
   const validatePrerequisite = useCallback(async (): Promise<boolean> => {
     const errorTitle = 'Failed to send message'
@@ -361,7 +366,12 @@ const useSendMessage = () => {
 
         addNewMessage(responseMessage)
 
+        let chunkCount = 1
         for await (const chunk of stream) {
+          setChunkCount((prev) => ({
+            ...prev,
+            [responseMessage.id]: chunkCount++,
+          }))
           const content = chunk.choices[0]?.delta?.content || ''
           assistantResponseMessage += content
           const messageContent: MessageContent = {
@@ -579,6 +589,7 @@ const useSendMessage = () => {
       let assistantResponseMessage = ''
       try {
         if (selectedModel!.stream === true) {
+          setDisableStopInference(true)
           const stream = await chatCompletionStreaming({
             messages,
             model: selectedModel!.model,
@@ -623,7 +634,14 @@ const useSendMessage = () => {
 
           addNewMessage(responseMessage)
 
+          let chunkCount = 1
           for await (const chunk of stream) {
+            setChunkCount((prev) => ({
+              ...prev,
+              [responseMessage.id]: chunkCount++,
+            }))
+            // we have first chunk, enable the inference button
+            setDisableStopInference(false)
             const content = chunk.choices[0]?.delta?.content || ''
             assistantResponseMessage += content
             const messageContent: MessageContent = {
@@ -737,6 +755,7 @@ const useSendMessage = () => {
           })
         }
 
+        setDisableStopInference(false)
         setIsGeneratingResponse(false)
         shouldSummarize = false
 
@@ -780,6 +799,8 @@ const useSendMessage = () => {
       chatCompletionStreaming,
       summarizeThread,
       setShowWarningMultipleModelModal,
+      setDisableStopInference,
+      setChunkCount,
     ]
   )
 
