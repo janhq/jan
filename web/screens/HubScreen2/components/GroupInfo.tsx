@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react'
 
 import Image from 'next/image'
 
-import { RemoteEngine, RemoteEngines } from '@janhq/core'
+import { EngineStatus, RemoteEngine, RemoteEngines } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
@@ -70,7 +70,8 @@ const SetUpComponent: React.FC<SetUpProps> = ({
     () =>
       engineData == null
         ? false
-        : engineData.find((e) => e.name === engine)?.status === 'ready',
+        : engineData.find((e) => e.name === engine)?.status ===
+          EngineStatus.Ready,
     [engineData, engine]
   )
 

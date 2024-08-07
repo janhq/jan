@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react'
 
-import { LocalEngines, RemoteEngine } from '@janhq/core'
+import { EngineStatus, LocalEngines, RemoteEngine } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -54,7 +54,8 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
     const isEngineConfigured: boolean =
       engineData == null || model?.engine == null
         ? false
-        : engineData.find((e) => e.name === model.engine)?.status === 'ready'
+        : engineData.find((e) => e.name === model.engine)?.status ===
+          EngineStatus.Ready
 
     const isModelDownloaded = downloadedModels.find(
       (m) => m.model === model!.model
@@ -78,7 +79,8 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
       const isApiKeyAdded: boolean =
         engineData == null || model?.engine == null
           ? false
-          : engineData.find((e) => e.name === model.engine)?.status === 'ready'
+          : engineData.find((e) => e.name === model.engine)?.status ===
+            EngineStatus.Ready
 
       const isModelDownloaded = downloadedModels.find(
         (m) => m.model === model.model

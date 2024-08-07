@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 
 import Image from 'next/image'
 
+import { EngineStatus } from '@janhq/core'
 import { Button, Input, Modal } from '@janhq/joi'
 import { useAtom, useSetAtom } from 'jotai'
 import { ArrowUpRight } from 'lucide-react'
@@ -28,7 +29,8 @@ const SetUpApiKeyModal: React.FC = () => {
   useEffect(() => {
     if (!remoteEngine || !engineData) return
     const isEngineReady =
-      engineData.find((e) => e.name === remoteEngine)?.status === 'ready'
+      engineData.find((e) => e.name === remoteEngine)?.status ===
+      EngineStatus.Ready
     const fakeApiKey = '******************************************'
     setApiKey(isEngineReady ? fakeApiKey : '')
   }, [remoteEngine, engineData])

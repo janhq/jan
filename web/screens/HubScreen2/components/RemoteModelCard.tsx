@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react'
 
-import { RemoteEngine } from '@janhq/core'
+import { EngineStatus, RemoteEngine } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -38,7 +38,8 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, model }) => {
     const isApiKeyAdded: boolean =
       engineData == null || model?.engine == null
         ? false
-        : engineData.find((e) => e.name === model.engine)?.status === 'ready'
+        : engineData.find((e) => e.name === model.engine)?.status ===
+          EngineStatus.Ready
 
     const isModelDownloaded = downloadedModels.find(
       (m) => m.model === model.model
