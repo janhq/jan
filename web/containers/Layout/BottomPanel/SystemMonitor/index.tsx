@@ -26,7 +26,6 @@ import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import {
   cpuUsageAtom,
   gpusAtom,
-  ramUtilitizedAtom,
   totalRamAtom,
   usedRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
@@ -39,7 +38,6 @@ const SystemMonitor: React.FC = () => {
   const gpus = useAtomValue(gpusAtom)
 
   const [showFullScreen, setShowFullScreen] = useState(false)
-  const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
     showSystemMonitorPanelAtom
   )
@@ -180,7 +178,9 @@ const SystemMonitor: React.FC = () => {
                     className="w-full"
                     size="small"
                   />
-                  <span className="flex-shrink-0 ">{ramUtilitized}%</span>
+                  <span className="flex-shrink-0 ">
+                    {Math.round((usedRam / totalRam) * 100)}%
+                  </span>
                 </div>
               </div>
 
