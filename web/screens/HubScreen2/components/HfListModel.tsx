@@ -9,14 +9,10 @@ import { toaster } from '@/containers/Toast'
 import useAbortDownload from '@/hooks/useAbortDownload'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
-import useCortex from '@/hooks/useCortex'
-
-import {
-  addDownloadModelStateAtom,
-  downloadStateListAtom,
-} from '@/hooks/useDownloadState'
+import { downloadStateListAtom } from '@/hooks/useDownloadState'
 
 import useHfRepoDataQuery from '@/hooks/useHfRepoDataQuery'
+import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
 import useThreads from '@/hooks/useThreads'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
@@ -97,9 +93,8 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   modelHandle,
   fileName,
 }) => {
-  const { downloadModel } = useCortex()
+  const downloadModelMutation = useModelDownloadMutation()
   const { abortDownload } = useAbortDownload()
-  const addDownloadState = useSetAtom(addDownloadModelStateAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createThread } = useThreads()
   const { data: assistants } = useAssistantQuery()
@@ -122,9 +117,12 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   )
 
   const onDownloadClick = useCallback(async () => {
-    addDownloadState(persistModelId)
-    await downloadModel(modelHandle, fileName, persistModelId)
-  }, [addDownloadState, downloadModel, modelHandle, fileName, persistModelId])
+    downloadModelMutation.mutate({
+      modelId: modelHandle,
+      fileName: fileName,
+      persistedModelId: persistModelId,
+    })
+  }, [downloadModelMutation, modelHandle, fileName, persistModelId])
 
   const onUseModelClick = useCallback(async () => {
     if (!assistants || assistants.length === 0) {
