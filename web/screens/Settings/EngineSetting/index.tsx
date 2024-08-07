@@ -1,4 +1,4 @@
-import { LlmEngine } from '@janhq/core/.'
+import { LlmEngine, LlmEngines, LocalEngines } from '@janhq/core/.'
 import {
   Button,
   ScrollArea,
@@ -69,7 +69,7 @@ const EngineSetting: React.FC = () => {
                   </TableCell>
                   <TableCell>{getStatusTitle(engineStatus.status)}</TableCell>
                   <TableCell>
-                    {['ready', 'not_initialized'].includes(
+                    {LocalEngines.some(e => e === engineStatus.name) && ['ready', 'not_initialized'].includes(
                       engineStatus.status
                     ) ? (
                       <Button
