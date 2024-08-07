@@ -305,7 +305,11 @@ export const fetchHuggingFaceRepoData = async (
 
   AllQuantizations.forEach((quantization) => {
     data.siblings.forEach((sibling) => {
-      if (!sibling.quantization && sibling.rfilename.includes(quantization)) {
+      if (
+        !sibling.quantization &&
+        (sibling.rfilename.includes(quantization) ||
+          sibling.rfilename.includes(quantization.toLowerCase()))
+      ) {
         sibling.quantization = quantization
       }
     })
