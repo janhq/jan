@@ -212,7 +212,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           Use
         </Button>
       ) : downloadState != null ? (
-        <Button variant="soft">
+        <Button theme="ghost" className="p-0 text-[hsla(var(--primary-bg))]">
           <div className="flex items-center space-x-2">
             <span className="inline-block" onClick={onAbortDownloadClick}>
               Cancel
@@ -231,7 +231,13 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           </div>
         </Button>
       ) : (
-        <Button onClick={onDownloadClick}>Download</Button>
+        <Button
+          onClick={onDownloadClick}
+          theme="ghost"
+          className="bg-[hsla(var(--secondary-bg))] group-hover:bg-[hsla(var(--primary-bg))] group-hover:text-[hsla(var(--primary-fg))]"
+        >
+          Download
+        </Button>
       )}
     </div>
   )

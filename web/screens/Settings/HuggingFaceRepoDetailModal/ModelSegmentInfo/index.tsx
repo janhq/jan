@@ -33,9 +33,9 @@ const ModelSegmentInfo = () => {
   if (!importingHuggingFaceRepoData) return null
 
   return (
-    <div className="flex w-full flex-col space-y-4">
+    <div className="flex flex-col space-y-4 lg:w-1/3">
       <HeaderInfo title={'Model ID'}>
-        <h1 className="font-medium text-zinc-500 dark:text-gray-300">
+        <h1 className="mt-3 font-medium text-[hsla(var(--text-secondary))]">
           {modelName}
         </h1>
       </HeaderInfo>
@@ -63,7 +63,7 @@ const ModelSegmentInfo = () => {
           <HeaderInfo title="Downloads">
             <div className="flex flex-row items-center space-x-1.5">
               <Download size={16} />
-              <span className="font-medium text-zinc-500 dark:text-gray-300">
+              <span className="font-medium text-[hsla(var(--text-secondary))]">
                 {downloads}
               </span>
             </div>

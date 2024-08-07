@@ -60,7 +60,7 @@ const HfListModel: React.FC<Props> = ({ modelHandle }) => {
             {downloadableModels.map((item) => (
               <tr
                 key={item.rfilename}
-                className="border-b border-[hsla(var(--app-border))] last:border-b-0 hover:bg-[hsla(var(--primary-bg-soft))]"
+                className="group border-b border-[hsla(var(--app-border))] last:border-b-0 hover:bg-[hsla(var(--primary-bg-soft))]"
               >
                 <td className="whitespace-nowrap py-4 pl-3">
                   <div className="w-fit rounded-md border border-[hsla(var(--app-border))] bg-transparent px-1.5 py-0.5 text-[var(--text-primary)]">
@@ -70,7 +70,9 @@ const HfListModel: React.FC<Props> = ({ modelHandle }) => {
                 <td className="w-full pl-4">{item.rfilename}</td>
                 <td>
                   <div className="mr-3 flex items-center justify-end gap-3 whitespace-nowrap py-3">
-                    <span>{toGibibytes(item.fileSize)}</span>
+                    <span className="text-[hsla(var(--text-secondary))]">
+                      {toGibibytes(item.fileSize)}
+                    </span>
                     <DownloadContainer
                       modelHandle={modelHandle}
                       fileName={item.rfilename}
@@ -149,7 +151,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   ])
 
   return (
-    <div className="flex items-center justify-center">
+    <div className="flex items-center justify-center transition-all">
       {downloadedModel ? (
         <Button
           variant="soft"
@@ -159,7 +161,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           Use
         </Button>
       ) : downloadState != null ? (
-        <Button variant="soft">
+        <Button theme="ghost" className="p-0 text-[hsla(var(--primary-bg))]">
           <div className="flex items-center space-x-2">
             <span
               className="inline-block"
@@ -181,7 +183,13 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           </div>
         </Button>
       ) : (
-        <Button onClick={onDownloadClick}>Download</Button>
+        <Button
+          onClick={onDownloadClick}
+          theme="ghost"
+          className="bg-[hsla(var(--secondary-bg))] group-hover:bg-[hsla(var(--primary-bg))] group-hover:text-[hsla(var(--primary-fg))]"
+        >
+          Download
+        </Button>
       )}
     </div>
   )

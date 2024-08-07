@@ -146,7 +146,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           Use
         </Button>
       ) : downloadState != null ? (
-        <Button variant="soft">
+        <Button theme="ghost" className="p-0 text-[hsla(var(--primary-bg))]">
           <div className="flex items-center space-x-2">
             <span
               className="inline-block"

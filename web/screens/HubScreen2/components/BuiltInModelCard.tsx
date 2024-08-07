@@ -57,7 +57,7 @@ const BuiltInModelCard: React.FC<HfModelEntry> = ({
       </div>
       <div className="pointer-events-auto flex flex-col items-end gap-2">
         <DownloadContainer modelHandle={name} />
-        <span className="flex items-center gap-1 text-sm font-medium leading-3">
+        <span className="flex items-center gap-1 text-sm font-medium leading-3 text-[hsla(var(--text-secondary))]">
           {addThousandSeparator(downloads)}
           <CloudDownload size={14} />
         </span>
@@ -135,7 +135,7 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
           Use
         </Button>
       ) : downloadState != null ? (
-        <Button variant="soft">
+        <Button theme="ghost" className="p-0 text-[hsla(var(--primary-bg))]">
           <div className="flex items-center space-x-2">
             <span
               className="inline-block"
