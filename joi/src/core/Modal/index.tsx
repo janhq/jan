@@ -46,7 +46,7 @@ const Modal = ({
         <DialogPrimitive.Description>
           <VisuallyHidden></VisuallyHidden>
         </DialogPrimitive.Description>
-        <div className="modal__title">{title}</div>
+        {title && <div className="modal__title">{title}</div>}
         {content}
         {!hideClose && (
           <ModalClose asChild>
