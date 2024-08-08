@@ -30,4 +30,4 @@ export const didShowMigrationWarningAtom = atomWithStorage(
   }
 )
 
-export const hostAtom = atom('http://127.0.0.1:1338/v1')
+export const hostAtom = atom('http://127.0.0.1:1338')
