@@ -18,6 +18,8 @@ import { currentPromptAtom, editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { defaultThreadTitle } from '@/constants/Threads'
+
 import { inferenceErrorAtom } from '@/screens/HubScreen2/components/InferenceErrorModal'
 
 import { showWarningMultipleModelModalAtom } from '@/screens/HubScreen2/components/WarningMultipleModelModal'
@@ -512,7 +514,7 @@ const useSendMessage = () => {
       if (!isValid) return
 
       let shouldSummarize =
-        activeThread!.title === 'New Thread' ||
+        activeThread!.title === defaultThreadTitle ||
         activeThread!.title.trim() === ''
       const modelId = activeThread!.assistants[0].model
 

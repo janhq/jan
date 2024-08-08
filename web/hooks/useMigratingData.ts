@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback } from 'react'
 
+import { defaultThreadTitle } from '@/constants/Threads'
+
 import useAssistantQuery from './useAssistantQuery'
 
 import useCortex from './useCortex'
@@ -43,7 +45,7 @@ const useMigratingData = () => {
         console.error(`Ignore thread ${thread.id} because modelId is not found`)
         continue
       }
-      const threadTitle: string = thread.title ?? 'New Thread'
+      const threadTitle: string = thread.title ?? defaultThreadTitle
       const instructions: string = thread.assistants[0]?.instructions ?? ''
       // currently, we don't have api support for creating thread with messages
       const cortexThread = await createThread(modelId, assistants[0])

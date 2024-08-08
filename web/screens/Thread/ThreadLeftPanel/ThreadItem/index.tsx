@@ -6,6 +6,8 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { MoreHorizontalIcon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import { defaultThreadTitle } from '@/constants/Threads'
+
 import useThreads from '@/hooks/useThreads'
 
 import ModalCleanThread from '../ModalCleanThread'
@@ -82,10 +84,13 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
     >
       <div className="relative z-10 break-all p-2">
         {getThreadIdsShouldAnimateTitle.includes(thread.id) ? (
-          <TypingAnimated text={thread.title || 'New Thread'} speed={20} />
+          <TypingAnimated
+            text={thread.title || defaultThreadTitle}
+            speed={20}
+          />
         ) : (
           <span className="line-clamp-1 group-hover/message:pr-6">
-            {thread.title || 'New Thread'}
+            {thread.title || defaultThreadTitle}
           </span>
         )}
       </div>

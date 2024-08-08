@@ -5,6 +5,8 @@ import { Button, Modal, ModalClose } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
 import { Paintbrush } from 'lucide-react'
 
+import { defaultThreadTitle } from '@/constants/Threads'
+
 import useCortex from '@/hooks/useCortex'
 import useThreads from '@/hooks/useThreads'
 
@@ -24,8 +26,8 @@ const ModalCleanThread = ({ thread, closeContextMenu }: Props) => {
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       e.stopPropagation()
       cleanThread(thread.id)
-      updateThreadTitle(thread.id, 'New Thread')
-      updateThread({ ...thread, title: 'New Thread' })
+      updateThreadTitle(thread.id, defaultThreadTitle)
+      updateThread({ ...thread, title: defaultThreadTitle })
     },
     [cleanThread, thread, updateThread, updateThreadTitle]
   )
