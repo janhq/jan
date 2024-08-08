@@ -1,8 +1,7 @@
 import { app, BrowserWindow } from 'electron'
 
 import { join, resolve } from 'path'
-import { exec, execSync, ChildProcess } from 'child_process'
-import { cortexPath } from './cortex-runner'
+import { execSync } from 'child_process'
 
 /**
  * Managers
@@ -26,6 +25,8 @@ import { setupCore } from './utils/setup'
 import { setupReactDevTool } from './utils/dev'
 
 import log from 'electron-log'
+
+import { start } from 'cortexso'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -55,8 +56,6 @@ log.info('Log from the main process')
 
 // replace all console.log to log
 Object.assign(console, log.functions)
-
-let cortexService: ChildProcess | undefined = undefined
 
 const cortexJsPort = 1338
 const cortexCppPort = 3940
@@ -91,35 +90,9 @@ app
   .then(() => {
     const appConfiguration = getAppConfigurations()
     const janDataFolder = appConfiguration.data_folder
-
-    const cortexParams: Record<string, string> = {
-      '-n': 'jan',
-      '-a': host,
-      '-p': cortexJsPort.toString(),
-      '-ep': cortexCppPort.toString(),
-      '--dataFolder': janDataFolder,
-    }
-
-    // add cortex parameters to the command
-    const command = Object.entries(cortexParams).reduce(
-      (acc, [key, value]) => `${acc} ${key} ${value}`,
-      `${cortexPath}`
-    )
-
-    log.info('Starting cortex with command:', command)
-    // init cortex
-    cortexService = exec(`${command}`, (error, stdout, stderr) => {
-      if (error) {
-        log.error(`error: ${error.message}`)
-        return
-      }
-      if (stderr) {
-        log.error(`stderr: ${stderr}`)
-        return
-      }
-      log.info(`stdout: ${stdout}`)
-    })
-  })
+    
+    start('jan', host, cortexJsPort, cortexCppPort, janDataFolder)
+})
   .then(createUserSpace)
   .then(migrate)
   .then(setupMenu)
@@ -152,23 +125,9 @@ app.once('quit', async () => {
 
 app.once('window-all-closed', async () => {
   await stopApiServer()
-  await stopCortexService()
   cleanUpAndQuit()
 })
 
-async function stopCortexService() {
-  try {
-    const pid = cortexService?.pid
-    if (!pid) {
-      console.log('No cortex service to stop.')
-      return
-    }
-    process.kill(pid)
-    console.log(`Service with PID ${pid} has been terminated.`)
-  } catch (error) {
-    console.error('Error killing service:', error)
-  }
-}
 
 async function stopApiServer() {
   // this function is not meant to be success. It will throw an error.
