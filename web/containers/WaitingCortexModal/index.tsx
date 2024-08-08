@@ -42,8 +42,7 @@ const WaitingForCortexModal: React.FC = () => {
   return (
     <Modal
       hideClose
-      // open={waitingForCortex}
-      open={true}
+      open={waitingForCortex}
       className="w-auto"
       content={
         <div className="inline-flex flex-col">
