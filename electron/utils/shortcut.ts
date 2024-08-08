@@ -5,7 +5,7 @@ import { windowManager } from '../managers/window'
 const quickAskHotKey = 'CommandOrControl+J'
 
 export function registerGlobalShortcuts() {
-  if (!getAppConfigurations().quick_ask) return
+  if (!getAppConfigurations().quickAsk) return
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {
     // Feature Toggle for Quick Ask
     if (!windowManager.isQuickAskWindowVisible()) {

@@ -8,7 +8,7 @@ class TrayManager {
 
   createSystemTray = () => {
     // Feature Toggle for Quick Ask
-    if (!getAppConfigurations().quick_ask) return
+    if (!getAppConfigurations().quickAsk) return
 
     if (this.currentTray) {
       return

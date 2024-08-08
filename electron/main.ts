@@ -89,7 +89,7 @@ app
   .then(() => killProcessesOnPort(cortexJsPort))
   .then(() => {
     const appConfiguration = getAppConfigurations()
-    const janDataFolder = appConfiguration.data_folder
+    const janDataFolder = appConfiguration.dataFolderPath
     
     start('jan', host, cortexJsPort, cortexCppPort, janDataFolder)
 })

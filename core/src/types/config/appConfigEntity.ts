@@ -1,4 +1,8 @@
 export type AppConfiguration = {
-  data_folder: string
-  quick_ask: boolean
+  dataFolderPath: string,
+  quickAsk: boolean,
+  cortexCppHost: string,
+  cortexCppPort: number,
+  apiServerHost: string,
+  apiServerPort: number,
 }

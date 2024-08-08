@@ -2,8 +2,6 @@
 
 import { useEffect } from 'react'
 
-import { AppConfiguration } from '@janhq/core'
-
 import { useSetAtom } from 'jotai'
 
 import ClipboardListener from '@/containers/Providers/ClipboardListener'
@@ -29,11 +27,9 @@ export default function RootLayout() {
   }, [])
 
   useEffect(() => {
-    window.core?.api
-      ?.getAppConfigurations()
-      ?.then((appConfig: AppConfiguration) => {
-        setJanDataFolderPath(appConfig.data_folder)
-      })
+    window.electronAPI?.appDataFolder()?.then((path: string) => {
+      setJanDataFolderPath(path)
+    })
   }, [setJanDataFolderPath])
 
   useEffect(() => {

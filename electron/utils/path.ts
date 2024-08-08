@@ -3,14 +3,19 @@ import { existsSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { AppConfiguration } from '@janhq/core/node'
 import os from 'os'
+import { dump, load } from 'js-yaml'
 
-const configurationFileName = 'settings.json'
+const configurationFileName = '.janrc'
 
 const defaultJanDataFolder = join(os.homedir(), 'jan')
 
 const defaultAppConfig: AppConfiguration = {
-  data_folder: defaultJanDataFolder,
-  quick_ask: false,
+  dataFolderPath: defaultJanDataFolder,
+  quickAsk: true,
+  cortexCppHost: '127.0.0.1',
+  cortexCppPort: 3940,
+  apiServerHost: '127.0.0.1',
+  apiServerPort: 1338
 }
 
 export async function createUserSpace(): Promise<void> {
@@ -66,15 +71,14 @@ export const getAppConfigurations = (): AppConfiguration => {
     console.debug(
       `App config not found, creating default config at ${configurationFile}`
     )
-    writeFileSync(configurationFile, JSON.stringify(defaultAppConfig))
+    writeFileSync(configurationFile, dump(defaultAppConfig))
     return defaultAppConfig
   }
 
   try {
-    const appConfigurations: AppConfiguration = JSON.parse(
-      readFileSync(configurationFile, 'utf-8')
-    )
-    console.debug('app config', JSON.stringify(appConfigurations))
+    const configYaml = readFileSync(configurationFile, 'utf-8')
+    const appConfigurations = load(configYaml) as AppConfiguration
+    console.debug('app config', appConfigurations)
     return appConfigurations
   } catch (err) {
     console.error(
@@ -84,12 +88,15 @@ export const getAppConfigurations = (): AppConfiguration => {
   }
 }
 
-const getConfigurationFilePath = () =>
-  join(
-    global.core?.appPath() ||
-      process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'],
-    configurationFileName
-  )
+// Get configuration file path of the application
+const getConfigurationFilePath = () => {
+  const homeDir = os.homedir();
+  const configPath = join(
+    homeDir,
+    configurationFileName,
+  );
+  return configPath
+}
 
 export const updateAppConfiguration = (
   configuration: AppConfiguration
@@ -100,7 +107,7 @@ export const updateAppConfiguration = (
     configurationFile
   )
 
-  writeFileSync(configurationFile, JSON.stringify(configuration))
+  writeFileSync(configurationFile, dump(configuration))
   return Promise.resolve()
 }
 
@@ -110,6 +117,21 @@ export const updateAppConfiguration = (
  * @returns {string} The data folder path.
  */
 export const getJanDataFolderPath = (): string => {
-  const appConfigurations = getAppConfigurations()
-  return appConfigurations.data_folder
+  return getAppConfigurations().dataFolderPath 
+}
+
+// This is to support pulling legacy configs for migration purpose
+export const legacyConfigs = () => {
+  const legacyConfigFilePath = join(
+    process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'] ?? '',
+    'settings.json'
+  )
+  const legacyConfigs = JSON.parse(readFileSync(legacyConfigFilePath, 'utf-8')) as any
+
+  return legacyConfigs
+}
+
+// This is to support pulling legacy data path for migration purpose
+export const legacyDataPath = () => {
+  return legacyConfigs().data_path
 }

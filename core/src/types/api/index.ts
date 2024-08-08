@@ -35,6 +35,9 @@ export enum NativeRoute {
   syncModelFileToCortex = 'syncModelFileToCortex',
 
   openAppLog = 'openAppLog',
+  appDataFolder = 'appDataFolder',
+  changeDataFolder = 'changeDataFolder',
+  isDirectoryEmpty = 'isDirectoryEmpty',
 }
 
 export enum AppEvent {
