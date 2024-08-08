@@ -5,10 +5,11 @@ import {
   NativeRoute,
   SelectFileProp,
   SelectFileOption,
+  AppConfiguration,
 } from '@janhq/core/node'
 import { menu } from '../utils/menu'
 import { join } from 'path'
-import { getAppConfigurations, getJanDataFolderPath } from './../utils/path'
+import { getAppConfigurations, getJanDataFolderPath, legacyDataPath, updateAppConfiguration } from './../utils/path'
 import {
   readdirSync,
   writeFileSync,
@@ -16,8 +17,7 @@ import {
   existsSync,
   mkdirSync,
 } from 'fs'
-import { dump } from 'js-yaml'
-
+import { dump, load } from 'js-yaml'
 const isMac = process.platform === 'darwin'
 
 export function handleAppIPCs() {
@@ -209,7 +209,7 @@ export function handleAppIPCs() {
 
   ipcMain.handle(NativeRoute.openAppLog, async (_event): Promise<void> => {
     const configuration = getAppConfigurations()
-    const dataFolder = configuration.data_folder
+    const dataFolder = configuration.dataFolderPath
 
     try {
       const errorMessage = await shell.openPath(join(dataFolder))
@@ -224,11 +224,14 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
-    const janModelFolderPath = join(getJanDataFolderPath(), 'models')
+    
+    // Read models from legacy data folder
+    const janModelFolderPath = join(legacyDataPath(), 'models')
     const allModelFolders = readdirSync(janModelFolderPath)
 
+    // Latest app configs
     const configration = getAppConfigurations()
-    const destinationFolderPath = join(configration.data_folder, 'models')
+    const destinationFolderPath = join(configration.dataFolderPath, 'models')
 
     if (!existsSync(destinationFolderPath)) mkdirSync(destinationFolderPath)
 
@@ -332,7 +335,7 @@ export function handleAppIPCs() {
   ipcMain.handle(
     NativeRoute.getAllMessagesAndThreads,
     async (_event): Promise<any> => {
-      const janThreadFolderPath = join(getJanDataFolderPath(), 'threads')
+      const janThreadFolderPath = join(legacyDataPath(), 'threads')
       // check if exist
       if (!existsSync(janThreadFolderPath)) {
         return {
@@ -382,7 +385,7 @@ export function handleAppIPCs() {
   ipcMain.handle(
     NativeRoute.getAllLocalModels,
     async (_event): Promise<boolean> => {
-      const janModelsFolderPath = join(getJanDataFolderPath(), 'models')
+      const janModelsFolderPath = join(legacyDataPath(), 'models')
 
       if (!existsSync(janModelsFolderPath)) {
         console.debug('No local models found')
@@ -408,4 +411,50 @@ export function handleAppIPCs() {
       return hasLocalModels
     }
   )
+  ipcMain.handle(NativeRoute.appDataFolder, () => {
+    return getJanDataFolderPath()
+  })
+
+  ipcMain.handle(NativeRoute.changeDataFolder, async (_event, path) => {
+    const appConfiguration: AppConfiguration = getAppConfigurations()
+    const currentJanDataFolder = appConfiguration.dataFolderPath
+
+    appConfiguration.dataFolderPath = path
+
+    const reflect = require('@alumna/reflect')
+    const { err } = await reflect({
+      src: currentJanDataFolder,
+      dest: path,
+      recursive: true,
+      delete: false,
+      overwrite: true,
+      errorOnExist: false,
+    })
+    if (err) {
+      console.error(err)
+      throw err
+    }
+
+    // Migrate models
+    const janModelsPath = join(path, 'models')
+    if (existsSync(janModelsPath)) {
+      const modelYamls = readdirSync(janModelsPath).filter((x) =>
+        x.endsWith('.yaml') || x.endsWith('.yml')
+      )
+      for(const yaml of modelYamls) {
+        const modelPath = join(janModelsPath, yaml)
+        const model = load(readFileSync(modelPath, 'utf-8')) as any
+        if('files' in model && Array.isArray(model.files) && model.files.length > 0) {
+          model.files[0] = model.files[0].replace(currentJanDataFolder, path)
+        }
+        writeFileSync(modelPath, dump(model))
+      }
+    }
+    await updateAppConfiguration(appConfiguration)
+  })
+
+  ipcMain.handle(NativeRoute.isDirectoryEmpty, async (_event, path) => {
+    const dirChildren = readdirSync(path)
+    return dirChildren.filter((x) => x !== '.DS_Store').length === 0
+  })
 }

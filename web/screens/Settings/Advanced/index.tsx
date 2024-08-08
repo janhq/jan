@@ -13,6 +13,7 @@ import { toaster } from '@/containers/Toast'
 import useModelStop from '@/hooks/useModelStop'
 import { useSettings } from '@/hooks/useSettings'
 
+import DataFolder from './DataFolder'
 import CopyOverInstructionItem from './components/CopyOverInstruction'
 
 import DataMigration from './components/DataMigration'
@@ -79,7 +80,7 @@ const Advanced = () => {
   ) => {
     const appConfiguration: AppConfiguration =
       await window.core?.api?.getAppConfigurations()
-    appConfiguration.quick_ask = e
+    appConfiguration.quickAsk = e
     await window.core?.api?.updateAppConfiguration(appConfiguration)
     if (relaunch) window.core?.api?.relaunch()
   }
@@ -365,7 +366,7 @@ const Advanced = () => {
         {/*   </div> */}
         {/* )} */}
 
-        {/* <DataFolder /> */}
+        <DataFolder />
 
         {/* Proxy */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">

@@ -73,7 +73,7 @@ class WindowManager {
 
     windowManager.mainWindow?.on('close', function (evt) {
       // Feature Toggle for Quick Ask
-      if (!getAppConfigurations().quick_ask) return
+      if (!getAppConfigurations().quickAsk) return
 
       if (!isAppQuitting) {
         evt.preventDefault()
