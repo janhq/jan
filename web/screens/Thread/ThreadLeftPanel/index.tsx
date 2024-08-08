@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { Button } from '@janhq/joi'
 import { AnimatePresence } from 'framer-motion'
@@ -13,47 +13,30 @@ import { toaster } from '@/containers/Toast'
 
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 
+import useThreadCreateMutation from '@/hooks/useThreadCreateMutation'
+
 import useThreads from '@/hooks/useThreads'
 
-import { copyOverInstructionEnabledAtom } from '@/screens/Settings/Advanced/components/CopyOverInstruction'
+import { copyOverInstructionEnabledAtom } from '../ThreadRightPanel/AssistantSettingContainer/components/CopyOverInstruction'
 
 import ThreadItem from './ThreadItem'
 
-import {
-  downloadedModelsAtom,
-  getSelectedModelAtom,
-} from '@/helpers/atoms/Model.atom'
+import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import { activeThreadAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const ThreadLeftPanel: React.FC = () => {
-  const { createThread, setActiveThread } = useThreads()
+  const { setActiveThread } = useThreads()
+  const createThreadMutation = useThreadCreateMutation()
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
   const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
 
   const activeThread = useAtomValue(activeThreadAtom)
   const { data: assistants } = useAssistantQuery()
-  const isCreatingThread = useRef(false)
   const copyOverInstructionEnabled = useAtomValue(
     copyOverInstructionEnabledAtom
   )
-
-  useEffect(() => {
-    // if user does not have any threads, we should create one
-    const createThreadIfEmpty = async () => {
-      if (!assistants || assistants.length === 0) return
-      if (downloadedModels.length === 0) return
-      if (threads.length > 0) return
-      if (isCreatingThread.current) return
-      isCreatingThread.current = true
-      // user have models but does not have any thread. Let's create one
-      await createThread(downloadedModels[0].model, assistants[0])
-      isCreatingThread.current = false
-    }
-    createThreadIfEmpty()
-  }, [threads, assistants, downloadedModels, createThread])
 
   useEffect(() => {
     if (activeThread?.id) return
@@ -75,9 +58,13 @@ const ThreadLeftPanel: React.FC = () => {
     if (copyOverInstructionEnabled) {
       instructions = activeThread?.assistants[0]?.instructions ?? undefined
     }
-    createThread(selectedModel.model, assistants[0], instructions)
+    await createThreadMutation.mutateAsync({
+      modelId: selectedModel.model,
+      assistant: assistants[0],
+      instructions,
+    })
   }, [
-    createThread,
+    createThreadMutation,
     selectedModel,
     assistants,
     activeThread,

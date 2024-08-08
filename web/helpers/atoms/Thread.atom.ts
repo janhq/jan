@@ -70,17 +70,14 @@ export const isGeneratingResponseAtom = atom<boolean>(false)
  */
 export const threadsAtom = atom<Thread[]>([])
 
-export const deleteThreadAtom = atom(null, (_get, set, threadId: string) => {
-  set(threadsAtom, (threads) => {
-    // set active thread to the latest
-    const allThreads = threads.filter((c) => c.id !== threadId)
-    if (allThreads.length > 0) {
-      const latestThread = allThreads[0]
-      set(activeThreadIdAtom, latestThread.id)
-    }
-
-    return allThreads
-  })
+export const deleteThreadAtom = atom(null, (get, set, threadId: string) => {
+  const allThreads = get(threadsAtom)
+  const filteredThreads = allThreads.filter((t) => t.id !== threadId)
+  if (filteredThreads.length > 0) {
+    const latestThread = allThreads[0]
+    set(activeThreadIdAtom, latestThread.id)
+  }
+  set(threadsAtom, filteredThreads)
 })
 
 export const activeThreadAtom = atom<Thread | undefined>((get) =>

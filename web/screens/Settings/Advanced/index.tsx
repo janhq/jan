@@ -14,7 +14,6 @@ import useModelStop from '@/hooks/useModelStop'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
-import CopyOverInstructionItem from './components/CopyOverInstruction'
 
 import DataMigration from './components/DataMigration'
 
@@ -459,7 +458,6 @@ const Advanced = () => {
 
         {/* Factory Reset */}
         {/* <FactoryReset /> */}
-        {experimentalEnabled && <CopyOverInstructionItem />}
         {experimentalEnabled && <DataMigration />}
       </div>
     </ScrollArea>

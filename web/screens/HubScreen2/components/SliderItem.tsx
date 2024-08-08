@@ -13,7 +13,8 @@ import useAssistantQuery from '@/hooks/useAssistantQuery'
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
 import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
 import { QuickStartModel } from '@/hooks/useModelHub'
-import useThreads from '@/hooks/useThreads'
+
+import useThreadCreateMutation from '@/hooks/useThreadCreateMutation'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { downloadProgress } from '@/utils/download'
@@ -75,8 +76,8 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
   fileName,
 }) => {
   const downloadModelMutation = useModelDownloadMutation()
+  const createThreadMutation = useThreadCreateMutation()
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const { createThread } = useThreads()
   const { data: assistants } = useAssistantQuery()
 
   const { abortDownload } = useAbortDownload()
@@ -116,16 +117,19 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
       return
     }
 
-    await createThread(persistModelId, {
-      ...assistants[0],
-      model: persistModelId,
+    await createThreadMutation.mutateAsync({
+      modelId: persistModelId,
+      assistant: {
+        ...assistants[0],
+        model: persistModelId,
+      },
     })
     setDownloadLocalModelModalStage('NONE', undefined)
     setMainViewState(MainViewState.Thread)
   }, [
     setDownloadLocalModelModalStage,
     setMainViewState,
-    createThread,
+    createThreadMutation,
     persistModelId,
     assistants,
   ])

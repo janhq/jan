@@ -7,9 +7,14 @@ import { useDebouncedCallback } from 'use-debounce'
 
 import useUpdateInstruction from '@/hooks/useUpdateInstruction'
 
+import CopyOverInstruction from './components/CopyOverInstruction'
+
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const AssistantSettingContainer: React.FC = () => {
+  const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const [instructions, setInstructions] = useState(
     activeThread?.assistants[0]?.instructions || ''
@@ -43,11 +48,13 @@ const AssistantSettingContainer: React.FC = () => {
         Instructions
       </label>
       <TextArea
+        rows={5}
         id="assistant-instructions"
         placeholder="Eg. You are a helpful assistant."
         value={instructions}
         onChange={onInstructionChanged}
       />
+      {experimentalEnabled && <CopyOverInstruction />}
     </div>
   )
 }
