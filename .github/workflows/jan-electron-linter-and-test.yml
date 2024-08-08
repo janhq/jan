@@ -200,6 +200,9 @@ jobs:
 #        run: |
 #          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
+      - name: Setup node-gyp - distutils
+        run: pip3 install --upgrade setuptools
+        
       - name: Linter and test
         shell: powershell
         run: |
