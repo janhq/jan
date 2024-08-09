@@ -23,15 +23,15 @@ const WaitingForCortexModal: React.FC = () => {
     setWaitingForCortex(!(await isSystemAlive()))
   }, [setWaitingForCortex, isSystemAlive])
 
-  const getJanDataFolderPath = useCallback(async () => {
-    setJanDataFolderPath(await window?.electronAPI.homePath())
+  const getAppDataFolder = useCallback(async () => {
+    return window.electronAPI?.appDataFolder().then(setJanDataFolderPath)
   }, [setJanDataFolderPath])
 
   // Check health for the first time on mount
   useEffect(() => {
     checkSystemAlive()
-    getJanDataFolderPath()
-  }, [checkSystemAlive, getJanDataFolderPath])
+    getAppDataFolder()
+  }, [checkSystemAlive, getAppDataFolder])
 
   useEffect(() => {
     setTimeout(() => {
