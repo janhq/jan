@@ -7,7 +7,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useThreads from '@/hooks/useThreads'
 
-import { copyOverInstructionEnabledAtom } from '@/screens/Settings/Advanced/components/CopyOverInstruction'
+import { copyOverInstructionEnabledAtom } from '@/screens/Thread/ThreadRightPanel/AssistantSettingContainer/components/CopyOverInstruction'
 
 import { toaster } from '../Toast'
 

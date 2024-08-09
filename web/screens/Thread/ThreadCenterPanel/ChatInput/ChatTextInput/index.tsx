@@ -32,9 +32,7 @@ const ChatTextInput: React.FC<Props> = ({
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
-  const disabled = useMemo(() => {
-    return !activeThreadId
-  }, [activeThreadId])
+  const disabled = useMemo(() => !activeThreadId, [activeThreadId])
 
   const onChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -44,10 +42,8 @@ const ChatTextInput: React.FC<Props> = ({
   )
 
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.focus()
-    }
-  }, [activeThreadId])
+    textareaRef.current?.focus()
+  })
 
   useEffect(() => {
     if (textareaRef.current?.clientHeight) {

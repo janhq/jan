@@ -27,17 +27,11 @@ const useThreads = () => {
   const deleteThreadState = useSetAtom(deleteThreadAtom)
   const cleanMessages = useSetAtom(cleanChatMessageAtom)
   const {
-    fetchThreads,
     createThread,
     fetchMessages,
     deleteThread: deleteCortexThread,
     cleanThread: cleanCortexThread,
   } = useCortex()
-
-  const getThreadList = useCallback(async () => {
-    const threads = await fetchThreads()
-    setThreads(threads)
-  }, [setThreads, fetchThreads])
 
   const setActiveThread = useCallback(
     async (threadId: string) => {
@@ -85,7 +79,6 @@ const useThreads = () => {
   )
 
   return {
-    getThreadList,
     createThread: createNewThread,
     setActiveThread,
     deleteThread,

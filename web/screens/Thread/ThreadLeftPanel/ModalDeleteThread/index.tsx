@@ -23,12 +23,16 @@ const ModalDeleteThread: React.FC<Props> = ({
   const { deleteThread } = useThreads()
 
   const onDeleteThreadClick = useCallback(async () => {
-    await deleteThread(id)
-    toaster({
-      title: 'Thread successfully deleted.',
-      description: `Thread ${title} has been successfully deleted.`,
-      type: 'success',
-    })
+    try {
+      await deleteThread(id)
+      toaster({
+        title: 'Thread successfully deleted.',
+        description: `Thread ${title} has been successfully deleted.`,
+        type: 'success',
+      })
+    } catch (err) {
+      console.log(err)
+    }
   }, [deleteThread, id, title])
 
   return (
