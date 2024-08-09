@@ -54,11 +54,11 @@ const WaitingForCortexModal: React.FC = () => {
               <p className="mt-[2px] text-[hsla(var(--text-secondary))]">
                 API Server starting at{' '}
                 <a
-                  href={`${host}/api`}
+                  href={`${host.replace('/v1', '')}/api`}
                   target="_blank"
                   className="text-[hsla(var(--app-link))] hover:underline"
                 >
-                  {host}/api
+                  {host.replace('/v1', '')}/api
                 </a>
                 <br />
                 <br />
