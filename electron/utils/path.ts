@@ -4,6 +4,7 @@ import { join } from 'path'
 import { AppConfiguration } from '@janhq/core/node'
 import os from 'os'
 import { dump, load } from 'js-yaml'
+import { app } from 'electron'
 
 const configurationFileName = '.janrc'
 
@@ -15,7 +16,7 @@ const defaultAppConfig: AppConfiguration = {
   cortexCppHost: '127.0.0.1',
   cortexCppPort: 3940,
   apiServerHost: '127.0.0.1',
-  apiServerPort: 1338
+  apiServerPort: 1338,
 }
 
 export async function createUserSpace(): Promise<void> {
@@ -90,11 +91,8 @@ export const getAppConfigurations = (): AppConfiguration => {
 
 // Get configuration file path of the application
 const getConfigurationFilePath = () => {
-  const homeDir = os.homedir();
-  const configPath = join(
-    homeDir,
-    configurationFileName,
-  );
+  const homeDir = os.homedir()
+  const configPath = join(homeDir, configurationFileName)
   return configPath
 }
 
@@ -117,21 +115,23 @@ export const updateAppConfiguration = (
  * @returns {string} The data folder path.
  */
 export const getJanDataFolderPath = (): string => {
-  return getAppConfigurations().dataFolderPath 
+  return getAppConfigurations().dataFolderPath
 }
 
 // This is to support pulling legacy configs for migration purpose
 export const legacyConfigs = () => {
-  const legacyConfigFilePath = join(
-    process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'] ?? '',
-    'settings.json'
-  )
-  const legacyConfigs = JSON.parse(readFileSync(legacyConfigFilePath, 'utf-8')) as any
+  const legacyConfigFilePath = join(app.getPath('userData'), 'settings.json')
+
+  const legacyConfigs = JSON.parse(
+    readFileSync(legacyConfigFilePath, 'utf-8')
+  ) as any
+
+  console.debug('legacyConfigs', legacyConfigs)
 
   return legacyConfigs
 }
 
 // This is to support pulling legacy data path for migration purpose
 export const legacyDataPath = () => {
-  return legacyConfigs().data_path
+  return legacyConfigs().data_folder
 }
