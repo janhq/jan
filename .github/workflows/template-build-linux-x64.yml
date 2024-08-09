@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: '/latest/'
+      is_beta:
+        required: false
+        type: boolean
+        default: false
     secrets:
       CLOUDFLARE_R2_BUCKET_NAME:
         required: false
@@ -61,6 +65,22 @@ jobs:
           jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "${{ inputs.cloudflare_r2_path }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
+
+      - name: Change App Name for beta version
+        if: inputs.is_beta == true
+        shell: bash
+        run: |
+          chmod +x .github/scripts/rename-settings-app-nightly.sh
+          .github/scripts/rename-settings-app-nightly.sh ./core/src/node/helper/config.ts
+          chmod +x .github/scripts/rename-app-nightly.sh
+          .github/scripts/rename-app-nightly.sh ./electron/package.json
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json
+          cat ./core/src/node/helper/config.ts
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
+          cat ./package.json
 
       - name: Update app version base on tag
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
