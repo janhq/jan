@@ -6,7 +6,7 @@ const PROXY_FEATURE_ENABLED = 'proxyFeatureEnabled'
 const VULKAN_ENABLED = 'vulkanEnabled'
 const IGNORE_SSL = 'ignoreSSLFeature'
 const HTTPS_PROXY_FEATURE = 'httpsProxyFeature'
-const QUICK_ASK_ENABLED = 'quickAskEnabled'
+//const QUICK_ASK_ENABLED = 'quickAskEnabled'
 const MIGRATION_WARNING = 'didShowMigrationWarning'
 export const janDataFolderPathAtom = atom('')
 
@@ -20,7 +20,7 @@ export const proxyAtom = atomWithStorage(HTTPS_PROXY_FEATURE, '')
 
 export const ignoreSslAtom = atomWithStorage(IGNORE_SSL, false)
 export const vulkanEnabledAtom = atomWithStorage(VULKAN_ENABLED, false)
-export const quickAskEnabledAtom = atomWithStorage(QUICK_ASK_ENABLED, false)
+export const quickAskEnabledAtom = atom<boolean>(false) //atomWithStorage(QUICK_ASK_ENABLED, false)
 export const didShowMigrationWarningAtom = atomWithStorage(
   MIGRATION_WARNING,
   false,
