@@ -17,6 +17,8 @@ import {
 
 import { useAtomValue } from 'jotai'
 
+import { defaultThreadTitle } from '@/constants/Threads'
+
 import { UpdateConfigMutationVariables } from './useEngineMutation'
 import { MessageCreateMutationVariables } from './useMessageCreateMutation'
 import { MessageDeleteMutationVariables } from './useMessageDeleteMutation'
@@ -80,7 +82,7 @@ const useCortex = () => {
       if (!assistants || assistants.length === 0) continue
 
       // @ts-expect-error each thread must have a title, else default to 'New Thread'
-      const title: string = thread['title'] ?? 'New Thread'
+      const title: string = thread['title'] ?? defaultThreadTitle
 
       threads.push({
         ...thread,
@@ -227,7 +229,7 @@ const useCortex = () => {
       const thread: Thread = {
         ...createThreadResponse,
         // @ts-expect-error each thread will have a title, else default to 'New Thread'
-        title: createThreadResponse.title ?? 'New Thread',
+        title: createThreadResponse.title ?? defaultThreadTitle,
         assistants: [assistant],
       }
       return thread

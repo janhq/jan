@@ -10,15 +10,19 @@ const TypingAnimated: React.FC<Props> = ({ text, speed }) => {
   const [index, setIndex] = useState(0)
 
   useEffect(() => {
-    if (index < text.length) {
-      const timeout = setTimeout(() => {
-        setDisplayedText(displayedText + text[index])
+    const typingEffect = setInterval(() => {
+      if (text.length) {
+        setDisplayedText(text.substring(0, index + 1))
         setIndex(index + 1)
-      }, speed)
+      } else {
+        clearInterval(typingEffect)
+      }
+    }, speed)
 
-      return () => clearTimeout(timeout)
+    return () => {
+      clearInterval(typingEffect)
     }
-  }, [index, text, displayedText, speed])
+  }, [index, speed, text])
 
   return (
     <span className="line-clamp-1 group-hover/message:pr-6">
