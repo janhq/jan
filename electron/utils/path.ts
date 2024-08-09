@@ -12,7 +12,7 @@ const defaultJanDataFolder = join(os.homedir(), 'jan')
 
 const defaultAppConfig: AppConfiguration = {
   dataFolderPath: defaultJanDataFolder,
-  quickAsk: true,
+  quickAsk: false,
   cortexCppHost: '127.0.0.1',
   cortexCppPort: 3940,
   apiServerHost: '127.0.0.1',
@@ -80,7 +80,10 @@ export const getAppConfigurations = (): AppConfiguration => {
     const configYaml = readFileSync(configurationFile, 'utf-8')
     const appConfigurations = load(configYaml) as AppConfiguration
     console.debug('app config', appConfigurations)
-    return appConfigurations
+    return { 
+      ...appConfigurations,
+      quickAsk: false,
+    }
   } catch (err) {
     console.error(
       `Failed to read app config, return default config instead! Err: ${err}`
