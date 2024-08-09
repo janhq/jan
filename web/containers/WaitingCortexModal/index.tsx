@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Modal } from '@janhq/joi'
+import { Button, Modal } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 
 import useCortex from '@/hooks/useCortex'
@@ -8,22 +8,30 @@ import useCortex from '@/hooks/useCortex'
 import Spinner from '../Loader/Spinner'
 
 import { waitingForCortexAtom } from '@/helpers/atoms/App.atom'
-import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
+import { hostAtom, janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 
 const WaitingForCortexModal: React.FC = () => {
   const host = useAtomValue(hostAtom)
   const [waitingForCortex, setWaitingForCortex] = useAtom(waitingForCortexAtom)
   const [timedOut, setTimedOut] = useState(false)
   const { isSystemAlive } = useCortex()
+  const [janDataFolderPath, setJanDataFolderPath] = useAtom(
+    janDataFolderPathAtom
+  )
 
   const checkSystemAlive = useCallback(async () => {
     setWaitingForCortex(!(await isSystemAlive()))
   }, [setWaitingForCortex, isSystemAlive])
 
+  const getAppDataFolder = useCallback(async () => {
+    return window.electronAPI?.appDataFolder().then(setJanDataFolderPath)
+  }, [setJanDataFolderPath])
+
   // Check health for the first time on mount
   useEffect(() => {
     checkSystemAlive()
-  }, [checkSystemAlive])
+    getAppDataFolder()
+  }, [checkSystemAlive, getAppDataFolder])
 
   useEffect(() => {
     setTimeout(() => {
@@ -35,29 +43,53 @@ const WaitingForCortexModal: React.FC = () => {
     <Modal
       hideClose
       open={waitingForCortex}
-      title={'Loading dependencies'}
+      className="w-auto"
       content={
-        <div className="flex gap-x-2">
-          <p className="mt-[2px] text-[hsla(var(--text-secondary))]">
-            Running API Server at{' '}
-            <a
-              href={`${host}/api`}
-              target="_blank"
-              className="text-[hsla(var(--app-link))] hover:underline"
+        <div className="inline-flex flex-col">
+          {timedOut ? (
+            <>
+              <h1 className="inline text-base font-bold">
+                {`Hmm, Jan's taking longer than usual to start up...`}
+              </h1>
+              <p className="mt-[2px] text-[hsla(var(--text-secondary))]">
+                API Server starting at{' '}
+                <a
+                  href={`${host}/api`}
+                  target="_blank"
+                  className="text-[hsla(var(--app-link))] hover:underline"
+                >
+                  {host}/api
+                </a>
+                <br />
+                <br />
+                <span>
+                  Check logs at{' '}
+                  <span
+                    onClick={() => window?.electronAPI?.openAppLog()}
+                    className="cursor-pointer text-[hsla(var(--app-link))]"
+                  >
+                    {janDataFolderPath}
+                  </span>{' '}
+                  if this persists or restart app.
+                </span>
+              </p>
+            </>
+          ) : (
+            <h1 className="inline text-base font-bold">
+              Jan is getting ready! This usually <br /> takes a few seconds...
+            </h1>
+          )}
+          <div className="mx-auto my-4 inline-block">
+            <Spinner className="h-8 w-8" />
+          </div>
+          {timedOut && (
+            <Button
+              className="ml-auto inline-flex"
+              onClick={() => window.core?.api?.relaunch()}
             >
-              {host}/api
-            </a>
-            , please wait for a moment...
-            <br /> <br />
-            {timedOut && (
-              <span>
-                The API server is taking longer than usual to start. If this
-                process continues to run for a minute, please check the log file
-                under the Jan Data Folder path or restart the application.
-              </span>
-            )}
-          </p>
-          <Spinner />
+              Restart App
+            </Button>
+          )}
         </div>
       }
     />
