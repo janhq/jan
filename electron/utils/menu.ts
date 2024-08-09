@@ -12,7 +12,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
         click: () =>
           dialog.showMessageBox({
             title: `Jan`,
-            message: `Jan Version v${app.getVersion()}\n\nCopyright © 2024 Jan`,
+            message: `Jan Version v${app.getVersion()}\nCortex Version ${global.core.cortexVersion()}\n\nCopyright © 2024 Jan`,
           }),
       },
       {
@@ -33,7 +33,9 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
               }
             })
             .catch((error) => {
-              console.error('Error checking for updates:' + JSON.stringify(error))
+              console.error(
+                'Error checking for updates:' + JSON.stringify(error)
+              )
             }),
       },
       { type: 'separator' },

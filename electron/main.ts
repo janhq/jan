@@ -34,6 +34,8 @@ const mainPath = join(rendererPath, 'index.html')
 
 const mainUrl = 'http://localhost:3000'
 
+import { dependencies } from './package.json'
+
 const gotTheLock = app.requestSingleInstanceLock()
 
 if (process.defaultApp) {
@@ -52,7 +54,7 @@ const createMainWindow = () => {
 }
 
 log.initialize()
-log.info('Log from the main process')
+log.info('Starting jan from main thread..')
 
 // replace all console.log to log
 Object.assign(console, log.functions)
@@ -63,7 +65,7 @@ const host = '127.0.0.1'
 
 app
   .whenReady()
-  .then(setupCore)
+  .then(() => setupCore(dependencies['cortexso'] ?? 'Not found'))
   .then(() => {
     if (!gotTheLock) {
       app.quit()
@@ -90,9 +92,9 @@ app
   .then(() => {
     const appConfiguration = getAppConfigurations()
     const janDataFolder = appConfiguration.dataFolderPath
-    
+
     start('jan', host, cortexJsPort, cortexCppPort, janDataFolder)
-})
+  })
   .then(createUserSpace)
   .then(migrate)
   .then(setupMenu)
@@ -127,7 +129,6 @@ app.once('window-all-closed', async () => {
   await stopApiServer()
   cleanUpAndQuit()
 })
-
 
 async function stopApiServer() {
   // this function is not meant to be success. It will throw an error.

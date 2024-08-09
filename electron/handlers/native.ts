@@ -9,13 +9,19 @@ import {
 } from '@janhq/core/node'
 import { menu } from '../utils/menu'
 import { join } from 'path'
-import { getAppConfigurations, getJanDataFolderPath, legacyDataPath, updateAppConfiguration } from './../utils/path'
+import {
+  getAppConfigurations,
+  getJanDataFolderPath,
+  legacyDataPath,
+  updateAppConfiguration,
+} from './../utils/path'
 import {
   readdirSync,
   writeFileSync,
   readFileSync,
   existsSync,
   mkdirSync,
+  lstatSync,
 } from 'fs'
 import { dump, load } from 'js-yaml'
 const isMac = process.platform === 'darwin'
@@ -224,7 +230,6 @@ export function handleAppIPCs() {
   })
 
   ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
-    
     // Read models from legacy data folder
     const janModelFolderPath = join(legacyDataPath(), 'models')
     const allModelFolders = readdirSync(janModelFolderPath)
@@ -242,9 +247,20 @@ export function handleAppIPCs() {
 
     for (const modelName of allModelFolders) {
       const modelFolderPath = join(janModelFolderPath, modelName)
+      // check if exist and is a directory
+      if (!existsSync(modelFolderPath)) {
+        console.debug(`Model folder ${modelFolderPath} does not exist`)
+        continue
+      }
+
+      // check if it is a directory
+      if (!lstatSync(modelFolderPath).isDirectory()) {
+        console.debug(`${modelFolderPath} is not a directory`)
+        continue
+      }
+
       try {
         const filesInModelFolder = readdirSync(modelFolderPath)
-
         const destinationPath = join(destinationFolderPath, modelName)
 
         const modelJsonFullPath = join(
@@ -252,6 +268,10 @@ export function handleAppIPCs() {
           modelName,
           'model.json'
         )
+        if (!existsSync(modelJsonFullPath)) {
+          console.error(`Model json file not found in ${modelName}`)
+          continue
+        }
 
         const model = JSON.parse(readFileSync(modelJsonFullPath, 'utf-8'))
         const fileNames: string[] = model.sources.map((x: any) => x.filename)
@@ -438,13 +458,17 @@ export function handleAppIPCs() {
     // Migrate models
     const janModelsPath = join(path, 'models')
     if (existsSync(janModelsPath)) {
-      const modelYamls = readdirSync(janModelsPath).filter((x) =>
-        x.endsWith('.yaml') || x.endsWith('.yml')
+      const modelYamls = readdirSync(janModelsPath).filter(
+        (x) => x.endsWith('.yaml') || x.endsWith('.yml')
       )
-      for(const yaml of modelYamls) {
+      for (const yaml of modelYamls) {
         const modelPath = join(janModelsPath, yaml)
         const model = load(readFileSync(modelPath, 'utf-8')) as any
-        if('files' in model && Array.isArray(model.files) && model.files.length > 0) {
+        if (
+          'files' in model &&
+          Array.isArray(model.files) &&
+          model.files.length > 0
+        ) {
           model.files[0] = model.files[0].replace(currentJanDataFolder, path)
         }
         writeFileSync(modelPath, dump(model))
