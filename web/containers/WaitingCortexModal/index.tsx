@@ -48,7 +48,7 @@ const WaitingForCortexModal: React.FC = () => {
         <div className="inline-flex flex-col">
           {timedOut ? (
             <>
-              <h1 className="inline text-lg font-bold">
+              <h1 className="inline text-base font-bold">
                 {`Hmm, Jan's taking longer than usual to start up...`}
               </h1>
               <p className="mt-[2px] text-[hsla(var(--text-secondary))]">
@@ -75,7 +75,7 @@ const WaitingForCortexModal: React.FC = () => {
               </p>
             </>
           ) : (
-            <h1 className="inline text-lg font-bold">
+            <h1 className="inline text-base font-bold">
               Jan is getting ready! This usually <br /> takes a few seconds...
             </h1>
           )}
