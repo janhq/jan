@@ -18,7 +18,7 @@ import { handleAppIPCs } from './handlers/native'
  * Utils
  **/
 import { setupMenu } from './utils/menu'
-import { createUserSpace, getAppConfigurations } from './utils/path'
+import { createUserSpace, getJanDataFolderPath } from './utils/path'
 import { migrate } from './utils/migration'
 import { cleanUpAndQuit } from './utils/clean'
 import { setupCore } from './utils/setup'
@@ -33,8 +33,6 @@ const rendererPath = join(__dirname, '..', 'renderer')
 const mainPath = join(rendererPath, 'index.html')
 
 const mainUrl = 'http://localhost:3000'
-
-import { dependencies } from './package.json'
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -65,7 +63,11 @@ const host = '127.0.0.1'
 
 app
   .whenReady()
-  .then(() => setupCore(dependencies['cortexso'] ?? 'Not found'))
+  .then(() => {
+    const dataFolderPath = join(getJanDataFolderPath(), 'jan.log')
+    log.transports.file.resolvePathFn = () => dataFolderPath
+  })
+  .then(() => setupCore())
   .then(() => {
     if (!gotTheLock) {
       app.quit()
@@ -87,13 +89,11 @@ app
       )
     }
   })
+
   .then(() => killProcessesOnPort(cortexCppPort))
   .then(() => killProcessesOnPort(cortexJsPort))
   .then(() => {
-    const appConfiguration = getAppConfigurations()
-    const janDataFolder = appConfiguration.dataFolderPath
-
-    start('jan', host, cortexJsPort, cortexCppPort, janDataFolder)
+    start('jan', host, cortexJsPort, cortexCppPort, getJanDataFolderPath())
   })
   .then(createUserSpace)
   .then(migrate)

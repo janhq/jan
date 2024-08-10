@@ -35,7 +35,8 @@
       "docs",
       "scripts",
       "icons",
-      "themes"
+      "themes",
+      "package.json"
     ],
     "publish": [
       {
