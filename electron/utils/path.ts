@@ -79,7 +79,6 @@ export const getAppConfigurations = (): AppConfiguration => {
   try {
     const configYaml = readFileSync(configurationFile, 'utf-8')
     const appConfigurations = load(configYaml) as AppConfiguration
-    console.debug('app config', appConfigurations)
     return { 
       ...appConfigurations,
       quickAsk: false,
