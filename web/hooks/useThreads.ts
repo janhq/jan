@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 
 import { Assistant } from '@janhq/core'
-import log from 'electron-log/renderer'
 
 import { useSetAtom } from 'jotai'
 
@@ -49,7 +48,6 @@ const useThreads = () => {
         assistant.instructions = instructions
       }
       const thread = await createThread(assistant)
-      log.info('Create new thread result', thread)
       setThreads((threads) => [thread, ...threads])
       setActiveThread(thread.id)
       return thread
