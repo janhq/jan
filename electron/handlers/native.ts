@@ -229,6 +229,53 @@ export function handleAppIPCs() {
     }
   })
 
+  // TODO: rename to getApiKeys
+  ipcMain.handle(NativeRoute.syncApiKeys, () => {
+    // Read models from legacy data folder
+    const janModelFolderPath = join(legacyDataPath(), 'settings', '@janhq')
+    if (!existsSync(janModelFolderPath)) {
+      console.debug(`Setting folder ${janModelFolderPath}  is empty`)
+      return undefined
+    }
+    const allSettingsFolder = readdirSync(janModelFolderPath)
+    const ignoreFolders = ['monitoring-extension']
+    const settingFileName = 'settings.json'
+
+    const engineToApiKeyMap: Record<string, string> = {}
+
+    for (const settingFolder of allSettingsFolder) {
+      if (ignoreFolders.includes(settingFolder)) {
+        console.debug(`Ignoring ${settingFolder}`)
+        continue
+      }
+
+      const settingFullPath = join(
+        janModelFolderPath,
+        settingFolder,
+        settingFileName
+      )
+      if (!existsSync(settingFullPath)) {
+        console.debug(`Setting file not found in ${settingFolder}`)
+        continue
+      }
+      if (!lstatSync(settingFullPath).isFile()) {
+        console.debug(`${settingFullPath} is not a file`)
+        continue
+      }
+
+      // we store arrays of settings
+      const data = JSON.parse(readFileSync(settingFullPath, 'utf-8')) as any[]
+      console.log('setting data:', JSON.stringify(data))
+      for (const item of data) {
+        if (item.key && item.key.endsWith('api-key')) {
+          engineToApiKeyMap[item.key] = item['controllerProps']['value']
+        }
+      }
+    }
+
+    return engineToApiKeyMap
+  })
+
   ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
     // Read models from legacy data folder
     const janModelFolderPath = join(legacyDataPath(), 'models')
@@ -431,6 +478,7 @@ export function handleAppIPCs() {
       return hasLocalModels
     }
   )
+
   ipcMain.handle(NativeRoute.appDataFolder, () => {
     return getJanDataFolderPath()
   })

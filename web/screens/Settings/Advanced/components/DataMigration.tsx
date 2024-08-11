@@ -3,7 +3,7 @@ import { useCallback } from 'react'
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { showMigrationModalAtom } from '@/containers/Providers/ModalMigrations'
+import { showMigrationModalAtom } from '@/containers/MigrationModal'
 
 import { toaster } from '@/containers/Toast'
 

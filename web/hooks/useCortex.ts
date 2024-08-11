@@ -54,6 +54,12 @@ const useCortex = () => {
     return engineStatuses
   }, [cortex.engines])
 
+  const getEngineStatus = useCallback(
+    async (engine: LlmEngine): Promise<Engine> =>
+      cortex.engines.retrieve(engine),
+    [cortex.engines]
+  )
+
   const initializeEngine = useCallback(
     async (engine: LlmEngine) => {
       try {
@@ -360,6 +366,7 @@ const useCortex = () => {
     createModel,
     initializeEngine,
     getEngineStatuses,
+    getEngineStatus,
     isSystemAlive,
   }
 }

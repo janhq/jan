@@ -13,6 +13,7 @@
     "compile": "tsc --noEmit -p . --pretty"
   },
   "dependencies": {
+    "sharp": "^0.33.4",
     "@tanstack/react-query": "^5.48.0",
     "yaml": "^2.4.5",
     "@huggingface/hub": "^0.15.1",

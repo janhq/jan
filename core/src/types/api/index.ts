@@ -33,6 +33,7 @@ export enum NativeRoute {
   getAllMessagesAndThreads = 'getAllMessagesAndThreads',
   getAllLocalModels = 'getAllLocalModels',
   syncModelFileToCortex = 'syncModelFileToCortex',
+  syncApiKeys = 'syncApiKeys',
 
   openAppLog = 'openAppLog',
   appDataFolder = 'appDataFolder',

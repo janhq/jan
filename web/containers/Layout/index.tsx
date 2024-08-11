@@ -35,9 +35,7 @@ import LoadingModal from '../LoadingModal'
 
 import MainViewContainer from '../MainViewContainer'
 
-import ModalMigrations, {
-  showMigrationModalAtom,
-} from '../Providers/ModalMigrations'
+import MigrationModal, { showMigrationModalAtom } from '../MigrationModal'
 import WaitingForCortexModal from '../WaitingCortexModal'
 
 import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
@@ -124,7 +122,7 @@ const BaseLayout = () => {
         <ChooseWhatToImportModal />
         <InstallingExtensionModal />
         <HuggingFaceRepoDetailModal />
-        <ModalMigrations />
+        <MigrationModal />
       </div>
       <BottomPanel />
     </div>
