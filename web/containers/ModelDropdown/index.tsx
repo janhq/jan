@@ -1,6 +1,12 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 
-import { LlmEngines, LocalEngines, Model, RemoteEngines } from '@janhq/core'
+import {
+  LlmEngine,
+  LlmEngines,
+  LocalEngines,
+  Model,
+  RemoteEngines,
+} from '@janhq/core'
 import { Badge, Input, ScrollArea, Select, useClickOutside } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'

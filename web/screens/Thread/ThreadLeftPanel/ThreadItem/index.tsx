@@ -74,7 +74,7 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
       transition={{ ease: 'linear', duration: 0.2 }}
       layoutId={thread.id}
       className={twMerge(
-        'group/message relative mt-1 flex h-[28px] cursor-pointer items-center justify-between rounded-lg pl-2 first:mt-0 hover:bg-[hsla(var(--left-panel-menu-hover))]',
+        'group/message relative mr-1.5 mt-1 flex h-[28px] cursor-pointer items-center justify-between rounded-lg pl-2 first:mt-0 hover:bg-[hsla(var(--left-panel-menu-hover))]',
         activeThreadId === thread.id &&
           'text-primary bg-[hsla(var(--left-panel-icon-active-bg))] font-medium'
       )}
@@ -96,7 +96,7 @@ const ThreadItem: React.FC<Props> = ({ thread }) => {
       </div>
       <div
         className={twMerge(
-          'absolute bottom-0 right-0 top-0 flex w-[42px] items-center justify-end rounded-r-md'
+          'absolute bottom-0 right-1.5 top-0 flex w-[42px] items-center justify-end rounded-r-md'
         )}
       >
         <div

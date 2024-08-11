@@ -22,13 +22,12 @@ import { copyOverInstructionEnabledAtom } from '../ThreadRightPanel/AssistantSet
 import ThreadItem from './ThreadItem'
 
 import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
-import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import { activeThreadAtom, threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const ThreadLeftPanel: React.FC = () => {
   const { setActiveThread } = useThreads()
   const createThreadMutation = useThreadCreateMutation()
-  const reduceTransparent = useAtomValue(reduceTransparentAtom)
+
   const selectedModel = useAtomValue(getSelectedModelAtom)
   const threads = useAtomValue(threadsAtom)
 
@@ -73,7 +72,7 @@ const ThreadLeftPanel: React.FC = () => {
 
   return (
     <LeftPanelContainer>
-      <div className={twMerge('pl-1.5 pt-3', reduceTransparent && 'pr-1.5')}>
+      <div className={twMerge('pl-1.5 pt-3')}>
         <Button
           className="mb-2"
           data-testid="btn-create-thread"

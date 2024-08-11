@@ -1,8 +1,11 @@
 import { ModelHubCategory } from '@/hooks/useModelHub'
+import { LocalEngine } from '@janhq/core/.'
 
 export const getTitleByCategory = (category: ModelHubCategory) => {
   if (!category || !category.length) return ''
   switch (category) {
+    case 'cortex.llamacpp':
+      return 'llama.cpp'
     case 'BuiltInModels':
       return 'Built-in Models'
     case 'HuggingFace':
@@ -33,6 +36,16 @@ export const getLogoByCategory = (category: ModelHubCategory) => {
       return 'icons/app_icon.svg'
     case 'HuggingFace':
       return 'icons/ic_hugging_face.svg'
+    default:
+      return undefined
+  }
+}
+
+export const getLogoByLocalEngine = (engine: LocalEngine) => {
+  switch (engine) {
+    case 'cortex.llamacpp':
+      return 'icons/llamacpp.svg'
+
     default:
       return undefined
   }
