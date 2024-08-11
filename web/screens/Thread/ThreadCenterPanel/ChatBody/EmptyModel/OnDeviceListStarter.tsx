@@ -40,7 +40,12 @@ const OnDeviceStarterScreen = () => {
     [setLocalModelModalStage]
   )
 
-  if (!data) return <Spinner />
+  if (!data)
+    return (
+      <div className="flex justify-center">
+        <Spinner />
+      </div>
+    )
 
   const builtInModels: HfModelEntry[] =
     data.modelCategories.get('BuiltInModels') || []
