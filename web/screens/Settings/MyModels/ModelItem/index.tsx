@@ -121,7 +121,14 @@ const ModelItem: React.FC<Props> = ({ model }) => {
     })
 
     setMainViewState(MainViewState.Thread)
-  }, [])
+  }, [
+    assistants,
+    createThreadMutation,
+    engineData,
+    isRemoteEngine,
+    model,
+    setMainViewState,
+  ])
 
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
