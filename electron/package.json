@@ -123,7 +123,7 @@
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
     "@kirillvakalov/nut-tree__nut-js": "4.2.1-2",
-    "cortexso": "v0.5.0-40"
+    "cortexso": "v0.5.0-43"
   },
   "devDependencies": {
     "@types/js-yaml": "4.0.9",

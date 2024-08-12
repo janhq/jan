@@ -7,9 +7,15 @@ export interface ResourceStatus {
   cpu: {
     usage: number
   }
+  gpus: GpuInfo[]
 }
 
 export interface UsedMemInfo {
   total: number
   used: number
+}
+
+export interface GpuInfo {
+  name: string | undefined
+  vram: UsedMemInfo
 }
