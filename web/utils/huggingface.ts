@@ -106,7 +106,6 @@ export const fetchCortexHubModels = async (): Promise<HfModelEntry[]> => {
       }
     }
   }
-
   return modelEntries
 }
 
@@ -333,9 +332,8 @@ export const fetchHuggingFaceRepoData = async (
   return data
 }
 
-// TODO: move this to somewhere else
 export interface HfModelEntry extends ModelEntry {
-  model?: Model // TODO: deprecated this
+  model?: Model
   remoteModel?: boolean
   engine?: LlmEngine
 }

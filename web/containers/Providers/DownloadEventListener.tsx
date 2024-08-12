@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import { DownloadState2 } from '@janhq/core'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { downloadStateListAtom } from '@/hooks/useDownloadState'
 
-import useModels from '@/hooks/useModels'
+import { modelQueryKey } from '@/hooks/useModelQuery'
 
 import { waitingForCortexAtom } from '@/helpers/atoms/App.atom'
 import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
@@ -21,12 +22,12 @@ const DownloadEventListener: React.FC = () => {
   const abortController = useRef(new AbortController())
   const setDownloadStateList = useSetAtom(downloadStateListAtom)
   const setWaitingForCortex = useSetAtom(waitingForCortexAtom)
-  const { getModels } = useModels()
 
   const updateImportingModelProgress = useSetAtom(
     updateImportingModelProgressAtom
   )
   const setImportingModelSuccess = useSetAtom(setImportingModelSuccessAtom)
+  const queryClient = useQueryClient()
 
   const handleLocalImportModels = useCallback(
     (events: DownloadState2[]) => {
@@ -38,9 +39,10 @@ const DownloadEventListener: React.FC = () => {
           updateImportingModelProgress(event.id, event.progress)
         }
       }
-      getModels()
+
+      queryClient.invalidateQueries({ queryKey: modelQueryKey })
     },
-    [setImportingModelSuccess, updateImportingModelProgress, getModels]
+    [setImportingModelSuccess, updateImportingModelProgress, queryClient]
   )
 
   const subscribeDownloadEvent = useCallback(async () => {
@@ -54,7 +56,6 @@ const DownloadEventListener: React.FC = () => {
           const localImportEvents: DownloadState2[] = []
           // filter out the import local events
           for (const event of downloadEvents) {
-            console.debug('Receiving event', event)
             if (
               isAbsolutePath(event.id) &&
               event.type === 'model' &&
