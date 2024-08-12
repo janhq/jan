@@ -1,7 +1,7 @@
 ---
-name: Bug report
+name: report
 about: Create a report to help us improve Jan
-title: 'bug: [DESCRIPTION]'
+title: 'bug: '
 labels: 'type: bug'
 assignees: ''
 
