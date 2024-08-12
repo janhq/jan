@@ -25,7 +25,7 @@ const CopyOverInstruction: React.FC = () => {
 
   return (
     <div className="flex w-full flex-row items-center justify-center gap-x-2">
-      <h6 className="flex-1 font-medium">Save instructions for all threads</h6>
+      <h6 className="flex-1 font-medium">Save instructions for new threads</h6>
       <Switch
         checked={copyOverInstructionEnabled}
         onChange={onSwitchToggled}
