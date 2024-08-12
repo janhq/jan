@@ -1,10 +1,9 @@
-import { Fragment, useEffect } from 'react'
+import { Fragment, useMemo } from 'react'
 
-import { Model } from '@janhq/core'
-import { useAtom, useAtomValue } from 'jotai'
+import { EngineStatus, RemoteEngines } from '@janhq/core'
+import { useAtomValue } from 'jotai'
 
-import useCortex from '@/hooks/useCortex'
-import useModels from '@/hooks/useModels'
+import useEngineQuery from '@/hooks/useEngineQuery'
 
 import ThreadLeftPanel from '@/screens/Thread/ThreadLeftPanel'
 
@@ -14,35 +13,35 @@ import ThreadRightPanel from './ThreadRightPanel'
 
 import { waitingForCortexAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import {
-  isAnyRemoteModelConfiguredAtom,
-  setUpRemoteModelStageAtom,
-} from '@/helpers/atoms/SetupRemoteModel.atom'
 
 const ThreadScreen = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const waitingForCortex = useAtomValue(waitingForCortexAtom)
-  const isAnyRemoteModelConfigured = useAtomValue(
-    isAnyRemoteModelConfiguredAtom
-  )
-  const { createModel } = useCortex()
-  const { getModels } = useModels()
+  const { data: engineData } = useEngineQuery()
 
-  const [{ metadata }] = useAtom(setUpRemoteModelStageAtom)
+  const isAnyRemoteModelConfigured = useMemo(() => {
+    if (!engineData) return false
 
-  useEffect(() => {
-    if (isAnyRemoteModelConfigured) {
-      createModel(metadata?.model as Model)
-      getModels()
+    for (const engine of engineData) {
+      const remoteEngine = RemoteEngines.find((remoteEngine) => {
+        remoteEngine === engine.name
+      })
+      if (!remoteEngine) continue
+      if (engine.status === EngineStatus.Ready) return true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAnyRemoteModelConfigured])
+    return false
+  }, [engineData])
+
+  const shouldShowEmptyModel = useMemo(
+    () => !downloadedModels.length && !isAnyRemoteModelConfigured,
+    [downloadedModels, isAnyRemoteModelConfigured]
+  )
 
   if (waitingForCortex) return null
 
   return (
     <div className="relative flex h-full w-full flex-1 overflow-x-hidden">
-      {!downloadedModels.length && !isAnyRemoteModelConfigured ? (
+      {shouldShowEmptyModel ? (
         <EmptyModel />
       ) : (
         <Fragment>
