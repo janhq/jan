@@ -1,5 +1,6 @@
+import { LocalEngine } from '@janhq/core'
+
 import { ModelHubCategory } from '@/hooks/useModelHub'
-import { LocalEngine } from '@janhq/core/.'
 
 export const getTitleByCategory = (category: ModelHubCategory) => {
   if (!category || !category.length) return ''
