@@ -1,5 +1,5 @@
 ---
-name: Bug report
+name: _Bug report
 about: Create a report to help us improve Jan
 title: 'bug: [DESCRIPTION]'
 labels: 'type: bug'
