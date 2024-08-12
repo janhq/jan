@@ -3,6 +3,7 @@ import React, { useCallback, useMemo } from 'react'
 import { EngineStatus, LocalEngines, RemoteEngine } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { CloudDownload } from 'lucide-react'
@@ -14,7 +15,7 @@ import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useCortex from '@/hooks/useCortex'
 
 import useEngineQuery from '@/hooks/useEngineQuery'
-import useModels from '@/hooks/useModels'
+import { modelQueryKey } from '@/hooks/useModelQuery'
 import useThreads from '@/hooks/useThreads'
 
 import { HfModelEntry } from '@/utils/huggingface'
@@ -32,6 +33,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { data: assistants } = useAssistantQuery()
   const { data: engineData } = useEngineQuery()
+  const queryClient = useQueryClient()
 
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
   const setLocalModelModalStage = useSetAtom(localModelModalStageAtom)
@@ -39,7 +41,6 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
   const { createThread } = useThreads()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { createModel } = useCortex()
-  const { getModels } = useModels()
 
   const isLocalModel = useMemo(
     () =>
@@ -131,13 +132,12 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
 
       if (isApiKeyAdded) {
         createModel(model).then(() => {
-          getModels()
+          queryClient.invalidateQueries({ queryKey: modelQueryKey })
         })
         return
       }
     }
   }, [
-    getModels,
     createModel,
     createThread,
     setMainViewState,
@@ -149,6 +149,7 @@ const HubModelCard: React.FC<HfModelEntry> = ({ name, downloads, model }) => {
     isLocalModel,
     downloadedModels,
     assistants,
+    queryClient,
   ])
 
   const owner = model?.metadata?.owned_by ?? ''

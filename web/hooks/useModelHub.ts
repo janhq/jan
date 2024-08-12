@@ -168,11 +168,14 @@ const useModelHub = () => {
         results[1].data.forEach((modelEntry) => {
           const engine = modelEntry.engine
           if (modelEntry.remoteModel === true && engine) {
-            // @ts-expect-error ignore
-            data.modelCategories[engine] = data.modelCategories[engine]
-              ? // @ts-expect-error ignore
-                [...data.modelCategories[engine], modelEntry]
-              : [modelEntry]
+            if (data.modelCategories.has(engine)) {
+              data.modelCategories.set(
+                engine,
+                data.modelCategories.get(engine)!.concat(modelEntry)
+              )
+            } else {
+              data.modelCategories.set(engine, [modelEntry])
+            }
           }
         })
       }

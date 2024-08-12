@@ -6,27 +6,12 @@ import { toaster } from '@/containers/Toast'
 
 import useCortex from './useCortex'
 
-import {
-  downloadedModelsAtom,
-  removeDownloadedModelAtom,
-} from '@/helpers/atoms/Model.atom'
+import { removeDownloadedModelAtom } from '@/helpers/atoms/Model.atom'
 
 const useModels = () => {
-  const setDownloadedModels = useSetAtom(downloadedModelsAtom)
   const removeDownloadedModel = useSetAtom(removeDownloadedModelAtom)
-  const {
-    fetchModels,
-    deleteModel: cortexDeleteModel,
-    updateModel: cortexUpdateModel,
-  } = useCortex()
-
-  const getModels = useCallback(() => {
-    const getDownloadedModels = async () => {
-      const models = await fetchModels()
-      setDownloadedModels(models)
-    }
-    getDownloadedModels()
-  }, [setDownloadedModels, fetchModels])
+  const { deleteModel: cortexDeleteModel, updateModel: cortexUpdateModel } =
+    useCortex()
 
   const deleteModel = useCallback(
     async (modelId: string) => {
@@ -48,7 +33,7 @@ const useModels = () => {
     [cortexUpdateModel]
   )
 
-  return { getModels, deleteModel, updateModel }
+  return { deleteModel, updateModel }
 }
 
 export default useModels

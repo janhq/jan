@@ -7,10 +7,11 @@ import {
   StatusAndEvent,
 } from '@janhq/core'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { removeDownloadSuccessItemAtom } from '@/hooks/useDownloadState'
-import useModels from '@/hooks/useModels'
+import { modelQueryKey } from '@/hooks/useModelQuery'
 
 import { toaster } from '../Toast'
 
@@ -25,7 +26,7 @@ function ModelEventListener() {
   const removeDownloadSuccessItem = useSetAtom(removeDownloadSuccessItemAtom)
   const setIsLoadingModel = useSetAtom(isLoadingModelAtom)
 
-  const { getModels } = useModels()
+  const queryClient = useQueryClient()
 
   const handleModelEvent = useCallback(
     (modelEvent: ModelEvent) => {
@@ -64,11 +65,11 @@ function ModelEventListener() {
 
         case 'model-downloaded':
           removeDownloadSuccessItem(modelEvent.model)
-          getModels()
+          queryClient.invalidateQueries({ queryKey: modelQueryKey })
           break
 
         case 'model-deleted':
-          getModels()
+          queryClient.invalidateQueries({ queryKey: modelQueryKey })
           break
 
         case 'stopping-failed':
@@ -84,7 +85,7 @@ function ModelEventListener() {
           break
       }
     },
-    [getModels, removeDownloadSuccessItem, setIsLoadingModel]
+    [removeDownloadSuccessItem, setIsLoadingModel, queryClient]
   )
 
   const subscribeModelEvent = useCallback(async () => {

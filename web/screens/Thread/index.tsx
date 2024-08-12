@@ -1,6 +1,11 @@
 import { Fragment, useMemo } from 'react'
 
-import { EngineStatus, RemoteEngines } from '@janhq/core'
+import {
+  EngineStatus,
+  LlmEngine,
+  RemoteEngine,
+  RemoteEngines,
+} from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import useEngineQuery from '@/hooks/useEngineQuery'
@@ -22,14 +27,15 @@ const ThreadScreen = () => {
   const isAnyRemoteModelConfigured = useMemo(() => {
     if (!engineData) return false
 
+    let result = false
     for (const engine of engineData) {
-      const remoteEngine = RemoteEngines.find((remoteEngine) => {
-        remoteEngine === engine.name
-      })
-      if (!remoteEngine) continue
-      if (engine.status === EngineStatus.Ready) return true
+      if (RemoteEngines.includes(engine.name as RemoteEngine)) {
+        if (engine.status === EngineStatus.Ready) {
+          result = true
+        }
+      }
     }
-    return false
+    return result
   }, [engineData])
 
   const shouldShowEmptyModel = useMemo(
@@ -47,9 +53,9 @@ const ThreadScreen = () => {
         <Fragment>
           <ThreadLeftPanel />
           <ThreadCenterPanel />
+          <ThreadRightPanel />
         </Fragment>
       )}
-      <ThreadRightPanel />
     </div>
   )
 }
