@@ -4,7 +4,6 @@ import {
   ScrollArea,
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -46,7 +45,6 @@ const EngineSetting: React.FC = () => {
     <ScrollArea className="h-full w-full">
       <div className="p-4">
         <Table>
-          <TableCaption className="text-xl font-bold">Engines</TableCaption>
           <TableHeader>
             <TableRow>
               <TableHead>Engine name</TableHead>

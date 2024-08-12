@@ -55,7 +55,7 @@ const HuggingFaceModelCard: React.FC<HfModelEntry> = ({
       </div>
       <div className="pointer-events-auto flex flex-col items-end gap-2">
         <DownloadContainer modelHandle={name} />
-        <span className="flex items-center gap-1 text-sm font-medium leading-3">
+        <span className="flex items-center gap-1 text-sm font-medium leading-3 text-[hsla(var(--text-secondary))]">
           {addThousandSeparator(downloads)}
           <CloudDownload size={14} />
         </span>

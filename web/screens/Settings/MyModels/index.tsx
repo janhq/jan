@@ -6,7 +6,7 @@ import { LlmEngines } from '@janhq/core'
 import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { ImportIcon, UploadCloudIcon } from 'lucide-react'
+import { UploadIcon, UploadCloudIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -87,7 +87,7 @@ const MyModels = () => {
               theme="ghost"
               onClick={onImportModelClick}
             >
-              <ImportIcon size={16} className="mr-2" />
+              <UploadIcon size={16} className="mr-2" />
               <p>Import Model</p>
             </Button>
           </div>

@@ -85,7 +85,11 @@ const DetailModelGroup: React.FC<Props> = ({ category, onBackClicked }) => {
           <div className="w-full md:w-1/2">
             <Input
               prefixIcon={<Search size={16} />}
-              placeholder="Search"
+              placeholder={
+                category === 'HuggingFace'
+                  ? 'Search or paste Hugging Face URL'
+                  : 'Search'
+              }
               value={filter}
               onChange={onFilterChange}
             />
