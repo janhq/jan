@@ -131,7 +131,7 @@ const ModelSection: React.FC<Props> = ({
         </div>
         <div className="flex items-center">
           {isRemoteEngine && (
-            <Button theme="icon" onClick={onSettingClick}>
+            <Button theme="icon" variant="outline" onClick={onSettingClick}>
               {isEngineReady ? (
                 <SettingsIcon
                   size={14}
@@ -172,7 +172,7 @@ const ModelSection: React.FC<Props> = ({
               className={twMerge(
                 'flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                 !isRemoteEngine || isEngineReady
-                  ? 'text-[hsla(var(--text-primary))]'
+                  ? 'text-[hsla(var(--text-secondary))]'
                   : 'pointer-events-none cursor-not-allowed text-[hsla(var(--text-tertiary))]'
               )}
               onClick={() => {
