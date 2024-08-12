@@ -1,6 +1,12 @@
 import { memo, useCallback, useMemo, useState } from 'react'
 
-import { LocalEngines, Model } from '@janhq/core'
+import {
+  EngineStatus,
+  LocalEngines,
+  Model,
+  RemoteEngine,
+  RemoteEngines,
+} from '@janhq/core'
 import { Badge, Button, useClickOutside } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -12,12 +18,19 @@ import {
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import { toaster } from '@/containers/Toast'
+
+import useAssistantQuery from '@/hooks/useAssistantQuery'
+import useEngineQuery from '@/hooks/useEngineQuery'
 import useModelStart from '@/hooks/useModelStart'
 import useModelStop from '@/hooks/useModelStop'
 import useModels from '@/hooks/useModels'
 
+import useThreadCreateMutation from '@/hooks/useThreadCreateMutation'
+
 import { showWarningMultipleModelModalAtom } from '@/screens/HubScreen2/components/WarningMultipleModelModal'
 
+import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
@@ -33,6 +46,14 @@ const ModelItem: React.FC<Props> = ({ model }) => {
   const stopModel = useModelStop()
   const [more, setMore] = useState(false)
   const { deleteModel } = useModels()
+  const { data: engineData } = useEngineQuery()
+  const createThreadMutation = useThreadCreateMutation()
+  const { data: assistants } = useAssistantQuery()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const isRemoteEngine = RemoteEngines.includes(model.engine as RemoteEngine)
+  const isEngineReady =
+    engineData?.find((e) => e.name === model.engine)?.status ===
+    EngineStatus.Ready
 
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
@@ -82,6 +103,33 @@ const ModelItem: React.FC<Props> = ({ model }) => {
     (e) => model.engine != null && e === model.engine
   )
 
+  const onClickCloudModel = useCallback(async () => {
+    if (!isRemoteEngine) return null
+    if (!model || !engineData) return
+    if (!assistants || !assistants.length) {
+      toaster({
+        title: 'No assistant available.',
+        description: `Could not create a new thread. Please add an assistant.`,
+        type: 'error',
+      })
+      return
+    }
+
+    await createThreadMutation.mutateAsync({
+      modelId: model.model,
+      assistant: assistants[0],
+    })
+
+    setMainViewState(MainViewState.Thread)
+  }, [
+    assistants,
+    createThreadMutation,
+    engineData,
+    isRemoteEngine,
+    model,
+    setMainViewState,
+  ])
+
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -89,11 +137,14 @@ const ModelItem: React.FC<Props> = ({ model }) => {
           <div className="flex w-full items-center justify-between">
             <h6
               className={twMerge(
-                'line-clamp-1 max-w-[200px] font-medium',
-                model.engine !== 'cortex.llamacpp' &&
-                  'max-w-none text-[hsla(var(--text-secondary))]'
+                'line-clamp-1 font-medium text-[hsla(var(--text-secondary))]',
+                isLocalModel && 'max-w-[200px]',
+                isRemoteEngine && !isEngineReady
+                  ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
+                  : 'cursor-pointer'
               )}
               title={model.model}
+              onClick={onClickCloudModel}
             >
               {model.model}
             </h6>

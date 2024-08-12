@@ -18,7 +18,7 @@ import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
-import ModelItem from './ModelItem'
+import ModelGroup from './ModelGroup'
 
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -123,27 +123,14 @@ const MyModels = () => {
               )}
             </>
           ) : (
-            <div className="relative w-full">
+            <div className="relative mt-4 w-full">
               {LlmEngines.map((engine) => {
-                const modelByEngine = filteredDownloadedModels.filter(
-                  (x) => x.engine === engine
-                )
-
-                if (modelByEngine.length === 0) return null
-
                 return (
-                  <div className="my-6" key={engine}>
-                    <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <h6 className="text-base font-semibold capitalize">
-                        {engine}
-                      </h6>
-                    </div>
-                    <div className="mt-2">
-                      {modelByEngine.map((model) => (
-                        <ModelItem key={model.model} model={model} />
-                      ))}
-                    </div>
-                  </div>
+                  <ModelGroup
+                    engine={engine}
+                    key={engine}
+                    searchText={searchText}
+                  />
                 )
               })}
             </div>

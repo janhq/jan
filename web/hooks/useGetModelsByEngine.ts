@@ -18,7 +18,7 @@ const useGetModelsByEngine = () => {
 
   // TODO: this function needs to be clean up
   const getModelsByEngine = useCallback(
-    (engine: LlmEngine, searchText: string): Model[] => {
+    (engine: LlmEngine, searchText = ''): Model[] => {
       if (LocalEngines.some((x) => x === engine)) {
         return downloadedModels
           .filter((m) => m.engine === engine)
