@@ -18,18 +18,20 @@ import {
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import { toaster } from '@/containers/Toast'
+
+import useAssistantQuery from '@/hooks/useAssistantQuery'
+import useEngineQuery from '@/hooks/useEngineQuery'
 import useModelStart from '@/hooks/useModelStart'
 import useModelStop from '@/hooks/useModelStop'
 import useModels from '@/hooks/useModels'
 
+import useThreadCreateMutation from '@/hooks/useThreadCreateMutation'
+
 import { showWarningMultipleModelModalAtom } from '@/screens/HubScreen2/components/WarningMultipleModelModal'
 
-import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
-import useEngineQuery from '@/hooks/useEngineQuery'
-import { toaster } from '@/containers/Toast'
-import useThreadCreateMutation from '@/hooks/useThreadCreateMutation'
-import useAssistantQuery from '@/hooks/useAssistantQuery'
 import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { activeModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
