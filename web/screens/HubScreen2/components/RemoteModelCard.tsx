@@ -1,6 +1,8 @@
 import React, { useCallback } from 'react'
 
 import { EngineStatus, RemoteEngine } from '@janhq/core'
+import { useQueryClient } from '@tanstack/react-query'
+
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -10,7 +12,7 @@ import useAssistantQuery from '@/hooks/useAssistantQuery'
 import useCortex from '@/hooks/useCortex'
 
 import useEngineQuery from '@/hooks/useEngineQuery'
-import useModels from '@/hooks/useModels'
+import { modelQueryKey } from '@/hooks/useModelQuery'
 import useThreads from '@/hooks/useThreads'
 
 import { HfModelEntry } from '@/utils/huggingface'
@@ -23,12 +25,11 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, model }) => {
   const { createThread } = useThreads()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
+  const queryClient = useQueryClient()
 
   const { createModel } = useCortex()
-  const { getModels } = useModels()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { data: assistants } = useAssistantQuery()
-
   const { data: engineData } = useEngineQuery()
 
   const modelDisplayName = model?.name ?? name
@@ -85,7 +86,7 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, model }) => {
     if (isApiKeyAdded) {
       // TODO: useMutation reactQuery?
       await createModel(model)
-      getModels()
+      queryClient.invalidateQueries({ queryKey: modelQueryKey })
       if (!assistants || assistants.length === 0) {
         toaster({
           title: 'No assistant available.',
@@ -109,11 +110,11 @@ const RemoteModelCard: React.FC<HfModelEntry> = ({ name, model }) => {
     createModel,
     createThread,
     downloadedModels,
-    getModels,
     model,
     setMainViewState,
     setUpRemoteModelStage,
     modelDisplayName,
+    queryClient,
   ])
 
   return (

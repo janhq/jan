@@ -21,6 +21,7 @@ import { twMerge } from 'tailwind-merge'
 import { toaster } from '@/containers/Toast'
 
 import useAssistantQuery from '@/hooks/useAssistantQuery'
+import useEngineInit from '@/hooks/useEngineInit'
 import useEngineQuery from '@/hooks/useEngineQuery'
 import useModelStart from '@/hooks/useModelStart'
 import useModelStop from '@/hooks/useModelStop'
@@ -54,6 +55,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
   const isEngineReady =
     engineData?.find((e) => e.name === model.engine)?.status ===
     EngineStatus.Ready
+  const initializeEngine = useEngineInit()
 
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
@@ -74,6 +76,46 @@ const ModelItem: React.FC<Props> = ({ model }) => {
         stopModel.mutate(modelId)
         return
       }
+      const modelEngine = model.engine
+      if (!modelEngine) {
+        toaster({
+          title: 'Failed to start model',
+          description: `Engine for model ${model.model} is undefined`,
+          type: 'error',
+        })
+        return
+      }
+      if (!engineData) {
+        toaster({
+          title: 'Failed to start model',
+          description: `Engine data is not available. Please try again!`,
+          type: 'error',
+        })
+        return
+      }
+      const engineStatus = engineData.find((e) => e.name === modelEngine)
+      if (!engineStatus) {
+        toaster({
+          title: 'Failed to start model',
+          description: `Engine ${modelEngine} is not available`,
+          type: 'error',
+        })
+        console.error(`Engine ${modelEngine} is not available`)
+        return
+      }
+
+      if (
+        LocalEngines.find((e) => e === modelEngine) != null &&
+        engineStatus.status === 'not_initialized'
+      ) {
+        toaster({
+          title: 'Please wait for engine to initialize',
+          description: `Please retry after engine ${engineStatus.name} is installed.`,
+          type: 'default',
+        })
+        initializeEngine.mutate(modelEngine)
+        return
+      }
 
       if (activeModels.length >= concurrentModelWarningThreshold) {
         // if max concurrent models reached, stop the first model
@@ -88,6 +130,9 @@ const ModelItem: React.FC<Props> = ({ model }) => {
       stopModel,
       activeModels.length,
       setShowWarningMultipleModelModal,
+      engineData,
+      initializeEngine,
+      model,
     ]
   )
 

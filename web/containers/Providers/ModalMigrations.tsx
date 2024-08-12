@@ -2,6 +2,7 @@ import React, { Fragment, useCallback, useMemo, useState } from 'react'
 
 import { Button, Modal, Badge } from '@janhq/joi'
 
+import { useQueryClient } from '@tanstack/react-query'
 import { atom, useAtom, useSetAtom } from 'jotai'
 import { AlertTriangleIcon } from 'lucide-react'
 
@@ -11,7 +12,7 @@ import Spinner from '@/containers/Loader/Spinner'
 
 import useMigratingData from '@/hooks/useMigratingData'
 
-import useModels from '@/hooks/useModels'
+import { modelQueryKey } from '@/hooks/useModelQuery'
 
 import { didShowMigrationWarningAtom } from '@/helpers/atoms/AppConfig.atom'
 
@@ -31,7 +32,7 @@ const ModalMigrations = () => {
     useState<MigrationState>('idle')
   const [modelMigrationState, setModelMigrationState] =
     useState<MigrationState>('idle')
-  const { getModels } = useModels()
+  const queryClient = useQueryClient()
 
   const getStepTitle = () => {
     switch (step) {
@@ -74,8 +75,8 @@ const ModalMigrations = () => {
     setStep(2)
     await migratingModels()
     await migrationThreadsAndMessages()
-    getModels()
-  }, [migratingModels, migrationThreadsAndMessages, getModels])
+    queryClient.invalidateQueries({ queryKey: modelQueryKey })
+  }, [migratingModels, migrationThreadsAndMessages, queryClient])
 
   const onDismiss = useCallback(() => {
     setStep(1)

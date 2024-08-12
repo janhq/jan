@@ -53,11 +53,11 @@ const OnDeviceStarterScreen = () => {
     data.modelCategories.get('HuggingFace') || []
 
   const engineModelMap = new Map<typeof RemoteEngines, HfModelEntry[]>()
-  Object.entries(data.modelCategories).forEach(([key, value]) => {
+  for (const [key, value] of data.modelCategories) {
     if (key !== 'HuggingFace' && key !== 'BuiltInModels') {
       engineModelMap.set(key as unknown as typeof RemoteEngines, value)
     }
-  })
+  }
 
   const models: HfModelEntry[] = builtInModels.concat(huggingFaceModels)
 
