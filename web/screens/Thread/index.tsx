@@ -47,9 +47,9 @@ const ThreadScreen = () => {
         <Fragment>
           <ThreadLeftPanel />
           <ThreadCenterPanel />
+          <ThreadRightPanel />
         </Fragment>
       )}
-      <ThreadRightPanel />
     </div>
   )
 }
