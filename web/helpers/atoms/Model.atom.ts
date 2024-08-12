@@ -1,4 +1,10 @@
-import { ImportingModel, Model, ModelStatus } from '@janhq/core'
+import {
+  ImportingModel,
+  LlmEngine,
+  LocalEngines,
+  Model,
+  ModelStatus,
+} from '@janhq/core'
 import { atom } from 'jotai'
 
 import { activeThreadAtom, threadsAtom } from './Thread.atom'
@@ -128,3 +134,5 @@ export const updateSelectedModelAtom = atom(null, (get, set, model: Model) => {
 })
 
 export const activeModelsAtom = atom<ModelStatus[]>([])
+
+export const showEngineListModelAtom = atom<LlmEngine[]>([...LocalEngines])
