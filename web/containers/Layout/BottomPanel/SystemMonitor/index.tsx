@@ -35,7 +35,7 @@ const SystemMonitor: React.FC = () => {
   const [usedRam, setUsedRam] = useAtom(usedRamAtom)
   const [totalRam, setTotalRam] = useAtom(totalRamAtom)
   const [cpuUsage, setCpuUsage] = useAtom(cpuUsageAtom)
-  const gpus = useAtomValue(gpusAtom)
+  const [gpus, setGpus] = useAtom(gpusAtom)
 
   const [showFullScreen, setShowFullScreen] = useState(false)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
@@ -63,13 +63,18 @@ const SystemMonitor: React.FC = () => {
           setUsedRam(resourceEvent.mem.used)
           setTotalRam(resourceEvent.mem.total)
           setCpuUsage(resourceEvent.cpu.usage)
+          setGpus(
+            resourceEvent.gpus?.filter(
+              (gpu) => gpu.name && gpu.vram.used && gpu.vram.total
+            ) ?? []
+          )
         } catch (err) {
           console.error(err)
         }
       },
       signal: abortControllerRef.current.signal,
     })
-  }, [host, setTotalRam, setUsedRam, setCpuUsage])
+  }, [host, setTotalRam, setUsedRam, setCpuUsage, setGpus])
 
   const unregister = useCallback(() => {
     if (!abortControllerRef.current) return
@@ -195,8 +200,7 @@ const SystemMonitor: React.FC = () => {
                         <div className="flex gap-x-2">
                           <div className="">
                             <span>
-                              {gpu.memoryTotal - gpu.memoryFree}/
-                              {gpu.memoryTotal}
+                              {gpu.vram.used}/{gpu.vram.total}
                             </span>
                             <span> MB</span>
                           </div>
@@ -205,12 +209,17 @@ const SystemMonitor: React.FC = () => {
 
                       <div className="flex items-center gap-x-4">
                         <Progress
-                          value={gpu.utilization}
+                          value={Math.round(
+                            (gpu.vram.used / Math.max(gpu.vram.total, 1)) * 100
+                          )}
                           className="w-full"
                           size="small"
                         />
                         <span className="flex-shrink-0 ">
-                          {gpu.utilization}%
+                          {Math.round(
+                            (gpu.vram.used / Math.max(gpu.vram.total, 1)) * 100
+                          )}
+                          %
                         </span>
                       </div>
                     </div>

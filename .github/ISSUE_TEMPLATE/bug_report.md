@@ -1,7 +1,7 @@
 ---
-name: _Bug report
+name: Report
 about: Create a report to help us improve Jan
-title: 'bug: [DESCRIPTION]'
+title: 'bug: '
 labels: 'type: bug'
 assignees: ''
 
