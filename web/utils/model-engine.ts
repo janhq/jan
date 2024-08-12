@@ -7,6 +7,12 @@ export const getTitleByCategory = (category: ModelHubCategory) => {
   switch (category) {
     case 'cortex.llamacpp':
       return 'llama.cpp'
+    case 'cortex.onnx':
+      return 'Onnx'
+    case 'cortex.tensorrt-llm':
+      return 'Tensorrt-llm'
+    case 'triton_trtllm':
+      return 'Triton-trtllm'
     case 'BuiltInModels':
       return 'Built-in Models'
     case 'HuggingFace':

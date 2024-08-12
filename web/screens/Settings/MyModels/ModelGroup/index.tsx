@@ -20,29 +20,21 @@ import {
   PlusIcon,
 } from 'lucide-react'
 
-import { twMerge } from 'tailwind-merge'
-
 import useEngineQuery from '@/hooks/useEngineQuery'
 import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 
 import { getLogoByLocalEngine, getTitleByCategory } from '@/utils/model-engine'
 
-import ModelLabel from '../ModelLabel'
-
 import { showEngineListModelAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
+import ModelItem from '../ModelItem'
 
 type Props = {
   engine: LlmEngine
   searchText: string
-  onModelSelected: (model: Model) => void
 }
 
-const ModelSection: React.FC<Props> = ({
-  engine,
-  searchText,
-  onModelSelected,
-}) => {
+const ModelGroup: React.FC<Props> = ({ engine, searchText }) => {
   const [models, setModels] = useState<Model[]>([])
   const { getModelsByEngine } = useGetModelsByEngine()
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
@@ -101,26 +93,26 @@ const ModelSection: React.FC<Props> = ({
   if (models.length === 0) return null
 
   return (
-    <div className="w-full border-b border-[hsla(var(--app-border))] py-3 last:border-none">
-      <div className="flex justify-between pr-2">
+    <div className="w-full py-3">
+      <div className="mb-2 flex justify-between pr-2">
         <div
-          className="flex cursor-pointer gap-2 pl-3"
+          className="flex cursor-pointer items-center gap-2 pl-3"
           onClick={onClickChevron}
         >
           {!isRemoteEngine && (
             <Image
-              className="h-5 w-5 flex-shrink-0 rounded-full object-cover"
-              width={40}
-              height={40}
+              className="h-6 w-6 flex-shrink-0 rounded-full object-cover"
+              width={48}
+              height={48}
               src={localEngineLogo as string}
               alt="logo"
             />
           )}
           {engineLogo && (
             <Image
-              className="h-5 w-5 flex-shrink-0 rounded-full object-cover"
-              width={40}
-              height={40}
+              className="h-6 w-6 flex-shrink-0 rounded-full object-cover"
+              width={48}
+              height={48}
               src={engineLogo}
               alt="logo"
             />
@@ -131,7 +123,7 @@ const ModelSection: React.FC<Props> = ({
         </div>
         <div className="flex items-center gap-x-0.5">
           {isRemoteEngine && (
-            <Button theme="icon" variant="outline" onClick={onSettingClick}>
+            <Button theme="icon" onClick={onSettingClick} variant="outline">
               {isEngineReady ? (
                 <SettingsIcon
                   size={14}
@@ -162,32 +154,15 @@ const ModelSection: React.FC<Props> = ({
           )}
         </div>
       </div>
-      <ul>
+      <div>
         {models.map((model) => {
           if (!showModel) return null
-          return (
-            <li
-              key={model.model}
-              className={twMerge(
-                'flex cursor-pointer items-center gap-2 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                !isRemoteEngine || isEngineReady
-                  ? 'text-[hsla(var(--text-secondary))]'
-                  : 'pointer-events-none cursor-not-allowed text-[hsla(var(--text-tertiary))]'
-              )}
-              onClick={() => {
-                onModelSelected(model)
-              }}
-            >
-              <div className="flex w-full items-center justify-between">
-                <p className="line-clamp-1">{model.name ?? model.model}</p>
-              </div>
-              <ModelLabel metadata={model.metadata} compact />
-            </li>
-          )
+
+          return <ModelItem model={model} key={model.id} />
         })}
-      </ul>
+      </div>
     </div>
   )
 }
 
-export default ModelSection
+export default ModelGroup
