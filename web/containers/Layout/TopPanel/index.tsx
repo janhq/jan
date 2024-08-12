@@ -69,7 +69,7 @@ const TopPanel = () => {
   }, [activeThread?.id, setActiveThread, threads])
 
   const onCreateThreadClicked = useCallback(async () => {
-    if (!assistants || assistants.length === 0) {
+    if (!assistants || assistants.length) {
       toaster({
         title: 'No assistant available.',
         description: `Could not create a new thread. Please add an assistant.`,
