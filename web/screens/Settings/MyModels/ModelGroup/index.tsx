@@ -25,9 +25,10 @@ import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 
 import { getLogoByLocalEngine, getTitleByCategory } from '@/utils/model-engine'
 
+import ModelItem from '../ModelItem'
+
 import { showEngineListModelAtom } from '@/helpers/atoms/Model.atom'
 import { setUpRemoteModelStageAtom } from '@/helpers/atoms/SetupRemoteModel.atom'
-import ModelItem from '../ModelItem'
 
 type Props = {
   engine: LlmEngine
