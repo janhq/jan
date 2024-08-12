@@ -13,7 +13,12 @@ import {
 
 import { Button } from '@janhq/joi'
 import { useAtom, useSetAtom } from 'jotai'
-import { SettingsIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
+import {
+  SettingsIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  PlusIcon,
+} from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -62,22 +67,46 @@ const ModelSection: React.FC<Props> = ({
     })
   }, [apiKeyUrl, engine, engineLogo, setUpRemoteModelStage])
 
+  const isEngineReady =
+    engineData?.find((e) => e.name === engine)?.status === EngineStatus.Ready
+
+  const getEngineStatusReady: LlmEngine[] | undefined = engineData
+    ?.filter((e) => e.status === EngineStatus.Ready)
+    .map((x) => x.name as LlmEngine)
+
+  const showModel = showEngineListModel.includes(engine)
+
+  const onClickChevron = useCallback(() => {
+    if (showModel) {
+      setShowEngineListModel((prev) => prev.filter((item) => item !== engine))
+    } else {
+      setShowEngineListModel((prev) => [...prev, engine])
+    }
+  }, [engine, setShowEngineListModel, showModel])
+
   useEffect(() => {
     const matchedModels = getModelsByEngine(engine, searchText)
     setModels(matchedModels)
-  }, [getModelsByEngine, engine, searchText])
+    setShowEngineListModel((prev) => [
+      ...prev,
+      ...(getEngineStatusReady as LlmEngine[]),
+    ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getModelsByEngine, engine, searchText, setShowEngineListModel])
 
   const engineName = getTitleByCategory(engine)
   const localEngineLogo = getLogoByLocalEngine(engine as LocalEngine)
   const isRemoteEngine = RemoteEngines.includes(engine as RemoteEngine)
-  const showModel = showEngineListModel.includes(engine)
 
   if (models.length === 0) return null
 
   return (
     <div className="w-full border-b border-[hsla(var(--app-border))] py-3 last:border-none">
       <div className="flex justify-between pr-2">
-        <div className="flex gap-2 pl-3">
+        <div
+          className="flex cursor-pointer gap-2 pl-3"
+          onClick={onClickChevron}
+        >
           {!isRemoteEngine && (
             <Image
               className="h-5 w-5 flex-shrink-0 rounded-full object-cover"
@@ -103,33 +132,28 @@ const ModelSection: React.FC<Props> = ({
         <div className="flex items-center">
           {isRemoteEngine && (
             <Button theme="icon" onClick={onSettingClick}>
-              <SettingsIcon
-                size={14}
-                className="text-[hsla(var(--text-secondary))]"
-              />
+              {isEngineReady ? (
+                <SettingsIcon
+                  size={14}
+                  className="text-[hsla(var(--text-secondary))]"
+                />
+              ) : (
+                <PlusIcon
+                  size={14}
+                  className="text-[hsla(var(--text-secondary))]"
+                />
+              )}
             </Button>
           )}
           {!showModel ? (
-            <Button
-              theme="icon"
-              onClick={() =>
-                setShowEngineListModel((prev) => [...prev, engine])
-              }
-            >
+            <Button theme="icon" onClick={onClickChevron}>
               <ChevronDownIcon
                 size={14}
                 className="text-[hsla(var(--text-secondary))]"
               />
             </Button>
           ) : (
-            <Button
-              theme="icon"
-              onClick={() =>
-                setShowEngineListModel((prev) =>
-                  prev.filter((item) => item !== engine)
-                )
-              }
-            >
+            <Button theme="icon" onClick={onClickChevron}>
               <ChevronUpIcon
                 size={14}
                 className="text-[hsla(var(--text-secondary))]"
@@ -140,10 +164,6 @@ const ModelSection: React.FC<Props> = ({
       </div>
       <ul>
         {models.map((model) => {
-          const isEngineReady =
-            engineData?.find((e) => e.name === model.engine)?.status ===
-            EngineStatus.Ready
-
           if (!showModel) return null
 
           return (
