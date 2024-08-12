@@ -65,7 +65,9 @@ const SystemMonitor: React.FC = () => {
           setCpuUsage(resourceEvent.cpu.usage)
           setGpus(
             resourceEvent.gpus?.filter(
-              (gpu) => gpu.name && gpu.vram.used && gpu.vram.total
+              // Do not check vram used here
+              // since it could count 0 case
+              (gpu) => gpu.name && gpu.vram.total
             ) ?? []
           )
         } catch (err) {
