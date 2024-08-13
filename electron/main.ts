@@ -51,6 +51,15 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient('jan')
 }
 
+const createMainWindow = () => {
+  const preloadPath = join(__dirname, 'preload.js')
+  const rendererPath = join(__dirname, '..', 'renderer')
+  const mainPath = join(rendererPath, 'index.html')
+  const mainUrl = 'http://localhost:3000'
+  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
+  windowManager.createMainWindow(preloadPath, startUrl)
+}
+
 /**
  * App Lifecycle
  */
@@ -133,12 +142,3 @@ process.on('uncaughtException', function (err) {
   log.error(`Error: ${err}`)
   cleanCortexProcesses()
 })
-
-const createMainWindow = () => {
-  const preloadPath = join(__dirname, 'preload.js')
-  const rendererPath = join(__dirname, '..', 'renderer')
-  const mainPath = join(rendererPath, 'index.html')
-  const mainUrl = 'http://localhost:3000'
-  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
-  windowManager.createMainWindow(preloadPath, startUrl)
-}
