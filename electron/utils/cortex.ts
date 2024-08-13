@@ -8,9 +8,9 @@ export const cortexHost = '127.0.0.1'
 /**
  * Kills all possible running cortex processes
  */
-export async function cleanCortexProcesses() {
-  await killProcessesOnPort(cortexCppPort)
-  await killProcessesOnPort(cortexJsPort)
+export function cleanCortexProcesses() {
+  killProcessesOnPort(cortexCppPort)
+  killProcessesOnPort(cortexJsPort)
 }
 
 /**

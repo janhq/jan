@@ -16,23 +16,28 @@ import { handleAppIPCs } from './handlers/native'
 /**
  * Utils
  **/
-import { setupMenu } from './utils/menu'
-import { createUserSpace, getJanDataFolderPath } from './utils/path'
-import { migrate } from './utils/migration'
-import { cleanUpAndQuit } from './utils/clean'
-import { setupCore } from './utils/setup'
-import { setupReactDevTool } from './utils/dev'
+import {
+  setupMenu,
+  createUserSpace,
+  getJanDataFolderPath,
+  migrate,
+  cleanUpAndQuit,
+  setupCore,
+  setupReactDevTool,
+} from './utils'
 
 import log from 'electron-log'
 
+/**
+ * Cortex
+ */
 import { start } from 'cortexso'
-import { cortexCppPort, cortexJsPort, cortexHost, cleanCortexProcesses } from './utils/cortex'
-
-const preloadPath = join(__dirname, 'preload.js')
-const rendererPath = join(__dirname, '..', 'renderer')
-const mainPath = join(rendererPath, 'index.html')
-
-const mainUrl = 'http://localhost:3000'
+import {
+  cortexCppPort,
+  cortexJsPort,
+  cortexHost,
+  cleanCortexProcesses,
+} from './utils/cortex'
 
 const gotTheLock = app.requestSingleInstanceLock()
 
@@ -46,22 +51,18 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient('jan')
 }
 
-const createMainWindow = () => {
-  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
-  windowManager.createMainWindow(preloadPath, startUrl)
-}
-
-log.initialize()
-log.info('Starting jan from main thread..')
-
-// replace all console.log to log
-Object.assign(console, log.functions)
-
+/**
+ * App Lifecycle
+ */
 app
   .whenReady()
   .then(() => {
     const dataFolderPath = join(getJanDataFolderPath(), 'jan.log')
+    log.initialize()
+    log.info('Starting jan from main thread..')
     log.transports.file.resolvePathFn = () => dataFolderPath
+    // replace all console.log to log
+    Object.assign(console, log.functions)
   })
   .then(() => setupCore())
   .then(() => {
@@ -85,15 +86,20 @@ app
       )
     }
   })
-
   .then(() => cleanCortexProcesses())
-  .then(() => {
-    start('jan', cortexHost, cortexJsPort, cortexCppPort, getJanDataFolderPath())
-  })
+  .then(() =>
+    start(
+      'jan',
+      cortexHost,
+      cortexJsPort,
+      cortexCppPort,
+      getJanDataFolderPath()
+    )
+  )
   .then(createUserSpace)
   .then(migrate)
   .then(setupMenu)
-  .then(handleIPCs)
+  .then(handleAppIPCs)
   .then(handleAppUpdates)
   .then(createMainWindow)
   .then(() => {
@@ -116,27 +122,23 @@ app.on('open-url', (_event, url) => {
   windowManager.sendMainAppDeepLink(url)
 })
 
-app.once('quit', async () => {
-  cleanUpAndQuit()
-})
+app.once('quit', async () => cleanUpAndQuit())
 
-app.once('window-all-closed', async () => {
-  cleanUpAndQuit()
-})
-
+app.once('window-all-closed', async () => cleanUpAndQuit())
 
 /**
- * Handles various IPC messages from the renderer process.
- */
-function handleIPCs() {
-  // Inject core handlers for IPCs
-  // Handle native IPCs
-  handleAppIPCs()
-}
-
-/**
- * Suppress Node error messages
+ * Handle uncaughtException
  */
 process.on('uncaughtException', function (err) {
   log.error(`Error: ${err}`)
+  cleanCortexProcesses()
 })
+
+const createMainWindow = () => {
+  const preloadPath = join(__dirname, 'preload.js')
+  const rendererPath = join(__dirname, '..', 'renderer')
+  const mainPath = join(rendererPath, 'index.html')
+  const mainUrl = 'http://localhost:3000'
+  const startUrl = app.isPackaged ? `file://${mainPath}` : mainUrl
+  windowManager.createMainWindow(preloadPath, startUrl)
+}

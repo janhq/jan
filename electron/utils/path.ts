@@ -80,7 +80,7 @@ export const getAppConfigurations = (): AppConfiguration => {
     const configYaml = readFileSync(configurationFile, 'utf-8')
     const appConfigurations = load(configYaml) as AppConfiguration
     console.debug('app config', appConfigurations)
-    return { 
+    return {
       ...appConfigurations,
       quickAsk: false,
     }
@@ -92,13 +92,9 @@ export const getAppConfigurations = (): AppConfiguration => {
   }
 }
 
-// Get configuration file path of the application
-const getConfigurationFilePath = () => {
-  const homeDir = os.homedir()
-  const configPath = join(homeDir, configurationFileName)
-  return configPath
-}
-
+/**
+ * Update the app configuration
+ */
 export const updateAppConfiguration = (
   configuration: AppConfiguration
 ): Promise<void> => {
@@ -137,4 +133,11 @@ export const legacyConfigs = () => {
 // This is to support pulling legacy data path for migration purpose
 export const legacyDataPath = () => {
   return legacyConfigs().data_folder
+}
+
+// Get configuration file path of the application
+const getConfigurationFilePath = () => {
+  const homeDir = os.homedir()
+  const configPath = join(homeDir, configurationFileName)
+  return configPath
 }

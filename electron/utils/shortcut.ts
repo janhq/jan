@@ -4,6 +4,9 @@ import { windowManager } from '../managers/window'
 // TODO: Retrieve from config later
 const quickAskHotKey = 'CommandOrControl+J'
 
+/**
+ * Register global shortcuts to access quick ask window
+ */
 export function registerGlobalShortcuts() {
   if (!getAppConfigurations().quickAsk) return
   const ret = registerShortcut(quickAskHotKey, (selectedText: string) => {

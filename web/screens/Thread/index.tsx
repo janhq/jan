@@ -2,7 +2,6 @@ import { Fragment, useMemo } from 'react'
 
 import {
   EngineStatus,
-  LlmEngine,
   RemoteEngine,
   RemoteEngines,
 } from '@janhq/core'
