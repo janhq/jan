@@ -50,20 +50,17 @@ const useMigratingData = () => {
       // currently, we don't have api support for creating thread with messages
       const cortexThread = await createThread(modelId, assistants[0])
 
-      console.log('createThread', cortexThread)
       // update instruction
       cortexThread.assistants[0].instructions = instructions
       cortexThread.title = threadTitle
 
       // update thread name
       await updateThread(cortexThread)
-      console.log('updateThread', cortexThread)
 
       // we finished with thread, now continue with messages
       const janMessages = threadsAndMessages.messages.filter(
         (m) => m.thread_id === thread.id
       )
-
       for (let j = 0; j < janMessages.length; ++j) {
         const janMessage = janMessages[j]
         // filter out the system message if any

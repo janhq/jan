@@ -8,21 +8,21 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "jest",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx}\"",
     "compile": "tsc --noEmit -p . --pretty"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.48.0",
-    "yaml": "^2.4.5",
-    "@huggingface/hub": "^0.15.1",
-    "embla-carousel-react": "^8.1.5",
     "@cortexso/cortex.js": "^0.1.6",
-    "@microsoft/fetch-event-source": "^2.0.1",
+    "@huggingface/hub": "^0.15.1",
     "@janhq/core": "link:./core",
     "@janhq/joi": "link:./joi",
+    "@microsoft/fetch-event-source": "^2.0.1",
+    "@tanstack/react-query": "^5.48.0",
     "autoprefixer": "10.4.16",
     "class-variance-authority": "^0.7.0",
+    "embla-carousel-react": "^8.1.5",
     "framer-motion": "^10.16.4",
     "highlight.js": "^11.9.0",
     "jotai": "^2.6.0",
@@ -43,10 +43,15 @@
     "sass": "^1.69.4",
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "3.3.5",
-    "use-debounce": "^10.0.0"
+    "use-debounce": "^10.0.0",
+    "yaml": "^2.4.5"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.0.1",
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.0",
+    "@testing-library/react-hooks": "^8.0.1",
+    "@types/jest": "^29.5.12",
     "@types/node": "20.8.10",
     "@types/react": "18.2.34",
     "@types/react-dom": "18.2.14",
@@ -63,9 +68,14 @@
     "eslint-plugin-prettier": "^5.0.1",
     "eslint-plugin-react": "^7.34.0",
     "eslint-plugin-react-hooks": "^4.6.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "jest-fetch-mock": "^3.0.3",
+    "node-fetch": "^3.3.2",
     "prettier": "^3.0.3",
     "prettier-plugin-tailwindcss": "^0.5.6",
     "rimraf": "^5.0.5",
+    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
 }
