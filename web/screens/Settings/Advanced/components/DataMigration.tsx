@@ -40,27 +40,51 @@ const DataMigration: React.FC = () => {
   }, [threads, deleteThread])
 
   return (
-    <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-      <div className="space-y-1">
-        <div className="flex gap-x-2">
-          <h6 className="font-semibold capitalize">
-            Migrate data from old version of Jan app
-          </h6>
+    <>
+      <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+        <div className="space-y-1">
+          <div className="flex gap-x-2">
+            <h6 className="font-semibold capitalize">
+              Data Migration from Older Versions
+            </h6>
+          </div>
+          <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+            From version 0.6, Jan uses Cortex as its core engine. Without
+            migration, your previous threads and models may be inaccessible.
+            Migrate your data to maintain access in the latest version.
+          </p>
         </div>
-        <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-          Migrate multiple times can cause duplicate threads, please consider
-          using the remove threads button to clean up existing threads data
-        </p>
+        <div className="flex flex-shrink-0 flex-row gap-x-2">
+          <Button
+            theme="primary"
+            onClick={onStartMigrationClick}
+            variant="soft"
+          >
+            Migrate Now
+          </Button>
+        </div>
       </div>
-      <div className="flex flex-shrink-0 flex-row gap-x-2">
-        <Button theme="primary" onClick={onStartMigrationClick}>
-          Start migration
-        </Button>
-        <Button theme="destructive" onClick={onCleanUpDataClick}>
-          Remove threads and messages
-        </Button>
+      <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+        <div className="space-y-1">
+          <div className="flex gap-x-2">
+            <h6 className="font-semibold capitalize">Delete All Threads</h6>
+          </div>
+          <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+            Multiple migrations may create duplicate threads. Use this button to
+            clean up if needed.
+          </p>
+        </div>
+        <div className="flex flex-shrink-0 flex-row gap-x-2">
+          <Button
+            theme="destructive"
+            onClick={onCleanUpDataClick}
+            variant="soft"
+          >
+            Remove All Threads
+          </Button>
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 

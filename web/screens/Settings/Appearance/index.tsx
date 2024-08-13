@@ -52,7 +52,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Appearance</h6>
           </div>
           <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Select a color theme
+            Select a color theme.
           </p>
         </div>
         <Select
@@ -68,7 +68,7 @@ export default function AppearanceOptions() {
               <h6 className="font-semibold capitalize">Interface theme</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Translucent option is only available for some theme
+              Translucent option is only available for some theme.
             </p>
           </div>
           <div className="flex items-center gap-x-2">
@@ -97,7 +97,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Spell Check</h6>
           </div>
           <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Toggle to disable spell checking.
+            Toggle to enable or disable spell checking.
           </p>
         </div>
         <div className="flex-shrink-0">

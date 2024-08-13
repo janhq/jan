@@ -194,7 +194,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
               {model.model}
             </h6>
             {model.engine === 'cortex.llamacpp' && (
-              <div className="flex gap-x-8">
+              <div className="flex justify-end gap-x-8 text-right">
                 <p
                   className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
                   title={model.model}

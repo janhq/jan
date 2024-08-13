@@ -1,7 +1,5 @@
 import { Fragment } from 'react'
 
-import Image from 'next/image'
-
 import BlankState from '@/containers/BlankState'
 
 import useModelHub from '@/hooks/useModelHub'
@@ -24,11 +22,11 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
   const huggingFaceModels = data.modelCategories.get('HuggingFace') ?? []
   const remoteModels: HfModelEntry[] = []
 
-  Object.entries(data.modelCategories).forEach(([key, value]) => {
+  for (const [key, value] of data.modelCategories) {
     if (key !== 'HuggingFace' && key !== 'BuiltInModels') {
       remoteModels.push(...value)
     }
-  })
+  }
 
   const filteredBuiltInModels = builtInModels.filter((model) => {
     return model.name.toLowerCase().includes(queryText.toLowerCase())
@@ -57,19 +55,13 @@ const HubScreenFilter: React.FC<Props> = ({ queryText }) => {
           <BlankState title="No search results found" />
         </div>
       ) : (
-        <div className="mx-auto mt-6 flex h-full w-full max-w-[650px] flex-col gap-6 py-6">
+        <div className="mx-auto mt-6 flex h-full w-full max-w-[650px] flex-col gap-4 py-4">
           {isOnDevice && (
             <Fragment>
               <div className="mt-4 flex items-center gap-2 first:mt-0">
-                <Image
-                  width={24}
-                  height={24}
-                  src="icons/app_icon.svg"
-                  alt="Built-In Models"
-                />
                 <h1 className="text-lg font-semibold">On-Device Models</h1>
               </div>
-              <div className="w-full">
+              <div className="-mt-2 w-full">
                 {filteredBuiltInModels.map((hfModelEntry) => (
                   <BuiltInModelCard key={hfModelEntry.id} {...hfModelEntry} />
                 ))}

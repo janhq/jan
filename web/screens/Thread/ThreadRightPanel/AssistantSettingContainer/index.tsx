@@ -40,7 +40,7 @@ const AssistantSettingContainer: React.FC = () => {
   )
 
   return (
-    <div className="flex flex-col space-y-4 p-4">
+    <div className="flex flex-col p-4">
       <label
         id="assistant-instructions"
         className="mb-2 inline-block font-bold"
@@ -50,7 +50,7 @@ const AssistantSettingContainer: React.FC = () => {
       <TextArea
         rows={5}
         id="assistant-instructions"
-        placeholder="Eg. You are a helpful assistant."
+        placeholder="e.g., You are a helpful assistant."
         value={instructions}
         onChange={onInstructionChanged}
       />
