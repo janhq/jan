@@ -7,7 +7,7 @@ import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
+import { Marked, MarkedOptions, Renderer } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import markedKatex from 'marked-katex-extension'
 
@@ -86,6 +86,8 @@ const SimpleTextMessage: React.FC<Props> = ({
         },
       }),
       {
+        gfm: true,
+        breaks: true,
         renderer: {
           link: (href, title, text) =>
             Renderer.prototype.link
