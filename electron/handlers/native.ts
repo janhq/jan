@@ -7,14 +7,14 @@ import {
   SelectFileOption,
   AppConfiguration,
 } from '@janhq/core/node'
-import { menu } from '../utils/menu'
 import { join } from 'path'
 import {
+  menu,
   getAppConfigurations,
   getJanDataFolderPath,
   legacyDataPath,
   updateAppConfiguration,
-} from './../utils/path'
+} from './../utils'
 import {
   readdirSync,
   writeFileSync,

@@ -1,8 +1,7 @@
 import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
-import { getAppConfigurations } from './../utils/path'
-import { getBounds, saveBounds } from '../utils/setup'
+import { getAppConfigurations, getBounds, saveBounds } from './../utils'
 import { AppEvent } from '@janhq/core/node'
 
 /**
