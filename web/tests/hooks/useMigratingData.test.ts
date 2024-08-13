@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import 'openai/shims/web'
 
@@ -24,11 +25,17 @@ describe('useMigratingData', () => {
   const mockSyncModelFileToCortex = jest.fn()
 
   beforeEach(() => {
-    
-    useThreads.mockReturnValue({ createThread: mockCreateThread, updateThread: mockUpdateThread })
+    useThreads.mockReturnValue({
+      createThread: mockCreateThread,
+      updateThread: mockUpdateThread,
+    })
     useCortex.mockReturnValue({ updateThread: mockUpdateThread })
     useMessageCreateMutation.mockReturnValue({ mutateAsync: mutateAsync })
-    mockCreateThread.mockReturnValue({ id: 'thread1', assistants: [{ model: { id: 'model1' } }], title: 'Thread 1' })
+    mockCreateThread.mockReturnValue({
+      id: 'thread1',
+      assistants: [{ model: { id: 'model1' } }],
+      title: 'Thread 1',
+    })
     useAssistantQuery.mockReturnValue({ data: [{ id: 'assistant1' }] })
     window.electronAPI = {
       getAllMessagesAndThreads: mockGetAllMessagesAndThreads,
@@ -112,47 +119,45 @@ describe('useMigratingData', () => {
 
   it('should handle empty local models', async () => {
     mockGetAllLocalModels.mockResolvedValue(false)
-  
+
     const { result } = renderHook(() => useMigratingData())
-  
+
     await act(async () => {
       await result.current.getJanLocalModels()
     })
-  
+
     expect(mockGetAllLocalModels).toHaveBeenCalled()
     expect(mockSyncModelFileToCortex).not.toHaveBeenCalled()
   })
-  
 
   it('should handle no assistants found during migration', async () => {
     useAssistantQuery.mockReturnValue({ data: [] })
-  
+
     const { result } = renderHook(() => useMigratingData())
-  
+
     await act(async () => {
       await result.current.migrateThreadsAndMessages()
     })
-  
+
     expect(mockCreateThread).not.toHaveBeenCalled()
     expect(mockUpdateThread).not.toHaveBeenCalled()
     expect(mutateAsync).not.toHaveBeenCalled()
   })
-  
+
   it('should handle empty threads and messages', async () => {
     mockGetAllMessagesAndThreads.mockResolvedValue({
       messages: [],
       threads: [],
     } as never)
-  
+
     const { result } = renderHook(() => useMigratingData())
-  
+
     await act(async () => {
       await result.current.migrateThreadsAndMessages()
     })
-  
+
     expect(mockCreateThread).not.toHaveBeenCalled()
     expect(mockUpdateThread).not.toHaveBeenCalled()
     expect(mutateAsync).not.toHaveBeenCalled()
   })
-  
 })

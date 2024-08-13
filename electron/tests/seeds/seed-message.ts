@@ -1,14 +1,12 @@
+import { v4 as uuid } from 'uuid'
 import { join } from 'path'
-import { legacyDataPath } from '../../utils/path';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs-extra';
-import os from 'os'
-import { load } from 'js-yaml';
+import { mkdirSync, writeFileSync } from 'fs-extra';
 
 const sampleThreads = [
     {
-        "id": "jan_1723493088",
+        "id": `jan_${Date.now()}`,
         "object": "thread",
-        "title": "New Thread",
+        "title": `thread_${Date.now()}`,
         "assistants": [
           {
             "assistant_id": "jan",
@@ -41,29 +39,63 @@ const sampleThreads = [
         ],
         "created": 1723493088249,
         "updated": 1723493088249
-      }
+      },
+      {
+        "id": `jan_${Date.now()}`,
+        "object": "thread",
+        "title": `thread_${Date.now()}`,
+        "assistants": [
+          {
+            "assistant_id": "jan",
+            "assistant_name": "Jan",
+            "tools": [
+              {
+                "type": "retrieval",
+                "enabled": false,
+                "useTimeWeightedRetriever": false,
+                "settings": {
+                  "top_k": 2,
+                  "chunk_size": 1024,
+                  "chunk_overlap": 64,
+                  "retrieval_template": "Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.\n----------------\nCONTEXT: {CONTEXT}\n----------------\nQUESTION: {QUESTION}\n----------------\nHelpful Answer:"
+                }
+              }
+            ],
+            "model": {
+              "id": "tinyllama",
+              "settings": {},
+              "parameters": {
+                "max_tokens": 2048,
+                "temperature": 0.7,
+                "stream": false
+              },
+              "engine": "cortex.llamacpp",
+            },
+            "instructions": ""
+          }
+        ],
+        "created": 1723493088249,
+        "updated": 1723493088249
+      },
+
 ]
 
 const sampleMessages = [
-    {"id":"01J5437S21MX7S1NA1W3QZJ6B9","thread_id":"jan_1723493088","role":"user","status":"ready","created":1723493246017,"updated":1723493246017,"object":"thread.message","content":[{"type":"text","text":{"value":"hey","annotations":[]}}]}
+    {"id":`${uuid()}`,"thread_id": sampleThreads[0].id,"role":"user","status":"ready","created":1723493246017,"updated":1723493246017,"object":"thread.message","content":[{"type":"text","text":{"value":"hey","annotations":[]}}]},
+    {"id":`${uuid()}`,"thread_id": sampleThreads[0].id,"role":"user","status":"ready","created":172349324, "updated":1723493246017,"object":"thread.message","content":[{"type":"text","text":{"value":"how are you","annotations":[]}}]},
+    {"id":`${uuid()}`,"thread_id": sampleThreads[0].id,"role":"user","status":"ready","created":172349324, "updated":1723493246017,"object":"thread.message","content":[{"type":"text","text":{"value":"what is the weather like","annotations":[]}}]},
 ]
 
-export const seedMessages = async () => {
-    const janConfigPath = os.homedir()
-    const janConfigFile = join(janConfigPath, '.janrc')
-    const config = load(readFileSync(janConfigFile, 'utf-8')) as any
-    const dataFolderPath = config.dataFolderPath
-    const dbFileName = 'cortex.db'
-    const dbPath = join(dataFolderPath, dbFileName)
-    rmSync(dbPath, { force: true })
-    const janThreadFolderPath = join(legacyDataPath(), 'threads')
+export const seedData = async (path) => {
+    const janThreadFolderPath = join(path, 'threads')
     for (const thread of sampleThreads) {
         const threadFolder = join(janThreadFolderPath, thread.id)
-        mkdirSync(threadFolder)
+        mkdirSync(threadFolder, { recursive: true })
         const threadFile = join(threadFolder, 'thread.json')
         writeFileSync(threadFile, JSON.stringify(thread, null, 2))
         const messages = sampleMessages.filter(m => m.thread_id === thread.id)
         const messageFile = join(threadFolder, 'messages.jsonl')
         writeFileSync(messageFile, messages.map(m => JSON.stringify(m)).join('\n'))
     }
+    return { threads: sampleThreads, messages: sampleMessages }
 }

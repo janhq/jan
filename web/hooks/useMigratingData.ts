@@ -14,7 +14,6 @@ const useMigratingData = () => {
   const { updateThread } = useCortex()
   const createMessage = useMessageCreateMutation()
   const { data: assistants } = useAssistantQuery()
-
   const getJanThreadsAndMessages = useCallback(async (): Promise<{
     messages: any[]
     threads: any[]
