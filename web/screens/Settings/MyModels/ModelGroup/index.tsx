@@ -23,7 +23,11 @@ import {
 import useEngineQuery from '@/hooks/useEngineQuery'
 import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 
-import { getLogoByLocalEngine, getTitleByCategory } from '@/utils/model-engine'
+import {
+  getLogoByLocalEngine,
+  getLogoByRemoteEngine,
+  getTitleByCategory,
+} from '@/utils/model-engine'
 
 import ModelItem from '../ModelItem'
 
@@ -89,6 +93,7 @@ const ModelGroup: React.FC<Props> = ({ engine, searchText }) => {
 
   const engineName = getTitleByCategory(engine)
   const localEngineLogo = getLogoByLocalEngine(engine as LocalEngine)
+  const remoteEngineLogo = getLogoByRemoteEngine(engine as RemoteEngine)
   const isRemoteEngine = RemoteEngines.includes(engine as RemoteEngine)
 
   if (models.length === 0) return null
@@ -100,21 +105,21 @@ const ModelGroup: React.FC<Props> = ({ engine, searchText }) => {
           className="flex cursor-pointer items-center gap-2 pl-3"
           onClick={onClickChevron}
         >
-          {!isRemoteEngine && (
+          {!isRemoteEngine && localEngineLogo && (
             <Image
               className="h-6 w-6 flex-shrink-0 rounded-full object-cover"
               width={48}
               height={48}
-              src={localEngineLogo as string}
+              src={localEngineLogo}
               alt="logo"
             />
           )}
-          {engineLogo && (
+          {remoteEngineLogo && (
             <Image
               className="h-6 w-6 flex-shrink-0 rounded-full object-cover"
               width={48}
               height={48}
-              src={engineLogo}
+              src={remoteEngineLogo}
               alt="logo"
             />
           )}

@@ -25,7 +25,11 @@ import { twMerge } from 'tailwind-merge'
 import useEngineQuery from '@/hooks/useEngineQuery'
 import useGetModelsByEngine from '@/hooks/useGetModelsByEngine'
 
-import { getLogoByLocalEngine, getTitleByCategory } from '@/utils/model-engine'
+import {
+  getLogoByLocalEngine,
+  getLogoByRemoteEngine,
+  getTitleByCategory,
+} from '@/utils/model-engine'
 
 import ModelLabel from '../ModelLabel'
 
@@ -96,6 +100,7 @@ const ModelSection: React.FC<Props> = ({
 
   const engineName = getTitleByCategory(engine)
   const localEngineLogo = getLogoByLocalEngine(engine as LocalEngine)
+  const remoteEngineLogo = getLogoByRemoteEngine(engine as RemoteEngine)
   const isRemoteEngine = RemoteEngines.includes(engine as RemoteEngine)
 
   if (models.length === 0) return null
@@ -107,22 +112,23 @@ const ModelSection: React.FC<Props> = ({
           className="flex cursor-pointer gap-2 pl-3"
           onClick={onClickChevron}
         >
-          {!isRemoteEngine && (
+          {!isRemoteEngine && localEngineLogo && (
             <Image
               className="h-5 w-5 flex-shrink-0 rounded-full object-cover"
               width={40}
               height={40}
-              src={localEngineLogo as string}
+              src={localEngineLogo}
               alt="logo"
             />
           )}
-          {engineLogo && (
+
+          {remoteEngineLogo && (
             <Image
               className="h-5 w-5 flex-shrink-0 rounded-full object-cover"
               width={40}
               height={40}
-              src={engineLogo}
-              alt="logo"
+              src={remoteEngineLogo}
+              alt={`logo - ${engine}`}
             />
           )}
           <h6 className="pr-3 font-medium text-[hsla(var(--text-secondary))]">

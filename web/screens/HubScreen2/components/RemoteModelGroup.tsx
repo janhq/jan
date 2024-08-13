@@ -14,7 +14,7 @@ import useEngineQuery from '@/hooks/useEngineQuery'
 
 import { HfModelEntry } from '@/utils/huggingface'
 
-import { getTitleByCategory } from '@/utils/model-engine'
+import { getLogoByRemoteEngine, getTitleByCategory } from '@/utils/model-engine'
 
 import RemoteModelCard from './RemoteModelCard'
 
@@ -30,13 +30,11 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
   const { data: engineData } = useEngineQuery()
   const setUpRemoteModelStage = useSetAtom(setUpRemoteModelStageAtom)
 
-  const engineLogo: string | undefined = data.find(
-    (entry) => entry.model?.metadata?.logo != null
-  )?.model?.metadata?.logo
-
   const apiKeyUrl: string | undefined = data.find(
     (entry) => entry.model?.metadata?.api_key_url != null
   )?.model?.metadata?.api_key_url
+
+  const remoteEngineLogo = getLogoByRemoteEngine(engine as RemoteEngine)
 
   // get maximum 4 items
   const models = data.slice(0, 4)
@@ -54,19 +52,19 @@ const RemoteModelGroup: React.FC<Props> = ({ data, engine, onSeeAllClick }) => {
 
   const onSetUpClick = useCallback(() => {
     setUpRemoteModelStage('SETUP_API_KEY', engine, {
-      logo: engineLogo,
+      logo: remoteEngineLogo,
       api_key_url: apiKeyUrl,
     })
-  }, [setUpRemoteModelStage, engine, engineLogo, apiKeyUrl])
+  }, [setUpRemoteModelStage, engine, remoteEngineLogo, apiKeyUrl])
 
   return (
     <Fragment>
       <div className="mt-12 flex items-center gap-2 first:mt-0">
-        {engineLogo && (
+        {remoteEngineLogo && (
           <Image
             width={24}
             height={24}
-            src={engineLogo}
+            src={remoteEngineLogo}
             alt="Engine logo"
             className="rounded-full"
           />
