@@ -2,7 +2,6 @@ import { PropsWithChildren } from 'react'
 
 import { Metadata } from 'next'
 
-import 'katex/dist/katex.min.css'
 import '@/styles/main.scss'
 
 export const metadata: Metadata = {

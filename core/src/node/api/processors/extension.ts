@@ -42,7 +42,7 @@ export class Extension implements Processor {
    * @returns An array of paths to the base extensions.
    */
   async baseExtensions() {
-    const baseExtensionPath = join(await appResourcePath(), 'pre-install')
+    const baseExtensionPath = join(appResourcePath(), 'pre-install')
     return readdirSync(baseExtensionPath)
       .filter((file) => extname(file) === '.tgz')
       .map((file) => join(baseExtensionPath, file))
