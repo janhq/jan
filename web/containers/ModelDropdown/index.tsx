@@ -1,11 +1,25 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
+import Image from 'next/image'
+
 import { InferenceEngine } from '@janhq/core'
-import { Badge, Input, ScrollArea, Select, useClickOutside } from '@janhq/joi'
+import {
+  Badge,
+  Button,
+  Input,
+  ScrollArea,
+  Select,
+  useClickOutside,
+} from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { ChevronDownIcon, DownloadCloudIcon, XIcon } from 'lucide-react'
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  DownloadCloudIcon,
+  XIcon,
+} from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import ProgressCircle from '@/containers/Loader/ProgressCircle'
@@ -22,6 +36,13 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
+import {
+  getLogoEngine,
+  getTitleByEngine,
+  localEngines,
+  priorityEngine,
+} from '@/utils/modelEngine'
+
 import { extensionManager } from '@/extension'
 
 import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
@@ -29,6 +50,7 @@ import {
   configuredModelsAtom,
   getDownloadingModelAtom,
   selectedModelAtom,
+  showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
@@ -40,14 +62,6 @@ type Props = {
   strictedThread?: boolean
   disabled?: boolean
 }
-
-const engineHasLogo = [
-  InferenceEngine.anthropic,
-  InferenceEngine.cohere,
-  InferenceEngine.martian,
-  InferenceEngine.mistral,
-  InferenceEngine.openai,
-]
 
 const ModelDropdown = ({
   disabled,
@@ -81,6 +95,10 @@ const ModelDropdown = ({
     toggle,
   ])
 
+  const [showEngineListModel, setShowEngineListModel] = useAtom(
+    showEngineListModelAtom
+  )
+
   const filteredDownloadedModels = useMemo(
     () =>
       configuredModels
@@ -92,16 +110,10 @@ const ModelDropdown = ({
             return e.engine
           }
           if (searchFilter === 'local') {
-            return (
-              e.engine === InferenceEngine.nitro ||
-              e.engine === InferenceEngine.nitro_tensorrt_llm
-            )
+            return localEngines.includes(e.engine)
           }
           if (searchFilter === 'remote') {
-            return (
-              e.engine !== InferenceEngine.nitro &&
-              e.engine !== InferenceEngine.nitro_tensorrt_llm
-            )
+            return !localEngines.includes(e.engine)
           }
         })
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -230,10 +242,37 @@ const ModelDropdown = ({
     .filter((x) => !inActiveEngineProvider.includes(x.engine))
     .map((x) => x.engine)
 
-  const groupByEngine = findByEngine.filter(function (item, index) {
-    if (findByEngine.indexOf(item) === index)
-      return item !== InferenceEngine.nitro
-  })
+  const groupByEngine = findByEngine
+    .filter(function (item, index) {
+      if (findByEngine.indexOf(item) === index) return item
+    })
+    .sort((a, b) => {
+      if (priorityEngine.includes(a) && priorityEngine.includes(b)) {
+        return priorityEngine.indexOf(a) - priorityEngine.indexOf(b)
+      } else if (priorityEngine.includes(a)) {
+        return -1
+      } else if (priorityEngine.includes(b)) {
+        return 1
+      } else {
+        return 0 // Leave the rest in their original order
+      }
+    })
+
+  const getEngineStatusReady: InferenceEngine[] = extensionHasSettings
+    ?.filter((e) => e.apiKey.length > 0)
+    .map((x) => x.provider as InferenceEngine)
+
+  useEffect(() => {
+    setShowEngineListModel((prev) => [
+      ...prev,
+      ...(getEngineStatusReady as InferenceEngine[]),
+    ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setShowEngineListModel, extensionHasSettings])
+
+  const isDownloadALocalModel = downloadedModels.some((x) =>
+    localEngines.includes(x.engine)
+  )
 
   if (strictedThread && !activeThread) {
     return null
@@ -312,161 +351,22 @@ const ModelDropdown = ({
             </div>
           </div>
           <ScrollArea className="h-[calc(100%-36px)] w-full">
-            {searchFilter !== 'remote' && (
-              <div className="relative w-full">
-                <div className="mt-2">
-                  <h6 className="mb-1 mt-3 px-3 font-medium text-[hsla(var(--text-secondary))]">
-                    Cortex
-                  </h6>
-                </div>
-                {filteredDownloadedModels
-                  .filter((x) => {
-                    if (searchText.length === 0) {
-                      return downloadedModels.find((c) => c.id === x.id)
-                    } else {
-                      return x
-                    }
-                  })
-                  .filter((x) => x.engine === InferenceEngine.nitro).length !==
-                0 ? (
-                  <ul className="pb-2">
-                    {filteredDownloadedModels
-                      ? filteredDownloadedModels
-                          .filter((x) => x.engine === InferenceEngine.nitro)
-                          .filter((x) => {
-                            if (searchText.length === 0) {
-                              return downloadedModels.find((c) => c.id === x.id)
-                            } else {
-                              return x
-                            }
-                          })
-                          .map((model) => {
-                            const isDownloading = downloadingModels.some(
-                              (md) => md.id === model.id
-                            )
-                            const isdDownloaded = downloadedModels.some(
-                              (c) => c.id === model.id
-                            )
-                            return (
-                              <li
-                                key={model.id}
-                                className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                                onClick={() => {
-                                  if (isdDownloaded) {
-                                    onClickModelItem(model.id)
-                                  }
-                                }}
-                              >
-                                <div className="flex items-center gap-2">
-                                  <p
-                                    className={twMerge(
-                                      'line-clamp-1',
-                                      !isdDownloaded &&
-                                        'text-[hsla(var(--text-secondary))]'
-                                    )}
-                                    title={model.name}
-                                  >
-                                    {model.name}
-                                  </p>
-                                  <ModelLabel
-                                    metadata={model.metadata}
-                                    compact
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                  {!isdDownloaded && (
-                                    <span className="font-medium">
-                                      {toGibibytes(model.metadata.size)}
-                                    </span>
-                                  )}
-                                  {!isDownloading && !isdDownloaded ? (
-                                    <DownloadCloudIcon
-                                      size={18}
-                                      className="cursor-pointer text-[hsla(var(--app-link))]"
-                                      onClick={() => downloadModel(model)}
-                                    />
-                                  ) : (
-                                    Object.values(downloadStates)
-                                      .filter((x) => x.modelId === model.id)
-                                      .map((item) => (
-                                        <ProgressCircle
-                                          key={item.modelId}
-                                          percentage={
-                                            formatDownloadPercentage(
-                                              item?.percent,
-                                              {
-                                                hidePercentage: true,
-                                              }
-                                            ) as number
-                                          }
-                                          size={100}
-                                        />
-                                      ))
-                                  )}
-                                </div>
-                              </li>
-                            )
-                          })
-                      : null}
-                  </ul>
-                ) : (
-                  <ul className="pb-2">
-                    {featuredModel.map((model) => {
-                      const isDownloading = downloadingModels.some(
-                        (md) => md.id === model.id
-                      )
-                      return (
-                        <li
-                          key={model.id}
-                          className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                        >
-                          <div className="flex items-center gap-2">
-                            <p
-                              className="line-clamp-1 text-[hsla(var(--text-secondary))]"
-                              title={model.name}
-                            >
-                              {model.name}
-                            </p>
-                            <ModelLabel metadata={model.metadata} compact />
-                          </div>
-                          <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                            <span className="font-medium">
-                              {toGibibytes(model.metadata.size)}
-                            </span>
-                            {!isDownloading ? (
-                              <DownloadCloudIcon
-                                size={18}
-                                className="cursor-pointer text-[hsla(var(--app-link))]"
-                                onClick={() => downloadModel(model)}
-                              />
-                            ) : (
-                              Object.values(downloadStates)
-                                .filter((x) => x.modelId === model.id)
-                                .map((item) => (
-                                  <ProgressCircle
-                                    key={item.modelId}
-                                    percentage={
-                                      formatDownloadPercentage(item?.percent, {
-                                        hidePercentage: true,
-                                      }) as number
-                                    }
-                                    size={100}
-                                  />
-                                ))
-                            )}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </div>
-            )}
-
             {groupByEngine.map((engine, i) => {
-              const apiKey =
-                extensionHasSettings.filter((x) => x.provider === engine)[0]
-                  ?.apiKey.length > 1
+              const apiKey = !localEngines.includes(engine)
+                ? extensionHasSettings.filter((x) => x.provider === engine)[0]
+                    ?.apiKey.length > 1
+                : true
+              const engineLogo = getLogoEngine(engine as InferenceEngine)
+              const showModel = showEngineListModel.includes(engine)
+              const onClickChevron = () => {
+                if (showModel) {
+                  setShowEngineListModel((prev) =>
+                    prev.filter((item) => item !== engine)
+                  )
+                } else {
+                  setShowEngineListModel((prev) => [...prev, engine])
+                }
+              }
               return (
                 <div
                   className="relative w-full border-t border-[hsla(var(--app-border))] first:border-t-0"
@@ -474,57 +374,221 @@ const ModelDropdown = ({
                 >
                   <div className="mt-2">
                     <div className="flex items-center justify-between px-3">
-                      <h6 className="mb-1 mt-3 font-medium capitalize text-[hsla(var(--text-secondary))]">
-                        {engine}
-                      </h6>
-                      <div className="-mr-2">
-                        <SetupRemoteModel engine={engine} />
+                      <div
+                        className="flex cursor-pointer items-center gap-2 py-1"
+                        onClick={onClickChevron}
+                      >
+                        {engineLogo && (
+                          <Image
+                            className="h-6 w-6 flex-shrink-0"
+                            width={48}
+                            height={48}
+                            src={engineLogo}
+                            alt="logo"
+                          />
+                        )}
+                        <h6 className="font-medium text-[hsla(var(--text-secondary))]">
+                          {getTitleByEngine(engine)}
+                        </h6>
+                      </div>
+                      <div className="-mr-2 flex gap-1">
+                        {!localEngines.includes(engine) && (
+                          <SetupRemoteModel engine={engine} />
+                        )}
+                        {!showModel ? (
+                          <Button theme="icon" onClick={onClickChevron}>
+                            <ChevronDownIcon
+                              size={14}
+                              className="text-[hsla(var(--text-secondary))]"
+                            />
+                          </Button>
+                        ) : (
+                          <Button theme="icon" onClick={onClickChevron}>
+                            <ChevronUpIcon
+                              size={14}
+                              className="text-[hsla(var(--text-secondary))]"
+                            />
+                          </Button>
+                        )}
                       </div>
                     </div>
+
+                    {engine === InferenceEngine.nitro &&
+                      !isDownloadALocalModel &&
+                      showModel && (
+                        <>
+                          {!searchText.length ? (
+                            <ul className="pb-2">
+                              {featuredModel.map((model) => {
+                                const isDownloading = downloadingModels.some(
+                                  (md) => md.id === model.id
+                                )
+                                return (
+                                  <li
+                                    key={model.id}
+                                    className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <p
+                                        className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                        title={model.name}
+                                      >
+                                        {model.name}
+                                      </p>
+                                      <ModelLabel
+                                        metadata={model.metadata}
+                                        compact
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                      <span className="font-medium">
+                                        {toGibibytes(model.metadata.size)}
+                                      </span>
+                                      {!isDownloading ? (
+                                        <DownloadCloudIcon
+                                          size={18}
+                                          className="cursor-pointer text-[hsla(var(--app-link))]"
+                                          onClick={() => downloadModel(model)}
+                                        />
+                                      ) : (
+                                        Object.values(downloadStates)
+                                          .filter((x) => x.modelId === model.id)
+                                          .map((item) => (
+                                            <ProgressCircle
+                                              key={item.modelId}
+                                              percentage={
+                                                formatDownloadPercentage(
+                                                  item?.percent,
+                                                  {
+                                                    hidePercentage: true,
+                                                  }
+                                                ) as number
+                                              }
+                                              size={100}
+                                            />
+                                          ))
+                                      )}
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          ) : (
+                            <>
+                              {filteredDownloadedModels
+                                .filter(
+                                  (x) => x.engine === InferenceEngine.nitro
+                                )
+                                .filter((x) => {
+                                  if (searchText.length === 0) {
+                                    return downloadedModels.find(
+                                      (c) => c.id === x.id
+                                    )
+                                  } else {
+                                    return x
+                                  }
+                                })
+                                .map((model) => {
+                                  const isDownloading = downloadingModels.some(
+                                    (md) => md.id === model.id
+                                  )
+                                  const isdDownloaded = downloadedModels.some(
+                                    (c) => c.id === model.id
+                                  )
+                                  return (
+                                    <li
+                                      key={model.id}
+                                      className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                                      onClick={() => {
+                                        if (isdDownloaded) {
+                                          onClickModelItem(model.id)
+                                        }
+                                      }}
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <p
+                                          className={twMerge(
+                                            'line-clamp-1',
+                                            !isdDownloaded &&
+                                              'text-[hsla(var(--text-secondary))]'
+                                          )}
+                                          title={model.name}
+                                        >
+                                          {model.name}
+                                        </p>
+                                        <ModelLabel
+                                          metadata={model.metadata}
+                                          compact
+                                        />
+                                      </div>
+                                      <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                        {!isdDownloaded && (
+                                          <span className="font-medium">
+                                            {toGibibytes(model.metadata.size)}
+                                          </span>
+                                        )}
+                                        {!isDownloading && !isdDownloaded ? (
+                                          <DownloadCloudIcon
+                                            size={18}
+                                            className="cursor-pointer text-[hsla(var(--app-link))]"
+                                            onClick={() => downloadModel(model)}
+                                          />
+                                        ) : (
+                                          Object.values(downloadStates)
+                                            .filter(
+                                              (x) => x.modelId === model.id
+                                            )
+                                            .map((item) => (
+                                              <ProgressCircle
+                                                key={item.modelId}
+                                                percentage={
+                                                  formatDownloadPercentage(
+                                                    item?.percent,
+                                                    {
+                                                      hidePercentage: true,
+                                                    }
+                                                  ) as number
+                                                }
+                                                size={100}
+                                              />
+                                            ))
+                                        )}
+                                      </div>
+                                    </li>
+                                  )
+                                })}
+                            </>
+                          )}
+                        </>
+                      )}
+
                     <ul className="pb-2">
                       {filteredDownloadedModels
                         .filter((x) => x.engine === engine)
+                        .filter((y) => {
+                          if (localEngines.includes(y.engine)) {
+                            return downloadedModels.find((c) => c.id === y.id)
+                          } else {
+                            return y
+                          }
+                        })
                         .map((model) => {
+                          if (!showModel) return null
                           return (
                             <li
                               key={model.id}
                               className={twMerge(
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                                !apiKey &&
-                                  model.engine !==
-                                    InferenceEngine.nitro_tensorrt_llm &&
-                                  'cursor-default text-[hsla(var(--text-tertiary))]'
+                                !apiKey
+                                  ? 'cursor-disabled text-[hsla(var(--text-tertiary))]'
+                                  : 'text-[hsla(var(--text-secondary))]'
                               )}
                               onClick={() => {
-                                if (
-                                  apiKey ||
-                                  model.engine ===
-                                    InferenceEngine.nitro_tensorrt_llm
-                                ) {
-                                  onClickModelItem(model.id)
-                                }
+                                onClickModelItem(model.id)
                               }}
                             >
                               <div className="flex flex-shrink-0 gap-x-2">
-                                {engineHasLogo.map((x) => {
-                                  if (x === model.engine) {
-                                    return (
-                                      <div
-                                        className="relative flex-shrink-0 overflow-hidden rounded-full"
-                                        key={x}
-                                      >
-                                        <img
-                                          src={`images/ModelProvider/${x}.svg`}
-                                          alt="Model Provider"
-                                          width={20}
-                                          height={20}
-                                          className="object-cover"
-                                        />
-                                      </div>
-                                    )
-                                  }
-                                })}
-                                <p className="line-clamp-1" title={model.name}>
+                                <p className="line-clamp-1 " title={model.name}>
                                   {model.name}
                                 </p>
                               </div>

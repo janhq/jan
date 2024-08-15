@@ -1,5 +1,7 @@
-import { ImportingModel, Model } from '@janhq/core'
+import { ImportingModel, Model, InferenceEngine } from '@janhq/core'
 import { atom } from 'jotai'
+
+import { localEngines } from '@/utils/modelEngine'
 
 export const stateModel = atom({ state: 'start', loading: false, model: '' })
 export const activeAssistantModelAtom = atom<Model | undefined>(undefined)
@@ -132,3 +134,5 @@ export const updateImportingModelAtom = atom(
 )
 
 export const selectedModelAtom = atom<Model | undefined>(undefined)
+
+export const showEngineListModelAtom = atom<InferenceEngine[]>(localEngines)
