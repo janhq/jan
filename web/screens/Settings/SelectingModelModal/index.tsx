@@ -1,72 +1,29 @@
 import { useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 
-import { ImportingModel, SelectFileOption } from '@janhq/core'
+import { SelectFileOption, systemInformation } from '@janhq/core'
 import { Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { UploadCloudIcon } from 'lucide-react'
 
-import { snackbar } from '@/containers/Toast'
-
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
-import {
+import useImportModel, {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
-
-const SelectingModelModal: React.FC = () => {
+const SelectingModelModal = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
-  const setImportingModels = useSetAtom(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
-
-  const onImportFileWindowsClick = useCallback(async () => {
-    const options: SelectFileOption = {
-      title: 'Select model files',
-      buttonLabel: 'Select',
-      allowMultiple: true,
-      filters: [
-        { name: 'GGUF Files', extensions: ['gguf'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    }
-    const filePaths: string[] = await window.core?.api?.selectFiles(options)
-    if (!filePaths || filePaths.length === 0) return
-
-    const importingModels: ImportingModel[] = filePaths
-      .filter((path) => path.endsWith('.gguf'))
-      .map((path) => {
-        const normalizedPath = isWindows ? path.replace(/\\/g, '/') : path
-
-        return {
-          importId: normalizedPath,
-          modelId: undefined,
-          name: normalizedPath.replace('.gguf', ''),
-          description: '',
-          path: path,
-          tags: [],
-          size: 0,
-          status: 'PREPARING',
-          format: 'gguf',
-        }
-      })
-    if (importingModels.length < 1) {
-      snackbar({
-        description: `Only files with .gguf extension can be imported.`,
-        type: 'error',
-      })
-      return
-    }
-    setImportingModels(importingModels)
-    setImportModelStage('MODEL_SELECTED')
-  }, [setImportingModels, setImportModelStage])
+  const { sanitizeFilePaths } = useImportModel()
 
   const onSelectFileClick = useCallback(async () => {
-    if (isWindows) {
-      return onImportFileWindowsClick()
+    const platform = (await systemInformation()).osInfo?.platform
+    if (platform === 'win32') {
+      setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
+      return
     }
     const options: SelectFileOption = {
       title: 'Select model folders',
@@ -74,36 +31,10 @@ const SelectingModelModal: React.FC = () => {
       allowMultiple: true,
       selectDirectory: true,
     }
-    const filePaths: string[] = await window.core?.api?.selectFiles(options)
+    const filePaths = await window.core?.api?.selectFiles(options)
     if (!filePaths || filePaths.length === 0) return
-
-    const importingModels: ImportingModel[] = filePaths
-      .filter((path) => path.endsWith('.gguf'))
-      .map((path) => {
-        const normalizedPath = isWindows ? path.replace(/\\/g, '/') : path
-
-        return {
-          importId: normalizedPath,
-          modelId: undefined,
-          name: normalizedPath.replace('.gguf', ''),
-          description: '',
-          path: path,
-          tags: [],
-          size: 0,
-          status: 'PREPARING',
-          format: 'gguf',
-        }
-      })
-    if (importingModels.length < 1) {
-      snackbar({
-        description: `Only files with .gguf extension can be imported.`,
-        type: 'error',
-      })
-      return
-    }
-    setImportingModels(importingModels)
-    setImportModelStage('MODEL_SELECTED')
-  }, [setImportModelStage, setImportingModels, onImportFileWindowsClick])
+    sanitizeFilePaths(filePaths)
+  }, [sanitizeFilePaths, setImportModelStage])
 
   const { isDragActive, getRootProps } = useDropzone({
     noClick: true,
@@ -122,7 +53,9 @@ const SelectingModelModal: React.FC = () => {
   return (
     <Modal
       open={importModelStage === 'SELECTING_MODEL'}
-      onOpenChange={() => setImportModelStage('NONE')}
+      onOpenChange={() => {
+        setImportModelStage('NONE')
+      }}
       title="Import Model"
       content={
         <div>

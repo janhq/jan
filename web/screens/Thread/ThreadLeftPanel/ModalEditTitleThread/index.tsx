@@ -2,14 +2,9 @@ import { useCallback, useLayoutEffect, memo, useState } from 'react'
 
 import { Thread } from '@janhq/core'
 import { Modal, ModalClose, Button, Input } from '@janhq/joi'
-import { useSetAtom } from 'jotai'
 import { PencilIcon } from 'lucide-react'
 
-import { useDebouncedCallback } from 'use-debounce'
-
-import useCortex from '@/hooks/useCortex'
-
-import { updateThreadTitleAtom } from '@/helpers/atoms/Thread.atom'
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 type Props = {
   thread: Thread
@@ -17,9 +12,8 @@ type Props = {
 }
 
 const ModalEditTitleThread = ({ thread, closeContextMenu }: Props) => {
-  const { updateThread } = useCortex()
-  const updateThreadTitle = useSetAtom(updateThreadTitleAtom)
   const [title, setTitle] = useState(thread.title)
+  const { updateThreadMetadata } = useCreateNewThread()
 
   useLayoutEffect(() => {
     if (thread.title) {
@@ -27,17 +21,17 @@ const ModalEditTitleThread = ({ thread, closeContextMenu }: Props) => {
     }
   }, [thread.title])
 
-  const debounceUpdateThreadTitle = useDebouncedCallback(
-    async (title: string) => {
-      updateThread({ ...thread, title })
-    },
-    500
-  )
+  const onUpdateTitle = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+      e.stopPropagation()
 
-  const onUpdateTitle = useCallback(() => {
-    updateThreadTitle(thread.id, title)
-    debounceUpdateThreadTitle(title)
-  }, [title, debounceUpdateThreadTitle, thread.id, updateThreadTitle])
+      updateThreadMetadata({
+        ...thread,
+        title: title || 'New Thread',
+      })
+    },
+    [thread, title, updateThreadMetadata]
+  )
 
   return (
     <Modal

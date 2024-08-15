@@ -1,7 +1,11 @@
 import React, { ReactNode } from 'react'
 
 import * as SelectPrimitive from '@radix-ui/react-select'
-import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons'
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from '@radix-ui/react-icons'
 
 import './styles.scss'
 import { twMerge } from 'tailwind-merge'

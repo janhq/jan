@@ -1,32 +1,30 @@
 import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
+import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
+  ModuleManager,
+  getJanDataFolderPath,
+  getJanExtensionsPath,
+  init,
   AppEvent,
   NativeRoute,
   SelectFileProp,
-  SelectFileOption,
-  AppConfiguration,
 } from '@janhq/core/node'
+import { SelectFileOption } from '@janhq/core'
 import { menu } from '../utils/menu'
-import { join } from 'path'
-import {
-  getAppConfigurations,
-  getJanDataFolderPath,
-  legacyDataPath,
-  updateAppConfiguration,
-} from './../utils/path'
-import {
-  readdirSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
-  mkdirSync,
-  lstatSync,
-} from 'fs'
-import { dump, load } from 'js-yaml'
+
 const isMac = process.platform === 'darwin'
 
 export function handleAppIPCs() {
+  /**
+   * Handles the "openAppDirectory" IPC message by opening the app's user data directory.
+   * The `shell.openPath` method is used to open the directory in the user's default file explorer.
+   * @param _event - The IPC event object.
+   */
+  ipcMain.handle(NativeRoute.openAppDirectory, async (_event) => {
+    shell.openPath(getJanDataFolderPath())
+  })
+
   /**
    * Handles the "setNativeThemeLight" IPC message by setting the native theme source to "light".
    * This will change the appearance of the app to the light theme.
@@ -43,41 +41,12 @@ export function handleAppIPCs() {
     windowManager.mainWindow?.minimize()
   })
 
-  ipcMain.handle(NativeRoute.homePath, () => {
-    // Handles the 'get jan home path' IPC event. This event is triggered to get the default jan home path.
-    return join(
-      process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'] ?? '',
-      'jan'
-    )
-  })
   ipcMain.handle(NativeRoute.setMaximizeApp, async (_event) => {
     if (windowManager.mainWindow?.isMaximized()) {
       windowManager.mainWindow.unmaximize()
     } else {
       windowManager.mainWindow?.maximize()
     }
-  })
-
-  ipcMain.handle(NativeRoute.getThemes, async () => {
-    const folderPath = join(getJanDataFolderPath(), 'themes')
-    const installedThemes = readdirSync(folderPath)
-
-    const themesOptions = Promise.all(
-      installedThemes
-        .filter((x: string) => x !== '.DS_Store')
-        .map(async (x: string) => {
-          const y = join(folderPath, x, `theme.json`)
-          const c = JSON.parse(readFileSync(y, 'utf-8'))
-          return { name: c?.displayName, value: c.id }
-        })
-    )
-    return themesOptions
-  })
-
-  ipcMain.handle(NativeRoute.readTheme, async (_event, themeId: string) => {
-    const folderPath = join(getJanDataFolderPath(), 'themes')
-    const filePath = join(folderPath, themeId, `theme.json`)
-    return JSON.parse(readFileSync(filePath, 'utf-8'))
   })
 
   /**
@@ -112,8 +81,27 @@ export function handleAppIPCs() {
    * @param url - The URL to reload.
    */
   ipcMain.handle(NativeRoute.relaunch, async (_event) => {
-    app.relaunch()
-    app.exit()
+    ModuleManager.instance.clearImportedModules()
+
+    if (app.isPackaged) {
+      app.relaunch()
+      app.exit()
+    } else {
+      for (const modulePath in ModuleManager.instance.requiredModules) {
+        delete require.cache[
+          require.resolve(join(getJanExtensionsPath(), modulePath))
+        ]
+      }
+      init({
+        // Function to check from the main process that user wants to install a extension
+        confirmInstall: async (_extensions: string[]) => {
+          return true
+        },
+        // Path to install extension to
+        extensionsPath: getJanExtensionsPath(),
+      })
+      windowManager.mainWindow?.reload()
+    }
   })
 
   ipcMain.handle(NativeRoute.selectDirectory, async () => {
@@ -183,7 +171,7 @@ export function handleAppIPCs() {
     }
   )
 
-  ipcMain.handle(NativeRoute.showOpenMenu, function (_e, args) {
+  ipcMain.handle(NativeRoute.showOpenMenu, function (e, args) {
     if (!isMac && windowManager.mainWindow) {
       menu.popup({
         window: windowManager.mainWindow,
@@ -211,274 +199,5 @@ export function handleAppIPCs() {
 
   ipcMain.handle(NativeRoute.ackDeepLink, async (_event): Promise<void> => {
     windowManager.ackDeepLink()
-  })
-
-  ipcMain.handle(NativeRoute.openAppLog, async (_event): Promise<void> => {
-    const configuration = getAppConfigurations()
-    const dataFolder = configuration.dataFolderPath
-
-    try {
-      const errorMessage = await shell.openPath(join(dataFolder))
-      if (errorMessage) {
-        console.error(`An error occurred: ${errorMessage}`)
-      } else {
-        console.log('Path opened successfully')
-      }
-    } catch (error) {
-      console.error(`Failed to open path: ${error}`)
-    }
-  })
-
-  ipcMain.handle(NativeRoute.syncModelFileToCortex, async (_event) => {
-    // Read models from legacy data folder
-    const janModelFolderPath = join(legacyDataPath(), 'models')
-    const allModelFolders = readdirSync(janModelFolderPath)
-
-    // Latest app configs
-    const configration = getAppConfigurations()
-    const destinationFolderPath = join(configration.dataFolderPath, 'models')
-
-    if (!existsSync(destinationFolderPath)) mkdirSync(destinationFolderPath)
-
-    console.log(
-      `Syncing model from ${allModelFolders} to ${destinationFolderPath}`
-    )
-    const reflect = require('@alumna/reflect')
-
-    for (const modelName of allModelFolders) {
-      const modelFolderPath = join(janModelFolderPath, modelName)
-      // check if exist and is a directory
-      if (!existsSync(modelFolderPath)) {
-        console.debug(`Model folder ${modelFolderPath} does not exist`)
-        continue
-      }
-
-      // check if it is a directory
-      if (!lstatSync(modelFolderPath).isDirectory()) {
-        console.debug(`${modelFolderPath} is not a directory`)
-        continue
-      }
-
-      try {
-        const filesInModelFolder = readdirSync(modelFolderPath)
-        const destinationPath = join(destinationFolderPath, modelName)
-
-        const modelJsonFullPath = join(
-          janModelFolderPath,
-          modelName,
-          'model.json'
-        )
-        if (!existsSync(modelJsonFullPath)) {
-          console.error(`Model json file not found in ${modelName}`)
-          continue
-        }
-
-        const model = JSON.parse(readFileSync(modelJsonFullPath, 'utf-8'))
-        const fileNames: string[] = model.sources.map((x: any) => x.filename)
-        let files: string[] = []
-
-        if (filesInModelFolder.length > 1) {
-          // prepend fileNames with model folder path
-          files = fileNames.map((x: string) =>
-            join(destinationFolderPath, model.id, x)
-          )
-        } else if (
-          model.sources.length &&
-          !/^(http|https):\/\/[^/]+\/.*/.test(model.sources[0].url)
-        ) {
-          // Symlink case
-          files = [model.sources[0].url]
-        } else continue
-
-        // create folder if not exist
-        // only for local model files
-        if (!existsSync(destinationPath) && filesInModelFolder.length > 1) {
-          mkdirSync(destinationPath, { recursive: true })
-        }
-
-        const engine =
-          model.engine === 'nitro' || model.engine === 'cortex'
-            ? 'cortex.llamacpp'
-            : (model.engine ?? 'cortex.llamacpp')
-
-        const updatedModelFormat = {
-          id: model.id,
-          name: model.id,
-          model: model.id,
-          version: Number(model.version),
-          files: files ?? [],
-          created: Date.now(),
-          object: 'model',
-          owned_by: model.metadata?.author ?? '',
-
-          // settings
-          ngl: model.settings?.ngl,
-          ctx_len: model.settings?.ctx_len ?? 2048,
-          engine: engine,
-          prompt_template: model.settings?.prompt_template ?? '',
-
-          // parameters
-          stop: model.parameters?.stop ?? [],
-          top_p: model.parameters?.top_p,
-          temperature: model.parameters?.temperature,
-          frequency_penalty: model.parameters?.frequency_penalty,
-          presence_penalty: model.parameters?.presence_penalty,
-          max_tokens: model.parameters?.max_tokens ?? 2048,
-          stream: model.parameters?.stream ?? true,
-        }
-        if (filesInModelFolder.length > 1) {
-          const { err } = await reflect({
-            src: modelFolderPath,
-            dest: destinationPath,
-            recursive: true,
-            delete: false,
-            overwrite: true,
-            errorOnExist: false,
-          })
-
-          if (err) {
-            console.error(err)
-            continue
-          }
-        }
-        // create the model.yml file
-        const modelYamlData = dump(updatedModelFormat)
-        const modelYamlPath = join(destinationFolderPath, `${modelName}.yaml`)
-
-        writeFileSync(modelYamlPath, modelYamlData)
-      } catch (err) {
-        console.error(err)
-      }
-    }
-  })
-
-  ipcMain.handle(
-    NativeRoute.getAllMessagesAndThreads,
-    async (_event): Promise<any> => {
-      const janThreadFolderPath = join(legacyDataPath(), 'threads')
-      // check if exist
-      if (!existsSync(janThreadFolderPath)) {
-        return {
-          threads: [],
-          messages: [],
-        }
-      }
-      // get children of thread folder
-      const allThreadFolders = readdirSync(janThreadFolderPath)
-      const threads: any[] = []
-      const messages: any[] = []
-      for (const threadFolder of allThreadFolders) {
-        try {
-          const threadJsonFullPath = join(
-            janThreadFolderPath,
-            threadFolder,
-            'thread.json'
-          )
-          const thread = JSON.parse(readFileSync(threadJsonFullPath, 'utf-8'))
-          threads.push(thread)
-
-          const messageFullPath = join(
-            janThreadFolderPath,
-            threadFolder,
-            'messages.jsonl'
-          )
-
-          if (!existsSync(messageFullPath)) continue
-          const lines = readFileSync(messageFullPath, 'utf-8')
-            .toString()
-            .split('\n')
-            .filter((line: any) => line !== '')
-          for (const line of lines) {
-            messages.push(JSON.parse(line))
-          }
-        } catch (err) {
-          console.error(err)
-        }
-      }
-      return {
-        threads,
-        messages,
-      }
-    }
-  )
-
-  ipcMain.handle(
-    NativeRoute.getAllLocalModels,
-    async (_event): Promise<boolean> => {
-      const janModelsFolderPath = join(legacyDataPath(), 'models')
-
-      if (!existsSync(janModelsFolderPath)) {
-        console.debug('No local models found')
-        return false
-      }
-
-      // get children of thread folder
-      const allModelsFolders = readdirSync(janModelsFolderPath)
-      let hasLocalModels = false
-      for (const modelFolder of allModelsFolders) {
-        try {
-          const modelsFullPath = join(janModelsFolderPath, modelFolder)
-          const dir = readdirSync(modelsFullPath)
-          const ggufFile = dir.some((file) => file.endsWith('.gguf'))
-          if (ggufFile) {
-            hasLocalModels = true
-            break
-          }
-        } catch (err) {
-          console.error(err)
-        }
-      }
-      return hasLocalModels
-    }
-  )
-  ipcMain.handle(NativeRoute.appDataFolder, () => {
-    return getJanDataFolderPath()
-  })
-
-  ipcMain.handle(NativeRoute.changeDataFolder, async (_event, path) => {
-    const appConfiguration: AppConfiguration = getAppConfigurations()
-    const currentJanDataFolder = appConfiguration.dataFolderPath
-
-    appConfiguration.dataFolderPath = path
-
-    const reflect = require('@alumna/reflect')
-    const { err } = await reflect({
-      src: currentJanDataFolder,
-      dest: path,
-      recursive: true,
-      delete: false,
-      overwrite: true,
-      errorOnExist: false,
-    })
-    if (err) {
-      console.error(err)
-      throw err
-    }
-
-    // Migrate models
-    const janModelsPath = join(path, 'models')
-    if (existsSync(janModelsPath)) {
-      const modelYamls = readdirSync(janModelsPath).filter(
-        (x) => x.endsWith('.yaml') || x.endsWith('.yml')
-      )
-      for (const yaml of modelYamls) {
-        const modelPath = join(janModelsPath, yaml)
-        const model = load(readFileSync(modelPath, 'utf-8')) as any
-        if (
-          'files' in model &&
-          Array.isArray(model.files) &&
-          model.files.length > 0
-        ) {
-          model.files[0] = model.files[0].replace(currentJanDataFolder, path)
-        }
-        writeFileSync(modelPath, dump(model))
-      }
-    }
-    await updateAppConfiguration(appConfiguration)
-  })
-
-  ipcMain.handle(NativeRoute.isDirectoryEmpty, async (_event, path) => {
-    const dirChildren = readdirSync(path)
-    return dirChildren.filter((x) => x !== '.DS_Store').length === 0
   })
 }

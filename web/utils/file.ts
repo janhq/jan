@@ -1,4 +1,4 @@
-import { basename } from 'path'
+import { baseName } from '@janhq/core'
 
 export type FilePathWithSize = {
   path: string
@@ -16,7 +16,7 @@ export const getFileInfoFromFile = async (
   const result: FilePathWithSize[] = []
   for (const file of files) {
     if (file.path && file.path.length > 0) {
-      const fileName = await basename(file.path)
+      const fileName = await baseName(file.path)
 
       result.push({
         path: file.path,

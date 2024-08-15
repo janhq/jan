@@ -14,7 +14,10 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import ModelList from '@/screens/Hub/ModelList'
 
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  configuredModelsAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const sortMenus = [
   {
@@ -32,25 +35,26 @@ const sortMenus = [
 ]
 
 const HubScreen = () => {
+  const configuredModels = useAtomValue(configuredModelsAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [searchValue, setsearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('all-models')
 
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
 
-  const filteredModels = downloadedModels.filter((model) => {
+  const filteredModels = configuredModels.filter((x) => {
     if (sortSelected === 'downloaded') {
       return (
-        model.model?.toLowerCase().includes(searchValue.toLowerCase()) &&
-        downloadedModels.some((m) => m.model === model.model)
+        x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
+        downloadedModels.some((y) => y.id === x.id)
       )
     } else if (sortSelected === 'featured') {
       return (
-        model.model?.toLowerCase().includes(searchValue.toLowerCase()) &&
-        model.metadata?.tags.includes('Featured')
+        x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
+        x.metadata.tags.includes('Featured')
       )
     } else {
-      return model.model?.toLowerCase().includes(searchValue.toLowerCase())
+      return x.name.toLowerCase().includes(searchValue.toLowerCase())
     }
   })
 

@@ -32,7 +32,7 @@ const SelectedText = ({ onCleared }: { onCleared?: () => void }) => {
       className="relative rounded-lg border border-[hsla(var(--app-border))] p-[10px]"
     >
       <div
-        className="shadow absolute right-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[hsla(var(--app-border))]"
+        className="absolute right-2 top-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[hsla(var(--app-border))] shadow"
         onClick={onClearClicked}
       >
         <X size={14} className="text-[hsla(var(--text-secondary)]" />

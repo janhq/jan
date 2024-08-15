@@ -1,9 +1,8 @@
-import { isAbsolute, relative } from 'path'
+import { Fragment, useCallback, useState } from 'react'
 
-import { Fragment, useCallback, useEffect, useState } from 'react'
-
+import { AppConfiguration, isSubdirectory } from '@janhq/core'
 import { Button, Input } from '@janhq/joi'
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { PencilIcon, FolderOpenIcon } from 'lucide-react'
 
 import Loader from '@/containers/Loader'
@@ -31,18 +30,8 @@ const DataFolder = () => {
   const setShowChangeFolderError = useSetAtom(showChangeFolderErrorAtom)
   const showDestNotEmptyConfirm = useSetAtom(showDestNotEmptyConfirmAtom)
 
-  const [janDataFolderPath, setJanDataFolderPath] = useAtom(
-    janDataFolderPathAtom
-  )
-  const getAppDataFolder = useCallback(async () => {
-    return window.electronAPI?.appDataFolder().then(setJanDataFolderPath)
-  }, [setJanDataFolderPath])
-
   const [destinationPath, setDestinationPath] = useState(undefined)
-
-  useEffect(() => {
-    getAppDataFolder()
-  }, [getAppDataFolder])
+  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
 
   const onChangeFolderClick = useCallback(async () => {
     const destFolder = await window.core?.api?.selectDirectory()
@@ -53,15 +42,11 @@ const DataFolder = () => {
       return
     }
 
-    const currentJanDataFolder = await window.electronAPI?.appDataFolder()
+    const appConfiguration: AppConfiguration =
+      await window.core?.api?.getAppConfigurations()
+    const currentJanDataFolder = appConfiguration.data_folder
 
-    const relativePath = relative(currentJanDataFolder, destFolder)
-
-    if (
-      relativePath &&
-      !relativePath.startsWith('..') &&
-      !isAbsolute(relativePath)
-    ) {
+    if (await isSubdirectory(currentJanDataFolder, destFolder)) {
       setShowSameDirectory(true)
       return
     }
@@ -122,9 +107,7 @@ const DataFolder = () => {
             <FolderOpenIcon
               size={16}
               className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer"
-              onClick={() =>
-                window.electronAPI?.openFileExplorer(janDataFolderPath)
-              }
+              onClick={() => window.core?.api?.openAppDirectory()}
             />
           </div>
           <Button

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Model } from '@janhq/core'
+import {
+  Model,
+  ModelEvent,
+  events,
+  joinPath,
+  openFileExplorer,
+} from '@janhq/core'
 import { Modal, Button, Input, ModalClose, TextArea } from '@janhq/joi'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -38,7 +44,7 @@ const EditModelInfoModal = () => {
   const updateImportingModel = useSetAtom(updateImportingModelAtom)
   const { updateModelInfo } = useImportModel()
   const [modelPath, setModelPath] = useState<string>('')
-  console.log('EditModelInfoModal', setModelPath)
+
   const editingModel = importingModels.find(
     (model) => model.importId === editingModelId
   )
@@ -63,7 +69,7 @@ const EditModelInfoModal = () => {
     const modelInfo: Partial<Model> = {
       id: editingModel.modelId,
       name: modelName,
-      // description,
+      description,
       metadata: {
         author: 'User',
         tags,
@@ -72,7 +78,7 @@ const EditModelInfoModal = () => {
     }
 
     await updateModelInfo(modelInfo)
-    // events.emit(ModelEvent.OnModelsUpdate, {})
+    events.emit(ModelEvent.OnModelsUpdate, {})
     updateImportingModel(editingModel.importId, modelName, description, tags)
 
     setImportModelStage('IMPORTING_MODEL')
@@ -83,15 +89,15 @@ const EditModelInfoModal = () => {
     const getModelPath = async () => {
       const modelId = editingModel?.modelId
       if (!modelId) return ''
-      // const path = await joinPath([janDataFolder, 'models', modelId])
-      // setModelPath(path)
+      const path = await joinPath([janDataFolder, 'models', modelId])
+      setModelPath(path)
     }
     getModelPath()
   }, [janDataFolder, editingModel])
 
   const onShowInFinderClick = useCallback(() => {
-    // openFileExplorer(modelPath)
-  }, [])
+    openFileExplorer(modelPath)
+  }, [modelPath])
 
   if (!editingModel) {
     setImportModelStage('IMPORTING_MODEL')

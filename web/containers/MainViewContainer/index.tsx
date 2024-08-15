@@ -1,10 +1,13 @@
 import { useAtomValue } from 'jotai'
 
-import HubScreen2 from '@/screens/HubScreen2'
+import { MainViewState } from '@/constants/screens'
+
+import HubScreen from '@/screens/Hub'
+import LocalServerScreen from '@/screens/LocalServer'
 import SettingsScreen from '@/screens/Settings'
 import ThreadScreen from '@/screens/Thread'
 
-import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 const MainViewContainer = () => {
   const mainViewState = useAtomValue(mainViewStateAtom)
@@ -12,11 +15,15 @@ const MainViewContainer = () => {
   let children = null
   switch (mainViewState) {
     case MainViewState.Hub:
-      children = <HubScreen2 />
+      children = <HubScreen />
       break
 
     case MainViewState.Settings:
       children = <SettingsScreen />
+      break
+
+    case MainViewState.LocalServer:
+      children = <LocalServerScreen />
       break
 
     default:

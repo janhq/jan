@@ -2,7 +2,6 @@ import { PropsWithChildren } from 'react'
 
 import { Metadata } from 'next'
 
-import 'katex/dist/katex.min.css'
 import '@/styles/main.scss'
 
 export const metadata: Metadata = {
@@ -14,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: PropsWithChildren) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="h-screen overflow-hidden font-sans text-sm antialiased">
+      <body className="h-screen font-sans text-sm antialiased">
         <div className="dragable-bar" />
         {children}
       </body>

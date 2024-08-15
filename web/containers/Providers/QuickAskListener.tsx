@@ -1,25 +1,33 @@
+import { Fragment, ReactNode } from 'react'
+
 import { useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import useSendMessage from '@/hooks/useSendMessage'
+import { MainViewState } from '@/constants/screens'
 
-import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-const QuickAskListener: React.FC = () => {
-  const { sendMessage } = useSendMessage()
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+
+type Props = {
+  children: ReactNode
+}
+
+const QuickAskListener: React.FC<Props> = ({ children }) => {
+  const { sendChatMessage } = useSendChatMessage()
   const setMainState = useSetAtom(mainViewStateAtom)
 
   const debounced = useDebouncedCallback((value) => {
     setMainState(MainViewState.Thread)
-    sendMessage(value)
+    sendChatMessage(value)
   }, 300)
 
   window.electronAPI?.onUserSubmitQuickAsk((_event: string, input: string) => {
     debounced(input)
   })
 
-  return null
+  return <Fragment>{children}</Fragment>
 }
 
 export default QuickAskListener

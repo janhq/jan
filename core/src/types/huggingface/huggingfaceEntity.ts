@@ -40,11 +40,6 @@ export type CardDataKeysTuple = typeof CardDataKeys
 export type CardDataKeys = CardDataKeysTuple[number]
 
 export const AllQuantizations = [
-  'IQ1_M',
-  'IQ1_S',
-  'IQ3_S',
-  'Q3_K_XL',
-  'IQ4_NL',
   'Q3_K_S',
   'Q3_K_M',
   'Q3_K_L',
@@ -56,16 +51,8 @@ export const AllQuantizations = [
   'Q4_1',
   'Q5_0',
   'Q5_1',
-  'Q5_K_L',
-  'Q4_K_L',
   'IQ2_XXS',
   'IQ2_XS',
-  'IQ2_S',
-  'IQ2_M',
-  'IQ3_M',
-  'IQ3_XS',
-  'IQ3_XXS',
-  'IQ4_XS',
   'Q2_K',
   'Q2_K_S',
   'Q6_K',

@@ -1,39 +1,25 @@
-import { useCallback } from 'react'
-
-import React from 'react'
+import { useCallback, memo } from 'react'
 
 import { Modal, ModalClose, Button } from '@janhq/joi'
 import { Trash2Icon } from 'lucide-react'
 
-import { toaster } from '@/containers/Toast'
-
-import useThreads from '@/hooks/useThreads'
+import useDeleteThread from '@/hooks/useDeleteThread'
 
 type Props = {
-  id: string
-  title: string
+  threadId: string
   closeContextMenu?: () => void
 }
 
-const ModalDeleteThread: React.FC<Props> = ({
-  id,
-  title,
-  closeContextMenu,
-}) => {
-  const { deleteThread } = useThreads()
+const ModalDeleteThread = ({ threadId, closeContextMenu }: Props) => {
+  const { deleteThread } = useDeleteThread()
 
-  const onDeleteThreadClick = useCallback(async () => {
-    try {
-      await deleteThread(id)
-      toaster({
-        title: 'Thread successfully deleted.',
-        description: `Thread ${title} has been successfully deleted.`,
-        type: 'success',
-      })
-    } catch (err) {
-      console.log(err)
-    }
-  }, [deleteThread, id, title])
+  const onDeleteThreadClick = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
+      e.stopPropagation()
+      deleteThread(threadId)
+    },
+    [deleteThread, threadId]
+  )
 
   return (
     <Modal
@@ -83,4 +69,4 @@ const ModalDeleteThread: React.FC<Props> = ({
   )
 }
 
-export default React.memo(ModalDeleteThread)
+export default memo(ModalDeleteThread)

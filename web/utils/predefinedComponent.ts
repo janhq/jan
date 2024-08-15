@@ -1,4 +1,4 @@
-import { SettingComponentProps } from '@janhq/core'
+import { SettingComponentProps } from '@janhq/core/.'
 
 export const presetConfiguration: Record<string, SettingComponentProps> = {
   prompt_template: {

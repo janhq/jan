@@ -11,7 +11,11 @@ import {
   lstatSync,
 } from 'fs'
 import Store from 'electron-store'
-import { getJanDataFolderPath, appResourcePath } from './../utils/path'
+import {
+  getJanExtensionsPath,
+  getJanDataFolderPath,
+  appResourcePath,
+} from '@janhq/core/node'
 
 /**
  * Migrates the extensions & themes.
@@ -24,6 +28,8 @@ export async function migrate() {
   if (store.get('migrated_version') !== app.getVersion()) {
     console.debug('start migration:', store.get('migrated_version'))
 
+    // if (existsSync(getJanExtensionsPath()))
+    //   rmdirSync(getJanExtensionsPath(), { recursive: true })
     await migrateThemes()
 
     store.set('migrated_version', app.getVersion())

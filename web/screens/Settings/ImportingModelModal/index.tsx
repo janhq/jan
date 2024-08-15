@@ -1,57 +1,46 @@
-import { Fragment, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { Modal } from '@janhq/joi'
+import { joinPath, openFileExplorer } from '@janhq/core'
+import { Button, Modal } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { AlertCircle } from 'lucide-react'
 
-import useCortex from '@/hooks/useCortex'
 import {
   getImportModelStageAtom,
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
+import { openFileTitle } from '@/utils/titleUtils'
 
 import ImportingModelItem from './ImportingModelItem'
 
-import {
-  importingModelsAtom,
-  setImportingModelErrorAtom,
-} from '@/helpers/atoms/Model.atom'
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
-const ImportingModelModal: React.FC = () => {
-  const downloadModelMutation = useModelDownloadMutation()
-  const { downloadModel } = useCortex()
-  const setImportModelStage = useSetAtom(setImportModelStageAtom)
-  const setImportModelError = useSetAtom(setImportingModelErrorAtom)
+const ImportingModelModal = () => {
   const importingModels = useAtomValue(importingModelsAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
+  const setImportModelStage = useSetAtom(setImportModelStageAtom)
+  const janDataFolder = useAtomValue(janDataFolderPathAtom)
+
+  const [modelFolder, setModelFolder] = useState('')
+
+  useEffect(() => {
+    const getModelPath = async () => {
+      const modelPath = await joinPath([janDataFolder, 'models'])
+      setModelFolder(modelPath)
+    }
+    getModelPath()
+  }, [janDataFolder])
 
   const finishedImportModel = importingModels.filter(
     (model) => model.status === 'IMPORTED'
   ).length
 
-  useEffect(() => {
-    const importModels = async () => {
-      for (const model of importingModels) {
-        try {
-          await downloadModelMutation.mutateAsync({
-            modelId: model.path,
-          })
-        } catch (error) {
-          let errorMessage = String(error)
-          if (error instanceof Error) {
-            errorMessage = error.message
-          }
-
-          setImportModelError(model.importId, errorMessage)
-        }
-      }
-    }
-    importModels()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [downloadModel])
+  const onOpenModelFolderClick = useCallback(() => {
+    openFileExplorer(modelFolder)
+  }, [modelFolder])
 
   return (
     <Modal
@@ -59,25 +48,41 @@ const ImportingModelModal: React.FC = () => {
       onOpenChange={() => setImportModelStage('NONE')}
       title={`Importing model (${finishedImportModel}/${importingModels.length})`}
       content={
-        <Fragment>
-          <div className="mb-2 space-y-3">
+        <div>
+          <div className="flex flex-row items-center space-x-2 pb-3">
+            <label className="text-[hsla(var(--text-secondary)] text-xs">
+              {modelFolder}
+            </label>
+            <Button
+              theme="ghost"
+              size="small"
+              variant="outline"
+              onClick={onOpenModelFolderClick}
+            >
+              {openFileTitle()}
+            </Button>
+          </div>
+
+          <div className="space-y-3">
             {importingModels.map((model) => (
               <ImportingModelItem key={model.importId} model={model} />
             ))}
           </div>
 
-          <div className="flex flex-row gap-2 rounded-b-lg border-t border-[hsla(var(--app-border))] py-2">
-            <AlertCircle
-              size={16}
-              className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
-            />
-            <p className="text-[hsla(var(--text-secondary)] font-semibold">
-              Own your model configurations, use at your own risk.
-              Misconfigurations may result in lower quality or unexpected
-              outputs.
-            </p>
+          <div>
+            <div className="flex flex-row gap-2 rounded-b-lg border-t border-[hsla(var(--app-border))] py-2">
+              <AlertCircle
+                size={16}
+                className="mt-1 flex-shrink-0 text-[hsla(var(--warning-bg))]"
+              />
+              <p className="text-[hsla(var(--text-secondary)] font-semibold">
+                Own your model configurations, use at your own risk.
+                Misconfigurations may result in lower quality or unexpected
+                outputs.
+              </p>
+            </div>
           </div>
-        </Fragment>
+        </div>
       }
     />
   )

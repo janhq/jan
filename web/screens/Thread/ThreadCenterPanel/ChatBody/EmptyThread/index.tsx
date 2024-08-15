@@ -1,29 +1,28 @@
-import { Fragment, memo } from 'react'
+import { memo } from 'react'
 
-import { LocalEngines } from '@janhq/core'
+import { InferenceEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
-import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { MainViewState } from '@/constants/screens'
+
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
-const EmptyThread: React.FC = () => {
+const EmptyThread = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-
-  const haveLocalModel = downloadedModels.filter(
-    (e) => LocalEngines.find((x) => x === e.engine) != null
-  )
+  const showOnboardingStep =
+    downloadedModels.filter((e) => e.engine === InferenceEngine.nitro)
+      .length === 0
 
   return (
     <div className="mx-auto flex h-full flex-col items-center justify-center text-center">
       <LogoMark className="mx-auto mb-2 animate-wave" width={32} height={32} />
-      {haveLocalModel ? (
-        <p className="mt-1 font-medium">How can I help you?</p>
-      ) : (
-        <Fragment>
+      {showOnboardingStep ? (
+        <>
           <p className="mt-1 font-medium">
             {`You don't have a local model yet.`}
           </p>
@@ -34,7 +33,9 @@ const EmptyThread: React.FC = () => {
           >
             Explore The Hub
           </Button>
-        </Fragment>
+        </>
+      ) : (
+        <p className="mt-1 font-medium">How can I help you?</p>
       )}
     </div>
   )

@@ -1,9 +1,10 @@
-import { SettingComponentProps } from '@janhq/core'
+import { Model, SettingComponentProps } from '@janhq/core'
 
 import { presetConfiguration } from './predefinedComponent'
 
 export const getConfigurationsData = (
-  settings: object
+  settings: object,
+  selectedModel?: Model
 ): SettingComponentProps[] => {
   const componentData: SettingComponentProps[] = []
 
@@ -22,11 +23,15 @@ export const getConfigurationsData = (
           switch (key) {
             case 'max_tokens':
               componentSetting.controllerProps.max =
-                componentSetting.controllerProps.max ?? 4096
+                selectedModel?.parameters.max_tokens ||
+                componentSetting.controllerProps.max ||
+                4096
               break
             case 'ctx_len':
               componentSetting.controllerProps.max =
-                componentSetting.controllerProps.max ?? 2048
+                selectedModel?.settings.ctx_len ||
+                componentSetting.controllerProps.max ||
+                2048
               break
           }
         }

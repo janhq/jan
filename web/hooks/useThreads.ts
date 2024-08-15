@@ -1,87 +1,73 @@
-import { useCallback } from 'react'
+import { useEffect } from 'react'
 
-import { Assistant } from '@janhq/core'
+import {
+  ExtensionTypeEnum,
+  Thread,
+  ThreadState,
+  ConversationalExtension,
+} from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
-import useCortex from './useCortex'
-
+import { extensionManager } from '@/extension/ExtensionManager'
 import {
-  cleanChatMessageAtom,
-  deleteChatMessageAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
-
-import { setThreadMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
-import {
-  deleteThreadAtom,
-  setActiveThreadIdAtom,
+  ModelParams,
+  threadDataReadyAtom,
+  threadModelParamsAtom,
+  threadStatesAtom,
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const useThreads = () => {
+  const setThreadStates = useSetAtom(threadStatesAtom)
   const setThreads = useSetAtom(threadsAtom)
-  const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
-  const setThreadMessage = useSetAtom(setThreadMessagesAtom)
-  const deleteMessages = useSetAtom(deleteChatMessageAtom)
-  const deleteThreadState = useSetAtom(deleteThreadAtom)
-  const cleanMessages = useSetAtom(cleanChatMessageAtom)
-  const {
-    createThread,
-    fetchMessages,
-    deleteThread: deleteCortexThread,
-    cleanThread: cleanCortexThread,
-  } = useCortex()
+  const setThreadModelRuntimeParams = useSetAtom(threadModelParamsAtom)
+  const setThreadDataReady = useSetAtom(threadDataReadyAtom)
 
-  const setActiveThread = useCallback(
-    async (threadId: string) => {
-      const messages = await fetchMessages(threadId)
-      setThreadMessage(threadId, messages)
-      setActiveThreadId(threadId)
-    },
-    [fetchMessages, setThreadMessage, setActiveThreadId]
-  )
+  useEffect(() => {
+    const getThreads = async () => {
+      const localThreads = await getLocalThreads()
+      const localThreadStates: Record<string, ThreadState> = {}
+      const threadModelParams: Record<string, ModelParams> = {}
 
-  const createNewThread = useCallback(
-    async (modelId: string, assistant: Assistant, instructions?: string) => {
-      assistant.model = modelId
-      if (instructions) {
-        assistant.instructions = instructions
-      }
-      const thread = await createThread(assistant)
-      setThreads((threads) => [thread, ...threads])
-      setActiveThread(thread.id)
-      return thread
-    },
-    [createThread, setActiveThread, setThreads]
-  )
+      localThreads.forEach((thread) => {
+        if (thread.id != null) {
+          const lastMessage = (thread.metadata?.lastMessage as string) ?? ''
 
-  const deleteThread = useCallback(
-    async (threadId: string) => {
-      try {
-        await deleteCortexThread(threadId)
-        deleteThreadState(threadId)
-        deleteMessages(threadId)
-      } catch (err) {
-        console.error(err)
-      }
-    },
-    [deleteMessages, deleteCortexThread, deleteThreadState]
-  )
+          localThreadStates[thread.id] = {
+            hasMore: false,
+            waitingForResponse: false,
+            lastMessage,
+          }
 
-  const cleanThread = useCallback(
-    async (threadId: string) => {
-      await cleanCortexThread(threadId)
-      cleanMessages(threadId)
-    },
-    [cleanCortexThread, cleanMessages]
-  )
+          const modelParams = thread.assistants?.[0]?.model?.parameters
+          const engineParams = thread.assistants?.[0]?.model?.settings
+          threadModelParams[thread.id] = {
+            ...modelParams,
+            ...engineParams,
+          }
+        }
+      })
 
-  return {
-    createThread: createNewThread,
-    setActiveThread,
-    deleteThread,
-    cleanThread,
-  }
+      // updating app states
+      setThreadStates(localThreadStates)
+      setThreads(localThreads)
+      setThreadModelRuntimeParams(threadModelParams)
+      setThreadDataReady(true)
+    }
+
+    getThreads()
+  }, [
+    setThreadModelRuntimeParams,
+    setThreadStates,
+    setThreads,
+    setThreadDataReady,
+  ])
 }
+
+const getLocalThreads = async (): Promise<Thread[]> =>
+  (await extensionManager
+    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    ?.getThreads()) ?? []
 
 export default useThreads

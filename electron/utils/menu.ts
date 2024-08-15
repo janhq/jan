@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { app, Menu, shell, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { log } from '@janhq/core/node'
 const isMac = process.platform === 'darwin'
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
@@ -12,7 +13,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
         click: () =>
           dialog.showMessageBox({
             title: `Jan`,
-            message: `Jan Version v${app.getVersion()}\nCortex Version ${global.core.cortexVersion()}\n\nCopyright © 2024 Jan`,
+            message: `Jan Version v${app.getVersion()}\n\nCopyright © 2024 Jan`,
           }),
       },
       {
@@ -33,9 +34,7 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
               }
             })
             .catch((error) => {
-              console.error(
-                'Error checking for updates:' + JSON.stringify(error)
-              )
+              log('Error checking for updates:' + JSON.stringify(error))
             }),
       },
       { type: 'separator' },

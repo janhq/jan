@@ -7,13 +7,12 @@ test('renders left navigation panel', async () => {
     .first()
     .isEnabled({ timeout: TIMEOUT })
   expect([settingsBtn].filter((e) => !e).length).toBe(0)
-
-  // System Monitor should be there
-  await page.getByText('System Monitor').first().click({
+  // Chat section should be there
+  await page.getByTestId('Local API Server').first().click({
     timeout: TIMEOUT,
   })
-  const systemMonitors = page.getByText('Running Models').first()
-  await expect(systemMonitors).toBeVisible({
+  const localServer = page.getByTestId('local-server-testid').first()
+  await expect(localServer).toBeVisible({
     timeout: TIMEOUT,
   })
 })

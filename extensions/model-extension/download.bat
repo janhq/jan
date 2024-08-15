@@ -1,0 +1,3 @@
+@echo off
+set /p LLAMA_CPP_VERSION=<./scripts/version.txt
+.\node_modules\.bin\download https://github.com/ggerganov/llama.cpp/archive/refs/tags/%LLAMA_CPP_VERSION%.tar.gz -o . --filename ./scripts/llama.cpp.tar.gz && tar -xzf .\scripts\llama.cpp.tar.gz "llama.cpp-%LLAMA_CPP_VERSION%/convert.py" "llama.cpp-%LLAMA_CPP_VERSION%/convert-hf-to-gguf.py" "llama.cpp-%LLAMA_CPP_VERSION%/gguf-py" && cpx "./llama.cpp-%LLAMA_CPP_VERSION%/**" "scripts" && rimraf "./scripts/llama.cpp.tar.gz" && rimraf "./llama.cpp-%LLAMA_CPP_VERSION%"

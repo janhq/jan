@@ -8,7 +8,7 @@
   ],
   "homepage": "https://jan.ai",
   "license": "AGPL-3.0",
-  "main": "dist/lib/index.js",
+  "main": "dist/core.es5.js",
   "module": "dist/core.cjs.js",
   "typings": "dist/types/index.d.ts",
   "files": [
@@ -17,18 +17,18 @@
   ],
   "author": "Jan <service@jan.ai>",
   "exports": {
-    ".": "./dist/lib/index.js",
+    ".": "./dist/core.es5.js",
     "./node": "./dist/node/index.cjs.js"
   },
   "typesVersions": {
     "*": {
       ".": [
-        "./dist/lib/index.js",
+        "./dist/core.es5.js.map",
         "./dist/types/index.d.ts"
       ],
       "node": [
         "./dist/node/index.cjs.js.map",
-        "./dist/types/index.d.ts"
+        "./dist/types/node/index.d.ts"
       ]
     }
   },
@@ -40,7 +40,6 @@
     "start": "rollup -c rollup.config.ts -w"
   },
   "devDependencies": {
-    "openai": "4.51.0",
     "@rollup/plugin-replace": "^5.0.5",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.4",
@@ -59,6 +58,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "ulidx": "^2.3.0"
   }
 }

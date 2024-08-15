@@ -1,14 +1,14 @@
 import { join } from 'path'
 import { Tray, app, Menu } from 'electron'
 import { windowManager } from '../managers/window'
-import { getAppConfigurations } from './../utils/path'
+import { getAppConfigurations } from '@janhq/core/node'
 
 class TrayManager {
   currentTray: Tray | undefined
 
   createSystemTray = () => {
     // Feature Toggle for Quick Ask
-    if (!getAppConfigurations().quickAsk) return
+    if (!getAppConfigurations().quick_ask) return
 
     if (this.currentTray) {
       return

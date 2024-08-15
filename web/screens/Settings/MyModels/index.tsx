@@ -2,45 +2,39 @@ import { useCallback, useMemo, useState } from 'react'
 
 import { useDropzone } from 'react-dropzone'
 
-import { LlmEngines } from '@janhq/core'
+import { InferenceEngine } from '@janhq/core'
+
 import { Button, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { UploadIcon, UploadCloudIcon } from 'lucide-react'
+import { UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
-import BlankState from '@/containers/BlankState'
-
 import ModelSearch from '@/containers/ModelSearch'
 
-import useDropModelBinaries from '@/hooks/useDropModelBinaries'
+import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
+import useDropModelBinaries from '@/hooks/useDropModelBinaries'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
-import ModelGroup from './ModelGroup'
+import MyModelList from './MyModelList'
 
-import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const MyModels = () => {
-  const setMainViewState = useSetAtom(mainViewStateAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const { onDropModels } = useDropModelBinaries()
   const [searchText, setSearchText] = useState('')
-  const setImportModelStage = useSetAtom(setImportModelStageAtom)
-
-  const onImportModelClick = useCallback(() => {
-    setImportModelStage('SELECTING_MODEL')
-  }, [setImportModelStage])
 
   const filteredDownloadedModels = useMemo(
     () =>
       downloadedModels
-        .filter((m) =>
-          m.model.toLowerCase().includes(searchText.toLowerCase().trim())
+        .filter((e) =>
+          e.name.toLowerCase().includes(searchText.toLowerCase().trim())
         )
-        .sort((a, b) => a.model.localeCompare(b.model)),
+        .sort((a, b) => a.name.localeCompare(b.name)),
     [downloadedModels, searchText]
   )
 
@@ -50,9 +44,19 @@ const MyModels = () => {
     onDrop: onDropModels,
   })
 
+  const onImportModelClick = useCallback(() => {
+    setImportModelStage('SELECTING_MODEL')
+  }, [setImportModelStage])
+
   const onSearchChange = useCallback((input: string) => {
     setSearchText(input)
   }, [])
+
+  const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  const groupByEngine = findByEngine.filter(function (item, index) {
+    if (findByEngine.indexOf(item) === index)
+      return item !== InferenceEngine.nitro
+  })
 
   return (
     <div {...getRootProps()} className="h-full w-full">
@@ -92,49 +96,48 @@ const MyModels = () => {
             </Button>
           </div>
 
-          {!filteredDownloadedModels.length ? (
-            <>
-              {searchText.length > 0 ? (
-                <BlankState
-                  title="No search results found"
-                  description="You need to download model"
-                  action={
-                    <Button
-                      className="mt-4"
-                      onClick={() => setMainViewState(MainViewState.Hub)}
-                    >
-                      Explore The Hub
-                    </Button>
-                  }
-                />
-              ) : (
-                <BlankState
-                  title="Model not found"
-                  description="You need to download your first model"
-                  action={
-                    <Button
-                      className="mt-4"
-                      onClick={() => setMainViewState(MainViewState.Hub)}
-                    >
-                      Explore The Hub
-                    </Button>
-                  }
-                />
-              )}
-            </>
-          ) : (
-            <div className="relative mt-4 w-full">
-              {LlmEngines.map((engine) => {
-                return (
-                  <ModelGroup
-                    engine={engine}
-                    key={engine}
-                    searchText={searchText}
-                  />
-                )
-              })}
-            </div>
-          )}
+          <div className="relative w-full">
+            {filteredDownloadedModels.filter(
+              (x) => x.engine === InferenceEngine.nitro
+            ).length !== 0 && (
+              <div className="my-6">
+                <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <h6 className="text-base font-semibold">Cortex</h6>
+                </div>
+                <div className="mt-2">
+                  {filteredDownloadedModels
+                    ? filteredDownloadedModels
+                        .filter((x) => x.engine === InferenceEngine.nitro)
+                        .map((model) => {
+                          return <MyModelList key={model.id} model={model} />
+                        })
+                    : null}
+                </div>
+              </div>
+            )}
+
+            {groupByEngine.map((engine, i) => {
+              return (
+                <div className="my-6" key={i}>
+                  <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <h6 className="text-base font-semibold capitalize">
+                      {engine}
+                    </h6>
+                    <SetupRemoteModel engine={engine} />
+                  </div>
+                  <div className="mt-2">
+                    {filteredDownloadedModels
+                      ? filteredDownloadedModels
+                          .filter((x) => x.engine === engine)
+                          .map((model) => {
+                            return <MyModelList key={model.id} model={model} />
+                          })
+                      : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </ScrollArea>
     </div>

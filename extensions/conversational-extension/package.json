@@ -1,0 +1,36 @@
+{
+  "name": "@janhq/conversational-extension",
+  "productName": "Conversational",
+  "version": "1.0.0",
+  "description": "This extension enables conversations and state persistence via your filesystem",
+  "main": "dist/index.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.0"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "bundleDependencies": []
+}

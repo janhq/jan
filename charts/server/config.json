@@ -1,0 +1,4 @@
+{
+    "image-list": "server=ghcr.io/janhq/jan-server",
+    "platforms": "linux/amd64"
+}

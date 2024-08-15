@@ -1,17 +1,10 @@
 import { atom } from 'jotai'
 
-export enum MainViewState {
-  Hub,
-  Settings,
-  Thread,
-  LocalServer,
-}
+import { MainViewState } from '@/constants/screens'
 
 export const mainViewStateAtom = atom<MainViewState>(MainViewState.Thread)
 
 export const defaultJanDataFolderAtom = atom<string>('')
-
-export const waitingForCortexAtom = atom<boolean>(true)
 
 // Store panel atom
 export const showLeftPanelAtom = atom<boolean>(true)
