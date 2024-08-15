@@ -10,17 +10,17 @@ import { toGibibytes } from '@/utils/converter'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-const Column = ['Name', 'Size', '']
+const Column = ['Model', 'Size', '']
 
 const TableActiveModel = () => {
   const { activeModel, stateModel, stopModel } = useActiveModel()
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   return (
-    <div className="m-4 mr-0 w-1/2">
-      <div className="overflow-hidden rounded-lg border border-[hsla(var(--app-border))]">
+    <div className="w-1/2">
+      <div className="overflow-hidden border-b border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          <thead className="w-full border-b border-[hsla(var(--app-border))]">
+          <thead className="w-full border-b border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))]">
             <tr>
               {Column.map((col, i) => {
                 return (

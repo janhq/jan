@@ -57,7 +57,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Appearance</h6>
           </div>
           <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Select a color theme
+            Select a color theme.
           </p>
         </div>
         <Select
