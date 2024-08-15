@@ -1,39 +1,76 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect } from 'react'
+
+import {
+  ExtensionTypeEnum,
+  Model,
+  ModelEvent,
+  ModelExtension,
+  events,
+} from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
-import { toaster } from '@/containers/Toast'
-
-import useCortex from './useCortex'
-
-import { removeDownloadedModelAtom } from '@/helpers/atoms/Model.atom'
+import { extensionManager } from '@/extension'
+import {
+  configuredModelsAtom,
+  defaultModelAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const useModels = () => {
-  const removeDownloadedModel = useSetAtom(removeDownloadedModelAtom)
-  const { deleteModel: cortexDeleteModel, updateModel: cortexUpdateModel } =
-    useCortex()
+  const setDownloadedModels = useSetAtom(downloadedModelsAtom)
+  const setConfiguredModels = useSetAtom(configuredModelsAtom)
+  const setDefaultModel = useSetAtom(defaultModelAtom)
 
-  const deleteModel = useCallback(
-    async (modelId: string) => {
-      await cortexDeleteModel(modelId)
-      removeDownloadedModel(modelId)
+  const getData = useCallback(() => {
+    const getDownloadedModels = async () => {
+      const models = await getLocalDownloadedModels()
+      setDownloadedModels(models)
+    }
 
-      toaster({
-        title: 'Model Deletion Successful',
-        description: `Model ${modelId} has been successfully deleted.`,
-        type: 'success',
-      })
-    },
-    [removeDownloadedModel, cortexDeleteModel]
-  )
+    const getConfiguredModels = async () => {
+      const models = await getLocalConfiguredModels()
+      setConfiguredModels(models)
+    }
 
-  const updateModel = useCallback(
-    async (modelId: string, modelSettings: Record<string, unknown>) =>
-      cortexUpdateModel(modelId, modelSettings),
-    [cortexUpdateModel]
-  )
+    const getDefaultModel = async () => {
+      const defaultModel = await getLocalDefaultModel()
+      setDefaultModel(defaultModel)
+    }
 
-  return { deleteModel, updateModel }
+    Promise.all([
+      getDownloadedModels(),
+      getConfiguredModels(),
+      getDefaultModel(),
+    ])
+  }, [setDownloadedModels, setConfiguredModels, setDefaultModel])
+
+  useEffect(() => {
+    // Try get data on mount
+    getData()
+
+    // Listen for model updates
+    events.on(ModelEvent.OnModelsUpdate, async () => getData())
+    return () => {
+      // Remove listener on unmount
+      events.off(ModelEvent.OnModelsUpdate, async () => {})
+    }
+  }, [getData])
 }
+
+const getLocalDefaultModel = async (): Promise<Model | undefined> =>
+  extensionManager
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.getDefaultModel()
+
+const getLocalConfiguredModels = async (): Promise<Model[]> =>
+  extensionManager
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.getConfiguredModels() ?? []
+
+const getLocalDownloadedModels = async (): Promise<Model[]> =>
+  extensionManager
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.getDownloadedModels() ?? []
 
 export default useModels

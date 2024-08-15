@@ -1,37 +1,43 @@
 import React, { Fragment, useEffect, useState } from 'react'
 
-import { SettingComponentProps } from '@janhq/core'
+import {
+  BaseExtension,
+  InstallationState,
+  SettingComponentProps,
+} from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
+import ExtensionItem from '../CoreExtensions/ExtensionItem'
 import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 
+import { extensionManager } from '@/extension'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const ExtensionSetting = () => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
-  // const [installationState, setInstallationState] =
-  //   useState<InstallationState>('NotRequired')
-  // const [baseExtension, setBaseExtension] = useState<BaseExtension | undefined>(
-  //   undefined
-  // )
+  const [installationState, setInstallationState] =
+    useState<InstallationState>('NotRequired')
+  const [baseExtension, setBaseExtension] = useState<BaseExtension | undefined>(
+    undefined
+  )
 
   useEffect(() => {
     const getExtensionSettings = async () => {
       if (!selectedExtensionName) return
-      // const allSettings: SettingComponentProps[] = []
-      // const baseExtension = extensionManager.getByName(selectedExtensionName)
-      // if (!baseExtension) return
+      const allSettings: SettingComponentProps[] = []
+      const baseExtension = extensionManager.getByName(selectedExtensionName)
+      if (!baseExtension) return
 
-      // setBaseExtension(baseExtension)
-      // if (typeof baseExtension.getSettings === 'function') {
-      //   const setting = await baseExtension.getSettings()
-      //   if (setting) allSettings.push(...setting)
-      // }
-      // setSettings(allSettings)
+      setBaseExtension(baseExtension)
+      if (typeof baseExtension.getSettings === 'function') {
+        const setting = await baseExtension.getSettings()
+        if (setting) allSettings.push(...setting)
+      }
+      setSettings(allSettings)
 
-      // setInstallationState(await baseExtension.installationState())
+      setInstallationState(await baseExtension.installationState())
     }
     getExtensionSettings()
   }, [selectedExtensionName])
@@ -45,10 +51,10 @@ const ExtensionSetting = () => {
       if (setting.key !== key) return setting
       setting.controllerProps.value = value
 
-      // const extensionName = setting.extensionName
-      // if (extensionName) {
-      //   extensionManager.getByName(extensionName)?.updateSettings([setting])
-      // }
+      const extensionName = setting.extensionName
+      if (extensionName) {
+        extensionManager.getByName(extensionName)?.updateSettings([setting])
+      }
 
       return setting
     })
@@ -64,9 +70,9 @@ const ExtensionSetting = () => {
           onValueUpdated={onValueChanged}
         />
       )}
-      {/* {baseExtension && installationState !== 'NotRequired' && (
+      {baseExtension && installationState !== 'NotRequired' && (
         <ExtensionItem item={baseExtension} />
-      )} */}
+      )}
     </Fragment>
   )
 }

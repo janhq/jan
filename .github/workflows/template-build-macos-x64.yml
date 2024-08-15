@@ -56,11 +56,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.9'
-
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
@@ -135,7 +130,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'

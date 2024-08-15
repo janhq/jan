@@ -1,80 +1,96 @@
-import { Fragment, useCallback } from 'react'
+import { Fragment, useCallback, useEffect } from 'react'
 
 import { Tooltip, Switch, Input } from '@janhq/joi'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { InfoIcon } from 'lucide-react'
+
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+
+import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import AssistantSetting from '@/screens/Thread/ThreadCenterPanel/AssistantSetting'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
-import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const Tools = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-  const selectedModel = useAtomValue(getSelectedModelAtom)
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
+  const { updateThreadMetadata } = useCreateNewThread()
+  const { recommendedModel, downloadedModels } = useRecommendedModel()
 
   const componentDataAssistantSetting = getConfigurationsData(
-    // (activeThread?.assistants[0]?.tools &&
-    //   activeThread?.assistants[0]?.tools[0]?.settings) ??
-    {}
+    (activeThread?.assistants[0]?.tools &&
+      activeThread?.assistants[0]?.tools[0]?.settings) ??
+      {}
   )
+
+  useEffect(() => {
+    if (!activeThread) return
+    let model = downloadedModels.find(
+      (model) => model.id === activeThread.assistants[0].model.id
+    )
+    if (!model) {
+      model = recommendedModel
+    }
+    setSelectedModel(model)
+  }, [recommendedModel, activeThread, downloadedModels, setSelectedModel])
 
   const onRetrievalSwitchUpdate = useCallback(
     (enabled: boolean) => {
-      console.log('onRetrievalSwitchUpdate enabled', enabled)
       if (!activeThread) return
-      // updateThreadMetadata({
-      //   ...activeThread,
-      //   assistants: [
-      //     {
-      //       ...activeThread.assistants[0],
-      //       tools: [
-      //         {
-      //           type: 'retrieval',
-      //           enabled: enabled,
-      //           settings:
-      //             (activeThread.assistants[0].tools &&
-      //               activeThread.assistants[0].tools[0]?.settings) ??
-      //             {},
-      //         },
-      //       ],
-      //     },
-      //   ],
-      // })
+      updateThreadMetadata({
+        ...activeThread,
+        assistants: [
+          {
+            ...activeThread.assistants[0],
+            tools: [
+              {
+                type: 'retrieval',
+                enabled: enabled,
+                settings:
+                  (activeThread.assistants[0].tools &&
+                    activeThread.assistants[0].tools[0]?.settings) ??
+                  {},
+              },
+            ],
+          },
+        ],
+      })
     },
-    [activeThread]
+    [activeThread, updateThreadMetadata]
   )
 
-  // const onTimeWeightedRetrieverSwitchUpdate = useCallback(
-  //   (enabled: boolean) => {
-  //     if (!activeThread) return
-  //     updateThreadMetadata({
-  //       ...activeThread,
-  //       assistants: [
-  //         {
-  //           ...activeThread.assistants[0],
-  //           tools: [
-  //             {
-  //               type: 'retrieval',
-  //               enabled: true,
-  //               useTimeWeightedRetriever: enabled,
-  //               settings:
-  //                 (activeThread.assistants[0].tools &&
-  //                   activeThread.assistants[0].tools[0]?.settings) ??
-  //                 {},
-  //             },
-  //           ],
-  //         },
-  //       ],
-  //     })
-  //   },
-  //   [activeThread]
-  // )
+  const onTimeWeightedRetrieverSwitchUpdate = useCallback(
+    (enabled: boolean) => {
+      if (!activeThread) return
+      updateThreadMetadata({
+        ...activeThread,
+        assistants: [
+          {
+            ...activeThread.assistants[0],
+            tools: [
+              {
+                type: 'retrieval',
+                enabled: true,
+                useTimeWeightedRetriever: enabled,
+                settings:
+                  (activeThread.assistants[0].tools &&
+                    activeThread.assistants[0].tools[0]?.settings) ??
+                  {},
+              },
+            ],
+          },
+        ],
+      })
+    },
+    [activeThread, updateThreadMetadata]
+  )
 
   if (!experimentalFeature) return null
 
@@ -167,7 +183,7 @@ const Tools = () => {
                           your specific use case."
                       />
                     </label>
-                    {/* <div className="ml-auto flex items-center justify-between">
+                    <div className="ml-auto flex items-center justify-between">
                       <Switch
                         name="use-time-weighted-retriever"
                         className="mr-2"
@@ -179,7 +195,7 @@ const Tools = () => {
                           onTimeWeightedRetrieverSwitchUpdate(e.target.checked)
                         }
                       />
-                    </div> */}
+                    </div>
                   </div>
 
                   <div className="w-full">

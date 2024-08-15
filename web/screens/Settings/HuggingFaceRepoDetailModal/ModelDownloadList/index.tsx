@@ -7,7 +7,7 @@ import ModelDownloadRow from '../ModelDownloadRow'
 
 import { importingHuggingFaceRepoDataAtom } from '@/helpers/atoms/HuggingFace.atom'
 
-const ModelDownloadList: React.FC = () => {
+const ModelDownloadList = () => {
   const importingHuggingFaceRepoData = useAtomValue(
     importingHuggingFaceRepoDataAtom
   )
@@ -34,7 +34,8 @@ const ModelDownloadList: React.FC = () => {
           if (!model.downloadUrl) return null
           return (
             <ModelDownloadRow
-              modelHandle={importingHuggingFaceRepoData.id}
+              repoData={importingHuggingFaceRepoData}
+              downloadUrl={model.downloadUrl}
               key={model.rfilename}
               index={index}
               fileName={model.rfilename}

@@ -1,10 +1,7 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 
-import { ResourceStatus } from '@janhq/core'
 import { Progress } from '@janhq/joi'
 import { useClickOutside } from '@janhq/joi'
-
-import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   MonitorIcon,
@@ -16,28 +13,32 @@ import {
 
 import { twMerge } from 'tailwind-merge'
 
+import useGetSystemResources from '@/hooks/useGetSystemResources'
+
+import { usePath } from '@/hooks/usePath'
+
 import { toGibibytes } from '@/utils/converter'
 
 import TableActiveModel from './TableActiveModel'
 
 import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
-import { hostAtom } from '@/helpers/atoms/AppConfig.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 import {
   cpuUsageAtom,
   gpusAtom,
+  ramUtilitizedAtom,
   totalRamAtom,
   usedRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
-const SystemMonitor: React.FC = () => {
-  const host = useAtomValue(hostAtom)
-  const [usedRam, setUsedRam] = useAtom(usedRamAtom)
-  const [totalRam, setTotalRam] = useAtom(totalRamAtom)
-  const [cpuUsage, setCpuUsage] = useAtom(cpuUsageAtom)
-  const [gpus, setGpus] = useAtom(gpusAtom)
-
+const SystemMonitor = () => {
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
+  const cpuUsage = useAtomValue(cpuUsageAtom)
+  const gpus = useAtomValue(gpusAtom)
+  const { onRevealInFinder } = usePath()
   const [showFullScreen, setShowFullScreen] = useState(false)
+  const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
     showSystemMonitorPanelAtom
   )
@@ -46,44 +47,8 @@ const SystemMonitor: React.FC = () => {
     null
   )
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
-  const abortControllerRef = useRef<AbortController | null>(null)
 
-  const onOpenAppLogClick = useCallback(() => {
-    window?.electronAPI?.openAppLog()
-  }, [])
-
-  const register = useCallback(async () => {
-    if (abortControllerRef.current) return
-    abortControllerRef.current = new AbortController()
-    await fetchEventSource(`${host}/system/events/resources`, {
-      onmessage(ev) {
-        if (!ev.data || ev.data === '') return
-        try {
-          const resourceEvent = JSON.parse(ev.data) as ResourceStatus
-          setUsedRam(resourceEvent.mem.used)
-          setTotalRam(resourceEvent.mem.total)
-          setCpuUsage(resourceEvent.cpu.usage)
-          setGpus(
-            resourceEvent.gpus?.filter(
-              // Do not check vram used here
-              // since it could count 0 case
-              (gpu) => gpu.name && gpu.vram.total
-            ) ?? []
-          )
-        } catch (err) {
-          console.error(err)
-        }
-      },
-      signal: abortControllerRef.current.signal,
-    })
-  }, [host, setTotalRam, setUsedRam, setCpuUsage, setGpus])
-
-  const unregister = useCallback(() => {
-    if (!abortControllerRef.current) return
-    abortControllerRef.current.abort()
-    abortControllerRef.current = null
-  }, [])
-
+  const { watch, stopWatching } = useGetSystemResources()
   useClickOutside(
     () => {
       setShowSystemMonitorPanel(false)
@@ -94,11 +59,14 @@ const SystemMonitor: React.FC = () => {
   )
 
   useEffect(() => {
-    register()
+    // Watch for resource update
+    watch()
+
     return () => {
-      unregister()
+      stopWatching()
     }
-  }, [register, unregister])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <Fragment>
@@ -132,7 +100,7 @@ const SystemMonitor: React.FC = () => {
             <div className="unset-drag flex cursor-pointer items-center gap-x-2">
               <div
                 className="flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]"
-                onClick={() => onOpenAppLogClick()}
+                onClick={() => onRevealInFinder('Logs')}
               >
                 <FolderOpenIcon size={12} /> App Log
               </div>
@@ -185,9 +153,7 @@ const SystemMonitor: React.FC = () => {
                     className="w-full"
                     size="small"
                   />
-                  <span className="flex-shrink-0 ">
-                    {Math.round((usedRam / totalRam) * 100)}%
-                  </span>
+                  <span className="flex-shrink-0 ">{ramUtilitized}%</span>
                 </div>
               </div>
 
@@ -202,7 +168,8 @@ const SystemMonitor: React.FC = () => {
                         <div className="flex gap-x-2">
                           <div className="">
                             <span>
-                              {gpu.vram.used}/{gpu.vram.total}
+                              {gpu.memoryTotal - gpu.memoryFree}/
+                              {gpu.memoryTotal}
                             </span>
                             <span> MB</span>
                           </div>
@@ -211,17 +178,12 @@ const SystemMonitor: React.FC = () => {
 
                       <div className="flex items-center gap-x-4">
                         <Progress
-                          value={Math.round(
-                            (gpu.vram.used / Math.max(gpu.vram.total, 1)) * 100
-                          )}
+                          value={gpu.utilization}
                           className="w-full"
                           size="small"
                         />
                         <span className="flex-shrink-0 ">
-                          {Math.round(
-                            (gpu.vram.used / Math.max(gpu.vram.total, 1)) * 100
-                          )}
-                          %
+                          {gpu.utilization}%
                         </span>
                       </div>
                     </div>

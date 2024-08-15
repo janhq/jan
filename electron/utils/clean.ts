@@ -1,14 +1,14 @@
+import { ModuleManager } from '@janhq/core/node'
 import { windowManager } from './../managers/window'
+import { dispose } from './disposable'
 import { app } from 'electron'
-import { cleanCortexProcesses, stopCortexApiServer } from './cortex'
 
-
-/**
- * Clean up windows then quit
- */
-export async function cleanUpAndQuit() {
-  windowManager.cleanUp()
-  await stopCortexApiServer()
-  await cleanCortexProcesses()
-  app.quit()
+export function cleanUpAndQuit() {
+  if (!ModuleManager.instance.cleaningResource) {
+    ModuleManager.instance.cleaningResource = true
+    windowManager.cleanUp()
+    dispose(ModuleManager.instance.requiredModules)
+    ModuleManager.instance.clearImportedModules()
+    app.quit()
+  }
 }

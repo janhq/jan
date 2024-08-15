@@ -1,0 +1,50 @@
+{
+  "name": "@janhq/assistant-extension",
+  "productName": "Jan Assistant",
+  "version": "1.0.1",
+  "description": "This extension enables assistants, including Jan, a default assistant that can call all downloaded models",
+  "main": "dist/index.js",
+  "node": "dist/node/index.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
+    "build": "yarn clean:modules && tsc --module commonjs && rollup -c rollup.config.ts",
+    "build:publish:linux": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "run-script-os"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-replace": "^5.0.5",
+    "@types/pdf-parse": "^1.1.4",
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "rollup": "^2.38.5",
+    "rollup-plugin-define": "^1.0.1",
+    "rollup-plugin-sourcemaps": "^0.6.3",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "typescript": "^5.3.3",
+    "run-script-os": "^1.1.6"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "@langchain/community": "0.0.13",
+    "hnswlib-node": "^1.4.2",
+    "langchain": "^0.0.214",
+    "pdf-parse": "^1.1.1",
+    "ts-loader": "^9.5.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "bundleDependencies": [
+    "@janhq/core",
+    "hnswlib-node"
+  ]
+}

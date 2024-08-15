@@ -18,14 +18,16 @@ else
 	cd joi && yarn install && yarn build
 endif
 
-# Installs yarn dependencies and builds core
+# Installs yarn dependencies and builds core and extensions
 install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
 	yarn global add turbo@1.13.2
 	yarn build:core
+	yarn build:server
 	yarn install
+	yarn build:extensions
 
 check-file-counts: install-and-build
 ifeq ($(OS),Windows_NT)
@@ -34,11 +36,11 @@ else
 	@tgz_count=$$(find pre-install -type f -name "*.tgz" | wc -l); dir_count=$$(find extensions -mindepth 1 -maxdepth 1 -type d -exec test -e '{}/package.json' \; -print | wc -l); if [ $$tgz_count -ne $$dir_count ]; then echo "Number of .tgz files in pre-install ($$tgz_count) does not match the number of subdirectories in extension ($$dir_count)"; exit 1; else echo "Extension build successful"; fi
 endif
 
-dev: install-and-build
+dev: check-file-counts
 	yarn dev
 
 # Linting
-lint: install-and-build
+lint: check-file-counts
 	yarn lint
 
 update-playwright-config:
@@ -106,11 +108,11 @@ test: lint
 	yarn test
 
 # Builds and publishes the app
-build-and-publish: install-and-build
+build-and-publish: check-file-counts
 	yarn build:publish
 
 # Build
-build: install-and-build
+build: check-file-counts
 	yarn build
 
 clean:

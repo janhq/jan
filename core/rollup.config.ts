@@ -43,7 +43,7 @@ export default [
     ],
   },
   {
-    input: `src/index.ts`,
+    input: `src/node/index.ts`,
     output: [{ file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true }],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: [
@@ -52,6 +52,7 @@ export default [
       'pacote',
       '@types/pacote',
       '@npmcli/arborist',
+      'ulidx',
       'node-fetch',
       'fs',
       'request',

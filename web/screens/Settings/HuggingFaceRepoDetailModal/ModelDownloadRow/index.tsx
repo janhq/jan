@@ -1,44 +1,120 @@
 import { useCallback, useMemo } from 'react'
 
-import { Quantization } from '@janhq/core'
+import {
+  DownloadState,
+  HuggingFaceRepoData,
+  Model,
+  Quantization,
+} from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import { toaster } from '@/containers/Toast'
+import { MainViewState } from '@/constants/screens'
 
-import useAbortDownload from '@/hooks/useAbortDownload'
-import useAssistantQuery from '@/hooks/useAssistantQuery'
-
-import { downloadStateListAtom } from '@/hooks/useDownloadState'
-import useModelDownloadMutation from '@/hooks/useModelDownloadMutation'
-import useThreads from '@/hooks/useThreads'
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import useDownloadModel from '@/hooks/useDownloadModel'
+import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
-import { downloadProgress } from '@/utils/download'
-
-import { MainViewState, mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  defaultModelAtom,
+  downloadedModelsAtom,
+} from '@/helpers/atoms/Model.atom'
 
 type Props = {
   index: number
-  modelHandle: string
+  repoData: HuggingFaceRepoData
+  downloadUrl: string
   fileName: string
   fileSize?: number
   quantization?: Quantization
 }
 
 const ModelDownloadRow: React.FC<Props> = ({
-  modelHandle,
+  repoData,
+  downloadUrl,
   fileName,
   fileSize = 0,
   quantization,
 }) => {
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const { downloadModel, abortModelDownload } = useDownloadModel()
+  const allDownloadStates = useAtomValue(modelDownloadStateAtom)
+  const downloadState: DownloadState | undefined = allDownloadStates[fileName]
+
+  const { requestCreateNewThread } = useCreateNewThread()
+  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const assistants = useAtomValue(assistantsAtom)
+  const isDownloaded = downloadedModels.find((md) => md.id === fileName) != null
+
+  const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
+  const defaultModel = useAtomValue(defaultModelAtom)
+
+  const model = useMemo(() => {
+    if (!defaultModel) {
+      return undefined
+    }
+
+    const model: Model = {
+      ...defaultModel,
+      sources: [
+        {
+          url: downloadUrl,
+          filename: fileName,
+        },
+      ],
+      id: fileName,
+      name: fileName,
+      created: Date.now(),
+      metadata: {
+        author: 'User',
+        tags: repoData.tags,
+        size: fileSize,
+      },
+    }
+    return model
+  }, [fileName, fileSize, repoData, downloadUrl, defaultModel])
+
+  const onAbortDownloadClick = useCallback(() => {
+    if (model) {
+      abortModelDownload(model)
+    }
+  }, [model, abortModelDownload])
+
+  const onDownloadClick = useCallback(async () => {
+    if (model) {
+      downloadModel(model)
+    }
+  }, [model, downloadModel])
+
+  const onUseModelClick = useCallback(async () => {
+    if (assistants.length === 0) {
+      alert('No assistant available')
+      return
+    }
+    await requestCreateNewThread(assistants[0], model)
+    setMainViewState(MainViewState.Thread)
+    setHfImportingStage('NONE')
+  }, [
+    assistants,
+    model,
+    requestCreateNewThread,
+    setMainViewState,
+    setHfImportingStage,
+  ])
+
+  if (!model) {
+    return null
+  }
+
   return (
-    <div className="flex flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
+    <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
       <div className="flex">
         {quantization && (
           <Badge variant="soft" className="mr-1">
@@ -51,86 +127,12 @@ const ModelDownloadRow: React.FC<Props> = ({
         <Badge theme="secondary">{toGibibytes(fileSize)}</Badge>
       </div>
 
-      <DownloadContainer modelHandle={modelHandle} fileName={fileName} />
-    </div>
-  )
-}
-
-type DownloadContainerProps = {
-  modelHandle: string
-  fileName: string
-}
-
-const DownloadContainer: React.FC<DownloadContainerProps> = ({
-  modelHandle,
-  fileName,
-}) => {
-  const downloadModelMutation = useModelDownloadMutation()
-  const setMainViewState = useSetAtom(mainViewStateAtom)
-  const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
-  const { createThread } = useThreads()
-  const { abortDownload } = useAbortDownload()
-
-  const { data: assistants } = useAssistantQuery()
-
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const allDownloadState = useAtomValue(downloadStateListAtom)
-
-  const persistModelId = modelHandle
-    .replaceAll('/', '_')
-    .concat('_')
-    .concat(fileName)
-
-  const downloadState = allDownloadState.find((s) => s.id === persistModelId)
-
-  const downloadedModel = useMemo(
-    () => downloadedModels.find((m) => m.model === persistModelId),
-    [downloadedModels, persistModelId]
-  )
-
-  const onDownloadClick = useCallback(() => {
-    downloadModelMutation.mutate({
-      modelId: modelHandle,
-      fileName: fileName,
-      persistedModelId: persistModelId,
-    })
-  }, [downloadModelMutation, modelHandle, fileName, persistModelId])
-
-  const onUseModelClick = useCallback(async () => {
-    if (!assistants || assistants.length === 0) {
-      toaster({
-        title: 'No assistant available.',
-        description: 'Please create an assistant to create a new thread',
-        type: 'error',
-      })
-      return
-    }
-
-    await createThread(fileName, {
-      ...assistants[0],
-      model: fileName,
-    })
-    setHfImportingStage('NONE')
-    setMainViewState(MainViewState.Thread)
-  }, [
-    setHfImportingStage,
-    setMainViewState,
-    createThread,
-    fileName,
-    assistants,
-  ])
-
-  const onAbortDownloadClick = useCallback(() => {
-    abortDownload(persistModelId)
-  }, [abortDownload, persistModelId])
-
-  return (
-    <div className="flex items-center justify-center">
-      {downloadedModel ? (
+      {isDownloaded ? (
         <Button
           variant="soft"
           className="min-w-[98px]"
           onClick={onUseModelClick}
+          data-testid={`use-model-btn-${model.id}`}
         >
           Use
         </Button>
@@ -143,13 +145,13 @@ const DownloadContainer: React.FC<DownloadContainerProps> = ({
             <Progress
               className="inline-block h-2 w-[80px]"
               value={
-                formatDownloadPercentage(downloadProgress(downloadState), {
+                formatDownloadPercentage(downloadState?.percent, {
                   hidePercentage: true,
                 }) as number
               }
             />
             <span className="tabular-nums">
-              {formatDownloadPercentage(downloadProgress(downloadState))}
+              {formatDownloadPercentage(downloadState.percent)}
             </span>
           </div>
         </Button>

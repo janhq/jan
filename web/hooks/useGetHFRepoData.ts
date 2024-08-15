@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react'
 
-import { fetchHuggingFaceRepoData } from '@/utils/huggingface'
+import {
+  ExtensionTypeEnum,
+  HuggingFaceRepoData,
+  ModelExtension,
+} from '@janhq/core'
+
+import { extensionManager } from '@/extension'
 
 export const useGetHFRepoData = () => {
   const [error, setError] = useState<string | undefined>(undefined)
@@ -10,7 +16,7 @@ export const useGetHFRepoData = () => {
     try {
       setError(undefined)
       setLoading(true)
-      const data = await fetchHuggingFaceRepoData(repoId)
+      const data = await extensionGetHfRepoData(repoId)
       return data
     } catch (err) {
       console.error(err)
@@ -24,4 +30,12 @@ export const useGetHFRepoData = () => {
   }, [])
 
   return { loading, error, getHfRepoData }
+}
+
+const extensionGetHfRepoData = async (
+  repoId: string
+): Promise<HuggingFaceRepoData | undefined> => {
+  return extensionManager
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.fetchHuggingFaceRepoData(repoId)
 }

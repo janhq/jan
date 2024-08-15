@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { PropsWithChildren, forwardRef } from 'react'
 import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
 import { twMerge } from 'tailwind-merge'
 
@@ -9,7 +9,7 @@ const ScrollArea = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
 >(({ className, children, onScroll, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
-    type="auto"
+    type="scroll"
     className={twMerge('scroll-area__root', className)}
     {...props}
   >

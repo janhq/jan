@@ -1,9 +1,8 @@
 import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
-import { getAppConfigurations } from './../utils/path'
+import { getAppConfigurations, AppEvent } from '@janhq/core/node'
 import { getBounds, saveBounds } from '../utils/setup'
-import { AppEvent } from '@janhq/core/node'
 
 /**
  * Manages the current window instance.
@@ -32,7 +31,6 @@ class WindowManager {
       x: bounds.x,
       y: bounds.y,
       webPreferences: {
-        allowRunningInsecureContent: true,
         nodeIntegration: true,
         preload: preloadPath,
         webSecurity: false,
@@ -73,7 +71,7 @@ class WindowManager {
 
     windowManager.mainWindow?.on('close', function (evt) {
       // Feature Toggle for Quick Ask
-      if (!getAppConfigurations().quickAsk) return
+      if (!getAppConfigurations().quick_ask) return
 
       if (!isAppQuitting) {
         evt.preventDefault()

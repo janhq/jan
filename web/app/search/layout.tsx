@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react'
 
+import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
+
 import { useSetAtom } from 'jotai'
 
 import ClipboardListener from '@/containers/Providers/ClipboardListener'
@@ -27,14 +29,17 @@ export default function RootLayout() {
   }, [])
 
   useEffect(() => {
-    window.electronAPI?.appDataFolder()?.then((path: string) => {
-      setJanDataFolderPath(path)
-    })
+    window.core?.api
+      ?.getAppConfigurations()
+      ?.then((appConfig: AppConfiguration) => {
+        setJanDataFolderPath(appConfig.data_folder)
+      })
   }, [setJanDataFolderPath])
 
   useEffect(() => {
     async function getDefaultJanDataFolder() {
-      const defaultJanDataFolder = await window?.electronAPI.homePath()
+      const homePath = await getUserHomePath()
+      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
 
       setJanDefaultDataFolder(defaultJanDataFolder)
     }
@@ -48,8 +53,9 @@ export default function RootLayout() {
       <body className="font-sans antialiased">
         <JotaiWrapper>
           <ThemeWrapper>
-            <ClipboardListener />
-            <Search />
+            <ClipboardListener>
+              <Search />
+            </ClipboardListener>
           </ThemeWrapper>
         </JotaiWrapper>
       </body>

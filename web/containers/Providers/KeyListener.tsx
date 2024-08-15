@@ -1,74 +1,30 @@
 'use client'
 
-import { useCallback, useEffect } from 'react'
+import { Fragment, ReactNode, useEffect } from 'react'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
-import useAssistantQuery from '@/hooks/useAssistantQuery'
-import useThreads from '@/hooks/useThreads'
+import { MainViewState } from '@/constants/screens'
 
-import { copyOverInstructionEnabledAtom } from '@/screens/Thread/ThreadRightPanel/AssistantSettingContainer/components/CopyOverInstruction'
-
-import { toaster } from '../Toast'
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import {
-  MainViewState,
   mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
-import { getSelectedModelAtom } from '@/helpers/atoms/Model.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+type Props = {
+  children: ReactNode
+}
 
-const KeyListener: React.FC = () => {
+export default function KeyListener({ children }: Props) {
   const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
   const setShowRightPanel = useSetAtom(showRightPanelAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const { createThread } = useThreads()
-
-  const activeThread = useAtomValue(activeThreadAtom)
-  const copyOverInstructionEnabled = useAtomValue(
-    copyOverInstructionEnabledAtom
-  )
-  const { data: assistants } = useAssistantQuery()
-
-  const selectedModel = useAtomValue(getSelectedModelAtom)
-
-  const createNewThread = useCallback(() => {
-    if (!selectedModel) {
-      toaster({
-        title: 'No model selected.',
-        description: 'Please select a model to create a new thread.',
-        type: 'error',
-      })
-      return
-    }
-
-    if (!assistants || assistants.length === 0) {
-      toaster({
-        title: 'No assistant available.',
-        description: 'Please create an assistant to create a new thread',
-        type: 'error',
-      })
-      return
-    }
-
-    if (!selectedModel) return
-    let instructions: string | undefined = undefined
-    if (copyOverInstructionEnabled) {
-      instructions = activeThread?.assistants[0]?.instructions ?? undefined
-    }
-    createThread(selectedModel.model, assistants[0], instructions)
-    setMainViewState(MainViewState.Thread)
-  }, [
-    createThread,
-    setMainViewState,
-    selectedModel,
-    assistants,
-    activeThread,
-    copyOverInstructionEnabled,
-  ])
+  const { requestCreateNewThread } = useCreateNewThread()
+  const assistants = useAtomValue(assistantsAtom)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -80,7 +36,9 @@ const KeyListener: React.FC = () => {
       }
 
       if (e.key === 'n' && prefixKey) {
-        return createNewThread()
+        requestCreateNewThread(assistants[0])
+        setMainViewState(MainViewState.Thread)
+        return
       }
 
       if (e.key === 'b' && prefixKey) {
@@ -97,15 +55,11 @@ const KeyListener: React.FC = () => {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [
     assistants,
-    setShowRightPanel,
-    selectedModel,
-    createThread,
+    requestCreateNewThread,
     setMainViewState,
     setShowLeftPanel,
-    createNewThread,
+    setShowRightPanel,
   ])
 
-  return null
+  return <Fragment>{children}</Fragment>
 }
-
-export default KeyListener

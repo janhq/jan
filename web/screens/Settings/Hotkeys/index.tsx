@@ -23,11 +23,11 @@ const availableHotkeys = [
   },
   {
     combination: 'Enter',
-    description: 'Send a message (in input field)',
+    description: 'Send a message',
   },
   {
     combination: 'Shift Enter',
-    description: 'Insert a new line (in input field)',
+    description: 'Insert new line in input box',
   },
   {
     combination: 'Arrow Up',

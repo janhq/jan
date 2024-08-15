@@ -12,20 +12,12 @@ module.exports = {
     './screens/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    boxShadow: {
-      dropDown:
-        '0px 8px 16px 0px hsla(0, 0%, 0%, 0.08), 0px 0px 4px 0px hsla(0, 0%, 0%, 0.04)',
-    },
-    maxHeight: {
-      'screen-40': 'calc(100vh - 40%)',
-    },
     animation: {
       'wave': 'wave 2.5s linear infinite',
       'enter': 'enter 200ms ease-out',
       'slide-in': 'slide-in 1.2s cubic-bezier(.41,.73,.51,1.02)',
       'leave': 'leave 150ms ease-in forwards',
       'bounce-right': 'bounce-right 3s infinite',
-      'spin': 'spin 1s linear infinite',
     },
     keyframes: {
       'wave': {
@@ -55,10 +47,6 @@ module.exports = {
         '40%': { transform: 'translateX(-8px)' },
         '60%': { transform: 'translateX(-4px)' },
       },
-      'spin': {
-        from: { transform: 'rotate(0deg)' },
-        to: { transform: 'rotate(360deg)' },
-      },
     },
     extend: {
       fontFamily: {
@@ -68,22 +56,5 @@ module.exports = {
       },
     },
   },
-  plugins: [
-    function ({ addUtilities }) {
-      const newUtilities = {
-        '.custom-slider::-webkit-slider-thumb': {
-          appearance: 'none',
-          width: '14px',
-          height: '14px',
-          backgroundColor: '#FFFFFF',
-          cursor: 'pointer',
-          borderRadius: '9999px',
-          pointerEvents: 'auto',
-          border: '1px solid #2563EB',
-        },
-      }
-
-      addUtilities(newUtilities, ['responsive', 'hover'])
-    },
-  ],
+  plugins: [],
 }

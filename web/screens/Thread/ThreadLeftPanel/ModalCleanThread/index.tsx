@@ -1,35 +1,23 @@
 import { useCallback, memo } from 'react'
 
-import { Thread } from '@janhq/core'
 import { Button, Modal, ModalClose } from '@janhq/joi'
-import { useSetAtom } from 'jotai'
 import { Paintbrush } from 'lucide-react'
 
-import { defaultThreadTitle } from '@/constants/Threads'
-
-import useCortex from '@/hooks/useCortex'
-import useThreads from '@/hooks/useThreads'
-
-import { updateThreadTitleAtom } from '@/helpers/atoms/Thread.atom'
+import useDeleteThread from '@/hooks/useDeleteThread'
 
 type Props = {
-  thread: Thread
+  threadId: string
   closeContextMenu?: () => void
 }
 
-const ModalCleanThread = ({ thread, closeContextMenu }: Props) => {
-  const { cleanThread } = useThreads()
-  const updateThreadTitle = useSetAtom(updateThreadTitleAtom)
-  const { updateThread } = useCortex()
-
+const ModalCleanThread = ({ threadId, closeContextMenu }: Props) => {
+  const { cleanThread } = useDeleteThread()
   const onCleanThreadClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       e.stopPropagation()
-      cleanThread(thread.id)
-      updateThreadTitle(thread.id, defaultThreadTitle)
-      updateThread({ ...thread, title: defaultThreadTitle })
+      cleanThread(threadId)
     },
-    [cleanThread, thread, updateThread, updateThreadTitle]
+    [cleanThread, threadId]
   )
 
   return (

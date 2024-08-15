@@ -2,10 +2,12 @@ import { useCallback } from 'react'
 
 import { useTheme } from 'next-themes'
 
+import { fs, joinPath } from '@janhq/core'
 import { Button, Select, Switch } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 
 import {
+  janThemesPathAtom,
   reduceTransparentAtom,
   selectedThemeIdAtom,
   spellCheckAtom,
@@ -17,6 +19,7 @@ export default function AppearanceOptions() {
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
   const themeOptions = useAtomValue(themesOptionsAtom)
   const { setTheme } = useTheme()
+  const janThemesPath = useAtomValue(janThemesPathAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [reduceTransparent, setReduceTransparent] = useAtom(
     reduceTransparentAtom
@@ -26,7 +29,8 @@ export default function AppearanceOptions() {
   const handleClickTheme = useCallback(
     async (e: string) => {
       setSelectedIdTheme(e)
-      const theme: Theme = await window.electronAPI.readTheme(e)
+      const filePath = await joinPath([`${janThemesPath}/${e}`, `theme.json`])
+      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
       setThemeData(theme)
       setTheme(String(theme?.nativeTheme))
       if (theme?.reduceTransparent) {
@@ -36,6 +40,7 @@ export default function AppearanceOptions() {
       }
     },
     [
+      janThemesPath,
       reduceTransparent,
       setReduceTransparent,
       setSelectedIdTheme,
@@ -52,11 +57,11 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Appearance</h6>
           </div>
           <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Select a color theme.
+            Select a color theme
           </p>
         </div>
         <Select
-          value={selectedIdTheme || 'joi-light'}
+          value={selectedIdTheme}
           options={themeOptions}
           onValueChange={(e) => handleClickTheme(e)}
         />
@@ -67,21 +72,16 @@ export default function AppearanceOptions() {
             <div className="flex gap-x-2">
               <h6 className="font-semibold capitalize">Interface theme</h6>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Translucent option is only available for some theme.
-            </p>
           </div>
           <div className="flex items-center gap-x-2">
             <Button
               theme={reduceTransparent ? 'primary' : 'ghost'}
-              className="w-[120px]"
               variant={reduceTransparent ? 'solid' : 'outline'}
               onClick={() => setReduceTransparent(true)}
             >
               Solid
             </Button>
             <Button
-              className="w-[120px]"
               theme={reduceTransparent ? 'ghost' : 'primary'}
               variant={reduceTransparent ? 'outline' : 'solid'}
               onClick={() => setReduceTransparent(false)}
@@ -97,7 +97,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Spell Check</h6>
           </div>
           <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Toggle to enable or disable spell checking.
+            Toggle to disable spell checking.
           </p>
         </div>
         <div className="flex-shrink-0">

@@ -12,9 +12,6 @@ yarn.lock
 dist
 build
 .DS_Store
-electron/resources/win/*
-electron/resources/linux/*
-electron/resources/mac/*
 electron/renderer
 electron/models
 electron/docs

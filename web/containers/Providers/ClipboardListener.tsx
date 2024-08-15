@@ -1,8 +1,10 @@
+import { Fragment, PropsWithChildren } from 'react'
+
 import { useSetAtom } from 'jotai'
 
 import { selectedTextAtom } from './Jotai'
 
-const ClipboardListener: React.FC = () => {
+const ClipboardListener = ({ children }: PropsWithChildren) => {
   const setSelectedText = useSetAtom(selectedTextAtom)
 
   if (typeof window !== 'undefined') {
@@ -11,7 +13,7 @@ const ClipboardListener: React.FC = () => {
     })
   }
 
-  return null
+  return <Fragment>{children}</Fragment>
 }
 
 export default ClipboardListener
