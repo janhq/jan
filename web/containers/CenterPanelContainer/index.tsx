@@ -9,9 +9,7 @@ import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 const CenterPanelContainer = ({ children }: PropsWithChildren) => {
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   return (
-    <div
-      className={twMerge('flex h-full w-full', !reduceTransparent && 'px-1.5')}
-    >
+    <div className={twMerge('flex h-full w-full')}>
       <div
         className={twMerge(
           'h-full w-full overflow-hidden bg-[hsla(var(--center-panel-bg))]',

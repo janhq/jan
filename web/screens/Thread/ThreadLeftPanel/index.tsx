@@ -5,16 +5,11 @@ import { Thread } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
-import {
-  GalleryHorizontalEndIcon,
-  MoreHorizontalIcon,
-  PenSquareIcon,
-} from 'lucide-react'
+import { GalleryHorizontalEndIcon, MoreHorizontalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
-import { toaster } from '@/containers/Toast'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
@@ -87,18 +82,6 @@ const ThreadLeftPanel = () => {
     downloadedModels,
   ])
 
-  const onCreateConversationClick = async () => {
-    if (assistants.length === 0) {
-      toaster({
-        title: 'No assistant available.',
-        description: `Could not create a new thread. Please add an assistant.`,
-        type: 'error',
-      })
-    } else {
-      requestCreateNewThread(assistants[0])
-    }
-  }
-
   const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
     event.preventDefault()
     setContextMenu({
@@ -126,18 +109,6 @@ const ThreadLeftPanel = () => {
         </div>
       ) : (
         <div className="p-3">
-          <Button
-            className="mb-2"
-            data-testid="btn-create-thread"
-            onClick={onCreateConversationClick}
-            theme="icon"
-          >
-            <PenSquareIcon
-              size={16}
-              className="cursor-pointer text-[hsla(var(--text-secondary))]"
-            />
-          </Button>
-
           {threads.map((thread) => (
             <div
               key={thread.id}
