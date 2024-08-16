@@ -15,7 +15,7 @@ export const getLogoEngine = (engine: InferenceEngine) => {
     case InferenceEngine.martian:
       return 'images/ModelProvider/martian.svg'
     case InferenceEngine.openrouter:
-      return 'images/ModelProvider/openrouter.svg'
+      return 'images/ModelProvider/openRouter.svg'
     case InferenceEngine.openai:
       return 'images/ModelProvider/openai.svg'
     case InferenceEngine.groq:
