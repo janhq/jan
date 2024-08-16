@@ -25,7 +25,7 @@ export enum InferenceEngine {
   triton_trtllm = 'triton_trtllm',
   nitro_tensorrt_llm = 'nitro-tensorrt-llm',
   cohere = 'cohere',
-  nvdia = 'nvidia',
+  nvidia = 'nvidia',
   cortex_llamacpp = 'cortex.llamacpp',
   cortex_onnx = 'cortex.onnx',
   cortex_tensorrtllm = 'cortex.tensorrt-llm',

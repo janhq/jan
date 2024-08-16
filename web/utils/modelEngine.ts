@@ -2,29 +2,29 @@ import { InferenceEngine } from '@janhq/core'
 
 export const getLogoEngine = (engine: InferenceEngine) => {
   switch (engine) {
-    case 'anthropic':
+    case InferenceEngine.anthropic:
       return 'images/ModelProvider/anthropic.svg'
-    case 'nitro':
+    case InferenceEngine.nitro:
       return 'images/ModelProvider/nitro.svg'
-    case 'cortex.llamacpp':
-    case 'cortex.onnx':
-    case 'cortex.tensorrtllm':
+    case InferenceEngine.cortex_llamacpp':
+    case InferenceEngine.cortex_onnx:
+    case InferenceEngine.cortex_tensorrtllm:
       return 'images/ModelProvider/cortex.svg'
-    case 'mistral':
+    case InferenceEngine.mistral:
       return 'images/ModelProvider/mistral.svg'
-    case 'martian':
+    case InferenceEngine.martian:
       return 'images/ModelProvider/martian.svg'
-    case 'openrouter':
+    case InferenceEngine.openrouter:
       return 'images/ModelProvider/openrouter.svg'
-    case 'openai':
+    case InferenceEngine.openai:
       return 'images/ModelProvider/openai.svg'
-    case 'groq':
+    case InferenceEngine.groq:
       return 'images/ModelProvider/groq.svg'
-    case 'triton_trtllm':
+    case InferenceEngine.triton_trtllm:
       return 'images/ModelProvider/triton_trtllm.svg'
-    case 'cohere':
+    case InferenceEngine.cohere:
       return 'images/ModelProvider/cohere.svg'
-    case 'nvidia':
+    case InferenceEngine.nvidia:
       return 'images/ModelProvider/nvidia.svg'
     default:
       return undefined
@@ -41,17 +41,17 @@ export const localEngines = [
 
 export const getTitleByEngine = (engine: InferenceEngine) => {
   switch (engine) {
-    case 'nitro':
+    case InferenceEngine.nitro:
       return 'Llama.cpp (Nitro)'
-    case 'cortex.llamacpp':
+    case InferenceEngine.cortex_llamacpp:
       return 'Llama.cpp (Cortex)'
-    case 'cortex.onnx':
+    case InferenceEngine.cortex_onnx:
       return 'Onnx (Cortex)'
-    case 'cortex.tensorrtllm':
+    case InferenceEngine.cortex_tensorrtllm:
       return 'TensorRT-LLM (Cortex)'
-    case 'openai':
+    case InferenceEngine.openai:
       return 'OpenAI'
-    case 'openrouter':
+    case InferenceEngine.openrouter:
       return 'OpenRouter'
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1)
