@@ -375,7 +375,7 @@ const ModelDropdown = ({
                   <div className="mt-2">
                     <div className="flex items-center justify-between px-3">
                       <div
-                        className="flex cursor-pointer items-center gap-2 py-1"
+                        className="flex w-full cursor-pointer items-center gap-2 py-1"
                         onClick={onClickChevron}
                       >
                         {engineLogo && (
