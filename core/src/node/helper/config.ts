@@ -1,5 +1,5 @@
 import { AppConfiguration, SettingComponentProps } from '../../types'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import fs from 'fs'
 import os from 'os'
 import childProcess from 'child_process'
@@ -10,7 +10,10 @@ const configurationFileName = 'settings.json'
 // TODO: do not default the os.homedir
 const defaultJanDataFolder = join(os?.homedir() || '', 'jan')
 const defaultAppConfig: AppConfiguration = {
-  data_folder: defaultJanDataFolder,
+  data_folder:
+    process.env.CI === 'e2e'
+      ? process.env.APP_CONFIG_PATH ?? resolve('./test-data')
+      : defaultJanDataFolder,
   quick_ask: false,
 }
 
@@ -20,6 +23,7 @@ const defaultAppConfig: AppConfiguration = {
  * @returns {AppConfiguration} The app configurations.
  */
 export const getAppConfigurations = (): AppConfiguration => {
+  if (process.env.CI === 'e2e') return defaultAppConfig
   // Retrieve Application Support folder path
   // Fallback to user home directory if not found
   const configurationFile = getConfigurationFilePath()

@@ -11,6 +11,10 @@ export function normalizeFilePath(path: string): string {
   return path.replace(/^(file:[\\/]+)([^:\s]+)$/, '$2')
 }
 
+/**
+ * App resources path
+ * Returns string - The current application directory.
+ */
 export function appResourcePath() {
   try {
     const electron = require('electron')
