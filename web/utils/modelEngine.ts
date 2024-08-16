@@ -6,7 +6,7 @@ export const getLogoEngine = (engine: InferenceEngine) => {
       return 'images/ModelProvider/anthropic.svg'
     case InferenceEngine.nitro:
       return 'images/ModelProvider/nitro.svg'
-    case InferenceEngine.cortex_llamacpp':
+    case InferenceEngine.cortex_llamacpp:
     case InferenceEngine.cortex_onnx:
     case InferenceEngine.cortex_tensorrtllm:
       return 'images/ModelProvider/cortex.svg'
