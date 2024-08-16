@@ -42,6 +42,7 @@ export const useLoadTheme = async () => {
   )
 
   const getThemes = useCallback(async () => {
+    if (!janDataFolderPath.length) return
     const folderPath = await joinPath([janDataFolderPath, 'themes'])
     const installedThemes = await fs.readdirSync(folderPath)
 
