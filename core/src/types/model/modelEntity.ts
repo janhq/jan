@@ -28,7 +28,7 @@ export enum InferenceEngine {
   nvdia = 'nvidia',
   cortex_llamacpp = 'cortex.llamacpp',
   cortex_onnx = 'cortex.onnx',
-  cortex_tensorrtllm = 'cortex.tensorrtllm',
+  cortex_tensorrtllm = 'cortex.tensorrt-llm',
 }
 
 export type ModelArtifact = {
