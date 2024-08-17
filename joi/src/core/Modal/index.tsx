@@ -1,7 +1,6 @@
 import React, { ReactNode } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Cross2Icon } from '@radix-ui/react-icons'
-import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
 
 import './styles.scss'
 import { twMerge } from 'tailwind-merge'
