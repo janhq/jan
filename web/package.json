@@ -19,6 +19,7 @@
     "@janhq/joi": "link:./joi",
     "autoprefixer": "10.4.16",
     "class-variance-authority": "^0.7.0",
+    "csstype": "^3.0.10",
     "framer-motion": "^10.16.4",
     "highlight.js": "^11.9.0",
     "jotai": "^2.6.0",
@@ -38,7 +39,6 @@
     "react-dropzone": "^14.2.3",
     "react-hook-form": "^7.47.0",
     "react-hot-toast": "^2.4.1",
-    "csstype": "^3.0.10",
     "react-icons": "^4.12.0",
     "react-scroll-to-bottom": "^4.2.0",
     "react-toastify": "^9.1.3",
@@ -46,8 +46,8 @@
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "3.3.5",
     "ulidx": "^2.3.0",
-    "uuid": "^9.0.1",
     "use-debounce": "^10.0.0",
+    "uuid": "^9.0.1",
     "zod": "^3.22.4"
   },
   "devDependencies": {

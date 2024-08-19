@@ -45,6 +45,9 @@ export default class JanModelExtension extends ModelExtension {
   private static readonly _offlineInferenceEngine = [
     InferenceEngine.nitro,
     InferenceEngine.nitro_tensorrt_llm,
+    InferenceEngine.cortex_onnx,
+    InferenceEngine.cortex_llamacpp,
+    InferenceEngine.cortex_tensorrtllm,
   ]
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _supportedGpuArch = ['ampere', 'ada']

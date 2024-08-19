@@ -4,13 +4,13 @@ import sourceMaps from 'rollup-plugin-sourcemaps'
 import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
-
+const hf = require('./helpers/huggingface.js')
 const packageJson = require('./package.json')
 const defaultSettingJson = require('./resources/default_settings.json')
 
-export default [
+export default async () => [
   {
-    input: `src/index.ts`,
+    input: 'src/index.ts',
     output: [{ file: packageJson.main, format: 'es', sourcemap: true }],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: [],
@@ -20,7 +20,7 @@ export default [
     plugins: [
       replace({
         preventAssignment: true,
-        MODELS: JSON.stringify([]),
+        MODELS: JSON.stringify(await hf.fetchCortexHubModels()),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
         INFERENCE_URL: JSON.stringify(

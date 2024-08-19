@@ -8,7 +8,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 0",
+    "test": "jest --passWithNoTests",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
     "build:publish:darwin": "rimraf *.tgz --glob && yarn build && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
     "build:publish:win32": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
@@ -46,6 +46,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@huggingface/hub": "^0.15.1",
     "@janhq/core": "file:../../core",
     "@nestjs/microservices": "^10.4.1",
     "@nestjs/websockets": "^10.4.1",
