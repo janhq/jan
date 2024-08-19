@@ -12,6 +12,7 @@ import {
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
+import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { generateThreadId } from '@/utils/thread'
@@ -31,6 +32,7 @@ import {
   updateThreadAtom,
   setThreadModelParamsAtom,
   isGeneratingResponseAtom,
+  activeThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -57,6 +59,10 @@ export const useCreateNewThread = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const copyOverInstructionEnabled = useAtomValue(
+    copyOverInstructionEnabledAtom
+  )
+  const activeThread = useAtomValue(activeThreadAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
@@ -105,6 +111,10 @@ export const useCreateNewThread = () => {
         : {}
 
     const createdAt = Date.now()
+    let instructions: string | undefined = undefined
+    if (copyOverInstructionEnabled) {
+      instructions = activeThread?.assistants[0]?.instructions ?? undefined
+    }
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
@@ -116,7 +126,7 @@ export const useCreateNewThread = () => {
           { ...defaultModel?.parameters, ...overriddenParameters } ?? {},
         engine: defaultModel?.engine,
       },
-      instructions: assistant.instructions,
+      instructions,
     }
 
     const threadId = generateThreadId(assistant.id)
