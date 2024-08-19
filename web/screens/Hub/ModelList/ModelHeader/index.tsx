@@ -144,7 +144,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
         <div className="inline-flex items-center space-x-2">
           <div className="hidden items-center sm:inline-flex">
             <span className="mr-4 font-semibold">
-              {toGibibytes(model.metadata.size)}
+              {toGibibytes(model.metadata?.size)}
             </span>
             <ModelLabel metadata={model.metadata} />
           </div>
