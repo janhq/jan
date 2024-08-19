@@ -581,7 +581,7 @@ const ModelDropdown = ({
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey
                                   ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
-                                  : 'text-[hsla(var(--text-secondary))]'
+                                  : 'text-[hsla(var(--text-priamry))]'
                               )}
                               onClick={() => {
                                 if (
