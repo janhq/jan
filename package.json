@@ -36,7 +36,7 @@
     "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:extensions": "rimraf ./pre-install/*.tgz && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish && cd .. && yarn pre-install",
+    "build:extensions": "rimraf --glob \"./pre-install/*.tgz\" && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish && cd .. && yarn pre-install",
     "build:test": "yarn copy:assets && turbo run @janhq/web#build && cpx \"web/out/**\" \"electron/renderer/\" && turbo run build:test",
     "build": "yarn build:web && yarn build:electron",
     "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
@@ -47,8 +47,9 @@
     "concurrently": "^8.2.1",
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
-    "wait-on": "^7.0.1",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "wait-on": "^7.0.1"
   },
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "packageManager": "yarn@4.3.1"
 }

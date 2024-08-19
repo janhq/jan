@@ -17,9 +17,9 @@
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
+    "ts-loader": "^9.5.0",
     "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0"
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
     "@janhq/core": "file:../../core"
@@ -32,5 +32,8 @@
     "package.json",
     "README.md"
   ],
-  "bundleDependencies": []
+  "bundleDependencies": [],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  }
 }

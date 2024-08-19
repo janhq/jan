@@ -39,5 +39,8 @@
   ],
   "bundleDependencies": [
     "fetch-retry"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  }
 }

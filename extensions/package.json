@@ -1,5 +1,8 @@
 {
   "private": true,
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
   "workspaces": {
     "packages": [
       "**"

@@ -69,5 +69,8 @@
     "fetch-retry",
     "@janhq/core",
     "decompress"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  }
 }
