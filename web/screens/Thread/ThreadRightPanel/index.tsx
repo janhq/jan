@@ -14,6 +14,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { Settings2Icon } from 'lucide-react'
 
+import CopyOverInstruction from '@/containers/CopyInstruction'
 import EngineSetting from '@/containers/EngineSetting'
 import ModelDropdown from '@/containers/ModelDropdown'
 
@@ -212,6 +213,7 @@ const ThreadRightPanel = () => {
                 onChange={onAssistantInstructionChanged}
               />
             </div>
+            {experimentalFeature && <CopyOverInstruction />}
             <div>
               <label
                 id="assistant-instructions"
