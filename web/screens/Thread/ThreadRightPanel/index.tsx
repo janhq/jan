@@ -207,6 +207,7 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeThread?.assistants[0].instructions ?? ''}
+                rows={8}
                 onChange={onAssistantInstructionChanged}
               />
             </div>

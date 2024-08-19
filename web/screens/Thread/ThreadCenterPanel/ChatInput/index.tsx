@@ -11,7 +11,7 @@ import {
   Badge,
   useMediaQuery,
 } from '@janhq/joi'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import {
   FileTextIcon,
   ImageIcon,
@@ -394,10 +394,14 @@ const ChatInput = () => {
               stateModel.loading && 'bg-transparent'
             )}
           >
-            <div className="flex items-center gap-x-3">
+            <div className="flex items-center gap-x-2">
               <ModelDropdown chatInputMode />
-              <Button
-                theme="icon"
+              <Badge
+                theme="secondary"
+                className="cursor-pointer px-1"
+                variant={
+                  activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
+                }
                 onClick={() => {
                   setActiveTabThreadRightPanel('model')
                   if (matches) {
@@ -411,7 +415,7 @@ const ChatInput = () => {
                   size={16}
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
-              </Button>
+              </Badge>
               {experimentalFeature && (
                 <Badge
                   className="flex cursor-pointer items-center gap-x-1"
