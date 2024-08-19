@@ -168,6 +168,7 @@ export abstract class BaseExtension implements ExtensionType {
     ])
 
     try {
+      if (!(await fs.existsSync(settingPath))) return []
       const content = await fs.readFileSync(settingPath, 'utf-8')
       const settings: SettingComponentProps[] = JSON.parse(content)
       return settings
