@@ -3,11 +3,19 @@ import { Fragment, useEffect, useState } from 'react'
 import { Progress } from '@janhq/joi'
 import { useClickOutside } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
-import { MonitorIcon, XIcon, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  MonitorIcon,
+  XIcon,
+  ChevronDown,
+  ChevronUp,
+  FolderOpenIcon,
+} from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import useGetSystemResources from '@/hooks/useGetSystemResources'
+
+import { usePath } from '@/hooks/usePath'
 
 import { toGibibytes } from '@/utils/converter'
 
@@ -28,6 +36,7 @@ const SystemMonitor = () => {
   const usedRam = useAtomValue(usedRamAtom)
   const cpuUsage = useAtomValue(cpuUsageAtom)
   const gpus = useAtomValue(gpusAtom)
+  const { onRevealInFinder } = usePath()
   const [showFullScreen, setShowFullScreen] = useState(false)
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
@@ -64,7 +73,7 @@ const SystemMonitor = () => {
       <div
         ref={setControl}
         className={twMerge(
-          'flex cursor-pointer items-center gap-x-1 rounded-l px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
+          'flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
           showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))]'
         )}
         onClick={() => {
@@ -79,7 +88,7 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-8px)] flex-shrink-0 flex-col rounded-lg rounded-b-none border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-8px)] flex-shrink-0 flex-col border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
             showFullScreen && 'h-[calc(100%-63px)]',
             reduceTransparent && 'w-[calc(100%-48px)] rounded-none'
           )}
@@ -89,6 +98,12 @@ const SystemMonitor = () => {
               Running Models
             </h6>
             <div className="unset-drag flex cursor-pointer items-center gap-x-2">
+              <div
+                className="flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]"
+                onClick={() => onRevealInFinder('Logs')}
+              >
+                <FolderOpenIcon size={12} /> App Log
+              </div>
               {showFullScreen ? (
                 <ChevronDown
                   size={20}
@@ -113,7 +128,7 @@ const SystemMonitor = () => {
             </div>
           </div>
 
-          <div className="flex h-full gap-4">
+          <div className="flex h-full gap-y-4">
             <TableActiveModel />
 
             <div className="w-1/2 border-l border-[hsla(var(--app-border))] p-4">

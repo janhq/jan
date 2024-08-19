@@ -7,6 +7,7 @@ import { toaster } from '@/containers/Toast'
 
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
+import { vulkanEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -34,6 +35,7 @@ export function useActiveModel() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
   const [pendingModelLoad, setPendingModelLoad] = useAtom(pendingModelLoadAtom)
+  const isVulkanEnabled = useAtomValue(vulkanEnabledAtom)
 
   const downloadedModelsRef = useRef<Model[]>([])
 
@@ -88,6 +90,11 @@ export function useActiveModel() {
           ...activeThread.assistants[0].model.settings,
         },
       }
+    }
+
+    if (isVulkanEnabled) {
+      // @ts-expect-error flash_attn is newly added and will be migrate to cortex in the future
+      model.settings['flash_attn'] = false
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)

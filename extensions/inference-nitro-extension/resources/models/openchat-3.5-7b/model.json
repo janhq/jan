@@ -8,14 +8,14 @@
   "id": "openchat-3.5-7b",
   "object": "model",
   "name": "Openchat-3.5 7B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "The performance of Openchat surpasses ChatGPT-3.5 and Grok-1 across various benchmarks.",
   "format": "gguf",
   "settings": {
     "ctx_len": 8192,
     "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:",
     "llama_model_path": "openchat-3.5-0106.Q4_K_M.gguf",
-    "ngl": 32
+    "ngl": 33
   },
   "parameters": {
     "temperature": 0.7,

@@ -8,14 +8,14 @@
     "id": "llamacorn-1.1b",
     "object": "model",
     "name": "LlamaCorn 1.1B Q8",
-    "version": "1.0",
+    "version": "1.1",
     "description": "LlamaCorn is designed to improve chat functionality from TinyLlama.",
     "format": "gguf",
     "settings": {
       "ctx_len": 2048,
       "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
       "llama_model_path": "llamacorn-1.1b-chat.Q8_0.gguf",
-      "ngl": 22
+      "ngl": 23
     },
     "parameters": {
       "temperature": 0.7,

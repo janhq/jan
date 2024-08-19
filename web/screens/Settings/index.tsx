@@ -14,7 +14,7 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 export const SettingScreenList = [
   'My Models',
   'Appearance',
-  'Hotkey & Shortcut',
+  'Keyboard Shortcuts',
   'Advanced Settings',
   'Extensions',
 ] as const
@@ -24,6 +24,7 @@ export type SettingScreen = SettingScreenTuple[number]
 
 const SettingsScreen = () => {
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
+
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
       setSelectedSettingScreen('Advanced Settings')

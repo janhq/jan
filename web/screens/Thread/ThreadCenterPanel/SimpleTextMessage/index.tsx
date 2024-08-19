@@ -145,7 +145,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   }, [props.content])
 
   return (
-    <div className="group relative mx-auto p-4">
+    <div className="group relative mx-auto max-w-[700px] p-4">
       <div
         className={twMerge(
           'mb-2 flex items-center justify-start gap-x-2',
@@ -178,7 +178,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         >
           {isUser
             ? props.role
-            : activeThread?.assistants[0].assistant_name ?? props.role}
+            : (activeThread?.assistants[0].assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created)}
@@ -201,7 +201,12 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           )}
       </div>
 
-      <div className={twMerge('w-full')}>
+      <div
+        className={twMerge(
+          'w-full',
+          !isUser && !text.includes(' ') && 'break-all'
+        )}
+      >
         <>
           {props.content[0]?.type === ContentType.Image && (
             <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
@@ -268,7 +273,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               ) : (
                 <div
                   className={twMerge(
-                    'message flex flex-col gap-y-2 font-medium leading-relaxed',
+                    'message flex flex-col gap-y-2 leading-relaxed',
                     isUser ? 'whitespace-pre-wrap break-words' : 'p-4'
                   )}
                 >
@@ -279,7 +284,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto font-medium leading-relaxed',
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed',
                 isUser && 'whitespace-pre-wrap break-words'
               )}
               dangerouslySetInnerHTML={{ __html: parsedText }}

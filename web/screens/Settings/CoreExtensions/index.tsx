@@ -158,7 +158,7 @@ const ExtensionCatalog = () => {
           {engineActiveExtensions.length !== 0 && (
             <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
               <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Model Provider
+                Model Providers
               </h6>
             </div>
           )}
@@ -213,7 +213,7 @@ const ExtensionCatalog = () => {
           {coreActiveExtensions.length > 0 && (
             <div className="mb-3 mt-8 border-b border-[hsla(var(--app-border))] pb-4">
               <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Core Extention
+                Core Extension
               </h6>
             </div>
           )}

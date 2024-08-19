@@ -8,14 +8,14 @@
   "id": "yi-34b",
   "object": "model",
   "name": "Yi 34B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Yi-34B, a specialized chat model, is known for its diverse and creative responses and excels across various NLP tasks and benchmarks.",
   "format": "gguf",
   "settings": {
     "ctx_len": 4096,
     "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
     "llama_model_path": "yi-34b-chat.Q4_K_M.gguf",
-    "ngl": 60
+    "ngl": 61
   },
   "parameters": {
     "temperature": 0.7,

@@ -1,0 +1,127 @@
+name: Nightly Update cortex cpp
+
+on:
+  schedule:
+    - cron: '30 19 * * 1-5' # At 01:30 on every day-of-week from Monday through Friday UTC +7
+  workflow_dispatch:
+
+jobs:
+  update-submodule:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+
+    outputs:
+      pr_number: ${{ steps.check-update.outputs.pr_number }}
+      pr_created: ${{ steps.check-update.outputs.pr_created }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+        ref: dev
+        fetch-depth: 0
+        token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+
+    - name: Configure Git
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: Update submodule to latest release
+      id: check-update
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+      run: |
+        curl -s https://api.github.com/repos/janhq/cortex/releases > /tmp/github_api_releases.json
+        latest_prerelease_name=$(cat /tmp/github_api_releases.json | jq -r '.[] | select(.prerelease) | .name' | head -n 1)
+
+        get_asset_count() {
+          local version_name=$1
+          cat /tmp/github_api_releases.json | jq -r --arg version_name "$version_name" '.[] | select(.name == $version_name) | .assets | length'
+        }
+
+        cortex_cpp_version_file_path="extensions/inference-nitro-extension/bin/version.txt"
+        current_version_name=$(cat "$cortex_cpp_version_file_path" | head -n 1)
+
+        current_version_asset_count=$(get_asset_count "$current_version_name")
+        latest_prerelease_asset_count=$(get_asset_count "$latest_prerelease_name")
+
+        if [ "$current_version_name" = "$latest_prerelease_name" ]; then
+          echo "cortex cpp remote repo doesn't have update today, skip update cortex-cpp for today nightly build"
+          echo "::set-output name=pr_created::false"
+          exit 0
+        fi
+
+        if [ "$current_version_asset_count" != "$latest_prerelease_asset_count" ]; then
+          echo "Latest prerelease version has different number of assets, somethink went wrong, skip update cortex-cpp for today nightly build"
+          echo "::set-output name=pr_created::false"
+          exit 1
+        fi
+
+        echo $latest_prerelease_name > $cortex_cpp_version_file_path
+        echo "Updated version from $current_version_name to $latest_prerelease_name."
+        echo "::set-output name=pr_created::true"
+
+        git add -f $cortex_cpp_version_file_path
+        git commit -m "Update cortex cpp nightly to version $latest_prerelease_name"
+        branch_name="update-nightly-$(date +'%Y-%m-%d-%H-%M')"
+        git checkout -b $branch_name
+        git push origin $branch_name
+
+        pr_title="Update cortex cpp nightly to version $latest_prerelease_name"
+        pr_body="This PR updates the Update cortex cpp nightly to version $latest_prerelease_name"
+
+        gh pr create --title "$pr_title" --body "$pr_body" --head $branch_name --base dev --reviewer Van-QA
+
+        pr_number=$(gh pr list --head $branch_name --json number --jq '.[0].number')
+        echo "::set-output name=pr_number::$pr_number"
+
+  check-and-merge-pr:
+    needs: update-submodule
+    if: needs.update-submodule.outputs.pr_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        submodules: recursive
+        fetch-depth: 0
+        token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+
+    - name: Wait for CI to pass
+      env:
+          GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+      run: |
+        pr_number=${{ needs.update-submodule.outputs.pr_number }}
+        while true; do
+          ci_completed=$(gh pr checks $pr_number --json completedAt --jq '.[].completedAt')
+          if echo "$ci_completed" | grep -q "0001-01-01T00:00:00Z"; then
+            echo "CI is still running, waiting..."
+            sleep 60
+          else
+            echo "CI has completed, checking states..."
+            ci_states=$(gh pr checks $pr_number --json state --jq '.[].state')
+            if echo "$ci_states" | grep -vqE "SUCCESS|SKIPPED"; then
+              echo "CI failed, exiting..."
+              exit 1
+            else
+              echo "CI passed, merging PR..."
+              break
+            fi
+          fi
+        done
+
+    - name: Merge the PR
+      env:
+          GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+      run: |
+        pr_number=${{ needs.update-submodule.outputs.pr_number }}
+        gh pr merge $pr_number --merge --admin

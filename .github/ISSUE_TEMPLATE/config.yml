@@ -1,0 +1,7 @@
+## To encourage contributors to use issue templates, we don't allow blank issues
+blank_issues_enabled: true
+
+contact_links:
+  - name: "\u2753 Our GitHub Discussions page"
+    url: "https://github.com/orgs/janhq/discussions/categories/q-a"
+    about: "Please ask and answer questions here!"

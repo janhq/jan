@@ -16,6 +16,8 @@ import useDeleteModel from '@/hooks/useDeleteModel'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { localEngines } from '@/utils/modelEngine'
+
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type Props = {
@@ -44,33 +46,10 @@ const MyModelList = ({ model }: Props) => {
     }
   }
 
-  const engineHasLogo = [
-    InferenceEngine.anthropic,
-    InferenceEngine.cohere,
-    InferenceEngine.martian,
-    InferenceEngine.mistral,
-    InferenceEngine.openai,
-  ]
-
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex w-1/2 gap-x-8">
-          {engineHasLogo.map((x) => {
-            if (x === model.engine) {
-              return (
-                <div className="relative overflow-hidden rounded-full" key={x}>
-                  <img
-                    src={`images/ModelProvider/${x}.svg`}
-                    alt="Model Provider"
-                    width={24}
-                    height={24}
-                    className="object-cover"
-                  />
-                </div>
-              )
-            }
-          })}
           <div className="flex w-full items-center justify-between">
             <h6
               className={twMerge(
@@ -95,13 +74,13 @@ const MyModelList = ({ model }: Props) => {
           </div>
         </div>
 
-        {model.engine === InferenceEngine.nitro && (
+        {localEngines.includes(model.engine) && (
           <div className="flex gap-x-4">
             <Badge theme="secondary" className="sm:mr-16">
               {toGibibytes(model.metadata.size)}
             </Badge>
 
-            <div className="flex items-center gap-x-4">
+            <div className="relative flex items-center gap-x-4">
               {stateModel.loading && stateModel.model?.id === model.id ? (
                 <Badge
                   className="inline-flex items-center space-x-2"
@@ -144,7 +123,7 @@ const MyModelList = ({ model }: Props) => {
                 </Button>
                 {more && (
                   <div
-                    className="absolute right-4 top-10 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
+                    className="absolute right-8 top-0 z-20 w-52 overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg"
                     ref={setMenu}
                   >
                     <Tooltip

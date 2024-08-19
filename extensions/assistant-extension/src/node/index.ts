@@ -11,13 +11,14 @@ export function toolRetrievalUpdateTextSplitter(
 export async function toolRetrievalIngestNewDocument(
   file: string,
   model: string,
-  engine: string
+  engine: string,
+  useTimeWeighted: boolean
 ) {
   const filePath = path.join(getJanDataFolderPath(), normalizeFilePath(file))
   const threadPath = path.dirname(filePath.replace('files', ''))
   retrieval.updateEmbeddingEngine(model, engine)
   return retrieval
-    .ingestAgentKnowledge(filePath, `${threadPath}/memory`)
+    .ingestAgentKnowledge(filePath, `${threadPath}/memory`, useTimeWeighted)
     .catch((err) => {
       console.error(err)
     })
@@ -33,8 +34,11 @@ export async function toolRetrievalLoadThreadMemory(threadId: string) {
     })
 }
 
-export async function toolRetrievalQueryResult(query: string) {
-  return retrieval.generateResult(query).catch((err) => {
+export async function toolRetrievalQueryResult(
+  query: string,
+  useTimeWeighted: boolean = false
+) {
+  return retrieval.generateResult(query, useTimeWeighted).catch((err) => {
     console.error(err)
   })
 }

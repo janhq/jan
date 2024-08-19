@@ -39,3 +39,5 @@ extensions/*-extension/bin/vulkaninfo
 
 # Turborepo
 .turbo
+electron/test-data
+electron/test-results

@@ -1,0 +1,82 @@
+name: "\U0001F41B Bug Report"
+description: "If something isn't working as expected \U0001F914"
+labels: [ "type: bug" ]
+title: 'bug: [DESCRIPTION]'
+
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for taking the time to fill out this bug report!"
+
+  - type: checkboxes
+    attributes:
+      label: "#"
+      description: "Please search [here](./?q=is%3Aissue) to see if an issue already exists for the bug you encountered"
+      options:
+        - label: "I have searched the existing issues"
+          required: false
+
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Current behavior"
+      description: "A clear and concise description of what the bug is"
+
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Minimum reproduction step"
+      description: |
+        Please list out steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Expected behavior"
+      description: "A clear and concise description of what you expected to happen"
+
+  - type: textarea
+    validations:
+      required: true
+    attributes:
+      label: "Screenshots / Logs"
+      description: |
+        Kindly provide your screenshots / [usage logs](https://jan.ai/docs/troubleshooting#how-to-get-error-logs) that could be helpful in diagnosing the problem
+        **Tip:** You can attach images, recordings or log files by clicking this area to highlight it and then dragging files in
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+  - type: input
+    validations:
+      required: true
+    attributes:
+      label: "Jan version"
+      description: "**Tip:** The version is located in the lower right conner of the Jan app"
+      placeholder: "e.g. 0.5.x-xxx nightly or stable"
+
+  - type: checkboxes
+    attributes:
+      label: "In which operating systems have you tested?"
+      options:
+        - label: macOS
+        - label: Windows
+        - label: Linux
+
+  - type: textarea
+    attributes:
+      label: "Environment details"
+      description: |
+        - Operating System: [Specify your OS details: e.g., MacOS Sonoma 14.2.1, Windows 11, Ubuntu 22, etc]
+        - Processor: [e.g., Apple M1, Intel Core i7, AMD Ryzen 5, etc]
+        - RAM: [e.g., 8GB, 16GB]
+        - Any additional relevant hardware specifics: [e.g., Graphics card, SSD/HDD]

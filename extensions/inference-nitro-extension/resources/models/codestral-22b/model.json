@@ -8,14 +8,14 @@
     "id": "codestral-22b",
     "object": "model",
     "name": "Codestral 22B Q4",
-    "version": "1.0",
+    "version": "1.1",
     "description": "Latest model from MistralAI optimized for code generation tasks.",
     "format": "gguf",
     "settings": {
       "ctx_len": 32000,
       "prompt_template": "{system_message} [INST] {prompt} [/INST]",
       "llama_model_path": "Codestral-22B-v0.1-Q4_K_M.gguf",
-      "ngl": 56
+      "ngl": 57
     },
     "parameters": {
       "temperature": 0.7,

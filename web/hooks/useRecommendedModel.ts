@@ -72,9 +72,6 @@ export default function useRecommendedModel() {
     // if we don't have [lastUsedModelId], then we can just use the first model
     // in the downloaded list
     if (!lastUsedModelId) {
-      console.debug(
-        `No last used model, using first model in list ${models[0].id}}`
-      )
       setRecommendedModel(models[0])
       return
     }
@@ -90,7 +87,6 @@ export default function useRecommendedModel() {
       return
     }
 
-    console.debug(`Using last used model ${lastUsedModel.id}`)
     setRecommendedModel(lastUsedModel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getAndSortDownloadedModels, activeThread])

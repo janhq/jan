@@ -8,14 +8,14 @@
     "id": "llama3-8b-instruct",
     "object": "model",
     "name": "Llama 3 8B Q4",
-    "version": "1.1",
+    "version": "1.2",
     "description": "Meta's Llama 3 excels at general usage situations, including chat, general world knowledge, and coding.",
     "format": "gguf",
     "settings": {
       "ctx_len": 8192,
       "prompt_template": "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
       "llama_model_path": "Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
-      "ngl": 32
+      "ngl": 33
     },
     "parameters": {
       "temperature": 0.7,

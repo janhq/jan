@@ -11,11 +11,7 @@ import {
   lstatSync,
 } from 'fs'
 import Store from 'electron-store'
-import {
-  getJanExtensionsPath,
-  getJanDataFolderPath,
-  appResourcePath,
-} from '@janhq/core/node'
+import { getJanDataFolderPath, appResourcePath } from '@janhq/core/node'
 
 /**
  * Migrates the extensions & themes.
@@ -43,9 +39,9 @@ async function migrateThemes() {
   if (!existsSync(join(getJanDataFolderPath(), 'themes')))
     mkdirSync(join(getJanDataFolderPath(), 'themes'), { recursive: true })
 
-  const themes = readdirSync(join(await appResourcePath(), 'themes'))
+  const themes = readdirSync(join(appResourcePath(), 'themes'))
   for (const theme of themes) {
-    const themePath = join(await appResourcePath(), 'themes', theme)
+    const themePath = join(appResourcePath(), 'themes', theme)
     if (existsSync(themePath) && !lstatSync(themePath).isDirectory()) {
       continue
     }

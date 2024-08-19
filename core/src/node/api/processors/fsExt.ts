@@ -1,6 +1,6 @@
 import { join } from 'path'
 import fs from 'fs'
-import { appResourcePath, normalizeFilePath } from '../../helper/path'
+import { appResourcePath, normalizeFilePath, validatePath } from '../../helper/path'
 import { getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
 import { Processor } from './Processor'
 import { FileStat } from '../../../types'
@@ -16,19 +16,6 @@ export class FSExt implements Processor {
     const instance = this as any
     const func = instance[key]
     return func(...args)
-  }
-
-  // Handles the 'syncFile' IPC event. This event is triggered to synchronize a file from a source path to a destination path.
-  syncFile(src: string, dest: string) {
-    const reflect = require('@alumna/reflect')
-    return reflect({
-      src,
-      dest,
-      recursive: true,
-      delete: false,
-      overwrite: true,
-      errorOnExist: false,
-    })
   }
 
   // Handles the 'getJanDataFolderPath' IPC event. This event is triggered to get the user space path.
@@ -70,14 +57,18 @@ export class FSExt implements Processor {
   writeBlob(path: string, data: any) {
     try {
       const normalizedPath = normalizeFilePath(path)
+      
       const dataBuffer = Buffer.from(data, 'base64')
-      fs.writeFileSync(join(getJanDataFolderPath(), normalizedPath), dataBuffer)
+      const writePath = join(getJanDataFolderPath(), normalizedPath)
+      validatePath(writePath)
+      fs.writeFileSync(writePath, dataBuffer)
     } catch (err) {
       console.error(`writeFile ${path} result: ${err}`)
     }
   }
 
   copyFile(src: string, dest: string): Promise<void> {
+    validatePath(dest)
     return new Promise((resolve, reject) => {
       fs.copyFile(src, dest, (err) => {
         if (err) {

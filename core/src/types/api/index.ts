@@ -90,7 +90,6 @@ export enum ExtensionRoute {
 }
 export enum FileSystemRoute {
   appendFileSync = 'appendFileSync',
-  copyFileSync = 'copyFileSync',
   unlinkSync = 'unlinkSync',
   existsSync = 'existsSync',
   readdirSync = 'readdirSync',
@@ -100,7 +99,6 @@ export enum FileSystemRoute {
   writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
-  syncFile = 'syncFile',
   copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
   getResourcePath = 'getResourcePath',
@@ -169,5 +167,5 @@ export const APIEvents = [
 export type PayloadType = {
   messages: ChatCompletionMessage[]
   model: string
-  stream: Boolean
+  stream: boolean
 }

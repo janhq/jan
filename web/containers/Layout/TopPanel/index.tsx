@@ -9,20 +9,27 @@ import {
   PanelRightCloseIcon,
   MinusIcon,
   MenuIcon,
+  SquareIcon,
   PaletteIcon,
   XIcon,
+  PenSquareIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
+
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import {
   mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   reduceTransparentAtom,
   selectedSettingAtom,
@@ -34,6 +41,18 @@ const TopPanel = () => {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const { requestCreateNewThread } = useCreateNewThread()
+  const assistants = useAtomValue(assistantsAtom)
+
+  const onCreateNewThreadClick = () => {
+    if (!assistants.length)
+      return toaster({
+        title: 'No assistant available.',
+        description: `Could not create a new thread. Please add an assistant.`,
+        type: 'error',
+      })
+    requestCreateNewThread(assistants[0])
+  }
 
   return (
     <div
@@ -51,7 +70,7 @@ const TopPanel = () => {
             <Button
               theme="icon"
               onClick={() => {
-                window?.electronAPI.showOpenMenu(100, 100)
+                window?.electronAPI?.showOpenMenu(100, 100)
               }}
             >
               <MenuIcon size={16} />
@@ -69,6 +88,18 @@ const TopPanel = () => {
                 </Button>
               )}
             </Fragment>
+          )}
+          {mainViewState === MainViewState.Thread && (
+            <Button
+              data-testid="btn-create-thread"
+              onClick={onCreateNewThreadClick}
+              theme="icon"
+            >
+              <PenSquareIcon
+                size={16}
+                className="cursor-pointer text-[hsla(var(--text-secondary))]"
+              />
+            </Button>
           )}
         </div>
         <div className="unset-drag flex items-center gap-x-2">
@@ -96,17 +127,23 @@ const TopPanel = () => {
             <PaletteIcon size={16} className="cursor-pointer" />
           </Button>
 
-          {isWindows && (
+          {!isMac && (
             <div className="flex items-center gap-x-2">
               <Button
                 theme="icon"
-                onClick={() => window?.electronAPI.setMinimizeApp()}
+                onClick={() => window?.electronAPI?.setMinimizeApp()}
               >
                 <MinusIcon size={16} />
               </Button>
               <Button
                 theme="icon"
-                onClick={() => window?.electronAPI.setCloseApp()}
+                onClick={() => window?.electronAPI?.setMaximizeApp()}
+              >
+                <SquareIcon size={14} />
+              </Button>
+              <Button
+                theme="icon"
+                onClick={() => window?.electronAPI?.setCloseApp()}
               >
                 <XIcon size={16} />
               </Button>
