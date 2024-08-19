@@ -398,7 +398,7 @@ const ChatInput = () => {
               <ModelDropdown chatInputMode />
               <Badge
                 theme="secondary"
-                className="cursor-pointer px-1"
+                className="flex cursor-pointer items-center gap-x-1"
                 variant={
                   activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
                 }
@@ -415,6 +415,7 @@ const ChatInput = () => {
                   size={16}
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
+                <span>Inference</span>
               </Badge>
               {experimentalFeature && (
                 <Badge

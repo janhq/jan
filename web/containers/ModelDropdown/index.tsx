@@ -284,6 +284,7 @@ const ModelDropdown = ({
         {chatInputMode ? (
           <Badge
             theme="secondary"
+            variant={open ? 'solid' : 'outline'}
             className="cursor-pointer"
             onClick={() => setOpen(!open)}
           >
