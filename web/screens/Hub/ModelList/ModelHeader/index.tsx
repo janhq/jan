@@ -134,10 +134,11 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
           />
         </div>
       )} */}
-      <div className="flex items-center justify-between px-4 py-2">
+      <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-2">
-          <span className="line-clamp-1 text-base font-semibold">
+          <span className="line-clamp-1 text-base font-semibold capitalize">
             {model.name}
+            {model.metadata?.label && <Badge theme="secondary" variant='outline' className='mx-2 py-1 uppercase'>{model.metadata.label}</Badge>}
           </span>
           <EngineBadge engine={model.engine} />
         </div>
@@ -146,7 +147,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
             <span className="mr-4 font-semibold">
               {toGibibytes(model.metadata?.size)}
             </span>
-            <ModelLabel metadata={model.metadata} />
+            {model.format !== 'api' && <ModelLabel metadata={model.metadata} />}
           </div>
           {downloadButton}
           <ChevronDownIcon

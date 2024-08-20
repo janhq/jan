@@ -72,11 +72,6 @@ const tryGettingModelYaml = async (repoName, branch) => {
       url: `https://huggingface.co/${repoName}/resolve/${branch}/${file}`,
     }))
     model.id = `${model.model.replace(':', '-')}-${branch}`
-    model.name = (model.name + ' ' + branch)
-      .replace(/(^\w|\s\w)/g, (m) => m.toUpperCase())
-      .replace(/gguf/gi, 'GGUF')
-      .replace(/\b(\d+)b\b/gi, (match) => match.toUpperCase())
-      .replace(/\b(\w+)\b(?:\s+\1)+/gi, '$1')
 
     const data = await (
       await downloadFile({ repo: repoName, path: 'README.md' })
@@ -86,7 +81,12 @@ const tryGettingModelYaml = async (repoName, branch) => {
       ?.trim()
 
     // At least try to pull size and branch name as tag
-    model.metadata = model.metadata ?? { size, tags: [branch] }
+    model.metadata = {
+      ...model.metadata,
+      size,
+      tags: [...(model.tags ?? []), branch],
+      label: branch,
+    }
     return model
   } catch (e) {
     return undefined

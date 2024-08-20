@@ -107,6 +107,7 @@ export type ModelMetadata = {
   tags: string[]
   size: number
   cover?: string
+  label?: string
 }
 
 /**
