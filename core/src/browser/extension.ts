@@ -118,10 +118,18 @@ export abstract class BaseExtension implements ExtensionType {
       setting.extensionName = this.name
     })
     try {
-      await fs.mkdir(extensionSettingFolderPath)
+      if (!(await fs.existsSync(extensionSettingFolderPath)))
+        await fs.mkdir(extensionSettingFolderPath)
       const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
 
-      if (await fs.existsSync(settingFilePath)) return
+      // Persists new setting only
+      if (await fs.existsSync(settingFilePath)) {
+        const oldSettings = JSON.parse(await fs.readFileSync(settingFilePath, 'utf-8'))
+        if (Array.isArray(oldSettings))
+          settings = oldSettings.concat(
+            settings.filter((e) => !oldSettings.some((o) => o.key === e.key))
+          )
+      }
       await fs.writeFileSync(settingFilePath, JSON.stringify(settings, null, 2))
     } catch (err) {
       console.error(err)
