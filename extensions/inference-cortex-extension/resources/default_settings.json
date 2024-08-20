@@ -1,12 +1,32 @@
 [
   {
-    "key": "test",
-    "title": "Test",
-    "description": "Test",
+    "key": "cortex-host",
+    "title": "Cortex Host",
+    "description": "The host of the Cortex API.",
     "controllerType": "input",
     "controllerProps": {
-      "placeholder": "Test",
-      "value": ""
+      "placeholder": "Input the host of the Cortex process",
+      "value": "127.0.0.1"
+    }
+  },
+  {
+    "key": "cortex-port",
+    "title": "Cortex Port",
+    "description": "The port of the Cortex API.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Input the port of the Cortex process",
+      "value": "1338"
+    }
+  },
+  {
+    "key": "cortex-engine-port",
+    "title": "Cortex Engine Port",
+    "description": "The port of the Cortex Engine.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Input the port of the Cortex Engine",
+      "value": "3930"
     }
   },
   {
