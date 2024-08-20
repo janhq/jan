@@ -13,7 +13,7 @@ import { Model, LocalOAIEngine } from '@janhq/core'
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceNitroExtension extends LocalOAIEngine {
+export default class JanInferenceCortexExtension extends LocalOAIEngine {
   nodeModule: string = NODE
   provider: string = 'cortex'
   /**
@@ -34,7 +34,6 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
 
   override loadModel(model: Model): Promise<void> {
     if (model.engine !== this.provider) return Promise.resolve()
-
     return super.loadModel(model)
   }
 
