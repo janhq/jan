@@ -73,6 +73,7 @@ const tryGettingModelYaml = async (repoName, branch) => {
     }))
     model.id = `${model.model.replace(':', '-')}-${branch}`
 
+    // Download README.md for description parsing
     const data = await (
       await downloadFile({ repo: repoName, path: 'README.md' })
     )?.text()

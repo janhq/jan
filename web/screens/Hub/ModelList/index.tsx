@@ -37,6 +37,7 @@ const ModelList = ({ models }: Props) => {
         remainingModels.push(m)
       }
     })
+    recommendedModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
     latestModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
     featuredModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
     remoteModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
