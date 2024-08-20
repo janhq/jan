@@ -53,13 +53,14 @@ export default async () => [
   {
     input: `src/node/index.ts`,
     output: [
-      { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true },
+      { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: false },
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: ['@janhq/core/node'],
     watch: {
       include: 'src/node/**',
     },
+    inlineDynamicImports: true,
     plugins: [
       // Allow json resolution
       json(),
