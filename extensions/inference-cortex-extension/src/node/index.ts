@@ -13,6 +13,7 @@ import {
   getJanDataFolderPath
 } from '@janhq/core/node'
 import { start as startCortex } from 'cortexso'
+import { showToast } from '@janhq/core/.'
 
 interface InitEngineOptions {
     runMode?: 'CPU' | 'GPU';
@@ -23,6 +24,24 @@ interface InitEngineOptions {
     vulkan?: boolean;
     version?: string;
 }
+
+enum EngineStatus {
+    NOT_SUPPORTED = 'not_supported',
+    READY = 'ready',
+    MISSING_CONFIGURATION = 'missing_configuration',
+    NOT_INITIALIZED = 'not_initialized',
+    ERROR = 'error',
+
+}
+
+interface EngineInformation {
+  name: string;
+  description: string;
+  version: string;
+  productName: string;
+  status: EngineStatus;
+}
+
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -161,7 +180,23 @@ async function loadModel(
           : path.join(modelFolder, params.model.settings.mmproj),
       }),
     }
-    await spawnCortexProcess(systemInfo)
+
+    if([InferenceEngine.cortex_onnx, InferenceEngine.cortex_tensorrtllm].includes(params.model.engine)){
+      const engineInfo = await getEngineInformation(params.model.engine)
+      if(engineInfo.status === EngineStatus.NOT_SUPPORTED){
+          showToast('Engine not compatible', `Engine ${params.model.engine} is not compatible with the current system`)
+      }
+
+      if(engineInfo.status === EngineStatus.NOT_INITIALIZED){
+        throw new Error('EXTENSION_IS_NOT_INSTALLED::Cortex extension with engine ' + params.model.engine)
+      }
+
+      if(engineInfo.status !== EngineStatus.ERROR){
+        showToast('Engine error', `Unable to load engine ${params.model.engine}`)
+      }
+
+      
+    }
     await loadLLMModel(params.model.id, currentSettings)
     return;
 }
@@ -291,13 +326,12 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
 }
 
 async function initCortexEngine(engineName: string, options: InitEngineOptions): Promise<void> {
-    const engineInfo = await fetch(CORTEX_ENGINE_INFO(engineName));
-    const engineInfoJson = await engineInfo.json();
-    if(engineInfoJson.status === 'not_supported'){
+    const engineInfo = await getEngineInformation(engineName);
+    if(engineInfo.status === 'not_supported'){
         log(`[CORTEX]::Error: Engine ${engineName} is not supported`)
         return Promise.reject(`Engine ${engineName} is not supported`)
     }
-    if(engineInfoJson.status === 'ready'){
+    if(engineInfo.status === 'ready'){
         log(`[CORTEX]::Debug: Engine ${engineName} is already initialized`)
         return Promise.resolve()
     }
@@ -311,6 +345,12 @@ async function initCortexEngine(engineName: string, options: InitEngineOptions):
     retries: 3,
     retryDelay: 300,
 })
+}
+
+async function getEngineInformation(engineName: string): Promise<EngineInformation> {
+    const engineInfo = await fetch(CORTEX_ENGINE_INFO(engineName));
+    const engineInfoJson = await engineInfo.json();
+    return engineInfoJson as EngineInformation;
 }
 
 /**
@@ -350,4 +390,7 @@ export default {
   loadModel,
   unloadModel,
   dispose,
+  getEngineInformation,
+  spawnCortexProcess,
+  initCortexEngine
 }
