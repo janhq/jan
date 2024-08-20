@@ -1,6 +1,9 @@
 import ThreadLeftPanel from '@/screens/Thread/ThreadLeftPanel'
 
 import ThreadCenterPanel from './ThreadCenterPanel'
+import ModalCleanThread from './ThreadLeftPanel/ModalCleanThread'
+import ModalDeleteThread from './ThreadLeftPanel/ModalDeleteThread'
+import ModalEditTitleThread from './ThreadLeftPanel/ModalEditTitleThread'
 import ThreadRightPanel from './ThreadRightPanel'
 
 const ThreadScreen = () => {
@@ -9,6 +12,11 @@ const ThreadScreen = () => {
       <ThreadLeftPanel />
       <ThreadCenterPanel />
       <ThreadRightPanel />
+
+      {/* Showing variant modal action for thread screen */}
+      <ModalEditTitleThread />
+      <ModalCleanThread />
+      <ModalDeleteThread />
     </div>
   )
 }
