@@ -34,7 +34,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   override loadModel(model: Model): Promise<void> {
     if (model.engine !== this.provider) return Promise.resolve()
-
     return super.loadModel(model)
   }
 
