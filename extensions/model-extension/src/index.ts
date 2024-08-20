@@ -19,8 +19,6 @@ import {
   DownloadRequest,
   executeOnMain,
   HuggingFaceRepoData,
-  Quantization,
-  log,
   getFileSize,
   AllQuantizations,
   ModelEvent,
@@ -565,6 +563,19 @@ export default class JanModelExtension extends ModelExtension {
     }
 
     const defaultModel = (await this.getDefaultModel()) as Model
+    const metadata = await executeOnMain(
+      NODE,
+      'retrieveGGUFMetadata',
+      await joinPath([
+        await getJanDataFolderPath(),
+        'models',
+        dirName,
+        binaryFileName,
+      ])
+    )
+
+    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+
     if (!defaultModel) {
       console.error('Unable to find default model')
       return
@@ -581,8 +592,18 @@ export default class JanModelExtension extends ModelExtension {
           filename: binaryFileName,
         },
       ],
+      parameters: {
+        ...defaultModel.parameters,
+        stop: [metadata['tokenizer.ggml.tokens'][eos_id] ?? ''],
+      },
       settings: {
         ...defaultModel.settings,
+        prompt_template:
+          metadata.parsed_chat_template ??
+          defaultModel.settings.prompt_template,
+        ctx_len:
+          metadata['llama.context_length'] ?? defaultModel.settings.ctx_len,
+        ngl: (metadata['llama.block_count'] ?? 32) + 1,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -657,6 +678,13 @@ export default class JanModelExtension extends ModelExtension {
       return
     }
 
+    const metadata = await executeOnMain(
+      NODE,
+      'retrieveGGUFMetadata',
+      modelBinaryPath
+    )
+    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+
     const binaryFileName = await baseName(modelBinaryPath)
 
     const model: Model = {
@@ -669,8 +697,19 @@ export default class JanModelExtension extends ModelExtension {
           filename: binaryFileName,
         },
       ],
+      parameters: {
+        ...defaultModel.parameters,
+        stop: [metadata['tokenizer.ggml.tokens'][eos_id] ?? ''],
+      },
+
       settings: {
         ...defaultModel.settings,
+        prompt_template:
+          metadata.parsed_chat_template ??
+          defaultModel.settings.prompt_template,
+        ctx_len:
+          metadata['llama.context_length'] ?? defaultModel.settings.ctx_len,
+        ngl: (metadata['llama.block_count'] ?? 32) + 1,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -825,219 +864,5 @@ export default class JanModelExtension extends ModelExtension {
       LocalImportModelEvent.onLocalImportModelFinished,
       importedModels
     )
-  }
-
-  private getGgufFileList(
-    repoData: HuggingFaceRepoData,
-    selectedQuantization: Quantization
-  ): string[] {
-    return repoData.siblings
-      .map((file) => file.rfilename)
-      .filter((file) => file.indexOf(selectedQuantization) !== -1)
-      .filter((file) => file.endsWith('.gguf'))
-  }
-
-  private getFileList(repoData: HuggingFaceRepoData): string[] {
-    // SafeTensors first, if not, then PyTorch
-    const modelFiles = repoData.siblings
-      .map((file) => file.rfilename)
-      .filter((file) =>
-        JanModelExtension._safetensorsRegexs.some((regex) => regex.test(file))
-      )
-    if (modelFiles.length === 0) {
-      repoData.siblings.forEach((file) => {
-        if (
-          JanModelExtension._pytorchRegexs.some((regex) =>
-            regex.test(file.rfilename)
-          )
-        ) {
-          modelFiles.push(file.rfilename)
-        }
-      })
-    }
-
-    const vocabFiles = [
-      'tokenizer.model',
-      'vocab.json',
-      'tokenizer.json',
-    ].filter((file) =>
-      repoData.siblings.some((sibling) => sibling.rfilename === file)
-    )
-
-    const etcFiles = repoData.siblings
-      .map((file) => file.rfilename)
-      .filter(
-        (file) =>
-          (file.endsWith('.json') && !vocabFiles.includes(file)) ||
-          file.endsWith('.txt') ||
-          file.endsWith('.py') ||
-          file.endsWith('.tiktoken')
-      )
-
-    return [...modelFiles, ...vocabFiles, ...etcFiles]
-  }
-
-  private async getModelDirPath(repoID: string): Promise<string> {
-    const modelName = repoID.split('/').slice(1).join('/')
-    return joinPath([await getJanDataFolderPath(), 'models', modelName])
-  }
-
-  private async getConvertedModelPath(repoID: string): Promise<string> {
-    const modelName = repoID.split('/').slice(1).join('/')
-    const modelDirPath = await this.getModelDirPath(repoID)
-    return joinPath([modelDirPath, modelName + '.gguf'])
-  }
-
-  private async getQuantizedModelPath(
-    repoID: string,
-    quantization: Quantization
-  ): Promise<string> {
-    const modelName = repoID.split('/').slice(1).join('/')
-    const modelDirPath = await this.getModelDirPath(repoID)
-    return joinPath([
-      modelDirPath,
-      modelName + `-${quantization.toLowerCase()}.gguf`,
-    ])
-  }
-  private getCtxLength(config: {
-    max_sequence_length?: number
-    max_position_embeddings?: number
-    n_ctx?: number
-  }): number {
-    if (config.max_sequence_length) return config.max_sequence_length
-    if (config.max_position_embeddings) return config.max_position_embeddings
-    if (config.n_ctx) return config.n_ctx
-    return 2048
-  }
-
-  /**
-   * Converts a Hugging Face model to GGUF.
-   * @param repoID - The repo ID of the model to convert.
-   * @returns A promise that resolves when the conversion is complete.
-   */
-  async convert(repoID: string): Promise<void> {
-    if (this.interrupted) return
-    const modelDirPath = await this.getModelDirPath(repoID)
-    const modelOutPath = await this.getConvertedModelPath(repoID)
-    if (!(await fs.existsSync(modelDirPath))) {
-      throw new Error('Model dir not found')
-    }
-    if (await fs.existsSync(modelOutPath)) return
-
-    await executeOnMain(NODE, 'installDeps')
-    if (this.interrupted) return
-
-    try {
-      await executeOnMain(
-        NODE,
-        'convertHf',
-        modelDirPath,
-        modelOutPath + '.temp'
-      )
-    } catch (err) {
-      log(`[Conversion]::Debug: Error using hf-to-gguf.py, trying convert.py`)
-
-      let ctx = 2048
-      try {
-        const config = await fs.readFileSync(
-          await joinPath([modelDirPath, 'config.json']),
-          'utf8'
-        )
-        const configParsed = JSON.parse(config)
-        ctx = this.getCtxLength(configParsed)
-        configParsed.max_sequence_length = ctx
-        await fs.writeFileSync(
-          await joinPath([modelDirPath, 'config.json']),
-          JSON.stringify(configParsed, null, 2)
-        )
-      } catch (err) {
-        log(`${err}`)
-        // ignore missing config.json
-      }
-
-      const bpe = await fs.existsSync(
-        await joinPath([modelDirPath, 'vocab.json'])
-      )
-
-      await executeOnMain(
-        NODE,
-        'convert',
-        modelDirPath,
-        modelOutPath + '.temp',
-        {
-          ctx,
-          bpe,
-        }
-      )
-    }
-    await executeOnMain(
-      NODE,
-      'renameSync',
-      modelOutPath + '.temp',
-      modelOutPath
-    )
-
-    for (const file of await fs.readdirSync(modelDirPath)) {
-      if (
-        modelOutPath.endsWith(file) ||
-        (file.endsWith('config.json') && !file.endsWith('_config.json'))
-      )
-        continue
-      await fs.unlinkSync(await joinPath([modelDirPath, file]))
-    }
-  }
-
-  /**
-   * Quantizes a GGUF model.
-   * @param repoID - The repo ID of the model to quantize.
-   * @param quantization - The quantization to use.
-   * @returns A promise that resolves when the quantization is complete.
-   */
-  async quantize(repoID: string, quantization: Quantization): Promise<void> {
-    if (this.interrupted) return
-    const modelDirPath = await this.getModelDirPath(repoID)
-    const modelOutPath = await this.getQuantizedModelPath(repoID, quantization)
-    if (!(await fs.existsSync(modelDirPath))) {
-      throw new Error('Model dir not found')
-    }
-    if (await fs.existsSync(modelOutPath)) return
-
-    await executeOnMain(
-      NODE,
-      'quantize',
-      await this.getConvertedModelPath(repoID),
-      modelOutPath + '.temp',
-      quantization
-    )
-    await executeOnMain(
-      NODE,
-      'renameSync',
-      modelOutPath + '.temp',
-      modelOutPath
-    )
-
-    await fs.unlinkSync(await this.getConvertedModelPath(repoID))
-  }
-
-  /**
-   * Cancels the convert of current Hugging Face model.
-   * @param repoID - The repository ID to cancel.
-   * @param repoData - The repository data to cancel.
-   * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
-   */
-  async cancelConvert(
-    repoID: string,
-    repoData: HuggingFaceRepoData
-  ): Promise<void> {
-    this.interrupted = true
-    const modelDirPath = await this.getModelDirPath(repoID)
-    const files = this.getFileList(repoData)
-    for (const file of files) {
-      const filePath = file
-      const localPath = await joinPath([modelDirPath, filePath])
-      await abortDownload(localPath)
-    }
-
-    executeOnMain(NODE, 'killProcesses')
   }
 }
