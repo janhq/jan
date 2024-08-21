@@ -10,7 +10,7 @@ import {
   Model,
   AssistantTool,
 } from '@janhq/core'
-import { atom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
@@ -24,7 +24,10 @@ import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import {
+  experimentalFeatureEnabledAtom,
+  preserveModelSettingsAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
@@ -62,6 +65,7 @@ export const useCreateNewThread = () => {
   const copyOverInstructionEnabled = useAtomValue(
     copyOverInstructionEnabledAtom
   )
+  const preserveModelSettings = useAtomValue(preserveModelSettingsAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
@@ -99,15 +103,20 @@ export const useCreateNewThread = () => {
       enabled: true,
       settings: assistant.tools && assistant.tools[0].settings,
     }
-
+    const defaultContextLength = preserveModelSettings
+      ? model?.metadata?.default_ctx_len
+      : 2048
+    const defaultMaxTokens = preserveModelSettings
+      ? model?.metadata?.default_max_tokens
+      : 2048
     const overriddenSettings =
       defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
-        ? { ctx_len: defaultModel.metadata?.default_ctx_len ?? 2048 }
+        ? { ctx_len: defaultContextLength }
         : {}
 
     const overriddenParameters =
       defaultModel?.parameters.max_tokens && defaultModel.parameters.max_tokens
-        ? { max_tokens: defaultModel.metadata?.default_max_tokens ?? 2048 }
+        ? { max_tokens: defaultMaxTokens }
         : {}
 
     const createdAt = Date.now()
