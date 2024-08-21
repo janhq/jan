@@ -10,17 +10,21 @@ import {
   ThreadAssistantInfo,
 } from '@janhq/core'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
-import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import {
+  selectedModelAtom,
+  updateDownloadedModelAtom,
+} from '@/helpers/atoms/Model.atom'
 import {
   ModelParams,
   getActiveThreadModelParamsAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
 
 export type UpdateModelParameter = {
   params?: ModelParams
@@ -30,8 +34,10 @@ export type UpdateModelParameter = {
 
 export default function useUpdateModelParameters() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-  const selectedModel = useAtomValue(selectedModelAtom)
+  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const updateDownloadedModel = useSetAtom(updateDownloadedModelAtom)
+  const preserveModelFeatureEnabled = useAtomValue(preserveModelSettingsAtom)
 
   const updateModelParameter = useCallback(
     async (thread: Thread, settings: UpdateModelParameter) => {
@@ -69,7 +75,7 @@ export default function useUpdateModelParameters() {
 
       // Persists default settings to model file
       // Do not overwrite ctx_len and max_tokens
-      if (selectedModel) {
+      if (preserveModelFeatureEnabled && selectedModel) {
         const updatedModel = {
           ...selectedModel,
           parameters: {
@@ -90,6 +96,8 @@ export default function useUpdateModelParameters() {
         await extensionManager
           .get<ModelExtension>(ExtensionTypeEnum.Model)
           ?.saveModel(updatedModel)
+        setSelectedModel(updatedModel)
+        updateDownloadedModel(updatedModel)
       }
     },
     [activeModelParams, selectedModel, setThreadModelParams]
