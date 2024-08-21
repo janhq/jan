@@ -26,7 +26,9 @@ const tryGettingModelYaml = async (repoName, branch) => {
   // At build-time we could not detect user hardwares so can just check platform
   if (
     (branch.includes('onnx') && process.platform !== 'win32') ||
-    (branch.includes('tensorrt') && process.platform === 'darwin')
+    (branch.includes('tensorrt') && process.platform === 'darwin') ||
+    (branch.includes('tensorrt-llm-windows') && process.platform !== 'win32') ||
+    (branch.includes('tensorrt-llm-linux') && process.platform !== 'linux')
   )
     return undefined
 
@@ -86,7 +88,7 @@ const tryGettingModelYaml = async (repoName, branch) => {
       ...model.metadata,
       size,
       tags: [...(model.tags ?? []), branch],
-      label: branch,
+      label: branch.replace('-windows', '').replace('-linux', ''),
     }
     return model
   } catch (e) {
