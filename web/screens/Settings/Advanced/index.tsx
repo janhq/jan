@@ -65,7 +65,9 @@ const Advanced = () => {
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
   const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
 
-  const [preserveModelSettings, setPreserveModelSettings] = useAtom(preserveModelSettingsAtom)
+  const [preserveModelSettings, setPreserveModelSettings] = useAtom(
+    preserveModelSettingsAtom
+  )
   const [proxy, setProxy] = useAtom(proxyAtom)
   const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
 
@@ -391,10 +393,13 @@ const Advanced = () => {
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
-                <h6 className="font-semibold capitalize">Preserve Model Settings</h6>
+                <h6 className="font-semibold capitalize">
+                  Preserve Model Settings
+                </h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Save model settings changes directly to the model file so that new threads will reuse the previous settings.
+                Save model settings changes directly to the model file so that
+                new threads will reuse the previous settings.
               </p>
             </div>
 

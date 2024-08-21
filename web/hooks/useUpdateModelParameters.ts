@@ -15,6 +15,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
+import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   selectedModelAtom,
   updateDownloadedModelAtom,
@@ -24,7 +25,6 @@ import {
   getActiveThreadModelParamsAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
 
 export type UpdateModelParameter = {
   params?: ModelParams
