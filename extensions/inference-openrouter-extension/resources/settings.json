@@ -19,5 +19,15 @@
       "value": "",
       "type": "password"
     }
+  },
+  {
+    "key": "openrouter-model",
+    "title": "Model",
+    "description": "If the model parameter is omitted, the user or payer's default is used. Otherwise, remember to select a value for model from the [supported models](https://openrouter.ai/docs/models) or API, and include the organization prefix.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Leave empty for default model",
+      "value": ""
+    } 
   }
 ]

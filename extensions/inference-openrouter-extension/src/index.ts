@@ -8,20 +8,14 @@
 
 import { RemoteOAIEngine } from '@janhq/core'
 import { PayloadType } from '@janhq/core'
-import { ChatCompletionRole } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
 
 enum Settings {
   apiKey = 'openrouter-api-key',
+  model = 'openrouter-model',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
-}
-
-enum RoleType {
-  user = 'USER',
-  chatbot = 'CHATBOT',
-  system = 'SYSTEM',
 }
 
 /**
@@ -32,6 +26,7 @@ enum RoleType {
 export default class JanInferenceOpenRouterExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
   provider: string = 'openrouter'
+  model?: string | undefined
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -45,12 +40,23 @@ export default class JanInferenceOpenRouterExtension extends RemoteOAIEngine {
       Settings.chatCompletionsEndPoint,
       ''
     )
+    this.model = await this.getSetting<string>(Settings.model, '')
+    // Openrouter uses default model on no model param set
+    if (!this.model?.length) this.model = undefined
     if (this.inferenceUrl.length === 0) {
       SETTINGS.forEach((setting) => {
         if (setting.key === Settings.chatCompletionsEndPoint) {
           this.inferenceUrl = setting.controllerProps.value as string
         }
       })
+    }
+  }
+
+  override async headers(): Promise<HeadersInit> {
+    return {
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://jan.ai',
+      'Authorization': `Bearer ${this.apiKey}`,
     }
   }
 
@@ -69,8 +75,14 @@ export default class JanInferenceOpenRouterExtension extends RemoteOAIEngine {
       } else {
         this.inferenceUrl = value
       }
+    } else if (key === Settings.model) {
+      this.model =
+        typeof value === 'string' && value.length > 0 ? value : undefined
     }
   }
 
-  transformPayload = (payload: PayloadType)=>({...payload,model:"openrouter/auto"})
+  transformPayload = (payload: PayloadType) => ({
+    ...payload,
+    model: this.model,
+  })
 }
