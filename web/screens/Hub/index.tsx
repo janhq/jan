@@ -7,6 +7,7 @@ import { ScrollArea, Button, Select } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { UploadIcon } from 'lucide-react'
 
+import BlankState from '@/containers/BlankState'
 import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import ModelSearch from '@/containers/ModelSearch'
 
@@ -92,15 +93,19 @@ const HubScreen = () => {
           </div>
         </div>
         <div className="p-4 py-0 sm:px-16">
-          <div className="mb-4 flex w-full justify-end">
-            <Select
-              value={sortSelected}
-              onValueChange={(value) => {
-                setSortSelected(value)
-              }}
-              options={sortMenus}
-            />
-          </div>
+          {!filteredModels.length ? (
+            <BlankState title="No search results found" />
+          ) : (
+            <div className="mb-4 flex w-full justify-end">
+              <Select
+                value={sortSelected}
+                onValueChange={(value) => {
+                  setSortSelected(value)
+                }}
+                options={sortMenus}
+              />
+            </div>
+          )}
           <ModelList models={filteredModels} />
         </div>
       </ScrollArea>

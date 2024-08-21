@@ -7,6 +7,7 @@ import {
 } from '@janhq/core'
 
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 
 export const engineParamsUpdateAtom = atom<boolean>(false)
 
@@ -130,4 +131,10 @@ export const setThreadModelParamsAtom = atom(
     currentState[threadId] = params
     set(threadModelParamsAtom, currentState)
   }
+)
+
+const ACTIVE_SETTING_INPUT_BOX = 'activeSettingInputBox'
+export const activeSettingInputBoxAtom = atomWithStorage<boolean>(
+  ACTIVE_SETTING_INPUT_BOX,
+  false
 )

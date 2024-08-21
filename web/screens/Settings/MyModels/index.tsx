@@ -18,6 +18,7 @@ import {
 
 import { twMerge } from 'tailwind-merge'
 
+import BlankState from '@/containers/BlankState'
 import ModelSearch from '@/containers/ModelSearch'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
@@ -183,72 +184,80 @@ const MyModels = () => {
           </div>
 
           <div className="relative w-full">
-            {groupByEngine.map((engine, i) => {
-              const engineLogo = getLogoEngine(engine as InferenceEngine)
-              const showModel = showEngineListModel.includes(engine)
-              const onClickChevron = () => {
-                if (showModel) {
-                  setShowEngineListModel((prev) =>
-                    prev.filter((item) => item !== engine)
-                  )
-                } else {
-                  setShowEngineListModel((prev) => [...prev, engine])
+            {!groupByEngine.length ? (
+              <div className="mt-8">
+                <BlankState title="No search results found" />
+              </div>
+            ) : (
+              groupByEngine.map((engine, i) => {
+                const engineLogo = getLogoEngine(engine as InferenceEngine)
+                const showModel = showEngineListModel.includes(engine)
+                const onClickChevron = () => {
+                  if (showModel) {
+                    setShowEngineListModel((prev) =>
+                      prev.filter((item) => item !== engine)
+                    )
+                  } else {
+                    setShowEngineListModel((prev) => [...prev, engine])
+                  }
                 }
-              }
-              return (
-                <div className="my-6" key={i}>
-                  <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div
-                      className="mb-1 mt-3 flex cursor-pointer items-center gap-2"
-                      onClick={onClickChevron}
-                    >
-                      {engineLogo && (
-                        <Image
-                          className="h-6 w-6 flex-shrink-0"
-                          width={48}
-                          height={48}
-                          src={engineLogo}
-                          alt="logo"
-                        />
-                      )}
-                      <h6 className="font-medium text-[hsla(var(--text-secondary))]">
-                        {getTitleByEngine(engine)}
-                      </h6>
+                return (
+                  <div className="my-6" key={i}>
+                    <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div
+                        className="mb-1 mt-3 flex cursor-pointer items-center gap-2"
+                        onClick={onClickChevron}
+                      >
+                        {engineLogo && (
+                          <Image
+                            className="h-6 w-6 flex-shrink-0"
+                            width={48}
+                            height={48}
+                            src={engineLogo}
+                            alt="logo"
+                          />
+                        )}
+                        <h6 className="font-medium text-[hsla(var(--text-secondary))]">
+                          {getTitleByEngine(engine)}
+                        </h6>
+                      </div>
+                      <div className="flex gap-1">
+                        {!localEngines.includes(engine) && (
+                          <SetupRemoteModel engine={engine} />
+                        )}
+                        {!showModel ? (
+                          <Button theme="icon" onClick={onClickChevron}>
+                            <ChevronDownIcon
+                              size={14}
+                              className="text-[hsla(var(--text-secondary))]"
+                            />
+                          </Button>
+                        ) : (
+                          <Button theme="icon" onClick={onClickChevron}>
+                            <ChevronUpIcon
+                              size={14}
+                              className="text-[hsla(var(--text-secondary))]"
+                            />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      {!localEngines.includes(engine) && (
-                        <SetupRemoteModel engine={engine} />
-                      )}
-                      {!showModel ? (
-                        <Button theme="icon" onClick={onClickChevron}>
-                          <ChevronDownIcon
-                            size={14}
-                            className="text-[hsla(var(--text-secondary))]"
-                          />
-                        </Button>
-                      ) : (
-                        <Button theme="icon" onClick={onClickChevron}>
-                          <ChevronUpIcon
-                            size={14}
-                            className="text-[hsla(var(--text-secondary))]"
-                          />
-                        </Button>
-                      )}
+                    <div className="mt-2">
+                      {filteredDownloadedModels
+                        ? filteredDownloadedModels
+                            .filter((x) => x.engine === engine)
+                            .map((model) => {
+                              if (!showModel) return null
+                              return (
+                                <MyModelList key={model.id} model={model} />
+                              )
+                            })
+                        : null}
                     </div>
                   </div>
-                  <div className="mt-2">
-                    {filteredDownloadedModels
-                      ? filteredDownloadedModels
-                          .filter((x) => x.engine === engine)
-                          .map((model) => {
-                            if (!showModel) return null
-                            return <MyModelList key={model.id} model={model} />
-                          })
-                      : null}
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </div>
       </ScrollArea>

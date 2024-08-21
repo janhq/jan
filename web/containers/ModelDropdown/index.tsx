@@ -284,6 +284,7 @@ const ModelDropdown = ({
         {chatInputMode ? (
           <Badge
             theme="secondary"
+            variant={open ? 'solid' : 'outline'}
             className="cursor-pointer"
             onClick={() => setOpen(!open)}
           >
@@ -580,10 +581,15 @@ const ModelDropdown = ({
                               className={twMerge(
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey
-                                  ? 'cursor-disabled text-[hsla(var(--text-tertiary))]'
-                                  : 'text-[hsla(var(--text-secondary))]'
+                                  ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
+                                  : 'text-[hsla(var(--text-primary))]'
                               )}
                               onClick={() => {
+                                if (
+                                  !apiKey &&
+                                  !localEngines.includes(model.engine)
+                                )
+                                  return null
                                 onClickModelItem(model.id)
                               }}
                             >

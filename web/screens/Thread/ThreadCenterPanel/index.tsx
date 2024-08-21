@@ -211,14 +211,6 @@ const ThreadCenterPanel = () => {
             </Fragment>
           )}
 
-          {queuedMessage && !reloadModel && (
-            <div className="mb-2 text-center">
-              <span className="text-[hsla(var(--text-secondary)]">
-                Message will be sent once the model has started
-              </span>
-            </div>
-          )}
-
           {activeModel && isGeneratingResponse && <GenerateResponse />}
           <ChatInput />
         </div>

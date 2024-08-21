@@ -7,12 +7,9 @@ import {
   TextArea,
   Accordion,
   AccordionItem,
-  Button,
 } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-
-import { Settings2Icon } from 'lucide-react'
 
 import CopyOverInstruction from '@/containers/CopyInstruction'
 import EngineSetting from '@/containers/EngineSetting'
@@ -210,36 +207,11 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeThread?.assistants[0].instructions ?? ''}
+                rows={8}
                 onChange={onAssistantInstructionChanged}
               />
             </div>
             {experimentalFeature && <CopyOverInstruction />}
-            <div>
-              <label
-                id="assistant-instructions"
-                className="mb-2 inline-block font-bold"
-              >
-                Model
-              </label>
-              <div className="flex gap-2">
-                <div className="w-full">
-                  <ModelDropdown />
-                </div>
-                <Button
-                  theme="icon"
-                  variant="outline"
-                  className="!h-8 !w-8 flex-shrink-0"
-                  onClick={() => {
-                    setActiveTabThreadRightPanel('model')
-                  }}
-                >
-                  <Settings2Icon
-                    size={16}
-                    className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
-                  />
-                </Button>
-              </div>
-            </div>
           </div>
         </TabsContent>
         <TabsContent value="model">
