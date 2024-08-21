@@ -11,10 +11,9 @@ import { Button, Progress, Tooltip } from '@janhq/joi'
 import { InfoCircledIcon } from '@radix-ui/react-icons'
 import { useAtomValue } from 'jotai'
 
-import { Marked, Renderer } from 'marked'
-
 import { extensionManager } from '@/extension'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
+import { marked } from '@/utils/marked'
 
 type Props = {
   item: BaseExtension
@@ -33,7 +32,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
 
   const progress = isInstalling
     ? (installingExtensions.find((e) => e.extensionId === item.name)
-        ?.percentage ?? -1)
+      ?.percentage ?? -1)
     : -1
 
   useEffect(() => {
@@ -149,7 +148,7 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
               }
               content={
                 compatibility &&
-                !compatibility['platform']?.includes(PLATFORM) ? (
+                  !compatibility['platform']?.includes(PLATFORM) ? (
                   <span>
                     Only available on&nbsp;
                     {compatibility?.platform
@@ -180,18 +179,5 @@ const InstallStateIndicator: React.FC<InstallStateProps> = ({
       return <div></div>
   }
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
 
 export default ExtensionItem

@@ -17,6 +17,7 @@ import { formatExtensionsName } from '@/utils/converter'
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
+import { marked } from '@/utils/marked'
 
 type EngineExtension = {
   provider: InferenceEngine
@@ -54,7 +55,7 @@ const ExtensionCatalog = () => {
               ...extension,
               provider:
                 'provider' in extension &&
-                typeof extension.provider === 'string'
+                  typeof extension.provider === 'string'
                   ? extension.provider
                   : '',
             })
@@ -255,18 +256,5 @@ const ExtensionCatalog = () => {
     </>
   )
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
 
 export default ExtensionCatalog
