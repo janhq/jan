@@ -42,6 +42,6 @@ export const retrieveGGUFMetadata = async (ggufPath: string) => {
       parsed_chat_template: renderedTemplate,
     }
   } catch (e) {
-    console.log(e)
+    console.log('[MODEL_EXT]', e)
   }
 }
