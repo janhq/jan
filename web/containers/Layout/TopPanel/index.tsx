@@ -34,6 +34,7 @@ import {
   reduceTransparentAtom,
   selectedSettingAtom,
 } from '@/helpers/atoms/Setting.atom'
+import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const TopPanel = () => {
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
@@ -43,6 +44,9 @@ const TopPanel = () => {
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const assistants = useAtomValue(assistantsAtom)
+  const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
+    activeTabThreadRightPanelAtom
+  )
 
   const onCreateNewThreadClick = () => {
     if (!assistants.length)
@@ -107,11 +111,27 @@ const TopPanel = () => {
             mainViewState !== MainViewState.Settings && (
               <Fragment>
                 {showRightPanel ? (
-                  <Button theme="icon" onClick={() => setShowRightPanel(false)}>
+                  <Button
+                    theme="icon"
+                    onClick={() => {
+                      setShowRightPanel(false)
+                      if (activeTabThreadRightPanel === 'model') {
+                        setActiveTabThreadRightPanel(undefined)
+                      }
+                    }}
+                  >
                     <PanelRightCloseIcon size={16} />
                   </Button>
                 ) : (
-                  <Button theme="icon" onClick={() => setShowRightPanel(true)}>
+                  <Button
+                    theme="icon"
+                    onClick={() => {
+                      setShowRightPanel(true)
+                      if (activeTabThreadRightPanel === undefined) {
+                        setActiveTabThreadRightPanel('model')
+                      }
+                    }}
+                  >
                     <PanelRightOpenIcon size={16} />
                   </Button>
                 )}
