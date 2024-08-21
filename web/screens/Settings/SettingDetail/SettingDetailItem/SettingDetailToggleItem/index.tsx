@@ -2,25 +2,12 @@ import { ChangeEvent } from 'react'
 
 import { CheckboxComponentProps, SettingComponentProps } from '@janhq/core'
 import { Switch } from '@janhq/joi'
-import { Marked, Renderer } from 'marked'
+import { marked } from '@/utils/marked'
 
 type Props = {
   settingProps: SettingComponentProps
   onValueChanged?: (e: ChangeEvent<HTMLInputElement>) => void
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
 
 const SettingDetailToggleItem: React.FC<Props> = ({
   settingProps,

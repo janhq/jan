@@ -8,25 +8,12 @@ import {
 
 import { Input } from '@janhq/joi'
 import { CopyIcon, EyeIcon, FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
+import { marked } from '@/utils/marked'
 
 type Props = {
   settingProps: SettingComponentProps
   onValueChanged?: (e: string) => void
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) =>
-      Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        ),
-  },
-})
-
 const SettingDetailTextInputItem = ({
   settingProps,
   onValueChanged,

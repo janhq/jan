@@ -10,6 +10,8 @@ import ModelLabel from '@/containers/ModelLabel'
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 
 import { toGibibytes } from '@/utils/converter'
+import { marked } from '@/utils/marked'
+
 
 type Props = {
   model: Model
@@ -26,6 +28,10 @@ const ModelItem: React.FC<Props> = ({ model }) => {
     }
   }
 
+  const description = marked.parse(model?.description ?? '-', {
+    async: false,
+  })
+
   return (
     <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-[hsla(var(--app-border))]">
       <ModelItemHeader model={model} onClick={handleToggle} open={open} />
@@ -40,9 +46,10 @@ const ModelItem: React.FC<Props> = ({ model }) => {
             </div>
             <div className="mb-6 flex flex-col gap-1">
               <span className="font-semibold">About</span>
-              <p className="text-[hsla(var(--text-secondary))]">
-                {model.description || '-'}
-              </p>
+              <div
+                dangerouslySetInnerHTML={{ __html: description }}
+                className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
+              />
             </div>
             <div className="flex flex-col gap-y-4 sm:flex-row sm:gap-x-10 sm:gap-y-0">
               <div>
