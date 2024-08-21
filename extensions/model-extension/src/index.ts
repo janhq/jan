@@ -30,7 +30,8 @@ import { extractFileName } from './helpers/path'
 import { GGUFMetadata, gguf } from '@huggingface/gguf'
 import { NotSupportedModelError } from './@types/NotSupportModelError'
 import { InvalidHostError } from './@types/InvalidHostError'
-
+import { inferenceParams, modelSettingParams } from './helpers/params'
+import { parse } from 'yaml'
 declare const SETTINGS: Array<any>
 enum Settings {
   huggingFaceAccessToken = 'hugging-face-access-token',
@@ -41,12 +42,16 @@ enum Settings {
  */
 export default class JanModelExtension extends ModelExtension {
   private static readonly _homeDir = 'file://models'
-  private static readonly _modelMetadataFileName = 'model.json'
+  private static readonly _modelMetadataJsonFileName = 'model.json'
+  private static readonly _modelMetadataYamlFileName = 'model.yaml'
   private static readonly _supportedModelFormat = '.gguf'
   private static readonly _incompletedModelFileName = '.download'
   private static readonly _offlineInferenceEngine = [
     InferenceEngine.nitro,
     InferenceEngine.nitro_tensorrt_llm,
+    InferenceEngine.cortex_onnx,
+    InferenceEngine.cortex_llamacpp,
+    InferenceEngine.cortex_tensorrtllm,
   ]
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _supportedGpuArch = ['ampere', 'ada']
@@ -324,10 +329,7 @@ export default class JanModelExtension extends ModelExtension {
   async deleteModel(modelId: string): Promise<void> {
     try {
       const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
-      const jsonFilePath = await joinPath([
-        dirPath,
-        JanModelExtension._modelMetadataFileName,
-      ])
+      const jsonFilePath = await this.getModelFilePath(dirPath)
       const modelInfo = JSON.parse(
         await this.readModelMetadata(jsonFilePath)
       ) as Model
@@ -342,7 +344,10 @@ export default class JanModelExtension extends ModelExtension {
       // remove all files under dirPath except model.json
       const files = await fs.readdirSync(dirPath)
       const deletePromises = files.map(async (fileName: string) => {
-        if (fileName !== JanModelExtension._modelMetadataFileName) {
+        if (
+          fileName !== JanModelExtension._modelMetadataJsonFileName &&
+          fileName !== JanModelExtension._modelMetadataYamlFileName
+        ) {
           return fs.unlinkSync(await joinPath([dirPath, fileName]))
         }
       })
@@ -358,14 +363,11 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is saved.
    */
   async saveModel(model: Model): Promise<void> {
-    const jsonFilePath = await joinPath([
-      JanModelExtension._homeDir,
-      model.id,
-      JanModelExtension._modelMetadataFileName,
-    ])
+    const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
+    const modelFilePath = this.getModelFilePath(modelDirPath)
 
     try {
-      await fs.writeFileSync(jsonFilePath, JSON.stringify(model, null, 2))
+      await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
     } catch (err) {
       console.error(err)
     }
@@ -422,17 +424,22 @@ export default class JanModelExtension extends ModelExtension {
     )
   }
 
-  private async getModelJsonPath(
+  private async getModelFilePath(
     folderFullPath: string
   ): Promise<string | undefined> {
     // try to find model.json recursively inside each folder
     if (!(await fs.existsSync(folderFullPath))) return undefined
     const files: string[] = await fs.readdirSync(folderFullPath)
     if (files.length === 0) return undefined
-    if (files.includes(JanModelExtension._modelMetadataFileName)) {
+    if (files.includes(JanModelExtension._modelMetadataJsonFileName)) {
       return joinPath([
         folderFullPath,
-        JanModelExtension._modelMetadataFileName,
+        JanModelExtension._modelMetadataJsonFileName,
+      ])
+    } else if (files.includes(JanModelExtension._modelMetadataYamlFileName)) {
+      return joinPath([
+        folderFullPath,
+        JanModelExtension._modelMetadataYamlFileName,
       ])
     }
     // continue recursive
@@ -440,7 +447,7 @@ export default class JanModelExtension extends ModelExtension {
       const path = await joinPath([folderFullPath, file])
       const fileStats = await fs.fileStat(path)
       if (fileStats.isDirectory) {
-        const result = await this.getModelJsonPath(path)
+        const result = await this.getModelFilePath(path)
         if (result) return result
       }
     }
@@ -471,34 +478,62 @@ export default class JanModelExtension extends ModelExtension {
           JanModelExtension._homeDir,
           dirName,
         ])
-        const jsonPath = await this.getModelJsonPath(folderFullPath)
-
-        if (await fs.existsSync(jsonPath)) {
-          // if we have the model.json file, read it
-          let model = await this.readModelMetadata(jsonPath)
-
-          model = typeof model === 'object' ? model : JSON.parse(model)
-
-          // This to ensure backward compatibility with `model.json` with `source_url`
-          if (model['source_url'] != null) {
-            model['sources'] = [
-              {
-                filename: model.id,
-                url: model['source_url'],
-              },
-            ]
-          }
-
-          if (selector && !(await selector?.(dirName, model))) {
-            return
-          }
-          return model
+        const modelFilePath = await this.getModelFilePath(folderFullPath)
+        let model
+        if (
+          modelFilePath.endsWith(JanModelExtension._modelMetadataJsonFileName)
+        ) {
+          model = await this.readModelMetadata(modelFilePath)
+        } else if (
+          modelFilePath.endsWith(JanModelExtension._modelMetadataYamlFileName)
+        ) {
+          model = parse(await this.readModelMetadata(modelFilePath))
         } else {
           // otherwise, we generate our own model file
           // TODO: we might have more than one binary file here. This will be addressed with new version of Model file
           //  which is the PR from Hiro on branch Jan can see
           return this.generateModelMetadata(dirName)
         }
+
+        model = typeof model === 'object' ? model : JSON.parse(model)
+
+        // This to ensure backward compatibility with `model.json` with `source_url`
+        if (model['source_url'] != null) {
+          model['sources'] = [
+            {
+              filename: model.id,
+              url: model['source_url'],
+            },
+          ]
+        }
+
+        model.settings = model.settings ?? {}
+        model.parameters = model.parameters ?? {}
+
+        // New format support
+        // model settings and inference params can be flattened
+        for (const [key, value] of Object.entries(model)) {
+          if (modelSettingParams.includes(key)) {
+            model.settings = {
+              // Add in model settings
+              [key]: value,
+              // Model's load settings should be prioritized
+              ...model.settings,
+            }
+          } else if (inferenceParams.includes(key)) {
+            model.parameters = {
+              // Add in inference parameters
+              [key]: value,
+              // Model's inference paramaters should be prioritized
+              ...model.parameters,
+            }
+          }
+        }
+
+        if (selector && !(await selector?.(dirName, model))) {
+          return
+        }
+        return model
       })
       const results = await Promise.allSettled(readJsonPromises)
       const modelData = results.map((result) => {
@@ -594,11 +629,9 @@ export default class JanModelExtension extends ModelExtension {
       },
     }
 
-    const modelFilePath = await joinPath([
-      JanModelExtension._homeDir,
-      dirName,
-      JanModelExtension._modelMetadataFileName,
-    ])
+    const modelFilePath = await this.getModelFilePath(
+      await joinPath([JanModelExtension._homeDir, dirName])
+    )
 
     await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
 
@@ -682,11 +715,7 @@ export default class JanModelExtension extends ModelExtension {
       },
     }
 
-    const modelFilePath = await joinPath([
-      modelFolderPath,
-      JanModelExtension._modelMetadataFileName,
-    ])
-
+    const modelFilePath = this.getModelFilePath(modelFolderPath)
     await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
 
     return model
@@ -697,12 +726,12 @@ export default class JanModelExtension extends ModelExtension {
     if (modelInfo.id == null) throw new Error('Model ID is required')
 
     const janDataFolderPath = await getJanDataFolderPath()
-    const jsonFilePath = await joinPath([
+    const modelFolderPath = await joinPath([
       janDataFolderPath,
       'models',
       modelId,
-      JanModelExtension._modelMetadataFileName,
     ])
+    const jsonFilePath = await this.getModelFilePath(modelFolderPath)
     const model = JSON.parse(
       await this.readModelMetadata(jsonFilePath)
     ) as Model

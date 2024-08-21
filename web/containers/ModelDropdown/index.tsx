@@ -87,7 +87,7 @@ const ModelDropdown = ({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
   const featuredModel = configuredModels.filter((x) =>
-    x.metadata.tags.includes('Featured')
+    x.metadata?.tags?.includes('Featured')
   )
 
   useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [
@@ -226,7 +226,7 @@ const ModelDropdown = ({
                   : '',
               provider:
                 'provider' in extension &&
-                typeof extension.provider === 'string'
+                  typeof extension.provider === 'string'
                   ? extension.provider
                   : '',
             })
@@ -243,7 +243,7 @@ const ModelDropdown = ({
     .map((x) => x.engine)
 
   const groupByEngine = findByEngine
-    .filter(function (item, index) {
+    .filter(function(item, index) {
       if (findByEngine.indexOf(item) === index) return item
     })
     .sort((a, b) => {
@@ -354,7 +354,7 @@ const ModelDropdown = ({
             {groupByEngine.map((engine, i) => {
               const apiKey = !localEngines.includes(engine)
                 ? extensionHasSettings.filter((x) => x.provider === engine)[0]
-                    ?.apiKey.length > 1
+                  ?.apiKey.length > 1
                 : true
               const engineLogo = getLogoEngine(engine as InferenceEngine)
               const showModel = showEngineListModel.includes(engine)
@@ -510,7 +510,7 @@ const ModelDropdown = ({
                                           className={twMerge(
                                             'line-clamp-1',
                                             !isdDownloaded &&
-                                              'text-[hsla(var(--text-secondary))]'
+                                            'text-[hsla(var(--text-secondary))]'
                                           )}
                                           title={model.name}
                                         >

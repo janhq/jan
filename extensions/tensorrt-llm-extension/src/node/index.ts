@@ -54,7 +54,7 @@ async function loadModel(
 
   const settings: ModelLoadParams = {
     engine_path: modelFolder,
-    ctx_len: params.model.settings.ctx_len ?? 2048,
+    ctx_len: params.model.settings?.ctx_len ?? 2048,
     ...params.model.settings,
   }
   if (!systemInfo) {

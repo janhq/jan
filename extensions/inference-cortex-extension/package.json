@@ -8,7 +8,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
     "build:publish:darwin": "rimraf *.tgz --glob && yarn build && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
     "build:publish:win32": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
@@ -44,14 +44,14 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "@huggingface/hub": "^0.15.1",
     "@janhq/core": "file:../../core",
     "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
     "terminate": "2.6.1",
-    "ulidx": "^2.3.0",
-    "cortexso": "^v0.5.0-45"
+    "ulidx": "^2.3.0"
   },
   "engines": {
     "node": ">=18.0.0"
