@@ -12,7 +12,6 @@
     "productName": "Jan",
     "files": [
       "renderer/**/*",
-      "katex-fonts/**/*",
       "build/**/*.{js,map}",
       "pre-install",
       "themes",
@@ -23,7 +22,6 @@
     ],
     "asarUnpack": [
       "pre-install",
-      "katex-fonts",
       "themes",
       "docs",
       "scripts",
