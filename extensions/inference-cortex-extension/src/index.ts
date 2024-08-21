@@ -6,7 +6,7 @@
  * @module inference-extension/src/index
  */
 
-import { Model, LocalOAIEngine, executeOnMain, systemInformation, showToast, InstallationPackage } from '@janhq/core'
+import { Model, LocalOAIEngine, executeOnMain, systemInformation, showToast, InstallationPackage, InstallationState, DownloadState, events, DownloadEvent } from '@janhq/core'
 
 declare const DEFAULT_SETTINGS: Array<any>
 
@@ -14,6 +14,14 @@ enum Settings {
   cortexHost = 'cortex-host',
   cortexPort = 'cortex-port',
   cortexEnginePort = 'cortex-engine-port',
+}
+
+const installationStateMapByStatus: Record<string, InstallationState> = {
+  ready : 'Installed',
+  not_supported: 'NotCompatible',
+  error: 'Corrupted',
+  miss_configuration: 'Corrupted',
+  not_initialized: 'NotInstalled',
 }
 
 /**
@@ -27,6 +35,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cortexHost: string = ''
   cortexPort: string = ''
   cortexEnginePort: string = ''
+  private abortControllers: Record<string, AbortController> = {};
   /**
    * The URL for making inference requests.
    */
@@ -61,28 +70,52 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     return super.unloadModel(model)
   }
 
-  installationPackages(): Promise<InstallationPackage[]> {
+  async installationPackages(): Promise<InstallationPackage[]> {
+    const [cortexOnnxInfo, cortexTensorrtLlmInfo] = await Promise.all([
+      executeOnMain(NODE, 'getEngineInformation', 'cortex.onnx'),
+      executeOnMain(NODE, 'getEngineInformation', 'cortex.tensorrt-llm'),
+    ])
     return Promise.resolve([{
       name: "cortex.onnx",
-    description: "This engine enables chat completion API calls using the Onnx engine",
-    version: "0.0.1",
-    installationState: "NotRequired"
+    description: cortexOnnxInfo.description,
+    version: cortexOnnxInfo.version,
+    installationState: installationStateMapByStatus[cortexOnnxInfo.status]
     }, {
       name: "cortex.tensorrt-llm",
-      description: "This engine enables chat completion API calls using the TensorrtLLM engine",
-      version: "0.0.1",
-      installationState: "NotRequired"
+      description: cortexTensorrtLlmInfo.description,
+      version: cortexTensorrtLlmInfo.version,
+      installationState: installationStateMapByStatus[cortexTensorrtLlmInfo.status]
     }])
   }
 
   async installPackage(packageName: string): Promise<void> {
     try{
-    await executeOnMain(NODE, 'initCortexEngine', packageName)
+      this.abortControllers[packageName] = new AbortController()
+      await executeOnMain(NODE, 'initCortexEngine', packageName) as AsyncIterable<DownloadState>
+      const downloadState = await executeOnMain(NODE, 'getEngineDownloadProgress', packageName, this.abortControllers[packageName].signal)
+    for await (const state of downloadState) {
+      console.log('Download state:', state)
+      events.emit(DownloadEvent.onFileDownloadUpdate, state)
+    }
     } catch (error: any) {
+      delete this.abortControllers[packageName]
       console.error('Failed to install package', error)
       showToast('Failed to install package', error.message || 'Exception occurred')
     }
   }
+
+  async abortPackageInstallation(packageName: string): Promise<void> {
+    try {
+      await executeOnMain(NODE, 'abortCortexEngine', packageName)
+      this.abortControllers[packageName].abort()
+      delete this.abortControllers[packageName]
+    } catch (error: any) {
+      console.error('Failed to abort package installation', error)
+      showToast('Failed to abort package installation', error.message || 'Exception occurred')
+    }
+  }
+
+
 
   onSettingUpdate<T>(key: string, value: T): void {
     if (key === Settings.cortexEnginePort) {

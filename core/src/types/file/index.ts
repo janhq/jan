@@ -20,7 +20,7 @@ export type DownloadState = {
   localPath?: string
 }
 
-export type DownloadType = 'model' | 'extension'
+export type DownloadType = 'model' | 'extension' | 'engine'
 
 export type DownloadRequest = {
   /**

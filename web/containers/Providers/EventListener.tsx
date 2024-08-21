@@ -22,11 +22,13 @@ import {
   InstallingExtensionState,
   removeInstallingExtensionAtom,
   setInstallingExtensionAtom,
+  setInstallingPackageAtom,
 } from '@/helpers/atoms/Extension.atom'
 
 const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
+  const setInstallingPackage = useSetAtom(setInstallingPackageAtom)
   const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
 
   const onFileDownloadUpdate = useCallback(
@@ -39,11 +41,17 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
           localPath: state.localPath,
         }
         setInstallingExtension(state.extensionId!, installingExtensionState)
+      } else if (state.downloadType === 'engine') {
+        setInstallingPackage(state.extensionId!, {
+          extensionId: state.extensionId!,
+          packageName: state.modelId!,
+          percentage: state.percent,
+        })
       } else {
         setDownloadState(state)
       }
     },
-    [setDownloadState, setInstallingExtension]
+    [setDownloadState, setInstallingExtension, setInstallingPackage]
   )
 
   const onFileDownloadError = useCallback(
@@ -51,11 +59,17 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       console.debug('onFileDownloadError', state)
       if (state.downloadType === 'extension') {
         removeInstallingExtension(state.extensionId!)
+      } else if (state.downloadType === 'engine') {
+        setInstallingPackage(state.extensionId!, {
+          extensionId: state.extensionId!,
+          packageName: state.modelId!,
+          percentage: -1,
+        })
       } else {
         setDownloadState(state)
       }
     },
-    [setDownloadState, removeInstallingExtension]
+    [removeInstallingExtension, setInstallingPackage, setDownloadState]
   )
 
   const onFileDownloadSuccess = useCallback(

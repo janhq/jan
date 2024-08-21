@@ -10,10 +10,34 @@ import {
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
-  getJanDataFolderPath
+  getJanDataFolderPath,
 } from '@janhq/core/node'
 import { start as startCortex } from 'cortexso'
-import { showToast } from '@janhq/core/.'
+import { DownloadEvent, DownloadState, events, showToast } from '@janhq/core'
+
+type DownloadItem = {
+  id: string;
+  time: {
+    elapsed: number;
+    remaining: number;
+  };
+  size: {
+    total: number;
+    transferred: number;
+  };
+  progress: number;
+  checksum?: string;
+  status: DownloadStatus;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export enum DownloadStatus {
+  Pending = 'pending',
+  Downloading = 'downloading',
+  Error = 'error',
+  Downloaded = 'downloaded',
+}
 
 interface InitEngineOptions {
     runMode?: 'CPU' | 'GPU';
@@ -42,6 +66,13 @@ interface EngineInformation {
   status: EngineStatus;
 }
 
+const downloadStateMap : Record<DownloadStatus, DownloadState['downloadState']> = {
+  [DownloadStatus.Pending]: 'downloading',
+  [DownloadStatus.Downloading]: 'downloading',
+  [DownloadStatus.Error]: 'error',
+  [DownloadStatus.Downloaded]: 'end'
+}
+
 
 // Polyfill fetch with retry
 const fetchRetry = fetchRT(fetch)
@@ -68,11 +99,18 @@ const CORTEX_HTTP_UNLOAD_MODEL_URL = (modelId: string) => `${CORTEX_HTTP_SERVER_
 // The URL for the Cortex subprocess to kill itself
 const CORTEX_HTTP_KILL_URL = `${CORTEX_HTTP_SERVER_URL}/v1/system`
 
+// The URL for the Cortex subprocess to check health
 const CORTEX_HEALTH_CHECK_URL = `${CORTEX_HTTP_SERVER_URL}/v1/system`
 
+// The URL for the Cortex subprocess to init engine
 const CORTEX_INIT_ENGINE_URL =(engine: string) =>  `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}/init`
 
+// The URL for the Cortex subprocess to get engine information
 const CORTEX_ENGINE_INFO =(engine: string) =>  `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}`
+
+// The URL for the Cortex subprocess to download engine
+const CORTEX_ENGINE_DOWNLOAD_EVENT = `${CORTEX_HTTP_SERVER_URL}/v1/system/events/download`
+
 
 const CORTEX_PORT_FREE_CHECK_INTERVAL = 100
 
@@ -353,6 +391,82 @@ async function getEngineInformation(engineName: string): Promise<EngineInformati
     return engineInfoJson as EngineInformation;
 }
 
+async function* getEngineDownloadProgress(engineName: string, controller: AbortController): AsyncIterable<DownloadState> {
+  const eventSource = new EventSource(CORTEX_ENGINE_DOWNLOAD_EVENT);
+
+  controller.signal.onabort = () => {
+    eventSource.close();
+  };
+
+  const asyncIterable = {
+    [Symbol.asyncIterator]: () => {
+      let done = false; // Flag to indicate if the iteration is done
+      const next = () =>{
+        
+        return new Promise<IteratorResult<DownloadState>>((resolve, reject) => {
+          eventSource.onmessage = (event) => {
+            if (event.data.title !== engineName) {
+              return;
+            }
+            controller.signal.onabort = () => {
+              eventSource.close();
+              resolve({ value: undefined, done: true });
+            };
+            if (!event.data.length) {
+              eventSource.close();
+              resolve({ value: undefined, done: true }); // End the iterator
+              return;
+            }
+
+            const cortexDownloadItem = event.data.children[0] as DownloadItem;
+
+            const downloadState: DownloadState = {
+              modelId: engineName,
+              fileName: cortexDownloadItem.id,
+              time: cortexDownloadItem.time,
+              speed: 0,
+              percent: Number((cortexDownloadItem.size.transferred / (cortexDownloadItem.size.total || 1)).toFixed(2)),
+              size: cortexDownloadItem.size,
+              downloadState: downloadStateMap[cortexDownloadItem.status],
+              children: [],
+              error: cortexDownloadItem.error,
+              extensionId: '@janhq/inference-cortex-extension',
+            };
+            if(cortexDownloadItem.status === DownloadStatus.Error){
+              eventSource.close();
+              reject(new Error(`[CORTEX]::Error: Engine download failed: ${cortexDownloadItem.error}`));
+              return;
+            }
+            if(cortexDownloadItem.status === DownloadStatus.Downloaded){
+              eventSource.close();
+              resolve({ value: downloadState, done: true });
+              return;
+            }
+            resolve({ value: downloadState, done: false });
+          };
+
+          eventSource.onerror = (event) => {
+            eventSource.close();
+            log(`[CORTEX]::Error: Engine download failed: ${event}`);
+            reject(new Error(`[CORTEX]::Error: Engine download failed: ${event}`));
+          };
+
+          controller.signal.onabort = () => {
+            if (done) return; // Prevent handling more events after done
+            done = true;
+            eventSource.close();
+            resolve({ value: undefined, done: true }); // End the iterator on abort
+          };
+        })
+      }
+      return {
+        next,
+      };
+    }
+  };
+
+  return asyncIterable;
+}
 /**
  * Every module should have a dispose function
  * This will be called when the extension is unloaded and should clean up any resources
@@ -392,5 +506,6 @@ export default {
   dispose,
   getEngineInformation,
   spawnCortexProcess,
-  initCortexEngine
+  initCortexEngine,
+  getEngineDownloadProgress,
 }

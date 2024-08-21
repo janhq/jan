@@ -10,7 +10,7 @@ import {
 import { useAtomValue } from 'jotai'
 
 import ExtensionItem from '../CoreExtensions/ExtensionItem'
-import InstallStateIndicator from '../InstallStateIndicator'
+import ExtensionPackage from '../ExtensionPackage'
 import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 
 import { extensionManager } from '@/extension'
@@ -83,35 +83,11 @@ const ExtensionSetting = () => {
       {baseExtension &&
         installationPackages.length > 0 &&
         installationPackages.map((installationPackage) => (
-          <div
+          <ExtensionPackage
             key={installationPackage.name}
-            className="mx-4 flex items-start justify-between border-b border-[hsla(var(--app-border))] py-6 first:pt-4 last:border-none"
-          >
-            <div className="flex-1 flex-shrink-0 space-y-1">
-              <div className="flex items-center gap-x-2">
-                <h6 className="font-semibold">{installationPackage.name}</h6>
-              </div>
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: installationPackage.description,
-                }}
-                className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
-              />
-            </div>
-
-            <div className="flex min-w-[150px] flex-row justify-end">
-              {/* TODO: Implement InstallStateIndicator properly */}
-              <InstallStateIndicator
-                installProgress={-1}
-                installState={'NotInstalled'}
-                onInstallClick={() =>
-                  baseExtension.installPackage(installationPackage.name)
-                }
-                //TODO: onCancelClick
-                onCancelClick={() => null}
-              />
-            </div>
-          </div>
+            item={baseExtension}
+            installationPackage={installationPackage}
+          />
         ))}
     </Fragment>
   )

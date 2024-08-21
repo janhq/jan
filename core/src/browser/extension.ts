@@ -35,6 +35,7 @@ export type InstallationPackage = {
   name: string;
   version: string;
   installationState: InstallationState;
+  description?: string;
 };
 
 /**
@@ -215,6 +216,18 @@ export abstract class BaseExtension implements ExtensionType {
       )
     })
   }
-  abstract installationPackages(): Promise<InstallationPackage[]>
-  abstract installPackage(packageName: string): Promise<void>
+
+  installationPackages(): Promise<InstallationPackage[]>{
+    return Promise.resolve([])
+  }
+
+  installPackage(packageName: string): Promise<void>{
+    return Promise.resolve()
+  }
+
+  abortPackageInstallation(packageName: string): Promise<void>{
+    return Promise.resolve()
+   }
+
+
 }
