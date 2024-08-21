@@ -17,6 +17,16 @@ const availableHotkeys = [
     description: 'Toggle right panel',
   },
   {
+    combination: 'Shift Backspace',
+    modifierKeys: [isMac ? '⌘' : 'Ctrl'],
+    description: 'Delete current active thread',
+  },
+  {
+    combination: 'Shift C',
+    modifierKeys: [isMac ? '⌘' : 'Ctrl'],
+    description: 'Clean current active thread',
+  },
+  {
     combination: ',',
     modifierKeys: [isMac ? '⌘' : 'Ctrl'],
     description: 'Navigate to settings',
