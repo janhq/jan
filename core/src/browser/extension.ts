@@ -31,6 +31,12 @@ const ALL_INSTALLATION_STATE = [
 export type InstallationStateTuple = typeof ALL_INSTALLATION_STATE
 export type InstallationState = InstallationStateTuple[number]
 
+export type InstallationPackage = {
+  name: string;
+  version: string;
+  installationState: InstallationState;
+};
+
 /**
  * Represents a base extension.
  * This class should be extended by any class that represents an extension.
@@ -209,4 +215,6 @@ export abstract class BaseExtension implements ExtensionType {
       )
     })
   }
+  abstract installationPackages(): Promise<InstallationPackage[]>
+  abstract installPackage(packageName: string): Promise<void>
 }
