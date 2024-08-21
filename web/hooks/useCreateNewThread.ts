@@ -102,12 +102,12 @@ export const useCreateNewThread = () => {
 
     const overriddenSettings =
       defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
-        ? { ctx_len: 2048 }
+        ? { ctx_len: defaultModel.metadata?.default_ctx_len ?? 2048 }
         : {}
 
     const overriddenParameters =
       defaultModel?.parameters.max_tokens && defaultModel.parameters.max_tokens
-        ? { max_tokens: 2048 }
+        ? { max_tokens: defaultModel.metadata?.default_max_tokens ?? 2048 }
         : {}
 
     const createdAt = Date.now()

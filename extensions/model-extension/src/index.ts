@@ -353,7 +353,7 @@ export default class JanModelExtension extends ModelExtension {
   }
 
   /**
-   * Saves a machine learning model.
+   * Saves a model file.
    * @param model - The model to save.
    * @returns A Promise that resolves when the model is saved.
    */

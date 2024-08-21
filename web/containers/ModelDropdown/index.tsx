@@ -163,12 +163,17 @@ const ModelDropdown = ({
         // TODO: When Cortex support hardware instructions, we should remove this
         const overriddenSettings =
           model?.settings.ctx_len && model.settings.ctx_len > 2048
-            ? { ctx_len: 2048 }
+            ? { ctx_len: model.metadata?.default_ctx_len ?? 2048 }
+            : {}
+        const overriddenParameters =
+          model?.parameters.max_tokens && model.parameters.max_tokens
+            ? { max_tokens: model.metadata?.default_max_tokens ?? 2048 }
             : {}
 
         const modelParams = {
           ...model?.parameters,
           ...model?.settings,
+          ...overriddenParameters,
           ...overriddenSettings,
         }
 
