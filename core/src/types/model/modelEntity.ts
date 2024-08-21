@@ -111,6 +111,9 @@ export type ModelMetadata = {
   default_ctx_len?: number
   default_max_tokens?: number
   label?: string
+  // These settings to preserve model settings across threads
+  default_ctx_len?: number
+  default_max_tokens?: number
 }
 
 /**
