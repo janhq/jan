@@ -14,6 +14,8 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
+import useRecommendedModel from './useRecommendedModel'
+
 import { extensionManager } from '@/extension'
 import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
@@ -38,6 +40,7 @@ export default function useUpdateModelParameters() {
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const updateDownloadedModel = useSetAtom(updateDownloadedModelAtom)
   const preserveModelFeatureEnabled = useAtomValue(preserveModelSettingsAtom)
+  const { recommendedModel, setRecommendedModel } = useRecommendedModel()
 
   const updateModelParameter = useCallback(
     async (thread: Thread, settings: UpdateModelParameter) => {
@@ -75,29 +78,35 @@ export default function useUpdateModelParameters() {
 
       // Persists default settings to model file
       // Do not overwrite ctx_len and max_tokens
-      if (preserveModelFeatureEnabled && selectedModel) {
+      if (preserveModelFeatureEnabled) {
+        const defaultContextLength = settingParams.ctx_len
+        const defaultMaxTokens = runtimeParams.max_tokens
+
+        // eslint-disable-next-line  @typescript-eslint/naming-convention
+        const { ctx_len, ...toSaveSettings } = settingParams
+        // eslint-disable-next-line  @typescript-eslint/naming-convention
+        const { max_tokens, ...toSaveParams } = runtimeParams
+
         const updatedModel = {
-          ...selectedModel,
+          id: settings.modelId ?? selectedModel?.id,
           parameters: {
-            ...runtimeParams,
-            max_tokens: selectedModel.parameters.max_tokens,
+            ...toSaveSettings,
           },
           settings: {
-            ...settingParams,
-            ctx_len: selectedModel.settings.ctx_len,
+            ...toSaveParams,
           },
           metadata: {
-            ...selectedModel.metadata,
-            default_ctx_len: settingParams.ctx_len,
-            default_max_tokens: runtimeParams.max_tokens,
+            default_ctx_len: defaultContextLength,
+            default_max_tokens: defaultMaxTokens,
           },
-        } as Model
+        } as Partial<Model>
 
-        await extensionManager
+        const model = await extensionManager
           .get<ModelExtension>(ExtensionTypeEnum.Model)
-          ?.saveModel(updatedModel)
-        setSelectedModel(updatedModel)
-        updateDownloadedModel(updatedModel)
+          ?.updateModelInfo(updatedModel)
+        if (model) updateDownloadedModel(model)
+        if (selectedModel?.id === model?.id) setSelectedModel(model)
+        if (recommendedModel?.id === model?.id) setRecommendedModel(model)
       }
     },
     [
@@ -105,15 +114,17 @@ export default function useUpdateModelParameters() {
       selectedModel,
       setThreadModelParams,
       preserveModelFeatureEnabled,
-      setSelectedModel,
       updateDownloadedModel,
+      setSelectedModel,
     ]
   )
 
   const processStopWords = (params: ModelParams): ModelParams => {
     if ('stop' in params && typeof params['stop'] === 'string') {
       // Input as string but stop words accept an array of strings (space as separator)
-      params['stop'] = (params['stop'] as string).split(' ')
+      params['stop'] = (params['stop'] as string)
+        .split(' ')
+        .filter((e) => e.trim().length)
     }
     return params
   }

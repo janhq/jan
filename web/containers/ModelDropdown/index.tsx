@@ -171,11 +171,11 @@ const ModelDropdown = ({
           : 2048
         const overriddenSettings =
           model?.settings.ctx_len && model.settings.ctx_len > 2048
-            ? { ctx_len: defaultContextLength }
+            ? { ctx_len: defaultContextLength ?? 2048 }
             : {}
         const overriddenParameters =
           model?.parameters.max_tokens && model.parameters.max_tokens
-            ? { max_tokens: defaultMaxTokens }
+            ? { max_tokens: defaultMaxTokens ?? 2048 }
             : {}
 
         const modelParams = {

@@ -749,9 +749,17 @@ export default class JanModelExtension extends ModelExtension {
     const updatedModel: Model = {
       ...model,
       ...modelInfo,
+      parameters: {
+        ...model.parameters,
+        ...modelInfo.parameters,
+      },
+      settings: {
+        ...model.settings,
+        ...modelInfo.settings,
+      },
       metadata: {
         ...model.metadata,
-        tags: modelInfo.metadata?.tags ?? [],
+        ...modelInfo.metadata,
       },
     }
 
