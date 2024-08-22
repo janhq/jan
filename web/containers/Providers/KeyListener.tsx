@@ -37,12 +37,12 @@ export default function KeyListener({ children }: Props) {
     const onKeyDown = (e: KeyboardEvent) => {
       const prefixKey = isMac ? e.metaKey : e.ctrlKey
 
-      if (e.key === 'b' && prefixKey && e.shiftKey) {
+      if (e.code === 'KeyB' && prefixKey && e.shiftKey) {
         setShowRightPanel((showRightideBar) => !showRightideBar)
         return
       }
 
-      if (e.key === 'Backspace' && prefixKey && e.shiftKey) {
+      if (e.code === 'Backspace' && prefixKey && e.shiftKey) {
         if (!activeThread || mainViewState !== MainViewState.Thread) return
         setModalActionThread({
           showModal: ThreadModalAction.Delete,
@@ -51,7 +51,7 @@ export default function KeyListener({ children }: Props) {
         return
       }
 
-      if (e.key === 'c' && prefixKey && e.shiftKey) {
+      if (e.code === 'KeyC' && prefixKey && e.shiftKey) {
         if (!activeThread || mainViewState !== MainViewState.Thread) return
         setModalActionThread({
           showModal: ThreadModalAction.Clean,
@@ -60,19 +60,19 @@ export default function KeyListener({ children }: Props) {
         return
       }
 
-      if (e.key === 'n' && prefixKey) {
+      if (e.code === 'KeyN' && prefixKey) {
         if (mainViewState !== MainViewState.Thread) return
         requestCreateNewThread(assistants[0])
         setMainViewState(MainViewState.Thread)
         return
       }
 
-      if (e.key === 'b' && prefixKey) {
+      if (e.code === 'KeyB' && prefixKey) {
         setShowLeftPanel((showLeftSideBar) => !showLeftSideBar)
         return
       }
 
-      if (e.key === ',' && prefixKey) {
+      if (e.code === 'Comma' && prefixKey) {
         setMainViewState(MainViewState.Settings)
         return
       }
