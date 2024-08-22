@@ -10,10 +10,12 @@ import {
   Model,
   AssistantTool,
 } from '@janhq/core'
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
+
+import { toaster } from '@/containers/Toast'
 
 import { generateThreadId } from '@/utils/thread'
 
@@ -93,7 +95,11 @@ export const useCreateNewThread = () => {
       const lastMessage = threads[0]?.metadata?.lastMessage
 
       if (!lastMessage && threads.length) {
-        return null
+        return toaster({
+          title: 'No new thread created.',
+          description: `To avoid piling up empty threads, please reuse previous one before creating new.`,
+          type: 'warning',
+        })
       }
     }
 
