@@ -191,7 +191,7 @@ const ThreadRightPanel = () => {
           { name: 'Model', value: 'model' },
           ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
         ]}
-        value={activeTabThreadRightPanel}
+        value={activeTabThreadRightPanel as string}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}
       >
         <TabsContent value="assistant">

@@ -3,14 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 
-import {
-  TextArea,
-  Button,
-  Tooltip,
-  useClickOutside,
-  Badge,
-  useMediaQuery,
-} from '@janhq/joi'
+import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   FileTextIcon,
@@ -20,7 +13,6 @@ import {
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
-  ShapesIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -88,8 +80,6 @@ const ChatInput = () => {
 
   const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
-
-  const matches = useMediaQuery('(max-width: 880px)')
 
   useEffect(() => {
     if (isWaitingToSend && activeThreadId) {
@@ -403,11 +393,25 @@ const ChatInput = () => {
                   activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
                 }
                 onClick={() => {
-                  setActiveTabThreadRightPanel('model')
-                  if (matches) {
-                    setShowRightPanel(!showRightPanel)
-                  } else if (!showRightPanel) {
+                  // TODO @faisal: should be refactor later and better experience beetwen tab and toggle button
+                  if (showRightPanel && activeTabThreadRightPanel !== 'model') {
                     setShowRightPanel(true)
+                    setActiveTabThreadRightPanel('model')
+                  }
+                  if (showRightPanel && activeTabThreadRightPanel === 'model') {
+                    setShowRightPanel(false)
+                    setActiveTabThreadRightPanel(undefined)
+                  }
+                  if (activeTabThreadRightPanel === undefined) {
+                    setShowRightPanel(true)
+                    setActiveTabThreadRightPanel('model')
+                  }
+                  if (
+                    !showRightPanel &&
+                    activeTabThreadRightPanel !== 'model'
+                  ) {
+                    setShowRightPanel(true)
+                    setActiveTabThreadRightPanel('model')
                   }
                 }}
               >
@@ -415,9 +419,9 @@ const ChatInput = () => {
                   size={16}
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
-                <span>Inference</span>
               </Badge>
-              {experimentalFeature && (
+              {/* Temporary disable it */}
+              {/* {experimentalFeature && (
                 <Badge
                   className="flex cursor-pointer items-center gap-x-1"
                   theme="secondary"
@@ -439,7 +443,7 @@ const ChatInput = () => {
                   />
                   <span>Tools</span>
                 </Badge>
-              )}
+              )} */}
             </div>
             <Button
               theme="icon"
