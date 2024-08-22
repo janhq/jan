@@ -3,19 +3,7 @@ import { join, resolve } from 'path'
 import fs from 'fs'
 import os from 'os'
 import childProcess from 'child_process'
-
 const configurationFileName = 'settings.json'
-
-// TODO: do no specify app name in framework module
-// TODO: do not default the os.homedir
-const defaultJanDataFolder = join(os?.homedir() || '', 'jan')
-const defaultAppConfig: AppConfiguration = {
-  data_folder:
-    process.env.CI === 'e2e'
-      ? process.env.APP_CONFIG_PATH ?? resolve('./test-data')
-      : defaultJanDataFolder,
-  quick_ask: false,
-}
 
 /**
  * Getting App Configurations.
@@ -23,7 +11,8 @@ const defaultAppConfig: AppConfiguration = {
  * @returns {AppConfiguration} The app configurations.
  */
 export const getAppConfigurations = (): AppConfiguration => {
-  if (process.env.CI === 'e2e') return defaultAppConfig
+  const appDefaultConfiguration = defaultAppConfig()
+  if (process.env.CI === 'e2e') return appDefaultConfiguration
   // Retrieve Application Support folder path
   // Fallback to user home directory if not found
   const configurationFile = getConfigurationFilePath()
@@ -31,8 +20,8 @@ export const getAppConfigurations = (): AppConfiguration => {
   if (!fs.existsSync(configurationFile)) {
     // create default app config if we don't have one
     console.debug(`App config not found, creating default config at ${configurationFile}`)
-    fs.writeFileSync(configurationFile, JSON.stringify(defaultAppConfig))
-    return defaultAppConfig
+    fs.writeFileSync(configurationFile, JSON.stringify(appDefaultConfiguration))
+    return appDefaultConfiguration
   }
 
   try {
@@ -42,7 +31,7 @@ export const getAppConfigurations = (): AppConfiguration => {
     return appConfigurations
   } catch (err) {
     console.error(`Failed to read app config, return default config instead! Err: ${err}`)
-    return defaultAppConfig
+    return defaultAppConfig()
   }
 }
 
@@ -157,5 +146,24 @@ export const getEngineConfiguration = async (engineId: string) => {
   return {
     api_key: apiKey,
     full_url: fullUrl,
+  }
+}
+
+/**
+ * Default app configurations
+ * App Data Folder default to Electron's userData
+ * %APPDATA% on Windows
+ * $XDG_CONFIG_HOME or ~/.config on Linux
+ * ~/Library/Application Support on macOS
+ */
+const defaultAppConfig = (): AppConfiguration => {
+  const { app } = require('electron')
+  const defaultJanDataFolder = join(app?.getPath('userData') ?? os?.homedir() ?? '', 'jan')
+  return {
+    data_folder:
+      process.env.CI === 'e2e'
+        ? (process.env.APP_CONFIG_PATH ?? resolve('./test-data'))
+        : defaultJanDataFolder,
+    quick_ask: false,
   }
 }
