@@ -574,7 +574,7 @@ export default class JanModelExtension extends ModelExtension {
       ])
     )
 
-    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
 
     if (!defaultModel) {
       console.error('Unable to find default model')
@@ -594,16 +594,18 @@ export default class JanModelExtension extends ModelExtension {
       ],
       parameters: {
         ...defaultModel.parameters,
-        stop: [metadata['tokenizer.ggml.tokens'][eos_id] ?? ''],
+        stop: eos_id
+          ? [metadata['tokenizer.ggml.tokens'][eos_id] ?? '']
+          : defaultModel.parameters.stop,
       },
       settings: {
         ...defaultModel.settings,
         prompt_template:
-          metadata.parsed_chat_template ??
+          metadata?.parsed_chat_template ??
           defaultModel.settings.prompt_template,
         ctx_len:
-          metadata['llama.context_length'] ?? defaultModel.settings.ctx_len,
-        ngl: (metadata['llama.block_count'] ?? 32) + 1,
+          metadata?.['llama.context_length'] ?? defaultModel.settings.ctx_len,
+        ngl: (metadata?.['llama.block_count'] ?? 32) + 1,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -683,7 +685,7 @@ export default class JanModelExtension extends ModelExtension {
       'retrieveGGUFMetadata',
       modelBinaryPath
     )
-    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
 
     const binaryFileName = await baseName(modelBinaryPath)
 
@@ -699,17 +701,19 @@ export default class JanModelExtension extends ModelExtension {
       ],
       parameters: {
         ...defaultModel.parameters,
-        stop: [metadata['tokenizer.ggml.tokens'][eos_id] ?? ''],
+        stop: eos_id
+          ? [metadata?.['tokenizer.ggml.tokens'][eos_id] ?? '']
+          : defaultModel.parameters.stop,
       },
 
       settings: {
         ...defaultModel.settings,
         prompt_template:
-          metadata.parsed_chat_template ??
+          metadata?.parsed_chat_template ??
           defaultModel.settings.prompt_template,
         ctx_len:
-          metadata['llama.context_length'] ?? defaultModel.settings.ctx_len,
-        ngl: (metadata['llama.block_count'] ?? 32) + 1,
+          metadata?.['llama.context_length'] ?? defaultModel.settings.ctx_len,
+        ngl: (metadata?.['llama.block_count'] ?? 32) + 1,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
