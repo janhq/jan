@@ -4,6 +4,7 @@ import sourceMaps from 'rollup-plugin-sourcemaps'
 import typescript from 'rollup-plugin-typescript2'
 import json from '@rollup/plugin-json'
 import replace from '@rollup/plugin-replace'
+
 const packageJson = require('./package.json')
 const defaultSettingJson = require('./resources/default_settings.json')
 
@@ -55,7 +56,7 @@ export default [
       { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: false},
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ['@janhq/core/node', 'cortexso', '@janhq/core', 'sqlite3'],
+    external: ['@janhq/core/node', 'cortexso', '@janhq/core'],
     watch: {
       include: 'src/node/**',
     },
