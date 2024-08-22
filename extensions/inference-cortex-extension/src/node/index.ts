@@ -52,34 +52,68 @@ interface ModelInitOptions {
   modelFolder: string
   model: Model
 }
+
+class CortexProcess {
 // The PORT to use for the Cortex subprocess
-const PORT = 1338
+port = 1338
 // The HOST address to use for the Cortex subprocess
-const LOCAL_HOST = '127.0.0.1'
+host = '127.0.0.1'
 
-const ENGINE_PORT = 3930
+// The PORT to use for the Cortex engine subprocess
+enginePort = 3930
 // The URL for the Cortex subprocess
-const CORTEX_HTTP_SERVER_URL = `http://${LOCAL_HOST}:${PORT}`
-// The URL for the Cortex subprocess to load a model
-const CORTEX_HTTP_LOAD_MODEL_URL = (modelId: string) => `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/start`
-// The URL for the Cortex subprocess to unload a model
-const CORTEX_HTTP_UNLOAD_MODEL_URL = (modelId: string) => `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/stop`
-// The URL for the Cortex subprocess to kill itself
-const CORTEX_HTTP_KILL_URL = `${CORTEX_HTTP_SERVER_URL}/v1/system`
+getUrls = () => {
+  // The URL for the Cortex subprocess
+  const CORTEX_HTTP_SERVER_URL = `http://${this.host}:${this.port}`
+  return {
+    cortexHttpServerUrl: CORTEX_HTTP_SERVER_URL,
+    // The URL for the Cortex subprocess to load a model
+    cortexHttpLoadModelUrl: (modelId: string) =>
+      `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/start`,
+    // The URL for the Cortex subprocess to unload a model
+    cortexHttpUnloadModelUrl: (modelId: string) =>
+      `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/stop`,
+    // The URL for the Cortex subprocess to kill itself
+    cortexHttpKillUrl: `${CORTEX_HTTP_SERVER_URL}/v1/system`,
+    // The URL for the Cortex subprocess to check health
+    cortexHealthCheckUrl: `${CORTEX_HTTP_SERVER_URL}/v1/system`,
+    // The URL for the Cortex subprocess to init engine
+    cortexInitEngineUrl: (engine: string) =>
+      `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}/init`,
+    // The URL for the Cortex subprocess to get engine information
+    cortexEngineInfo: (engine: string) =>
+      `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}`,
+    cortexEngineDownloadEvent: `${CORTEX_HTTP_SERVER_URL}/v1/system/events/download`,
+}
+}
 
-// The URL for the Cortex subprocess to check health
-const CORTEX_HEALTH_CHECK_URL = `${CORTEX_HTTP_SERVER_URL}/v1/system`
+setPort = (port: number) => {
+  this.port = port
+}
 
-// The URL for the Cortex subprocess to init engine
-const CORTEX_INIT_ENGINE_URL =(engine: string) =>  `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}/init`
+setHost = (host: string) => {
+  this.host = host
+}
 
-// The URL for the Cortex subprocess to get engine information
-const CORTEX_ENGINE_INFO =(engine: string) =>  `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}`
+setEnginePort = (port: number) => {
+  this.enginePort = port
+}
+}
 
-// The URL for the Cortex subprocess to download engine
-const CORTEX_ENGINE_DOWNLOAD_EVENT = `${CORTEX_HTTP_SERVER_URL}/v1/system/events/download`
 
+const cortexProcess = new CortexProcess()
 
+const setPort = (port: number) => {
+  cortexProcess.setPort(port)
+}
+
+const setHost = (host: string) => {
+  cortexProcess.setHost(host)
+}
+
+const setEnginePort = (port: number) => {
+  cortexProcess.setEnginePort(port)
+}
 const CORTEX_PORT_FREE_CHECK_INTERVAL = 100
 
 // The supported model format
@@ -96,7 +130,9 @@ let currentSettings: (ModelSettingParams & { model?: string }) | undefined =
  * @returns A Promise that resolves when the subprocess is terminated successfully, or rejects with an error message if the subprocess fails to terminate.
  */
 async function unloadModel(modelId: string): Promise<void> {
-   await fetch(CORTEX_HTTP_UNLOAD_MODEL_URL(modelId), {
+  log(`[CORTEX]::Debug: Unloading model ${modelId}`)
+  const { cortexHttpUnloadModelUrl } = cortexProcess.getUrls()
+   await fetch(cortexHttpUnloadModelUrl(modelId), {
     method: 'POST',
    });
   return Promise.resolve()
@@ -262,7 +298,8 @@ function loadLLMModel(modelId: string, settings: any): Promise<Response> {
     settings.ngl = 100
   }
   log(`[CORTEX]::Debug: Loading model with params ${JSON.stringify(settings)}`)
-  return fetchRetry(CORTEX_HTTP_LOAD_MODEL_URL(modelId), {
+  const { cortexHttpLoadModelUrl } = cortexProcess.getUrls()
+  return fetchRetry(cortexHttpLoadModelUrl(modelId), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -293,18 +330,19 @@ async function killSubprocess(): Promise<void> {
   const controller = new AbortController()
   setTimeout(() => controller.abort(), 5000)
   log(`[CORTEX]::Debug: Request to kill cortex`)
-    return fetch(CORTEX_HTTP_KILL_URL, {
+  const { cortexHttpKillUrl } = cortexProcess.getUrls()
+    return fetch(cortexHttpKillUrl, {
       method: 'DELETE',
       signal: controller.signal,
     })
       .catch(() => {}) // Do nothing with this attempt
       .then(() =>
-        tcpPortUsed.waitUntilFree(PORT, CORTEX_PORT_FREE_CHECK_INTERVAL, 5000)
+        tcpPortUsed.waitUntilFree(cortexProcess.port, CORTEX_PORT_FREE_CHECK_INTERVAL, 5000)
       )
       .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
       .catch((err) => {
         log(
-          `[CORTEX]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+          `[CORTEX]::Debug: Could not kill running process on port ${cortexProcess.port}. Might be another process running on the same port? ${err}`
         )
         throw 'PORT_NOT_AVAILABLE'
       })
@@ -324,7 +362,7 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
         return Promise.resolve()
     }
     log(`[CORTEX]::Debug: Spawning cortex subprocess...`)
-    await startCortex('jan', LOCAL_HOST, PORT, ENGINE_PORT, getJanDataFolderPath())
+    await startCortex('jan', cortexProcess.host, cortexProcess.port, cortexProcess.enginePort, getJanDataFolderPath())
     log(`[CORTEX]::Debug: Cortex subprocess started`)
     await initCortexEngine(InferenceEngine.cortex_llamacpp, {
         runMode: systemInfo?.gpuSetting?.run_mode === 'gpu' ? 'GPU' : 'CPU',
@@ -346,7 +384,8 @@ async function initCortexEngine(engineName: string, options: InitEngineOptions):
         return Promise.resolve()
     }
     log(`[CORTEX]::Debug: Initializing cortex engine...`)
-   await fetchRetry(CORTEX_INIT_ENGINE_URL(engineName), {
+    const { cortexInitEngineUrl } = cortexProcess.getUrls()
+   await fetchRetry(cortexInitEngineUrl(engineName), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -358,7 +397,8 @@ async function initCortexEngine(engineName: string, options: InitEngineOptions):
 }
 
 async function getEngineInformation(engineName: string): Promise<EngineInformation> {
-    const engineInfo = await fetch(CORTEX_ENGINE_INFO(engineName));
+    const { cortexEngineInfo } = cortexProcess.getUrls()
+    const engineInfo = await fetch(cortexEngineInfo(engineName));
     const engineInfoJson = await engineInfo.json();
     return engineInfoJson as EngineInformation;
 }
@@ -385,7 +425,8 @@ export interface NitroProcessInfo {
 
 const getHealthCheckCortexProcess = async (): Promise<boolean> => {
     try{
-    const health = await fetchRetry(CORTEX_HEALTH_CHECK_URL, {
+      const { cortexHealthCheckUrl } = cortexProcess.getUrls()
+    const health = await fetchRetry(cortexHealthCheckUrl, {
         method: 'GET',
         retries: 3,
     retryDelay: 300,
@@ -396,7 +437,9 @@ const getHealthCheckCortexProcess = async (): Promise<boolean> => {
 }
 }
 
-const getEngineDownloadProgressUrl = () => CORTEX_ENGINE_DOWNLOAD_EVENT
+const getEngineDownloadProgressUrl = () => {
+    return cortexProcess.getUrls().cortexEngineDownloadEvent
+}
 
 export default {
   loadModel,
@@ -405,5 +448,8 @@ export default {
   getEngineInformation,
   spawnCortexProcess,
   initCortexEngine,
-  getEngineDownloadProgressUrl
+  getEngineDownloadProgressUrl,
+  setPort,
+  setHost,
+  setEnginePort,
 }

@@ -4,15 +4,15 @@ export type SettingComponentProps = {
   description: string
   controllerType: ControllerType
   controllerProps: SliderComponentProps | CheckboxComponentProps | InputComponentProps
-
   extensionName?: string
   requireModelReload?: boolean
   configType?: ConfigType
+  children?: SettingComponentProps[]
 }
 
 export type ConfigType = 'runtime' | 'setting'
 
-export type ControllerType = 'slider' | 'checkbox' | 'input'
+export type ControllerType = 'slider' | 'checkbox' | 'input' | 'formGroup'
 
 export type InputType = 'password' | 'text' | 'email' | 'number' | 'tel' | 'url'
 

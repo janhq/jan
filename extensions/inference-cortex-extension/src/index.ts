@@ -6,8 +6,12 @@
  * @module inference-extension/src/index
  */
 
-import { Model, LocalOAIEngine, executeOnMain, systemInformation, showToast, InstallationPackage, InstallationState, DownloadState, events, DownloadEvent, InferenceEngine } from '@janhq/core'
+import { Model, LocalOAIEngine, executeOnMain, systemInformation, showToast, InstallationPackage, InstallationState, DownloadState, events, DownloadEvent, InferenceEngine, SettingComponentProps } from '@janhq/core'
 
+
+const waitInMs = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+const extensionName = '@janhq/inference-cortex-extension'
 type DownloadItem = {
   id: string;
   time: {
@@ -43,6 +47,7 @@ const downloadStateMap : Record<DownloadStatus, DownloadState["downloadState"]> 
 declare const DEFAULT_SETTINGS: Array<any>
 
 enum Settings {
+  cortexProcessConfig = 'cortex-process-config',
   cortexHost = 'cortex-host',
   cortexPort = 'cortex-port',
   cortexEnginePort = 'cortex-engine-port',
@@ -67,7 +72,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cortexHost: string = ''
   cortexPort: string = ''
   cortexEnginePort: string = ''
-  private abortControllers: Record<string, AbortController> = {};
+  private abortControllers: Record<string, true> = {};
   /**
    * The URL for making inference requests.
    */
@@ -80,7 +85,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.inferenceUrl = INFERENCE_URL
     const system = await systemInformation()
     try {
-      console.log('Spawning cortex process')
       await executeOnMain(NODE, 'spawnCortexProcess', system)
       await this.installPackage(InferenceEngine.cortex_llamacpp);
     } catch (error: any) {
@@ -132,44 +136,61 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       reject(error)
     }
     eventSource.onmessage = (eventSourceEvent) => {
-      console.log('Download progress:', eventSourceEvent)
+      if(!this.abortControllers[packageName]){
+        eventSource.close()
+        events.emit(DownloadEvent.onFileDownloadError, {
+          extensionId: extensionName,
+          modelId: packageName,
+          downloadState: 'error',
+          error: 'aborted'
+        })
+        return resolve()
+      }
       if (!eventSourceEvent?.data){
         eventSource.close()
         showToast('Failed to get download progress', 'No data received')
         return reject('No data received')
       }
       
-      const data = JSON.parse(eventSourceEvent.data);
-      if (!data.length) {
+      const downloadItems = JSON.parse(eventSourceEvent.data);
+      if (!downloadItems.length) {
         eventSource.close();
         return resolve()
       }
+      const filerDownloadItems = downloadItems.filter((data: any) => {
+        if(data.title.includes(packageName)){
+          return true
+        }
+        if(packageName === InferenceEngine.cortex_tensorrtllm && data.title.includes('Cuda Toolkit')){
+          return true
+        }
+        return false
+      })
 
-      if (data.title !== packageName) {
-        return resolve()
-      }
-
-      const cortexDownloadItem = data.children[0] as DownloadItem;
+      const cortexDownloadItem = filerDownloadItems[0].children[0] as DownloadItem;
+      const totalSize = filerDownloadItems.map(({children} : {children: DownloadItem}) => children.size.total).reduce((acc: number, size: number) => acc + size, 0);
+      const transferredSize = filerDownloadItems.map(({children} : {children: DownloadItem}) => children.size.transferred).reduce((acc: number, size: number) => acc + size, 0);
 
       const downloadState: DownloadState = {
         modelId: packageName,
         fileName: cortexDownloadItem.id,
         time: cortexDownloadItem.time,
         speed: 0,
-        percent: Number((cortexDownloadItem.size.transferred / (cortexDownloadItem.size.total || 1)).toFixed(2)),
+        percent: Number(((transferredSize / Math.max(totalSize, 1)) * 100).toFixed(2)),
         size: cortexDownloadItem.size,
         downloadState: downloadStateMap[cortexDownloadItem.status],
-        children: [],
+        downloadType: 'engine',
         error: cortexDownloadItem.error,
-        extensionId: '@janhq/inference-cortex-extension',
+        extensionId: extensionName,
       };
-      if(cortexDownloadItem.status === DownloadStatus.Error){
+
+      if(filerDownloadItems.some(({children} : {children: DownloadItem}) => children.status === DownloadStatus.Error)){
         eventSource.close();
         showToast('Failed to download package', cortexDownloadItem.error || 'Exception occurred')
         events.emit(DownloadEvent.onFileDownloadError, downloadState)
         return resolve()
       }
-      if(cortexDownloadItem.status === DownloadStatus.Downloaded){
+      if(filerDownloadItems.every(({children} : {children: DownloadItem}) => children.status === DownloadStatus.Downloaded)){
         eventSource.close();
         events.emit(DownloadEvent.onFileDownloadSuccess, downloadState)
         return resolve()
@@ -182,10 +203,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   async installPackage(packageName: string): Promise<void> {
     try{
-      this.abortControllers[packageName] = new AbortController()
+      this.abortControllers[packageName] = true
       await executeOnMain(NODE, 'initCortexEngine', packageName)
+      await waitInMs(2000)
       await this.getEngineDownloadProgress(packageName)
-      console.log('Package installed')
     } catch (error: any) {
       delete this.abortControllers[packageName]
       console.error('Failed to install package', error)
@@ -196,7 +217,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   async abortPackageInstallation(packageName: string): Promise<void> {
     try {
       await executeOnMain(NODE, 'abortCortexEngine', packageName)
-      this.abortControllers[packageName].abort()
       delete this.abortControllers[packageName]
     } catch (error: any) {
       console.error('Failed to abort package installation', error)
@@ -206,14 +226,25 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
 
 
-  onSettingUpdate<T>(key: string, value: T): void {
-    if (key === Settings.cortexEnginePort) {
-      this.cortexEnginePort = value as string
-    } else if (key === Settings.cortexHost) {
-      this.cortexHost = value as string
-    } else {
-      this.cortexPort = value as string
+  async onSettingUpdate<T>(key: string, value: T): Promise<void> {
+    if(key === Settings.cortexProcessConfig){
+      await Promise.all((value as SettingComponentProps[]).map(async setting => {
+        if(setting.key === Settings.cortexHost){
+          this.cortexHost = setting.controllerProps.value as string
+          await executeOnMain(NODE, 'setHost', this.cortexHost)
+        }
+        if(setting.key === Settings.cortexPort){
+          this.cortexPort = setting.controllerProps.value as string
+          await executeOnMain(NODE, 'setPort', this.cortexPort)
+        }
+        if(setting.key === Settings.cortexEnginePort){
+          this.cortexEnginePort = setting.controllerProps.value as string
+          await executeOnMain(NODE, 'setEnginePort', this.cortexEnginePort)
+        }
+      }))
+      await executeOnMain(NODE, 'killSubprocess')
+      const system = await systemInformation()
+      await executeOnMain(NODE, 'spawnCortexProcess', system)
     }
-    // TODO:  Add mechanism to update Cortex process
   }
 }

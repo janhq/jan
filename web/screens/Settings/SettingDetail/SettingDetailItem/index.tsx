@@ -1,14 +1,23 @@
 import { SettingComponentProps } from '@janhq/core'
 
+import SettingDetailFormGroupItem from './SettingDetailFormGroupItem'
 import SettingDetailTextInputItem from './SettingDetailTextInputItem'
 import SettingDetailToggleItem from './SettingDetailToggleItem'
 
 type Props = {
   componentProps: SettingComponentProps[]
   onValueUpdated: (key: string, value: string | number | boolean) => void
+  onSettingUpdated: (
+    key: string,
+    updatedSettings: SettingComponentProps
+  ) => void
 }
 
-const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {
+const SettingDetailItem = ({
+  componentProps,
+  onValueUpdated,
+  onSettingUpdated,
+}: Props) => {
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'input': {
@@ -33,6 +42,18 @@ const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {
         )
       }
 
+      case 'formGroup': {
+        if (!data.children) return null
+        return (
+          <SettingDetailFormGroupItem
+            key={data.key}
+            settingProps={data}
+            onValueChanged={(updatedSettingProps) =>
+              onSettingUpdated(data.key, updatedSettingProps)
+            }
+          />
+        )
+      }
       default:
         return null
     }

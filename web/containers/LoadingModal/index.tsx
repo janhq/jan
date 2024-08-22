@@ -8,7 +8,7 @@ export type LoadingInfo = {
 
 export const loadingModalInfoAtom = atom<LoadingInfo | undefined>(undefined)
 
-const ResettingModal: React.FC = () => {
+const LoadingModal: React.FC = () => {
   const loadingInfo = useAtomValue(loadingModalInfoAtom)
 
   return (
@@ -24,4 +24,4 @@ const ResettingModal: React.FC = () => {
   )
 }
 
-export default ResettingModal
+export default LoadingModal
