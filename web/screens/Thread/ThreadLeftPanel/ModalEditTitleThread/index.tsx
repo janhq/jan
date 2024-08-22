@@ -1,57 +1,52 @@
 import { useCallback, useLayoutEffect, memo, useState } from 'react'
 
-import { Thread } from '@janhq/core'
 import { Modal, ModalClose, Button, Input } from '@janhq/joi'
-import { PencilIcon } from 'lucide-react'
+import { useAtom } from 'jotai'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
-type Props = {
-  thread: Thread
-  closeContextMenu?: () => void
-}
+import {
+  modalActionThreadAtom,
+  ThreadModalAction,
+} from '@/helpers/atoms/Thread.atom'
 
-const ModalEditTitleThread = ({ thread, closeContextMenu }: Props) => {
-  const [title, setTitle] = useState(thread.title)
+const ModalEditTitleThread = () => {
   const { updateThreadMetadata } = useCreateNewThread()
+  const [modalActionThread, setModalActionThread] = useAtom(
+    modalActionThreadAtom
+  )
+  const [title, setTitle] = useState(modalActionThread.thread?.title as string)
 
   useLayoutEffect(() => {
-    if (thread.title) {
-      setTitle(thread.title)
+    if (modalActionThread.thread?.title) {
+      setTitle(modalActionThread.thread?.title)
     }
-  }, [thread.title])
+  }, [modalActionThread.thread?.title])
 
   const onUpdateTitle = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       e.stopPropagation()
-
+      if (!modalActionThread.thread) return null
       updateThreadMetadata({
-        ...thread,
+        ...modalActionThread?.thread,
         title: title || 'New Thread',
       })
     },
-    [thread, title, updateThreadMetadata]
+    [modalActionThread?.thread, title, updateThreadMetadata]
   )
+
+  const onCloseModal = useCallback(() => {
+    setModalActionThread({
+      showModal: undefined,
+      thread: undefined,
+    })
+  }, [setModalActionThread])
 
   return (
     <Modal
       title="Edit title thread"
-      onOpenChange={(open) => {
-        if (open && closeContextMenu) {
-          closeContextMenu()
-        }
-      }}
-      trigger={
-        <div
-          className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <PencilIcon size={16} className="text-[hsla(var(--secondary))]" />
-          <span className="text-bold text-[hsla(var(--secondary))]">
-            Edit title
-          </span>
-        </div>
-      }
+      onOpenChange={onCloseModal}
+      open={modalActionThread.showModal === ThreadModalAction.EditTitle}
       content={
         <form className="mt-4">
           <Input
@@ -64,11 +59,7 @@ const ModalEditTitleThread = ({ thread, closeContextMenu }: Props) => {
               <Button theme="ghost">Cancel</Button>
             </ModalClose>
             <ModalClose asChild>
-              <Button
-                type="submit"
-                onClick={onUpdateTitle}
-                disabled={title.length === 0}
-              >
+              <Button type="submit" onClick={onUpdateTitle} disabled={!title}>
                 Save
               </Button>
             </ModalClose>

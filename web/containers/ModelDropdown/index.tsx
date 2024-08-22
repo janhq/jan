@@ -45,6 +45,7 @@ import {
 
 import { extensionManager } from '@/extension'
 
+import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
 import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 import {
   configuredModelsAtom,
@@ -89,6 +90,7 @@ const ModelDropdown = ({
   const featuredModel = configuredModels.filter((x) =>
     x.metadata.tags.includes('Featured')
   )
+  const preserveModelSettings = useAtomValue(preserveModelSettingsAtom)
 
   useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [
     dropdownOptions,
@@ -161,14 +163,25 @@ const ModelDropdown = ({
       if (activeThread) {
         // Default setting ctx_len for the model for a better onboarding experience
         // TODO: When Cortex support hardware instructions, we should remove this
+        const defaultContextLength = preserveModelSettings
+          ? model?.metadata?.default_ctx_len
+          : 2048
+        const defaultMaxTokens = preserveModelSettings
+          ? model?.metadata?.default_max_tokens
+          : 2048
         const overriddenSettings =
           model?.settings.ctx_len && model.settings.ctx_len > 2048
-            ? { ctx_len: 2048 }
+            ? { ctx_len: defaultContextLength }
+            : {}
+        const overriddenParameters =
+          model?.parameters.max_tokens && model.parameters.max_tokens
+            ? { max_tokens: defaultMaxTokens }
             : {}
 
         const modelParams = {
           ...model?.parameters,
           ...model?.settings,
+          ...overriddenParameters,
           ...overriddenSettings,
         }
 
@@ -284,6 +297,7 @@ const ModelDropdown = ({
         {chatInputMode ? (
           <Badge
             theme="secondary"
+            variant={open ? 'solid' : 'outline'}
             className="cursor-pointer"
             onClick={() => setOpen(!open)}
           >
@@ -580,10 +594,15 @@ const ModelDropdown = ({
                               className={twMerge(
                                 'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey
-                                  ? 'cursor-disabled text-[hsla(var(--text-tertiary))]'
-                                  : 'text-[hsla(var(--text-secondary))]'
+                                  ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
+                                  : 'text-[hsla(var(--text-primary))]'
                               )}
                               onClick={() => {
+                                if (
+                                  !apiKey &&
+                                  !localEngines.includes(model.engine)
+                                )
+                                  return null
                                 onClickModelItem(model.id)
                               }}
                             >

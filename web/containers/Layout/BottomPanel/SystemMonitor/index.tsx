@@ -88,7 +88,7 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-8px)] flex-shrink-0 flex-col border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px)] flex-shrink-0 flex-col border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
             showFullScreen && 'h-[calc(100%-63px)]',
             reduceTransparent && 'w-[calc(100%-48px)] rounded-none'
           )}

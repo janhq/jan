@@ -1,182 +1,47 @@
-import { PythonShell } from 'python-shell'
-import { spawn, ChildProcess } from 'child_process'
-import { resolve as presolve, join as pjoin } from 'path'
-import { log, Quantization } from '@janhq/core/node'
-import { statSync } from 'fs'
-export { renameSync } from 'fs'
+import { closeSync, openSync, readSync } from 'fs'
+import { Template } from '@huggingface/jinja'
+/**
+ * This is to retrieve the metadata from a GGUF file
+ * It uses hyllama and jinja from @huggingface module
+ */
+export const retrieveGGUFMetadata = async (ggufPath: string) => {
+  try {
+    const { ggufMetadata } = await import('hyllama')
+    // Read first 10mb of gguf file
+    const fd = openSync(ggufPath, 'r')
+    const buffer = new Uint8Array(10_000_000)
+    readSync(fd, buffer, 0, 10_000_000, 0)
+    closeSync(fd)
 
-let pythonShell: PythonShell | undefined = undefined
-let quantizeProcess: ChildProcess | undefined = undefined
+    // Parse metadata and tensor info
+    const { metadata } = ggufMetadata(buffer.buffer)
 
-export const getSize = (path: string): number => statSync(path).size
-
-export const killProcesses = () => {
-  if (pythonShell) {
-    pythonShell.kill()
-    pythonShell = undefined
+    const template = new Template(metadata['tokenizer.chat_template'])
+    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+    const bos_id = metadata['tokenizer.ggml.bos_token_id']
+    const eos_token = metadata['tokenizer.ggml.tokens'][eos_id]
+    const bos_token = metadata['tokenizer.ggml.tokens'][bos_id]
+    // Parse jinja template
+    const renderedTemplate = template.render({
+      add_generation_prompt: true,
+      eos_token,
+      bos_token,
+      messages: [
+        {
+          role: 'system',
+          content: '{system_message}',
+        },
+        {
+          role: 'user',
+          content: '{prompt}',
+        },
+      ],
+    })
+    return {
+      ...metadata,
+      parsed_chat_template: renderedTemplate,
+    }
+  } catch (e) {
+    console.log('[MODEL_EXT]', e)
   }
-  if (quantizeProcess) {
-    quantizeProcess.kill()
-    quantizeProcess = undefined
-  }
-}
-
-export const getQuantizeExecutable = (): string => {
-  let binaryFolder = pjoin(__dirname, '..', 'bin') // Current directory by default
-  let binaryName = 'quantize'
-  /**
-   * The binary folder is different for each platform.
-   */
-  if (process.platform === 'win32') {
-    binaryFolder = pjoin(binaryFolder, 'win')
-    binaryName = 'quantize.exe'
-  } else if (process.platform === 'darwin') {
-    /**
-     *  For MacOS: mac-universal both Silicon and InteL
-     */
-    binaryFolder = pjoin(binaryFolder, 'mac-universal')
-  } else {
-    binaryFolder = pjoin(binaryFolder, 'linux-cpu')
-  }
-  return pjoin(binaryFolder, binaryName)
-}
-
-export const installDeps = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const _pythonShell = new PythonShell(
-      presolve(__dirname, '..', 'scripts', 'install_deps.py')
-    )
-    _pythonShell.on('message', (message) => {
-      log(`[Install Deps]::Debug: ${message}`)
-    })
-    _pythonShell.on('stderr', (stderr) => {
-      log(`[Install Deps]::Error: ${stderr}`)
-    })
-    _pythonShell.on('error', (err) => {
-      pythonShell = undefined
-      log(`[Install Deps]::Error: ${err}`)
-      reject(err)
-    })
-    _pythonShell.on('close', () => {
-      const exitCode = _pythonShell.exitCode
-      pythonShell = undefined
-      log(
-        `[Install Deps]::Debug: Deps installation exited with code: ${exitCode}`
-      )
-      exitCode === 0 ? resolve() : reject(exitCode)
-    })
-  })
-}
-
-export const convertHf = async (
-  modelDirPath: string,
-  outPath: string
-): Promise<void> => {
-  return await new Promise<void>((resolve, reject) => {
-    const _pythonShell = new PythonShell(
-      presolve(__dirname, '..', 'scripts', 'convert-hf-to-gguf.py'),
-      {
-        args: [modelDirPath, '--outfile', outPath],
-      }
-    )
-    pythonShell = _pythonShell
-    _pythonShell.on('message', (message) => {
-      log(`[Conversion]::Debug: ${message}`)
-    })
-    _pythonShell.on('stderr', (stderr) => {
-      log(`[Conversion]::Error: ${stderr}`)
-    })
-    _pythonShell.on('error', (err) => {
-      pythonShell = undefined
-      log(`[Conversion]::Error: ${err}`)
-      reject(err)
-    })
-    _pythonShell.on('close', () => {
-      const exitCode = _pythonShell.exitCode
-      pythonShell = undefined
-      if (exitCode !== 0) {
-        log(`[Conversion]::Debug: Conversion exited with code: ${exitCode}`)
-        reject(exitCode)
-      } else {
-        resolve()
-      }
-    })
-  })
-}
-
-export const convert = async (
-  modelDirPath: string,
-  outPath: string,
-  { ctx, bpe }: { ctx?: number; bpe?: boolean }
-): Promise<void> => {
-  const args = [modelDirPath, '--outfile', outPath]
-  if (ctx) {
-    args.push('--ctx')
-    args.push(ctx.toString())
-  }
-  if (bpe) {
-    args.push('--vocab-type')
-    args.push('bpe')
-  }
-  return await new Promise<void>((resolve, reject) => {
-    const _pythonShell = new PythonShell(
-      presolve(__dirname, '..', 'scripts', 'convert.py'),
-      {
-        args,
-      }
-    )
-    _pythonShell.on('message', (message) => {
-      log(`[Conversion]::Debug: ${message}`)
-    })
-    _pythonShell.on('stderr', (stderr) => {
-      log(`[Conversion]::Error: ${stderr}`)
-    })
-    _pythonShell.on('error', (err) => {
-      pythonShell = undefined
-      log(`[Conversion]::Error: ${err}`)
-      reject(err)
-    })
-    _pythonShell.on('close', () => {
-      const exitCode = _pythonShell.exitCode
-      pythonShell = undefined
-      if (exitCode !== 0) {
-        log(`[Conversion]::Debug: Conversion exited with code: ${exitCode}`)
-        reject(exitCode)
-      } else {
-        resolve()
-      }
-    })
-  })
-}
-
-export const quantize = async (
-  modelPath: string,
-  outPath: string,
-  quantization: Quantization
-): Promise<void> => {
-  return await new Promise<void>((resolve, reject) => {
-    const quantizeExecutable = getQuantizeExecutable()
-    const _quantizeProcess = spawn(quantizeExecutable, [
-      modelPath,
-      outPath,
-      quantization,
-    ])
-    quantizeProcess = _quantizeProcess
-
-    _quantizeProcess.stdout?.on('data', (data) => {
-      log(`[Quantization]::Debug: ${data}`)
-    })
-    _quantizeProcess.stderr?.on('data', (data) => {
-      log(`[Quantization]::Error: ${data}`)
-    })
-
-    _quantizeProcess.on('close', (code) => {
-      if (code !== 0) {
-        log(`[Quantization]::Debug: Quantization exited with code: ${code}`)
-        reject(code)
-      } else {
-        resolve()
-      }
-    })
-  })
 }

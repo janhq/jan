@@ -7,6 +7,13 @@ import {
 } from '@janhq/core'
 
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
+
+export enum ThreadModalAction {
+  Clean = 'clean',
+  Delete = 'delete',
+  EditTitle = 'edit-title',
+}
 
 export const engineParamsUpdateAtom = atom<boolean>(false)
 
@@ -131,3 +138,17 @@ export const setThreadModelParamsAtom = atom(
     set(threadModelParamsAtom, currentState)
   }
 )
+
+const ACTIVE_SETTING_INPUT_BOX = 'activeSettingInputBox'
+export const activeSettingInputBoxAtom = atomWithStorage<boolean>(
+  ACTIVE_SETTING_INPUT_BOX,
+  false
+)
+
+export const modalActionThreadAtom = atom<{
+  showModal: ThreadModalAction | undefined
+  thread: Thread | undefined
+}>({
+  showModal: undefined,
+  thread: undefined,
+})

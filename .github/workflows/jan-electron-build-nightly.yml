@@ -10,7 +10,7 @@ on:
         description: 'Public Provider'
         options:
           - none
-          - cloudflare-r2
+          - aws-s3
         default: none
 
 jobs:
@@ -28,10 +28,10 @@ jobs:
             echo "::set-output name=ref::${{ github.ref }}"
           else
             if [ "${{ github.event_name }}" == "schedule" ]; then
-              echo "::set-output name=public_provider::cloudflare-r2"
+              echo "::set-output name=public_provider::aws-s3"
               echo "::set-output name=ref::refs/heads/dev"
             elif [ "${{ github.event_name }}" == "push" ]; then
-              echo "::set-output name=public_provider::cloudflare-r2"
+              echo "::set-output name=public_provider::aws-s3"
               echo "::set-output name=ref::${{ github.ref }}"
             else
               echo "::set-output name=public_provider::none"
@@ -112,13 +112,13 @@ jobs:
           cat ./latest-mac.yml
       
       - name: Upload latest-mac.yml
-        if: ${{ needs.set-public-provider.outputs.public_provider == 'cloudflare-r2' }}
+        if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
         run: |
-          aws s3api put-object --endpoint-url https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com --bucket ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }} --key "latest/latest-mac.yml" --body "./latest-mac.yml"
+          aws s3 cp ./latest-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/latest/latest-mac.yml"
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
 
     
@@ -147,7 +147,7 @@ jobs:
   noti-discord-manual-and-update-url-readme:
     needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
     secrets: inherit
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'cloudflare-r2'
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
     with:
       ref: refs/heads/dev

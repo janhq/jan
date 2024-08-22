@@ -34,6 +34,17 @@ export const removeDownloadingModelAtom = atom(
 
 export const downloadedModelsAtom = atom<Model[]>([])
 
+export const updateDownloadedModelAtom = atom(
+  null,
+  (get, set, updatedModel: Model) => {
+    const models: Model[] = get(downloadedModelsAtom).map((c) =>
+      c.id === updatedModel.id ? updatedModel : c
+    )
+
+    set(downloadedModelsAtom, models)
+  }
+)
+
 export const removeDownloadedModelAtom = atom(
   null,
   (get, set, modelId: string) => {
