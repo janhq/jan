@@ -10,10 +10,10 @@ import {
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
+  DownloadState,
   getJanDataFolderPath,
 } from '@janhq/core/node'
-import { start as startCortex } from 'cortexso'
-import { DownloadEvent, DownloadState, events, showToast } from '@janhq/core'
+
 
 type DownloadItem = {
   id: string;
@@ -32,7 +32,7 @@ type DownloadItem = {
   metadata?: Record<string, unknown>;
 }
 
-export enum DownloadStatus {
+enum DownloadStatus {
   Pending = 'pending',
   Downloading = 'downloading',
   Error = 'error',
@@ -66,7 +66,7 @@ interface EngineInformation {
   status: EngineStatus;
 }
 
-const downloadStateMap : Record<DownloadStatus, DownloadState['downloadState']> = {
+const downloadStateMap : Record<DownloadStatus, DownloadState["downloadState"]> = {
   [DownloadStatus.Pending]: 'downloading',
   [DownloadStatus.Downloading]: 'downloading',
   [DownloadStatus.Error]: 'error',
@@ -222,7 +222,7 @@ async function loadModel(
     if([InferenceEngine.cortex_onnx, InferenceEngine.cortex_tensorrtllm].includes(params.model.engine)){
       const engineInfo = await getEngineInformation(params.model.engine)
       if(engineInfo.status === EngineStatus.NOT_SUPPORTED){
-          showToast('Engine not compatible', `Engine ${params.model.engine} is not compatible with the current system`)
+          console.log('Engine not compatible', `Engine ${params.model.engine} is not compatible with the current system`)
       }
 
       if(engineInfo.status === EngineStatus.NOT_INITIALIZED){
@@ -230,7 +230,7 @@ async function loadModel(
       }
 
       if(engineInfo.status !== EngineStatus.ERROR){
-        showToast('Engine error', `Unable to load engine ${params.model.engine}`)
+        console.log('Engine error', `Unable to load engine ${params.model.engine}`)
       }
 
       
@@ -347,6 +347,9 @@ async function killSubprocess(): Promise<void> {
  * @returns A promise that resolves when the Cortex subprocess is started.
  */
 async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> {
+  console.log('systemInfo', systemInfo)
+  console.log('1232456')
+  const { start: startCortex } = await import('cortexso')
     const isCortexRunning = await getHealthCheckCortexProcess()
     if (isCortexRunning) {
         log(`[CORTEX]::Debug: Cortex subprocess is already running`)
