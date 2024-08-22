@@ -79,10 +79,12 @@ export default function useUpdateModelParameters() {
         const updatedModel = {
           ...selectedModel,
           parameters: {
+            ...selectedModel.parameters,
             ...runtimeParams,
             max_tokens: selectedModel.parameters.max_tokens,
           },
           settings: {
+            ...selectedModel.settings,
             ...settingParams,
             ctx_len: selectedModel.settings.ctx_len,
           },
