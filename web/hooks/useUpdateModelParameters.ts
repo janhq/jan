@@ -115,7 +115,9 @@ export default function useUpdateModelParameters() {
   const processStopWords = (params: ModelParams): ModelParams => {
     if ('stop' in params && typeof params['stop'] === 'string') {
       // Input as string but stop words accept an array of strings (space as separator)
-      params['stop'] = (params['stop'] as string).split(' ')
+      params['stop'] = (params['stop'] as string)
+        .split(' ')
+        .filter((e) => e.trim().length)
     }
     return params
   }
