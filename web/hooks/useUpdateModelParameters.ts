@@ -82,9 +82,9 @@ export default function useUpdateModelParameters() {
         const defaultContextLength = settingParams.ctx_len
         const defaultMaxTokens = runtimeParams.max_tokens
 
-        // eslint-disable-next-line  @typescript-eslint/naming-convention
+        // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unused-vars
         const { ctx_len, ...toSaveSettings } = settingParams
-        // eslint-disable-next-line  @typescript-eslint/naming-convention
+        // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unused-vars
         const { max_tokens, ...toSaveParams } = runtimeParams
 
         const updatedModel = {
@@ -116,6 +116,8 @@ export default function useUpdateModelParameters() {
       preserveModelFeatureEnabled,
       updateDownloadedModel,
       setSelectedModel,
+      recommendedModel,
+      setRecommendedModel,
     ]
   )
 
