@@ -387,7 +387,7 @@ const ModelDropdown = ({
                   key={i}
                 >
                   <div className="mt-2">
-                    <div className="flex items-center justify-between px-3">
+                    <div className="flex items-center justify-between px-4">
                       <div
                         className="flex w-full cursor-pointer items-center gap-2 py-1"
                         onClick={onClickChevron}
