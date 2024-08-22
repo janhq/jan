@@ -122,13 +122,16 @@ export abstract class BaseExtension implements ExtensionType {
         await fs.mkdir(extensionSettingFolderPath)
       const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
 
-      // Persists new setting only
+      // Persists new settings
       if (await fs.existsSync(settingFilePath)) {
         const oldSettings = JSON.parse(await fs.readFileSync(settingFilePath, 'utf-8'))
-        if (Array.isArray(oldSettings))
-          settings = oldSettings.concat(
-            settings.filter((e) => !oldSettings.some((o) => o.key === e.key))
-          )
+        settings.forEach((setting) => {
+          // Keep setting value
+          if (setting.controllerProps && Array.isArray(oldSettings))
+            setting.controllerProps.value = oldSettings.find(
+              (e: any) => e.key === setting.key
+            )?.controllerProps?.value
+        })
       }
       await fs.writeFileSync(settingFilePath, JSON.stringify(settings, null, 2))
     } catch (err) {
