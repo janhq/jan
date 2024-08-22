@@ -53,10 +53,10 @@ export default async () => [
   {
     input: `src/node/index.ts`,
     output: [
-      { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: false },
+      { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: false},
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ['@janhq/core/node'],
+    external: ['@janhq/core/node', 'cortexso', '@janhq/core', 'sqlite3'],
     watch: {
       include: 'src/node/**',
     },
@@ -66,15 +66,14 @@ export default async () => [
       json(),
       // Compile TypeScript files
       typescript({ useTsconfigDeclarationDir: true }),
+      resolve({
+        extensions: ['.ts', '.js', '.json', '.mjs', '.js', '.json', '.node'],
+      }),
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
       commonjs(),
       // Allow node_modules resolution, so you can use 'external' to control
       // which external modules to include in the bundle
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
-      resolve({
-        extensions: ['.ts', '.js', '.json'],
-      }),
-
       // Resolve source maps to the original source
       sourceMaps(),
     ],

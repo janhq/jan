@@ -46,9 +46,15 @@
   "dependencies": {
     "@huggingface/hub": "^0.15.1",
     "@janhq/core": "file:../../core",
+    "@nestjs/microservices": "^10.4.1",
+    "@nestjs/websockets": "^10.4.1",
+    "class-transformer": "^0.5.1",
+    "cortexso": "^v0.5.0-45",
     "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
+    "pg-hstore": "^2.3.4",
     "rxjs": "^7.8.1",
+    "sqlite3": "^5.1.7",
     "tcp-port-used": "^1.0.2",
     "terminate": "2.6.1",
     "ulidx": "^2.3.0"
@@ -66,6 +72,12 @@
     "fetch-retry",
     "@janhq/core",
     "decompress",
-    "cortexso"
+    "cortexso",
+    "@nestjs/microservices",
+    "@nestjs/websockets",
+    "class-transformer",
+    "pg-hstore",
+    "rxjs",
+    "sqlite3"
   ]
 }
