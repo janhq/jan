@@ -10,6 +10,7 @@ import {
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
+  DownloadState,
   getJanDataFolderPath,
 } from '@janhq/core/node'
 
@@ -39,7 +40,6 @@ interface EngineInformation {
   productName: string;
   status: EngineStatus;
 }
-
 
 
 // Polyfill fetch with retry
