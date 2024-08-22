@@ -100,7 +100,14 @@ export default function useUpdateModelParameters() {
         updateDownloadedModel(updatedModel)
       }
     },
-    [activeModelParams, selectedModel, setThreadModelParams]
+    [
+      activeModelParams,
+      selectedModel,
+      setThreadModelParams,
+      preserveModelFeatureEnabled,
+      setSelectedModel,
+      updateDownloadedModel,
+    ]
   )
 
   const processStopWords = (params: ModelParams): ModelParams => {
