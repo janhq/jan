@@ -10,35 +10,8 @@ import {
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
-  DownloadState,
   getJanDataFolderPath,
 } from '@janhq/core/node'
-import EventSource from 'eventsource'
-
-
-type DownloadItem = {
-  id: string;
-  time: {
-    elapsed: number;
-    remaining: number;
-  };
-  size: {
-    total: number;
-    transferred: number;
-  };
-  progress: number;
-  checksum?: string;
-  status: DownloadStatus;
-  error?: string;
-  metadata?: Record<string, unknown>;
-}
-
-enum DownloadStatus {
-  Pending = 'pending',
-  Downloading = 'downloading',
-  Error = 'error',
-  Downloaded = 'downloaded',
-}
 
 interface InitEngineOptions {
     runMode?: 'CPU' | 'GPU';
@@ -67,12 +40,6 @@ interface EngineInformation {
   status: EngineStatus;
 }
 
-const downloadStateMap : Record<DownloadStatus, DownloadState["downloadState"]> = {
-  [DownloadStatus.Pending]: 'downloading',
-  [DownloadStatus.Downloading]: 'downloading',
-  [DownloadStatus.Error]: 'error',
-  [DownloadStatus.Downloaded]: 'end'
-}
 
 
 // Polyfill fetch with retry
@@ -364,14 +331,6 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
         vulkan: systemInfo?.gpuSetting?.vulkan ?? false,
         gpuType: systemInfo?.gpuSetting?.vulkan ? 'Others (Vulkan)' : 'Nvidia',
     })
-    const controller = new AbortController()
-    log(`[CORTEX]::Debug: Waiting for engine download progress...`)
-    const result = await getEngineDownloadProgress(InferenceEngine.cortex_llamacpp, controller)
-    log(`[CORTEX]::Debug: Engine download progress...`)
-    for await (const downloadState of result) {
-        log(`[CORTEX]::Debug: Download progress: ${JSON.stringify(downloadState)}`)
-    }
-    console.log('finished')
     return Promise.resolve()
 }
 
@@ -404,89 +363,6 @@ async function getEngineInformation(engineName: string): Promise<EngineInformati
     return engineInfoJson as EngineInformation;
 }
 
-async function* getEngineDownloadProgress(engineName: string, controller: AbortController): AsyncIterable<DownloadState> {
-  const eventSource = new EventSource(`http://127.0.0.1:1337/v1/system/events/download`)
-  const asyncIterable = {
-    [Symbol.asyncIterator]: () => {
-      let done = false; // Flag to indicate if the iteration is done
-      const next = () =>{
-        return new Promise<IteratorResult<DownloadState>>((resolve, reject) => {
-          eventSource.onmessage = (event) => {
-            console.log('event', event)
-            if(!event.data){
-              eventSource.close();
-              resolve({ value: undefined, done: true }); // End the iterator
-            }
-            const data = JSON.parse(event.data);
-            if (!data.length) {
-              eventSource.close();
-              resolve({ value: undefined, done: true }); // End the iterator
-              return;
-            }
-
-            if (data.title !== engineName) {
-              return;
-            }
-
-            const cortexDownloadItem = data.children[0] as DownloadItem;
-
-            const downloadState: DownloadState = {
-              modelId: engineName,
-              fileName: cortexDownloadItem.id,
-              time: cortexDownloadItem.time,
-              speed: 0,
-              percent: Number((cortexDownloadItem.size.transferred / (cortexDownloadItem.size.total || 1)).toFixed(2)),
-              size: cortexDownloadItem.size,
-              downloadState: downloadStateMap[cortexDownloadItem.status],
-              children: [],
-              error: cortexDownloadItem.error,
-              extensionId: '@janhq/inference-cortex-extension',
-            };
-            if(cortexDownloadItem.status === DownloadStatus.Error){
-              eventSource.close();
-              reject(new Error(`[CORTEX]::Error: Engine download failed: ${cortexDownloadItem.error}`));
-              return;
-            }
-            if(cortexDownloadItem.status === DownloadStatus.Downloaded){
-              eventSource.close();
-              resolve({ value: downloadState, done: true });
-              return;
-            }
-            resolve({ value: downloadState, done: false });
-          };
-
-          eventSource.onerror = (event) => {
-            eventSource.close();
-            log(`[CORTEX]::Error: Engine download failed: ${event}`);
-            reject(new Error(`[CORTEX]::Error: Engine download failed: ${event}`));
-          };
-
-          controller.signal.onabort = () => {
-            if (done) return; // Prevent handling more events after done
-            done = true;
-            eventSource.close();
-            resolve({ value: undefined, done: true }); // End the iterator on abort
-          };
-        })
-      }
-      return {
-        next,
-      };
-    },
-    return() {
-      eventSource.close();
-      return Promise.resolve({ value: undefined, done: true });
-  },
-  };
-
-  try {
-    for await (const downloadState of asyncIterable) {
-      yield downloadState;
-    }
-  } finally {
-    eventSource.close();
-  }
-}
 /**
  * Every module should have a dispose function
  * This will be called when the extension is unloaded and should clean up any resources
@@ -520,6 +396,8 @@ const getHealthCheckCortexProcess = async (): Promise<boolean> => {
 }
 }
 
+const getEngineDownloadProgressUrl = () => CORTEX_ENGINE_DOWNLOAD_EVENT
+
 export default {
   loadModel,
   unloadModel,
@@ -527,5 +405,5 @@ export default {
   getEngineInformation,
   spawnCortexProcess,
   initCortexEngine,
-  getEngineDownloadProgress,
+  getEngineDownloadProgressUrl
 }
