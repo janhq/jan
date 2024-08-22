@@ -13,6 +13,7 @@ import {
   DownloadState,
   getJanDataFolderPath,
 } from '@janhq/core/node'
+import EventSource from 'eventsource'
 
 interface InitEngineOptions {
     runMode?: 'CPU' | 'GPU';
@@ -368,11 +369,20 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
         vulkan: systemInfo?.gpuSetting?.vulkan ?? false,
         gpuType: systemInfo?.gpuSetting?.vulkan ? 'Others (Vulkan)' : 'Nvidia',
     })
+    const controller = new AbortController()
+    log(`[CORTEX]::Debug: Waiting for engine download progress...`)
+    const result = await getEngineDownloadProgress(InferenceEngine.cortex_llamacpp, controller)
+    log(`[CORTEX]::Debug: Engine download progress...`)
+    for await (const downloadState of result) {
+        log(`[CORTEX]::Debug: Download progress: ${JSON.stringify(downloadState)}`)
+    }
+    console.log('finished')
     return Promise.resolve()
 }
 
 async function initCortexEngine(engineName: string, options: InitEngineOptions): Promise<void> {
     const engineInfo = await getEngineInformation(engineName);
+    console.log('options', options)
     if(engineInfo.status === 'not_supported'){
         log(`[CORTEX]::Error: Engine ${engineName} is not supported`)
         return Promise.reject(`Engine ${engineName} is not supported`)
