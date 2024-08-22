@@ -7,7 +7,9 @@ import {
   InstallationPackage,
 } from '@janhq/core'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
+
+import { loadingModalInfoAtom } from '@/containers/LoadingModal'
 
 import ExtensionItem from '../CoreExtensions/ExtensionItem'
 import ExtensionPackage from '../ExtensionPackage'
@@ -19,6 +21,7 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 const ExtensionSetting = () => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
+  const setLoadingInfo = useSetAtom(loadingModalInfoAtom)
   const [installationState, setInstallationState] =
     useState<InstallationState>('NotRequired')
   const [installationPackages, setInstallationPackages] = useState<
@@ -69,12 +72,38 @@ const ExtensionSetting = () => {
     setSettings(newSettings)
   }
 
+  const onSettingUpdated = async (
+    key: string,
+    updatedSettings: SettingComponentProps
+  ) => {
+    setLoadingInfo({
+      message: 'Updating settings...',
+      title: 'Settings',
+    })
+    const newSettings = await Promise.all(
+      settings.map(async (setting) => {
+        if (setting.key !== key) return setting
+        setting = updatedSettings
+        const extensionName = setting.extensionName
+        if (extensionName) {
+          await extensionManager
+            .getByName(extensionName)
+            ?.updateSettings([setting])
+        }
+        return setting
+      })
+    )
+    setLoadingInfo(undefined)
+    setSettings(newSettings)
+  }
+
   return (
     <Fragment>
       {settings.length > 0 && (
         <SettingDetailItem
           componentProps={settings}
           onValueUpdated={onValueChanged}
+          onSettingUpdated={onSettingUpdated}
         />
       )}
       {baseExtension && installationState !== 'NotRequired' && (

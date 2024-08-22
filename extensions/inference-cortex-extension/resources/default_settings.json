@@ -1,5 +1,15 @@
 [
   {
+    "key": "cortex-process-config",
+    "title": "Cortex Process Configuration",
+    "description": "The configuration of the Cortex process.",
+    "controllerType": "formGroup",
+    "controllerProps": {
+      "placeholder": "",
+      "value": ""
+    },
+    "children":
+  [{
     "key": "cortex-host",
     "title": "Cortex Host",
     "description": "The host of the Cortex API.",
@@ -28,26 +38,7 @@
       "placeholder": "Input the port of the Cortex Engine",
       "value": "3930"
     }
-  },
-  {
-    "key": "embedding",
-    "title": "Embedding",
-    "description": "Whether to enable embedding.",
-    "controllerType": "checkbox",
-    "controllerProps": {
-      "value": true
-    }
-  },
-  {
-    "key": "ctx_len",
-    "title": "Context Length",
-    "description": "The context length for model operations varies; the maximum depends on the specific model used.",
-    "controllerType": "slider",
-    "controllerProps": {
-      "min": 0,
-      "max": 4096,
-      "step": 128,
-      "value": 2048
-    }
+  }
+]
   }
 ]

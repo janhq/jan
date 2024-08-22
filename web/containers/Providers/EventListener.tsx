@@ -21,6 +21,7 @@ import QuickAskListener from './QuickAskListener'
 import {
   InstallingExtensionState,
   removeInstallingExtensionAtom,
+  removeInstallingPackageAtom,
   setInstallingExtensionAtom,
   setInstallingPackageAtom,
 } from '@/helpers/atoms/Extension.atom'
@@ -30,6 +31,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
   const setInstallingPackage = useSetAtom(setInstallingPackageAtom)
   const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
+  const removeInstallingPackage = useSetAtom(removeInstallingPackageAtom)
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
@@ -60,11 +62,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType === 'extension') {
         removeInstallingExtension(state.extensionId!)
       } else if (state.downloadType === 'engine') {
-        setInstallingPackage(state.extensionId!, {
-          extensionId: state.extensionId!,
-          packageName: state.modelId!,
-          percentage: -1,
-        })
+       removeInstallingPackage(state.extensionId!, state.modelId!)
       } else {
         setDownloadState(state)
       }

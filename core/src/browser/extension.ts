@@ -209,12 +209,12 @@ export abstract class BaseExtension implements ExtensionType {
 
     await fs.writeFileSync(settingPath, JSON.stringify(updatedSettings, null, 2))
 
-    updatedSettings.forEach((setting) => {
-      this.onSettingUpdate<typeof setting.controllerProps.value>(
+    await Promise.all(updatedSettings.map((setting) => {
+      this.onSettingUpdate<typeof setting.controllerProps.value | typeof setting.children>(
         setting.key,
-        setting.controllerProps.value
+        setting.children? setting.children: setting.controllerProps.value
       )
-    })
+    }))
   }
 
   installationPackages(): Promise<InstallationPackage[]>{
