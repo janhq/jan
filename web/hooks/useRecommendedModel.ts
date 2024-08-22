@@ -95,5 +95,9 @@ export default function useRecommendedModel() {
     getRecommendedModel()
   }, [getRecommendedModel])
 
-  return { recommendedModel, downloadedModels: sortedModels }
+  return {
+    recommendedModel,
+    downloadedModels: sortedModels,
+    setRecommendedModel,
+  }
 }
