@@ -13,6 +13,7 @@ import {
   DownloadState,
   getJanDataFolderPath,
 } from '@janhq/core/node'
+import EventSource from 'eventsource'
 
 
 type DownloadItem = {
@@ -360,14 +361,23 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
     log(`[CORTEX]::Debug: Cortex subprocess started`)
     await initCortexEngine(InferenceEngine.cortex_llamacpp, {
         runMode: systemInfo?.gpuSetting?.run_mode === 'gpu' ? 'GPU' : 'CPU',
-        vulkan: systemInfo?.gpuSetting?.vulkan,
+        vulkan: systemInfo?.gpuSetting?.vulkan ?? false,
         gpuType: systemInfo?.gpuSetting?.vulkan ? 'Others (Vulkan)' : 'Nvidia',
     })
+    const controller = new AbortController()
+    log(`[CORTEX]::Debug: Waiting for engine download progress...`)
+    const result = await getEngineDownloadProgress(InferenceEngine.cortex_llamacpp, controller)
+    log(`[CORTEX]::Debug: Engine download progress...`)
+    for await (const downloadState of result) {
+        log(`[CORTEX]::Debug: Download progress: ${JSON.stringify(downloadState)}`)
+    }
+    console.log('finished')
     return Promise.resolve()
 }
 
 async function initCortexEngine(engineName: string, options: InitEngineOptions): Promise<void> {
     const engineInfo = await getEngineInformation(engineName);
+    console.log('options', options)
     if(engineInfo.status === 'not_supported'){
         log(`[CORTEX]::Error: Engine ${engineName} is not supported`)
         return Promise.reject(`Engine ${engineName} is not supported`)
@@ -395,33 +405,30 @@ async function getEngineInformation(engineName: string): Promise<EngineInformati
 }
 
 async function* getEngineDownloadProgress(engineName: string, controller: AbortController): AsyncIterable<DownloadState> {
-  const eventSource = new EventSource(CORTEX_ENGINE_DOWNLOAD_EVENT);
-
-  controller.signal.onabort = () => {
-    eventSource.close();
-  };
-
+  const eventSource = new EventSource(`http://127.0.0.1:1337/v1/system/events/download`)
   const asyncIterable = {
     [Symbol.asyncIterator]: () => {
       let done = false; // Flag to indicate if the iteration is done
       const next = () =>{
-        
         return new Promise<IteratorResult<DownloadState>>((resolve, reject) => {
           eventSource.onmessage = (event) => {
-            if (event.data.title !== engineName) {
-              return;
-            }
-            controller.signal.onabort = () => {
+            console.log('event', event)
+            if(!event.data){
               eventSource.close();
-              resolve({ value: undefined, done: true });
-            };
-            if (!event.data.length) {
+              resolve({ value: undefined, done: true }); // End the iterator
+            }
+            const data = JSON.parse(event.data);
+            if (!data.length) {
               eventSource.close();
               resolve({ value: undefined, done: true }); // End the iterator
               return;
             }
 
-            const cortexDownloadItem = event.data.children[0] as DownloadItem;
+            if (data.title !== engineName) {
+              return;
+            }
+
+            const cortexDownloadItem = data.children[0] as DownloadItem;
 
             const downloadState: DownloadState = {
               modelId: engineName,
@@ -465,10 +472,20 @@ async function* getEngineDownloadProgress(engineName: string, controller: AbortC
       return {
         next,
       };
-    }
+    },
+    return() {
+      eventSource.close();
+      return Promise.resolve({ value: undefined, done: true });
+  },
   };
 
-  return asyncIterable;
+  try {
+    for await (const downloadState of asyncIterable) {
+      yield downloadState;
+    }
+  } finally {
+    eventSource.close();
+  }
 }
 /**
  * Every module should have a dispose function

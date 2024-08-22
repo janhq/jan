@@ -56,7 +56,7 @@ export default async () => [
       { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: false},
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ['@janhq/core/node', 'cortexso', '@janhq/core', 'sqlite3'],
+    external: ['@janhq/core/node', 'cortexso', '@janhq/core'],
     watch: {
       include: 'src/node/**',
     },
