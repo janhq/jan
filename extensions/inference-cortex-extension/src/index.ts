@@ -6,7 +6,39 @@
  * @module inference-extension/src/index
  */
 
-import { Model, LocalOAIEngine, executeOnMain, systemInformation, showToast, InstallationPackage, InstallationState, DownloadState, events, DownloadEvent } from '@janhq/core'
+import { Model, LocalOAIEngine, executeOnMain, systemInformation, showToast, InstallationPackage, InstallationState, DownloadState, events, DownloadEvent, InferenceEngine } from '@janhq/core'
+
+type DownloadItem = {
+  id: string;
+  time: {
+    elapsed: number;
+    remaining: number;
+  };
+  size: {
+    total: number;
+    transferred: number;
+  };
+  progress: number;
+  checksum?: string;
+  status: DownloadStatus;
+  error?: string;
+  metadata?: Record<string, unknown>;
+}
+
+enum DownloadStatus {
+  Pending = 'pending',
+  Downloading = 'downloading',
+  Error = 'error',
+  Downloaded = 'downloaded',
+}
+
+
+const downloadStateMap : Record<DownloadStatus, DownloadState["downloadState"]> = {
+  [DownloadStatus.Pending]: 'downloading',
+  [DownloadStatus.Downloading]: 'downloading',
+  [DownloadStatus.Error]: 'error',
+  [DownloadStatus.Downloaded]: 'end'
+}
 
 declare const DEFAULT_SETTINGS: Array<any>
 
@@ -48,7 +80,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.inferenceUrl = INFERENCE_URL
     const system = await systemInformation()
     try {
+      console.log('Spawning cortex process')
       await executeOnMain(NODE, 'spawnCortexProcess', system)
+      await this.installPackage(InferenceEngine.cortex_llamacpp);
     } catch (error: any) {
       console.error('Failed to spawn cortex process', error)
       showToast('Failed to spawn cortex process', error.message || 'Exception occurred')
@@ -72,8 +106,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   async installationPackages(): Promise<InstallationPackage[]> {
     const [cortexOnnxInfo, cortexTensorrtLlmInfo] = await Promise.all([
-      executeOnMain(NODE, 'getEngineInformation', 'cortex.onnx'),
-      executeOnMain(NODE, 'getEngineInformation', 'cortex.tensorrt-llm'),
+      executeOnMain(NODE, 'getEngineInformation', InferenceEngine.cortex_onnx),
+      executeOnMain(NODE, 'getEngineInformation', InferenceEngine.cortex_tensorrtllm),
     ])
     return Promise.resolve([{
       name: "cortex.onnx",
@@ -88,15 +122,70 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     }])
   }
 
+  private async getEngineDownloadProgress(packageName: string): Promise<void> {
+    const eventSourceUrl = await executeOnMain(NODE, 'getEngineDownloadProgressUrl') as string
+    const eventSource = new EventSource(eventSourceUrl)
+    return new Promise((resolve, reject) => {
+    eventSource.onerror = (error: any) => {
+      console.error('Failed to get download progress', error)
+      showToast('Failed to get download progress', error.message || 'Exception occurred')
+      reject(error)
+    }
+    eventSource.onmessage = (eventSourceEvent) => {
+      console.log('Download progress:', eventSourceEvent)
+      if (!eventSourceEvent?.data){
+        eventSource.close()
+        showToast('Failed to get download progress', 'No data received')
+        return reject('No data received')
+      }
+      
+      const data = JSON.parse(eventSourceEvent.data);
+      if (!data.length) {
+        eventSource.close();
+        return resolve()
+      }
+
+      if (data.title !== packageName) {
+        return resolve()
+      }
+
+      const cortexDownloadItem = data.children[0] as DownloadItem;
+
+      const downloadState: DownloadState = {
+        modelId: packageName,
+        fileName: cortexDownloadItem.id,
+        time: cortexDownloadItem.time,
+        speed: 0,
+        percent: Number((cortexDownloadItem.size.transferred / (cortexDownloadItem.size.total || 1)).toFixed(2)),
+        size: cortexDownloadItem.size,
+        downloadState: downloadStateMap[cortexDownloadItem.status],
+        children: [],
+        error: cortexDownloadItem.error,
+        extensionId: '@janhq/inference-cortex-extension',
+      };
+      if(cortexDownloadItem.status === DownloadStatus.Error){
+        eventSource.close();
+        showToast('Failed to download package', cortexDownloadItem.error || 'Exception occurred')
+        events.emit(DownloadEvent.onFileDownloadError, downloadState)
+        return resolve()
+      }
+      if(cortexDownloadItem.status === DownloadStatus.Downloaded){
+        eventSource.close();
+        events.emit(DownloadEvent.onFileDownloadSuccess, downloadState)
+        return resolve()
+      }
+      events.emit(DownloadEvent.onFileDownloadUpdate, downloadState)
+    }
+    })
+  }
+
+
   async installPackage(packageName: string): Promise<void> {
     try{
       this.abortControllers[packageName] = new AbortController()
-      await executeOnMain(NODE, 'initCortexEngine', packageName) as AsyncIterable<DownloadState>
-      const downloadState = await executeOnMain(NODE, 'getEngineDownloadProgress', packageName, this.abortControllers[packageName].signal)
-    for await (const state of downloadState) {
-      console.log('Download state:', state)
-      events.emit(DownloadEvent.onFileDownloadUpdate, state)
-    }
+      await executeOnMain(NODE, 'initCortexEngine', packageName)
+      await this.getEngineDownloadProgress(packageName)
+      console.log('Package installed')
     } catch (error: any) {
       delete this.abortControllers[packageName]
       console.error('Failed to install package', error)
