@@ -203,6 +203,7 @@ const ModelDropdown = ({
       setSelectedModel,
       setThreadModelParams,
       updateModelParameter,
+      preserveModelSettings,
     ]
   )
 

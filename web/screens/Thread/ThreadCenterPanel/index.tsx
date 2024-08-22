@@ -18,7 +18,7 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { snackbar } from '@/containers/Toast'
 
 import { activeModelAtom } from '@/hooks/useActiveModel'
-import { queuedMessageAtom, reloadModelAtom } from '@/hooks/useSendChatMessage'
+import { reloadModelAtom } from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 
@@ -138,7 +138,6 @@ const ThreadCenterPanel = () => {
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
   const [dragOver, setDragOver] = useState(false)
 
-  const queuedMessage = useAtomValue(queuedMessageAtom)
   const reloadModel = useAtomValue(reloadModelAtom)
 
   const activeModel = useAtomValue(activeModelAtom)
