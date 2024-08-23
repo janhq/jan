@@ -62,12 +62,12 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType === 'extension') {
         removeInstallingExtension(state.extensionId!)
       } else if (state.downloadType === 'engine') {
-       removeInstallingPackage(state.extensionId!, state.modelId!)
+        removeInstallingPackage(state.extensionId!, state.modelId!)
       } else {
         setDownloadState(state)
       }
     },
-    [removeInstallingExtension, setInstallingPackage, setDownloadState]
+    [removeInstallingExtension, removeInstallingPackage, setDownloadState]
   )
 
   const onFileDownloadSuccess = useCallback(
@@ -76,9 +76,13 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType !== 'extension') {
         setDownloadState(state)
       }
-      events.emit(ModelEvent.OnModelsUpdate, {})
+      if (state.downloadType === 'engine') {
+        removeInstallingPackage(state.extensionId!, state.modelId!)
+      } else {
+        events.emit(ModelEvent.OnModelsUpdate, {})
+      }
     },
-    [setDownloadState]
+    [removeInstallingPackage, setDownloadState]
   )
 
   const onFileUnzipSuccess = useCallback(

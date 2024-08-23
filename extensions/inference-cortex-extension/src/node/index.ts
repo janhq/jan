@@ -84,6 +84,7 @@ getUrls = () => {
     cortexEngineInfo: (engine: string) =>
       `${CORTEX_HTTP_SERVER_URL}/v1/engines/${engine}`,
     cortexEngineDownloadEvent: `${CORTEX_HTTP_SERVER_URL}/v1/system/events/download`,
+    cortexAbortDownload: (downloadId: string) => `${CORTEX_HTTP_SERVER_URL}/v1/models/${downloadId}/abort`,
 }
 }
 
@@ -353,8 +354,6 @@ async function killSubprocess(): Promise<void> {
  * @returns A promise that resolves when the Cortex subprocess is started.
  */
 async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> {
-  console.log('systemInfo', systemInfo)
-  console.log('1232456')
   const { start: startCortex } = await import('cortexso')
     const isCortexRunning = await getHealthCheckCortexProcess()
     if (isCortexRunning) {
@@ -374,7 +373,6 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
 
 async function initCortexEngine(engineName: string, options: InitEngineOptions): Promise<void> {
     const engineInfo = await getEngineInformation(engineName);
-    console.log('options', options)
     if(engineInfo.status === 'not_supported'){
         log(`[CORTEX]::Error: Engine ${engineName} is not supported`)
         return Promise.reject(`Engine ${engineName} is not supported`)
@@ -398,7 +396,9 @@ async function initCortexEngine(engineName: string, options: InitEngineOptions):
 
 async function getEngineInformation(engineName: string): Promise<EngineInformation> {
     const { cortexEngineInfo } = cortexProcess.getUrls()
+    log(`[CORTEX]::Debug: Fetching engine information for ${engineName}`)
     const engineInfo = await fetch(cortexEngineInfo(engineName));
+    log(`[CORTEX]::Debug: Engine information fetched with status:`, engineInfo.status)
     const engineInfoJson = await engineInfo.json();
     return engineInfoJson as EngineInformation;
 }
@@ -441,15 +441,26 @@ const getEngineDownloadProgressUrl = () => {
     return cortexProcess.getUrls().cortexEngineDownloadEvent
 }
 
+const abortCortexEngineDownload = async (downloadIds: string[]) => {
+  log(`[CORTEX]::Debug: Aborting download for ${downloadIds}`)
+  const { cortexAbortDownload } = cortexProcess.getUrls()
+  await Promise.all(downloadIds.map(async (downloadId) => fetch(cortexAbortDownload(downloadId), {
+    method: 'DELETE',
+  })))
+  log(`[CORTEX]::Debug: Download aborted for ${downloadIds}`)
+}
+
 export default {
   loadModel,
   unloadModel,
   dispose,
   getEngineInformation,
   spawnCortexProcess,
+  killSubprocess,
   initCortexEngine,
   getEngineDownloadProgressUrl,
   setPort,
   setHost,
   setEnginePort,
+  abortCortexEngineDownload
 }
