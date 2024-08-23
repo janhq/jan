@@ -167,6 +167,8 @@
 - [ ] Attemp to test downloading model from hub using **HTTP Proxy** [guideline](https://github.com/janhq/jan/pull/1562)
 - [ ] Logs that are older than 7 days or exceed 1MB in size will be automatically cleared upon starting the application.
 - [ ] Users can click on Reset button to **factory reset** app settings to its original state & delete all usage data.
+    - [ ] Keep the current app data location
+    - [ ] Reset the current app data location
 - [ ] Users can enable the setting and chat using quick ask.
 
 ### 5. Engine
