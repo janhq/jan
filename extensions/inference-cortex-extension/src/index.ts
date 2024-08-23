@@ -72,7 +72,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cortexHost: string = ''
   cortexPort: string = ''
   cortexEnginePort: string = ''
-  private abortControllers: Record<string, true> = {};
+  private abortControllers: Record<string, string[]> = {};
   /**
    * The URL for making inference requests.
    */
@@ -166,17 +166,25 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         }
         return false
       })
+      if(!filerDownloadItems.length){
+        eventSource.close();
+        return resolve()
+      }
+
+      if(!this.abortControllers[packageName]?.length){
+        this.abortControllers[packageName].push(...filerDownloadItems.map(({ id }: {id: string}) => id))
+      }
 
       const cortexDownloadItem = filerDownloadItems[0].children[0] as DownloadItem;
-      const totalSize = filerDownloadItems.map(({children} : {children: DownloadItem}) => children.size.total).reduce((acc: number, size: number) => acc + size, 0);
-      const transferredSize = filerDownloadItems.map(({children} : {children: DownloadItem}) => children.size.transferred).reduce((acc: number, size: number) => acc + size, 0);
+      const totalSize = filerDownloadItems.map(({children} : {children: DownloadItem[]}) => children[0].size.total).reduce((acc: number, size: number) => acc + size, 0);
+      const transferredSize = filerDownloadItems.map(({children} : {children: DownloadItem[]}) => children[0].size.transferred).reduce((acc: number, size: number) => acc + size, 0);
 
       const downloadState: DownloadState = {
         modelId: packageName,
         fileName: cortexDownloadItem.id,
         time: cortexDownloadItem.time,
         speed: 0,
-        percent: Number(((transferredSize / Math.max(totalSize, 1)) * 100).toFixed(2)),
+        percent: Number(((transferredSize / Math.max(totalSize, 1))).toFixed(2)),
         size: cortexDownloadItem.size,
         downloadState: downloadStateMap[cortexDownloadItem.status],
         downloadType: 'engine',
@@ -184,13 +192,13 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         extensionId: extensionName,
       };
 
-      if(filerDownloadItems.some(({children} : {children: DownloadItem}) => children.status === DownloadStatus.Error)){
+      if(filerDownloadItems.some(({children} : {children: DownloadItem[]}) => children[0].status === DownloadStatus.Error)){
         eventSource.close();
         showToast('Failed to download package', cortexDownloadItem.error || 'Exception occurred')
         events.emit(DownloadEvent.onFileDownloadError, downloadState)
         return resolve()
       }
-      if(filerDownloadItems.every(({children} : {children: DownloadItem}) => children.status === DownloadStatus.Downloaded)){
+      if(filerDownloadItems.every(({children} : {children: DownloadItem[]}) => children[0].status === DownloadStatus.Downloaded)){
         eventSource.close();
         events.emit(DownloadEvent.onFileDownloadSuccess, downloadState)
         return resolve()
@@ -203,7 +211,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   async installPackage(packageName: string): Promise<void> {
     try{
-      this.abortControllers[packageName] = true
+      this.abortControllers[packageName] = []
       await executeOnMain(NODE, 'initCortexEngine', packageName)
       await waitInMs(2000)
       await this.getEngineDownloadProgress(packageName)
@@ -216,7 +224,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   async abortPackageInstallation(packageName: string): Promise<void> {
     try {
-      await executeOnMain(NODE, 'abortCortexEngine', packageName)
+      await executeOnMain(NODE, 'abortCortexEngineDownload', this.abortControllers[packageName])
       delete this.abortControllers[packageName]
     } catch (error: any) {
       console.error('Failed to abort package installation', error)

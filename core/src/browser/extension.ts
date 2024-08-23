@@ -220,7 +220,7 @@ export abstract class BaseExtension implements ExtensionType {
     await Promise.all(updatedSettings.map((setting) => {
       this.onSettingUpdate<typeof setting.controllerProps.value | typeof setting.children>(
         setting.key,
-        setting.children? setting.children: setting.controllerProps.value
+        setting.children ? setting.children : setting.controllerProps.value
       )
     }))
   }
