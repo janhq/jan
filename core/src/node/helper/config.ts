@@ -158,7 +158,7 @@ export const getEngineConfiguration = async (engineId: string) => {
  */
 export const defaultAppConfig = (): AppConfiguration => {
   const { app } = require('electron')
-  const defaultJanDataFolder = join(app?.getPath('userData') ?? os?.homedir() ?? '', 'jan')
+  const defaultJanDataFolder = join(app?.getPath('userData') ?? os?.homedir() ?? '', 'data')
   return {
     data_folder:
       process.env.CI === 'e2e'
