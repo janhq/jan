@@ -1,7 +1,7 @@
 import { join } from 'path'
 import fs from 'fs'
 import { appResourcePath, normalizeFilePath, validatePath } from '../../helper/path'
-import { getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
+import { defaultAppConfig, getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
 import { Processor } from './Processor'
 import { FileStat } from '../../../types'
 
@@ -28,9 +28,10 @@ export class FSExt implements Processor {
     return appResourcePath()
   }
 
-  // Handles the 'getUserHomePath' IPC event. This event is triggered to get the user home path.
+  // Handles the 'getUserHomePath' IPC event. This event is triggered to get the user app data path.
+  // CAUTION: This would not return OS home path but the app data path.
   getUserHomePath() {
-    return process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME']
+    return defaultAppConfig().data_folder
   }
 
   // handle fs is directory here

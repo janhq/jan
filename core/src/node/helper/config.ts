@@ -156,7 +156,7 @@ export const getEngineConfiguration = async (engineId: string) => {
  * $XDG_CONFIG_HOME or ~/.config on Linux
  * ~/Library/Application Support on macOS
  */
-const defaultAppConfig = (): AppConfiguration => {
+export const defaultAppConfig = (): AppConfiguration => {
   const { app } = require('electron')
   const defaultJanDataFolder = join(app?.getPath('userData') ?? os?.homedir() ?? '', 'jan')
   return {

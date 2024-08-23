@@ -38,8 +38,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     async function getDefaultJanDataFolder() {
-      const homePath = await getUserHomePath()
-      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
+      const defaultJanDataFolder = await getUserHomePath()
 
       setJanDefaultDataFolder(defaultJanDataFolder)
     }
