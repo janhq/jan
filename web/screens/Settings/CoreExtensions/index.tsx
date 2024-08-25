@@ -38,7 +38,7 @@ const ExtensionCatalog = () => {
   useEffect(() => {
     const getAllSettings = async () => {
       const extensionsMenu = []
-      const engineMenu = []
+      const engineMenu: any[] = []
       const extensions = extensionManager.getAll()
 
       for (const extension of extensions) {
