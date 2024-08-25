@@ -116,7 +116,6 @@ const MyModels = () => {
   }, [])
 
   const findByEngine = filteredDownloadedModels.map((x) => x.engine)
-  console.log('findByEngine', findByEngine)
   const groupByEngine = findByEngine
     .filter(function (item, index) {
       console.log('item', item)

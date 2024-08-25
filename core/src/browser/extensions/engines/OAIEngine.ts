@@ -56,7 +56,6 @@ export abstract class OAIEngine extends AIEngine {
    * Inference request
    */
   override async inference(data: MessageRequest) {
-    console.log('Inference request:', data)
     const isCortex = [InferenceEngine.cortex_llamacpp, InferenceEngine.cortex_onnx, InferenceEngine.cortex_tensorrtllm].includes(data.model?.engine as any)
     const engine = data.model?.engine
 
@@ -120,12 +119,10 @@ export abstract class OAIEngine extends AIEngine {
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       complete: async () => {
-        console.log('Inference complete')
         message.status = message.content.length ? MessageStatus.Ready : MessageStatus.Error
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       error: async (err: any) => {
-        console.log('error', err)
         console.debug('inference url: ', this.inferenceUrl)
         console.debug('header: ', header)
         console.error(`Inference error:`, JSON.stringify(err))

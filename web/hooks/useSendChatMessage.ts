@@ -277,14 +277,12 @@ export default function useSendChatMessage() {
     if (modelRef.current?.id !== modelId) {
       setQueuedMessage(true)
       const error = await startModel(modelId).catch((error: Error) => error)
-      console.log('error', error)
       setQueuedMessage(false)
       if (error) {
         updateThreadWaiting(activeThreadRef.current.id, false)
         return
       }
     }
-    console.log('modelRef.current', modelRef.current, modelId)
     setIsGeneratingResponse(true)
 
     // Process message request with Assistants tools
@@ -295,25 +293,12 @@ export default function useSendChatMessage() {
       ) ?? []
     )
     request.messages = normalizeMessages(request.messages ?? [])
-    const engine =
-      false &&
-      (
-        [
-          InferenceEngine.cortex_llamacpp as InferenceEngine,
-          InferenceEngine.cortex_onnx as InferenceEngine,
-          InferenceEngine.cortex_tensorrtllm as InferenceEngine,
-        ] as any
-      ).includes(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
-        ? 'cortex'
-        : (requestBuilder.model?.engine ?? modelRequest.engine ?? '')
+    const engine = requestBuilder.model?.engine ?? modelRequest.engine ?? ''
     // Request for inference
-    console.log(EngineManager.instance().get(engine)?.inference, engine)
     EngineManager.instance().get(engine)?.inference(request)
-    console.log('request', request)
     // Reset states
     setReloadModel(false)
     setEngineParamsUpdate(false)
-    console.log('setEngineParamsUpdate', false)
   }
 
   return {

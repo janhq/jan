@@ -33,7 +33,6 @@ export class Extension implements Processor {
       return module[method](...params)
     } else {
       console.debug(module[method])
-      console.log(module, join(getPath(), modulePath))
       console.error(`Function "${method}" does not exist in the module.`)
     }
   }

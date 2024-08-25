@@ -261,7 +261,6 @@ const ModelDropdown = ({
   const getEngineStatusReady: InferenceEngine[] = extensionHasSettings
     ?.filter((e) => e.apiKey.length > 0)
     .map((x) => x.provider as InferenceEngine)
-  console.log('getEngineStatusReady', getEngineStatusReady)
 
   useEffect(() => {
     setShowEngineListModel((prev) => [

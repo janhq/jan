@@ -98,20 +98,8 @@ export function useActiveModel() {
     }
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
     console.log(model.engine)
-    const engineName =
-    //  [
-    //   InferenceEngine.cortex_llamacpp,
-    //   InferenceEngine.cortex_onnx,
-    //   InferenceEngine.cortex_tensorrtllm,
-    // ].includes(model.engine)
-    //   ? 'cortex'
-
-    //   :
-       model.engine
+    const engineName = model.engine
     const engine = EngineManager.instance().get(engineName)
-    console.log(engine, 'asdsadasddasjhjk', engineName)
-    console.log(model, 'asdsadasddasjhjk')
-    console.debug(`Starting model ${model.id}...`, engine, 'asdsad', 'asd')
     return engine
       ?.loadModel(model)
       .then(() => {

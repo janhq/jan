@@ -27,7 +27,6 @@ export abstract class LocalOAIEngine extends OAIEngine {
    * Load the model.
    */
   override async loadModel(model: Model): Promise<void> {
-    console.log('Loading modelllll:', model)
     if(!this.providers.includes(model.engine.toString())) return
     const modelFolderName = 'models'
     const modelFolder = await joinPath([await getJanDataFolderPath(), modelFolderName, model.id])

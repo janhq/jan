@@ -88,26 +88,21 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       await executeOnMain(NODE, 'spawnCortexProcess', system)
       await this.installPackage(InferenceEngine.cortex_llamacpp);
     } catch (error: any) {
-      console.error('Failed to spawn cortex process', error)
       showToast('Failed to spawn cortex process', error.message || 'Exception occurred')
     }
     const models = MODELS as unknown as Model[]
-    console.log('Modelsssssss:', models)
     super.onLoad()
     this.registerSettings(DEFAULT_SETTINGS)
     this.registerModels(models)
   }
 
   override async loadModel(model: Model): Promise<void> {
-    console.log('Loading model:', model)
     if(model.engine && !this.providers.includes(model.engine)) return Promise.resolve()
-      console.log('Loading model:', model)
     return super.loadModel(model)
   }
 
   override async unloadModel(model?: Model): Promise<void> {
     if (model?.engine && !this.providers.includes(model.engine)) return Promise.resolve()
-    console.log('Unloading model:', model)
     return super.unloadModel(model)
   }
 

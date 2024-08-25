@@ -21,7 +21,6 @@ export class ExtensionManager {
   register<T extends BaseExtension>(name: string, extension: T) {
     // Register for naming use
     this.extensions.set(name, extension)
-    console.log('Registering extension:', name)
     // Register AI Engines
     if ('providers' in extension) {
       ;(extension.providers as string[]).forEach((provider: string) => {
