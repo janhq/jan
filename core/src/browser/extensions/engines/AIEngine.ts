@@ -13,7 +13,7 @@ export abstract class AIEngine extends BaseExtension {
   private static modelsFolder = 'models'
 
   // The inference engine
-  abstract provider: string
+  abstract providers: string[]
 
   /**
    * On extension load, subscribe to events.
@@ -79,7 +79,9 @@ export abstract class AIEngine extends BaseExtension {
    * Loads the model.
    */
   async loadModel(model: Model): Promise<any> {
-    if (model.engine.toString() !== this.provider) return Promise.resolve()
+    if(!this.providers.includes(model.engine.toString())) {
+      return Promise.resolve()
+    }
     events.emit(ModelEvent.OnModelReady, model)
     return Promise.resolve()
   }
@@ -87,7 +89,9 @@ export abstract class AIEngine extends BaseExtension {
    * Stops the model.
    */
   async unloadModel(model?: Model): Promise<any> {
-    if (model?.engine && model.engine.toString() !== this.provider) return Promise.resolve()
+    if(model?.engine && !this.providers.includes(model.engine.toString())) {
+      return Promise.resolve()
+    }
     events.emit(ModelEvent.OnModelStopped, model ?? {})
     return Promise.resolve()
   }

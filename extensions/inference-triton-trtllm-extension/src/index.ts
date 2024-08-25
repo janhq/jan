@@ -20,7 +20,7 @@ enum Settings {
  */
 export default class JanInferenceTritonTrtLLMExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'triton_trtllm'
+  providers: string[] = ['triton_trtllm']
 
   /**
    * Subscribes to events emitted by the @janhq/core package.

@@ -22,7 +22,7 @@ enum Settings {
  */
 export default class JanInferenceGroqExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider = 'groq'
+  providers = ['groq']
 
   override async onLoad(): Promise<void> {
     super.onLoad()
