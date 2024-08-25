@@ -114,7 +114,7 @@ const ModelDownloadRow: React.FC<Props> = ({
   }
 
   return (
-    <div className="flex w-[662px] flex-row items-center justify-between space-x-1 rounded border border-[hsla(var(--app-border))] p-3">
+    <div className="flex flex-col gap-4 space-x-1 rounded border border-[hsla(var(--app-border))] p-3 md:flex-row md:items-center md:justify-between lg:w-[550px]">
       <div className="flex">
         {quantization && (
           <Badge variant="soft" className="mr-1">
@@ -124,7 +124,9 @@ const ModelDownloadRow: React.FC<Props> = ({
         <h1 className="mr-5 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]">
           {fileName}
         </h1>
-        <Badge theme="secondary">{toGibibytes(fileSize)}</Badge>
+        <Badge theme="secondary" className="hidden md:flex">
+          {toGibibytes(fileSize)}
+        </Badge>
       </div>
 
       {isDownloaded ? (
