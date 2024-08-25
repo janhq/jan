@@ -50,7 +50,7 @@ const MyModels = () => {
     showEngineListModelAtom
   )
   const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string; apiKey: string; provider: string }[]
+    { name?: string; setting: string; apiKey: string; providers: string[] }[]
   >([])
 
   const filteredDownloadedModels = useMemo(
@@ -83,7 +83,7 @@ const MyModels = () => {
         name?: string
         setting: string
         apiKey: string
-        provider: string
+        providers: string[]
       }[] = []
       const extensions = extensionManager.getAll()
 
@@ -102,11 +102,11 @@ const MyModels = () => {
                 'apiKey' in extension && typeof extension.apiKey === 'string'
                   ? extension.apiKey
                   : '',
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
+              providers:
+                'providers' in extension &&
+                typeof (extension.providers as string[])[0] === 'string'
+                  ? (extension.providers as string[])
+                  : [''],
             })
           }
         }
@@ -117,8 +117,10 @@ const MyModels = () => {
   }, [])
 
   const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  console.log('findByEngine', findByEngine)
   const groupByEngine = findByEngine
     .filter(function (item, index) {
+      console.log('item', item)
       if (findByEngine.indexOf(item) === index) return item
     })
     .sort((a, b) => {
@@ -135,7 +137,8 @@ const MyModels = () => {
 
   const getEngineStatusReady: InferenceEngine[] = extensionHasSettings
     ?.filter((e) => e.apiKey.length > 0)
-    .map((x) => x.provider as InferenceEngine)
+    .map((x) => x.providers as InferenceEngine[])
+    .flat()
 
   useEffect(() => {
     setShowEngineListModel((prev) => [

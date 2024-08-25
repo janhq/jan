@@ -11,8 +11,6 @@ import { useAtomValue } from 'jotai'
 
 import { Marked, Renderer } from 'marked'
 
-import { marked } from '@/utils/marked'
-
 import InstallStateIndicator from '../InstallStateIndicator'
 
 import { extensionManager } from '@/extension'

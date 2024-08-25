@@ -30,6 +30,7 @@ import { NotSupportedModelError } from './@types/NotSupportModelError'
 import { InvalidHostError } from './@types/InvalidHostError'
 import { inferenceParams, modelSettingParams } from './helpers/params'
 import { parse } from 'yaml'
+
 declare const SETTINGS: Array<any>
 enum Settings {
   huggingFaceAccessToken = 'hugging-face-access-token',

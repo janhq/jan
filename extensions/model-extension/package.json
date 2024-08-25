@@ -39,7 +39,8 @@
     "@huggingface/jinja": "^0.3.0",
     "@janhq/core": "file:../../core",
     "hyllama": "^0.2.2",
-    "python-shell": "^5.0.0"
+    "python-shell": "^5.0.0",
+    "yaml": "^2.5.0"
   },
   "bundleDependencies": [
     "hyllama",
