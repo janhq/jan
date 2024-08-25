@@ -35,7 +35,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
    * Override custom function name for loading and unloading model
    * Which are implemented from node module
    */
-  override provider = PROVIDER
+  override providers = [PROVIDER]
   override inferenceUrl = INFERENCE_URL
   override nodeModule = NODE
 
@@ -68,7 +68,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     const executableFolderPath = await joinPath([
       janDataFolderPath,
       'engines',
-      this.provider,
+      this.providers[0],
       engineVersion,
       info.gpuSetting?.gpus[0].arch,
     ])
@@ -155,7 +155,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     const enginePath = await joinPath([
       janDataFolderPath,
       'engines',
-      this.provider,
+      this.providers[0],
       engineVersion,
       firstGpu.arch,
       info.osInfo.platform === 'win32' ? 'nitro.exe' : 'nitro',

@@ -38,6 +38,7 @@ const SettingDetailFormGroupItem: React.FC<Props> = ({
       ;(newUpdatedSettings.children as SettingComponentProps[]).push(child)
     })
     setCurrentSettings(newUpdatedSettings)
+    onValueChanged(newUpdatedSettings)
   }
 
   return (
@@ -72,15 +73,6 @@ const SettingDetailFormGroupItem: React.FC<Props> = ({
             return null
         }
       })}
-      <div className="flex w-full flex-col items-end justify-between gap-4 border-b border-[hsla(var(--app-border))] py-2 first:pt-0 last:border-none sm:flex-row-reverse">
-        <Button
-          theme={'primary'}
-          variant={'solid'}
-          onClick={() => onValueChanged(currentSettings)}
-        >
-          Apply Settings
-        </Button>
-      </div>
     </div>
   )
 }

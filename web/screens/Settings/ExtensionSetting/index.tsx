@@ -76,10 +76,6 @@ const ExtensionSetting = () => {
     key: string,
     updatedSettings: SettingComponentProps
   ) => {
-    setLoadingInfo({
-      message: 'Updating settings...',
-      title: 'Settings',
-    })
     const newSettings = await Promise.all(
       settings.map(async (setting) => {
         if (setting.key !== key) return setting
@@ -93,7 +89,6 @@ const ExtensionSetting = () => {
         return setting
       })
     )
-    setLoadingInfo(undefined)
     setSettings(newSettings)
   }
 

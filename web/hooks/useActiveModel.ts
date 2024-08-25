@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { EngineManager, Model } from '@janhq/core'
+import { EngineManager, InferenceEngine, Model } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -96,9 +96,22 @@ export function useActiveModel() {
       // @ts-expect-error flash_attn is newly added and will be migrate to cortex in the future
       model.settings['flash_attn'] = false
     }
-
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    const engine = EngineManager.instance().get(model.engine)
+    console.log(model.engine)
+    const engineName =
+    //  [
+    //   InferenceEngine.cortex_llamacpp,
+    //   InferenceEngine.cortex_onnx,
+    //   InferenceEngine.cortex_tensorrtllm,
+    // ].includes(model.engine)
+    //   ? 'cortex'
+
+    //   :
+       model.engine
+    const engine = EngineManager.instance().get(engineName)
+    console.log(engine, 'asdsadasddasjhjk', engineName)
+    console.log(model, 'asdsadasddasjhjk')
+    console.debug(`Starting model ${model.id}...`, engine, 'asdsad', 'asd')
     return engine
       ?.loadModel(model)
       .then(() => {

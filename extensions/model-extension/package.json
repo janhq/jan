@@ -45,6 +45,12 @@
     "@huggingface/gguf": "^0.0.11",
     "@janhq/core": "file:../../core",
     "python-shell": "^5.0.0",
-    "yaml": "^2.5.0"
-  }
+    "yaml": "^2.5.0",
+    "hyllama": "^0.2.2"
+  },
+  "bundleDependencies": [
+    "hyllama",
+    "@huggingface/gguf",
+    "@huggingface/jinja"
+  ]
 }

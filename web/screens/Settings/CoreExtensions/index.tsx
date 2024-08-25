@@ -14,10 +14,11 @@ import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
 import { formatExtensionsName } from '@/utils/converter'
 
+import { marked } from '@/utils/marked'
+
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
-import { marked } from '@/utils/marked'
 
 type EngineExtension = {
   provider: InferenceEngine
@@ -44,20 +45,18 @@ const ExtensionCatalog = () => {
         const settings = await extension.getSettings()
         if (
           typeof extension.getSettings === 'function' &&
-          'provider' in extension &&
-          typeof extension.provider === 'string'
+          'providers' in extension &&
+          typeof (extension.providers as string[])[0] === 'string'
         ) {
           if (
             (settings && settings.length > 0) ||
             (await extension.installationState()) !== 'NotRequired'
           ) {
-            engineMenu.push({
-              ...extension,
-              provider:
-                'provider' in extension &&
-                  typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
+            ;(extension.providers as string[]).forEach((provider) => {
+              engineMenu.push({
+                ...extension,
+                provider,
+              })
             })
           }
         } else {
@@ -68,7 +67,7 @@ const ExtensionCatalog = () => {
       }
 
       setCoreActiveExtensions(extensionsMenu)
-      setEngineActiveExtensions(engineMenu as any)
+      setEngineActiveExtensions(engineMenu as any[])
     }
     getAllSettings()
   }, [])

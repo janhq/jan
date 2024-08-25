@@ -23,11 +23,12 @@ export class ExtensionManager {
     this.extensions.set(name, extension)
     console.log('Registering extension:', name)
     // Register AI Engines
-    if ('provider' in extension && typeof extension.provider === 'string') {
-      this.engines.set(
-        extension.provider as unknown as string,
-        extension as unknown as AIEngine
-      )
+    if ('providers' in extension) {
+      extension.providers.forEach((provider: string) => {
+        if (typeof provider === 'string') {
+          this.engines.set(provider, extension as unknown as AIEngine)
+        }
+      })
     }
   }
 

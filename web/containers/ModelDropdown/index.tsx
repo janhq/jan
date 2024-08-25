@@ -226,7 +226,7 @@ const ModelDropdown = ({
                   : '',
               provider:
                 'provider' in extension &&
-                  typeof extension.provider === 'string'
+                typeof extension.provider === 'string'
                   ? extension.provider
                   : '',
             })
@@ -243,7 +243,7 @@ const ModelDropdown = ({
     .map((x) => x.engine)
 
   const groupByEngine = findByEngine
-    .filter(function(item, index) {
+    .filter(function (item, index) {
       if (findByEngine.indexOf(item) === index) return item
     })
     .sort((a, b) => {
@@ -261,6 +261,7 @@ const ModelDropdown = ({
   const getEngineStatusReady: InferenceEngine[] = extensionHasSettings
     ?.filter((e) => e.apiKey.length > 0)
     .map((x) => x.provider as InferenceEngine)
+  console.log('getEngineStatusReady', getEngineStatusReady)
 
   useEffect(() => {
     setShowEngineListModel((prev) => [
@@ -354,7 +355,7 @@ const ModelDropdown = ({
             {groupByEngine.map((engine, i) => {
               const apiKey = !localEngines.includes(engine)
                 ? extensionHasSettings.filter((x) => x.provider === engine)[0]
-                  ?.apiKey.length > 1
+                    ?.apiKey.length > 1
                 : true
               const engineLogo = getLogoEngine(engine as InferenceEngine)
               const showModel = showEngineListModel.includes(engine)
@@ -413,7 +414,12 @@ const ModelDropdown = ({
                       </div>
                     </div>
 
-                    {engine === InferenceEngine.nitro &&
+                    {[
+                      InferenceEngine.nitro,
+                      InferenceEngine.cortex_llamacpp,
+                      InferenceEngine.cortex_onnx,
+                      InferenceEngine.cortex_tensorrtllm,
+                    ].includes(engine) &&
                       !isDownloadALocalModel &&
                       showModel && (
                         <>
@@ -510,7 +516,7 @@ const ModelDropdown = ({
                                           className={twMerge(
                                             'line-clamp-1',
                                             !isdDownloaded &&
-                                            'text-[hsla(var(--text-secondary))]'
+                                              'text-[hsla(var(--text-secondary))]'
                                           )}
                                           title={model.name}
                                         >
