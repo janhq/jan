@@ -37,7 +37,7 @@ type CoherePayloadType = {
  */
 export default class JanInferenceCohereExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'cohere'
+  providers: string[] = ['cohere']
 
   override async onLoad(): Promise<void> {
     super.onLoad()

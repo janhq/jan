@@ -25,7 +25,7 @@ enum Settings {
  */
 export default class JanInferenceOpenRouterExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'openrouter'
+  providers: string[] = ['openrouter']
   model?: string | undefined
 
   override async onLoad(): Promise<void> {

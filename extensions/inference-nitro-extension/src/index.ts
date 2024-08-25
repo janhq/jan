@@ -32,7 +32,7 @@ declare const CUDA_DOWNLOAD_URL: string
  */
 export default class JanInferenceNitroExtension extends LocalOAIEngine {
   nodeModule: string = NODE
-  provider: string = 'nitro'
+  providers: string[] = ['nitro']
 
   /**
    * Checking the health for Nitro's process each 5 secs.
@@ -94,7 +94,8 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   }
 
   override loadModel(model: Model): Promise<void> {
-    if (model.engine !== this.provider) return Promise.resolve()
+    if(model.engine && !this.providers.includes(model.engine)) return Promise.resolve()
+
     this.getNitroProcessHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),
       JanInferenceNitroExtension._intervalHealthCheck
@@ -103,7 +104,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
   }
 
   override async unloadModel(model?: Model): Promise<void> {
-    if (model?.engine && model.engine !== this.provider) return
+    if(model?.engine && !this.providers.includes(model.engine)) return Promise.resolve()
 
     // stop the periocally health check
     if (this.getNitroProcessHealthIntervalId) {

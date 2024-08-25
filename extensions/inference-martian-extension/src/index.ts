@@ -23,7 +23,7 @@ enum Settings {
  */
 export default class JanInferenceMartianExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'martian'
+  providers: string[] = ['martian']
 
   override async onLoad(): Promise<void> {
     super.onLoad()

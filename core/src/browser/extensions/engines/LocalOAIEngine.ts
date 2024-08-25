@@ -27,7 +27,8 @@ export abstract class LocalOAIEngine extends OAIEngine {
    * Load the model.
    */
   override async loadModel(model: Model): Promise<void> {
-    if (model.engine.toString() !== this.provider) return
+    console.log('Loading modelllll:', model)
+    if(!this.providers.includes(model.engine.toString())) return
     const modelFolderName = 'models'
     const modelFolder = await joinPath([await getJanDataFolderPath(), modelFolderName, model.id])
     const systemInfo = await systemInformation()
@@ -54,7 +55,7 @@ export abstract class LocalOAIEngine extends OAIEngine {
    * Stops the model.
    */
   override async unloadModel(model?: Model) {
-    if (model?.engine && model.engine?.toString() !== this.provider) return Promise.resolve()
+    if(model?.engine && !this.providers.includes(model.engine.toString())) return Promise.resolve()
 
     this.loadedModel = undefined
     await executeOnMain(this.nodeModule, this.unloadModelFunctionName).then(() => {

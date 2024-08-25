@@ -11,7 +11,7 @@ export class EngineManager {
    * @param engine - The engine to register.
    */
   register<T extends AIEngine>(engine: T) {
-    this.engines.set(engine.provider, engine)
+    engine.providers.forEach((provider) => this.engines.set(provider, engine))
   }
 
   /**

@@ -1,5 +1,5 @@
 import fs from 'fs'
-import path from 'path'
+import path, { join } from 'path'
 import tcpPortUsed from 'tcp-port-used'
 import fetchRT from 'fetch-retry'
 import {
@@ -53,7 +53,7 @@ interface ModelInitOptions {
   modelFolder: string
   model: Model
 }
-
+let cortexProcessInstance: any
 class CortexProcess {
 // The PORT to use for the Cortex subprocess
 port = 1338
@@ -70,7 +70,7 @@ getUrls = () => {
     cortexHttpServerUrl: CORTEX_HTTP_SERVER_URL,
     // The URL for the Cortex subprocess to load a model
     cortexHttpLoadModelUrl: (modelId: string) =>
-      `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/start`,
+      `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/start-by-file`,
     // The URL for the Cortex subprocess to unload a model
     cortexHttpUnloadModelUrl: (modelId: string) =>
       `${CORTEX_HTTP_SERVER_URL}/v1/models/${modelId}/stop`,
@@ -126,6 +126,7 @@ const SUPPORTED_MODEL_FORMAT = '.gguf'
 let currentSettings: (ModelSettingParams & { model?: string }) | undefined =
   undefined
 
+  
 /**
  * Stops a Cortex subprocess.
  * @param wrapper - The model wrapper.
@@ -155,6 +156,7 @@ async function loadModel(
         InferenceEngine.cortex_onnx,
         InferenceEngine.cortex_tensorrtllm,
     ]
+  console.log('params.model.engine', params.model.engine)
   if (!isSupportedEngine.includes(params.model.engine)) {
     // Not a cortex model
     return Promise.resolve()
@@ -241,6 +243,9 @@ async function loadModel(
 
       
     }
+    console.log('currentSettings', currentSettings)
+    await spawnCortexProcess(systemInfo)
+    console.log('loadLLMModel', params.model.id, currentSettings)
     await loadLLMModel(params.model.id, currentSettings)
     return;
 }
@@ -296,30 +301,42 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(modelId: string, settings: any): Promise<Response> {
+  const { cortexHttpLoadModelUrl } = cortexProcess.getUrls()
   if (!settings?.ngl) {
     settings.ngl = 100
   }
-  log(`[CORTEX]::Debug: Loading model with params ${JSON.stringify(settings)}`)
-  const { cortexHttpLoadModelUrl } = cortexProcess.getUrls()
+  const modelsPath = join(getJanDataFolderPath(), 'models')
+  const metadataPath = join(modelsPath, modelId, 'model.json')
+  const ggufPath = join(modelsPath, modelId, 'model.gguf')
+
+  log(`[NITRO]::Debug: Loading model with params ${JSON.stringify({
+    ...settings,
+    filePath: ggufPath,
+    metadataPath,
+  })}`)
   return fetchRetry(cortexHttpLoadModelUrl(modelId), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(settings),
+    body: JSON.stringify({
+      ...settings,
+      filePath: ggufPath,
+      metadataPath,
+    }),
     retries: 3,
     retryDelay: 300,
   })
     .then((res) => {
       log(
-        `[CORTEX]::Debug: Load model success with response ${JSON.stringify(
+        `[NITRO]::Debug: Load model success with response ${JSON.stringify(
           res
         )}`
       )
       return Promise.resolve(res)
     })
     .catch((err) => {
-      log(`[CORTEX]::Error: Load model failed with error ${err}`)
+      log(`[NITRO]::Error: Load model failed with error ${err}`)
       return Promise.reject(err)
     })
 }
@@ -332,22 +349,7 @@ async function killSubprocess(): Promise<void> {
   const controller = new AbortController()
   setTimeout(() => controller.abort(), 5000)
   log(`[CORTEX]::Debug: Request to kill cortex`)
-  const { cortexHttpKillUrl } = cortexProcess.getUrls()
-    return fetch(cortexHttpKillUrl, {
-      method: 'DELETE',
-      signal: controller.signal,
-    })
-      .catch(() => {}) // Do nothing with this attempt
-      .then(() =>
-        tcpPortUsed.waitUntilFree(cortexProcess.port, CORTEX_PORT_FREE_CHECK_INTERVAL, 5000)
-      )
-      .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
-      .catch((err) => {
-        log(
-          `[CORTEX]::Debug: Could not kill running process on port ${cortexProcess.port}. Might be another process running on the same port? ${err}`
-        )
-        throw 'PORT_NOT_AVAILABLE'
-      })
+  await cortexProcessInstance.close();
 }
 
 /**
@@ -362,21 +364,13 @@ async function spawnCortexProcess(systemInfo?: SystemInformation): Promise<any> 
         return Promise.resolve()
     }
     log(`[CORTEX]::Debug: Spawning cortex subprocess...`)
-    await startCortex('jan', cortexProcess.host, cortexProcess.port, cortexProcess.enginePort, getJanDataFolderPath())
+    cortexProcessInstance = await startCortex('jan', cortexProcess.host, cortexProcess.port, cortexProcess.enginePort, getJanDataFolderPath())
     log(`[CORTEX]::Debug: Cortex subprocess started`)
     await initCortexEngine(InferenceEngine.cortex_llamacpp, {
         runMode: systemInfo?.gpuSetting?.run_mode === 'gpu' ? 'GPU' : 'CPU',
         vulkan: systemInfo?.gpuSetting?.vulkan ?? false,
         gpuType: systemInfo?.gpuSetting?.vulkan ? 'Others (Vulkan)' : 'Nvidia',
     })
-    const controller = new AbortController()
-    log(`[CORTEX]::Debug: Waiting for engine download progress...`)
-    const result = await getEngineDownloadProgress(InferenceEngine.cortex_llamacpp, controller)
-    log(`[CORTEX]::Debug: Engine download progress...`)
-    for await (const downloadState of result) {
-        log(`[CORTEX]::Debug: Download progress: ${JSON.stringify(downloadState)}`)
-    }
-    console.log('finished')
     return Promise.resolve()
 }
 

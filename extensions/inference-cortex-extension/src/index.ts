@@ -68,7 +68,7 @@ const installationStateMapByStatus: Record<string, InstallationState> = {
  */
 export default class JanInferenceCortexExtension extends LocalOAIEngine {
   nodeModule: string = NODE
-  provider: string = 'cortex'
+  providers: string[] = [InferenceEngine.cortex_llamacpp, InferenceEngine.cortex_onnx, InferenceEngine.cortex_tensorrtllm]
   cortexHost: string = ''
   cortexPort: string = ''
   cortexEnginePort: string = ''
@@ -92,19 +92,22 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       showToast('Failed to spawn cortex process', error.message || 'Exception occurred')
     }
     const models = MODELS as unknown as Model[]
+    console.log('Modelsssssss:', models)
     super.onLoad()
     this.registerSettings(DEFAULT_SETTINGS)
     this.registerModels(models)
   }
 
   override async loadModel(model: Model): Promise<void> {
-    if (model.engine !== this.provider) return Promise.resolve()
+    console.log('Loading model:', model)
+    if(model.engine && !this.providers.includes(model.engine)) return Promise.resolve()
+      console.log('Loading model:', model)
     return super.loadModel(model)
   }
 
   override async unloadModel(model?: Model): Promise<void> {
-    if (model?.engine && model.engine !== this.provider) return
-
+    if (model?.engine && !this.providers.includes(model.engine)) return Promise.resolve()
+    console.log('Unloading model:', model)
     return super.unloadModel(model)
   }
 

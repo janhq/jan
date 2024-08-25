@@ -23,7 +23,7 @@ enum Settings {
  */
 export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'openai'
+  providers: string[] = ['openai']
 
   override async onLoad(): Promise<void> {
     super.onLoad()

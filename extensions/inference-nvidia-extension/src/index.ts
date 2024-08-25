@@ -22,7 +22,7 @@ enum Settings {
  */
 export default class JanNVIDIANIMInferenceEngine extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'nvidia'
+  providers: string[] = ['nvidia']
 
   override async onLoad(): Promise<void> {
     super.onLoad()

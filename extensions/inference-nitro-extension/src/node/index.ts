@@ -72,6 +72,7 @@ async function loadModel(
   params: ModelInitOptions,
   systemInfo?: SystemInformation
 ): Promise<ModelOperationResponse | void> {
+  console.log('Loading modelll:', params.model)
   if (params.model.engine !== InferenceEngine.nitro) {
     // Not a nitro model
     return Promise.resolve()

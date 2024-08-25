@@ -32,7 +32,7 @@ type AnthropicPayloadType = {
  */
 export default class JanInferenceAnthropicExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'anthropic'
+  providers: string[] = ['anthropic']
   maxTokens: number = 4096
 
   override async onLoad(): Promise<void> {
