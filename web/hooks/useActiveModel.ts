@@ -97,7 +97,6 @@ export function useActiveModel() {
       model.settings['flash_attn'] = false
     }
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    console.log(model.engine)
     const engineName = model.engine
     const engine = EngineManager.instance().get(engineName)
     return engine
