@@ -4,7 +4,6 @@ import { appResourcePath, normalizeFilePath, validatePath } from '../../helper/p
 import { defaultAppConfig, getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
 import { Processor } from './Processor'
 import { FileStat } from '../../../types'
-import { joinPath } from '../../../browser'
 
 export class FSExt implements Processor {
   observer?: Function
@@ -89,23 +88,38 @@ export class FSExt implements Processor {
       size: number
     }[] = []
     for (const filePath of paths) {
-      const fileStats = this.fileStat(filePath, true)
+      const normalizedPath = normalizeFilePath(filePath)
+      console.log(normalizedPath)
+     
+      const isExist = fs.existsSync(normalizedPath)
+      console.log(11)
+      if (!isExist) continue
+      console.log(12)
+      const fileStats = fs.statSync(normalizedPath)
+      console.log(13)
       if (!fileStats) continue
-      if (!fileStats.isDirectory) {
-        const fileName = await basename(filePath)
+      if (!fileStats.isDirectory()) {
+        console.log(4)
+        const fileName = await basename(normalizedPath)
         sanitizedFilePaths.push({
-          path: filePath,
+          path: normalizedPath,
           name: fileName,
           size: fileStats.size,
         })
+        console.log(1)
       } else {
+        console.log(2)
         // allowing only one level of directory
-        const files = await readdirSync(filePath)
+        const files = await readdirSync(normalizedPath)
+        console.log(3)
   
         for (const file of files) {
-          const fullPath = await joinPath([filePath, file])
-          const fileStats = await this.fileStat(fullPath, true)
-          if (!fileStats || fileStats.isDirectory) continue
+          console.log(4, file)
+          const fullPath = await join(normalizedPath, file)
+          console.log(fullPath)
+          const fileStats = await fs.statSync(fullPath)
+          console.log(6)
+          if (!fileStats || fileStats.isDirectory()) continue
   
           sanitizedFilePaths.push({
             path: fullPath,

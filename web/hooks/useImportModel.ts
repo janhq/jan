@@ -66,9 +66,9 @@ const useImportModel = () => {
   const sanitizeFilePaths = useCallback(
     async (filePaths: string[]) => {
       if (!filePaths || filePaths.length === 0) return
-      const { unsupportedFiles, supportedFiles } = fs.getGgufFiles(
+      const { unsupportedFiles, supportedFiles } = (await fs.getGgufFiles(
         filePaths
-      ) as {
+      )) as unknown as {
         unsupportedFiles: FilePathWithSize[]
         supportedFiles: FilePathWithSize[]
       }
