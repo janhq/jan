@@ -1,9 +1,10 @@
-import { join } from 'path'
-import fs from 'fs'
+import { basename, join } from 'path'
+import fs, { readdirSync } from 'fs'
 import { appResourcePath, normalizeFilePath, validatePath } from '../../helper/path'
 import { getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
 import { Processor } from './Processor'
 import { FileStat } from '../../../types'
+import { joinPath } from '../../../browser'
 
 export class FSExt implements Processor {
   observer?: Function
@@ -78,5 +79,50 @@ export class FSExt implements Processor {
         }
       })
     })
+  }
+
+  async getGgufFiles(paths: string[]) {
+    const sanitizedFilePaths: {
+      path: string
+      name: string
+      size: number
+    }[] = []
+    for (const filePath of paths) {
+      const fileStats = this.fileStat(filePath, true)
+      if (!fileStats) continue
+      if (!fileStats.isDirectory) {
+        const fileName = await basename(filePath)
+        sanitizedFilePaths.push({
+          path: filePath,
+          name: fileName,
+          size: fileStats.size,
+        })
+      } else {
+        // allowing only one level of directory
+        const files = await readdirSync(filePath)
+  
+        for (const file of files) {
+          const fullPath = await joinPath([filePath, file])
+          const fileStats = await this.fileStat(fullPath, true)
+          if (!fileStats || fileStats.isDirectory) continue
+  
+          sanitizedFilePaths.push({
+            path: fullPath,
+            name: file,
+            size: fileStats.size,
+          })
+        }
+      }
+    }
+    const unsupportedFiles = sanitizedFilePaths.filter(
+      (file) => !file.path.endsWith('.gguf')
+    )
+    const supportedFiles = sanitizedFilePaths.filter((file) =>
+      file.path.endsWith('.gguf')
+    )
+    return {
+      unsupportedFiles,
+      supportedFiles,
+    }
   }
 }
