@@ -41,14 +41,16 @@
     "build": "yarn build:web && yarn build:electron",
     "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
     "dev:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi dev",
-    "build:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi build"
+    "build:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi build",
+    "prepare": "husky"
   },
   "devDependencies": {
     "concurrently": "^8.2.1",
     "cpx": "^1.5.0",
+    "husky": "^9.1.5",
     "rimraf": "^3.0.2",
-    "wait-on": "^7.0.1",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "wait-on": "^7.0.1"
   },
   "version": "0.0.0"
 }
