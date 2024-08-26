@@ -51,7 +51,7 @@
     "@nestjs/microservices": "^10.4.1",
     "@nestjs/websockets": "^10.4.1",
     "class-transformer": "^0.5.1",
-    "cortexso": "^v0.5.0-45",
+    "cortexso": "^v0.5.0-47",
     "decompress": "^4.2.1",
     "eventsource": "^2.0.2",
     "fetch-retry": "^5.0.6",
