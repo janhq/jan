@@ -206,7 +206,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     })
   }
 
-
   async installPackage(packageName: string): Promise<void> {
     try{
       this.abortControllers[packageName] = []

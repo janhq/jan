@@ -142,10 +142,9 @@ async function unloadModel(modelId: string): Promise<void> {
 }
 
 /**
- * Initializes a Nitro subprocess to load a machine learning model.
+ * Initializes a Cortex subprocess to load a machine learning model.
  * @param wrapper - The model wrapper.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
- * TODO: Should pass absolute of the model file instead of just the name - So we can modurize the module.ts to npm package
  */
 async function loadModel(
   params: ModelInitOptions,
@@ -240,8 +239,6 @@ async function loadModel(
       if(engineInfo.status !== EngineStatus.ERROR){
         console.log('Engine error', `Unable to load engine ${params.model.engine}`)
       }
-
-      
     }
     console.log('currentSettings', currentSettings)
     await spawnCortexProcess(systemInfo)
@@ -297,7 +294,7 @@ function promptTemplateConverter(promptTemplate: string): PromptTemplate {
 }
 
 /**
- * Loads a LLM model into the Nitro subprocess by sending a HTTP POST request.
+ * Loads a LLM model into the Cortex subprocess by sending a HTTP POST request.
  * @returns A Promise that resolves when the model is loaded successfully, or rejects with an error message if the model is not found or fails to load.
  */
 function loadLLMModel(modelId: string, settings: any): Promise<Response> {
@@ -309,7 +306,7 @@ function loadLLMModel(modelId: string, settings: any): Promise<Response> {
   const metadataPath = join(modelsPath, modelId, 'model.json')
   const ggufPath = join(modelsPath, modelId, 'model.gguf')
 
-  log(`[NITRO]::Debug: Loading model with params ${JSON.stringify({
+  log(`[CORTEX]::Debug: Loading model with params ${JSON.stringify({
     ...settings,
     filePath: ggufPath,
     metadataPath,
@@ -329,20 +326,20 @@ function loadLLMModel(modelId: string, settings: any): Promise<Response> {
   })
     .then((res) => {
       log(
-        `[NITRO]::Debug: Load model success with response ${JSON.stringify(
+        `[CORTEX]::Debug: Load model success with response ${JSON.stringify(
           res
         )}`
       )
       return Promise.resolve(res)
     })
     .catch((err) => {
-      log(`[NITRO]::Error: Load model failed with error ${err}`)
+      log(`[CORTEX]::Error: Load model failed with error ${err}`)
       return Promise.reject(err)
     })
 }
 
 /**
- * Terminates the Nitro subprocess.
+ * Terminates the Cortex subprocess.
  * @returns A Promise that resolves when the subprocess is terminated successfully, or rejects with an error message if the subprocess fails to terminate.
  */
 async function killSubprocess(): Promise<void> {
@@ -417,14 +414,7 @@ function dispose() {
 }
 
 /**
- * Nitro process info
- */
-export interface NitroProcessInfo {
-  isRunning: boolean
-}
-
-/**
- * Get the current Nitro process info
+ * Get the current Cortex process info
  */
 
 const getHealthCheckCortexProcess = async (): Promise<boolean> => {

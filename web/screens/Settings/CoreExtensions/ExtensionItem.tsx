@@ -9,13 +9,12 @@ import {
 
 import { useAtomValue } from 'jotai'
 
-import { Marked, Renderer } from 'marked'
+import { marked } from '@/utils/marked'
 
 import InstallStateIndicator from '../InstallStateIndicator'
 
 import { extensionManager } from '@/extension'
 import { installingExtensionAtom } from '@/helpers/atoms/Extension.atom'
-import { marked } from '@/utils/marked'
 
 type Props = {
   item: BaseExtension
@@ -34,7 +33,7 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
 
   const progress = isInstalling
     ? (installingExtensions.find((e) => e.extensionId === item.name)
-      ?.percentage ?? -1)
+        ?.percentage ?? -1)
     : -1
 
   useEffect(() => {
@@ -99,18 +98,5 @@ const ExtensionItem: React.FC<Props> = ({ item }) => {
     </div>
   )
 }
-
-const marked: Marked = new Marked({
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
 
 export default ExtensionItem

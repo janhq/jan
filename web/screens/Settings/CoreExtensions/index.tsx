@@ -6,7 +6,6 @@ import { InferenceEngine } from '@janhq/core'
 import { Button, ScrollArea, Badge, Switch, Input } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import { SearchIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
