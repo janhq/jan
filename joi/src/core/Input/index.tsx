@@ -2,17 +2,30 @@ import React, { ReactNode, forwardRef } from 'react'
 import { twMerge } from 'tailwind-merge'
 
 import './styles.scss'
+import { Cross2Icon } from '@radix-ui/react-icons'
 
 export interface Props extends React.InputHTMLAttributes<HTMLInputElement> {
   textAlign?: 'left' | 'right'
   prefixIcon?: ReactNode
   suffixIcon?: ReactNode
   onCLick?: () => void
+  clearable?: boolean
+  onClear?: () => void
 }
 
 const Input = forwardRef<HTMLInputElement, Props>(
   (
-    { className, type, textAlign, prefixIcon, suffixIcon, onClick, ...props },
+    {
+      className,
+      type,
+      textAlign,
+      prefixIcon,
+      suffixIcon,
+      onClick,
+      onClear,
+      clearable,
+      ...props
+    },
     ref
   ) => {
     return (
@@ -25,6 +38,11 @@ const Input = forwardRef<HTMLInputElement, Props>(
         {suffixIcon && (
           <div className="input__suffix-icon" onClick={onClick}>
             {suffixIcon}
+          </div>
+        )}
+        {clearable && (
+          <div className="input__clear-icon" onClick={onClear}>
+            <Cross2Icon className="text-red-200" />
           </div>
         )}
         <input
