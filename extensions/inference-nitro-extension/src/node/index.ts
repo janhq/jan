@@ -260,9 +260,14 @@ function loadLLMModel(settings: any): Promise<Response> {
 async function validateModelStatus(modelId: string): Promise<void> {
   // Send a GET request to the validation URL.
   // Retry the request up to 3 times if it fails, with a delay of 500 milliseconds between retries.
+  log(`[CORTEX]::Debug: Validating model ${modelId}`)
   return fetchRetry(NITRO_HTTP_VALIDATE_MODEL_URL, {
     method: 'POST',
-    body: JSON.stringify({ model: modelId }),
+    body: JSON.stringify({ 
+      model: modelId,
+      // TODO: force to use cortex llamacpp by default
+      engine: 'cortex.llamacpp'
+    }),
     headers: {
       'Content-Type': 'application/json',
     },
@@ -288,8 +293,9 @@ async function validateModelStatus(modelId: string): Promise<void> {
         return Promise.resolve()
       }
     }
+    const errorBody = await res.text()
     log(
-      `[CORTEX]::Debug: Validate model state failed with response ${JSON.stringify(
+      `[CORTEX]::Debug: Validate model state failed with response ${errorBody} and status is ${JSON.stringify(
         res.statusText
       )}`
     )
