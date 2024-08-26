@@ -27,7 +27,7 @@ const Tools = () => {
   const componentDataAssistantSetting = getConfigurationsData(
     (activeThread?.assistants[0]?.tools &&
       activeThread?.assistants[0]?.tools[0]?.settings) ??
-      {}
+    {}
   )
 
   useEffect(() => {
@@ -183,19 +183,6 @@ const Tools = () => {
                           your specific use case."
                       />
                     </label>
-                    <div className="ml-auto flex items-center justify-between">
-                      <Switch
-                        name="use-time-weighted-retriever"
-                        className="mr-2"
-                        checked={
-                          activeThread?.assistants[0].tools[0]
-                            .useTimeWeightedRetriever || false
-                        }
-                        onChange={(e) =>
-                          onTimeWeightedRetrieverSwitchUpdate(e.target.checked)
-                        }
-                      />
-                    </div>
                   </div>
 
                   <div className="w-full">
@@ -223,6 +210,20 @@ const Tools = () => {
                                 also considers when they were added to give
                                 newer ones more importance."
                     />
+                    <div className="ml-auto flex items-center justify-between">
+                      <Switch
+                        name="use-time-weighted-retriever"
+                        className="mr-2"
+                        checked={
+                          activeThread?.assistants[0].tools[0]
+                            .useTimeWeightedRetriever || false
+                        }
+                        onChange={(e) =>
+                          onTimeWeightedRetrieverSwitchUpdate(e.target.checked)
+                        }
+                      />
+                    </div>
+
                   </div>
                 </div>
                 <AssistantSetting
