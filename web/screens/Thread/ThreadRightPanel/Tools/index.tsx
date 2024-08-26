@@ -213,7 +213,6 @@ const Tools = () => {
                     <div className="ml-auto flex items-center justify-between">
                       <Switch
                         name="use-time-weighted-retriever"
-                        className="mr-2"
                         checked={
                           activeThread?.assistants[0].tools[0]
                             .useTimeWeightedRetriever || false
