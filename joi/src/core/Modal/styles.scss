@@ -42,7 +42,7 @@ fieldset,
   }
 
   &__title {
-    @apply line-clamp-1;
+    @apply leading-relaxed;
     margin: 0 0 8px 0;
     padding-right: 16px;
     font-weight: 600;
