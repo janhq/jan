@@ -27,7 +27,7 @@ const Tools = () => {
   const componentDataAssistantSetting = getConfigurationsData(
     (activeThread?.assistants[0]?.tools &&
       activeThread?.assistants[0]?.tools[0]?.settings) ??
-    {}
+      {}
   )
 
   useEffect(() => {
@@ -223,7 +223,6 @@ const Tools = () => {
                         }
                       />
                     </div>
-
                   </div>
                 </div>
                 <AssistantSetting

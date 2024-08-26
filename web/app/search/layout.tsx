@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 
-import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
+import { AppConfiguration, getUserHomePath } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
