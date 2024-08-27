@@ -92,33 +92,23 @@ export class FSExt implements Processor {
       console.log(normalizedPath)
      
       const isExist = fs.existsSync(normalizedPath)
-      console.log(11)
       if (!isExist) continue
-      console.log(12)
       const fileStats = fs.statSync(normalizedPath)
-      console.log(13)
       if (!fileStats) continue
       if (!fileStats.isDirectory()) {
-        console.log(4)
         const fileName = await basename(normalizedPath)
         sanitizedFilePaths.push({
           path: normalizedPath,
           name: fileName,
           size: fileStats.size,
         })
-        console.log(1)
       } else {
-        console.log(2)
         // allowing only one level of directory
         const files = await readdirSync(normalizedPath)
-        console.log(3)
   
         for (const file of files) {
-          console.log(4, file)
           const fullPath = await join(normalizedPath, file)
-          console.log(fullPath)
           const fileStats = await fs.statSync(fullPath)
-          console.log(6)
           if (!fileStats || fileStats.isDirectory()) continue
   
           sanitizedFilePaths.push({
