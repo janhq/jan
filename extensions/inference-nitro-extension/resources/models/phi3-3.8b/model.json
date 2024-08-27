@@ -5,7 +5,6 @@
         "filename": "Phi-3-mini-4k-instruct-q4.gguf"
       }
     ],
-    "id": "phi3-3.8b",
     "object": "model",
     "name": "Phi-3 Mini",
     "version": "1.2",

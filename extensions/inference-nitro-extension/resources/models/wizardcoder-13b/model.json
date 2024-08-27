@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/TheBloke/WizardCoder-Python-13B-V1.0-GGUF/resolve/main/wizardcoder-python-13b-v1.0.Q4_K_M.gguf"
     }
   ],
-  "id": "wizardcoder-13b",
   "object": "model",
   "name": "Wizard Coder Python 13B Q4",
   "version": "1.2",

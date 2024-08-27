@@ -5,7 +5,6 @@
             "filename": "llamacorn-1.1b-chat.Q8_0.gguf"
         }
     ],
-    "id": "llamacorn-1.1b",
     "object": "model",
     "name": "LlamaCorn 1.1B Q8",
     "version": "1.1",

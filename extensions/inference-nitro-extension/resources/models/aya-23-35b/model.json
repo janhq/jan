@@ -5,7 +5,6 @@
         "url": "https://huggingface.co/bartowski/aya-23-35B-GGUF/resolve/main/aya-23-35B-Q4_K_M.gguf"
       }
     ],
-    "id": "aya-23-35b",
     "object": "model",
     "name": "Aya 23 35B Q4",
     "version": "1.1",

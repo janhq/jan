@@ -5,7 +5,6 @@
         "url": "https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf"
       }
     ],
-    "id": "codestral-22b",
     "object": "model",
     "name": "Codestral 22B Q4",
     "version": "1.1",

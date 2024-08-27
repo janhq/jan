@@ -9,7 +9,6 @@
       "url": "https://huggingface.co/mys/ggml_bakllava-1/resolve/main/mmproj-model-f16.gguf"
     }
   ],
-  "id": "bakllava-1",
   "object": "model",
   "name": "BakLlava 1",
   "version": "1.0",

@@ -5,7 +5,6 @@
         "filename": "stablelm-zephyr-3b.Q8_0.gguf"
       }
     ],
-    "id": "stable-zephyr-3b",
     "object": "model",
     "name": "Stable Zephyr 3B Q8",
     "version": "1.1",

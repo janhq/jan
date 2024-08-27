@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/TheBloke/Llama-2-7B-Chat-GGUF/resolve/main/llama-2-7b-chat.Q4_K_M.gguf"
     }
   ],
-  "id": "llama2-chat-7b",
   "object": "model",
   "name": "Llama 2 Chat 7B Q4",
   "version": "1.1",

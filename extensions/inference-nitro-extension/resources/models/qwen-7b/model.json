@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GGUF/resolve/main/qwen1_5-7b-chat-q4_k_m.gguf"
     }
   ],
-  "id": "qwen-7b",
   "object": "model",
   "name": "Qwen Chat 7B Q4",
   "version": "1.2",

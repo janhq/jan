@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/TheBloke/Yi-34B-Chat-GGUF/resolve/main/yi-34b-chat.Q4_K_M.gguf"
     }
   ],
-  "id": "yi-34b",
   "object": "model",
   "name": "Yi 34B Q4",
   "version": "1.1",

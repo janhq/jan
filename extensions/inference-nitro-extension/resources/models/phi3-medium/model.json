@@ -5,7 +5,6 @@
         "filename": "Phi-3-medium-128k-instruct-Q4_K_M.gguf"
       }
     ],
-    "id": "phi3-medium",
     "object": "model",
     "name": "Phi-3 Medium",
     "version": "1.2",

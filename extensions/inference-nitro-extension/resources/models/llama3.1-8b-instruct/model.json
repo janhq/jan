@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
     }
   ],
-  "id": "llama3.1-8b-instruct",
   "object": "model",
   "name": "Llama 3.1 8B Q4 Instruct",
   "version": "1.0",

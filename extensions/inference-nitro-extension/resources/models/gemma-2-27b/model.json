@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/bartowski/gemma-2-27b-it-GGUF/resolve/main/gemma-2-27b-it-Q4_K_M.gguf"
     }
   ],
-  "id": "gemma-2-27b-it",
   "object": "model",
   "name": "Gemma 2 27B Q4",
   "version": "1.0",

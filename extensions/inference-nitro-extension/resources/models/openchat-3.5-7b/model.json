@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/TheBloke/openchat-3.5-0106-GGUF/resolve/main/openchat-3.5-0106.Q4_K_M.gguf"
     }
   ],
-  "id": "openchat-3.5-7b",
   "object": "model",
   "name": "Openchat-3.5 7B Q4",
   "version": "1.2",

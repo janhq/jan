@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf"
     }
   ],
-  "id": "mistral-ins-7b-q4",
   "object": "model",
   "name": "Mistral Instruct 7B Q4",
   "version": "1.3",

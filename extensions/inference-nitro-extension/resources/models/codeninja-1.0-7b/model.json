@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/beowolx/CodeNinja-1.0-OpenChat-7B-GGUF/resolve/main/codeninja-1.0-openchat-7b.Q4_K_M.gguf"
     }
   ],
-  "id": "codeninja-1.0-7b",
   "object": "model",
   "name": "CodeNinja 7B Q4",
   "version": "1.2",

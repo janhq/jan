@@ -5,7 +5,6 @@
         "url": "https://huggingface.co/janhq/vistral-7b-chat-dpo-GGUF/resolve/main/vistral-7b-chat-dpo.Q4_K_M.gguf"
       }
     ],
-    "id": "vistral-7b",
     "object": "model",
     "name": "Vistral 7B Q4",
     "version": "1.2",

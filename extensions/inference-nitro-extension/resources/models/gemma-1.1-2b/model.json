@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/bartowski/gemma-1.1-2b-it-GGUF/resolve/main/gemma-1.1-2b-it-Q4_K_M.gguf"
     }
   ],
-  "id": "gemma-1.1-2b-it",
   "object": "model",
   "name": "Gemma 1.1 2B Q4",
   "version": "1.3",

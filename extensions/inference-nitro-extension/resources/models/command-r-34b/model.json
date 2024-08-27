@@ -5,7 +5,6 @@
         "url": "https://huggingface.co/andrewcanis/c4ai-command-r-v01-GGUF/resolve/main/c4ai-command-r-v01-Q4_K_M.gguf"
       }
     ],
-    "id": "command-r-34b",
     "object": "model",
     "name": "Command-R v01 34B Q4",
     "version": "1.5",

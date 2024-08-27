@@ -9,7 +9,6 @@
       "url": "https://huggingface.co/cjpais/llava-1.6-mistral-7b-gguf/resolve/main/mmproj-model-f16.gguf"
     }
   ],
-  "id": "llava-7b",
   "object": "model",
   "name": "LlaVa 7B",
   "version": "1.1",

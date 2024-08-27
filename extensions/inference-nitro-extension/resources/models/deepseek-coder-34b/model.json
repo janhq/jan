@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/TheBloke/deepseek-coder-33B-instruct-GGUF/resolve/main/deepseek-coder-33b-instruct.Q4_K_M.gguf"
     }
   ],
-  "id": "deepseek-coder-34b",
   "object": "model",
   "name": "Deepseek Coder 33B Q4",
   "version": "1.2",

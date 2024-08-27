@@ -5,7 +5,6 @@
       "url": "https://huggingface.co/NeverSleep/Noromaid-7B-0.4-DPO-GGUF/resolve/main/Noromaid-7B-0.4-DPO.q4_k_m.gguf"
     }
   ],
-  "id": "noromaid-7b",
   "object": "model",
   "name": "Noromaid 7B Q4",
   "version": "1.2",
