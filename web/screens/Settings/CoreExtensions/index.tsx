@@ -138,7 +138,10 @@ const ExtensionCatalog = () => {
             <Input
               prefixIcon={<SearchIcon size={16} />}
               placeholder="Search"
+              value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              clearable={searchText.length > 0}
+              onClear={() => setSearchText('')}
             />
           </div>
           <div>

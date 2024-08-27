@@ -64,6 +64,11 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
     [debounced]
   )
 
+  const onClear = useCallback(() => {
+    setSearchText('')
+    debounced()
+  }, [debounced])
+
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -80,6 +85,9 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
       placeholder="Search or paste Hugging Face URL"
       onChange={onSearchChanged}
       onKeyDown={onKeyDown}
+      value={searchText}
+      clearable={searchText.length > 0}
+      onClear={onClear}
     />
   )
 }
