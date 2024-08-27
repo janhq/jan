@@ -5,7 +5,6 @@
         "url": "https://cohere.com"
       }
     ],
-    "id": "command-r-plus",
     "object": "model",
     "name": "Command R+",
     "version": "1.0",
@@ -32,7 +31,6 @@
         "url": "https://cohere.com"
       }
     ],
-    "id": "command-r",
     "object": "model",
     "name": "Command R",
     "version": "1.0",

@@ -5,7 +5,6 @@
         "url": "https://www.anthropic.com/"
       }
     ],
-    "id": "claude-3-opus-20240229",
     "object": "model",
     "name": "Claude 3 Opus",
     "version": "1.0",
@@ -29,7 +28,6 @@
         "url": "https://www.anthropic.com/"
       }
     ],
-    "id": "claude-3-sonnet-20240229",
     "object": "model",
     "name": "Claude 3 Sonnet",
     "version": "1.0",
@@ -53,7 +51,6 @@
         "url": "https://www.anthropic.com/"
       }
     ],
-    "id": "claude-3-haiku-20240307",
     "object": "model",
     "name": "Claude 3 Haiku",
     "version": "1.0",
@@ -77,7 +74,6 @@
         "url": "https://www.anthropic.com/"
       }
     ],
-    "id": "claude-3-5-sonnet-20240620",
     "object": "model",
     "name": "Claude 3.5 Sonnet",
     "version": "1.0",

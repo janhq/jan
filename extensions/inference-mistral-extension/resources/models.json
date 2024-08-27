@@ -5,7 +5,6 @@
         "url": "https://docs.mistral.ai/api/"
       }
     ],
-    "id": "mistral-small-latest",
     "object": "model",
     "name": "Mistral Small",
     "version": "1.1",
@@ -32,7 +31,6 @@
         "url": "https://docs.mistral.ai/api/"
       }
     ],
-    "id": "mistral-large-latest",
     "object": "model",
     "name": "Mistral Large",
     "version": "1.1",
@@ -59,7 +57,6 @@
         "url": "https://docs.mistral.ai/api/"
       }
     ],
-    "id": "open-mixtral-8x22b",
     "object": "model",
     "name": "Mixtral 8x22B",
     "version": "1.1",

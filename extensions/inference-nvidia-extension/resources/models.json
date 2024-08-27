@@ -5,7 +5,6 @@
         "url": "https://integrate.api.nvidia.com/v1/chat/completions"
       }
     ],
-    "id": "mistralai/mistral-7b-instruct-v0.2",
     "object": "model",
     "name": "Mistral 7B",
     "version": "1.1",

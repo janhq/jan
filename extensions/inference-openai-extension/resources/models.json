@@ -5,7 +5,6 @@
         "url": "https://openai.com"
       }
     ],
-    "id": "gpt-4-turbo",
     "object": "model",
     "name": "OpenAI GPT 4 Turbo",
     "version": "1.2",
@@ -35,7 +34,6 @@
         "url": "https://openai.com"
       }
     ],
-    "id": "gpt-4-vision-preview",
     "object": "model",
     "name": "OpenAI GPT 4 with Vision (Preview)",
     "version": "1.1",
@@ -66,7 +64,6 @@
         "url": "https://openai.com"
       }
     ],
-    "id": "gpt-3.5-turbo",
     "object": "model",
     "name": "OpenAI GPT 3.5 Turbo",
     "version": "1.1",
@@ -96,7 +93,6 @@
         "url": "https://openai.com"
       }
     ],
-    "id": "gpt-4o",
     "object": "model",
     "name": "OpenAI GPT 4o",
     "version": "1.1",

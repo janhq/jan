@@ -5,7 +5,6 @@
         "url": "https://withmartian.com/"
       }
     ],
-    "id": "router",
     "object": "model",
     "name": "Martian Model Router",
     "version": "1.0",

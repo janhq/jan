@@ -5,7 +5,6 @@
         "url": "https://openrouter.ai"
       }
     ],
-    "id": "open-router-auto",
     "object": "model",
     "name": "OpenRouter",
     "version": "1.0",
