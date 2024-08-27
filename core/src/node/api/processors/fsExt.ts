@@ -89,7 +89,6 @@ export class FSExt implements Processor {
     }[] = []
     for (const filePath of paths) {
       const normalizedPath = normalizeFilePath(filePath)
-      console.log(normalizedPath)
      
       const isExist = fs.existsSync(normalizedPath)
       if (!isExist) continue
