@@ -89,6 +89,7 @@ export abstract class OAIEngine extends AIEngine {
       model: model.id,
       stream: true,
       ...model.parameters,
+      ...(this.provider === 'nitro' ? { engine: 'cortex.llamacpp'} : {}),
     }
     if (this.transformPayload) {
       requestBody = this.transformPayload(requestBody)
