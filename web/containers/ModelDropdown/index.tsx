@@ -430,158 +430,73 @@ const ModelDropdown = ({
 
                     {engine === InferenceEngine.nitro &&
                       !isDownloadALocalModel &&
-                      showModel && (
-                        <>
-                          {!searchText.length ? (
-                            <ul className="pb-2">
-                              {featuredModel.map((model) => {
-                                const isDownloading = downloadingModels.some(
-                                  (md) => md.id === model.id
-                                )
-                                return (
-                                  <li
-                                    key={model.id}
-                                    className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                      showModel &&
+                      !searchText.length && (
+                        <ul className="pb-2">
+                          {featuredModel.map((model) => {
+                            const isDownloading = downloadingModels.some(
+                              (md) => md.id === model.id
+                            )
+                            return (
+                              <li
+                                key={model.id}
+                                className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <p
+                                    className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                    title={model.name}
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <p
-                                        className="line-clamp-1 text-[hsla(var(--text-secondary))]"
-                                        title={model.name}
-                                      >
-                                        {model.name}
-                                      </p>
-                                      <ModelLabel
-                                        metadata={model.metadata}
-                                        compact
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                      <span className="font-medium">
-                                        {toGibibytes(model.metadata.size)}
-                                      </span>
-                                      {!isDownloading ? (
-                                        <DownloadCloudIcon
-                                          size={18}
-                                          className="cursor-pointer text-[hsla(var(--app-link))]"
-                                          onClick={() => downloadModel(model)}
-                                        />
-                                      ) : (
-                                        Object.values(downloadStates)
-                                          .filter((x) => x.modelId === model.id)
-                                          .map((item) => (
-                                            <ProgressCircle
-                                              key={item.modelId}
-                                              percentage={
-                                                formatDownloadPercentage(
-                                                  item?.percent,
-                                                  {
-                                                    hidePercentage: true,
-                                                  }
-                                                ) as number
+                                    {model.name}
+                                  </p>
+                                  <ModelLabel
+                                    metadata={model.metadata}
+                                    compact
+                                  />
+                                </div>
+                                <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                  <span className="font-medium">
+                                    {toGibibytes(model.metadata.size)}
+                                  </span>
+                                  {!isDownloading ? (
+                                    <DownloadCloudIcon
+                                      size={18}
+                                      className="cursor-pointer text-[hsla(var(--app-link))]"
+                                      onClick={() => downloadModel(model)}
+                                    />
+                                  ) : (
+                                    Object.values(downloadStates)
+                                      .filter((x) => x.modelId === model.id)
+                                      .map((item) => (
+                                        <ProgressCircle
+                                          key={item.modelId}
+                                          percentage={
+                                            formatDownloadPercentage(
+                                              item?.percent,
+                                              {
+                                                hidePercentage: true,
                                               }
-                                              size={100}
-                                            />
-                                          ))
-                                      )}
-                                    </div>
-                                  </li>
-                                )
-                              })}
-                            </ul>
-                          ) : (
-                            <>
-                              {filteredDownloadedModels
-                                .filter(
-                                  (x) => x.engine === InferenceEngine.nitro
-                                )
-                                .filter((x) => {
-                                  if (searchText.length === 0) {
-                                    return downloadedModels.find(
-                                      (c) => c.id === x.id
-                                    )
-                                  } else {
-                                    return x
-                                  }
-                                })
-                                .map((model) => {
-                                  const isDownloading = downloadingModels.some(
-                                    (md) => md.id === model.id
-                                  )
-                                  const isdDownloaded = downloadedModels.some(
-                                    (c) => c.id === model.id
-                                  )
-                                  return (
-                                    <li
-                                      key={model.id}
-                                      className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                                      onClick={() => {
-                                        if (isdDownloaded) {
-                                          onClickModelItem(model.id)
-                                        }
-                                      }}
-                                    >
-                                      <div className="flex items-center gap-2">
-                                        <p
-                                          className={twMerge(
-                                            'line-clamp-1',
-                                            !isdDownloaded &&
-                                              'text-[hsla(var(--text-secondary))]'
-                                          )}
-                                          title={model.name}
-                                        >
-                                          {model.name}
-                                        </p>
-                                        <ModelLabel
-                                          metadata={model.metadata}
-                                          compact
+                                            ) as number
+                                          }
+                                          size={100}
                                         />
-                                      </div>
-                                      <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                        {!isdDownloaded && (
-                                          <span className="font-medium">
-                                            {toGibibytes(model.metadata.size)}
-                                          </span>
-                                        )}
-                                        {!isDownloading && !isdDownloaded ? (
-                                          <DownloadCloudIcon
-                                            size={18}
-                                            className="cursor-pointer text-[hsla(var(--app-link))]"
-                                            onClick={() => downloadModel(model)}
-                                          />
-                                        ) : (
-                                          Object.values(downloadStates)
-                                            .filter(
-                                              (x) => x.modelId === model.id
-                                            )
-                                            .map((item) => (
-                                              <ProgressCircle
-                                                key={item.modelId}
-                                                percentage={
-                                                  formatDownloadPercentage(
-                                                    item?.percent,
-                                                    {
-                                                      hidePercentage: true,
-                                                    }
-                                                  ) as number
-                                                }
-                                                size={100}
-                                              />
-                                            ))
-                                        )}
-                                      </div>
-                                    </li>
-                                  )
-                                })}
-                            </>
-                          )}
-                        </>
+                                      ))
+                                  )}
+                                </div>
+                              </li>
+                            )
+                          })}
+                        </ul>
                       )}
 
                     <ul className="pb-2">
                       {filteredDownloadedModels
                         .filter((x) => x.engine === engine)
                         .filter((y) => {
-                          if (localEngines.includes(y.engine)) {
+                          if (
+                            localEngines.includes(y.engine) &&
+                            !searchText.length
+                          ) {
                             return downloadedModels.find((c) => c.id === y.id)
                           } else {
                             return y
@@ -589,11 +504,17 @@ const ModelDropdown = ({
                         })
                         .map((model) => {
                           if (!showModel) return null
+                          const isDownloading = downloadingModels.some(
+                            (md) => md.id === model.id
+                          )
+                          const isdDownloaded = downloadedModels.some(
+                            (c) => c.id === model.id
+                          )
                           return (
                             <li
                               key={model.id}
                               className={twMerge(
-                                'cursor-pointer px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
+                                'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                 !apiKey
                                   ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
                                   : 'text-[hsla(var(--text-primary))]'
@@ -604,13 +525,54 @@ const ModelDropdown = ({
                                   !localEngines.includes(model.engine)
                                 )
                                   return null
-                                onClickModelItem(model.id)
+                                if (isdDownloaded) {
+                                  onClickModelItem(model.id)
+                                }
                               }}
                             >
-                              <div className="flex flex-shrink-0 gap-x-2">
-                                <p className="line-clamp-1 " title={model.name}>
+                              <div className="flex gap-x-2">
+                                <p
+                                  className={twMerge(
+                                    'line-clamp-1',
+                                    !isdDownloaded &&
+                                      'text-[hsla(var(--text-secondary))]'
+                                  )}
+                                  title={model.name}
+                                >
                                   {model.name}
                                 </p>
+                                <ModelLabel metadata={model.metadata} compact />
+                              </div>
+                              <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                {!isdDownloaded && (
+                                  <span className="font-medium">
+                                    {toGibibytes(model.metadata.size)}
+                                  </span>
+                                )}
+                                {!isDownloading && !isdDownloaded ? (
+                                  <DownloadCloudIcon
+                                    size={18}
+                                    className="cursor-pointer text-[hsla(var(--app-link))]"
+                                    onClick={() => downloadModel(model)}
+                                  />
+                                ) : (
+                                  Object.values(downloadStates)
+                                    .filter((x) => x.modelId === model.id)
+                                    .map((item) => (
+                                      <ProgressCircle
+                                        key={item.modelId}
+                                        percentage={
+                                          formatDownloadPercentage(
+                                            item?.percent,
+                                            {
+                                              hidePercentage: true,
+                                            }
+                                          ) as number
+                                        }
+                                        size={100}
+                                      />
+                                    ))
+                                )}
                               </div>
                             </li>
                           )
