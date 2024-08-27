@@ -476,7 +476,8 @@ export default class JanModelExtension extends ModelExtension {
           let model = await this.readModelMetadata(jsonPath)
 
           model = typeof model === 'object' ? model : JSON.parse(model)
-
+          // ignore id from model.json, use the folder name instead
+          model.id = dirName;
           // This to ensure backward compatibility with `model.json` with `source_url`
           if (model['source_url'] != null) {
             model['sources'] = [
