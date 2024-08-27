@@ -11,6 +11,7 @@ import {
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
+import CopyOverInstruction from '@/containers/CopyInstruction'
 import EngineSetting from '@/containers/EngineSetting'
 import ModelDropdown from '@/containers/ModelDropdown'
 
@@ -190,7 +191,7 @@ const ThreadRightPanel = () => {
           { name: 'Model', value: 'model' },
           ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
         ]}
-        value={activeTabThreadRightPanel}
+        value={activeTabThreadRightPanel as string}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}
       >
         <TabsContent value="assistant">
@@ -206,9 +207,11 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeThread?.assistants[0].instructions ?? ''}
+                rows={8}
                 onChange={onAssistantInstructionChanged}
               />
             </div>
+            {experimentalFeature && <CopyOverInstruction />}
           </div>
         </TabsContent>
         <TabsContent value="model">

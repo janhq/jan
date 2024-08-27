@@ -33,13 +33,16 @@ const Modal = ({
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="modal__overlay" />
       <DialogPrimitive.Content
+        aria-describedby={undefined}
         className={twMerge(
           'modal__content',
           fullPage && 'modal__content--fullpage',
           className
         )}
       >
-        <div className="modal__title">{title}</div>
+        <DialogPrimitive.Title className="modal__title">
+          {title}
+        </DialogPrimitive.Title>
         {content}
         {!hideClose && (
           <ModalClose asChild>

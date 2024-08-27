@@ -12,9 +12,9 @@ import {
 } from 'fs'
 import Store from 'electron-store'
 import {
-  getJanExtensionsPath,
   getJanDataFolderPath,
   appResourcePath,
+  getJanExtensionsPath,
 } from '@janhq/core/node'
 
 /**
@@ -28,8 +28,9 @@ export async function migrate() {
   if (store.get('migrated_version') !== app.getVersion()) {
     console.debug('start migration:', store.get('migrated_version'))
 
-    // if (existsSync(getJanExtensionsPath()))
-    //   rmdirSync(getJanExtensionsPath(), { recursive: true })
+    if (existsSync(getJanExtensionsPath()))
+      rmdirSync(getJanExtensionsPath(), { recursive: true })
+
     await migrateThemes()
 
     store.set('migrated_version', app.getVersion())
@@ -43,9 +44,9 @@ async function migrateThemes() {
   if (!existsSync(join(getJanDataFolderPath(), 'themes')))
     mkdirSync(join(getJanDataFolderPath(), 'themes'), { recursive: true })
 
-  const themes = readdirSync(join(await appResourcePath(), 'themes'))
+  const themes = readdirSync(join(appResourcePath(), 'themes'))
   for (const theme of themes) {
-    const themePath = join(await appResourcePath(), 'themes', theme)
+    const themePath = join(appResourcePath(), 'themes', theme)
     if (existsSync(themePath) && !lstatSync(themePath).isDirectory()) {
       continue
     }

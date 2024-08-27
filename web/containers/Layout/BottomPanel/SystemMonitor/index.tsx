@@ -88,7 +88,7 @@ const SystemMonitor = () => {
         <div
           ref={setElementExpand}
           className={twMerge(
-            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px-8px)] flex-shrink-0 flex-col rounded-lg rounded-b-none border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+            'fixed bottom-9 left-[49px] z-50 flex w-[calc(100%-48px)] flex-shrink-0 flex-col border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
             showFullScreen && 'h-[calc(100%-63px)]',
             reduceTransparent && 'w-[calc(100%-48px)] rounded-none'
           )}
@@ -128,7 +128,7 @@ const SystemMonitor = () => {
             </div>
           </div>
 
-          <div className="flex h-full gap-4">
+          <div className="flex h-full gap-y-4">
             <TableActiveModel />
 
             <div className="w-1/2 border-l border-[hsla(var(--app-border))] p-4">

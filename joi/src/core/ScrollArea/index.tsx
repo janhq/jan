@@ -9,7 +9,7 @@ const ScrollArea = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
 >(({ className, children, onScroll, ...props }, ref) => (
   <ScrollAreaPrimitive.Root
-    type="scroll"
+    type="auto"
     className={twMerge('scroll-area__root', className)}
     {...props}
   >

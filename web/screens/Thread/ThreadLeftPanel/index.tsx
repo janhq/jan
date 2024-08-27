@@ -8,28 +8,27 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import {
   GalleryHorizontalEndIcon,
   MoreHorizontalIcon,
-  PenSquareIcon,
+  Paintbrush,
+  PencilIcon,
+  Trash2Icon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
-import { toaster } from '@/containers/Toast'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
-
-import ModalCleanThread from './ModalCleanThread'
-import ModalDeleteThread from './ModalDeleteThread'
-import ModalEditTitleThread from './ModalEditTitleThread'
 
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import {
   getActiveThreadIdAtom,
+  modalActionThreadAtom,
   threadDataReadyAtom,
+  ThreadModalAction,
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -42,6 +41,7 @@ const ThreadLeftPanel = () => {
   const { requestCreateNewThread } = useCreateNewThread()
   const setEditMessage = useSetAtom(editMessageAtom)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
+  const setModalActionThread = useSetAtom(modalActionThreadAtom)
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean
@@ -87,18 +87,6 @@ const ThreadLeftPanel = () => {
     downloadedModels,
   ])
 
-  const onCreateConversationClick = async () => {
-    if (assistants.length === 0) {
-      toaster({
-        title: 'No assistant available.',
-        description: `Could not create a new thread. Please add an assistant.`,
-        type: 'error',
-      })
-    } else {
-      requestCreateNewThread(assistants[0])
-    }
-  }
-
   const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
     event.preventDefault()
     setContextMenu({
@@ -126,18 +114,6 @@ const ThreadLeftPanel = () => {
         </div>
       ) : (
         <div className="p-3">
-          <Button
-            className="mb-2"
-            data-testid="btn-create-thread"
-            onClick={onCreateConversationClick}
-            theme="icon"
-          >
-            <PenSquareIcon
-              size={16}
-              className="cursor-pointer text-[hsla(var(--text-secondary))]"
-            />
-          </Button>
-
           {threads.map((thread) => (
             <div
               key={thread.id}
@@ -176,18 +152,60 @@ const ThreadLeftPanel = () => {
                       'visible'
                   )}
                 >
-                  <ModalEditTitleThread
-                    thread={thread}
-                    closeContextMenu={closeContextMenu}
-                  />
-                  <ModalCleanThread
-                    threadId={thread.id}
-                    closeContextMenu={closeContextMenu}
-                  />
-                  <ModalDeleteThread
-                    threadId={thread.id}
-                    closeContextMenu={closeContextMenu}
-                  />
+                  <div
+                    className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                    onClick={(e) => {
+                      setModalActionThread({
+                        showModal: ThreadModalAction.EditTitle,
+                        thread,
+                      })
+                      e.stopPropagation()
+                    }}
+                  >
+                    <PencilIcon
+                      size={16}
+                      className="text-[hsla(var(--secondary))]"
+                    />
+                    <span className="text-bold text-[hsla(var(--secondary))]">
+                      Edit title
+                    </span>
+                  </div>
+                  <div
+                    className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                    onClick={(e) => {
+                      setModalActionThread({
+                        showModal: ThreadModalAction.Clean,
+                        thread,
+                      })
+                      e.stopPropagation()
+                    }}
+                  >
+                    <Paintbrush
+                      size={16}
+                      className="text-[hsla(var(--text-secondary))]"
+                    />
+                    <span className="text-bold text-[hsla(var(--app-text-primary))]">
+                      Clean thread
+                    </span>
+                  </div>
+                  <div
+                    className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                    onClick={(e) => {
+                      setModalActionThread({
+                        showModal: ThreadModalAction.Delete,
+                        thread,
+                      })
+                      e.stopPropagation()
+                    }}
+                  >
+                    <Trash2Icon
+                      size={16}
+                      className="text-[hsla(var(--destructive-bg))]"
+                    />
+                    <span className="text-bold text-[hsla(var(--destructive-bg))]">
+                      Delete thread
+                    </span>
+                  </div>
                 </div>
               </div>
               {activeThreadId === thread.id && (

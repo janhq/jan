@@ -13,7 +13,6 @@
     "compile": "tsc --noEmit -p . --pretty"
   },
   "dependencies": {
-    "@headlessui/react": "^1.7.15",
     "@heroicons/react": "^2.0.18",
     "@hookform/resolvers": "^3.3.2",
     "@janhq/core": "link:./core",
@@ -22,6 +21,7 @@
     "class-variance-authority": "^0.7.0",
     "framer-motion": "^10.16.4",
     "highlight.js": "^11.9.0",
+    "postcss-url": "10.1.3",
     "jotai": "^2.6.0",
     "katex": "^0.16.10",
     "lodash": "^4.17.21",

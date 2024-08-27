@@ -40,9 +40,8 @@ const HuggingFaceRepoDetailModal = () => {
       fullPage
       content={
         <div className="flex h-full w-full flex-col">
-          <div className="flex">
+          <div className="flex flex-col gap-4 lg:flex-row">
             <ModelSegmentInfo />
-            <div className="mx-6 h-full border border-[hsla(var(--app-border))]" />
             <ModelDownloadList />
           </div>
         </div>

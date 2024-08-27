@@ -12,7 +12,10 @@ import {
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
+import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
+
+import { toaster } from '@/containers/Toast'
 
 import { generateThreadId } from '@/utils/thread'
 
@@ -23,7 +26,10 @@ import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
 
-import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import {
+  experimentalFeatureEnabledAtom,
+  preserveModelSettingsAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
@@ -31,6 +37,7 @@ import {
   updateThreadAtom,
   setThreadModelParamsAtom,
   isGeneratingResponseAtom,
+  activeThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -57,6 +64,11 @@ export const useCreateNewThread = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
+  const copyOverInstructionEnabled = useAtomValue(
+    copyOverInstructionEnabledAtom
+  )
+  const preserveModelSettings = useAtomValue(preserveModelSettingsAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
@@ -83,7 +95,11 @@ export const useCreateNewThread = () => {
       const lastMessage = threads[0]?.metadata?.lastMessage
 
       if (!lastMessage && threads.length) {
-        return null
+        return toaster({
+          title: 'No new thread created.',
+          description: `To avoid piling up empty threads, please reuse previous one before creating new.`,
+          type: 'warning',
+        })
       }
     }
 
@@ -93,18 +109,26 @@ export const useCreateNewThread = () => {
       enabled: true,
       settings: assistant.tools && assistant.tools[0].settings,
     }
-
+    const defaultContextLength = preserveModelSettings
+      ? defaultModel?.metadata?.default_ctx_len
+      : 2048
+    const defaultMaxTokens = preserveModelSettings
+      ? defaultModel?.metadata?.default_max_tokens
+      : 2048
     const overriddenSettings =
       defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
-        ? { ctx_len: 2048 }
+        ? { ctx_len: defaultContextLength ?? 2048 }
         : {}
 
-    const overriddenParameters =
-      defaultModel?.parameters.max_tokens && defaultModel.parameters.max_tokens
-        ? { max_tokens: 2048 }
-        : {}
+    const overriddenParameters = defaultModel?.parameters.max_tokens
+      ? { max_tokens: defaultMaxTokens ?? 2048 }
+      : {}
 
     const createdAt = Date.now()
+    let instructions: string | undefined = undefined
+    if (copyOverInstructionEnabled) {
+      instructions = activeThread?.assistants[0]?.instructions ?? undefined
+    }
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
       assistant_name: assistant.name,
@@ -116,7 +140,7 @@ export const useCreateNewThread = () => {
           { ...defaultModel?.parameters, ...overriddenParameters } ?? {},
         engine: defaultModel?.engine,
       },
-      instructions: assistant.instructions,
+      instructions,
     }
 
     const threadId = generateThreadId(assistant.id)

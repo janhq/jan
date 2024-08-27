@@ -2,7 +2,7 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -14,6 +14,11 @@ import {
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+import {
+  activeThreadAtom,
+  modalActionThreadAtom,
+  ThreadModalAction,
+} from '@/helpers/atoms/Thread.atom'
 
 type Props = {
   children: ReactNode
@@ -22,31 +27,52 @@ type Props = {
 export default function KeyListener({ children }: Props) {
   const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
   const setShowRightPanel = useSetAtom(showRightPanelAtom)
-  const setMainViewState = useSetAtom(mainViewStateAtom)
+  const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const assistants = useAtomValue(assistantsAtom)
+  const activeThread = useAtomValue(activeThreadAtom)
+  const setModalActionThread = useSetAtom(modalActionThreadAtom)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const prefixKey = isMac ? e.metaKey : e.ctrlKey
 
-      if (e.key === 'b' && prefixKey && e.shiftKey) {
+      if (e.code === 'KeyB' && prefixKey && e.shiftKey) {
         setShowRightPanel((showRightideBar) => !showRightideBar)
         return
       }
 
-      if (e.key === 'n' && prefixKey) {
+      if (e.code === 'Backspace' && prefixKey && e.shiftKey) {
+        if (!activeThread || mainViewState !== MainViewState.Thread) return
+        setModalActionThread({
+          showModal: ThreadModalAction.Delete,
+          thread: activeThread,
+        })
+        return
+      }
+
+      if (e.code === 'KeyC' && prefixKey && e.shiftKey) {
+        if (!activeThread || mainViewState !== MainViewState.Thread) return
+        setModalActionThread({
+          showModal: ThreadModalAction.Clean,
+          thread: activeThread,
+        })
+        return
+      }
+
+      if (e.code === 'KeyN' && prefixKey) {
+        if (mainViewState !== MainViewState.Thread) return
         requestCreateNewThread(assistants[0])
         setMainViewState(MainViewState.Thread)
         return
       }
 
-      if (e.key === 'b' && prefixKey) {
+      if (e.code === 'KeyB' && prefixKey) {
         setShowLeftPanel((showLeftSideBar) => !showLeftSideBar)
         return
       }
 
-      if (e.key === ',' && prefixKey) {
+      if (e.code === 'Comma' && prefixKey) {
         setMainViewState(MainViewState.Settings)
         return
       }
@@ -54,9 +80,12 @@ export default function KeyListener({ children }: Props) {
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [
+    activeThread,
     assistants,
+    mainViewState,
     requestCreateNewThread,
     setMainViewState,
+    setModalActionThread,
     setShowLeftPanel,
     setShowRightPanel,
   ])

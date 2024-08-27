@@ -12,22 +12,29 @@ import {
   SquareIcon,
   PaletteIcon,
   XIcon,
+  PenSquareIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
 
+import { toaster } from '@/containers/Toast'
+
 import { MainViewState } from '@/constants/screens'
+
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
 import {
   mainViewStateAtom,
   showLeftPanelAtom,
   showRightPanelAtom,
 } from '@/helpers/atoms/App.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   reduceTransparentAtom,
   selectedSettingAtom,
 } from '@/helpers/atoms/Setting.atom'
+import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const TopPanel = () => {
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
@@ -35,6 +42,21 @@ const TopPanel = () => {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const { requestCreateNewThread } = useCreateNewThread()
+  const assistants = useAtomValue(assistantsAtom)
+  const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
+    activeTabThreadRightPanelAtom
+  )
+
+  const onCreateNewThreadClick = () => {
+    if (!assistants.length)
+      return toaster({
+        title: 'No assistant available.',
+        description: `Could not create a new thread. Please add an assistant.`,
+        type: 'error',
+      })
+    requestCreateNewThread(assistants[0])
+  }
 
   return (
     <div
@@ -71,17 +93,45 @@ const TopPanel = () => {
               )}
             </Fragment>
           )}
+          {mainViewState === MainViewState.Thread && (
+            <Button
+              data-testid="btn-create-thread"
+              onClick={onCreateNewThreadClick}
+              theme="icon"
+            >
+              <PenSquareIcon
+                size={16}
+                className="cursor-pointer text-[hsla(var(--text-secondary))]"
+              />
+            </Button>
+          )}
         </div>
         <div className="unset-drag flex items-center gap-x-2">
           {mainViewState !== MainViewState.Hub &&
             mainViewState !== MainViewState.Settings && (
               <Fragment>
                 {showRightPanel ? (
-                  <Button theme="icon" onClick={() => setShowRightPanel(false)}>
+                  <Button
+                    theme="icon"
+                    onClick={() => {
+                      setShowRightPanel(false)
+                      if (activeTabThreadRightPanel === 'model') {
+                        setActiveTabThreadRightPanel(undefined)
+                      }
+                    }}
+                  >
                     <PanelRightCloseIcon size={16} />
                   </Button>
                 ) : (
-                  <Button theme="icon" onClick={() => setShowRightPanel(true)}>
+                  <Button
+                    theme="icon"
+                    onClick={() => {
+                      setShowRightPanel(true)
+                      if (activeTabThreadRightPanel === undefined) {
+                        setActiveTabThreadRightPanel('model')
+                      }
+                    }}
+                  >
                     <PanelRightOpenIcon size={16} />
                   </Button>
                 )}

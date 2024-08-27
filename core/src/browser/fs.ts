@@ -59,6 +59,15 @@ const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
   globalThis.core.api?.copyFile(src, dest)
 
 /**
+ * Gets the list of gguf files in a directory
+ * 
+ * @param path - The paths to the file.
+ * @returns {Promise<{any}>} - A promise that resolves with the list of gguf and non-gguf files
+ */
+const getGgufFiles: (paths: string[]) => Promise<any> = (
+  paths) => globalThis.core.api?.getGgufFiles(paths)
+
+/**
  * Gets the file's stats.
  *
  * @param path - The path to the file.
@@ -84,4 +93,5 @@ export const fs = {
   copyFile,
   fileStat,
   writeBlob,
+  getGgufFiles,
 }

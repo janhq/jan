@@ -1,48 +1,41 @@
 import { useCallback, memo } from 'react'
 
 import { Modal, ModalClose, Button } from '@janhq/joi'
-import { Trash2Icon } from 'lucide-react'
+import { useAtom } from 'jotai'
 
 import useDeleteThread from '@/hooks/useDeleteThread'
 
-type Props = {
-  threadId: string
-  closeContextMenu?: () => void
-}
+import {
+  modalActionThreadAtom,
+  ThreadModalAction,
+} from '@/helpers/atoms/Thread.atom'
 
-const ModalDeleteThread = ({ threadId, closeContextMenu }: Props) => {
+const ModalDeleteThread = () => {
   const { deleteThread } = useDeleteThread()
+  const [modalActionThread, setModalActionThread] = useAtom(
+    modalActionThreadAtom
+  )
 
   const onDeleteThreadClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       e.stopPropagation()
-      deleteThread(threadId)
+      deleteThread(modalActionThread.thread?.id as string)
     },
-    [deleteThread, threadId]
+    [deleteThread, modalActionThread.thread?.id]
   )
+
+  const onCloseModal = useCallback(() => {
+    setModalActionThread({
+      showModal: undefined,
+      thread: undefined,
+    })
+  }, [setModalActionThread])
 
   return (
     <Modal
       title="Delete Thread"
-      onOpenChange={(open) => {
-        if (open && closeContextMenu) {
-          closeContextMenu()
-        }
-      }}
-      trigger={
-        <div
-          className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Trash2Icon
-            size={16}
-            className="text-[hsla(var(--destructive-bg))]"
-          />
-          <span className="text-bold text-[hsla(var(--destructive-bg))]">
-            Delete thread
-          </span>
-        </div>
-      }
+      onOpenChange={onCloseModal}
+      open={modalActionThread.showModal === ThreadModalAction.Delete}
       content={
         <div>
           <p className="text-[hsla(var(--text-secondary))]">

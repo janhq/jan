@@ -4,9 +4,11 @@ import { InferenceEngine } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
-import { SettingsIcon } from 'lucide-react'
+import { SettingsIcon, PlusIcon } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
+
+import { localEngines } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -72,6 +74,11 @@ const SetupRemoteModel = ({ engine }: Props) => {
     )
   }
 
+  const apiKey = !localEngines.includes(engine)
+    ? extensionHasSettings.filter((x) => x.provider === engine)[0]?.apiKey
+        .length > 1
+    : true
+
   return (
     <Button
       theme="icon"
@@ -80,10 +87,14 @@ const SetupRemoteModel = ({ engine }: Props) => {
         onSetupItemClick(engine)
       }}
     >
-      <SettingsIcon
-        size={14}
-        className="text-hsla(var(--app-text-sencondary))"
-      />
+      {apiKey ? (
+        <SettingsIcon
+          size={14}
+          className="text-[hsla(var(--text-secondary))]"
+        />
+      ) : (
+        <PlusIcon size={14} className="text-[hsla(var(--text-secondary))]" />
+      )}
     </Button>
   )
 }

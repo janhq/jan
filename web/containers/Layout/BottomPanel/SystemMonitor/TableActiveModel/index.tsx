@@ -1,5 +1,3 @@
-import { Fragment } from 'react'
-
 import { Tooltip, Button, Badge } from '@janhq/joi'
 
 import { useAtom } from 'jotai'
@@ -8,19 +6,22 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { localEngines } from '@/utils/modelEngine'
+
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-const Column = ['Name', 'Size', '']
+const Column = ['Model', 'Size', '']
 
 const TableActiveModel = () => {
   const { activeModel, stateModel, stopModel } = useActiveModel()
+
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
   return (
-    <div className="m-4 mr-0 w-1/2">
-      <div className="overflow-hidden rounded-lg border border-[hsla(var(--app-border))]">
+    <div className="w-1/2">
+      <div className="overflow-hidden border-b border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          <thead className="w-full border-b border-[hsla(var(--app-border))]">
+          <thead className="w-full border-b border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))]">
             <tr>
               {Column.map((col, i) => {
                 return (
@@ -34,47 +35,53 @@ const TableActiveModel = () => {
               })}
             </tr>
           </thead>
-          {activeModel && (
-            <Fragment>
-              <tbody>
-                <tr>
-                  <td
-                    className="max-w-[200px] px-4 py-2 font-bold"
-                    title={activeModel.name}
-                  >
-                    <p className="line-clamp-2">{activeModel.name}</p>
-                  </td>
-                  <td className="px-4 py-2">
-                    <Badge theme="secondary">
-                      {toGibibytes(activeModel.metadata.size)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-2 text-center">
-                    <Tooltip
-                      trigger={
-                        <Button
-                          theme={
-                            stateModel.state === 'stop'
-                              ? 'destructive'
-                              : 'primary'
-                          }
-                          onClick={() => {
-                            stopModel()
-                            window.core?.api?.stopServer()
-                            setServerEnabled(false)
-                          }}
-                        >
-                          Stop
-                        </Button>
-                      }
-                      content="The API server is running, stop the model will
+          {activeModel && localEngines.includes(activeModel.engine) ? (
+            <tbody>
+              <tr>
+                <td
+                  className="max-w-[200px] px-4 py-2 font-bold"
+                  title={activeModel.name}
+                >
+                  <p className="line-clamp-2">{activeModel.name}</p>
+                </td>
+                <td className="px-4 py-2">
+                  <Badge theme="secondary">
+                    {activeModel.metadata.size
+                      ? toGibibytes(activeModel.metadata.size)
+                      : '-'}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2 text-center">
+                  <Tooltip
+                    trigger={
+                      <Button
+                        theme={
+                          stateModel.state === 'stop'
+                            ? 'destructive'
+                            : 'primary'
+                        }
+                        onClick={() => {
+                          stopModel()
+                          window.core?.api?.stopServer()
+                          setServerEnabled(false)
+                        }}
+                      >
+                        Stop
+                      </Button>
+                    }
+                    content="The API server is running, stop the model will
                       also stop the server"
-                      disabled={!serverEnabled}
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </Fragment>
+                    disabled={!serverEnabled}
+                  />
+                </td>
+              </tr>
+            </tbody>
+          ) : (
+            <tbody>
+              <tr className="text-[hsla(var(--text-secondary))]">
+                <td className="p-4">No on-device model running</td>
+              </tr>
+            </tbody>
           )}
         </table>
       </div>

@@ -1,5 +1,4 @@
 // Tailwind
-
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
@@ -7,6 +6,8 @@
 @import '@janhq/joi/dist/main.css';
 
 @import './base/global.scss';
+
+@import './vendor/katex.scss';
 
 @import './components/loader.scss';
 @import './components/code-block.scss';

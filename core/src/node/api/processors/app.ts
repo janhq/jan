@@ -77,8 +77,8 @@ export class App implements Processor {
       port: args?.port,
       isCorsEnabled: args?.isCorsEnabled,
       isVerboseEnabled: args?.isVerboseEnabled,
-      schemaPath: join(await appResourcePath(), 'docs', 'openapi', 'jan.yaml'),
-      baseDir: join(await appResourcePath(), 'docs', 'openapi'),
+      schemaPath: join(appResourcePath(), 'docs', 'openapi', 'jan.yaml'),
+      baseDir: join(appResourcePath(), 'docs', 'openapi'),
       prefix: args?.prefix,
     })
   }

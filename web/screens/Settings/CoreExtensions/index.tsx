@@ -138,7 +138,10 @@ const ExtensionCatalog = () => {
             <Input
               prefixIcon={<SearchIcon size={16} />}
               placeholder="Search"
+              value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              clearable={searchText.length > 0}
+              onClear={() => setSearchText('')}
             />
           </div>
           <div>
@@ -213,7 +216,7 @@ const ExtensionCatalog = () => {
           {coreActiveExtensions.length > 0 && (
             <div className="mb-3 mt-8 border-b border-[hsla(var(--app-border))] pb-4">
               <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Core Extention
+                Core Extension
               </h6>
             </div>
           )}

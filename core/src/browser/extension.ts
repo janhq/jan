@@ -118,10 +118,21 @@ export abstract class BaseExtension implements ExtensionType {
       setting.extensionName = this.name
     })
     try {
-      await fs.mkdir(extensionSettingFolderPath)
+      if (!(await fs.existsSync(extensionSettingFolderPath)))
+        await fs.mkdir(extensionSettingFolderPath)
       const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
 
-      if (await fs.existsSync(settingFilePath)) return
+      // Persists new settings
+      if (await fs.existsSync(settingFilePath)) {
+        const oldSettings = JSON.parse(await fs.readFileSync(settingFilePath, 'utf-8'))
+        settings.forEach((setting) => {
+          // Keep setting value
+          if (setting.controllerProps && Array.isArray(oldSettings))
+            setting.controllerProps.value = oldSettings.find(
+              (e: any) => e.key === setting.key
+            )?.controllerProps?.value
+        })
+      }
       await fs.writeFileSync(settingFilePath, JSON.stringify(settings, null, 2))
     } catch (err) {
       console.error(err)
@@ -168,6 +179,7 @@ export abstract class BaseExtension implements ExtensionType {
     ])
 
     try {
+      if (!(await fs.existsSync(settingPath))) return []
       const content = await fs.readFileSync(settingPath, 'utf-8')
       const settings: SettingComponentProps[] = JSON.parse(content)
       return settings

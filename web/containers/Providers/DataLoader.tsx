@@ -2,7 +2,7 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import { AppConfiguration, getUserHomePath, joinPath } from '@janhq/core'
+import { AppConfiguration, getUserHomePath } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
@@ -47,8 +47,7 @@ const DataLoader: React.FC<Props> = ({ children }) => {
 
   useEffect(() => {
     async function getDefaultJanDataFolder() {
-      const homePath = await getUserHomePath()
-      const defaultJanDataFolder = await joinPath([homePath, 'jan'])
+      const defaultJanDataFolder = await getUserHomePath()
 
       setJanDefaultDataFolder(defaultJanDataFolder)
     }

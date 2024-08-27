@@ -105,6 +105,7 @@ export enum FileManagerRoute {
   getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
   writeBlob = 'writeBlob',
+  getGgufFiles = 'getGgufFiles',
 }
 
 export type ApiFunction = (...args: any[]) => any

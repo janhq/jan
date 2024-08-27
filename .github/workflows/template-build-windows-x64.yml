@@ -10,23 +10,21 @@ on:
         required: true
         type: string
         default: none
-        description: 'none: build only, github: build and publish to github, cloudflare: build and publish to cloudflare'
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
       new_version:
         required: true
         type: string
         default: ''
-      cloudflare_r2_path:
+      aws_s3_prefix:
         required: false
         type: string
         default: '/latest/'
     secrets:
-      CLOUDFLARE_R2_BUCKET_NAME:
+      DELTA_AWS_S3_BUCKET_NAME:
         required: false
-      CLOUDFLARE_R2_ACCESS_KEY_ID:
+      DELTA_AWS_ACCESS_KEY_ID:
         required: false
-      CLOUDFLARE_R2_SECRET_ACCESS_KEY:
-        required: false
-      CLOUDFLARE_ACCOUNT_ID:
+      DELTA_AWS_SECRET_ACCESS_KEY:
         required: false
       AZURE_KEY_VAULT_URI:
         required: false
@@ -71,7 +69,7 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "bucket": "${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}", "region": "auto", "endpoint": "https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com", "path": "${{ inputs.cloudflare_r2_path }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "${{ inputs.aws_s3_prefix }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
           jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
@@ -99,7 +97,7 @@ jobs:
         run: |
           dotnet tool install --global AzureSignTool
 
-      - name: Build and publish app to cloudflare r2 or github artifactory
+      - name: Build and publish app to aws s3 r2 or github artifactory
         shell: bash
         if: inputs.public_provider != 'github'
         run: |
@@ -116,10 +114,11 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: "true"
+          AWS_MAX_ATTEMPTS: "5"
 
       - name: Build app and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
