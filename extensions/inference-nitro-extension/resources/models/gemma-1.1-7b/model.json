@@ -1,20 +1,20 @@
 {
   "sources": [
     {
-      "filename": "gemma-7b-it-q4_K_M.gguf",
-      "url": "https://huggingface.co/mmnga/gemma-7b-it-gguf/resolve/main/gemma-7b-it-q4_K_M.gguf"
+      "filename": "gemma-1.1-7b-it-q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/gemma-1.1-7b-it-GGUF/resolve/main/gemma-1.1-7b-it-Q4_K_M.gguf"
     }
   ],
-  "id": "gemma-7b",
+  "id": "gemma-1.1-7b-it",
   "object": "model",
-  "name": "Gemma 7B Q4",
+  "name": "Gemma 1.1 7B Q4",
   "version": "1.2",
   "description": "Google's Gemma is built for multilingual purpose",
   "format": "gguf",
   "settings": {
     "ctx_len": 8192,
     "prompt_template": "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model",
-    "llama_model_path": "gemma-7b-it-q4_K_M.gguf",
+    "llama_model_path": "gemma-1.1-7b-it-q4_K_M.gguf",
     "ngl": 29
   },
   "parameters": {
