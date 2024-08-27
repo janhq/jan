@@ -12,8 +12,8 @@ const codeninja7bJson = require('./resources/models/codeninja-1.0-7b/model.json'
 const commandr34bJson = require('./resources/models/command-r-34b/model.json')
 const deepseekCoder13bJson = require('./resources/models/deepseek-coder-1.3b/model.json')
 const deepseekCoder34bJson = require('./resources/models/deepseek-coder-34b/model.json')
-const gemma2bJson = require('./resources/models/gemma-2b/model.json')
-const gemma7bJson = require('./resources/models/gemma-7b/model.json')
+const gemma112bJson = require('./resources/models/gemma-1.1-2b/model.json')
+const gemma117bJson = require('./resources/models/gemma-1.1-7b/model.json')
 const llama2Chat70bJson = require('./resources/models/llama2-chat-70b/model.json')
 const llama2Chat7bJson = require('./resources/models/llama2-chat-7b/model.json')
 const llamacorn1bJson = require('./resources/models/llamacorn-1.1b/model.json')
@@ -42,6 +42,9 @@ const codestralJson = require('./resources/models/codestral-22b/model.json')
 const qwen2Json = require('./resources/models/qwen2-7b/model.json')
 const llama318bJson = require('./resources/models/llama3.1-8b-instruct/model.json')
 const llama3170bJson = require('./resources/models/llama3.1-70b-instruct/model.json')
+const gemma22bJson = require('./resources/models/gemma-2-2b/model.json')
+const gemma29bJson = require('./resources/models/gemma-2-9b/model.json')
+const gemma227bJson = require('./resources/models/gemma-2-27b/model.json')
 
 export default [
   {
@@ -61,8 +64,8 @@ export default [
           commandr34bJson,
           deepseekCoder13bJson,
           deepseekCoder34bJson,
-          gemma2bJson,
-          gemma7bJson,
+          gemma112bJson,
+          gemma117bJson,
           llama2Chat70bJson,
           llama2Chat7bJson,
           llamacorn1bJson,
@@ -91,6 +94,9 @@ export default [
           qwen2Json,
           llama318bJson,
           llama3170bJson,
+          gemma22bJson,
+          gemma29bJson,
+          gemma227bJson
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
