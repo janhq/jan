@@ -10,6 +10,8 @@ import { Badge, Button, Progress } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
@@ -114,16 +116,24 @@ const ModelDownloadRow: React.FC<Props> = ({
   }
 
   return (
-    <div className="flex flex-col gap-4 space-x-1 rounded border border-[hsla(var(--app-border))] p-3 md:flex-row md:items-center md:justify-between lg:w-[550px]">
-      <div className="flex">
-        {quantization && (
-          <Badge variant="soft" className="mr-1">
-            {quantization}
-          </Badge>
-        )}
-        <h1 className="mr-5 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]">
-          {fileName}
-        </h1>
+    <div className="flex flex-col gap-4 rounded border border-[hsla(var(--app-border))] p-3 md:flex-row md:items-center md:justify-between xl:w-full">
+      <div className="flex justify-between">
+        <div className="flex">
+          {quantization && (
+            <Badge variant="soft" className="mr-1">
+              {quantization}
+            </Badge>
+          )}
+          <h1
+            className={twMerge(
+              'mr-5 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]',
+              quantization && 'max-w-[25ch]'
+            )}
+            title={fileName}
+          >
+            {fileName}
+          </h1>
+        </div>
         <Badge theme="secondary" className="hidden md:flex">
           {toGibibytes(fileSize)}
         </Badge>
