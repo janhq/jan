@@ -159,35 +159,40 @@ const SystemMonitor = () => {
 
               {gpus.length > 0 && (
                 <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4 last:border-none">
-                  {gpus.map((gpu, index) => (
-                    <div key={index} className="mt-4 flex flex-col gap-x-2">
-                      <div className="flex w-full items-start justify-between">
-                        <span className="line-clamp-1 w-1/2 font-bold">
-                          {gpu.name}
-                        </span>
-                        <div className="flex gap-x-2">
-                          <div className="">
-                            <span>
-                              {gpu.memoryTotal - gpu.memoryFree}/
-                              {gpu.memoryTotal}
-                            </span>
-                            <span> MB</span>
+                  {gpus.map((gpu, index) => {
+                    const gpuUtilization = Math.round(
+                      (gpu.memoryFree / Math.max(gpu.memoryTotal, 1)) * 100
+                    )
+                    return (
+                      <div key={index} className="mt-4 flex flex-col gap-x-2">
+                        <div className="flex w-full items-start justify-between">
+                          <span className="line-clamp-1 w-1/2 font-bold">
+                            {gpu.name}
+                          </span>
+                          <div className="flex gap-x-2">
+                            <div className="">
+                              <span>
+                                {gpu.memoryTotal - gpu.memoryFree}/
+                                {gpu.memoryTotal}
+                              </span>
+                              <span> MB</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-x-4">
-                        <Progress
-                          value={gpu.utilization}
-                          className="w-full"
-                          size="small"
-                        />
-                        <span className="flex-shrink-0 ">
-                          {gpu.utilization}%
-                        </span>
+                        <div className="flex items-center gap-x-4">
+                          <Progress
+                            value={gpuUtilization}
+                            className="w-full"
+                            size="small"
+                          />
+                          <span className="flex-shrink-0 ">
+                            {gpuUtilization}%
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
