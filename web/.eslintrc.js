@@ -11,6 +11,9 @@ module.exports = {
     '_next',
     '*.md',
     'out',
+    '**/*.test.tsx',
+    '**/*.test.ts',
+    'testRunner.js',
   ],
   extends: [
     'next/core-web-vitals',
