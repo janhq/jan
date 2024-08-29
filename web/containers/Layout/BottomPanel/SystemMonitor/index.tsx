@@ -19,6 +19,8 @@ import { usePath } from '@/hooks/usePath'
 
 import { toGibibytes } from '@/utils/converter'
 
+import { utilizedMemory } from '@/utils/memory'
+
 import TableActiveModel from './TableActiveModel'
 
 import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
@@ -160,8 +162,9 @@ const SystemMonitor = () => {
               {gpus.length > 0 && (
                 <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4 last:border-none">
                   {gpus.map((gpu, index) => {
-                    const gpuUtilization = Math.round(
-                      (gpu.memoryFree / Math.max(gpu.memoryTotal, 1)) * 100
+                    const gpuUtilization = utilizedMemory(
+                      gpu.memoryFree,
+                      gpu.memoryTotal
                     )
                     return (
                       <div key={index} className="mt-4 flex flex-col gap-x-2">
