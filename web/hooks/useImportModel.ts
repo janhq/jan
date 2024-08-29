@@ -6,9 +6,7 @@ import {
   Model,
   ModelExtension,
   OptionType,
-  baseName,
   fs,
-  joinPath,
 } from '@janhq/core'
 
 import { atom, useSetAtom } from 'jotai'
