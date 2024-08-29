@@ -33,7 +33,7 @@ const ModelSegmentInfo = () => {
   if (!importingHuggingFaceRepoData) return null
 
   return (
-    <div className="flex w-full flex-col space-y-4">
+    <div className="flex w-full flex-col space-y-4 lg:w-1/3">
       <HeaderInfo title={'Model ID'}>
         <h1 className="font-medium text-zinc-500 dark:text-gray-300">
           {modelName}

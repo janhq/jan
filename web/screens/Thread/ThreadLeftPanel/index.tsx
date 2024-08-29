@@ -164,9 +164,9 @@ const ThreadLeftPanel = () => {
                   >
                     <PencilIcon
                       size={16}
-                      className="text-[hsla(var(--secondary))]"
+                      className="text-[hsla(var(--text-secondary))]"
                     />
-                    <span className="text-bold text-[hsla(var(--secondary))]">
+                    <span className="text-bold text-[hsla(var(--app-text-primary))]">
                       Edit title
                     </span>
                   </div>

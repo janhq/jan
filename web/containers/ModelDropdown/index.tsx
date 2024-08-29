@@ -299,7 +299,10 @@ const ModelDropdown = ({
           <Badge
             theme="secondary"
             variant={open ? 'solid' : 'outline'}
-            className="cursor-pointer"
+            className={twMerge(
+              'cursor-pointer',
+              open && 'border border-transparent'
+            )}
             onClick={() => setOpen(!open)}
           >
             <span className="line-clamp-1 ">{selectedModel?.name}</span>

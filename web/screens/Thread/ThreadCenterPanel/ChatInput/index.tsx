@@ -388,7 +388,11 @@ const ChatInput = () => {
               <ModelDropdown chatInputMode />
               <Badge
                 theme="secondary"
-                className="flex cursor-pointer items-center gap-x-1"
+                className={twMerge(
+                  'flex cursor-pointer items-center gap-x-1',
+                  activeTabThreadRightPanel === 'model' &&
+                    'border border-transparent'
+                )}
                 variant={
                   activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
                 }
