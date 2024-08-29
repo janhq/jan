@@ -181,7 +181,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     On-device Models
                   </h2>
                   <p
-                    className="cursor-pointer text-sm text-[hsla(var(--app-link))]"
+                    className="cursor-pointer text-sm text-[hsla(var(--text-secondary))]"
                     onClick={() => {
                       setMainViewState(MainViewState.Hub)
                     }}
