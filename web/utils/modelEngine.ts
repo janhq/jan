@@ -4,6 +4,7 @@ export const getLogoEngine = (engine: InferenceEngine) => {
   switch (engine) {
     case InferenceEngine.anthropic:
       return 'images/ModelProvider/anthropic.svg'
+    case InferenceEngine.nitro_tensorrt_llm:
     case InferenceEngine.nitro:
       return 'images/ModelProvider/nitro.svg'
     case InferenceEngine.cortex_llamacpp:
@@ -43,6 +44,8 @@ export const getTitleByEngine = (engine: InferenceEngine) => {
   switch (engine) {
     case InferenceEngine.nitro:
       return 'Llama.cpp (Nitro)'
+    case InferenceEngine.nitro_tensorrt_llm:
+      return 'TensorRT-LLM (Nitro)'
     case InferenceEngine.cortex_llamacpp:
       return 'Llama.cpp (Cortex)'
     case InferenceEngine.cortex_onnx:

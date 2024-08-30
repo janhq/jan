@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2015",
     "lib": ["dom", "dom.iterable", "esnext"],
-    "typeRoots": ["node_modules/@types", "./src/types"],
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types",
+      "../node_modules/@types/jest"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -25,5 +29,5 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "**/*.test.ts"]
 }
