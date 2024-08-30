@@ -20,7 +20,7 @@ body:
       required: true
     attributes:
       label: "Background"
-      description: "Briefly describe the context or problem that led to this feature request
+      description: "Briefly describe the context or problem that led to this feature request"
       placeholder: |
         I'm always frustrated when ...
 
