@@ -19,8 +19,8 @@ body:
     validations:
       required: true
     attributes:
-      label: "Is your feature request related to a problem? Please describe it"
-      description: "A clear and concise description of what the problem is"
+      label: "Background"
+      description: "Briefly describe the context or problem that led to this feature request
       placeholder: |
         I'm always frustrated when ...
 
@@ -28,17 +28,15 @@ body:
     validations:
       required: true
     attributes:
-      label: "Describe the solution"
-      description: "Description of what you want to happen. Add any considered drawbacks"
+      label: "Feature request"
+      description: "Clearly describe the feature or improvement you're proposing"
 
   - type: textarea
     attributes:
-      label: "Teachability, documentation, adoption, migration strategy"
-      description: "Explain how users will be able to use this and possibly write out something for the docs. Maybe a screenshot or design?"
+      label: "Proposed Implementation"
+      description: "If you have ideas on how this could be implemented, describe them here"
 
   - type: textarea
-    validations:
-      required: true
     attributes:
-      label: "What is the motivation / use case for changing the behavior?"
-      description: "Describe the motivation or the concrete use case"
+      label: "Additional Notes"
+      description: "Any other relevant information, considerations, or screenshots"
