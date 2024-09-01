@@ -234,6 +234,7 @@ const ModelDropdown = ({
       isModelSupportRagAndTools,
       setThreadModelParams,
       updateModelParameter,
+      updateThreadMetadata,
       preserveModelSettings,
     ]
   )
