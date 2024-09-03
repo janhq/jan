@@ -11,18 +11,15 @@ import ChatItem from '../ChatItem'
 
 import LoadModelError from '../LoadModelError'
 
-import EmptyModel from './EmptyModel'
 import EmptyThread from './EmptyThread'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const ChatBody = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
   const loadModelError = useAtomValue(loadModelErrorAtom)
 
-  if (!downloadedModels.length) return <EmptyModel />
   if (!messages.length) return <EmptyThread />
 
   return (
