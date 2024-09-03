@@ -29,6 +29,7 @@ export enum InferenceEngine {
   cortex_llamacpp = 'cortex.llamacpp',
   cortex_onnx = 'cortex.onnx',
   cortex_tensorrtllm = 'cortex.tensorrt-llm',
+  featherless = 'featherless',
 }
 
 export type ModelArtifact = {

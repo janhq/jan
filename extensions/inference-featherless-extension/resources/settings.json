@@ -1,0 +1,34 @@
+[
+  {
+    "key": "featherless-api-key",
+    "title": "API Key",
+    "description": "The Featherless API uses API keys for authentication. Visit your [API Keys](https://featherless.ai/account/api-keys) page to retrieve the API key you'll use in your requests.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Insert API Key",
+      "value": "",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
+    }
+  },
+  {
+    "key": "chat-completions-endpoint",
+    "title": "Chat Completions Endpoint",
+    "description": "The endpoint to use for chat completions. See the [documentation](https://featherless.ai/docs) for more information.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "https://api.featherless.ai/v1/chat/completions",
+      "value": "https://api.featherless.ai/v1/chat/completions"
+    }
+  },
+  {
+    "key": "featherless-model",
+    "title": "Model",
+    "description": "Choose a model at [Featherless](https://featherless.ai/models)",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "choose a model at https://featherless.ai/models",
+      "value": "Sao10K/L3-8B-Stheno-v3.2"
+    }
+  }
+]
