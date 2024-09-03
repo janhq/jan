@@ -59,7 +59,7 @@ export const getTitleByEngine = (engine: InferenceEngine) => {
     case InferenceEngine.openrouter:
       return 'OpenRouter'
     case InferenceEngine.featherless:
-      return 'featherless'
+      return 'Featherless'
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1)
   }

@@ -25,7 +25,7 @@ enum Settings {
  */
 export default class JanInferenceFeatherlessExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'featherless'
+  provider: string = 'Featherless'
   model?: string | undefined
 
   override async onLoad(): Promise<void> {

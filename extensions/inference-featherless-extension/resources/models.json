@@ -7,9 +7,9 @@
     ],
     "id": "featherless-auto",
     "object": "model",
-    "name": "featherless",
+    "name": "Featherless",
     "version": "1.0",
-    "description": "featherless lets you access all of huggingfaces models through their api",
+    "description": "Featherless lets you access all of huggingfaces models through their api",
     "format": "api",
     "settings": {},
     "parameters": {
@@ -23,6 +23,6 @@
       "author": "Featherless",
       "tags": ["General", "Big Context Length"]
     },
-    "engine": "featherless"
+    "engine": "Featherless"
   }
 ]
