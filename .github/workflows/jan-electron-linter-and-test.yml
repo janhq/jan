@@ -362,7 +362,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           lcov-file: "./coverage/lcov.info"
-          base-lcov-file: "./ref-lcov.info"
+          base-lcov-file: "./lcov.info"
           send-summary-comment: true
           show-annotations: "warning"
 
