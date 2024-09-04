@@ -3,6 +3,7 @@ import { app, Menu, shell, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { log } from '@janhq/core/node'
 const isMac = process.platform === 'darwin'
+import { windowManager } from '../managers/window'
 
 const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
   {
@@ -43,6 +44,14 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
       { role: 'hide' },
       { role: 'hideOthers' },
       { role: 'unhide' },
+      {
+        label: `Settings`,
+        accelerator: 'CmdOrCtrl+,',
+        click: () => {
+          windowManager.showMainWindow()
+          windowManager.sendMainViewState('Settings')
+        },
+      },
       { type: 'separator' },
       { role: 'quit' },
     ],
