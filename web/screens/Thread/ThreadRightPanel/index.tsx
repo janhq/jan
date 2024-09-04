@@ -221,8 +221,8 @@ const ThreadRightPanel = () => {
           <Accordion defaultValue={[]}>
             {settings.runtimeSettings.length !== 0 && (
               <AccordionItem
-                title="Inference Parameters"
-                value="Inference Parameters"
+                title="Inference Settings"
+                value="Inference Settings"
               >
                 <ModelSetting
                   componentProps={settings.runtimeSettings}
@@ -232,16 +232,13 @@ const ThreadRightPanel = () => {
             )}
 
             {promptTemplateSettings.length !== 0 && (
-              <AccordionItem title="Model Parameters" value="Model Parameters">
+              <AccordionItem title="Model Settings" value="Model Settings">
                 <PromptTemplateSetting componentData={promptTemplateSettings} />
               </AccordionItem>
             )}
 
             {settings.engineSettings.length !== 0 && (
-              <AccordionItem
-                title="Engine Parameters"
-                value="Engine Parameters"
-              >
+              <AccordionItem title="Engine Settings" value="Engine Settings">
                 <EngineSetting
                   componentData={settings.engineSettings}
                   onValueChanged={onValueChanged}
