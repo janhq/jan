@@ -140,6 +140,7 @@ const ThreadLeftPanel = () => {
                 className={twMerge(
                   `group/icon text-[hsla(var(--text-secondary)] invisible absolute right-1 top-1/2 z-20 -translate-y-1/2 rounded-md px-0.5 group-hover/message:visible`
                 )}
+                data-testid="thread-menu"
               >
                 <Button theme="icon" className="mt-2">
                   <MoreHorizontalIcon />
@@ -154,6 +155,7 @@ const ThreadLeftPanel = () => {
                 >
                   <div
                     className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                    data-testid="btn-edit-title"
                     onClick={(e) => {
                       setModalActionThread({
                         showModal: ThreadModalAction.EditTitle,
@@ -172,6 +174,7 @@ const ThreadLeftPanel = () => {
                   </div>
                   <div
                     className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                    data-testid="btn-clean-thread"
                     onClick={(e) => {
                       setModalActionThread({
                         showModal: ThreadModalAction.Clean,
@@ -190,6 +193,7 @@ const ThreadLeftPanel = () => {
                   </div>
                   <div
                     className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                    data-testid="btn-delete-thread"
                     onClick={(e) => {
                       setModalActionThread({
                         showModal: ThreadModalAction.Delete,

@@ -51,7 +51,10 @@ export function toaster(props: Props) {
           <div className="relative flex w-full items-start gap-x-3">
             <div className="mt-1">{renderIcon(type)}</div>
             <div>
-              <h1 className="font-medium text-[hsla(var(--toaster-text-title))]">
+              <h1
+                className="font-medium text-[hsla(var(--toaster-text-title))]"
+                data-testid={`toaster-${props.type}-${props.title}`}
+              >
                 {title}
               </h1>
               <p className="mt-1 text-[hsla(var(--toaster-text-desc))]">

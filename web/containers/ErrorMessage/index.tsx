@@ -98,6 +98,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         <div
           key={message.id}
           className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--text-secondary))]"
+          data-testid="error-message"
         >
           {getErrorTitle()}
           <p>

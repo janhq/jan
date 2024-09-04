@@ -1,6 +1,6 @@
 import { Page, expect } from '@playwright/test'
 import { CommonActions } from './commonActions'
-import { TIMEOUT } from '../config/fixtures'
+import { page, TIMEOUT } from '../config/fixtures'
 
 export class BasePage {
   menuId: string
@@ -50,5 +50,12 @@ export class BasePage {
         isVisible = false
       })
     return isVisible
+  }
+
+  async waitLoadersCompleted() {
+    await page.waitForFunction(() => {
+      const loaders = document.querySelectorAll('[data-testid$="loader"]')
+      return !loaders.length
+    }, { timeout: TIMEOUT })
   }
 }

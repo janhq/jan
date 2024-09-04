@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import { page, test, TIMEOUT } from '../config/fixtures'
 
-test('Select GPT model from Hub and Chat with Invalid API Key', async ({ hubPage }) => {
+test('Select Use GPT model from Hub and Chat with Invalid API Key', async ({ hubPage }) => {
   await hubPage.navigateByMenu()
   await hubPage.verifyContainerVisible()
 
@@ -23,13 +23,49 @@ test('Select GPT model from Hub and Chat with Invalid API Key', async ({ hubPage
     .getByTestId('btn-send-chat')
     .click()
 
-  await page.waitForFunction(() => {
-    const loaders = document.querySelectorAll('[data-testid$="loader"]');
-    return !loaders.length;
-  }, { timeout: TIMEOUT });
+  await hubPage.waitLoadersCompleted()
 
   const APIKeyError = page.getByTestId('invalid-API-key-error')
   await expect(APIKeyError).toBeVisible({
     timeout: TIMEOUT,
   })
+})
+
+test('Select User local model from Hub and Chat', async ({ hubPage }) => {
+  await hubPage.navigateByMenu()
+  await hubPage.verifyContainerVisible()
+
+  // Select the first GPT model
+  await page
+    .locator('[data-testid^="use-model-btn"][data-testid*="tinyllama"]')
+    .first().click()
+
+  await page
+    .getByTestId('txt-input-chat')
+    .fill('How many r\'s in strawberry?')
+
+  await page
+    .getByTestId('btn-send-chat')
+    .click()
+
+  await expect(page.locator('[data-testid^="toaster-"]')).toBeVisible()
+
+  await hubPage.waitLoadersCompleted()
+
+  await expect(page.getByTestId('error-message')).not.toBeVisible({
+    timeout: TIMEOUT,
+  })
+})
+
+test('Thread dropdown option should be visible', async () => {
+
+  await page.getByTestId('thread-menu').first().hover({ force: true })
+
+  await expect(page.getByTestId('btn-edit-title').first()).toBeVisible()
+  await expect(page.getByTestId('btn-clean-thread').first()).toBeVisible()
+  await expect(page.getByTestId('btn-delete-thread').first()).toBeVisible()
+
+  // await expect(page.getByTestId('"toaster-"')).toBeVisible({
+  //   timeout: 1,
+  // })
 })
