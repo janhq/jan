@@ -19,7 +19,8 @@
   },
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace @janhq/web lint",
-    "test:unit": "yarn workspace @janhq/core test",
+    "test:unit": "jest",
+    "test:coverage": "jest --coverage --collectCoverageFrom='src/**/*.{ts,tsx}'",
     "test": "yarn workspace jan test:e2e",
     "test-local": "yarn lint && yarn build:test && yarn test",
     "pre-install:darwin": "find extensions -type f -path \"**/*.tgz\" -exec cp {} pre-install \\;",
