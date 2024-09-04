@@ -42,3 +42,4 @@ extensions/*-extension/bin/vulkaninfo
 electron/test-data
 electron/test-results
 core/test_results.html
+coverage

@@ -37,6 +37,30 @@ on:
       - '!README.md'
 
 jobs:
+
+  base_branch_cov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.base_ref }}
+      - name: Use Node.js v20.9.0
+        uses: actions/setup-node@v3
+        with:
+          node-version: v20.9.0
+
+      - name: Install dependencies
+        run: yarn
+
+      - name: Run test coverage
+        run: yarn test:coverage
+
+      - name: Upload code coverage for ref branch
+        uses: actions/upload-artifact@v3
+        with:
+          name: ref-lcov.info
+          path: ./coverage/lcov.info
+
   test-on-macos:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, macOS, macos-desktop]
@@ -247,6 +271,7 @@ jobs:
 
   test-on-ubuntu:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
+    needs: base_branch_cov
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
@@ -291,6 +316,16 @@ jobs:
           TURBO_API: '${{ secrets.TURBO_API }}'
           TURBO_TEAM: 'linux'
           TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
+
+      - name: Generate Code Coverage report
+        id: code-coverage
+        uses: barecheck/code-coverage-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          lcov-file: "./coverage/lcov.info"
+          base-lcov-file: "./lcov.info"
+          send-summary-comment: true
+          show-annotations: "warning"
 
   test-on-ubuntu-pr-target:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
