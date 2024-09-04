@@ -39,6 +39,10 @@ import {
 
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
+const INFERENCE_SETTINGS = 'Inference Settings'
+const MODEL_SETTINGS = 'Model Settings'
+const ENGINE_SETTINGS = 'Engine Settings'
+
 const ThreadRightPanel = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
@@ -221,8 +225,8 @@ const ThreadRightPanel = () => {
           <Accordion defaultValue={[]}>
             {settings.runtimeSettings.length !== 0 && (
               <AccordionItem
-                title="Inference Settings"
-                value="Inference Settings"
+                title={INFERENCE_SETTINGS}
+                value={INFERENCE_SETTINGS}
               >
                 <ModelSetting
                   componentProps={settings.runtimeSettings}
@@ -232,13 +236,13 @@ const ThreadRightPanel = () => {
             )}
 
             {promptTemplateSettings.length !== 0 && (
-              <AccordionItem title="Model Settings" value="Model Settings">
+              <AccordionItem title={MODEL_SETTINGS} value={MODEL_SETTINGS}>
                 <PromptTemplateSetting componentData={promptTemplateSettings} />
               </AccordionItem>
             )}
 
             {settings.engineSettings.length !== 0 && (
-              <AccordionItem title="Engine Settings" value="Engine Settings">
+              <AccordionItem title={ENGINE_SETTINGS} value={ENGINE_SETTINGS}>
                 <EngineSetting
                   componentData={settings.engineSettings}
                   onValueChanged={onValueChanged}
