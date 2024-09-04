@@ -1,4 +1,3 @@
-// @auto-generated
 import { Downloader } from './download';
 import { DownloadEvent } from '../../../types/api';
 import { DownloadManager } from '../../helper/download';
@@ -19,7 +18,7 @@ it('should handle getFileSize errors correctly', async () => {
 
 it('should pause download correctly', () => {
   const observer = jest.fn();
-  const fileName = 'path/to/file';
+  const fileName = process.platform === 'win32' ? 'C:\\path\\to\\file' : 'path/to/file';
 
   const downloader = new Downloader(observer);
   const pauseMock = jest.fn();
@@ -30,10 +29,9 @@ it('should pause download correctly', () => {
   expect(pauseMock).toHaveBeenCalled();
 });
 
-
 it('should resume download correctly', () => {
   const observer = jest.fn();
-  const fileName = 'path/to/file';
+  const fileName = process.platform === 'win32' ? 'C:\\path\\to\\file' : 'path/to/file';
 
   const downloader = new Downloader(observer);
   const resumeMock = jest.fn();
@@ -44,10 +42,9 @@ it('should resume download correctly', () => {
   expect(resumeMock).toHaveBeenCalled();
 });
 
-
 it('should handle aborting a download correctly', () => {
   const observer = jest.fn();
-  const fileName = 'path/to/file';
+  const fileName = process.platform === 'win32' ? 'C:\\path\\to\\file' : 'path/to/file';
 
   const downloader = new Downloader(observer);
   const abortMock = jest.fn();

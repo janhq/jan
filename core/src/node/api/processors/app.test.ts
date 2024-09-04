@@ -1,33 +1,32 @@
-// @auto-generated
 import { App } from './app';
 
-it('should stop server', () => {
+it('should call stopServer', () => {
   const app = new App();
-  const stopServerMock = jest.fn();
+  const stopServerMock = jest.fn().mockResolvedValue('Server stopped');
   jest.mock('@janhq/server', () => ({
-    stopServer: stopServerMock,
+    stopServer: stopServerMock
   }));
-  app.stopServer();
+  const result = app.stopServer();
   expect(stopServerMock).toHaveBeenCalled();
 });
 
-
-it('should retrieve basename correctly', () => {
+it('should correctly retrieve basename', () => {
   const app = new App();
   const result = app.baseName('/path/to/file.txt');
   expect(result).toBe('file.txt');
 });
 
-
-it('should identify subdirectories correctly', async () => {
+it('should correctly identify subdirectories', () => {
   const app = new App();
-  const result = await app.isSubdirectory('/path/to', '/path/to/subdir');
+  const basePath = process.platform === 'win32' ? 'C:\\path\\to' : '/path/to';
+  const subPath = process.platform === 'win32' ? 'C:\\path\\to\\subdir' : '/path/to/subdir';
+  const result = app.isSubdirectory(basePath, subPath);
   expect(result).toBe(true);
 });
 
-
-it('should join multiple paths correctly', () => {
+it('should correctly join multiple paths', () => {
   const app = new App();
   const result = app.joinPath(['path', 'to', 'file']);
-  expect(result).toBe('path/to/file');
+  const expectedPath = process.platform === 'win32' ? 'path\\to\\file' : 'path/to/file';
+  expect(result).toBe(expectedPath);
 });
