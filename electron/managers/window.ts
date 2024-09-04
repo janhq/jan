@@ -151,7 +151,7 @@ class WindowManager {
   }
 
   /**
-   * Try to send the deep linkto the main app.
+   * Try to send the deep link to the main app.
    */
   sendMainAppDeepLink(url: string): void {
     this.deeplink = url
@@ -166,6 +166,9 @@ class WindowManager {
     }, 500)
   }
 
+  /**
+   *  Send main view state to the main app.
+   */
   sendMainViewState(route: string) {
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(AppEvent.onMainViewStateChange, route)
