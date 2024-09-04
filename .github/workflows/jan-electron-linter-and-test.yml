@@ -358,6 +358,8 @@ jobs:
           echo -e "Display ID: $DISPLAY"
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
+          make lint
+          yarn build:test
           yarn test:coverage
         env:
           TURBO_API: '${{ secrets.TURBO_API }}'
