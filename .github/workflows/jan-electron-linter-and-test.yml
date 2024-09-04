@@ -337,20 +337,10 @@ jobs:
           rm -rf ~/jan
           make clean
 
-      - name: Get Commit Message for PR
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}}" >> $GITHUB_ENV
-
-      - name: Get Commit Message for push event
-        if: github.event_name == 'push'
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
-
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Linux" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
+      - name: Download code coverage report from base branch
+        uses: actions/download-artifact@v3
+        with:
+          name: ref-lcov.info
 
       - name: Linter and test coverage
         run: |
