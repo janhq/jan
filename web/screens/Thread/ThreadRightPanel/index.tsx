@@ -1,6 +1,10 @@
 import { memo, useCallback, useMemo } from 'react'
 
-import { SettingComponentProps, SliderComponentProps } from '@janhq/core/.'
+import {
+  InferenceEngine,
+  SettingComponentProps,
+  SliderComponentProps,
+} from '@janhq/core'
 import {
   Tabs,
   TabsContent,
@@ -24,6 +28,7 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
+import { localEngines } from '@/utils/modelEngine'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import PromptTemplateSetting from './PromptTemplateSetting'
@@ -48,6 +53,10 @@ const ThreadRightPanel = () => {
   )
   const { updateThreadMetadata } = useCreateNewThread()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
+
+  const isModelSupportRagAndTools =
+    selectedModel?.engine === InferenceEngine.openai ||
+    localEngines.includes(selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()
@@ -189,7 +198,16 @@ const ThreadRightPanel = () => {
         options={[
           { name: 'Assistant', value: 'assistant' },
           { name: 'Model', value: 'model' },
-          ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
+          ...(experimentalFeature
+            ? [
+                {
+                  name: 'Tools',
+                  value: 'tools',
+                  disabled: !isModelSupportRagAndTools,
+                  tooltipContent: 'Not supported for this model',
+                },
+              ]
+            : []),
         ]}
         value={activeTabThreadRightPanel as string}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}

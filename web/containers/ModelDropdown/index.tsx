@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import Image from 'next/image'
 
-import { InferenceEngine } from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import {
   Badge,
   Button,
@@ -28,6 +28,7 @@ import ModelLabel from '@/containers/ModelLabel'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
@@ -92,6 +93,8 @@ const ModelDropdown = ({
   )
   const preserveModelSettings = useAtomValue(preserveModelSettingsAtom)
 
+  const { updateThreadMetadata } = useCreateNewThread()
+
   useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [
     dropdownOptions,
     toggle,
@@ -100,6 +103,13 @@ const ModelDropdown = ({
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
   )
+
+  const isModelSupportRagAndTools = useCallback((model: Model) => {
+    return (
+      model?.engine === InferenceEngine.openai ||
+      localEngines.includes(model?.engine as InferenceEngine)
+    )
+  }, [])
 
   const filteredDownloadedModels = useMemo(
     () =>
@@ -161,6 +171,26 @@ const ModelDropdown = ({
       setOpen(false)
 
       if (activeThread) {
+        // Change assistand tools based on model support RAG
+        updateThreadMetadata({
+          ...activeThread,
+          assistants: [
+            {
+              ...activeThread.assistants[0],
+              tools: [
+                {
+                  type: 'retrieval',
+                  enabled: isModelSupportRagAndTools(model as Model),
+                  settings: {
+                    ...(activeThread.assistants[0].tools &&
+                      activeThread.assistants[0].tools[0]?.settings),
+                  },
+                },
+              ],
+            },
+          ],
+        })
+
         // Default setting ctx_len for the model for a better onboarding experience
         // TODO: When Cortex support hardware instructions, we should remove this
         const defaultContextLength = preserveModelSettings
@@ -201,8 +231,10 @@ const ModelDropdown = ({
       downloadedModels,
       activeThread,
       setSelectedModel,
+      isModelSupportRagAndTools,
       setThreadModelParams,
       updateModelParameter,
+      updateThreadMetadata,
       preserveModelSettings,
     ]
   )
