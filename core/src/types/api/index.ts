@@ -55,6 +55,7 @@ export enum AppEvent {
   onSelectedText = 'onSelectedText',
 
   onDeepLink = 'onDeepLink',
+  onMainViewStateChange = 'onMainViewStateChange',
 }
 
 export enum DownloadRoute {
