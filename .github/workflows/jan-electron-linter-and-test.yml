@@ -91,6 +91,11 @@ jobs:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
 
+      - name: 'Prepare models.json'
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
+
       - name: Get Commit Message for PR
         if: github.event_name == 'pull_request'
         run: |
@@ -143,6 +148,11 @@ jobs:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
 
+      - name: 'Prepare models.json'
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
+
       - name: Linter and test
         run: |
           npm config set registry https://registry.npmjs.org --global
@@ -188,6 +198,12 @@ jobs:
         with:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
+
+      - name: 'Prepare models.json'
+        shell: bash
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
 
       - name: Get Commit Message for push event
         if: github.event_name == 'push'
@@ -243,6 +259,12 @@ jobs:
         with:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
+
+      - name: 'Prepare models.json'
+        shell: bash
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
 
       - name: Get Commit Message for PR
         if: github.event_name == 'pull_request'
@@ -300,6 +322,12 @@ jobs:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
 
+      - name: 'Prepare models.json'
+        shell: bash
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
+
       - name: Linter and test
         shell: powershell
         run: |
@@ -333,6 +361,11 @@ jobs:
         with:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
+
+      - name: 'Prepare models.json'
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
 
       - name: Get Commit Message for PR
         if: github.event_name == 'pull_request'
@@ -437,6 +470,11 @@ jobs:
         with:
           url: "http://minio.jan.ai:9000/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
           target: electron/test-data/models/tinyllama-1.1b/
+
+      - name: 'Prepare models.json'
+        continue-on-error: true
+        run: |
+          cp extensions/inference-nitro-extension/resources/models/tinyllama-1.1b/model.json electron/test-data/models/tinyllama-1.1b/
 
       - name: Linter and test
         run: |
