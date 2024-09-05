@@ -195,7 +195,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         </div>
         {messages[messages.length - 1]?.id === props.id &&
           (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
-            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
+            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]"
+              data-testid="token-speed"
+            >
               Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
             </p>
           )}
