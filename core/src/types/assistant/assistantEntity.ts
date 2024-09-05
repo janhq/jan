@@ -12,7 +12,7 @@ export type AssistantTool = {
 
 export type Assistant = {
   /** Represents the avatar of the user. */
-  avatar: string
+  avatar?: string
   /** Represents the location of the thread. */
   thread_location: string | undefined
   /** Represents the unique identifier of the object. */

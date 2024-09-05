@@ -32,6 +32,7 @@ export type ThreadAssistantInfo = {
   model: ModelInfo
   instructions?: string
   tools?: AssistantTool[]
+  avatar?: string
 }
 
 /**

@@ -1,4 +1,7 @@
+/* eslint-disable jsx-a11y/alt-text */
 import { memo, useCallback, useMemo } from 'react'
+
+import Image from 'next/image'
 
 import {
   InferenceEngine,
@@ -11,9 +14,11 @@ import {
   TextArea,
   Accordion,
   AccordionItem,
+  Input,
 } from '@janhq/joi'
-
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+
+import { UploadIcon } from 'lucide-react'
 
 import CopyOverInstruction from '@/containers/CopyInstruction'
 import EngineSetting from '@/containers/EngineSetting'
@@ -150,6 +155,44 @@ const ThreadRightPanel = () => {
     [activeThread, updateThreadMetadata]
   )
 
+  const onAssistantNameChanged = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (activeThread)
+        updateThreadMetadata({
+          ...activeThread,
+          assistants: [
+            {
+              ...activeThread.assistants[0],
+              assistant_name: e.target.value || '',
+            },
+          ],
+        })
+    },
+    [activeThread, updateThreadMetadata]
+  )
+
+  const onAssistantAvatarChanged = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (activeThread && e.target.files && e.target.files[0]) {
+        const file = e.target.files[0]
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          updateThreadMetadata({
+            ...activeThread,
+            assistants: [
+              {
+                ...activeThread.assistants[0],
+                avatar: reader.result as string,
+              },
+            ],
+          })
+        }
+        reader.readAsDataURL(file)
+      }
+    },
+    [activeThread, updateThreadMetadata]
+  )
+
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
       if (!activeThread) {
@@ -196,6 +239,8 @@ const ThreadRightPanel = () => {
     return null
   }
 
+  const avatar = activeThread?.assistants[0].avatar
+
   return (
     <RightPanelContainer>
       <Tabs
@@ -217,7 +262,62 @@ const ThreadRightPanel = () => {
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}
       >
         <TabsContent value="assistant">
-          <div className="flex flex-col space-y-4 p-4">
+          <div className="flex flex-col gap-4 px-4">
+            <div className="mt-4">
+              <label className="inline-block font-bold">Avatar</label>
+              <div className="relative mt-2 h-16 w-16">
+                {avatar ? (
+                  <Image
+                    src={avatar}
+                    alt="avatar"
+                    width={100}
+                    height={100}
+                    className="absolute h-full w-full rounded-full object-cover object-center"
+                    priority
+                  />
+                ) : (
+                  <Image
+                    src={'/icons/app_icon.svg'}
+                    alt="avatar"
+                    width={100}
+                    height={100}
+                    className="absolute h-full w-full rounded-full border border-[hsla(var(--app-border))] object-cover object-center p-2"
+                    priority
+                  />
+                )}
+                <div className="absolute -bottom-2 -right-2 flex h-7 w-7 rounded-full border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow">
+                  <label
+                    htmlFor="avatar-upload"
+                    className="flex h-full w-full cursor-pointer items-center justify-center"
+                  >
+                    <UploadIcon
+                      size={14}
+                      className="text-[hsla(var(--text-secondary))]"
+                    />
+                  </label>
+                  <input
+                    id="avatar-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={onAssistantAvatarChanged}
+                  />
+                </div>
+              </div>
+            </div>
+            <div>
+              <label
+                id="assistant-instructions"
+                className="mb-2 inline-block font-bold"
+              >
+                Name
+              </label>
+              <Input
+                id="assistant-name"
+                value={activeThread?.assistants[0].assistant_name ?? ''}
+                onChange={onAssistantNameChanged}
+              />
+            </div>
             <div>
               <label
                 id="assistant-instructions"
