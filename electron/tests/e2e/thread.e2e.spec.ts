@@ -22,6 +22,10 @@ test('Select User local model from Hub and Chat', async ({ hubPage }) => {
 
   await hubPage.waitLoadersCompleted()
 
+  await expect(page.getByTestId('btn-stop-chat')).not.toBeVisible({
+    timeout: TIMEOUT,
+  })
+
   await expect(page.getByTestId('error-message')).not.toBeVisible({
     timeout: TIMEOUT,
   })

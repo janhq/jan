@@ -373,6 +373,7 @@ const ChatInput = () => {
                 theme="destructive"
                 onClick={onStopInferenceClick}
                 className="h-8 w-8 rounded-lg p-0"
+                data-testid="btn-stop-chat"
               >
                 <StopCircle size={20} />
               </Button>
