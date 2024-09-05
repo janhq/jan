@@ -1,5 +1,3 @@
-// @auto-generated
-
 import { openExternalUrl } from './core';
 import { joinPath } from './core';
 import { openFileExplorer } from './core';

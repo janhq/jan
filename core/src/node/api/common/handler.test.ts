@@ -1,4 +1,3 @@
-// @auto-generated
 import { CoreRoutes } from '../../../types/api';
 import { RequestHandler } from './handler';
 import { RequestAdapter } from './adapter';

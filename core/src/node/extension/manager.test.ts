@@ -1,4 +1,3 @@
-// @auto-generated
 import * as fs from 'fs';
 import { join } from 'path';
 import { ExtensionManager } from './manager';

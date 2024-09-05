@@ -1,4 +1,3 @@
-// @auto-generated
 import Extension from './extension';
 import { join } from 'path';
 import 'pacote';

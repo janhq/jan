@@ -1,5 +1,5 @@
-// @auto-generated
 import { getAllExtensions } from './store';
+import { getActiveExtensions } from './store';
 import { getExtension } from './store';
 
 test('should return empty array when no extensions added', () => {
@@ -26,3 +26,18 @@ test('should return all extensions when multiple extensions added', () => {
   expect(getAllExtensions()).toEqual([ext1, ext2]);
 });
 
+
+
+test('should return only active extensions', () => {
+  const ext1 = new Extension('ext1');
+  ext1.name = 'ext1';
+  ext1.setActive(true);
+  const ext2 = new Extension('ext2');
+  ext2.name = 'ext2';
+  ext2.setActive(false);
+
+  addExtension(ext1, false);
+  addExtension(ext2, false);
+
+  expect(getActiveExtensions()).toEqual([ext1]);
+});

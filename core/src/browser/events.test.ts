@@ -1,5 +1,3 @@
-// @auto-generated
-
 import { events } from './events';
 import { jest } from '@jest/globals';
 

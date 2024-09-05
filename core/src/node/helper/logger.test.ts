@@ -1,4 +1,3 @@
-// @auto-generated
 import { Logger, LoggerManager } from './logger';
 
   it('should flush queued logs to registered loggers', () => {

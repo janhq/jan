@@ -30,3 +30,11 @@ it('should correctly join multiple paths', () => {
   const expectedPath = process.platform === 'win32' ? 'path\\to\\file' : 'path/to/file';
   expect(result).toBe(expectedPath);
 });
+
+it('should call correct function with provided arguments using process method', () => {
+  const app = new App();
+  const mockFunc = jest.fn();
+  app.joinPath = mockFunc;
+  app.process('joinPath', ['path1', 'path2']);
+  expect(mockFunc).toHaveBeenCalledWith(['path1', 'path2']);
+});

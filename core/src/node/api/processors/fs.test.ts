@@ -1,4 +1,3 @@
-// @auto-generated
 import { FileSystem } from './fs';
 
 it('should throw an error when the route does not exist in process', async () => {

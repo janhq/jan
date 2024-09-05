@@ -1,4 +1,3 @@
-// @auto-generated
 import { FSExt } from './fsExt';
 import { defaultAppConfig } from '../../helper';
 
@@ -25,3 +24,11 @@ it('should return correct user home path', () => {
   expect(userHomePath).toBe(defaultAppConfig().data_folder);
 });
 
+
+
+it('should return empty array when no files are provided', async () => {
+  const fsExt = new FSExt();
+  const result = await fsExt.getGgufFiles([]);
+  expect(result.supportedFiles).toEqual([]);
+  expect(result.unsupportedFiles).toEqual([]);
+});

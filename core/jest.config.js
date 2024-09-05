@@ -4,5 +4,5 @@ module.exports = {
   moduleNameMapper: {
     '@/(.*)': '<rootDir>/src/$1',
   },
-  runner: './testRunner.js'
+  runner: './testRunner.js',
 }

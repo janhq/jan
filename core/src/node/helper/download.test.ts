@@ -1,4 +1,3 @@
-// @auto-generated
 import { DownloadManager } from './download';
 
 it('should set a network request for a specific file', () => {

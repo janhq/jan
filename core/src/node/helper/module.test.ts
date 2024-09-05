@@ -1,4 +1,3 @@
-// @auto-generated
 import { ModuleManager } from './module';
 
 it('should clear all imported modules', () => {

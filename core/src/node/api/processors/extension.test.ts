@@ -1,4 +1,3 @@
-// @auto-generated
 import { Extension } from './extension';
 
 it('should call function associated with key in process method', () => {

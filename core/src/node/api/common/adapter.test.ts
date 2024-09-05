@@ -1,4 +1,3 @@
-// @auto-generated
 import { RequestAdapter } from './adapter';
 
 it('should return undefined for unknown route', () => {

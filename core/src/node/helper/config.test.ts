@@ -1,4 +1,3 @@
-// @auto-generated
 import { getEngineConfiguration } from './config';
 import { getAppConfigurations, defaultAppConfig } from './config';
 
