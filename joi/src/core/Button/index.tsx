@@ -7,7 +7,7 @@ import { twMerge } from 'tailwind-merge'
 
 import './styles.scss'
 
-const buttonVariants = cva('btn', {
+export const buttonConfig = {
   variants: {
     theme: {
       primary: 'btn--primary',
@@ -30,12 +30,13 @@ const buttonVariants = cva('btn', {
     },
   },
   defaultVariants: {
-    theme: 'primary',
-    size: 'medium',
-    variant: 'solid',
-    block: false,
+    theme: 'primary' as const,
+    size: 'medium' as const,
+    variant: 'solid' as const,
+    block: false as const,
   },
-})
+}
+const buttonVariants = cva('btn', buttonConfig)
 
 export interface ButtonProps
   extends ButtonHTMLAttributes<HTMLButtonElement>,
