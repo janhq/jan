@@ -124,7 +124,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onRegenerateClick}
-              data-testid="btn-copy-msg"
+              data-testid="btn-regenerate-msg"
             >
               <Tooltip
                 trigger={

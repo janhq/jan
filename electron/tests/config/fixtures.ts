@@ -19,7 +19,9 @@ import { CommonActions } from '../pages/commonActions'
 export let electronApp: ElectronApplication
 export let page: Page
 export let appInfo: ElectronAppInfo
+let context: BrowserContext
 export const TIMEOUT = parseInt(process.env.TEST_TIMEOUT || Constants.TIMEOUT)
+const TRACE_PATH = Constants.TRACE_DIR + 'trace.zip'
 
 export async function setupElectron() {
   console.log(`TEST TIMEOUT: ${TIMEOUT}`)
@@ -100,11 +102,14 @@ export const test = base.extend<
       if (testInfo.status !== testInfo.expectedStatus) {
         await commonActions.takeScreenshot('')
       }
+
+      await context.tracing.stopChunk({ path: TRACE_PATH })
+      await testInfo.attach('trace', { path: TRACE_PATH })
     },
     { auto: true },
   ],
-  
 })
+
 
 test.beforeAll(async () => {
   test.setTimeout(TIMEOUT)
@@ -112,6 +117,11 @@ test.beforeAll(async () => {
   await page.waitForSelector('img[alt="Jan - Logo"]', {
     state: 'visible',
     timeout: TIMEOUT,
+  })
+  context = electronApp.context()
+  await context.tracing.start({ screenshots: true, snapshots: true })
+  page.on('close', async () => {
+    await context.tracing.stop()
   })
 })
 

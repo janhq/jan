@@ -14,6 +14,7 @@ test('Select User local model from Hub and Chat', async ({ hubPage }) => {
     .getByTestId('txt-input-chat')
     .fill('How many r\'s in strawberry?')
 
+  // send chat
   await page
     .getByTestId('btn-send-chat')
     .click()
@@ -32,19 +33,39 @@ test('Select User local model from Hub and Chat', async ({ hubPage }) => {
     timeout: TIMEOUT,
   })
 
-  await expect(page.getByTestId('btn-copy-msg')).toBeVisible({ timeout: TIMEOUT })
+  await expect(page.getByTestId('btn-regenerate-msg')).toBeVisible({ timeout: TIMEOUT })
 
   const text = await page.getByTestId('lbl-token-speed').textContent()
   const tokenSpeed = parseFloat(text.match(/\d+(\.\d+)?/)[0])
   // Assertion to check if token speed is higher than 3 t/s
   expect(tokenSpeed).toBeGreaterThan(3)
 
-  await page.getByTestId('btn-copy-msg').click()
+  let apiRequest
+  await page.route('**/inferences/server/chat_completion', route => {
+    apiRequest = route.request()
+    route.continue()
+  })
+
+  await page.getByTestId('btn-regenerate-msg').click()
+
+  await page.waitForResponse('**/inferences/server/chat_completion')
 
   await hubPage.waitLoadersCompleted()
 
   await expect(page.getByTestId('error-message')).not.toBeVisible({
     timeout: TIMEOUT,
+  })
+
+  // Verify API request payload
+  const requestBody = JSON.parse(await apiRequest.postData())
+  expect(requestBody).toMatchObject({
+    'engine': 'cortex.llamacpp',
+    'frequency_penalty': 0,
+    'max_tokens': 2048,
+    'presence_penalty': 0,
+    'stream': true,
+    'temperature': 0.7,
+    'top_p': 0.95,
   })
 })
 
