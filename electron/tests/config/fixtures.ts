@@ -101,10 +101,9 @@ export const test = base.extend<
       // After the test, we can check whether the test passed or failed.
       if (testInfo.status !== testInfo.expectedStatus) {
         await commonActions.takeScreenshot('')
+        await context.tracing.stopChunk({ path: TRACE_PATH })
+        await testInfo.attach('trace', { path: TRACE_PATH })
       }
-
-      await context.tracing.stopChunk({ path: TRACE_PATH })
-      await testInfo.attach('trace', { path: TRACE_PATH })
     },
     { auto: true },
   ],
@@ -123,6 +122,11 @@ test.beforeAll(async () => {
   page.on('close', async () => {
     await context.tracing.stop()
   })
+})
+
+test.beforeEach(async () => {
+  // start chunk before each test
+  await context.tracing.startChunk()
 })
 
 test.afterAll(async () => {
