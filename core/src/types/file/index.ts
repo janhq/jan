@@ -16,7 +16,7 @@ export type DownloadState = {
 
   error?: string
   extensionId?: string
-  downloadType?: DownloadType
+  downloadType?: DownloadType | string
   localPath?: string
 }
 
@@ -40,7 +40,7 @@ export type DownloadRequest = {
    */
   extensionId?: string
 
-  downloadType?: DownloadType
+  downloadType?: DownloadType | string
 }
 
 type DownloadTime = {

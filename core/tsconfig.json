@@ -16,4 +16,5 @@
     "types": ["@types/jest"],
   },
   "include": ["src"],
+  "exclude": ["**/*.test.ts"]
 }
