@@ -2,7 +2,7 @@ import React, { Fragment, useState } from 'react'
 
 import Image from 'next/image'
 
-import { InferenceEngine } from '@janhq/core/.'
+import { InferenceEngine } from '@janhq/core'
 import { Button, Input, Progress, ScrollArea } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'

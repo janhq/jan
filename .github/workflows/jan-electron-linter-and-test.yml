@@ -40,6 +40,7 @@ jobs:
 
   base_branch_cov:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v3
         with:
@@ -50,7 +51,9 @@ jobs:
           node-version: v20.9.0
 
       - name: Install dependencies
-        run: yarn
+        run: |
+          yarn
+          yarn build:core
 
       - name: Run test coverage
         run: yarn test:coverage
