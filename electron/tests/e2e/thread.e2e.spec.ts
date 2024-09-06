@@ -18,7 +18,9 @@ test('Select User local model from Hub and Chat', async ({ hubPage }) => {
     .getByTestId('btn-send-chat')
     .click()
 
-  await expect(page.locator('[data-testid^="toaster-"]')).toBeVisible()
+  await expect(page.locator('[data-testid^="toaster-"]')).toBeVisible({
+    timeout: TIMEOUT,
+  })
 
   await hubPage.waitLoadersCompleted()
 
@@ -30,14 +32,14 @@ test('Select User local model from Hub and Chat', async ({ hubPage }) => {
     timeout: TIMEOUT,
   })
 
-  await expect(page.getByTestId('regenerate-msg')).toBeVisible({ timeout: TIMEOUT })
+  await expect(page.getByTestId('btn-copy-msg')).toBeVisible({ timeout: TIMEOUT })
 
-  const text = await page.getByTestId('token-speed').textContent()
+  const text = await page.getByTestId('lbl-token-speed').textContent()
   const tokenSpeed = parseFloat(text.match(/\d+(\.\d+)?/)[0])
   // Assertion to check if token speed is higher than 3 t/s
   expect(tokenSpeed).toBeGreaterThan(3)
 
-  await page.getByTestId('regenerate-msg').click()
+  await page.getByTestId('btn-copy-msg').click()
 
   await hubPage.waitLoadersCompleted()
 

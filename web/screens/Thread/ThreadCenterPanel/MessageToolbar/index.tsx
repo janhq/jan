@@ -103,7 +103,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onEditClick}
-              data-testid="edit-msg"
+              data-testid="btn-edit-msg"
             >
               <Tooltip
                 trigger={
@@ -124,7 +124,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onRegenerateClick}
-              data-testid="regenerate-msg"
+              data-testid="btn-copy-msg"
             >
               <Tooltip
                 trigger={
@@ -143,7 +143,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           onClick={() => {
             clipboard.copy(message.content[0]?.text?.value ?? '')
           }}
-          data-testid="copy-msg"
+          data-testid="btn-copy-msg"
         >
           {clipboard.copied ? (
             <CheckIcon size={14} className="text-[hsla(var(--success-bg))]" />
@@ -162,7 +162,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
         <div
           className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
           onClick={onDeleteClick}
-          data-testid="delete-msg"
+          data-testid="btn-delete-msg"
         >
           <Tooltip
             trigger={
