@@ -73,6 +73,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     this.registerModels(models)
     super.onLoad()
 
+    // Add additional dependencies PATH to the env
     executeOnMain(NODE, 'addAdditionalDependencies', {
       name: this.name,
       version: this.version,
