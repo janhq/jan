@@ -226,7 +226,16 @@ const ChatInput = () => {
                         )}
                         {activeThread?.assistants[0].tools &&
                           activeThread?.assistants[0].tools[0]?.enabled ===
-                            false && <span>Not supported for this model</span>}
+                            false &&
+                          isModelSupportRagAndTools && (
+                            <span>
+                              Turn on Retrieval in Tools settings to use this
+                              feature
+                            </span>
+                          )}
+                        {!isModelSupportRagAndTools && (
+                          <span>Not supported for this model</span>
+                        )}
                       </>
                     ))}
               </>
