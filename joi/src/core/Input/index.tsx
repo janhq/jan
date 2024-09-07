@@ -42,7 +42,7 @@ const Input = forwardRef<HTMLInputElement, Props>(
         )}
         {clearable && (
           <div className="input__clear-icon" onClick={onClear}>
-            <Cross2Icon className="text-red-200" />
+            <Cross2Icon data-testid="cross-2-icon" className="text-red-200" />
           </div>
         )}
         <input
