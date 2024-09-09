@@ -16,5 +16,5 @@ body:
     validations:
       required: true
     attributes:
-      label: "Feature Description"
+      label: "Feature Idea"
       description: "Describe what you want instead. Examples are welcome!"
