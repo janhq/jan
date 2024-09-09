@@ -1,6 +1,10 @@
 import { memo, useCallback, useMemo } from 'react'
 
-import { SettingComponentProps, SliderComponentProps } from '@janhq/core/.'
+import {
+  InferenceEngine,
+  SettingComponentProps,
+  SliderComponentProps,
+} from '@janhq/core'
 import {
   Tabs,
   TabsContent,
@@ -24,6 +28,7 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
+import { localEngines } from '@/utils/modelEngine'
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
 import PromptTemplateSetting from './PromptTemplateSetting'
@@ -39,6 +44,10 @@ import {
 
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
+const INFERENCE_SETTINGS = 'Inference Settings'
+const MODEL_SETTINGS = 'Model Settings'
+const ENGINE_SETTINGS = 'Engine Settings'
+
 const ThreadRightPanel = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
@@ -48,6 +57,10 @@ const ThreadRightPanel = () => {
   )
   const { updateThreadMetadata } = useCreateNewThread()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
+
+  const isModelSupportRagAndTools =
+    selectedModel?.engine === InferenceEngine.openai ||
+    localEngines.includes(selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()
@@ -189,7 +202,16 @@ const ThreadRightPanel = () => {
         options={[
           { name: 'Assistant', value: 'assistant' },
           { name: 'Model', value: 'model' },
-          ...(experimentalFeature ? [{ name: 'Tools', value: 'tools' }] : []),
+          ...(experimentalFeature
+            ? [
+                {
+                  name: 'Tools',
+                  value: 'tools',
+                  disabled: !isModelSupportRagAndTools,
+                  tooltipContent: 'Not supported for this model',
+                },
+              ]
+            : []),
         ]}
         value={activeTabThreadRightPanel as string}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}
@@ -221,8 +243,8 @@ const ThreadRightPanel = () => {
           <Accordion defaultValue={[]}>
             {settings.runtimeSettings.length !== 0 && (
               <AccordionItem
-                title="Inference Parameters"
-                value="Inference Parameters"
+                title={INFERENCE_SETTINGS}
+                value={INFERENCE_SETTINGS}
               >
                 <ModelSetting
                   componentProps={settings.runtimeSettings}
@@ -232,16 +254,13 @@ const ThreadRightPanel = () => {
             )}
 
             {promptTemplateSettings.length !== 0 && (
-              <AccordionItem title="Model Parameters" value="Model Parameters">
+              <AccordionItem title={MODEL_SETTINGS} value={MODEL_SETTINGS}>
                 <PromptTemplateSetting componentData={promptTemplateSettings} />
               </AccordionItem>
             )}
 
             {settings.engineSettings.length !== 0 && (
-              <AccordionItem
-                title="Engine Parameters"
-                value="Engine Parameters"
-              >
+              <AccordionItem title={ENGINE_SETTINGS} value={ENGINE_SETTINGS}>
                 <EngineSetting
                   componentData={settings.engineSettings}
                   onValueChanged={onValueChanged}

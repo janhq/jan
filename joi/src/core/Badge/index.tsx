@@ -6,7 +6,7 @@ import { twMerge } from 'tailwind-merge'
 
 import './styles.scss'
 
-const badgeVariants = cva('badge', {
+export const badgeConfig = {
   variants: {
     theme: {
       primary: 'badge--primary',
@@ -28,11 +28,13 @@ const badgeVariants = cva('badge', {
     },
   },
   defaultVariants: {
-    theme: 'primary',
-    size: 'medium',
-    variant: 'solid',
+    theme: 'primary' as const,
+    size: 'medium' as const,
+    variant: 'solid' as const,
   },
-})
+}
+
+const badgeVariants = cva('badge', badgeConfig)
 
 export interface BadgeProps
   extends HTMLAttributes<HTMLDivElement>,

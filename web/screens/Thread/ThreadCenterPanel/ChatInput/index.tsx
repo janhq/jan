@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { MessageStatus } from '@janhq/core'
+import { InferenceEngine, MessageStatus } from '@janhq/core'
 
 import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
@@ -24,12 +24,15 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
+import { localEngines } from '@/utils/modelEngine'
+
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeSettingInputBoxAtom,
@@ -53,6 +56,7 @@ const ChatInput = () => {
     activeSettingInputBoxAtom
   )
   const { sendChatMessage } = useSendChatMessage()
+  const selectedModel = useAtomValue(selectedModelAtom)
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
@@ -123,6 +127,10 @@ const ChatInput = () => {
   const onStopInferenceClick = async () => {
     stopInference()
   }
+
+  const isModelSupportRagAndTools =
+    selectedModel?.engine === InferenceEngine.openai ||
+    localEngines.includes(selectedModel?.engine as InferenceEngine)
 
   /**
    * Handles the change event of the extension file input element by setting the file name state.
@@ -198,6 +206,7 @@ const ChatInput = () => {
               </Button>
             }
             disabled={
+              isModelSupportRagAndTools &&
               activeThread?.assistants[0].tools &&
               activeThread?.assistants[0].tools[0]?.enabled
             }
@@ -217,12 +226,16 @@ const ChatInput = () => {
                         )}
                         {activeThread?.assistants[0].tools &&
                           activeThread?.assistants[0].tools[0]?.enabled ===
-                            false && (
+                            false &&
+                          isModelSupportRagAndTools && (
                             <span>
-                              Turn on Retrieval in Assistant Settings to use
-                              this feature.
+                              Turn on Retrieval in Tools settings to use this
+                              feature
                             </span>
                           )}
+                        {!isModelSupportRagAndTools && (
+                          <span>Not supported for this model</span>
+                        )}
                       </>
                     ))}
               </>
