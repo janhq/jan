@@ -5,7 +5,7 @@ labels: 'type: model request'
 body:
   - type: markdown
     attributes:
-      value: "**Tip:** Download any model by HuggingFace URL in the app hub's search bar. Use this form for unsupported models only."
+      value: "**Tip:** Download any HuggingFace model in app ([see guides](https://jan.ai/docs/models/manage-models#add-models)). Use this form for unsupported models only."
   - type: textarea
     validations:
       required: true
