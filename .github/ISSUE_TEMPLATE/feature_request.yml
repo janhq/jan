@@ -1,26 +1,14 @@
 name: "\U0001F680 Feature Request"
 description: "Suggest an idea for this project \U0001F63B!"
-title: 'feat: [DESCRIPTION]'
+title: 'idea: [DESCRIPTION]'
 labels: 'type: feature request'
 body:
-  - type: markdown
-    attributes:
-      value: "Thanks for taking the time to fill out this form!"
-
-  - type: checkboxes
-    attributes:
-      label: "#"
-      description: "Please search [here](./?q=is%3Aissue) to see if an issue already exists for the feature you are requesting"
-      options:
-        - label: "I have searched the existing issues"
-          required: false
-
   - type: textarea
     validations:
       required: true
     attributes:
-      label: "Background"
-      description: "Briefly describe the context or problem that led to this feature request"
+      label: "Problem Statement"
+      description: "Describe the problem you're facing"
       placeholder: |
         I'm always frustrated when ...
 
@@ -28,15 +16,5 @@ body:
     validations:
       required: true
     attributes:
-      label: "Feature request"
-      description: "Clearly describe the feature or improvement you're proposing"
-
-  - type: textarea
-    attributes:
-      label: "Proposed Implementation"
-      description: "If you have ideas on how this could be implemented, describe them here"
-
-  - type: textarea
-    attributes:
-      label: "Additional Notes"
-      description: "Any other relevant information, considerations, or screenshots"
+      label: "Feature Idea"
+      description: "Describe what you want instead. Examples are welcome!"
