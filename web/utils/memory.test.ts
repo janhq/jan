@@ -1,5 +1,3 @@
-// @auto-generated
-
 import { utilizedMemory } from './memory'
 
 test('test_utilizedMemory_arbitraryValues', () => {

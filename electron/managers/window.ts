@@ -166,6 +166,15 @@ class WindowManager {
     }, 500)
   }
 
+  /**
+   *  Send main view state to the main app.
+   */
+  sendMainViewState(route: string) {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send(AppEvent.onMainViewStateChange, route)
+    }
+  }
+
   cleanUp(): void {
     if (!this.mainWindow?.isDestroyed()) {
       this.mainWindow?.close()
