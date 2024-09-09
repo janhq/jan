@@ -15,7 +15,7 @@ if [ "$OS_TYPE" == "Linux" ]; then
     ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.25/cortex.llamacpp-0.1.25-linux-amd64"
 
     # Download engines for Linux
-    download "${ENGINE_DOWNLOAD_URL}-noavx.tar.gz"  -e --strip 1 -o "./bin/linux/engines/cortex.llamacpp" 1
+    download "${ENGINE_DOWNLOAD_URL}-noavx.tar.gz"  -e --strip 1 -o "./bin/linux-noavx/engines/cortex.llamacpp" 1
     download "${ENGINE_DOWNLOAD_URL}-avx.tar.gz"  -e --strip 1 -o "./bin/linux-avx/engines/cortex.llamacpp" 1
     download "${ENGINE_DOWNLOAD_URL}-avx2.tar.gz"  -e --strip 1 -o "./bin/linux-avx2/engines/cortex.llamacpp" 1
     download "${ENGINE_DOWNLOAD_URL}-avx512.tar.gz"  -e --strip 1 -o "./bin/linux-avx512/engines/cortex.llamacpp" 1
