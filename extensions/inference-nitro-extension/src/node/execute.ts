@@ -42,7 +42,7 @@ const os = (): string => {
 }
 
 /**
- * The cortex-cpp extension based on the current platform.
+ * The cortex.cpp extension based on the current platform.
  * @returns .exe if on Windows, otherwise an empty string.
  */
 const extension = (): '.exe' | '' => {
