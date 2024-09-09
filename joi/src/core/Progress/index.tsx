@@ -27,7 +27,14 @@ export interface ProgressProps
 
 const Progress = ({ className, size, value, ...props }: ProgressProps) => {
   return (
-    <div className={twMerge(progressVariants({ size, className }))} {...props}>
+    <div
+      role="progressbar"
+      aria-valuenow={value}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      className={twMerge(progressVariants({ size, className }))}
+      {...props}
+    >
       <div
         style={{ transform: `translateX(-${100 - (value || 0)}%)` }}
         className="progress--indicator"

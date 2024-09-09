@@ -6,12 +6,18 @@ import { Button, buttonConfig } from './index'
 // Mock the styles
 jest.mock('./styles.scss', () => ({}))
 
-describe('Button', () => {
+describe('@joi/core/Button', () => {
   it('renders with default props', () => {
     render(<Button>Click me</Button>)
     const button = screen.getByRole('button', { name: /click me/i })
     expect(button).toBeInTheDocument()
     expect(button).toHaveClass('btn btn--primary btn--medium btn--solid')
+  })
+
+  it('applies custom className', () => {
+    render(<Button className="custom-class">Test Button</Button>)
+    const badge = screen.getByText('Test Button')
+    expect(badge).toHaveClass('custom-class')
   })
 
   it('renders as a child component when asChild is true', () => {
@@ -58,11 +64,27 @@ describe('Button', () => {
     expect(button).toHaveClass('btn btn--block')
   })
 
-  it('merges custom className with generated classes', () => {
-    render(<Button className="custom-class">Custom Class Button</Button>)
-    const button = screen.getByRole('button', { name: /custom class button/i })
-    expect(button).toHaveClass(
-      'btn btn--primary btn--medium btn--solid custom-class'
-    )
+  it('fails when a new theme is added without updating the test', () => {
+    const expectedThemes = ['primary', 'ghost', 'icon', 'destructive']
+    const actualThemes = Object.keys(buttonConfig.variants.theme)
+    expect(actualThemes).toEqual(expectedThemes)
+  })
+
+  it('fails when a new variant is added without updating the test', () => {
+    const expectedVariant = ['solid', 'soft', 'outline']
+    const actualVariants = Object.keys(buttonConfig.variants.variant)
+    expect(actualVariants).toEqual(expectedVariant)
+  })
+
+  it('fails when a new size is added without updating the test', () => {
+    const expectedSizes = ['small', 'medium', 'large']
+    const actualSizes = Object.keys(buttonConfig.variants.size)
+    expect(actualSizes).toEqual(expectedSizes)
+  })
+
+  it('fails when a new variant CVA is added without updating the test', () => {
+    const expectedVariantsCVA = ['theme', 'variant', 'size', 'block']
+    const actualVariant = Object.keys(buttonConfig.variants)
+    expect(actualVariant).toEqual(expectedVariantsCVA)
   })
 })

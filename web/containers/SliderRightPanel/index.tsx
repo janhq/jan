@@ -51,7 +51,7 @@ const SliderRightPanel = ({
           <Slider
             value={[value]}
             onValueChange={(e) => {
-              onValueChanged?.(e[0])
+              onValueChanged?.(Number(e[0]))
               setVal(e[0].toString())
             }}
             min={min}
@@ -87,7 +87,7 @@ const SliderRightPanel = ({
                 }
               }}
               onChange={(e) => {
-                onValueChanged?.(e.target.value)
+                onValueChanged?.(Number(e.target.value))
                 if (/^\d*\.?\d*$/.test(e.target.value)) {
                   setVal(e.target.value)
                 }
