@@ -60,19 +60,19 @@ describe('Modal', () => {
   })
 
   it('calls onOpenChange when opening and closing the modal', () => {
-    const onOpenChange = jest.fn()
+    const onOpenChangeMock = jest.fn()
     render(
       <Modal
         trigger={<button>Open Modal</button>}
         content={<div>Modal Content</div>}
-        onOpenChange={onOpenChange}
+        onOpenChange={onOpenChangeMock}
       />
     )
 
     fireEvent.click(screen.getByText('Open Modal'))
-    expect(onOpenChange).toHaveBeenCalledWith(true)
+    expect(onOpenChangeMock).toHaveBeenCalledWith(true)
 
     fireEvent.click(screen.getByLabelText('Close'))
-    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(onOpenChangeMock).toHaveBeenCalledWith(false)
   })
 })
