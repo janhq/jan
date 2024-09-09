@@ -1,11 +1,11 @@
 name: "\U0001F929 Model Request"
-description: "Request a new model to be compiled and added to the Hub"
+description: "Request a new model to be compiled"
 title: 'feat: [DESCRIPTION]'
 labels: 'type: model request'
 body:
   - type: markdown
     attributes:
-      value: "**Tip:** you can download any GGUF model from HuggingFace by pasting its ID in the Hub's search bar."
+      value: "**Tip:** Download any model by HuggingFace URL in the app hub's search bar. Use this form for unsupported models only."
   - type: textarea
     validations:
       required: true
