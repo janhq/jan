@@ -14,7 +14,10 @@ import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 
-import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+import {
+  extractRuntimeParams,
+  extractModelLoadParams,
+} from '@/utils/modelParam'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
@@ -27,16 +30,18 @@ const LocalServerRightPanel = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const [currentModelSettingParams, setCurrentModelSettingParams] = useState(
-    toSettingParams(selectedModel?.settings)
+    extractModelLoadParams(selectedModel?.settings)
   )
 
   useEffect(() => {
     if (selectedModel) {
-      setCurrentModelSettingParams(toSettingParams(selectedModel?.settings))
+      setCurrentModelSettingParams(
+        extractModelLoadParams(selectedModel?.settings)
+      )
     }
   }, [selectedModel])
 
-  const modelRuntimeParams = toRuntimeParams(selectedModel?.settings)
+  const modelRuntimeParams = extractRuntimeParams(selectedModel?.settings)
 
   const componentDataRuntimeSetting = getConfigurationsData(
     modelRuntimeParams,

@@ -97,7 +97,7 @@ function unloadModel(): Promise<void> {
   }
 
   if (subprocess?.pid) {
-    log(`[CORTEX]::Debug: Killing PID ${subprocess.pid}`)
+    log(`[CORTEX]:: Killing PID ${subprocess.pid}`)
     const pid = subprocess.pid
     return new Promise((resolve, reject) => {
       terminate(pid, function (err) {
@@ -107,7 +107,7 @@ function unloadModel(): Promise<void> {
           return tcpPortUsed
             .waitUntilFree(parseInt(ENGINE_PORT), PORT_CHECK_INTERVAL, 5000)
             .then(() => resolve())
-            .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
+            .then(() => log(`[CORTEX]:: cortex process is terminated`))
             .catch(() => {
               killRequest()
             })

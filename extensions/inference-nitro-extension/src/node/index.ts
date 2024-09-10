@@ -227,7 +227,7 @@ function loadLLMModel(settings: any): Promise<Response> {
   if (!settings?.ngl) {
     settings.ngl = 100
   }
-  log(`[CORTEX]::Debug: Loading model with params ${JSON.stringify(settings)}`)
+  log(`[CORTEX]:: Loading model with params ${JSON.stringify(settings)}`)
   return fetchRetry(NITRO_HTTP_LOAD_MODEL_URL, {
     method: 'POST',
     headers: {
@@ -239,7 +239,7 @@ function loadLLMModel(settings: any): Promise<Response> {
   })
     .then((res) => {
       log(
-        `[CORTEX]::Debug: Load model success with response ${JSON.stringify(
+        `[CORTEX]:: Load model success with response ${JSON.stringify(
           res
         )}`
       )
@@ -260,7 +260,7 @@ function loadLLMModel(settings: any): Promise<Response> {
 async function validateModelStatus(modelId: string): Promise<void> {
   // Send a GET request to the validation URL.
   // Retry the request up to 3 times if it fails, with a delay of 500 milliseconds between retries.
-  log(`[CORTEX]::Debug: Validating model ${modelId}`)
+  log(`[CORTEX]:: Validating model ${modelId}`)
   return fetchRetry(NITRO_HTTP_VALIDATE_MODEL_URL, {
     method: 'POST',
     body: JSON.stringify({
@@ -275,7 +275,7 @@ async function validateModelStatus(modelId: string): Promise<void> {
     retryDelay: 300,
   }).then(async (res: Response) => {
     log(
-      `[CORTEX]::Debug: Validate model state with response ${JSON.stringify(
+      `[CORTEX]:: Validate model state with response ${JSON.stringify(
         res.status
       )}`
     )
@@ -286,7 +286,7 @@ async function validateModelStatus(modelId: string): Promise<void> {
       // Otherwise, return an object with an error message.
       if (body.model_loaded) {
         log(
-          `[CORTEX]::Debug: Validate model state success with response ${JSON.stringify(
+          `[CORTEX]:: Validate model state success with response ${JSON.stringify(
             body
           )}`
         )
@@ -295,7 +295,7 @@ async function validateModelStatus(modelId: string): Promise<void> {
     }
     const errorBody = await res.text()
     log(
-      `[CORTEX]::Debug: Validate model state failed with response ${errorBody} and status is ${JSON.stringify(
+      `[CORTEX]:: Validate model state failed with response ${errorBody} and status is ${JSON.stringify(
         res.statusText
       )}`
     )
@@ -310,7 +310,7 @@ async function validateModelStatus(modelId: string): Promise<void> {
 async function killSubprocess(): Promise<void> {
   const controller = new AbortController()
   setTimeout(() => controller.abort(), 5000)
-  log(`[CORTEX]::Debug: Request to kill cortex`)
+  log(`[CORTEX]:: Request to kill cortex`)
 
   const killRequest = () => {
     return fetch(NITRO_HTTP_KILL_URL, {
@@ -321,17 +321,17 @@ async function killSubprocess(): Promise<void> {
       .then(() =>
         tcpPortUsed.waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
       )
-      .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
+      .then(() => log(`[CORTEX]:: cortex process is terminated`))
       .catch((err) => {
         log(
-          `[CORTEX]::Debug: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
+          `[CORTEX]:: Could not kill running process on port ${PORT}. Might be another process running on the same port? ${err}`
         )
         throw 'PORT_NOT_AVAILABLE'
       })
   }
 
   if (subprocess?.pid && process.platform !== 'darwin') {
-    log(`[CORTEX]::Debug: Killing PID ${subprocess.pid}`)
+    log(`[CORTEX]:: Killing PID ${subprocess.pid}`)
     const pid = subprocess.pid
     return new Promise((resolve, reject) => {
       terminate(pid, function (err) {
@@ -341,7 +341,7 @@ async function killSubprocess(): Promise<void> {
         } else {
           tcpPortUsed
             .waitUntilFree(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 5000)
-            .then(() => log(`[CORTEX]::Debug: cortex process is terminated`))
+            .then(() => log(`[CORTEX]:: cortex process is terminated`))
             .then(() => resolve())
             .catch(() => {
               log(
@@ -362,7 +362,7 @@ async function killSubprocess(): Promise<void> {
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
 function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
-  log(`[CORTEX]::Debug: Spawning cortex subprocess...`)
+  log(`[CORTEX]:: Spawning cortex subprocess...`)
 
   return new Promise<void>(async (resolve, reject) => {
     let executableOptions = executableNitroFile(
@@ -381,7 +381,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
     const args: string[] = ['1', LOCAL_HOST, PORT.toString()]
     // Execute the binary
     log(
-      `[CORTEX]::Debug: Spawn cortex at path: ${executableOptions.executablePath}, and args: ${args}`
+      `[CORTEX]:: Spawn cortex at path: ${executableOptions.executablePath}, and args: ${args}`
     )
     log(`[CORTEX]::Debug: Cortex engine path: ${executableOptions.enginePath}`)
 
@@ -415,7 +415,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
 
     // Handle subprocess output
     subprocess.stdout.on('data', (data: any) => {
-      log(`[CORTEX]::Debug: ${data}`)
+      log(`[CORTEX]:: ${data}`)
     })
 
     subprocess.stderr.on('data', (data: any) => {
@@ -423,7 +423,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
     })
 
     subprocess.on('close', (code: any) => {
-      log(`[CORTEX]::Debug: cortex exited with code: ${code}`)
+      log(`[CORTEX]:: cortex exited with code: ${code}`)
       subprocess = undefined
       reject(`child process exited with code ${code}`)
     })
@@ -431,7 +431,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
     tcpPortUsed
       .waitUntilUsed(PORT, NITRO_PORT_FREE_CHECK_INTERVAL, 30000)
       .then(() => {
-        log(`[CORTEX]::Debug: cortex is ready`)
+        log(`[CORTEX]:: cortex is ready`)
         resolve()
       })
   })

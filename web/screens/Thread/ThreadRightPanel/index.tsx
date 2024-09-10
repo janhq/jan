@@ -29,7 +29,10 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { localEngines } from '@/utils/modelEngine'
-import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+import {
+  extractRuntimeParams,
+  extractModelLoadParams,
+} from '@/utils/modelParam'
 
 import PromptTemplateSetting from './PromptTemplateSetting'
 import Tools from './Tools'
@@ -68,14 +71,14 @@ const ThreadRightPanel = () => {
 
   const settings = useMemo(() => {
     // runtime setting
-    const modelRuntimeParams = toRuntimeParams(activeModelParams)
+    const modelRuntimeParams = extractRuntimeParams(activeModelParams)
     const componentDataRuntimeSetting = getConfigurationsData(
       modelRuntimeParams,
       selectedModel
     ).filter((x) => x.key !== 'prompt_template')
 
     // engine setting
-    const modelEngineParams = toSettingParams(activeModelParams)
+    const modelEngineParams = extractModelLoadParams(activeModelParams)
     const componentDataEngineSetting = getConfigurationsData(
       modelEngineParams,
       selectedModel
@@ -126,7 +129,7 @@ const ThreadRightPanel = () => {
   }, [activeModelParams, selectedModel])
 
   const promptTemplateSettings = useMemo(() => {
-    const modelEngineParams = toSettingParams(activeModelParams)
+    const modelEngineParams = extractModelLoadParams(activeModelParams)
     const componentDataEngineSetting = getConfigurationsData(
       modelEngineParams,
       selectedModel
