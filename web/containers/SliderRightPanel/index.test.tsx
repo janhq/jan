@@ -1,7 +1,6 @@
 import React from 'react'
 import { render } from '@testing-library/react'
-import { fireEvent } from '@testing-library/dom'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, screen } from '@testing-library/dom'
 import SliderRightPanel from './index'
 import '@testing-library/jest-dom'
 
@@ -12,6 +11,27 @@ class ResizeObserverMock {
 }
 
 global.ResizeObserver = ResizeObserverMock
+
+jest.mock('@radix-ui/react-slider', () => ({
+  Root: ({ children, onValueChange, ...props }: any) => (
+    <div data-testid="slider-root" {...props}>
+      <input
+        data-testid="slider-input"
+        type="number"
+        {...props}
+        onChange={(e: any) =>
+          onValueChange && onValueChange([parseInt(e.target.value)])
+        }
+      />
+      {children}
+    </div>
+  ),
+  Track: ({ children }: any) => (
+    <div data-testid="slider-track">{children}</div>
+  ),
+  Range: () => <div data-testid="slider-range" />,
+  Thumb: () => <div data-testid="slider-thumb" />,
+}))
 
 describe('SliderRightPanel', () => {
   const defaultProps = {
@@ -26,11 +46,10 @@ describe('SliderRightPanel', () => {
   }
 
   it('renders correctly with given props', () => {
-    const { getByText, getByRole } = render(
+    const { getByText } = render(
       <SliderRightPanel {...defaultProps} />
     )
     expect(getByText('Test Slider')).toBeInTheDocument()
-    expect(getByRole('slider')).toBeInTheDocument()
   })
 
   it('calls onValueChanged with correct value when input is changed', () => {
@@ -39,10 +58,14 @@ describe('SliderRightPanel', () => {
 
     const input = getByRole('textbox')
     fireEvent.change(input, { target: { value: '75' } })
-    userEvent.tab()
-    fireEvent.blur(input)
-    fireEvent.focusOut(input)
-    fireEvent.mouseUp(input)
+    expect(defaultProps.onValueChanged).toHaveBeenCalledWith(75)
+  })
+
+  it('calls onValueChanged with correct value when slider is changed', () => {
+    defaultProps.onValueChanged = jest.fn()
+
+    const input = screen.getByTestId('slider-input')
+    fireEvent.change(input, { target: { value: '75' } })
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(75)
   })
 
@@ -51,10 +74,7 @@ describe('SliderRightPanel', () => {
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
     const input = getByRole('textbox')
     fireEvent.change(input, { target: { value: '150' } })
-    userEvent.tab()
-    fireEvent.blur(input)
     fireEvent.focusOut(input)
-    fireEvent.mouseUp(input)
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(100)
   })
 
@@ -63,10 +83,7 @@ describe('SliderRightPanel', () => {
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
     const input = getByRole('textbox')
     fireEvent.change(input, { target: { value: '0' } })
-    userEvent.tab()
-    fireEvent.blur(input)
     fireEvent.focusOut(input)
-    fireEvent.mouseUp(input)
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(0)
   })
 
@@ -77,6 +94,4 @@ describe('SliderRightPanel', () => {
     fireEvent.change(input, { target: { value: 'invalid' } })
     expect(defaultProps.onValueChanged).not.toHaveBeenCalledWith(0)
   })
-
-  // TODO: Add slider tests
 })
