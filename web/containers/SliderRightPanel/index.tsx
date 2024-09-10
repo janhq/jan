@@ -90,16 +90,12 @@ const SliderRightPanel = ({
                 // Should not accept invalid value or NaN
                 // E.g. anything changes that trigger onValueChanged
                 // Which is incorrect
-                if (
-                  Number(e.target.value) > Number(max) ||
-                  Number(e.target.value) < Number(min) ||
-                  Number.isNaN(Number(e.target.value))
-                ) {
-                  if (/^\d*\.?\d*$/.test(e.target.value)) {
-                    setVal(e.target.value)
-                  }
-                  return
-                }
+                if (Number(e.target.value) > Number(max)) {
+                  setVal(max.toString())
+                } else if (Number(e.target.value) < Number(min)) {
+                  setVal(min.toString())
+                } else if (Number.isNaN(Number(e.target.value))) return
+
                 onValueChanged?.(Number(e.target.value))
                 // TODO: How to support negative number input?
                 if (/^\d*\.?\d*$/.test(e.target.value)) {

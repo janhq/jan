@@ -1,6 +1,6 @@
 import React from 'react'
 import { render } from '@testing-library/react'
-import { fireEvent, screen } from '@testing-library/dom'
+import { fireEvent } from '@testing-library/dom'
 import SliderRightPanel from './index'
 import '@testing-library/jest-dom'
 
@@ -12,8 +12,9 @@ class ResizeObserverMock {
 
 global.ResizeObserver = ResizeObserverMock
 
-jest.mock('@radix-ui/react-slider', () => ({
-  Root: ({ children, onValueChange, ...props }: any) => (
+jest.mock('@janhq/joi', () => ({
+  ...jest.requireActual('@janhq/joi'),
+  Slider: ({ children, onValueChange, ...props }: any) => (
     <div data-testid="slider-root" {...props}>
       <input
         data-testid="slider-input"
@@ -26,11 +27,6 @@ jest.mock('@radix-ui/react-slider', () => ({
       {children}
     </div>
   ),
-  Track: ({ children }: any) => (
-    <div data-testid="slider-track">{children}</div>
-  ),
-  Range: () => <div data-testid="slider-range" />,
-  Thumb: () => <div data-testid="slider-thumb" />,
 }))
 
 describe('SliderRightPanel', () => {
@@ -46,9 +42,7 @@ describe('SliderRightPanel', () => {
   }
 
   it('renders correctly with given props', () => {
-    const { getByText } = render(
-      <SliderRightPanel {...defaultProps} />
-    )
+    const { getByText } = render(<SliderRightPanel {...defaultProps} />)
     expect(getByText('Test Slider')).toBeInTheDocument()
   })
 
@@ -63,8 +57,9 @@ describe('SliderRightPanel', () => {
 
   it('calls onValueChanged with correct value when slider is changed', () => {
     defaultProps.onValueChanged = jest.fn()
+    const { getByTestId } = render(<SliderRightPanel {...defaultProps} />)
 
-    const input = screen.getByTestId('slider-input')
+    const input = getByTestId('slider-input')
     fireEvent.change(input, { target: { value: '75' } })
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(75)
   })
