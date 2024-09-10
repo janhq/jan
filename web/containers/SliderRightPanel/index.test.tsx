@@ -69,7 +69,7 @@ describe('SliderRightPanel', () => {
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(75)
   })
 
-  it('displays tooltip with max value message when input exceeds max', () => {
+  it('calls onValueChanged with max value when input exceeds max', () => {
     defaultProps.onValueChanged = jest.fn()
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
     const input = getByRole('textbox')
@@ -78,7 +78,7 @@ describe('SliderRightPanel', () => {
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(100)
   })
 
-  it('displays tooltip with min value message when input is below min', () => {
+  it('calls onValueChanged with min value when input is below min', () => {
     defaultProps.onValueChanged = jest.fn()
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
     const input = getByRole('textbox')
