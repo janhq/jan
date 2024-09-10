@@ -135,9 +135,8 @@ export const useCreateNewThread = () => {
       tools: experimentalEnabled ? [assistantTools] : assistant.tools,
       model: {
         id: defaultModel?.id ?? '*',
-        settings: { ...defaultModel?.settings, ...overriddenSettings } ?? {},
-        parameters:
-          { ...defaultModel?.parameters, ...overriddenParameters } ?? {},
+        settings: { ...defaultModel?.settings, ...overriddenSettings },
+        parameters: { ...defaultModel?.parameters, ...overriddenParameters },
         engine: defaultModel?.engine,
       },
       instructions,

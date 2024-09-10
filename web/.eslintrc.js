@@ -14,6 +14,7 @@ module.exports = {
     '**/*.test.tsx',
     '**/*.test.ts',
     'testRunner.js',
+    'jest.config.js',
   ],
   extends: [
     'next/core-web-vitals',
