@@ -80,7 +80,10 @@ const SliderRightPanel = ({
                   onValueChanged?.(Number(max))
                   setVal(max.toString())
                   setShowTooltip({ max: true, min: false })
-                } else if (Number(e.target.value) < Number(min)) {
+                } else if (
+                  Number(e.target.value) < Number(min) ||
+                  !e.target.value.length
+                ) {
                   onValueChanged?.(Number(min))
                   setVal(min.toString())
                   setShowTooltip({ max: false, min: true })
@@ -92,7 +95,10 @@ const SliderRightPanel = ({
                 // Which is incorrect
                 if (Number(e.target.value) > Number(max)) {
                   setVal(max.toString())
-                } else if (Number(e.target.value) < Number(min)) {
+                } else if (
+                  Number(e.target.value) < Number(min) ||
+                  !e.target.value.length
+                ) {
                   setVal(min.toString())
                 } else if (Number.isNaN(Number(e.target.value))) return
 
