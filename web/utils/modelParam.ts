@@ -9,7 +9,7 @@ import { ModelParams } from '@/helpers/atoms/Thread.atom'
  */
 export const validationRules: { [key: string]: (value: any) => boolean } = {
   temperature: (value: any) =>
-    typeof value === 'number' && value >= 0 && value <= 1,
+    typeof value === 'number' && value >= 0 && value <= 2,
   token_limit: (value: any) => Number.isInteger(value) && value >= 0,
   top_k: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
   top_p: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
@@ -39,7 +39,7 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
  * @param modelParams
  * @returns
  */
-export const extractRuntimeParams = (
+export const extractInferenceParams = (
   modelParams?: ModelParams
 ): ModelRuntimeParams => {
   if (!modelParams) return {}

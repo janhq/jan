@@ -15,7 +15,7 @@ import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { getConfigurationsData } from '@/utils/componentSettings'
 
 import {
-  extractRuntimeParams,
+  extractInferenceParams,
   extractModelLoadParams,
 } from '@/utils/modelParam'
 
@@ -41,7 +41,7 @@ const LocalServerRightPanel = () => {
     }
   }, [selectedModel])
 
-  const modelRuntimeParams = extractRuntimeParams(selectedModel?.settings)
+  const modelRuntimeParams = extractInferenceParams(selectedModel?.settings)
 
   const componentDataRuntimeSetting = getConfigurationsData(
     modelRuntimeParams,

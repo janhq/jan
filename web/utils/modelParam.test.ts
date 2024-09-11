@@ -4,10 +4,10 @@ import { validationRules } from './modelParam'
 describe('validationRules', () => {
   it('should validate temperature correctly', () => {
     expect(validationRules.temperature(0.5)).toBe(true)
-    expect(validationRules.temperature(1)).toBe(true)
+    expect(validationRules.temperature(2)).toBe(true)
     expect(validationRules.temperature(0)).toBe(true)
     expect(validationRules.temperature(-0.1)).toBe(false)
-    expect(validationRules.temperature(1.1)).toBe(false)
+    expect(validationRules.temperature(2.3)).toBe(false)
     expect(validationRules.temperature('0.5')).toBe(false)
   })
 

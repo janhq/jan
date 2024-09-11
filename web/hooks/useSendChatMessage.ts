@@ -24,7 +24,7 @@ import { Stack } from '@/utils/Stack'
 import { compressImage, getBase64 } from '@/utils/base64'
 import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
 import {
-  extractRuntimeParams,
+  extractInferenceParams,
   extractModelLoadParams,
 } from '@/utils/modelParam'
 
@@ -192,7 +192,7 @@ export default function useSendChatMessage() {
 
     if (engineParamsUpdate) setReloadModel(true)
 
-    const runtimeParams = extractRuntimeParams(activeModelParams)
+    const runtimeParams = extractInferenceParams(activeModelParams)
     const settingParams = extractModelLoadParams(activeModelParams)
 
     const prompt = message.trim()

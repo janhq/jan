@@ -20,7 +20,7 @@ import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
-import { extractRuntimeParams } from '@/utils/modelParam'
+import { extractInferenceParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
 import {
@@ -256,7 +256,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       },
     ]
 
-    const runtimeParams = extractRuntimeParams(activeModelParamsRef.current)
+    const runtimeParams = extractInferenceParams(activeModelParamsRef.current)
 
     const messageRequest: MessageRequest = {
       id: msgId,
