@@ -27,10 +27,7 @@ import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
 
-import {
-  experimentalFeatureEnabledAtom,
-  preserveModelSettingsAtom,
-} from '@/helpers/atoms/AppConfig.atom'
+import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
@@ -68,7 +65,6 @@ export const useCreateNewThread = () => {
   const copyOverInstructionEnabled = useAtomValue(
     copyOverInstructionEnabledAtom
   )
-  const preserveModelSettings = useAtomValue(preserveModelSettingsAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
@@ -110,19 +106,13 @@ export const useCreateNewThread = () => {
       enabled: true,
       settings: assistant.tools && assistant.tools[0].settings,
     }
-    const defaultContextLength = preserveModelSettings
-      ? defaultModel?.metadata?.default_ctx_len
-      : 2048
-    const defaultMaxTokens = preserveModelSettings
-      ? defaultModel?.metadata?.default_max_tokens
-      : 2048
     const overriddenSettings =
       defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
-        ? { ctx_len: defaultContextLength ?? 2048 }
+        ? { ctx_len: 4096 }
         : {}
 
     const overriddenParameters = defaultModel?.parameters.max_tokens
-      ? { max_tokens: defaultMaxTokens ?? 2048 }
+      ? { max_tokens: 4096 }
       : {}
 
     const createdAt = Date.now()

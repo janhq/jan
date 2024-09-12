@@ -4,9 +4,6 @@ import {
   ConversationalExtension,
   ExtensionTypeEnum,
   InferenceEngine,
-  Model,
-  ModelExtension,
-  ModelFile,
   Thread,
   ThreadAssistantInfo,
 } from '@janhq/core'
@@ -15,14 +12,8 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
 
-import useRecommendedModel from './useRecommendedModel'
-
 import { extensionManager } from '@/extension'
-import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
-import {
-  selectedModelAtom,
-  updateDownloadedModelAtom,
-} from '@/helpers/atoms/Model.atom'
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   ModelParams,
   getActiveThreadModelParamsAtom,
@@ -38,11 +29,8 @@ export type UpdateModelParameter = {
 
 export default function useUpdateModelParameters() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
-  const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
+  const [selectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const updateDownloadedModel = useSetAtom(updateDownloadedModelAtom)
-  const preserveModelFeatureEnabled = useAtomValue(preserveModelSettingsAtom)
-  const { recommendedModel, setRecommendedModel } = useRecommendedModel()
 
   const updateModelParameter = useCallback(
     async (thread: Thread, settings: UpdateModelParameter) => {
@@ -77,51 +65,8 @@ export default function useUpdateModelParameters() {
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.saveThread(updatedThread)
-
-      // Persists default settings to model file
-      // Do not overwrite ctx_len and max_tokens
-      if (preserveModelFeatureEnabled) {
-        const defaultContextLength = settingParams.ctx_len
-        const defaultMaxTokens = runtimeParams.max_tokens
-
-        // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unused-vars
-        const { ctx_len, ...toSaveSettings } = settingParams
-        // eslint-disable-next-line @typescript-eslint/naming-convention, @typescript-eslint/no-unused-vars
-        const { max_tokens, ...toSaveParams } = runtimeParams
-
-        const updatedModel = {
-          id: settings.modelId ?? selectedModel?.id,
-          parameters: {
-            ...toSaveSettings,
-          },
-          settings: {
-            ...toSaveParams,
-          },
-          metadata: {
-            default_ctx_len: defaultContextLength,
-            default_max_tokens: defaultMaxTokens,
-          },
-          file_path: settings.modelPath ?? selectedModel?.file_path,
-        } as Partial<ModelFile>
-
-        const model = await extensionManager
-          .get<ModelExtension>(ExtensionTypeEnum.Model)
-          ?.updateModelInfo(updatedModel)
-        if (model) updateDownloadedModel(model)
-        if (selectedModel?.id === model?.id) setSelectedModel(model)
-        if (recommendedModel?.id === model?.id) setRecommendedModel(model)
-      }
     },
-    [
-      activeModelParams,
-      selectedModel,
-      setThreadModelParams,
-      preserveModelFeatureEnabled,
-      updateDownloadedModel,
-      setSelectedModel,
-      recommendedModel,
-      setRecommendedModel,
-    ]
+    [activeModelParams, selectedModel, setThreadModelParams]
   )
 
   const processStopWords = (params: ModelParams): ModelParams => {
