@@ -4,6 +4,7 @@ import Image from 'next/image'
 
 import { InferenceEngine } from '@janhq/core'
 import { Button, Input, Progress, ScrollArea } from '@janhq/joi'
+import { useClickOutside } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { SearchIcon, DownloadCloudIcon } from 'lucide-react'
@@ -48,6 +49,7 @@ type Props = {
 
 const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const [searchValue, setSearchValue] = useState('')
+  const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const { downloadModel } = useDownloadModel()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
@@ -91,6 +93,8 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
   const rows = getRows(groupByEngine, itemsPerRow)
 
+  const refDropdown = useClickOutside(() => setIsOpen(false))
+
   const [visibleRows, setVisibleRows] = useState(1)
 
   return (
@@ -106,17 +110,20 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
             <h1 className="text-base font-semibold">Select a model to start</h1>
             <div className="mt-6 w-[320px] md:w-[400px]">
               <Fragment>
-                <div className="relative">
+                <div className="relative" ref={refDropdown}>
                   <Input
                     value={searchValue}
-                    onChange={(e) => setSearchValue(e.target.value)}
+                    onFocus={() => setIsOpen(true)}
+                    onChange={(e) => {
+                      setSearchValue(e.target.value)
+                    }}
                     placeholder="Search..."
                     prefixIcon={<SearchIcon size={16} />}
                   />
                   <div
                     className={twMerge(
                       'absolute left-0 top-10 max-h-[240px] w-full overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
-                      !searchValue.length ? 'invisible' : 'visible'
+                      !isOpen ? 'invisible' : 'visible'
                     )}
                   >
                     {!filteredModels.length ? (
