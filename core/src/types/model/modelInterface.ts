@@ -32,13 +32,6 @@ export interface ModelInterface {
   deleteModel(modelId: string): Promise<void>
 
   /**
-   * Saves a model.
-   * @param model - The model to save.
-   * @returns A Promise that resolves when the model has been saved.
-   */
-  saveModel(model: Model): Promise<void>
-
-  /**
    * Gets a list of downloaded models.
    * @returns A Promise that resolves with an array of downloaded models.
    */

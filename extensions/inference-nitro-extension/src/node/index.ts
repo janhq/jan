@@ -6,12 +6,12 @@ import fetchRT from 'fetch-retry'
 import {
   log,
   getSystemResourceInfo,
-  Model,
   InferenceEngine,
   ModelSettingParams,
   PromptTemplate,
   SystemInformation,
   getJanDataFolderPath,
+  ModelFile,
 } from '@janhq/core/node'
 import { executableNitroFile } from './execute'
 import terminate from 'terminate'
@@ -25,7 +25,7 @@ const fetchRetry = fetchRT(fetch)
  */
 interface ModelInitOptions {
   modelFolder: string
-  model: Model
+  model: ModelFile
 }
 // The PORT to use for the Nitro subprocess
 const PORT = 3928

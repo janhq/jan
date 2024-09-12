@@ -4,6 +4,7 @@ import {
   DownloadState,
   HuggingFaceRepoData,
   Model,
+  ModelFile,
   Quantization,
 } from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/joi'
@@ -53,7 +54,7 @@ const ModelDownloadRow: React.FC<Props> = ({
   const { requestCreateNewThread } = useCreateNewThread()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const assistants = useAtomValue(assistantsAtom)
-  const isDownloaded = downloadedModels.find((md) => md.id === fileName) != null
+  const downloadedModel = downloadedModels.find((md) => md.id === fileName)
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
   const defaultModel = useAtomValue(defaultModelAtom)
@@ -100,12 +101,12 @@ const ModelDownloadRow: React.FC<Props> = ({
       alert('No assistant available')
       return
     }
-    await requestCreateNewThread(assistants[0], model)
+    await requestCreateNewThread(assistants[0], downloadedModel)
     setMainViewState(MainViewState.Thread)
     setHfImportingStage('NONE')
   }, [
     assistants,
-    model,
+    downloadedModel,
     requestCreateNewThread,
     setMainViewState,
     setHfImportingStage,
@@ -139,7 +140,7 @@ const ModelDownloadRow: React.FC<Props> = ({
         </Badge>
       </div>
 
-      {isDownloaded ? (
+      {downloadedModel ? (
         <Button
           variant="soft"
           className="min-w-[98px]"

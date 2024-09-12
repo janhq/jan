@@ -6,6 +6,7 @@ import {
   InferenceEngine,
   Model,
   ModelExtension,
+  ModelFile,
   Thread,
   ThreadAssistantInfo,
 } from '@janhq/core'
@@ -31,6 +32,7 @@ import {
 export type UpdateModelParameter = {
   params?: ModelParams
   modelId?: string
+  modelPath?: string
   engine?: InferenceEngine
 }
 
@@ -99,7 +101,8 @@ export default function useUpdateModelParameters() {
             default_ctx_len: defaultContextLength,
             default_max_tokens: defaultMaxTokens,
           },
-        } as Partial<Model>
+          file_path: settings.modelPath ?? selectedModel?.file_path,
+        } as Partial<ModelFile>
 
         const model = await extensionManager
           .get<ModelExtension>(ExtensionTypeEnum.Model)

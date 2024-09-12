@@ -4,6 +4,7 @@ import {
   HuggingFaceRepoData,
   ImportingModel,
   Model,
+  ModelFile,
   ModelInterface,
   OptionType,
 } from '../../types'
@@ -26,11 +27,10 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
   ): Promise<void>
   abstract cancelModelDownload(modelId: string): Promise<void>
   abstract deleteModel(modelId: string): Promise<void>
-  abstract saveModel(model: Model): Promise<void>
-  abstract getDownloadedModels(): Promise<Model[]>
-  abstract getConfiguredModels(): Promise<Model[]>
+  abstract getDownloadedModels(): Promise<ModelFile[]>
+  abstract getConfiguredModels(): Promise<ModelFile[]>
   abstract importModels(models: ImportingModel[], optionType: OptionType): Promise<void>
-  abstract updateModelInfo(modelInfo: Partial<Model>): Promise<Model>
+  abstract updateModelInfo(modelInfo: Partial<ModelFile>): Promise<ModelFile>
   abstract fetchHuggingFaceRepoData(repoId: string): Promise<HuggingFaceRepoData>
   abstract getDefaultModel(): Promise<Model>
 }
