@@ -56,8 +56,10 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const featuredModel = configuredModels.filter((x) =>
-    x.metadata.tags.includes('Featured')
+  const featuredModel = configuredModels.filter(
+    (x) =>
+      (x.metadata.tags.includes('Featured') && x.id === 'gemma-2-9b-it') ||
+      x.id === 'llama3.1-8b-instruct'
   )
 
   const remoteModel = configuredModels.filter(
@@ -72,6 +74,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   })
 
   const remoteModelEngine = remoteModel.map((x) => x.engine)
+
   const groupByEngine = remoteModelEngine.filter(function (item, index) {
     if (remoteModelEngine.indexOf(item) === index) return item
   })
@@ -101,7 +104,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
               height={48}
             />
             <h1 className="text-base font-semibold">Select a model to start</h1>
-            <div className="mt-6 w-full lg:w-1/2">
+            <div className="mt-6 w-[320px] md:w-[400px]">
               <Fragment>
                 <div className="relative">
                   <Input
@@ -201,7 +204,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     >
                       <div className="w-full text-left">
                         <h6>{featModel.name}</h6>
-                        <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                        <p className="mt-4 text-[hsla(var(--text-secondary))]">
                           {featModel.metadata.author}
                         </p>
                       </div>
@@ -232,13 +235,18 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                           ))}
                         </div>
                       ) : (
-                        <Button
-                          theme="ghost"
-                          className="!bg-[hsla(var(--secondary-bg))]"
-                          onClick={() => downloadModel(featModel)}
-                        >
-                          Download
-                        </Button>
+                        <div className="flex flex-col items-end justify-end gap-2">
+                          <Button
+                            theme="ghost"
+                            className="!bg-[hsla(var(--secondary-bg))]"
+                            onClick={() => downloadModel(featModel)}
+                          >
+                            Download
+                          </Button>
+                          <span className="font-medium text-[hsla(var(--text-secondary))]">
+                            {toGibibytes(featModel.metadata.size)}
+                          </span>
+                        </div>
                       )}
                     </div>
                   )
@@ -255,7 +263,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     return (
                       <div
                         key={rowIndex}
-                        className="my-2 flex items-center justify-normal gap-10"
+                        className="my-2 flex items-center justify-center gap-4 md:gap-10"
                       >
                         {row.map((remoteEngine) => {
                           const engineLogo = getLogoEngine(
