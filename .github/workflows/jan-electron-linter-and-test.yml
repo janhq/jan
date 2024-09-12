@@ -37,7 +37,6 @@ on:
       - '!README.md'
 
 jobs:
-
   base_branch_cov:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -54,6 +53,7 @@ jobs:
         run: |
           yarn
           yarn build:core
+          yarn build:joi
 
       - name: Run test coverage
         run: yarn test:coverage
@@ -364,10 +364,10 @@ jobs:
         uses: barecheck/code-coverage-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          lcov-file: "./coverage/lcov.info"
-          base-lcov-file: "./lcov.info"
+          lcov-file: './coverage/lcov.info'
+          base-lcov-file: './lcov.info'
           send-summary-comment: true
-          show-annotations: "warning"
+          show-annotations: 'warning'
 
   test-on-ubuntu-pr-target:
     runs-on: [self-hosted, Linux, ubuntu-desktop]

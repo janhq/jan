@@ -67,26 +67,39 @@ describe('SliderRightPanel', () => {
   it('calls onValueChanged with max value when input exceeds max', () => {
     defaultProps.onValueChanged = jest.fn()
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
-    const input = getByRole('textbox')
+    const input = getByRole('textbox') as HTMLInputElement
     fireEvent.change(input, { target: { value: '150' } })
     fireEvent.focusOut(input)
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(100)
+    expect(input.value).toEqual('100')
   })
 
   it('calls onValueChanged with min value when input is below min', () => {
     defaultProps.onValueChanged = jest.fn()
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
-    const input = getByRole('textbox')
+    const input = getByRole('textbox') as HTMLInputElement
     fireEvent.change(input, { target: { value: '0' } })
     fireEvent.focusOut(input)
     expect(defaultProps.onValueChanged).toHaveBeenCalledWith(0)
+    expect(input.value).toEqual('0')
+  })
+
+  it('calls onValueChanged when input value is empty string', () => {
+    defaultProps.onValueChanged = jest.fn()
+    const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
+    const input = getByRole('textbox') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '' } })
+    fireEvent.focusOut(input)
+    expect(defaultProps.onValueChanged).toHaveBeenCalledWith(0)
+    expect(input.value).toEqual('0')
   })
 
   it('does not call onValueChanged when input is invalid', () => {
     defaultProps.onValueChanged = jest.fn()
     const { getByRole } = render(<SliderRightPanel {...defaultProps} />)
-    const input = getByRole('textbox')
+    const input = getByRole('textbox') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'invalid' } })
     expect(defaultProps.onValueChanged).not.toHaveBeenCalledWith(0)
+    expect(input.value).toEqual('50')
   })
 })
