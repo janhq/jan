@@ -7,7 +7,6 @@ import {
   Thread,
   ThreadAssistantInfo,
   ThreadState,
-  Model,
   AssistantTool,
   ModelFile,
 } from '@janhq/core'

@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { Model, ModelFile } from '@janhq/core'
+import { ModelFile } from '@janhq/core'
 import { Button, Badge, Tooltip } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'

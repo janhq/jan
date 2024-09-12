@@ -11,8 +11,9 @@ module.exports = {
     'plugin:react/recommended',
   ],
   rules: {
-    '@typescript-eslint/no-non-null-assertion': 'off',
     'react/prop-types': 'off', // In favor of strong typing - no need to dedupe
+    'react/no-is-mounted': 'off',
+    '@typescript-eslint/no-non-null-assertion': 'off',
     '@typescript-eslint/no-var-requires': 'off',
     '@typescript-eslint/ban-ts-comment': 'off',
     '@typescript-eslint/no-unused-vars': 'off',

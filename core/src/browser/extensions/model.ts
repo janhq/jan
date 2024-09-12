@@ -26,7 +26,7 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
     network?: { proxy: string; ignoreSSL?: boolean }
   ): Promise<void>
   abstract cancelModelDownload(modelId: string): Promise<void>
-  abstract deleteModel(modelId: string): Promise<void>
+  abstract deleteModel(model: ModelFile): Promise<void>
   abstract getDownloadedModels(): Promise<ModelFile[]>
   abstract getConfiguredModels(): Promise<ModelFile[]>
   abstract importModels(models: ImportingModel[], optionType: OptionType): Promise<void>

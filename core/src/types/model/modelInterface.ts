@@ -1,5 +1,5 @@
 import { GpuSetting } from '../miscellaneous'
-import { Model } from './modelEntity'
+import { Model, ModelFile } from './modelEntity'
 
 /**
  * Model extension for managing models.
@@ -29,7 +29,7 @@ export interface ModelInterface {
    * @param modelId - The ID of the model to delete.
    * @returns A Promise that resolves when the model has been deleted.
    */
-  deleteModel(modelId: string): Promise<void>
+  deleteModel(model: ModelFile): Promise<void>
 
   /**
    * Gets a list of downloaded models.

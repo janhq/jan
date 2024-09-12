@@ -1,3 +1,8 @@
+jest.mock('../../helper', () => ({
+  ...jest.requireActual('../../helper'),
+  getJanDataFolderPath: () => './app',
+}))
+import { dirname } from 'path'
 import { App } from './app'
 
 it('should call stopServer', () => {
@@ -6,7 +11,7 @@ it('should call stopServer', () => {
   jest.mock('@janhq/server', () => ({
     stopServer: stopServerMock,
   }))
-  const result = app.stopServer()
+  app.stopServer()
   expect(stopServerMock).toHaveBeenCalled()
 })
 
@@ -41,8 +46,12 @@ it('should call correct function with provided arguments using process method', 
 
 it('should retrieve the directory name from a file path (Unix/Windows)', async () => {
   const app = new App()
-  const path13 = 'C:/Users/John Doe/Desktop/file.txt'
-  expect(await app.dirName(path13)).toBe(
-    process.platform === 'win32' ? 'C:\\Users\\John Doe\\Desktop' : 'C:/Users/John Doe/Desktop'
-  )
+  const path = 'C:/Users/John Doe/Desktop/file.txt'
+  expect(await app.dirName(path)).toBe('C:/Users/John Doe/Desktop')
+})
+
+it('should retrieve the directory name when using file protocol', async () => {
+  const app = new App()
+  const path = 'file:/models/file.txt'
+  expect(await app.dirName(path)).toBe(process.platform === 'win32' ? 'app\\models' : 'app/models')
 })

@@ -22,8 +22,8 @@ import {
   getFileSize,
   AllQuantizations,
   ModelEvent,
-  FileMetadata,
   ModelFile,
+  dirName,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -50,16 +50,7 @@ export default class JanModelExtension extends ModelExtension {
   ]
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _supportedGpuArch = ['ampere', 'ada']
-  private static readonly _safetensorsRegexs = [
-    /model\.safetensors$/,
-    /model-[0-9]+-of-[0-9]+\.safetensors$/,
-  ]
-  private static readonly _pytorchRegexs = [
-    /pytorch_model\.bin$/,
-    /consolidated\.[0-9]+\.pth$/,
-    /pytorch_model-[0-9]+-of-[0-9]+\.bin$/,
-    /.*\.pt$/,
-  ]
+
   interrupted = false
 
   /**
@@ -321,9 +312,9 @@ export default class JanModelExtension extends ModelExtension {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
-  async deleteModel(modelId: string): Promise<void> {
+  async deleteModel(model: ModelFile): Promise<void> {
     try {
-      const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
+      const dirPath = await dirName(model.file_path)
       const jsonFilePath = await joinPath([
         dirPath,
         JanModelExtension._modelMetadataFileName,
@@ -332,9 +323,11 @@ export default class JanModelExtension extends ModelExtension {
         await this.readModelMetadata(jsonFilePath)
       ) as Model
 
+      // TODO: This is so tricky?
+      // Should depend on sources?
       const isUserImportModel =
         modelInfo.metadata?.author?.toLowerCase() === 'user'
-      if (isUserImportModel) {
+        if (isUserImportModel) {
         // just delete the folder
         return fs.rm(dirPath)
       }
@@ -408,8 +401,10 @@ export default class JanModelExtension extends ModelExtension {
   ): Promise<string | undefined> {
     // try to find model.json recursively inside each folder
     if (!(await fs.existsSync(folderFullPath))) return undefined
+
     const files: string[] = await fs.readdirSync(folderFullPath)
     if (files.length === 0) return undefined
+
     if (files.includes(JanModelExtension._modelMetadataFileName)) {
       return joinPath([
         folderFullPath,
@@ -452,6 +447,7 @@ export default class JanModelExtension extends ModelExtension {
           JanModelExtension._homeDir,
           dirName,
         ])
+
         const jsonPath = await this.getModelJsonPath(folderFullPath)
 
         if (await fs.existsSync(jsonPath)) {
@@ -746,6 +742,9 @@ export default class JanModelExtension extends ModelExtension {
         ...model.metadata,
         ...modelInfo.metadata,
       },
+      // Should not persist file_path & file_name
+      file_path: undefined,
+      file_name: undefined,
     }
 
     await fs.writeFileSync(

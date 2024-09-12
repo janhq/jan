@@ -4,7 +4,6 @@ import {
   DownloadState,
   HuggingFaceRepoData,
   Model,
-  ModelFile,
   Quantization,
 } from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/joi'
