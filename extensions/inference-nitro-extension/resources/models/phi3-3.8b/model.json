@@ -1,20 +1,20 @@
 {
     "sources": [
       {
-        "url": "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf",
-        "filename": "Phi-3-mini-4k-instruct-q4.gguf"
+        "url": "https://huggingface.co/cortexso/phi3/resolve/main/model.gguf",
+        "filename": "model.gguf"
       }
     ],
     "id": "phi3-3.8b",
     "object": "model",
     "name": "Phi-3 Mini",
-    "version": "1.2",
+    "version": "1.3",
     "description": "Phi-3 Mini is Microsoft's newest, compact model designed for mobile use.",
     "format": "gguf",
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "<|user|>\n{prompt}<|end|>\n<|assistant|>\n",
-      "llama_model_path": "Phi-3-mini-4k-instruct-q4.gguf",
+      "llama_model_path": "model.gguf",
       "ngl": 33
     },
     "parameters": {
@@ -35,4 +35,4 @@
       "size": 2320000000
     },
     "engine": "nitro"
-  }
+}
