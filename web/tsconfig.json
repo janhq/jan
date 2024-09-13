@@ -2,8 +2,6 @@
   "compilerOptions": {
     "target": "ES2015",
     "lib": ["dom", "dom.iterable", "esnext"],
-    "baseUrl": "./",
-
     "typeRoots": [
       "./node_modules/@types",
       "./src/types",
