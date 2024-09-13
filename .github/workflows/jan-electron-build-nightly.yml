@@ -88,12 +88,12 @@ jobs:
         with:
           ref: ${{ needs.set-public-provider.outputs.ref }}
       - name: Download mac-x64 artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: latest-mac-x64
           path: ./latest-mac-x64
       - name: Download mac-arm artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: latest-mac-arm64
           path: ./latest-mac-arm64
