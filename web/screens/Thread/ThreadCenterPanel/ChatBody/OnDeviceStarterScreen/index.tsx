@@ -60,8 +60,9 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
   const featuredModel = configuredModels.filter(
     (x) =>
-      (x.metadata.tags.includes('Featured') && x.id === 'gemma-2-9b-it') ||
-      x.id === 'llama3.1-8b-instruct'
+      x.metadata.tags.includes('Featured') &&
+      x.metadata.size > 2000000000 &&
+      x.metadata.size < 5000000000
   )
 
   const remoteModel = configuredModels.filter(

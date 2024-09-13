@@ -119,7 +119,7 @@ describe('OnDeviceStarterScreen', () => {
         metadata: {
           tags: ['Featured'],
           author: 'Test Author',
-          size: 1000000000,
+          size: 3000000000,
         },
       },
       {
@@ -142,7 +142,7 @@ describe('OnDeviceStarterScreen', () => {
     )
 
     expect(screen.getByText('Gemma 2B')).toBeInTheDocument()
-    expect(screen.getByText('Llama 3.1')).toBeInTheDocument()
+    expect(screen.queryByText('Llama 3.1')).not.toBeInTheDocument()
   })
 
   it('renders cloud models', () => {
