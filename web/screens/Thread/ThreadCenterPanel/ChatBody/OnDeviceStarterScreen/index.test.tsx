@@ -26,6 +26,7 @@ jest.mock('@janhq/joi', () => ({
   ),
   Progress: () => <div data-testid="progress" />,
   ScrollArea: ({ children }: any) => <div>{children}</div>,
+  useClickOutside: jest.fn(),
 }))
 
 jest.mock('@/containers/Brand/Logo/Mark', () => () => (
