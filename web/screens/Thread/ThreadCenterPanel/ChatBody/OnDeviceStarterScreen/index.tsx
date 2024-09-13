@@ -59,10 +59,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
   const featuredModel = configuredModels.filter(
-    (x) =>
-      x.metadata.tags.includes('Featured') &&
-      x.metadata.size > 2000000000 &&
-      x.metadata.size < 5000000000
+    (x) => x.metadata.tags.includes('Featured') && x.metadata.size < 5000000000
   )
 
   const remoteModel = configuredModels.filter(
