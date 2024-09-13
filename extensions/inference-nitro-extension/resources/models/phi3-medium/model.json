@@ -7,7 +7,7 @@
     ],
     "id": "phi3-medium",
     "object": "model",
-    "name": "Phi-3 Medium",
+    "name": "Phi-3 Medium Instruct Q4",
     "version": "1.2",
     "description": "Phi-3 Medium is Microsoft's latest SOTA model.",
     "format": "gguf",

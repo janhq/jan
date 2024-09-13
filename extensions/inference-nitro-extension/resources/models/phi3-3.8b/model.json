@@ -7,7 +7,7 @@
     ],
     "id": "phi3-3.8b",
     "object": "model",
-    "name": "Phi-3 Mini",
+    "name": "Phi-3 Mini Instruct Q4",
     "version": "1.3",
     "description": "Phi-3 Mini is Microsoft's newest, compact model designed for mobile use.",
     "format": "gguf",

@@ -7,7 +7,7 @@
     ],
     "id": "llama3-8b-instruct",
     "object": "model",
-    "name": "Llama 3 8B Q4",
+    "name": "Llama 3 8B Instruct Q4",
     "version": "1.2",
     "description": "Meta's Llama 3 excels at general usage situations, including chat, general world knowledge, and coding.",
     "format": "gguf",

@@ -7,7 +7,7 @@
   ],
   "id": "deepseek-coder-34b",
   "object": "model",
-  "name": "Deepseek Coder 33B Q4",
+  "name": "Deepseek Coder 33B Instruct Q4",
   "version": "1.2",
   "description": "Deepseek Coder excelled in project-level code completion with advanced capabilities across multiple programming languages.",
   "format": "gguf",
