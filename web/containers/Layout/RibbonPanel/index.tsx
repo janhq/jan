@@ -22,6 +22,7 @@ import {
   reduceTransparentAtom,
   selectedSettingAtom,
 } from '@/helpers/atoms/Setting.atom'
+import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 export default function RibbonPanel() {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
@@ -32,6 +33,7 @@ export default function RibbonPanel() {
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const threads = useAtomValue(threadsAtom)
 
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
@@ -88,6 +90,7 @@ export default function RibbonPanel() {
         reduceTransparent && ' bg-[hsla(var(--ribbon-panel-bg))]',
         mainViewState === MainViewState.Thread &&
           !isDownloadALocalModel &&
+          !threads.length &&
           'border-none'
       )}
     >

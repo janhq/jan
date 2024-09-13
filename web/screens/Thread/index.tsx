@@ -7,7 +7,7 @@ import ThreadLeftPanel from '@/screens/Thread/ThreadLeftPanel'
 import { localEngines } from '@/utils/modelEngine'
 
 import ThreadCenterPanel from './ThreadCenterPanel'
-import OnDeviceStarterScreen from './ThreadCenterPanel/ChatBody/EmptyModel'
+import OnDeviceStarterScreen from './ThreadCenterPanel/ChatBody/OnDeviceStarterScreen'
 import ModalCleanThread from './ThreadLeftPanel/ModalCleanThread'
 import ModalDeleteThread from './ThreadLeftPanel/ModalDeleteThread'
 import ModalEditTitleThread from './ThreadLeftPanel/ModalEditTitleThread'
