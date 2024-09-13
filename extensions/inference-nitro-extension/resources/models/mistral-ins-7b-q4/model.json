@@ -8,7 +8,7 @@
   "id": "mistral-ins-7b-q4",
   "object": "model",
   "name": "Mistral 7B Instruct Q4",
-  "version": "1.4",
+  "version": "1.5",
   "description": "Mistral 7B Instruct model, specifically designed for a comprehensive understanding of the world.",
   "format": "gguf",
   "settings": {
@@ -28,7 +28,7 @@
   },
   "metadata": {
     "author": "MistralAI",
-    "tags": ["Featured", "7B", "Foundational Model"],
+    "tags": ["7B", "Foundational Model"],
     "size": 4370000000,
     "cover": "https://raw.githubusercontent.com/janhq/jan/dev/models/mistral-ins-7b-q4/cover.png"
   },
