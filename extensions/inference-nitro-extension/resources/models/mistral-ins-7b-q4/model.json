@@ -8,7 +8,7 @@
   "id": "mistral-ins-7b-q4",
   "object": "model",
   "name": "Mistral 7B Instruct Q4",
-  "version": "1.3",
+  "version": "1.4",
   "description": "Mistral 7B Instruct model, specifically designed for a comprehensive understanding of the world.",
   "format": "gguf",
   "settings": {
