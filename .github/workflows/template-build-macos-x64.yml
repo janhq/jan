@@ -148,13 +148,13 @@ jobs:
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: jan-mac-x64-${{ inputs.new_version }}
           path: ./electron/dist/jan-mac-x64-${{ inputs.new_version }}.dmg
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: latest-mac-x64
           path: ./electron/dist/latest-mac.yml

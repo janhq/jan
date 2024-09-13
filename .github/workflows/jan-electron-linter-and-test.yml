@@ -59,7 +59,7 @@ jobs:
         run: yarn test:coverage
 
       - name: Upload code coverage for ref branch
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ref-lcov.info
           path: ./coverage/lcov.info
@@ -341,7 +341,7 @@ jobs:
           make clean
 
       - name: Download code coverage report from base branch
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ref-lcov.info
 
