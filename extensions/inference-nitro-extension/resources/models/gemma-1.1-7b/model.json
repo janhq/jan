@@ -8,7 +8,7 @@
   "id": "gemma-1.1-7b-it",
   "object": "model",
   "name": "Gemma 1.1 7B Q4",
-  "version": "1.2",
+  "version": "1.3",
   "description": "Google's Gemma is built for multilingual purpose",
   "format": "gguf",
   "settings": {
@@ -28,7 +28,7 @@
   },
   "metadata": {
     "author": "Google",
-    "tags": ["7B", "Finetuned", "Featured"],
+    "tags": ["7B", "Finetuned"],
     "size": 5330000000
   },
   "engine": "nitro"
