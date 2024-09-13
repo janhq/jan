@@ -2,7 +2,7 @@ const nextJest = require('next/jest')
 
 /** @type {import('jest').Config} */
 const createJestConfig = nextJest({
-  dir: './',
+  dir: './web',
 })
 
 // Add any custom config to be passed to Jest
