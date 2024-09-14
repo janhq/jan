@@ -216,28 +216,30 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
                       {isDownloading ? (
                         <div className="flex w-full items-center gap-2">
-                          {Object.values(downloadStates).map((item, i) => (
-                            <div
-                              className="flex w-full items-center gap-2"
-                              key={i}
-                            >
-                              <Progress
-                                className="w-full"
-                                value={
-                                  formatDownloadPercentage(item?.percent, {
-                                    hidePercentage: true,
-                                  }) as number
-                                }
-                              />
-                              <div className="flex items-center justify-between gap-x-2">
-                                <div className="flex gap-x-2">
-                                  <span className="font-medium text-[hsla(var(--primary-bg))]">
-                                    {formatDownloadPercentage(item?.percent)}
-                                  </span>
+                          {Object.values(downloadStates)
+                            .filter((x) => x.modelId === featModel.id)
+                            .map((item, i) => (
+                              <div
+                                className="flex w-full items-center gap-2"
+                                key={i}
+                              >
+                                <Progress
+                                  className="w-full"
+                                  value={
+                                    formatDownloadPercentage(item?.percent, {
+                                      hidePercentage: true,
+                                    }) as number
+                                  }
+                                />
+                                <div className="flex items-center justify-between gap-x-2">
+                                  <div className="flex gap-x-2">
+                                    <span className="font-medium text-[hsla(var(--primary-bg))]">
+                                      {formatDownloadPercentage(item?.percent)}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
                         </div>
                       ) : (
                         <div className="flex flex-col items-end justify-end gap-2">
