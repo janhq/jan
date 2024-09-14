@@ -34,6 +34,11 @@ import {
   reduceTransparentAtom,
   selectedSettingAtom,
 } from '@/helpers/atoms/Setting.atom'
+import {
+  isAnyRemoteModelConfiguredAtom,
+  isDownloadALocalModelAtom,
+  threadsAtom,
+} from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const TopPanel = () => {
@@ -46,6 +51,11 @@ const TopPanel = () => {
   const assistants = useAtomValue(assistantsAtom)
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
+  )
+  const threads = useAtomValue(threadsAtom)
+  const isDownloadALocalModel = useAtomValue(isDownloadALocalModelAtom)
+  const isAnyRemoteModelConfigured = useAtomValue(
+    isAnyRemoteModelConfiguredAtom
   )
 
   const onCreateNewThreadClick = () => {
@@ -93,18 +103,20 @@ const TopPanel = () => {
               )}
             </Fragment>
           )}
-          {mainViewState === MainViewState.Thread && (
-            <Button
-              data-testid="btn-create-thread"
-              onClick={onCreateNewThreadClick}
-              theme="icon"
-            >
-              <PenSquareIcon
-                size={16}
-                className="cursor-pointer text-[hsla(var(--text-secondary))]"
-              />
-            </Button>
-          )}
+          {mainViewState === MainViewState.Thread &&
+            Boolean(threads.length) &&
+            (isDownloadALocalModel || isAnyRemoteModelConfigured) && (
+              <Button
+                data-testid="btn-create-thread"
+                onClick={onCreateNewThreadClick}
+                theme="icon"
+              >
+                <PenSquareIcon
+                  size={16}
+                  className="cursor-pointer text-[hsla(var(--text-secondary))]"
+                />
+              </Button>
+            )}
         </div>
         <div className="unset-drag flex items-center gap-x-2">
           {mainViewState !== MainViewState.Hub &&

@@ -105,7 +105,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
               width={48}
               height={48}
             />
-            <h1 className="text-base font-semibold">Select a model to start</h1>
+            <h1 className="text-base font-medium">Select a model to start</h1>
             <div className="mt-6 w-[320px] md:w-[400px]">
               <Fragment>
                 <div className="relative" ref={refDropdown}>
@@ -120,7 +120,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                   />
                   <div
                     className={twMerge(
-                      'absolute left-0 top-10 max-h-[240px] w-full overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+                      'absolute left-0 top-10 z-20 max-h-[240px] w-full overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
                       !isOpen ? 'invisible' : 'visible'
                     )}
                   >
@@ -205,11 +205,11 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                   return (
                     <div
                       key={featModel.id}
-                      className="my-2 flex items-center justify-between gap-2 border-b border-[hsla(var(--app-border))] py-4 last:border-none"
+                      className="my-2 flex items-center justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
                     >
                       <div className="w-full text-left">
-                        <h6>{featModel.name}</h6>
-                        <p className="mt-4 text-[hsla(var(--text-secondary))]">
+                        <h6 className="font-medium">{featModel.name}</h6>
+                        <p className="mt-2 font-medium text-[hsla(var(--text-secondary))]">
                           {featModel.metadata.author}
                         </p>
                       </div>
@@ -250,7 +250,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                           >
                             Download
                           </Button>
-                          <span className="font-medium text-[hsla(var(--text-secondary))]">
+                          <span className="text-[hsla(var(--text-secondary))]">
                             {toGibibytes(featModel.metadata.size)}
                           </span>
                         </div>
@@ -259,7 +259,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                   )
                 })}
 
-                <div className="mb-4 mt-8 flex items-center justify-between">
+                <div className="mb-2 mt-8 flex items-center justify-between">
                   <h2 className="text-[hsla(var(--text-secondary))]">
                     Cloud Models
                   </h2>
@@ -270,7 +270,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     return (
                       <div
                         key={rowIndex}
-                        className="my-2 flex items-center justify-center gap-4 md:gap-10"
+                        className="my-2 flex items-center gap-4 md:gap-10"
                       >
                         {row.map((remoteEngine) => {
                           const engineLogo = getLogoEngine(
@@ -300,7 +300,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                                 />
                               )}
 
-                              <p>
+                              <p className="font-medium">
                                 {getTitleByEngine(
                                   remoteEngine as InferenceEngine
                                 )}

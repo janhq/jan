@@ -152,3 +152,6 @@ export const modalActionThreadAtom = atom<{
   showModal: undefined,
   thread: undefined,
 })
+
+export const isDownloadALocalModelAtom = atom<boolean>(false)
+export const isAnyRemoteModelConfiguredAtom = atom<boolean>(false)
