@@ -71,20 +71,26 @@ const ThreadRightPanel = () => {
 
   const settings = useMemo(() => {
     // runtime setting
-    const modelRuntimeParams = extractInferenceParams({
-      ...selectedModel?.parameters,
-      ...activeModelParams,
-    })
+    const modelRuntimeParams = extractInferenceParams(
+      {
+        ...selectedModel?.parameters,
+        ...activeModelParams,
+      },
+      selectedModel?.parameters
+    )
     const componentDataRuntimeSetting = getConfigurationsData(
       modelRuntimeParams,
       selectedModel
     ).filter((x) => x.key !== 'prompt_template')
 
     // engine setting
-    const modelEngineParams = extractModelLoadParams({
-      ...selectedModel?.settings,
-      ...activeModelParams,
-    })
+    const modelEngineParams = extractModelLoadParams(
+      {
+        ...selectedModel?.settings,
+        ...activeModelParams,
+      },
+      selectedModel?.settings
+    )
     const componentDataEngineSetting = getConfigurationsData(
       modelEngineParams,
       selectedModel

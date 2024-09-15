@@ -40,7 +40,8 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
  * @returns
  */
 export const extractInferenceParams = (
-  modelParams?: ModelParams
+  modelParams?: ModelParams,
+  originParams?: ModelParams
 ): ModelRuntimeParams => {
   if (!modelParams) return {}
   const defaultModelParams: ModelRuntimeParams = {
@@ -61,10 +62,16 @@ export const extractInferenceParams = (
     if (key in defaultModelParams) {
       const validate = validationRules[key]
       if (validate && !validate(value)) {
-        console.error(`Invalid value for ${key}: ${value}`)
-        continue
+        // Invalid value - fall back to origin value
+        if (originParams && key in originParams) {
+          Object.assign(runtimeParams, {
+            ...runtimeParams,
+            [key]: originParams[key as keyof typeof originParams],
+          })
+        }
+      } else {
+        Object.assign(runtimeParams, { ...runtimeParams, [key]: value })
       }
-      Object.assign(runtimeParams, { ...runtimeParams, [key]: value })
     }
   }
 
@@ -77,7 +84,8 @@ export const extractInferenceParams = (
  * @returns
  */
 export const extractModelLoadParams = (
-  modelParams?: ModelParams
+  modelParams?: ModelParams,
+  originParams?: ModelParams
 ): ModelSettingParams => {
   if (!modelParams) return {}
   const defaultSettingParams: ModelSettingParams = {
@@ -98,10 +106,16 @@ export const extractModelLoadParams = (
     if (key in defaultSettingParams) {
       const validate = validationRules[key]
       if (validate && !validate(value)) {
-        console.error(`Invalid value for ${key}: ${value}`)
-        continue
+        // Invalid value - fall back to origin value
+        if (originParams && key in originParams) {
+          Object.assign(modelParams, {
+            ...modelParams,
+            [key]: originParams[key as keyof typeof originParams],
+          })
+        }
+      } else {
+        Object.assign(settingParams, { ...settingParams, [key]: value })
       }
-      Object.assign(settingParams, { ...settingParams, [key]: value })
     }
   }
 
