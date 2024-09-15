@@ -1,5 +1,5 @@
 // web/utils/modelParam.test.ts
-import { validationRules } from './modelParam'
+import { normalizeValue, validationRules } from './modelParam'
 
 describe('validationRules', () => {
   it('should validate temperature correctly', () => {
@@ -146,5 +146,38 @@ describe('validationRules', () => {
     expect(validationRules.text_model(false)).toBe(true)
     expect(validationRules.text_model('true')).toBe(false)
     expect(validationRules.text_model(1)).toBe(false)
+  })
+})
+
+describe('normalizeValue', () => {
+  it('should normalize ctx_len correctly', () => {
+    expect(normalizeValue('ctx_len', 100.5)).toBe(100)
+    expect(normalizeValue('ctx_len', '2')).toBe(2)
+    expect(normalizeValue('ctx_len', 100)).toBe(100)
+  })
+  it('should normalize token_limit correctly', () => {
+    expect(normalizeValue('token_limit', 100.5)).toBe(100)
+    expect(normalizeValue('token_limit', '1')).toBe(1)
+    expect(normalizeValue('token_limit', 0)).toBe(0)
+  })
+  it('should normalize max_tokens correctly', () => {
+    expect(normalizeValue('max_tokens', 100.5)).toBe(100)
+    expect(normalizeValue('max_tokens', '1')).toBe(1)
+    expect(normalizeValue('max_tokens', 0)).toBe(0)
+  })
+  it('should normalize ngl correctly', () => {
+    expect(normalizeValue('ngl', 12.5)).toBe(12)
+    expect(normalizeValue('ngl', '2')).toBe(2)
+    expect(normalizeValue('ngl', 0)).toBe(0)
+  })
+  it('should normalize n_parallel correctly', () => {
+    expect(normalizeValue('n_parallel', 2.5)).toBe(2)
+    expect(normalizeValue('n_parallel', '2')).toBe(2)
+    expect(normalizeValue('n_parallel', 0)).toBe(0)
+  })
+  it('should normalize cpu_threads correctly', () => {
+    expect(normalizeValue('cpu_threads', 4.5)).toBe(4)
+    expect(normalizeValue('cpu_threads', '4')).toBe(4)
+    expect(normalizeValue('cpu_threads', 0)).toBe(0)
   })
 })

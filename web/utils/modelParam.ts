@@ -35,6 +35,28 @@ export const validationRules: { [key: string]: (value: any) => boolean } = {
 }
 
 /**
+ * There are some parameters that need to be normalized before being sent to the server
+ * E.g. ctx_len should be an integer, but it can be a float from the input field
+ * @param key
+ * @param value
+ * @returns
+ */
+export const normalizeValue = (key: string, value: any) => {
+  if (
+    key === 'token_limit' ||
+    key === 'max_tokens' ||
+    key === 'ctx_len' ||
+    key === 'ngl' ||
+    key === 'n_parallel' ||
+    key === 'cpu_threads'
+  ) {
+    // Convert to integer
+    return Math.floor(Number(value))
+  }
+  return value
+}
+
+/**
  * Extract inference parameters from flat model parameters
  * @param modelParams
  * @returns
@@ -61,7 +83,7 @@ export const extractInferenceParams = (
   for (const [key, value] of Object.entries(modelParams)) {
     if (key in defaultModelParams) {
       const validate = validationRules[key]
-      if (validate && !validate(value)) {
+      if (validate && !validate(normalizeValue(key, value))) {
         // Invalid value - fall back to origin value
         if (originParams && key in originParams) {
           Object.assign(runtimeParams, {
@@ -70,7 +92,10 @@ export const extractInferenceParams = (
           })
         }
       } else {
-        Object.assign(runtimeParams, { ...runtimeParams, [key]: value })
+        Object.assign(runtimeParams, {
+          ...runtimeParams,
+          [key]: normalizeValue(key, value),
+        })
       }
     }
   }
@@ -105,7 +130,7 @@ export const extractModelLoadParams = (
   for (const [key, value] of Object.entries(modelParams)) {
     if (key in defaultSettingParams) {
       const validate = validationRules[key]
-      if (validate && !validate(value)) {
+      if (validate && !validate(normalizeValue(key, value))) {
         // Invalid value - fall back to origin value
         if (originParams && key in originParams) {
           Object.assign(modelParams, {
@@ -114,7 +139,10 @@ export const extractModelLoadParams = (
           })
         }
       } else {
-        Object.assign(settingParams, { ...settingParams, [key]: value })
+        Object.assign(settingParams, {
+          ...settingParams,
+          [key]: normalizeValue(key, value),
+        })
       }
     }
   }

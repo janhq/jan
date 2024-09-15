@@ -169,11 +169,18 @@ describe('useUpdateModelParameters', () => {
       assistants: [
         {
           model: {
-            parameters: {},
+            parameters: {
+              max_tokens: 1000,
+              token_limit: 1000,
+            },
             settings: {
+              cpu_threads: 4,
+              ctx_len: 1024,
               prompt_template: 'template',
               llama_model_path: 'path',
               mmproj: 'mmproj',
+              n_parallel: 2,
+              ngl: 12,
             },
           },
         },
@@ -239,6 +246,7 @@ describe('useUpdateModelParameters', () => {
               top_k: 0.7,
               top_p: 0.1,
               stream: true,
+              token_limit: 100,
               max_tokens: 1000,
               presence_penalty: 0.2,
             },
