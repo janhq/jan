@@ -58,9 +58,21 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const featuredModel = configuredModels.filter(
-    (x) => x.metadata.tags.includes('Featured') && x.metadata.size < 5000000000
-  )
+  const recommendModel = ['gemma-2-2b-it', 'llama3.1-8b-instruct']
+
+  const featuredModel = configuredModels.filter((x) => {
+    const manualRecommendModel = configuredModels.filter((x) =>
+      recommendModel.includes(x.id)
+    )
+
+    if (manualRecommendModel.length === 2) {
+      return x.id === recommendModel[0] || x.id === recommendModel[1]
+    } else {
+      return (
+        x.metadata.tags.includes('Featured') && x.metadata.size < 5000000000
+      )
+    }
+  })
 
   const remoteModel = configuredModels.filter(
     (x) => !localEngines.includes(x.engine)
