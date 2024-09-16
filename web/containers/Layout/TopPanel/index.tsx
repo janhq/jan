@@ -103,20 +103,24 @@ const TopPanel = () => {
               )}
             </Fragment>
           )}
-          {mainViewState === MainViewState.Thread &&
-            Boolean(threads.length) &&
-            (isDownloadALocalModel || isAnyRemoteModelConfigured) && (
-              <Button
-                data-testid="btn-create-thread"
-                onClick={onCreateNewThreadClick}
-                theme="icon"
-              >
-                <PenSquareIcon
-                  size={16}
-                  className="cursor-pointer text-[hsla(var(--text-secondary))]"
-                />
-              </Button>
-            )}
+          {mainViewState === MainViewState.Thread && (
+            <Button
+              data-testid="btn-create-thread"
+              onClick={onCreateNewThreadClick}
+              theme="icon"
+              className={twMerge(
+                'invisible',
+                Boolean(threads.length) &&
+                  (isDownloadALocalModel || isAnyRemoteModelConfigured) &&
+                  'visible'
+              )}
+            >
+              <PenSquareIcon
+                size={16}
+                className="cursor-pointer text-[hsla(var(--text-secondary))]"
+              />
+            </Button>
+          )}
         </div>
         <div className="unset-drag flex items-center gap-x-2">
           {mainViewState !== MainViewState.Hub &&
