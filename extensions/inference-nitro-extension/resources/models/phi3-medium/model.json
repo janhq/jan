@@ -8,12 +8,12 @@
     "id": "phi3-medium",
     "object": "model",
     "name": "Phi-3 Medium Instruct Q4",
-    "version": "1.3",
+    "version": "1.4",
     "description": "Phi-3 Medium is Microsoft's latest SOTA model.",
     "format": "gguf",
     "settings": {
       "ctx_len": 128000,
-      "prompt_template": "<|user|> {prompt}<|end|><|assistant|><|end|>",
+      "prompt_template": "<|user|> {prompt}<|end|><|assistant|>",
       "llama_model_path": "Phi-3-medium-128k-instruct-Q4_K_M.gguf",
       "ngl": 33
     },
