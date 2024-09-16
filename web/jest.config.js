@@ -17,6 +17,7 @@ const config = {
   // Add more setup options before each test is run
   // setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   runner: './testRunner.js',
+  collectCoverageFrom: ['./**/*.{ts,tsx}'],
 }
 
 // https://stackoverflow.com/a/72926763/5078746
