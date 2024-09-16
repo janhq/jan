@@ -66,11 +66,11 @@ export function useStarterScreen() {
   const isShowStarterScreen =
     !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length
 
-  const temporaryDisabledStartrScreen = false
+  const temporaryDisabled = true
 
   return {
     extensionHasSettings,
     isShowStarterScreen,
-    temporaryDisabledStartrScreen,
+    temporaryDisabled,
   }
 }

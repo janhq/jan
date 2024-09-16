@@ -1,4 +1,4 @@
-import { useStarterScreen } from '@/hooks/useOnboarding'
+import { useStarterScreen } from '@/hooks/useStarterScreen'
 
 import ThreadLeftPanel from '@/screens/Thread/ThreadLeftPanel'
 
@@ -11,20 +11,17 @@ import ThreadRightPanel from './ThreadRightPanel'
 
 const ThreadScreen = () => {
   // Temporarily disabled the starter screen. Later, we will use isShowStarterScreen instead of temporaryDisabledStarterScreen
-  const { extensionHasSettings, temporaryDisabledStartrScreen } =
-    useStarterScreen()
+  const { extensionHasSettings, temporaryDisabled } = useStarterScreen()
   return (
     <div className="relative flex h-full w-full flex-1 overflow-x-hidden">
-      {temporaryDisabledStartrScreen ? (
-        <>
-          <OnDeviceStarterScreen extensionHasSettings={extensionHasSettings} />
-        </>
-      ) : (
+      {temporaryDisabled ? (
         <>
           <ThreadLeftPanel />
           <ThreadCenterPanel />
           <ThreadRightPanel />
         </>
+      ) : (
+        <OnDeviceStarterScreen extensionHasSettings={extensionHasSettings} />
       )}
 
       {/* Showing variant modal action for thread screen */}
