@@ -263,10 +263,10 @@ async function validateModelStatus(modelId: string): Promise<void> {
   log(`[CORTEX]::Debug: Validating model ${modelId}`)
   return fetchRetry(NITRO_HTTP_VALIDATE_MODEL_URL, {
     method: 'POST',
-    body: JSON.stringify({ 
+    body: JSON.stringify({
       model: modelId,
       // TODO: force to use cortex llamacpp by default
-      engine: 'cortex.llamacpp'
+      engine: 'cortex.llamacpp',
     }),
     headers: {
       'Content-Type': 'application/json',
@@ -365,14 +365,37 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
   log(`[CORTEX]::Debug: Spawning cortex subprocess...`)
 
   return new Promise<void>(async (resolve, reject) => {
-    let executableOptions = executableNitroFile(systemInfo?.gpuSetting)
+    let executableOptions = executableNitroFile(
+      // If ngl is not set or equal to 0, run on CPU with correct instructions
+      systemInfo?.gpuSetting
+        ? {
+            ...systemInfo.gpuSetting,
+            run_mode:
+              currentSettings?.ngl === undefined || currentSettings.ngl === 0
+                ? 'cpu'
+                : systemInfo.gpuSetting.run_mode,
+          }
+        : undefined
+    )
 
     const args: string[] = ['1', LOCAL_HOST, PORT.toString()]
     // Execute the binary
     log(
       `[CORTEX]::Debug: Spawn cortex at path: ${executableOptions.executablePath}, and args: ${args}`
     )
-    log(path.parse(executableOptions.executablePath).dir)
+    log(`[CORTEX]::Debug: Cortex engine path: ${executableOptions.enginePath}`)
+
+    // Add engine path to the PATH and LD_LIBRARY_PATH
+    process.env.PATH = (process.env.PATH || '').concat(
+      path.delimiter,
+      executableOptions.enginePath
+    )
+    log(`[CORTEX] PATH: ${process.env.PATH}`)
+    process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
+      path.delimiter,
+      executableOptions.enginePath
+    )
+
     subprocess = spawn(
       executableOptions.executablePath,
       ['1', LOCAL_HOST, PORT.toString()],
@@ -380,6 +403,7 @@ function spawnNitroProcess(systemInfo?: SystemInformation): Promise<any> {
         cwd: path.join(path.parse(executableOptions.executablePath).dir),
         env: {
           ...process.env,
+          ENGINE_PATH: executableOptions.enginePath,
           CUDA_VISIBLE_DEVICES: executableOptions.cudaVisibleDevices,
           // Vulkan - Support 1 device at a time for now
           ...(executableOptions.vkVisibleDevices?.length > 0 && {
@@ -440,12 +464,19 @@ const getCurrentNitroProcessInfo = (): NitroProcessInfo => {
 }
 
 const addAdditionalDependencies = (data: { name: string; version: string }) => {
+  log(
+    `[CORTEX]::Debug: Adding additional dependencies for ${data.name} ${data.version}`
+  )
   const additionalPath = path.delimiter.concat(
     path.join(getJanDataFolderPath(), 'engines', data.name, data.version)
   )
   // Set the updated PATH
-  process.env.PATH = (process.env.PATH || '').concat(additionalPath)
+  process.env.PATH = (process.env.PATH || '').concat(
+    path.delimiter,
+    additionalPath
+  )
   process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
+    path.delimiter,
     additionalPath
   )
 }

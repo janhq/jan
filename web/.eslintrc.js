@@ -14,6 +14,7 @@ module.exports = {
     '**/*.test.tsx',
     '**/*.test.ts',
     'testRunner.js',
+    'jest.config.js',
   ],
   extends: [
     'next/core-web-vitals',
@@ -70,6 +71,7 @@ module.exports = {
     '@next/next/no-img-element': 'off',
     '@next/next/no-html-link-for-pages': 'off',
     'react/display-name': 'off',
+    'react/no-is-mounted': 'off',
     'react-hooks/rules-of-hooks': 'error',
     '@typescript-eslint/no-unused-vars': ['warn'],
     'import/order': [

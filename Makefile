@@ -104,7 +104,7 @@ endif
 # Testing
 test: lint
 	yarn build:test
-	yarn test:unit
+	yarn test:coverage
 	yarn test
 
 # Builds and publishes the app

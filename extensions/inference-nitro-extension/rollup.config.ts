@@ -96,7 +96,7 @@ export default [
           llama3170bJson,
           gemma22bJson,
           gemma29bJson,
-          gemma227bJson
+          gemma227bJson,
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
@@ -117,7 +117,10 @@ export default [
       // Allow json resolution
       json(),
       //     Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
+      typescript({
+        useTsconfigDeclarationDir: true,
+        exclude: ['**/__tests__', '**/*.test.ts'],
+      }),
       // Compile TypeScript files
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
       commonjs(),
@@ -139,7 +142,7 @@ export default [
       { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true },
     ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ['@janhq/core/node'],
+    external: ['@janhq/core/node', 'cpu-instructions'],
     watch: {
       include: 'src/node/**',
     },
@@ -147,7 +150,10 @@ export default [
       // Allow json resolution
       json(),
       // Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
+      typescript({
+        useTsconfigDeclarationDir: true,
+        exclude: ['**/__tests__', '**/*.test.ts'],
+      }),
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
       commonjs(),
       // Allow node_modules resolution, so you can use 'external' to control
@@ -156,7 +162,6 @@ export default [
       resolve({
         extensions: ['.ts', '.js', '.json'],
       }),
-
       // Resolve source maps to the original source
       sourceMaps(),
     ],

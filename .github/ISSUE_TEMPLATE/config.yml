@@ -2,6 +2,6 @@
 blank_issues_enabled: true
 
 contact_links:
-  - name: "\u2753 Our GitHub Discussions page"
+  - name: "\1F4AC Jan Discussions"
     url: "https://github.com/orgs/janhq/discussions/categories/q-a"
-    about: "Please ask and answer questions here!"
+    about: "Get help, discuss features & roadmap, and share your projects"

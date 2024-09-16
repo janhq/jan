@@ -6,7 +6,7 @@ import { useClickOutside } from '@janhq/joi'
 import { InfoIcon } from 'lucide-react'
 
 type Props = {
-  name: string
+  name?: string
   title: string
   disabled: boolean
   description: string
@@ -28,8 +28,10 @@ const SliderRightPanel = ({
   onValueChanged,
 }: Props) => {
   const [showTooltip, setShowTooltip] = useState({ max: false, min: false })
+  const [val, setVal] = useState(value.toString())
 
   useClickOutside(() => setShowTooltip({ max: false, min: false }), null, [])
+
   return (
     <div className="flex flex-col">
       <div className="mb-3 flex items-center gap-x-2">
@@ -48,7 +50,10 @@ const SliderRightPanel = ({
         <div className="relative w-full">
           <Slider
             value={[value]}
-            onValueChange={(e) => onValueChanged?.(e[0])}
+            onValueChange={(e) => {
+              onValueChanged?.(Number(e[0]))
+              setVal(e[0].toString())
+            }}
             min={min}
             max={max}
             step={step}
@@ -63,24 +68,45 @@ const SliderRightPanel = ({
           open={showTooltip.max || showTooltip.min}
           trigger={
             <Input
-              type="number"
+              type="text"
               className="-mt-4 h-8 w-[60px]"
               min={min}
               max={max}
-              value={String(value)}
+              value={val}
               disabled={disabled}
               textAlign="right"
               onBlur={(e) => {
                 if (Number(e.target.value) > Number(max)) {
                   onValueChanged?.(Number(max))
+                  setVal(max.toString())
                   setShowTooltip({ max: true, min: false })
-                } else if (Number(e.target.value) < Number(min)) {
+                } else if (
+                  Number(e.target.value) < Number(min) ||
+                  !e.target.value.length
+                ) {
                   onValueChanged?.(Number(min))
+                  setVal(min.toString())
                   setShowTooltip({ max: false, min: true })
                 }
               }}
               onChange={(e) => {
+                // Should not accept invalid value or NaN
+                // E.g. anything changes that trigger onValueChanged
+                // Which is incorrect
+                if (Number(e.target.value) > Number(max)) {
+                  setVal(max.toString())
+                } else if (
+                  Number(e.target.value) < Number(min) ||
+                  !e.target.value.length
+                ) {
+                  setVal(min.toString())
+                } else if (Number.isNaN(Number(e.target.value))) return
+
                 onValueChanged?.(Number(e.target.value))
+                // TODO: How to support negative number input?
+                if (/^\d*\.?\d*$/.test(e.target.value)) {
+                  setVal(e.target.value)
+                }
               }}
             />
           }

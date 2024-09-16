@@ -15,5 +15,6 @@
     "importHelpers": true,
     "typeRoots": ["node_modules/@types"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
 }

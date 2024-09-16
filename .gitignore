@@ -20,7 +20,7 @@ electron/themes
 electron/playwright-report
 server/pre-install
 package-lock.json
-
+coverage
 *.log
 core/lib/**
 
@@ -41,3 +41,7 @@ extensions/*-extension/bin/vulkaninfo
 .turbo
 electron/test-data
 electron/test-results
+core/test_results.html
+coverage
+.yarn
+.yarnrc

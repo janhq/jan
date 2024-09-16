@@ -46,6 +46,16 @@ const BaseLayout = () => {
     }
   }, [setMainViewState])
 
+  useEffect(() => {
+    window.electronAPI?.onMainViewStateChange(
+      (_event: string, route: string) => {
+        if (route === 'Settings') {
+          setMainViewState(MainViewState.Settings)
+        }
+      }
+    )
+  }, [setMainViewState])
+
   return (
     <div
       className={twMerge(
