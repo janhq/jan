@@ -10,7 +10,7 @@ import ModalEditTitleThread from './ThreadLeftPanel/ModalEditTitleThread'
 import ThreadRightPanel from './ThreadRightPanel'
 
 const ThreadScreen = () => {
-  // Temporarily disabled the starter screen. Later, we will use isShowStarterScreen instead of temporaryDisabledStarterScreen
+  // Temporarily disabled the starter screen. isShowStarterScreen always return false, we need update it when rework starter screen
   const { extensionHasSettings, isShowStarterScreen } = useStarterScreen()
   return (
     <div className="relative flex h-full w-full flex-1 overflow-x-hidden">
