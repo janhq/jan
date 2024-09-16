@@ -22,7 +22,11 @@ const FactoryReset = () => {
           recommended only if the application is in a corrupted state.
         </p>
       </div>
-      <Button theme="destructive" onClick={() => setModalValidation(true)}>
+      <Button
+        data-testid="reset-button"
+        theme="destructive"
+        onClick={() => setModalValidation(true)}
+      >
         Reset
       </Button>
       <ModalValidation />
