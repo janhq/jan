@@ -22,6 +22,8 @@ import {
   getFileSize,
   AllQuantizations,
   ModelEvent,
+  ModelFile,
+  dirName,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -48,16 +50,7 @@ export default class JanModelExtension extends ModelExtension {
   ]
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _supportedGpuArch = ['ampere', 'ada']
-  private static readonly _safetensorsRegexs = [
-    /model\.safetensors$/,
-    /model-[0-9]+-of-[0-9]+\.safetensors$/,
-  ]
-  private static readonly _pytorchRegexs = [
-    /pytorch_model\.bin$/,
-    /consolidated\.[0-9]+\.pth$/,
-    /pytorch_model-[0-9]+-of-[0-9]+\.bin$/,
-    /.*\.pt$/,
-  ]
+
   interrupted = false
 
   /**
@@ -319,9 +312,9 @@ export default class JanModelExtension extends ModelExtension {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
-  async deleteModel(modelId: string): Promise<void> {
+  async deleteModel(model: ModelFile): Promise<void> {
     try {
-      const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
+      const dirPath = await dirName(model.file_path)
       const jsonFilePath = await joinPath([
         dirPath,
         JanModelExtension._modelMetadataFileName,
@@ -330,9 +323,11 @@ export default class JanModelExtension extends ModelExtension {
         await this.readModelMetadata(jsonFilePath)
       ) as Model
 
+      // TODO: This is so tricky?
+      // Should depend on sources?
       const isUserImportModel =
         modelInfo.metadata?.author?.toLowerCase() === 'user'
-      if (isUserImportModel) {
+        if (isUserImportModel) {
         // just delete the folder
         return fs.rm(dirPath)
       }
@@ -351,29 +346,10 @@ export default class JanModelExtension extends ModelExtension {
   }
 
   /**
-   * Saves a model file.
-   * @param model - The model to save.
-   * @returns A Promise that resolves when the model is saved.
-   */
-  async saveModel(model: Model): Promise<void> {
-    const jsonFilePath = await joinPath([
-      JanModelExtension._homeDir,
-      model.id,
-      JanModelExtension._modelMetadataFileName,
-    ])
-
-    try {
-      await fs.writeFileSync(jsonFilePath, JSON.stringify(model, null, 2))
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  /**
    * Gets all downloaded models.
    * @returns A Promise that resolves with an array of all models.
    */
-  async getDownloadedModels(): Promise<Model[]> {
+  async getDownloadedModels(): Promise<ModelFile[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
         if (!JanModelExtension._offlineInferenceEngine.includes(model.engine))
@@ -425,8 +401,10 @@ export default class JanModelExtension extends ModelExtension {
   ): Promise<string | undefined> {
     // try to find model.json recursively inside each folder
     if (!(await fs.existsSync(folderFullPath))) return undefined
+
     const files: string[] = await fs.readdirSync(folderFullPath)
     if (files.length === 0) return undefined
+
     if (files.includes(JanModelExtension._modelMetadataFileName)) {
       return joinPath([
         folderFullPath,
@@ -446,7 +424,7 @@ export default class JanModelExtension extends ModelExtension {
 
   private async getModelsMetadata(
     selector?: (path: string, model: Model) => Promise<boolean>
-  ): Promise<Model[]> {
+  ): Promise<ModelFile[]> {
     try {
       if (!(await fs.existsSync(JanModelExtension._homeDir))) {
         console.debug('Model folder not found')
@@ -469,6 +447,7 @@ export default class JanModelExtension extends ModelExtension {
           JanModelExtension._homeDir,
           dirName,
         ])
+
         const jsonPath = await this.getModelJsonPath(folderFullPath)
 
         if (await fs.existsSync(jsonPath)) {
@@ -486,6 +465,8 @@ export default class JanModelExtension extends ModelExtension {
               },
             ]
           }
+          model.file_path = jsonPath
+          model.file_name = JanModelExtension._modelMetadataFileName
 
           if (selector && !(await selector?.(dirName, model))) {
             return
@@ -506,7 +487,7 @@ export default class JanModelExtension extends ModelExtension {
               typeof result.value === 'object'
                 ? result.value
                 : JSON.parse(result.value)
-            return model as Model
+            return model as ModelFile
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
           }
@@ -637,7 +618,7 @@ export default class JanModelExtension extends ModelExtension {
    * Gets all available models.
    * @returns A Promise that resolves with an array of all models.
    */
-  async getConfiguredModels(): Promise<Model[]> {
+  async getConfiguredModels(): Promise<ModelFile[]> {
     return this.getModelsMetadata()
   }
 
@@ -669,7 +650,7 @@ export default class JanModelExtension extends ModelExtension {
     modelBinaryPath: string,
     modelFolderName: string,
     modelFolderPath: string
-  ): Promise<Model> {
+  ): Promise<ModelFile> {
     const fileStats = await fs.fileStat(modelBinaryPath, true)
     const binaryFileSize = fileStats.size
 
@@ -732,25 +713,21 @@ export default class JanModelExtension extends ModelExtension {
 
     await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
 
-    return model
+    return {
+      ...model,
+      file_path: modelFilePath,
+      file_name: JanModelExtension._modelMetadataFileName,
+    }
   }
 
-  async updateModelInfo(modelInfo: Partial<Model>): Promise<Model> {
-    const modelId = modelInfo.id
+  async updateModelInfo(modelInfo: Partial<ModelFile>): Promise<ModelFile> {
     if (modelInfo.id == null) throw new Error('Model ID is required')
 
-    const janDataFolderPath = await getJanDataFolderPath()
-    const jsonFilePath = await joinPath([
-      janDataFolderPath,
-      'models',
-      modelId,
-      JanModelExtension._modelMetadataFileName,
-    ])
     const model = JSON.parse(
-      await this.readModelMetadata(jsonFilePath)
-    ) as Model
+      await this.readModelMetadata(modelInfo.file_path)
+    ) as ModelFile
 
-    const updatedModel: Model = {
+    const updatedModel: ModelFile = {
       ...model,
       ...modelInfo,
       parameters: {
@@ -765,9 +742,15 @@ export default class JanModelExtension extends ModelExtension {
         ...model.metadata,
         ...modelInfo.metadata,
       },
+      // Should not persist file_path & file_name
+      file_path: undefined,
+      file_name: undefined,
     }
 
-    await fs.writeFileSync(jsonFilePath, JSON.stringify(updatedModel, null, 2))
+    await fs.writeFileSync(
+      modelInfo.file_path,
+      JSON.stringify(updatedModel, null, 2)
+    )
     return updatedModel
   }
 

@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { Model } from '@janhq/core'
+import { ModelFile } from '@janhq/core'
 import { Button, Badge, Tooltip } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -38,7 +38,7 @@ import {
 } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
-  model: Model
+  model: ModelFile
   onClick: () => void
   open: string
 }
