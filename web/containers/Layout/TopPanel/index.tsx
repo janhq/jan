@@ -23,6 +23,7 @@ import { toaster } from '@/containers/Toast'
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import { useStarterScreen } from '@/hooks/useStarterScreen'
 
 import {
   mainViewStateAtom,
@@ -34,11 +35,6 @@ import {
   reduceTransparentAtom,
   selectedSettingAtom,
 } from '@/helpers/atoms/Setting.atom'
-import {
-  isAnyRemoteModelConfiguredAtom,
-  isDownloadALocalModelAtom,
-  threadsAtom,
-} from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const TopPanel = () => {
@@ -52,11 +48,6 @@ const TopPanel = () => {
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
-  const threads = useAtomValue(threadsAtom)
-  const isDownloadALocalModel = useAtomValue(isDownloadALocalModelAtom)
-  const isAnyRemoteModelConfigured = useAtomValue(
-    isAnyRemoteModelConfiguredAtom
-  )
 
   const onCreateNewThreadClick = () => {
     if (!assistants.length)
@@ -67,6 +58,8 @@ const TopPanel = () => {
       })
     requestCreateNewThread(assistants[0])
   }
+
+  const { isShowStarterScreen } = useStarterScreen()
 
   return (
     <div
@@ -103,17 +96,11 @@ const TopPanel = () => {
               )}
             </Fragment>
           )}
-          {mainViewState === MainViewState.Thread && (
+          {mainViewState === MainViewState.Thread && !isShowStarterScreen && (
             <Button
               data-testid="btn-create-thread"
               onClick={onCreateNewThreadClick}
               theme="icon"
-              className={twMerge(
-                'invisible',
-                Boolean(threads.length) &&
-                  (isDownloadALocalModel || isAnyRemoteModelConfigured) &&
-                  'visible'
-              )}
             >
               <PenSquareIcon
                 size={16}

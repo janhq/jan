@@ -63,13 +63,8 @@ export function useStarterScreen() {
     (x) => x.apiKey.length > 1
   )
 
-  let isShowStarterScreen
-
-  isShowStarterScreen =
+  const isShowStarterScreen =
     !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length
-
-  // Remove this part when we rework on starter screen
-  isShowStarterScreen = false
 
   return {
     extensionHasSettings,
