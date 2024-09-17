@@ -1,12 +1,12 @@
-import React from 'react';
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import React from 'react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import Advanced from '.';
+import Advanced from '.'
 
 class ResizeObserverMock {
-  observe() { }
-  unobserve() { }
-  disconnect() { }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
 }
 
 global.ResizeObserver = ResizeObserverMock
@@ -16,10 +16,11 @@ global.window.core = {
     getAppConfigurations: () => jest.fn(),
     updateAppConfiguration: () => jest.fn(),
     relaunch: () => jest.fn(),
-  }
+  },
 }
 
 const setSettingsMock = jest.fn()
+
 // Mock useSettings hook
 jest.mock('@/hooks/useSettings', () => ({
   __esModule: true,
@@ -30,108 +31,124 @@ jest.mock('@/hooks/useSettings', () => ({
       proxy: false,
       gpus: [{ name: 'gpu-1' }, { name: 'gpu-2' }],
       gpus_in_use: ['0'],
-      quick_ask: false
+      quick_ask: false,
     }),
     setSettings: setSettingsMock,
   }),
-}));
+}))
 
-import * as toast from '@/containers/Toast';
-jest.mock('@/containers/Toast');
+import * as toast from '@/containers/Toast'
+
+jest.mock('@/containers/Toast')
 
 jest.mock('@janhq/core', () => ({
   __esModule: true,
   ...jest.requireActual('@janhq/core'),
   fs: {
     rm: jest.fn(),
-  }
-}));
+  },
+}))
 
+// Simulate a full advanced settings screen
 // @ts-ignore
-global.isMac = false;
+global.isMac = false
 // @ts-ignore
-global.isWindows = true;
-
+global.isWindows = true
 
 describe('Advanced', () => {
   it('renders the component', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
     await waitFor(() => {
-      expect(screen.getByText('Experimental Mode')).toBeInTheDocument();
-      expect(screen.getByText('HTTPS Proxy')).toBeInTheDocument();
-      expect(screen.getByText('Ignore SSL certificates')).toBeInTheDocument();
-      expect(screen.getByText('Jan Data Folder')).toBeInTheDocument();
-      expect(screen.getByText('Reset to Factory Settings')).toBeInTheDocument();
+      expect(screen.getByText('Experimental Mode')).toBeInTheDocument()
+      expect(screen.getByText('HTTPS Proxy')).toBeInTheDocument()
+      expect(screen.getByText('Ignore SSL certificates')).toBeInTheDocument()
+      expect(screen.getByText('Jan Data Folder')).toBeInTheDocument()
+      expect(screen.getByText('Reset to Factory Settings')).toBeInTheDocument()
     })
-  });
+  })
 
   it('updates Experimental enabled', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
+    let experimentalToggle
     await waitFor(() => {
-      const experimentalToggle = screen.getByTestId(/experimental-switch/i);
-      fireEvent.click(experimentalToggle!);
-      expect(experimentalToggle).toBeChecked();
+      experimentalToggle = screen.getByTestId(/experimental-switch/i)
+      fireEvent.click(experimentalToggle!)
     })
-  });
+    expect(experimentalToggle).toBeChecked()
+  })
+
+  it('updates Experimental disabled', async () => {
+    render(<Advanced />)
+
+    let experimentalToggle
+    await waitFor(() => {
+      experimentalToggle = screen.getByTestId(/experimental-switch/i)
+      fireEvent.click(experimentalToggle!)
+    })
+    expect(experimentalToggle).not.toBeChecked()
+  })
 
   it('clears logs', async () => {
-    const jestMock = jest.fn();
-    jest.spyOn(toast, 'toaster').mockImplementation(jestMock);
+    const jestMock = jest.fn()
+    jest.spyOn(toast, 'toaster').mockImplementation(jestMock)
 
-    render(<Advanced />);
-
+    render(<Advanced />)
+    let clearLogsButton
     await waitFor(() => {
-      const clearLogsButton = screen.getByTestId(/clear-logs/i);
-      expect(clearLogsButton).toBeInTheDocument();
-      fireEvent.click(clearLogsButton);
-      expect(jestMock).toHaveBeenCalled();
+      clearLogsButton = screen.getByTestId(/clear-logs/i)
+      fireEvent.click(clearLogsButton)
     })
-  });
+    expect(clearLogsButton).toBeInTheDocument()
+    expect(jestMock).toHaveBeenCalled()
+  })
 
   it('toggles proxy enabled', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
+    let proxyToggle
     await waitFor(() => {
-      expect(screen.getByText('HTTPS Proxy')).toBeInTheDocument();
-      const proxyToggle = screen.getByTestId(/proxy-switch/i);
-      fireEvent.click(proxyToggle);
-      expect(proxyToggle).toBeChecked();
+      expect(screen.getByText('HTTPS Proxy')).toBeInTheDocument()
+      proxyToggle = screen.getByTestId(/proxy-switch/i)
+      fireEvent.click(proxyToggle)
     })
-  });
+    expect(proxyToggle).toBeChecked()
+  })
 
   it('updates proxy settings', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
+    let proxyInput
     await waitFor(() => {
-      const proxyToggle = screen.getByTestId(/proxy-switch/i);
-      fireEvent.click(proxyToggle);
-      const proxyInput = screen.getByTestId(/proxy-input/i);
-      fireEvent.change(proxyInput, { target: { value: 'http://proxy.com' } });
-      expect(proxyInput).toHaveValue('http://proxy.com');
+      const proxyToggle = screen.getByTestId(/proxy-switch/i)
+      fireEvent.click(proxyToggle)
+      proxyInput = screen.getByTestId(/proxy-input/i)
+      fireEvent.change(proxyInput, { target: { value: 'http://proxy.com' } })
     })
-  });
+    expect(proxyInput).toHaveValue('http://proxy.com')
+  })
 
   it('toggles ignore SSL certificates', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
+    let ignoreSslToggle
     await waitFor(() => {
-      expect(screen.getByText('Ignore SSL certificates')).toBeInTheDocument();
-      const ignoreSslToggle = screen.getByTestId(/ignore-ssl-switch/i);
-      fireEvent.click(ignoreSslToggle);
-      expect(ignoreSslToggle).toBeChecked();
+      expect(screen.getByText('Ignore SSL certificates')).toBeInTheDocument()
+      ignoreSslToggle = screen.getByTestId(/ignore-ssl-switch/i)
+      fireEvent.click(ignoreSslToggle)
     })
-  });
+    expect(ignoreSslToggle).toBeChecked()
+  })
 
   it('renders DataFolder component', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
     await waitFor(() => {
-      expect(screen.getByText('Jan Data Folder')).toBeInTheDocument();
-      expect(screen.getByTestId(/jan-data-folder-input/i)).toBeInTheDocument();
+      expect(screen.getByText('Jan Data Folder')).toBeInTheDocument()
+      expect(screen.getByTestId(/jan-data-folder-input/i)).toBeInTheDocument()
     })
-  });
+  })
 
   it('renders FactoryReset component', async () => {
-    render(<Advanced />);
+    render(<Advanced />)
     await waitFor(() => {
-      expect(screen.getByText('Reset to Factory Settings')).toBeInTheDocument();
-      expect(screen.getByTestId(/reset-button/i)).toBeInTheDocument();
+      expect(screen.getByText('Reset to Factory Settings')).toBeInTheDocument()
+      expect(screen.getByTestId(/reset-button/i)).toBeInTheDocument()
     })
-  });
-});
+  })
+})
