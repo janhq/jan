@@ -1,7 +1,7 @@
 {
   "name": "@janhq/inference-cortex-extension",
   "productName": "Cortex Inference Engine",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "This extension embeds cortex.cpp, a lightweight inference engine written in C++. See https://jan.ai.\nAdditional dependencies could be installed to run without Cuda Toolkit installation.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",

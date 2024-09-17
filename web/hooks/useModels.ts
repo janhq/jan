@@ -5,6 +5,7 @@ import {
   Model,
   ModelEvent,
   ModelExtension,
+  ModelFile,
   events,
 } from '@janhq/core'
 
@@ -63,12 +64,12 @@ const getLocalDefaultModel = async (): Promise<Model | undefined> =>
     .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.getDefaultModel()
 
-const getLocalConfiguredModels = async (): Promise<Model[]> =>
+const getLocalConfiguredModels = async (): Promise<ModelFile[]> =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.getConfiguredModels() ?? []
 
-const getLocalDownloadedModels = async (): Promise<Model[]> =>
+const getLocalDownloadedModels = async (): Promise<ModelFile[]> =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.getDownloadedModels() ?? []

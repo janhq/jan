@@ -46,3 +46,4 @@ coverage
 .yarn
 .yarnrc
 test_results.html
+*.tsbuildinfo

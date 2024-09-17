@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import { InferenceEngine, ModelFile } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import {
@@ -21,7 +21,7 @@ import { localEngines } from '@/utils/modelEngine'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type Props = {
-  model: Model
+  model: ModelFile
   groupTitle?: string
 }
 

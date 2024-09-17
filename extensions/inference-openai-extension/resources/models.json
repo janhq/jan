@@ -119,5 +119,65 @@
       ]
     },
     "engine": "openai"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://openai.com"
+      }
+    ],
+    "id": "o1-preview",
+    "object": "model",
+    "name": "OpenAI o1-preview",
+    "version": "1.0",
+    "description": "OpenAI o1-preview is a new model with complex reasoning",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "OpenAI",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "openai"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://openai.com"
+      }
+    ],
+    "id": "o1-mini",
+    "object": "model",
+    "name": "OpenAI o1-mini",
+    "version": "1.0",
+    "description": "OpenAI o1-mini is a lightweight reasoning model",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "OpenAI",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "openai"
   }
 ]

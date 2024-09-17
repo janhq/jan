@@ -1,4 +1,4 @@
-import { ImportingModel, Model, InferenceEngine } from '@janhq/core'
+import { ImportingModel, Model, InferenceEngine, ModelFile } from '@janhq/core'
 import { atom } from 'jotai'
 
 import { localEngines } from '@/utils/modelEngine'
@@ -32,18 +32,7 @@ export const removeDownloadingModelAtom = atom(
   }
 )
 
-export const downloadedModelsAtom = atom<Model[]>([])
-
-export const updateDownloadedModelAtom = atom(
-  null,
-  (get, set, updatedModel: Model) => {
-    const models: Model[] = get(downloadedModelsAtom).map((c) =>
-      c.id === updatedModel.id ? updatedModel : c
-    )
-
-    set(downloadedModelsAtom, models)
-  }
-)
+export const downloadedModelsAtom = atom<ModelFile[]>([])
 
 export const removeDownloadedModelAtom = atom(
   null,
@@ -57,7 +46,7 @@ export const removeDownloadedModelAtom = atom(
   }
 )
 
-export const configuredModelsAtom = atom<Model[]>([])
+export const configuredModelsAtom = atom<ModelFile[]>([])
 
 export const defaultModelAtom = atom<Model | undefined>(undefined)
 
@@ -144,6 +133,6 @@ export const updateImportingModelAtom = atom(
   }
 )
 
-export const selectedModelAtom = atom<Model | undefined>(undefined)
+export const selectedModelAtom = atom<ModelFile | undefined>(undefined)
 
 export const showEngineListModelAtom = atom<InferenceEngine[]>(localEngines)

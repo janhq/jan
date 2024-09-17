@@ -69,6 +69,13 @@ const joinPath: (paths: string[]) => Promise<string> = (paths) =>
   globalThis.core.api?.joinPath(paths)
 
 /**
+ * Get dirname of a file path.
+ * @param path - The file path to retrieve dirname.
+ * @returns {Promise<string>} A promise that resolves the dirname.
+ */
+const dirName: (path: string) => Promise<string> = (path) => globalThis.core.api?.dirName(path)
+
+/**
  * Retrieve the basename from an url.
  * @param path - The path to retrieve.
  * @returns {Promise<string>} A promise that resolves with the basename.
@@ -161,5 +168,6 @@ export {
   systemInformation,
   showToast,
   getFileSize,
+  dirName,
   FileStat,
 }
