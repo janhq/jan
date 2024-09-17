@@ -12,7 +12,10 @@ import {
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
-import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+import {
+  extractInferenceParams,
+  extractModelLoadParams,
+} from '@/utils/modelParam'
 
 import useRecommendedModel from './useRecommendedModel'
 
@@ -47,12 +50,17 @@ export default function useUpdateModelParameters() {
       const toUpdateSettings = processStopWords(settings.params ?? {})
       const updatedModelParams = settings.modelId
         ? toUpdateSettings
-        : { ...activeModelParams, ...toUpdateSettings }
+        : {
+            ...selectedModel?.parameters,
+            ...selectedModel?.settings,
+            ...activeModelParams,
+            ...toUpdateSettings,
+          }
 
       // update the state
       setThreadModelParams(thread.id, updatedModelParams)
-      const runtimeParams = toRuntimeParams(updatedModelParams)
-      const settingParams = toSettingParams(updatedModelParams)
+      const runtimeParams = extractInferenceParams(updatedModelParams)
+      const settingParams = extractModelLoadParams(updatedModelParams)
 
       const assistants = thread.assistants.map(
         (assistant: ThreadAssistantInfo) => {

@@ -87,26 +87,28 @@ const SliderRightPanel = ({
                   onValueChanged?.(Number(min))
                   setVal(min.toString())
                   setShowTooltip({ max: false, min: true })
+                } else {
+                  setVal(Number(e.target.value).toString()) // There is a case .5 but not 0.5
                 }
               }}
               onChange={(e) => {
-                // Should not accept invalid value or NaN
-                // E.g. anything changes that trigger onValueChanged
-                // Which is incorrect
-                if (Number(e.target.value) > Number(max)) {
-                  setVal(max.toString())
-                } else if (
-                  Number(e.target.value) < Number(min) ||
-                  !e.target.value.length
-                ) {
-                  setVal(min.toString())
-                } else if (Number.isNaN(Number(e.target.value))) return
-
-                onValueChanged?.(Number(e.target.value))
                 // TODO: How to support negative number input?
+                // Passthru since it validates again onBlur
                 if (/^\d*\.?\d*$/.test(e.target.value)) {
                   setVal(e.target.value)
                 }
+
+                // Should not accept invalid value or NaN
+                // E.g. anything changes that trigger onValueChanged
+                // Which is incorrect
+                if (
+                  Number(e.target.value) > Number(max) ||
+                  Number(e.target.value) < Number(min) ||
+                  Number.isNaN(Number(e.target.value))
+                ) {
+                  return
+                }
+                onValueChanged?.(Number(e.target.value))
               }}
             />
           }
