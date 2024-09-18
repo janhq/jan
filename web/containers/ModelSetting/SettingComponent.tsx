@@ -20,6 +20,8 @@ const SettingComponent: React.FC<Props> = ({
   disabled = false,
   onValueUpdated,
 }) => {
+  console.log(componentProps)
+
   const components = componentProps.map((data) => {
     switch (data.controllerType) {
       case 'slider': {

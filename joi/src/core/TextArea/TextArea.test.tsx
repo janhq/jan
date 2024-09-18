@@ -1,6 +1,7 @@
 import React from 'react'
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { act } from 'react-dom/test-utils'
 import { TextArea } from './index'
 
 // Mock the styles import
@@ -30,5 +31,59 @@ describe('@joi/core/TextArea', () => {
     render(<TextArea data-testid="custom-textarea" rows={5} />)
     const textareaElement = screen.getByTestId('custom-textarea')
     expect(textareaElement).toHaveAttribute('rows', '5')
+  })
+
+  it('resizes correctly based scrollHeight', () => {
+    const { container } = render(<TextArea autoResize />)
+    const textareaElement = container.querySelector('textarea')
+
+    // Mocking the scrollHeight
+    act(() => {
+      if (textareaElement) {
+        Object.defineProperty(textareaElement, 'scrollHeight', {
+          value: 80,
+          writable: false,
+        })
+        textareaElement.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+
+    expect(textareaElement.scrollHeight).toBe(80)
+  })
+
+  it('resizes correctly based on min height', () => {
+    const { container } = render(<TextArea autoResize minResize={100} />)
+    const textareaElement = container.querySelector('textarea')
+
+    // Mocking the scrollHeight
+    act(() => {
+      if (textareaElement) {
+        Object.defineProperty(textareaElement, 'scrollHeight', {
+          value: 100,
+          writable: false,
+        })
+        textareaElement.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+
+    expect(textareaElement.scrollHeight).toBe(100)
+  })
+
+  it('resizes correctly based on max height', () => {
+    const { container } = render(<TextArea autoResize maxResize={400} />)
+    const textareaElement = container.querySelector('textarea')
+
+    // Mocking the scrollHeight
+    act(() => {
+      if (textareaElement) {
+        Object.defineProperty(textareaElement, 'scrollHeight', {
+          value: 400,
+          writable: false,
+        })
+        textareaElement.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+
+    expect(textareaElement.scrollHeight).toBe(400)
   })
 })
