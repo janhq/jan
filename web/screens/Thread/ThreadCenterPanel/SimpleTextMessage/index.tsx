@@ -178,7 +178,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         >
           {isUser
             ? props.role
-            : (activeThread?.assistants[0].assistant_name ?? props.role)}
+            : activeThread?.assistants[0].assistant_name ?? props.role}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created)}
