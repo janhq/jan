@@ -79,7 +79,7 @@ const TableActiveModel = () => {
           ) : (
             <tbody>
               <tr className="text-[hsla(var(--text-secondary))]">
-                <td className="p-4">No on-device model running</td>
+                <td className="p-4">No models are loaded into memory</td>
               </tr>
             </tbody>
           )}
