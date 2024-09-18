@@ -7,8 +7,8 @@
   ],
   "id": "llama3.1-8b-instruct",
   "object": "model",
-  "name": "Llama 3.1 8B Q4 Instruct",
-  "version": "1.0",
+  "name": "Llama 3.1 8B Instruct Q4",
+  "version": "1.1",
   "description": "Meta's Llama 3.1 excels at general usage situations, including chat, general world knowledge, and coding.",
   "format": "gguf",
   "settings": {

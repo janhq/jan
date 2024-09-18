@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals'
 import { executableNitroFile } from './execute'
 import { GpuSetting } from '@janhq/core'
-import { sep } from 'path'
+import { cpuInfo } from 'cpu-instructions'
 
 let testSettings: GpuSetting = {
   run_mode: 'cpu',
@@ -22,6 +22,14 @@ let testSettings: GpuSetting = {
 }
 const originalPlatform = process.platform
 
+jest.mock('cpu-instructions', () => ({
+  cpuInfo: {
+    cpuInfo: jest.fn(),
+  },
+}))
+let mock = cpuInfo.cpuInfo as jest.Mock
+mock.mockReturnValue([])
+
 describe('test executable nitro file', () => {
   afterAll(function () {
     Object.defineProperty(process, 'platform', {
@@ -38,17 +46,19 @@ describe('test executable nitro file', () => {
     })
     expect(executableNitroFile(testSettings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`mac-arm64${sep}cortex-cpp`),
+        enginePath: expect.stringContaining(`mac-arm64`),
+        executablePath: originalPlatform === 'darwin' ? expect.stringContaining(`mac-arm64/cortex-cpp`) : expect.anything(),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
     )
     Object.defineProperty(process, 'arch', {
-      value: 'amd64',
+      value: 'x64',
     })
     expect(executableNitroFile(testSettings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`mac-amd64${sep}cortex-cpp`),
+        enginePath: expect.stringContaining(`mac-x64`),
+        executablePath: originalPlatform === 'darwin' ? expect.stringContaining(`mac-x64/cortex-cpp`) : expect.anything(),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
@@ -62,14 +72,11 @@ describe('test executable nitro file', () => {
     const settings: GpuSetting = {
       ...testSettings,
       run_mode: 'cpu',
-      cuda: {
-        exist: true,
-        version: '11',
-      },
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`win-cpu${sep}cortex-cpp.exe`),
+        enginePath: expect.stringContaining(`win`),
+        executablePath: expect.stringContaining(`cortex-cpp.exe`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
@@ -102,7 +109,8 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`win-cuda-11-7${sep}cortex-cpp.exe`),
+        enginePath: expect.stringContaining(`win-cuda-11-7`),
+        executablePath: expect.stringContaining(`cortex-cpp.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
@@ -135,7 +143,8 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`win-cuda-12-0${sep}cortex-cpp.exe`),
+        enginePath: expect.stringContaining(`win-cuda-12-0`),
+        executablePath: expect.stringContaining(`cortex-cpp.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
@@ -152,7 +161,8 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`linux-cpu${sep}cortex-cpp`),
+        enginePath: expect.stringContaining(`linux`),
+        executablePath: expect.stringContaining(`cortex-cpp`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
@@ -185,7 +195,8 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`linux-cuda-11-7${sep}cortex-cpp`),
+        enginePath: expect.stringContaining(`linux-cuda-11-7`),
+        executablePath: expect.stringContaining(`cortex-cpp`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
@@ -218,10 +229,203 @@ describe('test executable nitro file', () => {
     }
     expect(executableNitroFile(settings)).toEqual(
       expect.objectContaining({
-        executablePath: expect.stringContaining(`linux-cuda-12-0${sep}cortex-cpp`),
+        enginePath: expect.stringContaining(`linux-cuda-12-0`),
+        executablePath: expect.stringContaining(`cortex-cpp`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
     )
+  })
+
+  // Generate test for different cpu instructions on Linux
+  it(`executes on Linux CPU with different instructions`, () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'linux',
+    })
+    const settings: GpuSetting = {
+      ...testSettings,
+      run_mode: 'cpu',
+    }
+
+    const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
+    cpuInstructions.forEach((instruction) => {
+      mock.mockReturnValue([instruction])
+
+      expect(executableNitroFile(settings)).toEqual(
+        expect.objectContaining({
+          enginePath: expect.stringContaining(`linux-${instruction}`),
+          executablePath: expect.stringContaining(`cortex-cpp`),
+
+          cudaVisibleDevices: '',
+          vkVisibleDevices: '',
+        })
+      )
+    })
+  })
+  // Generate test for different cpu instructions on Windows
+  it(`executes on Windows CPU with different instructions`, () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'win32',
+    })
+    const settings: GpuSetting = {
+      ...testSettings,
+      run_mode: 'cpu',
+    }
+    const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
+    cpuInstructions.forEach((instruction) => {
+      mock.mockReturnValue([instruction])
+      expect(executableNitroFile(settings)).toEqual(
+        expect.objectContaining({
+          enginePath: expect.stringContaining(`win-${instruction}`),
+          executablePath: expect.stringContaining(`cortex-cpp.exe`),
+          cudaVisibleDevices: '',
+          vkVisibleDevices: '',
+        })
+      )
+    })
+  })
+
+  // Generate test for different cpu instructions on Windows
+  it(`executes on Windows GPU with different instructions`, () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'win32',
+    })
+    const settings: GpuSetting = {
+      ...testSettings,
+      run_mode: 'gpu',
+      cuda: {
+        exist: true,
+        version: '12',
+      },
+      nvidia_driver: {
+        exist: true,
+        version: '12',
+      },
+      gpus_in_use: ['0'],
+      gpus: [
+        {
+          id: '0',
+          name: 'NVIDIA GeForce GTX 1080',
+          vram: '80000000',
+        },
+      ],
+    }
+    const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
+    cpuInstructions.forEach((instruction) => {
+      mock.mockReturnValue([instruction])
+      expect(executableNitroFile(settings)).toEqual(
+        expect.objectContaining({
+          enginePath: expect.stringContaining(`win-cuda-12-0`),
+          executablePath: expect.stringContaining(`cortex-cpp.exe`),
+          cudaVisibleDevices: '0',
+          vkVisibleDevices: '0',
+        })
+      )
+    })
+  })
+
+  // Generate test for different cpu instructions on Linux
+  it(`executes on Linux GPU with different instructions`, () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'linux',
+    })
+    const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
+    const settings: GpuSetting = {
+      ...testSettings,
+      run_mode: 'gpu',
+      cuda: {
+        exist: true,
+        version: '12',
+      },
+      nvidia_driver: {
+        exist: true,
+        version: '12',
+      },
+      gpus_in_use: ['0'],
+      gpus: [
+        {
+          id: '0',
+          name: 'NVIDIA GeForce GTX 1080',
+          vram: '80000000',
+        },
+      ],
+    }
+    cpuInstructions.forEach((instruction) => {
+      mock.mockReturnValue([instruction])
+      expect(executableNitroFile(settings)).toEqual(
+        expect.objectContaining({
+          enginePath: expect.stringContaining(`linux-cuda-12-0`),
+          executablePath: expect.stringContaining(`cortex-cpp`),
+          cudaVisibleDevices: '0',
+          vkVisibleDevices: '0',
+        })
+      )
+    })
+  })
+
+  // Generate test for different cpu instructions on Linux
+  it(`executes on Linux Vulkan should not have CPU instructions included`, () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'linux',
+    })
+    const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
+    const settings: GpuSetting = {
+      ...testSettings,
+      run_mode: 'gpu',
+      vulkan: true,
+      cuda: {
+        exist: true,
+        version: '12',
+      },
+      nvidia_driver: {
+        exist: true,
+        version: '12',
+      },
+      gpus_in_use: ['0'],
+      gpus: [
+        {
+          id: '0',
+          name: 'NVIDIA GeForce GTX 1080',
+          vram: '80000000',
+        },
+      ],
+    }
+    cpuInstructions.forEach((instruction) => {
+      mock.mockReturnValue([instruction])
+      expect(executableNitroFile(settings)).toEqual(
+        expect.objectContaining({
+          enginePath: expect.stringContaining(`linux-vulkan`),
+          executablePath: expect.stringContaining(`cortex-cpp`),
+          cudaVisibleDevices: '0',
+          vkVisibleDevices: '0',
+        })
+      )
+    })
+  })
+
+  // Generate test for different cpu instructions on MacOS
+  it(`executes on MacOS with different instructions`, () => {
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+    })
+    const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
+    cpuInstructions.forEach(() => {
+      Object.defineProperty(process, 'platform', {
+        value: 'darwin',
+      })
+      const settings: GpuSetting = {
+        ...testSettings,
+        run_mode: 'cpu',
+      }
+      mock.mockReturnValue([])
+      expect(executableNitroFile(settings)).toEqual(
+        expect.objectContaining({
+          enginePath: expect.stringContaining(`mac-x64`),
+          executablePath: originalPlatform === 'darwin' ? expect.stringContaining(`mac-x64/cortex-cpp`) : expect.anything(),
+          cudaVisibleDevices: '',
+          vkVisibleDevices: '',
+        })
+      )
+    })
   })
 })

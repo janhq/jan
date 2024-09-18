@@ -35,7 +35,6 @@ import {
   proxyEnabledAtom,
   vulkanEnabledAtom,
   quickAskEnabledAtom,
-  preserveModelSettingsAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
 type GPU = {
@@ -44,19 +43,10 @@ type GPU = {
   name: string
 }
 
-const test = [
-  {
-    id: 'test a',
-    vram: 2,
-    name: 'nvidia A',
-  },
-  {
-    id: 'test',
-    vram: 2,
-    name: 'nvidia B',
-  },
-]
-
+/**
+ * Advanced Settings Screen
+ * @returns
+ */
 const Advanced = () => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
     experimentalFeatureEnabledAtom
@@ -65,15 +55,12 @@ const Advanced = () => {
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
   const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
 
-  const [preserveModelSettings, setPreserveModelSettings] = useAtom(
-    preserveModelSettingsAtom
-  )
   const [proxy, setProxy] = useAtom(proxyAtom)
   const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
 
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
-  const [gpuList, setGpuList] = useState<GPU[]>(test)
+  const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
@@ -91,6 +78,9 @@ const Advanced = () => {
       return y['name']
     })
 
+  /**
+   * Handle proxy change
+   */
   const onProxyChange = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.target.value || ''
@@ -104,6 +94,12 @@ const Advanced = () => {
     [setPartialProxy, setProxy]
   )
 
+  /**
+   * Update Quick Ask Enabled
+   * @param e
+   * @param relaunch
+   * @returns void
+   */
   const updateQuickAskEnabled = async (
     e: boolean,
     relaunch: boolean = true
@@ -115,6 +111,12 @@ const Advanced = () => {
     if (relaunch) window.core?.api?.relaunch()
   }
 
+  /**
+   * Update Vulkan Enabled
+   * @param e
+   * @param relaunch
+   * @returns void
+   */
   const updateVulkanEnabled = async (e: boolean, relaunch: boolean = true) => {
     toaster({
       title: 'Reload',
@@ -127,11 +129,19 @@ const Advanced = () => {
     if (relaunch) window.location.reload()
   }
 
+  /**
+   * Update Experimental Enabled
+   * @param e
+   * @returns
+   */
   const updateExperimentalEnabled = async (
     e: ChangeEvent<HTMLInputElement>
   ) => {
     setExperimentalEnabled(e.target.checked)
-    if (e) return
+
+    // If it checked, we don't need to do anything else
+    // Otherwise have to reset other settings
+    if (e.target.checked) return
 
     // It affects other settings, so we need to reset them
     const isRelaunch = quickAskEnabled || vulkanEnabled
@@ -140,6 +150,9 @@ const Advanced = () => {
     if (isRelaunch) window.core?.api?.relaunch()
   }
 
+  /**
+   * useEffect to set GPU enabled if possible
+   */
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
@@ -153,6 +166,10 @@ const Advanced = () => {
     setUseGpuIfPossible()
   }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
 
+  /**
+   * Clear logs
+   * @returns
+   */
   const clearLogs = async () => {
     try {
       await fs.rm(`file://logs`)
@@ -167,6 +184,11 @@ const Advanced = () => {
     })
   }
 
+  /**
+   * Handle GPU Change
+   * @param gpuId
+   * @returns
+   */
   const handleGPUChange = (gpuId: string) => {
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
@@ -192,6 +214,9 @@ const Advanced = () => {
   const gpuSelectionPlaceHolder =
     gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
 
+  /**
+   * Handle click outside
+   */
   useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
 
   return (
@@ -208,6 +233,7 @@ const Advanced = () => {
             </p>
           </div>
           <Switch
+            data-testid="experimental-switch"
             checked={experimentalEnabled}
             onChange={updateExperimentalEnabled}
           />
@@ -389,27 +415,6 @@ const Advanced = () => {
           </div>
         )}
 
-        {experimentalEnabled && (
-          <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-            <div className="flex-shrink-0 space-y-1">
-              <div className="flex gap-x-2">
-                <h6 className="font-semibold capitalize">
-                  Preserve Model Settings
-                </h6>
-              </div>
-              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Save model settings changes directly to the model file so that
-                new threads will reuse the previous settings.
-              </p>
-            </div>
-
-            <Switch
-              checked={preserveModelSettings}
-              onChange={(e) => setPreserveModelSettings(e.target.checked)}
-            />
-          </div>
-        )}
-
         <DataFolder />
 
         {/* Proxy */}
@@ -426,11 +431,13 @@ const Advanced = () => {
 
           <div className="flex w-full flex-shrink-0 flex-col items-end gap-2 pr-1 sm:w-1/2">
             <Switch
+              data-testid="proxy-switch"
               checked={proxyEnabled}
               onChange={() => setProxyEnabled(!proxyEnabled)}
             />
             <div className="w-full">
               <Input
+                data-testid="proxy-input"
                 placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
                 value={partialProxy}
                 onChange={onProxyChange}
@@ -453,6 +460,7 @@ const Advanced = () => {
             </p>
           </div>
           <Switch
+            data-testid="ignore-ssl-switch"
             checked={ignoreSSL}
             onChange={(e) => setIgnoreSSL(e.target.checked)}
           />
@@ -473,6 +481,7 @@ const Advanced = () => {
               </p>
             </div>
             <Switch
+              data-testid="quick-ask-switch"
               checked={quickAskEnabled}
               onChange={() => {
                 toaster({
@@ -496,7 +505,11 @@ const Advanced = () => {
               Clear all logs from Jan app.
             </p>
           </div>
-          <Button theme="destructive" onClick={clearLogs}>
+          <Button
+            data-testid="clear-logs"
+            theme="destructive"
+            onClick={clearLogs}
+          >
             Clear
           </Button>
         </div>

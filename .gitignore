@@ -43,3 +43,6 @@ electron/test-data
 electron/test-results
 core/test_results.html
 coverage
+.yarn
+.yarnrc
+*.tsbuildinfo

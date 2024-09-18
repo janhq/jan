@@ -10,8 +10,6 @@ import { useSettings } from '@/hooks/useSettings'
 
 import NotEnoughMemoryLabel from './NotEnoughMemoryLabel'
 
-import RecommendedLabel from './RecommendedLabel'
-
 import SlowOnYourDeviceLabel from './SlowOnYourDeviceLabel'
 
 import {
@@ -53,9 +51,7 @@ const ModelLabel = ({ metadata, compact }: Props) => {
         />
       )
     }
-    if (minimumRamModel < availableRam && !compact) {
-      return <RecommendedLabel />
-    }
+
     if (minimumRamModel < totalRam && minimumRamModel > availableRam) {
       return <SlowOnYourDeviceLabel compact={compact} />
     }

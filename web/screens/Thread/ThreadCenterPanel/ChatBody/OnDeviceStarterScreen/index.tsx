@@ -4,6 +4,7 @@ import Image from 'next/image'
 
 import { InferenceEngine } from '@janhq/core'
 import { Button, Input, Progress, ScrollArea } from '@janhq/joi'
+import { useClickOutside } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { SearchIcon, DownloadCloudIcon } from 'lucide-react'
@@ -48,6 +49,7 @@ type Props = {
 
 const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const [searchValue, setSearchValue] = useState('')
+  const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const { downloadModel } = useDownloadModel()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
@@ -56,9 +58,21 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const featuredModel = configuredModels.filter((x) =>
-    x.metadata.tags.includes('Featured')
-  )
+  const recommendModel = ['gemma-2-2b-it', 'llama3.1-8b-instruct']
+
+  const featuredModel = configuredModels.filter((x) => {
+    const manualRecommendModel = configuredModels.filter((x) =>
+      recommendModel.includes(x.id)
+    )
+
+    if (manualRecommendModel.length === 2) {
+      return x.id === recommendModel[0] || x.id === recommendModel[1]
+    } else {
+      return (
+        x.metadata.tags.includes('Featured') && x.metadata.size < 5000000000
+      )
+    }
+  })
 
   const remoteModel = configuredModels.filter(
     (x) => !localEngines.includes(x.engine)
@@ -72,6 +86,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   })
 
   const remoteModelEngine = remoteModel.map((x) => x.engine)
+
   const groupByEngine = remoteModelEngine.filter(function (item, index) {
     if (remoteModelEngine.indexOf(item) === index) return item
   })
@@ -88,6 +103,8 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
   const rows = getRows(groupByEngine, itemsPerRow)
 
+  const refDropdown = useClickOutside(() => setIsOpen(false))
+
   const [visibleRows, setVisibleRows] = useState(1)
 
   return (
@@ -100,20 +117,23 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
               width={48}
               height={48}
             />
-            <h1 className="text-base font-semibold">Select a model to start</h1>
-            <div className="mt-6 w-full lg:w-1/2">
+            <h1 className="text-base font-medium">Select a model to start</h1>
+            <div className="mt-6 w-[320px] md:w-[400px]">
               <Fragment>
-                <div className="relative">
+                <div className="relative" ref={refDropdown}>
                   <Input
                     value={searchValue}
-                    onChange={(e) => setSearchValue(e.target.value)}
+                    onFocus={() => setIsOpen(true)}
+                    onChange={(e) => {
+                      setSearchValue(e.target.value)
+                    }}
                     placeholder="Search..."
                     prefixIcon={<SearchIcon size={16} />}
                   />
                   <div
                     className={twMerge(
-                      'absolute left-0 top-10 max-h-[240px] w-full overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
-                      !searchValue.length ? 'invisible' : 'visible'
+                      'absolute left-0 top-10 z-20 max-h-[240px] w-full overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
+                      !isOpen ? 'invisible' : 'visible'
                     )}
                   >
                     {!filteredModels.length ? (
@@ -197,54 +217,61 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                   return (
                     <div
                       key={featModel.id}
-                      className="my-2 flex items-center justify-between gap-2 border-b border-[hsla(var(--app-border))] py-4 last:border-none"
+                      className="my-2 flex items-center justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
                     >
                       <div className="w-full text-left">
-                        <h6>{featModel.name}</h6>
-                        <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                        <h6 className="font-medium">{featModel.name}</h6>
+                        <p className="mt-2 font-medium text-[hsla(var(--text-secondary))]">
                           {featModel.metadata.author}
                         </p>
                       </div>
 
                       {isDownloading ? (
                         <div className="flex w-full items-center gap-2">
-                          {Object.values(downloadStates).map((item, i) => (
-                            <div
-                              className="flex w-full items-center gap-2"
-                              key={i}
-                            >
-                              <Progress
-                                className="w-full"
-                                value={
-                                  formatDownloadPercentage(item?.percent, {
-                                    hidePercentage: true,
-                                  }) as number
-                                }
-                              />
-                              <div className="flex items-center justify-between gap-x-2">
-                                <div className="flex gap-x-2">
-                                  <span className="font-medium text-[hsla(var(--primary-bg))]">
-                                    {formatDownloadPercentage(item?.percent)}
-                                  </span>
+                          {Object.values(downloadStates)
+                            .filter((x) => x.modelId === featModel.id)
+                            .map((item, i) => (
+                              <div
+                                className="flex w-full items-center gap-2"
+                                key={i}
+                              >
+                                <Progress
+                                  className="w-full"
+                                  value={
+                                    formatDownloadPercentage(item?.percent, {
+                                      hidePercentage: true,
+                                    }) as number
+                                  }
+                                />
+                                <div className="flex items-center justify-between gap-x-2">
+                                  <div className="flex gap-x-2">
+                                    <span className="font-medium text-[hsla(var(--primary-bg))]">
+                                      {formatDownloadPercentage(item?.percent)}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
                         </div>
                       ) : (
-                        <Button
-                          theme="ghost"
-                          className="!bg-[hsla(var(--secondary-bg))]"
-                          onClick={() => downloadModel(featModel)}
-                        >
-                          Download
-                        </Button>
+                        <div className="flex flex-col items-end justify-end gap-2">
+                          <Button
+                            theme="ghost"
+                            className="!bg-[hsla(var(--secondary-bg))]"
+                            onClick={() => downloadModel(featModel)}
+                          >
+                            Download
+                          </Button>
+                          <span className="text-[hsla(var(--text-secondary))]">
+                            {toGibibytes(featModel.metadata.size)}
+                          </span>
+                        </div>
                       )}
                     </div>
                   )
                 })}
 
-                <div className="mb-4 mt-8 flex items-center justify-between">
+                <div className="mb-2 mt-8 flex items-center justify-between">
                   <h2 className="text-[hsla(var(--text-secondary))]">
                     Cloud Models
                   </h2>
@@ -255,7 +282,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     return (
                       <div
                         key={rowIndex}
-                        className="my-2 flex items-center justify-normal gap-10"
+                        className="my-2 flex items-center gap-4 md:gap-10"
                       >
                         {row.map((remoteEngine) => {
                           const engineLogo = getLogoEngine(
@@ -285,7 +312,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                                 />
                               )}
 
-                              <p>
+                              <p className="font-medium">
                                 {getTitleByEngine(
                                   remoteEngine as InferenceEngine
                                 )}

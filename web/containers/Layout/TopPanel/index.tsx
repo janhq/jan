@@ -23,6 +23,7 @@ import { toaster } from '@/containers/Toast'
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import { useStarterScreen } from '@/hooks/useStarterScreen'
 
 import {
   mainViewStateAtom,
@@ -57,6 +58,8 @@ const TopPanel = () => {
       })
     requestCreateNewThread(assistants[0])
   }
+
+  const { isShowStarterScreen } = useStarterScreen()
 
   return (
     <div
@@ -93,7 +96,7 @@ const TopPanel = () => {
               )}
             </Fragment>
           )}
-          {mainViewState === MainViewState.Thread && (
+          {mainViewState === MainViewState.Thread && !isShowStarterScreen && (
             <Button
               data-testid="btn-create-thread"
               onClick={onCreateNewThreadClick}
