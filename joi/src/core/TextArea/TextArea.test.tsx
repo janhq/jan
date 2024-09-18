@@ -70,7 +70,7 @@ describe('@joi/core/TextArea', () => {
   })
 
   it('resizes correctly based on max height', () => {
-    const { container } = render(<TextArea autoResize maxResize={400} />)
+    const { container } = render(<TextArea autoResize maxResize={200} />)
     const textareaElement = container.querySelector('textarea')
 
     // Mocking the scrollHeight
