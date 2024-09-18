@@ -149,6 +149,14 @@ describe('validationRules', () => {
   })
 })
 
+
+  it('should normalize invalid values for keys not listed in validationRules', () => {
+    expect(normalizeValue('invalid_key', 'invalid')).toBe('invalid')
+    expect(normalizeValue('invalid_key', 123)).toBe(123)
+    expect(normalizeValue('invalid_key', true)).toBe(true)
+    expect(normalizeValue('invalid_key', false)).toBe(false)
+  })
+
 describe('normalizeValue', () => {
   it('should normalize ctx_len correctly', () => {
     expect(normalizeValue('ctx_len', 100.5)).toBe(100)
