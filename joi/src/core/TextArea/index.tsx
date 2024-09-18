@@ -1,4 +1,4 @@
-import React, { ReactNode, forwardRef, useRef, useEffect } from 'react'
+import React, { forwardRef, useRef, useEffect } from 'react'
 import { twMerge } from 'tailwind-merge'
 
 import './styles.scss'
@@ -15,30 +15,21 @@ export interface TextAreaProps
 
 const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
   (
-    { autoResize, minResize = 84, maxResize = 250, className, ...props },
+    { autoResize, minResize = 80, maxResize = 250, className, ...props },
     ref
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null)
 
     useEffect(() => {
-      if (autoResize && textareaRef.current?.clientHeight) {
+      if (autoResize && textareaRef.current) {
         const textarea = textareaRef.current
-        textarea.style.height = minResize + 'px'
-        textarea.style.overflow = 'hidden'
-
-        const scrollHeight = textareaRef.current.scrollHeight
-
-        textareaRef.current.style.height = scrollHeight + 'px'
-
-        textareaRef.current.style.height =
-          textareaRef.current.scrollHeight + 'px'
-
-        textareaRef.current.style.maxHeight = maxResize + 'px'
-
-        textareaRef.current.style.overflow =
-          textareaRef.current.scrollHeight >= maxResize ? 'auto' : 'hidden'
+        textarea.style.height = 'auto'
+        const scrollHeight = textarea.scrollHeight
+        const newHeight = Math.min(maxResize, Math.max(minResize, scrollHeight))
+        textarea.style.height = `${newHeight}px`
+        textarea.style.overflow = newHeight >= maxResize ? 'auto' : 'hidden'
       }
-    }, [props.value])
+    }, [props.value, autoResize, minResize, maxResize])
 
     return (
       <div className="textarea__wrapper">

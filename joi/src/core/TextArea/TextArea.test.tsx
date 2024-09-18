@@ -1,10 +1,8 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render, screen, act } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { act } from 'react-dom/test-utils'
 import { TextArea } from './index'
 
-// Mock the styles import
 jest.mock('./styles.scss', () => ({}))
 
 describe('@joi/core/TextArea', () => {
@@ -33,57 +31,39 @@ describe('@joi/core/TextArea', () => {
     expect(textareaElement).toHaveAttribute('rows', '5')
   })
 
-  it('resizes correctly based scrollHeight', () => {
-    const { container } = render(<TextArea autoResize />)
-    const textareaElement = container.querySelector('textarea')
+  it('should auto resize the textarea based on minResize', () => {
+    render(<TextArea autoResize minResize={10} />)
 
-    // Mocking the scrollHeight
-    act(() => {
-      if (textareaElement) {
-        Object.defineProperty(textareaElement, 'scrollHeight', {
-          value: 80,
-          writable: false,
-        })
-        textareaElement.dispatchEvent(new Event('input', { bubbles: true }))
-      }
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    Object.defineProperty(textarea, 'scrollHeight', {
+      value: 20,
+      writable: true,
     })
 
-    expect(textareaElement.scrollHeight).toBe(80)
+    act(() => {
+      textarea.value = 'Short text'
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(textarea.style.height).toBe('10px')
   })
 
-  it('resizes correctly based on min height', () => {
-    const { container } = render(<TextArea autoResize minResize={100} />)
-    const textareaElement = container.querySelector('textarea')
+  it('should auto resize the textarea based on maxResize', () => {
+    render(<TextArea autoResize maxResize={40} />)
 
-    // Mocking the scrollHeight
-    act(() => {
-      if (textareaElement) {
-        Object.defineProperty(textareaElement, 'scrollHeight', {
-          value: 100,
-          writable: false,
-        })
-        textareaElement.dispatchEvent(new Event('input', { bubbles: true }))
-      }
+    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
+
+    Object.defineProperty(textarea, 'scrollHeight', {
+      value: 100,
+      writable: true,
     })
 
-    expect(textareaElement.scrollHeight).toBe(100)
-  })
-
-  it('resizes correctly based on max height', () => {
-    const { container } = render(<TextArea autoResize maxResize={200} />)
-    const textareaElement = container.querySelector('textarea')
-
-    // Mocking the scrollHeight
     act(() => {
-      if (textareaElement) {
-        Object.defineProperty(textareaElement, 'scrollHeight', {
-          value: 400,
-          writable: false,
-        })
-        textareaElement.dispatchEvent(new Event('input', { bubbles: true }))
-      }
+      textarea.value = 'A very long text that should exceed max height'
+      textarea.dispatchEvent(new Event('input', { bubbles: true }))
     })
 
-    expect(textareaElement.scrollHeight).toBe(400)
+    expect(textarea.style.height).toBe('40px')
   })
 })
