@@ -52,3 +52,18 @@ type DownloadSize = {
   total: number
   transferred: number
 }
+
+/**
+ * The file metadata
+ */
+export type FileMetadata = {
+  /**
+   * The origin file path.
+   */
+  file_path: string
+
+  /**
+   * The file name.
+   */
+  file_name: string
+}

@@ -22,6 +22,7 @@ import {
   downloadFile,
   DownloadState,
   DownloadEvent,
+  ModelFile,
 } from '@janhq/core'
 
 declare const CUDA_DOWNLOAD_URL: string
@@ -94,7 +95,7 @@ export default class JanInferenceNitroExtension extends LocalOAIEngine {
     this.nitroProcessInfo = health
   }
 
-  override loadModel(model: Model): Promise<void> {
+  override loadModel(model: ModelFile): Promise<void> {
     if (model.engine !== this.provider) return Promise.resolve()
     this.getNitroProcessHealthIntervalId = setInterval(
       () => this.periodicallyGetNitroHealth(),

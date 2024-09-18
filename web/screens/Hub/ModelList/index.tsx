@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { Model } from '@janhq/core'
+import { ModelFile } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
@@ -9,16 +9,16 @@ import ModelItem from '@/screens/Hub/ModelList/ModelItem'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
-  models: Model[]
+  models: ModelFile[]
 }
 
 const ModelList = ({ models }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const sortedModels: Model[] = useMemo(() => {
-    const featuredModels: Model[] = []
-    const remoteModels: Model[] = []
-    const localModels: Model[] = []
-    const remainingModels: Model[] = []
+  const sortedModels: ModelFile[] = useMemo(() => {
+    const featuredModels: ModelFile[] = []
+    const remoteModels: ModelFile[] = []
+    const localModels: ModelFile[] = []
+    const remainingModels: ModelFile[] = []
     models.forEach((m) => {
       if (m.metadata?.tags?.includes('Featured')) {
         featuredModels.push(m)

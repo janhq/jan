@@ -2,7 +2,7 @@ import { getJanDataFolderPath, joinPath } from '../../core'
 import { events } from '../../events'
 import { BaseExtension } from '../../extension'
 import { fs } from '../../fs'
-import { MessageRequest, Model, ModelEvent } from '../../../types'
+import { MessageRequest, Model, ModelEvent, ModelFile } from '../../../types'
 import { EngineManager } from './EngineManager'
 
 /**
@@ -21,7 +21,7 @@ export abstract class AIEngine extends BaseExtension {
   override onLoad() {
     this.registerEngine()
 
-    events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
+    events.on(ModelEvent.OnModelInit, (model: ModelFile) => this.loadModel(model))
     events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
   }
 
@@ -78,7 +78,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Loads the model.
    */
-  async loadModel(model: Model): Promise<any> {
+  async loadModel(model: ModelFile): Promise<any> {
     if (model.engine.toString() !== this.provider) return Promise.resolve()
     events.emit(ModelEvent.OnModelReady, model)
     return Promise.resolve()

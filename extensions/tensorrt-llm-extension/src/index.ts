@@ -23,6 +23,7 @@ import {
   ModelEvent,
   getJanDataFolderPath,
   SystemInformation,
+  ModelFile,
 } from '@janhq/core'
 
 /**
@@ -137,7 +138,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.emit(ModelEvent.OnModelsUpdate, {})
   }
 
-  override async loadModel(model: Model): Promise<void> {
+  override async loadModel(model: ModelFile): Promise<void> {
     if ((await this.installationState()) === 'Installed')
       return super.loadModel(model)
 

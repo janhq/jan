@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Model } from '@janhq/core'
+import { ModelFile } from '@janhq/core'
 import { Badge } from '@janhq/joi'
 
 import { twMerge } from 'tailwind-merge'
@@ -12,7 +12,7 @@ import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 import { toGibibytes } from '@/utils/converter'
 
 type Props = {
-  model: Model
+  model: ModelFile
 }
 
 const ModelItem: React.FC<Props> = ({ model }) => {

@@ -1,3 +1,5 @@
+import { FileMetadata } from '../file'
+
 /**
  * Represents the information about a model.
  * @stored
@@ -151,3 +153,8 @@ export type ModelRuntimeParams = {
 export type ModelInitFailed = Model & {
   error: Error
 }
+
+/**
+ * ModelFile is the model.json entity and it's file metadata
+ */
+export type ModelFile = Model & FileMetadata
