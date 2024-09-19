@@ -36,7 +36,7 @@ const ModelConfigInput = ({
     <TextArea
       placeholder={placeholder}
       onChange={(e) => onValueChanged?.(e.target.value)}
-      cols={50}
+      autoResize
       value={value}
       disabled={disabled}
     />
