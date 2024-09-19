@@ -321,7 +321,7 @@ const Advanced = () => {
               <label className="mb-2 mr-2 inline-block font-medium">
                 Choose device(s)
               </label>
-              <div className="relative flex w-full md:w-1/2" ref={setToggle}>
+              <div className="relative w-full md:w-1/2" ref={setToggle}>
                 <Input
                   value={selectedGpu.join() || ''}
                   className="w-full cursor-pointer"
@@ -337,7 +337,7 @@ const Advanced = () => {
                 />
                 <div
                   className={twMerge(
-                    'absolute right-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+                    'absolute right-0 top-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
                     open ? 'flex' : 'hidden'
                   )}
                   ref={setDropdownOptions}

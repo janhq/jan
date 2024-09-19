@@ -49,11 +49,11 @@ const MyModelList = ({ model }: Props) => {
   return (
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex w-1/2 gap-x-8">
-          <div className="flex w-full items-center justify-between">
+        <div className="flex gap-x-8 lg:w-1/2">
+          <div className="flex h-full w-full flex-col items-start justify-between gap-2 lg:flex-row lg:items-center">
             <h6
               className={twMerge(
-                'line-clamp-1 max-w-[200px] font-medium',
+                'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
                 model.engine !== InferenceEngine.nitro &&
                   'max-w-none text-[hsla(var(--text-secondary))]'
               )}
@@ -64,7 +64,7 @@ const MyModelList = ({ model }: Props) => {
             {model.engine === InferenceEngine.nitro && (
               <div className="flex gap-x-8">
                 <p
-                  className="line-clamp-1 max-w-[120px] text-[hsla(var(--text-secondary))] xl:max-w-none"
+                  className="line-clamp-1 text-[hsla(var(--text-secondary))] lg:min-w-[160px] lg:max-w-[160px] xl:max-w-none"
                   title={model.id}
                 >
                   {model.id}
@@ -76,9 +76,11 @@ const MyModelList = ({ model }: Props) => {
 
         {localEngines.includes(model.engine) && (
           <div className="flex gap-x-4">
-            <Badge theme="secondary" className="sm:mr-16">
-              {toGibibytes(model.metadata.size)}
-            </Badge>
+            <div className="md:min-w-[90px] md:max-w-[90px]">
+              <Badge theme="secondary" className="sm:mr-8">
+                {toGibibytes(model.metadata.size)}
+              </Badge>
+            </div>
 
             <div className="relative flex items-center gap-x-4">
               {stateModel.loading && stateModel.model?.id === model.id ? (
