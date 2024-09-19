@@ -30,9 +30,9 @@ const ModalConfirmReset = () => {
       content={
         <div>
           <p className="text-[hsla(var(--text-secondary))]">
-            It will reset the application to its original state, deleting all
-            your usage data, including model customizations and conversation
-            history. This action is irreversible.
+            Restore app to initial state, erasing all models and chat history.
+            This action is irreversible and recommended only if the application
+            is corrupted.
           </p>
 
           <div className="my-4">
