@@ -14,12 +14,14 @@ import {
   ModelEvent,
   Thread,
   EngineManager,
+  InferenceEngine,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
+import { localEngines } from '@/utils/modelEngine'
 import { extractInferenceParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
@@ -234,7 +236,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       return
     }
 
-    if (!activeModelRef.current) {
+    // Check model engine; we don't want to generate a title when it's not a local engine.
+    if (
+      !activeModelRef.current ||
+      !localEngines.includes(activeModelRef.current?.engine as InferenceEngine)
+    ) {
       return
     }
 
