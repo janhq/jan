@@ -36,6 +36,10 @@ describe('@joi/hooks/useOS', () => {
   })
 
   it('should return undetermined when getValueInEffect is false', () => {
+    jest
+      .spyOn(window.navigator, 'userAgent', 'get')
+      .mockReturnValueOnce('UNKNOWN_USER_AGENT')
+
     const { result } = renderHook(() => useOs({ getValueInEffect: false }))
     expect(result.current).toBe('undetermined')
   })
