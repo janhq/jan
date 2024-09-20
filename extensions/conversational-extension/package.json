@@ -7,6 +7,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
   "scripts": {
+    "test": "jest",
     "build": "tsc -b . && webpack --config webpack.config.js",
     "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },

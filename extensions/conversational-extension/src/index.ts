@@ -5,6 +5,7 @@ import {
   Thread,
   ThreadMessage,
 } from '@janhq/core'
+import { safelyParseJSON } from './jsonUtil'
 
 /**
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
@@ -45,10 +46,11 @@ export default class JSONConversationalExtension extends ConversationalExtension
           if (result.status === 'fulfilled') {
             return typeof result.value === 'object'
               ? result.value
-              : JSON.parse(result.value)
+              : safelyParseJSON(result.value)
           }
+          return undefined
         })
-        .filter((convo) => convo != null)
+        .filter((convo) => !!convo)
       convos.sort(
         (a, b) => new Date(b.updated).getTime() - new Date(a.updated).getTime()
       )
@@ -195,7 +197,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
    * @param threadDirName the thread dir we are reading from.
    * @returns data of the thread
    */
-  private async readThread(threadDirName: string): Promise<any> {
+  async readThread(threadDirName: string): Promise<any> {
     return fs.readFileSync(
       await joinPath([
         JSONConversationalExtension._threadFolder,
@@ -210,7 +212,7 @@ export default class JSONConversationalExtension extends ConversationalExtension
    * Returns a Promise that resolves to an array of thread directories.
    * @private
    */
-  private async getValidThreadDirs(): Promise<string[]> {
+  async getValidThreadDirs(): Promise<string[]> {
     const fileInsideThread: string[] = await fs.readdirSync(
       JSONConversationalExtension._threadFolder
     )
@@ -266,7 +268,8 @@ export default class JSONConversationalExtension extends ConversationalExtension
 
       const messages: ThreadMessage[] = []
       result.forEach((line: string) => {
-        messages.push(JSON.parse(line))
+        const message = safelyParseJSON(line)
+        if (message) messages.push(safelyParseJSON(line))
       })
       return messages
     } catch (err) {
