@@ -107,8 +107,7 @@ const LocalServerLeftPanel = () => {
     <LeftPanelContainer>
       <Fragment>
         <div className="p-3">
-          <h2 className="font-bold">Server Options</h2>
-          <p className="mt-2 leading-relaxed text-[hsla(var(--text-secondary))]">
+          <p className="leading-relaxed text-[hsla(var(--text-secondary))]">
             Start an OpenAI-compatible local HTTP server.
           </p>
         </div>
