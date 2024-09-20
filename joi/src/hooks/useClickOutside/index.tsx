@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef } from 'react'
 
 const DEFAULT_EVENTS = ['mousedown', 'touchstart']
@@ -8,34 +7,43 @@ export function useClickOutside<T extends HTMLElement = any>(
   events?: string[] | null,
   nodes?: (HTMLElement | null)[]
 ) {
-  const ref = useRef<T>()
+  const ref = useRef<T>(null)
 
   useEffect(() => {
-    const listener = (event: any) => {
-      const { target } = event ?? {}
+    const listener = (event: Event) => {
+      const target = event.target as HTMLElement
+
+      // Check if the target or any ancestor has the data-ignore-outside-clicks attribute
+      const shouldIgnore =
+        target.closest('[data-ignore-outside-clicks]') !== null
+
       if (Array.isArray(nodes)) {
-        const shouldIgnore =
-          target?.hasAttribute('data-ignore-outside-clicks') ||
-          (!document.body.contains(target) && target.tagName !== 'HTML')
         const shouldTrigger = nodes.every(
           (node) => !!node && !event.composedPath().includes(node)
         )
-        shouldTrigger && !shouldIgnore && handler()
-      } else if (ref.current && !ref.current.contains(target)) {
+        if (shouldTrigger && !shouldIgnore) {
+          handler()
+        }
+      } else if (
+        ref.current &&
+        !ref.current.contains(target) &&
+        !shouldIgnore
+      ) {
         handler()
       }
     }
 
-    ;(events || DEFAULT_EVENTS).forEach((fn) =>
-      document.addEventListener(fn, listener)
+    const eventList = events || DEFAULT_EVENTS
+    eventList.forEach((event) =>
+      document.documentElement.addEventListener(event, listener)
     )
 
     return () => {
-      ;(events || DEFAULT_EVENTS).forEach((fn) =>
-        document.removeEventListener(fn, listener)
+      eventList.forEach((event) =>
+        document.documentElement.removeEventListener(event, listener)
       )
     }
-  }, [ref, handler, nodes])
+  }, [handler, nodes, events])
 
   return ref
 }

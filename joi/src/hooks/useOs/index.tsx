@@ -8,7 +8,7 @@ export type OS =
   | 'android'
   | 'linux'
 
-function getOS(): OS {
+export function getOS(): OS {
   if (typeof window === 'undefined') {
     return 'undetermined'
   }
