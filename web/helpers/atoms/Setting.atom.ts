@@ -19,4 +19,4 @@ export const reduceTransparentAtom = atomWithStorage<boolean>(
   REDUCE_TRANSPARENT,
   false
 )
-export const spellCheckAtom = atomWithStorage<boolean>(SPELL_CHECKING, true)
+export const spellCheckAtom = atomWithStorage<boolean>(SPELL_CHECKING, false)

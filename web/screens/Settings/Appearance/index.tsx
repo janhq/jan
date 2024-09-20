@@ -97,7 +97,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Spell Check</h6>
           </div>
           <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Toggle to disable spell checking.
+            Turn on to enable spell check
           </p>
         </div>
         <div className="flex-shrink-0">
