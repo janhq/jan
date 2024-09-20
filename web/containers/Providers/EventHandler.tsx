@@ -213,6 +213,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       // Attempt to generate the title of the Thread when needed
       generateThreadTitle(message, thread)
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
   )
 
