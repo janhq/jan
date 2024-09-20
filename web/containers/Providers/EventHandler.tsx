@@ -213,6 +213,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       // Attempt to generate the title of the Thread when needed
       generateThreadTitle(message, thread)
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
   )
 
@@ -236,12 +237,29 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       return
     }
 
-    // Check model engine; we don't want to generate a title when it's not a local engine.
+    if (!activeModelRef.current) {
+      return
+    }
+
+    // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (
-      !activeModelRef.current ||
       !localEngines.includes(activeModelRef.current?.engine as InferenceEngine)
     ) {
-      return
+      const updatedThread: Thread = {
+        ...thread,
+        title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
+        metadata: thread.metadata,
+      }
+      return extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread({
+          ...updatedThread,
+        })
+        .then(() => {
+          updateThread({
+            ...updatedThread,
+          })
+        })
     }
 
     // This is the first time message comes in on a new thread
