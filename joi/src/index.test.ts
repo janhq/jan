@@ -1,0 +1,43 @@
+import * as components from './index'
+
+// Mock styles globally for all components in this test
+jest.mock('./core/Tooltip/styles.scss', () => ({}))
+jest.mock('./core/ScrollArea/styles.scss', () => ({}))
+jest.mock('./core/Button/styles.scss', () => ({}))
+jest.mock('./core/Switch/styles.scss', () => ({}))
+jest.mock('./core/Progress/styles.scss', () => ({}))
+jest.mock('./core/Checkbox/styles.scss', () => ({}))
+jest.mock('./core/Badge/styles.scss', () => ({}))
+jest.mock('./core/Modal/styles.scss', () => ({}))
+jest.mock('./core/Slider/styles.scss', () => ({}))
+jest.mock('./core/Input/styles.scss', () => ({}))
+jest.mock('./core/Select/styles.scss', () => ({}))
+jest.mock('./core/TextArea/styles.scss', () => ({}))
+jest.mock('./core/Tabs/styles.scss', () => ({}))
+jest.mock('./core/Accordion/styles.scss', () => ({}))
+
+describe('Exports', () => {
+  it('exports all components and hooks', () => {
+    expect(components.Tooltip).toBeDefined()
+    expect(components.ScrollArea).toBeDefined()
+    expect(components.Button).toBeDefined()
+    expect(components.Switch).toBeDefined()
+    expect(components.Progress).toBeDefined()
+    expect(components.Checkbox).toBeDefined()
+    expect(components.Badge).toBeDefined()
+    expect(components.Modal).toBeDefined()
+    expect(components.Slider).toBeDefined()
+    expect(components.Input).toBeDefined()
+    expect(components.Select).toBeDefined()
+    expect(components.TextArea).toBeDefined()
+    expect(components.Tabs).toBeDefined()
+    expect(components.Accordion).toBeDefined()
+
+    expect(components.useClipboard).toBeDefined()
+    expect(components.usePageLeave).toBeDefined()
+    expect(components.useTextSelection).toBeDefined()
+    expect(components.useClickOutside).toBeDefined()
+    expect(components.useOs).toBeDefined()
+    expect(components.useMediaQuery).toBeDefined()
+  })
+})

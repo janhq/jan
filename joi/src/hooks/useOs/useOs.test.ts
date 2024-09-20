@@ -34,13 +34,14 @@ describe('@joi/hooks/useOS', () => {
     expect(getOS()).toBe('undetermined')
   })
 
-  afterEach(() => {
-    jest.clearAllMocks()
-  })
-
   it('should return undetermined when getValueInEffect is false', () => {
     const { result } = renderHook(() => useOs({ getValueInEffect: false }))
+    delete (global as any).window
     expect(result.current).toBe('undetermined')
+  })
+
+  afterEach(() => {
+    jest.clearAllMocks()
   })
 
   Object.entries(platforms).forEach(([os, userAgents]) => {
