@@ -12,13 +12,13 @@ class Extension {
   url: string
 
   /** @type {boolean} Whether the extension is activated or not. */
-  active
+  active?: boolean
 
   /** @type {string} Extension's description. */
-  description
+  description?: string
 
   /** @type {string} Extension's version. */
-  version
+  version?: string
 
   constructor(
     url: string,
