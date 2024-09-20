@@ -280,13 +280,13 @@ export const downloadModel = async (
   for (const source of model.sources) {
     const rq = request({ url: source, strictSSL, proxy })
     progress(rq, {})
-      .on('progress', function (state: any) {
+      ?.on('progress', function (state: any) {
         console.debug('progress', JSON.stringify(state, null, 2))
       })
-      .on('error', function (err: Error) {
+      ?.on('error', function (err: Error) {
         console.error('error', err)
       })
-      .on('end', function () {
+      ?.on('end', function () {
         console.debug('end')
       })
       .pipe(createWriteStream(modelBinaryPath))
