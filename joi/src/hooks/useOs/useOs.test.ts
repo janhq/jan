@@ -26,7 +26,9 @@ describe('@joi/hooks/useOS', () => {
   const originalWindow = global.window
 
   afterEach(() => {
-    global.window = originalWindow // Restore the original window after each test
+    global.window = originalWindow
+    jest.clearAllMocks()
+    jest.restoreAllMocks()
   })
 
   it('should return undetermined when window is undefined', () => {
@@ -38,10 +40,6 @@ describe('@joi/hooks/useOS', () => {
     const { result } = renderHook(() => useOs({ getValueInEffect: false }))
     delete (global as any).window
     expect(result.current).toBe('undetermined')
-  })
-
-  afterEach(() => {
-    jest.clearAllMocks()
   })
 
   Object.entries(platforms).forEach(([os, userAgents]) => {
