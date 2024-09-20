@@ -28,7 +28,6 @@ describe('@joi/hooks/useOS', () => {
   afterEach(() => {
     global.window = originalWindow
     jest.clearAllMocks()
-    jest.restoreAllMocks()
   })
 
   it('should return undetermined when window is undefined', () => {
@@ -38,7 +37,6 @@ describe('@joi/hooks/useOS', () => {
 
   it('should return undetermined when getValueInEffect is false', () => {
     const { result } = renderHook(() => useOs({ getValueInEffect: false }))
-    delete (global as any).window
     expect(result.current).toBe('undetermined')
   })
 
