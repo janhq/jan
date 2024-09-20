@@ -1,3 +1,7 @@
+/**
+ * @jest-environment jsdom
+ */
+
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
@@ -10,7 +14,6 @@ class ResizeObserverMock {
 }
 
 global.ResizeObserver = ResizeObserverMock
-// @ts-ignore
 global.window.core = {
   api: {
     getAppConfigurations: () => jest.fn(),
