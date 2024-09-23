@@ -13,7 +13,7 @@ import { ChatCompletionRole } from '@janhq/core'
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
 
-enum Settings {
+export enum Settings {
   apiKey = 'anthropic-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
 }
@@ -23,6 +23,7 @@ type AnthropicPayloadType = {
   model?: string
   max_tokens?: number
   messages?: Array<{ role: string; content: string }>
+  system?: string
 }
 
 /**
@@ -113,6 +114,10 @@ export default class JanInferenceAnthropicExtension extends RemoteOAIEngine {
           role: 'assistant',
           content: item.content as string,
         })
+      } else if (item.role === ChatCompletionRole.System) {
+        // When using Claude, you can dramatically improve its performance by using the system parameter to give it a role. 
+        // This technique, known as role prompting, is the most powerful way to use system prompts with Claude.
+        convertedData.system = item.content as string
       }
     })
 
