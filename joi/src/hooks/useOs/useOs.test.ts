@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react'
-import { useOs } from './index'
+import { useOs, getOS } from './index'
+import '@testing-library/jest-dom'
 
 const platforms = {
   windows: [
@@ -21,8 +22,26 @@ const platforms = {
 } as const
 
 describe('@joi/hooks/useOS', () => {
+  const global = globalThis
+  const originalWindow = global.window
+
   afterEach(() => {
+    global.window = originalWindow
     jest.clearAllMocks()
+  })
+
+  it('should return undetermined when window is undefined', () => {
+    delete (global as any).window
+    expect(getOS()).toBe('undetermined')
+  })
+
+  it('should return undetermined when getValueInEffect is false', () => {
+    jest
+      .spyOn(window.navigator, 'userAgent', 'get')
+      .mockReturnValueOnce('UNKNOWN_USER_AGENT')
+
+    const { result } = renderHook(() => useOs({ getValueInEffect: false }))
+    expect(result.current).toBe('undetermined')
   })
 
   Object.entries(platforms).forEach(([os, userAgents]) => {

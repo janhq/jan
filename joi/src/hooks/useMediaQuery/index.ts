@@ -23,7 +23,7 @@ function attachMediaListener(
   }
 }
 
-function getInitialValue(query: string, initialValue?: boolean) {
+export function getInitialValue(query: string, initialValue?: boolean) {
   if (typeof initialValue === 'boolean') {
     return initialValue
   }
