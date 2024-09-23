@@ -53,3 +53,11 @@ it('should skip processing for disabled tools', async () => {
   const result = await manager.process(request, tools)
   expect(result).toBe(request)
 })
+
+it('should throw an error when process is called without implementation', () => {
+  class TestTool extends InferenceTool {
+    name = 'testTool'
+  }
+  const tool = new TestTool()
+  expect(() => tool.process({} as MessageRequest)).toThrowError()
+})

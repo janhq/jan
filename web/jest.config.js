@@ -18,6 +18,14 @@ const config = {
   // setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   runner: './testRunner.js',
   collectCoverageFrom: ['./**/*.{ts,tsx}'],
+  transform: {
+    "^.+\\.tsx?$": [
+      "ts-jest",
+      {
+        diagnostics: false,
+      },
+    ],
+  },
 }
 
 // https://stackoverflow.com/a/72926763/5078746

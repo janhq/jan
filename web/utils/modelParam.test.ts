@@ -1,5 +1,7 @@
 // web/utils/modelParam.test.ts
 import { normalizeValue, validationRules } from './modelParam'
+import { extractModelLoadParams } from './modelParam';
+import { extractInferenceParams } from './modelParam';
 
 describe('validationRules', () => {
   it('should validate temperature correctly', () => {
@@ -189,3 +191,20 @@ describe('normalizeValue', () => {
     expect(normalizeValue('cpu_threads', 0)).toBe(0)
   })
 })
+
+
+  it('should handle invalid values correctly by falling back to originParams', () => {
+    const modelParams = { temperature: 'invalid', token_limit: -1 };
+    const originParams = { temperature: 0.5, token_limit: 100 };
+    expect(extractInferenceParams(modelParams, originParams)).toEqual(originParams);
+  });
+
+
+  it('should return an empty object when no modelParams are provided', () => {
+    expect(extractModelLoadParams()).toEqual({});
+  });
+
+
+  it('should return an empty object when no modelParams are provided', () => {
+    expect(extractInferenceParams()).toEqual({});
+  });
