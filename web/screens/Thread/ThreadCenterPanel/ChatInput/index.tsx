@@ -392,7 +392,7 @@ const ChatInput = () => {
         {activeSettingInputBox && (
           <div
             className={twMerge(
-              'absolute bottom-[6px] left-[1px] flex w-[calc(100%-10px)] items-center justify-between bg-[hsla(var(--textarea-bg))] p-3',
+              'absolute bottom-[6px] left-[1px] flex w-[calc(100%-10px)] items-center justify-between rounded-b-lg bg-[hsla(var(--textarea-bg))] p-3 pr-0',
               !activeThread && 'bg-transparent',
               stateModel.loading && 'bg-transparent'
             )}
