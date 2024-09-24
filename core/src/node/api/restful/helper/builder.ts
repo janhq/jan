@@ -353,8 +353,10 @@ export const chatCompletions = async (request: any, reply: any) => {
     body: JSON.stringify(request.body),
   })
   if (response.status !== 200) {
-    console.error(response)
-    reply.code(400).send(response)
+    // Forward the error response to client via reply
+    const responseBody = await response.text()
+    const responseHeaders = Object.fromEntries(response.headers)
+    reply.code(response.status).headers(responseHeaders).send(responseBody)
   } else {
     reply.raw.writeHead(200, {
       'Content-Type': request.body.stream === true ? 'text/event-stream' : 'application/json',
