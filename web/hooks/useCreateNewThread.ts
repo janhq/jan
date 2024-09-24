@@ -115,7 +115,7 @@ export const useCreateNewThread = () => {
       : {}
 
     const createdAt = Date.now()
-    let instructions: string | undefined = undefined
+    let instructions: string | undefined = assistant.instructions
     if (copyOverInstructionEnabled) {
       instructions = activeThread?.assistants[0]?.instructions ?? undefined
     }
