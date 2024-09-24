@@ -7,6 +7,8 @@ import { Tooltip } from '../Tooltip'
 import './styles.scss'
 import { twMerge } from 'tailwind-merge'
 
+type TabStyles = 'segmented'
+
 type TabsProps = {
   options: {
     name: string
@@ -14,8 +16,10 @@ type TabsProps = {
     disabled?: boolean
     tooltipContent?: string
   }[]
-  children: ReactNode
+  children?: ReactNode
+
   defaultValue?: string
+  tabStyle?: TabStyles
   value: string
   onValueChange?: (value: string) => void
 }
@@ -40,15 +44,18 @@ const TabsContent = ({ value, children, className }: TabsContentProps) => {
 const Tabs = ({
   options,
   children,
+  tabStyle,
   defaultValue,
   value,
   onValueChange,
+  ...props
 }: TabsProps) => (
   <TabsPrimitive.Root
-    className="tabs"
+    className={twMerge('tabs', tabStyle && `tabs--${tabStyle}`)}
     value={value}
     defaultValue={defaultValue}
     onValueChange={onValueChange}
+    {...props}
   >
     <TabsPrimitive.List className="tabs__list">
       {options.map((option, i) => {
