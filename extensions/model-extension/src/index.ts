@@ -572,7 +572,6 @@ export default class JanModelExtension extends ModelExtension {
       ])
     )
 
-    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
     const updatedModel = await this.retrieveGGUFMetadata(metadata)
 
     if (!defaultModel) {
@@ -594,9 +593,6 @@ export default class JanModelExtension extends ModelExtension {
       parameters: {
         ...defaultModel.parameters,
         ...updatedModel.parameters,
-        stop: eos_id
-          ? [metadata['tokenizer.ggml.tokens'][eos_id] ?? '']
-          : defaultModel.parameters.stop,
       },
       settings: {
         ...defaultModel.settings,
