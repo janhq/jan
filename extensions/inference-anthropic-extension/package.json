@@ -9,6 +9,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
+    "test": "jest test",
     "build": "tsc -b . && webpack --config webpack.config.js",
     "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "sync:core": "cd ../.. && yarn build:core && cd extensions && rm yarn.lock &&  cd inference-anthropic-extension && yarn && yarn build:publish"
