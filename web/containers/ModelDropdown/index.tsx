@@ -8,7 +8,7 @@ import {
   Button,
   Input,
   ScrollArea,
-  Select,
+  Tabs,
   useClickOutside,
 } from '@janhq/joi'
 
@@ -70,8 +70,8 @@ const ModelDropdown = ({
   strictedThread = true,
 }: Props) => {
   const { downloadModel } = useDownloadModel()
-  const [searchFilter, setSearchFilter] = useState('all')
-  const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
+
+  const [searchFilter, setSearchFilter] = useState('local')
   const [searchText, setSearchText] = useState('')
   const [open, setOpen] = useState(false)
   const activeThread = useAtomValue(activeThreadAtom)
@@ -92,10 +92,7 @@ const ModelDropdown = ({
   )
   const { updateThreadMetadata } = useCreateNewThread()
 
-  useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [
-    dropdownOptions,
-    toggle,
-  ])
+  useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
 
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
@@ -115,9 +112,6 @@ const ModelDropdown = ({
           e.name.toLowerCase().includes(searchText.toLowerCase().trim())
         )
         .filter((e) => {
-          if (searchFilter === 'all') {
-            return e.engine
-          }
           if (searchFilter === 'local') {
             return localEngines.includes(e.engine)
           }
@@ -152,9 +146,9 @@ const ModelDropdown = ({
 
   useEffect(() => {
     if (!activeThread) return
-    let model = downloadedModels.find(
-      (model) => model.id === activeThread.assistants[0].model.id
-    )
+    const modelId = activeThread?.assistants?.[0]?.model?.id
+
+    let model = downloadedModels.find((model) => model.id === modelId)
     if (!model) {
       model = recommendedModel
     }
@@ -309,10 +303,14 @@ const ModelDropdown = ({
   }
 
   return (
-    <div className={twMerge('relative', disabled && 'pointer-events-none')}>
+    <div
+      className={twMerge('relative', disabled && 'pointer-events-none')}
+      data-testid="model-selector"
+    >
       <div ref={setToggle}>
         {chatInputMode ? (
           <Badge
+            data-testid="model-selector-badge"
             theme="secondary"
             variant={open ? 'solid' : 'outline'}
             className={twMerge(
@@ -341,19 +339,30 @@ const ModelDropdown = ({
       </div>
       <div
         className={twMerge(
-          'w=80 absolute right-0 z-20 mt-2 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+          'absolute right-0 z-20 mt-2 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
           open ? 'flex' : 'hidden',
           chatInputMode && 'bottom-8 left-0 w-72'
         )}
         ref={setDropdownOptions}
       >
         <div className="w-full">
-          <div className="relative">
+          <div className="p-2 pb-0">
+            <Tabs
+              options={[
+                { name: 'On-device', value: 'local' },
+                { name: 'Cloud', value: 'remote' },
+              ]}
+              tabStyle="segmented"
+              value={searchFilter as string}
+              onValueChange={(value) => setSearchFilter(value)}
+            />
+          </div>
+          <div className="relative border-b border-[hsla(var(--app-border))] py-2">
             <Input
               placeholder="Search"
               value={searchText}
               ref={searchInputRef}
-              className="rounded-none border-x-0 border-t-0 focus-within:ring-0 hover:border-b-[hsla(var(--app-border))]"
+              className="rounded-none border-x-0 border-b-0 border-t-0 focus-within:ring-0 "
               onChange={(e) => setSearchText(e.target.value)}
               suffixIcon={
                 searchText.length > 0 && (
@@ -365,26 +374,8 @@ const ModelDropdown = ({
                 )
               }
             />
-            <div
-              className={twMerge(
-                'absolute right-2 top-1/2 -translate-y-1/2',
-                searchText.length && 'hidden'
-              )}
-            >
-              <Select
-                value={searchFilter}
-                className="h-6 gap-1 px-2"
-                options={[
-                  { name: 'All', value: 'all' },
-                  { name: 'On-device', value: 'local' },
-                  { name: 'Cloud', value: 'remote' },
-                ]}
-                onValueChange={(value) => setSearchFilter(value)}
-                onOpenChange={(open) => setFilterOptionsOpen(open)}
-              />
-            </div>
           </div>
-          <ScrollArea className="h-[calc(100%-36px)] w-full">
+          <ScrollArea className="h-[calc(100%-90px)] w-full">
             {groupByEngine.map((engine, i) => {
               const apiKey = !localEngines.includes(engine)
                 ? extensionHasSettings.filter((x) => x.provider === engine)[0]
