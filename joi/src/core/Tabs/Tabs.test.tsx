@@ -96,4 +96,20 @@ describe('@joi/core/Tabs', () => {
       'Disabled tab'
     )
   })
+
+  it('applies the tabStyle if provided', () => {
+    render(
+      <Tabs
+        data-testid="segmented-style"
+        options={mockOptions}
+        value="tab1"
+        onValueChange={() => {}}
+        tabStyle="segmented"
+      />
+    )
+
+    const tabsContainer = screen.getByTestId('segmented-style')
+    expect(tabsContainer).toHaveClass('tabs')
+    expect(tabsContainer).toHaveClass('tabs--segmented')
+  })
 })
