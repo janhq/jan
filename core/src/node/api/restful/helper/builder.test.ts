@@ -236,6 +236,47 @@ describe('builder helper functions', () => {
       })
     })
 
+    it('should return the error on status not ok', async () => {
+      const request = { body: { model: 'model1' } }
+      const mockSend = jest.fn()
+      const reply = {
+        code: jest.fn().mockReturnThis(),
+        send: jest.fn(),
+        headers: jest.fn().mockReturnValue({
+          send: mockSend,
+        }),
+        raw: {
+          writeHead: jest.fn(),
+          pipe: jest.fn(),
+        },
+      }
+
+      ;(existsSync as jest.Mock).mockReturnValue(true)
+      ;(readdirSync as jest.Mock).mockReturnValue(['file1'])
+      ;(readFileSync as jest.Mock).mockReturnValue(
+        JSON.stringify({ id: 'model1', engine: 'openai' })
+      )
+
+      // Mock fetch
+      const fetch = require('node-fetch')
+      fetch.mockResolvedValue({
+        status: 400,
+        headers: new Map([
+          ['content-type', 'application/json'],
+          ['x-request-id', '123456'],
+        ]),
+        body: { pipe: jest.fn() },
+        text: jest.fn().mockResolvedValue({ error: 'Mock error response' }),
+      })
+      await chatCompletions(request, reply)
+      expect(reply.code).toHaveBeenCalledWith(400)
+      expect(mockSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Mock error response',
+        })
+      )
+    })
+
     it('should return the chat completions', async () => {
       const request = { body: { model: 'model1' } }
       const reply = {
