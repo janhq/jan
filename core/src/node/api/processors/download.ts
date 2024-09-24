@@ -100,18 +100,20 @@ export class Downloader implements Processor {
       })
       .on('end', () => {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
-        if (currentDownloadState && DownloadManager.instance.networkRequests[normalizedPath]) {
-          if (DownloadManager.instance.downloadProgressMap[modelId]?.downloadState !== 'error') {
-            // Finished downloading, rename temp file to actual file
-            renameSync(downloadingTempFile, destination)
-            const downloadState: DownloadState = {
-              ...currentDownloadState,
-              fileName: fileName,
-              downloadState: 'end',
-            }
-            observer?.(DownloadEvent.onFileDownloadSuccess, downloadState)
-            DownloadManager.instance.downloadProgressMap[modelId] = downloadState
+        if (
+          currentDownloadState &&
+          DownloadManager.instance.networkRequests[normalizedPath] &&
+          DownloadManager.instance.downloadProgressMap[modelId]?.downloadState !== 'error'
+        ) {
+          // Finished downloading, rename temp file to actual file
+          renameSync(downloadingTempFile, destination)
+          const downloadState: DownloadState = {
+            ...currentDownloadState,
+            fileName: fileName,
+            downloadState: 'end',
           }
+          observer?.(DownloadEvent.onFileDownloadSuccess, downloadState)
+          DownloadManager.instance.downloadProgressMap[modelId] = downloadState
         }
       })
       .pipe(createWriteStream(downloadingTempFile))
