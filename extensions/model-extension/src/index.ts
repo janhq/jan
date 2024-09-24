@@ -24,6 +24,7 @@ import {
   ModelEvent,
   ModelFile,
   dirName,
+  ModelSettingParams,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -80,11 +81,27 @@ export default class JanModelExtension extends ModelExtension {
     gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
-    // create corresponding directory
+    // Create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
     const modelJsonPath = await joinPath([modelDirPath, 'model.json'])
+
+    // Download HF model - model.json not exist
     if (!(await fs.existsSync(modelJsonPath))) {
+      // It supports only one source for HF download
+      const metadata = await this.fetchModelMetadata(model.sources[0].url)
+      const updatedModel = await this.retrieveGGUFMetadata(metadata)
+      if (updatedModel) {
+        // Update model settings
+        model.settings = {
+          ...model.settings,
+          ...updatedModel.settings,
+        }
+        model.parameters = {
+          ...model.parameters,
+          ...updatedModel.parameters,
+        }
+      }
       await fs.writeFileSync(modelJsonPath, JSON.stringify(model, null, 2))
       events.emit(ModelEvent.OnModelsUpdate, {})
     }
@@ -327,7 +344,7 @@ export default class JanModelExtension extends ModelExtension {
       // Should depend on sources?
       const isUserImportModel =
         modelInfo.metadata?.author?.toLowerCase() === 'user'
-        if (isUserImportModel) {
+      if (isUserImportModel) {
         // just delete the folder
         return fs.rm(dirPath)
       }
@@ -555,7 +572,7 @@ export default class JanModelExtension extends ModelExtension {
       ])
     )
 
-    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
+    const updatedModel = await this.retrieveGGUFMetadata(metadata)
 
     if (!defaultModel) {
       console.error('Unable to find default model')
@@ -575,18 +592,11 @@ export default class JanModelExtension extends ModelExtension {
       ],
       parameters: {
         ...defaultModel.parameters,
-        stop: eos_id
-          ? [metadata['tokenizer.ggml.tokens'][eos_id] ?? '']
-          : defaultModel.parameters.stop,
+        ...updatedModel.parameters,
       },
       settings: {
         ...defaultModel.settings,
-        prompt_template:
-          metadata?.parsed_chat_template ??
-          defaultModel.settings.prompt_template,
-        ctx_len:
-          metadata?.['llama.context_length'] ?? defaultModel.settings.ctx_len,
-        ngl: (metadata?.['llama.block_count'] ?? 32) + 1,
+        ...updatedModel.settings,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -666,9 +676,9 @@ export default class JanModelExtension extends ModelExtension {
       'retrieveGGUFMetadata',
       modelBinaryPath
     )
-    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
 
     const binaryFileName = await baseName(modelBinaryPath)
+    const updatedModel = await this.retrieveGGUFMetadata(metadata)
 
     const model: Model = {
       ...defaultModel,
@@ -682,19 +692,12 @@ export default class JanModelExtension extends ModelExtension {
       ],
       parameters: {
         ...defaultModel.parameters,
-        stop: eos_id
-          ? [metadata?.['tokenizer.ggml.tokens'][eos_id] ?? '']
-          : defaultModel.parameters.stop,
+        ...updatedModel.parameters,
       },
 
       settings: {
         ...defaultModel.settings,
-        prompt_template:
-          metadata?.parsed_chat_template ??
-          defaultModel.settings.prompt_template,
-        ctx_len:
-          metadata?.['llama.context_length'] ?? defaultModel.settings.ctx_len,
-        ngl: (metadata?.['llama.block_count'] ?? 32) + 1,
+        ...updatedModel.settings,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -859,5 +862,36 @@ export default class JanModelExtension extends ModelExtension {
       LocalImportModelEvent.onLocalImportModelFinished,
       importedModels
     )
+  }
+
+  /**
+   * Retrieve Model Settings from GGUF Metadata
+   * @param metadata
+   * @returns
+   */
+  async retrieveGGUFMetadata(metadata: any): Promise<Partial<Model>> {
+    const template = await executeOnMain(NODE, 'renderJinjaTemplate', metadata)
+    const defaultModel = DEFAULT_MODEL as Model
+    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+    const architecture = metadata['general.architecture']
+
+    return {
+      settings: {
+        prompt_template: template ?? defaultModel.settings.prompt_template,
+        ctx_len:
+          metadata[`${architecture}.context_length`] ??
+          metadata['llama.context_length'] ??
+          4096,
+        ngl:
+          (metadata[`${architecture}.block_count`] ??
+            metadata['llama.block_count'] ??
+            32) + 1,
+      },
+      parameters: {
+        stop: eos_id
+          ? [metadata?.['tokenizer.ggml.tokens'][eos_id] ?? '']
+          : defaultModel.parameters.stop,
+      },
+    }
   }
 }

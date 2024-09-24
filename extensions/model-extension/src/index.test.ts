@@ -1,6 +1,13 @@
+/**
+ * @jest-environment jsdom
+ */
 const readDirSyncMock = jest.fn()
 const existMock = jest.fn()
 const readFileSyncMock = jest.fn()
+const downloadMock = jest.fn()
+const mkdirMock = jest.fn()
+const writeFileSyncMock = jest.fn()
+const copyFileMock = jest.fn()
 
 jest.mock('@janhq/core', () => ({
   ...jest.requireActual('@janhq/core/node'),
@@ -8,6 +15,9 @@ jest.mock('@janhq/core', () => ({
     existsSync: existMock,
     readdirSync: readDirSyncMock,
     readFileSync: readFileSyncMock,
+    writeFileSync: writeFileSyncMock,
+    mkdir: mkdirMock,
+    copyFile: copyFileMock,
     fileStat: () => ({
       isDirectory: false,
     }),
@@ -15,10 +25,20 @@ jest.mock('@janhq/core', () => ({
   dirName: jest.fn(),
   joinPath: (paths) => paths.join('/'),
   ModelExtension: jest.fn(),
+  downloadFile: downloadMock,
 }))
+
+global.fetch = jest.fn(() =>
+  Promise.resolve({
+    json: () => Promise.resolve({ test: 100 }),
+    arrayBuffer: jest.fn(),
+  })
+) as jest.Mock
 
 import JanModelExtension from '.'
 import { fs, dirName } from '@janhq/core'
+import { renderJinjaTemplate } from './node/index'
+import { Template } from '@huggingface/jinja'
 
 describe('JanModelExtension', () => {
   let sut: JanModelExtension
@@ -187,7 +207,6 @@ describe('JanModelExtension', () => {
     describe('no models downloaded', () => {
       it('should return empty array', async () => {
         // Mock downloaded models data
-        const downloadedModels = []
         existMock.mockReturnValue(true)
         readDirSyncMock.mockReturnValue([])
 
@@ -557,8 +576,41 @@ describe('JanModelExtension', () => {
           file_path: 'file://models/model1/model.json',
         } as any)
 
-        expect(fs.unlinkSync).toHaveBeenCalledWith('file://models/model1/test.engine')
+        expect(fs.unlinkSync).toHaveBeenCalledWith(
+          'file://models/model1/test.engine'
+        )
       })
     })
   })
+
+  describe('downloadModel', () => {
+    const model: any = {
+      id: 'model-id',
+      name: 'Test Model',
+      sources: [
+        { url: 'http://example.com/model.gguf', filename: 'model.gguf' },
+      ],
+      engine: 'test-engine',
+    }
+
+    const network = {
+      ignoreSSL: true,
+      proxy: 'http://proxy.example.com',
+    }
+
+    const gpuSettings: any = {
+      gpus: [{ name: 'nvidia-rtx-3080', arch: 'ampere' }],
+    }
+
+    it('should reject with invalid gguf metadata', async () => {
+      existMock.mockImplementation(() => false)
+
+      expect(
+        sut.downloadModel(model, gpuSettings, network)
+      ).rejects.toBeTruthy()
+    })
+
+    
+  })
+  
 })

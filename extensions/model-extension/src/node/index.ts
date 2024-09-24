@@ -16,27 +16,8 @@ export const retrieveGGUFMetadata = async (ggufPath: string) => {
     // Parse metadata and tensor info
     const { metadata } = ggufMetadata(buffer.buffer)
 
-    const template = new Template(metadata['tokenizer.chat_template'])
-    const eos_id = metadata['tokenizer.ggml.eos_token_id']
-    const bos_id = metadata['tokenizer.ggml.bos_token_id']
-    const eos_token = metadata['tokenizer.ggml.tokens'][eos_id]
-    const bos_token = metadata['tokenizer.ggml.tokens'][bos_id]
     // Parse jinja template
-    const renderedTemplate = template.render({
-      add_generation_prompt: true,
-      eos_token,
-      bos_token,
-      messages: [
-        {
-          role: 'system',
-          content: '{system_message}',
-        },
-        {
-          role: 'user',
-          content: '{prompt}',
-        },
-      ],
-    })
+    const renderedTemplate = renderJinjaTemplate(metadata)
     return {
       ...metadata,
       parsed_chat_template: renderedTemplate,
@@ -44,4 +25,35 @@ export const retrieveGGUFMetadata = async (ggufPath: string) => {
   } catch (e) {
     console.log('[MODEL_EXT]', e)
   }
+}
+
+/**
+ * Convert metadata to jinja template
+ * @param metadata
+ */
+export const renderJinjaTemplate = (metadata: any): string => {
+  const template = new Template(metadata['tokenizer.chat_template'])
+  const eos_id = metadata['tokenizer.ggml.eos_token_id']
+  const bos_id = metadata['tokenizer.ggml.bos_token_id']
+  if (eos_id === undefined || bos_id === undefined) {
+    return ''
+  }
+  const eos_token = metadata['tokenizer.ggml.tokens'][eos_id]
+  const bos_token = metadata['tokenizer.ggml.tokens'][bos_id]
+  // Parse jinja template
+  return template.render({
+    add_generation_prompt: true,
+    eos_token,
+    bos_token,
+    messages: [
+      {
+        role: 'system',
+        content: '{system_message}',
+      },
+      {
+        role: 'user',
+        content: '{prompt}',
+      },
+    ],
+  })
 }
