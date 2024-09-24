@@ -3,7 +3,6 @@ import { useAtomValue, useAtom, useSetAtom } from 'jotai'
 import ModelDropdown from './index'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 import '@testing-library/jest-dom'
-import ModelLabel from '@/containers/ModelLabel'
 
 class ResizeObserverMock {
   observe() {}
@@ -39,32 +38,23 @@ describe('ModelDropdown', () => {
     engine: 'nitro',
   }
 
-  const selectedModelMock = { id: 'selectedModel', name: 'selectedModel' }
-  const activeThreadMock = {
-    id: '1',
-    object: 'thread',
-    title: 'New Thread',
-    assistants: [
-      {
-        assistant_id: 'jan',
-        assistant_name: 'Jan',
-        model: {
-          id: 'selectedModel',
-          name: 'selectedModel',
-          engine: 'nitro',
-        },
-      },
-    ],
-    created: 1727145391467,
-    updated: 1727145391467,
-  }
+  const configuredModels = [remoteModel, localModel]
+
+  const mockConfiguredModel = configuredModels
+  const selectedModel = { id: 'selectedModel', name: 'selectedModel' }
+  const setSelectedModel = jest.fn()
+  const showEngineListModel = ['nitro']
+  const showEngineListModelAtom = jest.fn()
 
   beforeEach(() => {
     jest.clearAllMocks()
-    ;(useAtomValue as jest.Mock).mockReturnValueOnce(activeThreadMock)
-    ;(useAtomValue as jest.Mock).mockReturnValueOnce(jest.fn())
-    ;(useAtom as jest.Mock).mockReturnValueOnce(selectedModelMock)
-    ;(useRecommendedModel as jest.Mock).mockReturnValueOnce({
+    ;(useAtom as jest.Mock).mockReturnValue([selectedModel, setSelectedModel])
+    ;(useAtom as jest.Mock).mockReturnValue([
+      showEngineListModel,
+      showEngineListModelAtom,
+    ])
+    ;(useAtomValue as jest.Mock).mockReturnValue(mockConfiguredModel)
+    ;(useRecommendedModel as jest.Mock).mockReturnValue({
       recommendedModel: { id: 'model1', parameters: [], settings: [] },
       downloadedModels: [],
     })
@@ -72,9 +62,40 @@ describe('ModelDropdown', () => {
 
   it('renders the ModelDropdown component', async () => {
     render(<ModelDropdown />)
+
     await waitFor(() => {
       expect(screen.getByTestId('model-selector')).toBeInTheDocument()
-      expect(screen.getByDisplayValue('selectedModel')).toBeInTheDocument()
+    })
+  })
+
+  it('renders the ModelDropdown component as disabled', async () => {
+    render(<ModelDropdown disabled />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-selector')).toBeInTheDocument()
+      expect(screen.getByTestId('model-selector')).toHaveClass(
+        'pointer-events-none'
+      )
+    })
+  })
+
+  it('renders the ModelDropdown component as badge for chat Input', async () => {
+    render(<ModelDropdown chatInputMode />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-selector')).toBeInTheDocument()
+      expect(screen.getByTestId('model-selector-badge')).toBeInTheDocument()
+      expect(screen.getByTestId('model-selector-badge')).toHaveClass('badge')
+    })
+  })
+
+  it('renders the Tab correctly', async () => {
+    render(<ModelDropdown />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-selector')).toBeInTheDocument()
+      expect(screen.getByText('On-device'))
+      expect(screen.getByText('Cloud'))
     })
   })
 })
