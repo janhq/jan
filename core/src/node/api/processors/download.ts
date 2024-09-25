@@ -100,7 +100,11 @@ export class Downloader implements Processor {
       })
       .on('end', () => {
         const currentDownloadState = DownloadManager.instance.downloadProgressMap[modelId]
-        if (currentDownloadState && DownloadManager.instance.networkRequests[normalizedPath]) {
+        if (
+          currentDownloadState &&
+          DownloadManager.instance.networkRequests[normalizedPath] &&
+          DownloadManager.instance.downloadProgressMap[modelId]?.downloadState !== 'error'
+        ) {
           // Finished downloading, rename temp file to actual file
           renameSync(downloadingTempFile, destination)
           const downloadState: DownloadState = {
