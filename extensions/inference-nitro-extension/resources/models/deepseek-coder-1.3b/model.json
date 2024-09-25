@@ -8,7 +8,7 @@
   "id": "deepseek-coder-1.3b",
   "object": "model",
   "name": "Deepseek Coder 1.3B Instruct Q8",
-  "version": "1.3",
+  "version": "1.4",
   "description": "Deepseek Coder excelled in project-level code completion with advanced capabilities across multiple programming languages.",
   "format": "gguf",
   "settings": {
@@ -22,13 +22,13 @@
     "top_p": 0.95,
     "stream": true,
     "max_tokens": 16384,
-    "stop": [],
+    "stop": ["<|EOT|>"],
     "frequency_penalty": 0,
     "presence_penalty": 0
   },
   "metadata": {
     "author": "Deepseek, The Bloke",
-    "tags": ["Tiny", "Foundational Model"],
+    "tags": ["Tiny"],
     "size": 1430000000
   },
   "engine": "nitro"
