@@ -40,6 +40,14 @@ export type DownloadRequest = {
    */
   extensionId?: string
 
+  /**
+   * The model ID of the model that initiated the download.
+   */
+  modelId?: string
+
+  /**
+   * The download type.
+   */
   downloadType?: DownloadType | string
 }
 

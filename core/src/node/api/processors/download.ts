@@ -34,7 +34,7 @@ export class Downloader implements Processor {
     }
     const array = normalizedPath.split(sep)
     const fileName = array.pop() ?? ''
-    const modelId = array.pop() ?? ''
+    const modelId = downloadRequest.modelId ?? array.pop() ?? ''
 
     const destination = resolve(getJanDataFolderPath(), normalizedPath)
     validatePath(destination)

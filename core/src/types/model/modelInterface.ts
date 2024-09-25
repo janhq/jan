@@ -12,7 +12,7 @@ export interface ModelInterface {
    * @returns A Promise that resolves when the model has been downloaded.
    */
   downloadModel(
-    model: Model,
+    model: ModelFile,
     gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void>
@@ -35,11 +35,11 @@ export interface ModelInterface {
    * Gets a list of downloaded models.
    * @returns A Promise that resolves with an array of downloaded models.
    */
-  getDownloadedModels(): Promise<Model[]>
+  getDownloadedModels(): Promise<ModelFile[]>
 
   /**
    * Gets a list of configured models.
    * @returns A Promise that resolves with an array of configured models.
    */
-  getConfiguredModels(): Promise<Model[]>
+  getConfiguredModels(): Promise<ModelFile[]>
 }
