@@ -8,9 +8,14 @@ const downloadMock = jest.fn()
 const mkdirMock = jest.fn()
 const writeFileSyncMock = jest.fn()
 const copyFileMock = jest.fn()
+const dirNameMock = jest.fn()
+const executeMock = jest.fn()
 
 jest.mock('@janhq/core', () => ({
   ...jest.requireActual('@janhq/core/node'),
+  events: {
+    emit: jest.fn(),
+  },
   fs: {
     existsSync: existMock,
     readdirSync: readDirSyncMock,
@@ -22,11 +27,14 @@ jest.mock('@janhq/core', () => ({
       isDirectory: false,
     }),
   },
-  dirName: jest.fn(),
+  dirName: dirNameMock,
   joinPath: (paths) => paths.join('/'),
   ModelExtension: jest.fn(),
   downloadFile: downloadMock,
+  executeOnMain: executeMock,
 }))
+
+jest.mock('@huggingface/gguf')
 
 global.fetch = jest.fn(() =>
   Promise.resolve({
@@ -37,8 +45,7 @@ global.fetch = jest.fn(() =>
 
 import JanModelExtension from '.'
 import { fs, dirName } from '@janhq/core'
-import { renderJinjaTemplate } from './node/index'
-import { Template } from '@huggingface/jinja'
+import { gguf } from '@huggingface/gguf'
 
 describe('JanModelExtension', () => {
   let sut: JanModelExtension
@@ -48,7 +55,7 @@ describe('JanModelExtension', () => {
     sut = new JanModelExtension()
   })
 
-  afterEach(() => {
+  beforeEach(() => {
     jest.clearAllMocks()
   })
 
@@ -610,7 +617,172 @@ describe('JanModelExtension', () => {
       ).rejects.toBeTruthy()
     })
 
-    
+    it('should download corresponding ID', async () => {
+      existMock.mockImplementation(() => true)
+      dirNameMock.mockImplementation(() => 'file://models/model1')
+      downloadMock.mockImplementation(() => {
+        return Promise.resolve({})
+      })
+
+      expect(
+        await sut.downloadModel(
+          { ...model, file_path: 'file://models/model1/model.json' },
+          gpuSettings,
+          network
+        )
+      ).toBeUndefined()
+
+      expect(downloadMock).toHaveBeenCalledWith(
+        {
+          localPath: 'file://models/model1/model.gguf',
+          modelId: 'model-id',
+          url: 'http://example.com/model.gguf',
+        },
+        { ignoreSSL: true, proxy: 'http://proxy.example.com' }
+      )
+    })
+
+    it('should handle invalid model file', async () => {
+      executeMock.mockResolvedValue({})
+
+      fs.readFileSync = jest.fn(() => {
+        return JSON.stringify({ metadata: { author: 'user' } })
+      })
+
+      expect(
+        sut.downloadModel(
+          { ...model, file_path: 'file://models/model1/model.json' },
+          gpuSettings,
+          network
+        )
+      ).resolves.not.toThrow()
+
+      expect(downloadMock).not.toHaveBeenCalled()
+    })
+    it('should handle model file with no sources', async () => {
+      executeMock.mockResolvedValue({})
+      const modelWithoutSources = { ...model, sources: [] }
+
+      expect(
+        sut.downloadModel(
+          {
+            ...modelWithoutSources,
+            file_path: 'file://models/model1/model.json',
+          },
+          gpuSettings,
+          network
+        )
+      ).resolves.toBe(undefined)
+
+      expect(downloadMock).not.toHaveBeenCalled()
+    })
+
+    it('should handle model file with multiple sources', async () => {
+      const modelWithMultipleSources = {
+        ...model,
+        sources: [
+          { url: 'http://example.com/model1.gguf', filename: 'model1.gguf' },
+          { url: 'http://example.com/model2.gguf', filename: 'model2.gguf' },
+        ],
+      }
+
+      executeMock.mockResolvedValue({
+        metadata: { 'tokenizer.ggml.eos_token_id': 0 },
+      })
+      ;(gguf as jest.Mock).mockResolvedValue({
+        metadata: { 'tokenizer.ggml.eos_token_id': 0 },
+      })
+      // @ts-ignore
+      global.NODE = 'node'
+      // @ts-ignore
+      global.DEFAULT_MODEL = {
+        parameters: { stop: [] },
+      }
+      downloadMock.mockImplementation(() => {
+        return Promise.resolve({})
+      })
+
+      expect(
+        await sut.downloadModel(
+          {
+            ...modelWithMultipleSources,
+            file_path: 'file://models/model1/model.json',
+          },
+          gpuSettings,
+          network
+        )
+      ).toBeUndefined()
+
+      expect(downloadMock).toHaveBeenCalledWith(
+        {
+          localPath: 'file://models/model1/model1.gguf',
+          modelId: 'model-id',
+          url: 'http://example.com/model1.gguf',
+        },
+        { ignoreSSL: true, proxy: 'http://proxy.example.com' }
+      )
+
+      expect(downloadMock).toHaveBeenCalledWith(
+        {
+          localPath: 'file://models/model1/model2.gguf',
+          modelId: 'model-id',
+          url: 'http://example.com/model2.gguf',
+        },
+        { ignoreSSL: true, proxy: 'http://proxy.example.com' }
+      )
+    })
+
+    it('should handle model file with no file_path', async () => {
+      executeMock.mockResolvedValue({
+        metadata: { 'tokenizer.ggml.eos_token_id': 0 },
+      })
+      ;(gguf as jest.Mock).mockResolvedValue({
+        metadata: { 'tokenizer.ggml.eos_token_id': 0 },
+      })
+      // @ts-ignore
+      global.NODE = 'node'
+      // @ts-ignore
+      global.DEFAULT_MODEL = {
+        parameters: { stop: [] },
+      }
+      const modelWithoutFilepath = { ...model, file_path: undefined }
+
+      await sut.downloadModel(modelWithoutFilepath, gpuSettings, network)
+
+      expect(downloadMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          localPath: 'file://models/model-id/model.gguf',
+        }),
+        expect.anything()
+      )
+    })
+
+    it('should handle model file with invalid file_path', async () => {
+      executeMock.mockResolvedValue({
+        metadata: { 'tokenizer.ggml.eos_token_id': 0 },
+      })
+      ;(gguf as jest.Mock).mockResolvedValue({
+        metadata: { 'tokenizer.ggml.eos_token_id': 0 },
+      })
+      // @ts-ignore
+      global.NODE = 'node'
+      // @ts-ignore
+      global.DEFAULT_MODEL = {
+        parameters: { stop: [] },
+      }
+      const modelWithInvalidFilepath = {
+        ...model,
+        file_path: 'file://models/invalid-model.json',
+      }
+
+      await sut.downloadModel(modelWithInvalidFilepath, gpuSettings, network)
+
+      expect(downloadMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          localPath: 'file://models/model1/model.gguf',
+        }),
+        expect.anything()
+      )
+    })
   })
-  
 })

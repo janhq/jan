@@ -24,7 +24,6 @@ import {
   ModelEvent,
   ModelFile,
   dirName,
-  ModelSettingParams,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -77,14 +76,15 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async downloadModel(
-    model: Model,
+    model: ModelFile,
     gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
     // Create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
-    const modelJsonPath = await joinPath([modelDirPath, 'model.json'])
+    const modelJsonPath =
+      model.file_path ?? (await joinPath([modelDirPath, 'model.json']))
 
     // Download HF model - model.json not exist
     if (!(await fs.existsSync(modelJsonPath))) {
@@ -152,11 +152,15 @@ export default class JanModelExtension extends ModelExtension {
           JanModelExtension._supportedModelFormat
         )
         if (source.filename) {
-          path = await joinPath([modelDirPath, source.filename])
+          path = model.file_path
+            ? await joinPath([await dirName(model.file_path), source.filename])
+            : await joinPath([modelDirPath, source.filename])
         }
+
         const downloadRequest: DownloadRequest = {
           url: source.url,
           localPath: path,
+          modelId: model.id,
         }
         downloadFile(downloadRequest, network)
       }
@@ -166,10 +170,13 @@ export default class JanModelExtension extends ModelExtension {
         model.sources[0]?.url,
         JanModelExtension._supportedModelFormat
       )
-      const path = await joinPath([modelDirPath, fileName])
+      const path = model.file_path
+        ? await joinPath([await dirName(model.file_path), fileName])
+        : await joinPath([modelDirPath, fileName])
       const downloadRequest: DownloadRequest = {
         url: model.sources[0]?.url,
         localPath: path,
+        modelId: model.id,
       }
       downloadFile(downloadRequest, network)
 
