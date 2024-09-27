@@ -6,7 +6,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
@@ -35,7 +35,7 @@ const TableActiveModel = () => {
               })}
             </tr>
           </thead>
-          {activeModel && localEngines.includes(activeModel.engine) ? (
+          {activeModel && isLocalEngine(activeModel.engine) ? (
             <tbody>
               <tr>
                 <td

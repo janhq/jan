@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import Image from 'next/image'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import { InferenceEngine, LocalOAIEngine, Model } from '@janhq/core'
 import {
   Badge,
   Button,
@@ -40,7 +40,7 @@ import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import {
   getLogoEngine,
   getTitleByEngine,
-  localEngines,
+  isLocalEngine,
   priorityEngine,
 } from '@/utils/modelEngine'
 
@@ -101,7 +101,7 @@ const ModelDropdown = ({
   const isModelSupportRagAndTools = useCallback((model: Model) => {
     return (
       model?.engine === InferenceEngine.openai ||
-      localEngines.includes(model?.engine as InferenceEngine)
+      isLocalEngine(model?.engine as InferenceEngine)
     )
   }, [])
 
@@ -113,10 +113,10 @@ const ModelDropdown = ({
         )
         .filter((e) => {
           if (searchFilter === 'local') {
-            return localEngines.includes(e.engine)
+            return isLocalEngine(e.engine)
           }
           if (searchFilter === 'remote') {
-            return !localEngines.includes(e.engine)
+            return !isLocalEngine(e.engine)
           }
         })
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -236,7 +236,6 @@ const ModelDropdown = ({
       for (const extension of extensions) {
         if (typeof extension.getSettings === 'function') {
           const settings = await extension.getSettings()
-
           if (
             (settings && settings.length > 0) ||
             (await extension.installationState()) !== 'NotRequired'
@@ -295,7 +294,7 @@ const ModelDropdown = ({
   }, [setShowEngineListModel, extensionHasSettings])
 
   const isDownloadALocalModel = downloadedModels.some((x) =>
-    localEngines.includes(x.engine)
+    isLocalEngine(x.engine)
   )
 
   if (strictedThread && !activeThread) {
@@ -377,7 +376,7 @@ const ModelDropdown = ({
           </div>
           <ScrollArea className="h-[calc(100%-90px)] w-full">
             {groupByEngine.map((engine, i) => {
-              const apiKey = !localEngines.includes(engine)
+              const apiKey = !isLocalEngine(engine)
                 ? extensionHasSettings.filter((x) => x.provider === engine)[0]
                     ?.apiKey.length > 1
                 : true
@@ -417,7 +416,7 @@ const ModelDropdown = ({
                         </h6>
                       </div>
                       <div className="-mr-2 flex gap-1">
-                        {!localEngines.includes(engine) && (
+                        {!isLocalEngine(engine) && (
                           <SetupRemoteModel engine={engine} />
                         )}
                         {!showModel ? (
@@ -438,7 +437,7 @@ const ModelDropdown = ({
                       </div>
                     </div>
 
-                    {engine === InferenceEngine.nitro &&
+                    {isLocalEngine(engine) &&
                       !isDownloadALocalModel &&
                       showModel &&
                       !searchText.length && (
@@ -503,10 +502,7 @@ const ModelDropdown = ({
                       {filteredDownloadedModels
                         .filter((x) => x.engine === engine)
                         .filter((y) => {
-                          if (
-                            localEngines.includes(y.engine) &&
-                            !searchText.length
-                          ) {
+                          if (isLocalEngine(y.engine) && !searchText.length) {
                             return downloadedModels.find((c) => c.id === y.id)
                           } else {
                             return y
@@ -530,10 +526,7 @@ const ModelDropdown = ({
                                   : 'text-[hsla(var(--text-primary))]'
                               )}
                               onClick={() => {
-                                if (
-                                  !apiKey &&
-                                  !localEngines.includes(model.engine)
-                                )
+                                if (!apiKey && !isLocalEngine(model.engine))
                                   return null
                                 if (isdDownloaded) {
                                   onClickModelItem(model.id)

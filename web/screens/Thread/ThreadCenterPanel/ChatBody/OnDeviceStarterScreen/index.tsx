@@ -28,7 +28,7 @@ import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import {
   getLogoEngine,
   getTitleByEngine,
-  localEngines,
+  isLocalEngine,
 } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -74,13 +74,11 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
     }
   })
 
-  const remoteModel = configuredModels.filter(
-    (x) => !localEngines.includes(x.engine)
-  )
+  const remoteModel = configuredModels.filter((x) => !isLocalEngine(x.engine))
 
   const filteredModels = configuredModels.filter((model) => {
     return (
-      localEngines.includes(model.engine) &&
+      isLocalEngine(model.engine) &&
       model.name.toLowerCase().includes(searchValue.toLowerCase())
     )
   })

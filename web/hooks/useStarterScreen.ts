@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 
 import { useAtomValue } from 'jotai'
 
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -13,7 +13,7 @@ export function useStarterScreen() {
   const threads = useAtomValue(threadsAtom)
 
   const isDownloadALocalModel = downloadedModels.some((x) =>
-    localEngines.includes(x.engine)
+    isLocalEngine(x.engine)
   )
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<

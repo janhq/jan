@@ -24,7 +24,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
@@ -130,7 +130,7 @@ const ChatInput = () => {
 
   const isModelSupportRagAndTools =
     selectedModel?.engine === InferenceEngine.openai ||
-    localEngines.includes(selectedModel?.engine as InferenceEngine)
+    isLocalEngine(selectedModel?.engine as InferenceEngine)
 
   /**
    * Handles the change event of the extension file input element by setting the file name state.
