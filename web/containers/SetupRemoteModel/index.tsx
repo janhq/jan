@@ -8,7 +8,7 @@ import { SettingsIcon, PlusIcon } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
-import { isLocalEngine, localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'

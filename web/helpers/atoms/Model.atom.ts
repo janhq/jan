@@ -1,8 +1,6 @@
 import { ImportingModel, Model, ModelFile } from '@janhq/core'
 import { atom } from 'jotai'
 
-import { localEngines } from '@/utils/modelEngine'
-
 export const stateModel = atom({ state: 'start', loading: false, model: '' })
 export const activeAssistantModelAtom = atom<Model | undefined>(undefined)
 
