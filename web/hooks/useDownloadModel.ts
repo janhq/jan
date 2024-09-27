@@ -9,6 +9,8 @@ import {
   ModelArtifact,
   DownloadState,
   GpuSetting,
+  ModelFile,
+  dirName,
 } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -91,9 +93,11 @@ export default function useDownloadModel() {
     ]
   )
 
-  const abortModelDownload = useCallback(async (model: Model) => {
+  const abortModelDownload = useCallback(async (model: ModelFile) => {
     for (const source of model.sources) {
-      const path = await joinPath(['models', model.id, source.filename])
+      const path = model.file_path
+        ? await joinPath([await dirName(model.file_path), source.filename])
+        : await joinPath(['models', model.id, source.filename])
       await abortDownload(path)
     }
   }, [])
