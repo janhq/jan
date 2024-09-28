@@ -1,5 +1,10 @@
 import { EngineManager, InferenceEngine, LocalOAIEngine } from '@janhq/core'
-import { getTitleByEngine, isLocalEngine, priorityEngine } from './modelEngine'
+import {
+  getTitleByEngine,
+  isLocalEngine,
+  priorityEngine,
+  getLogoEngine,
+} from './modelEngine'
 
 jest.mock('@janhq/core', () => ({
   ...jest.requireActual('@janhq/core'),
@@ -113,6 +118,68 @@ describe('isLocalEngine', () => {
         InferenceEngine.cortex_tensorrtllm,
         InferenceEngine.nitro,
       ])
+    })
+  })
+
+  describe('getLogoEngine', () => {
+    it('should return correct logo path for InferenceEngine.anthropic', () => {
+      const result = getLogoEngine(InferenceEngine.anthropic)
+      expect(result).toBe('images/ModelProvider/anthropic.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.nitro_tensorrt_llm', () => {
+      const result = getLogoEngine(InferenceEngine.nitro_tensorrt_llm)
+      expect(result).toBe('images/ModelProvider/nitro.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.cortex_llamacpp', () => {
+      const result = getLogoEngine(InferenceEngine.cortex_llamacpp)
+      expect(result).toBe('images/ModelProvider/cortex.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.mistral', () => {
+      const result = getLogoEngine(InferenceEngine.mistral)
+      expect(result).toBe('images/ModelProvider/mistral.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.martian', () => {
+      const result = getLogoEngine(InferenceEngine.martian)
+      expect(result).toBe('images/ModelProvider/martian.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.openrouter', () => {
+      const result = getLogoEngine(InferenceEngine.openrouter)
+      expect(result).toBe('images/ModelProvider/openRouter.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.openai', () => {
+      const result = getLogoEngine(InferenceEngine.openai)
+      expect(result).toBe('images/ModelProvider/openai.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.groq', () => {
+      const result = getLogoEngine(InferenceEngine.groq)
+      expect(result).toBe('images/ModelProvider/groq.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.triton_trtllm', () => {
+      const result = getLogoEngine(InferenceEngine.triton_trtllm)
+      expect(result).toBe('images/ModelProvider/triton_trtllm.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.cohere', () => {
+      const result = getLogoEngine(InferenceEngine.cohere)
+      expect(result).toBe('images/ModelProvider/cohere.svg')
+    })
+
+    it('should return correct logo path for InferenceEngine.nvidia', () => {
+      const result = getLogoEngine(InferenceEngine.nvidia)
+      expect(result).toBe('images/ModelProvider/nvidia.svg')
+    })
+
+    it('should return undefined for unknown engine', () => {
+      const result = getLogoEngine('unknownEngine' as InferenceEngine)
+      expect(result).toBeUndefined()
     })
   })
 })

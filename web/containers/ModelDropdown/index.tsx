@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import Image from 'next/image'
 
-import { InferenceEngine, LocalOAIEngine, Model } from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import {
   Badge,
   Button,
