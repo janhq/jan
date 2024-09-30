@@ -8,10 +8,10 @@ import {
   setConvoMessagesAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
-  ModelParams,
   setActiveThreadIdAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ModelParams } from '@/types/model'
 
 export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
