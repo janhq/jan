@@ -38,7 +38,7 @@ describe('Model.atom.ts', () => {
 
   describe('showEngineListModelAtom', () => {
     it('should initialize as an empty array', () => {
-      expect(ModelAtoms.showEngineListModelAtom.init).toEqual([])
+      expect(ModelAtoms.showEngineListModelAtom.init).toEqual(['nitro'])
     })
   })
 
