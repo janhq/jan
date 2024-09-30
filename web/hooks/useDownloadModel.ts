@@ -93,11 +93,12 @@ export default function useDownloadModel() {
     ]
   )
 
-  const abortModelDownload = useCallback(async (model: ModelFile) => {
+  const abortModelDownload = useCallback(async (model: Model | ModelFile) => {
     for (const source of model.sources) {
-      const path = model.file_path
-        ? await joinPath([await dirName(model.file_path), source.filename])
-        : await joinPath(['models', model.id, source.filename])
+      const path =
+        'file_path' in model
+          ? await joinPath([await dirName(model.file_path), source.filename])
+          : await joinPath(['models', model.id, source.filename])
       await abortDownload(path)
     }
   }, [])
