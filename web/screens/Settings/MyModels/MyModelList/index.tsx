@@ -16,7 +16,7 @@ import useDeleteModel from '@/hooks/useDeleteModel'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
@@ -74,7 +74,7 @@ const MyModelList = ({ model }: Props) => {
           </div>
         </div>
 
-        {localEngines.includes(model.engine) && (
+        {isLocalEngine(model.engine) && (
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">

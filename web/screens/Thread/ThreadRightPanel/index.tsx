@@ -28,7 +28,7 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 import {
   extractInferenceParams,
   extractModelLoadParams,
@@ -63,7 +63,7 @@ const ThreadRightPanel = () => {
 
   const isModelSupportRagAndTools =
     selectedModel?.engine === InferenceEngine.openai ||
-    localEngines.includes(selectedModel?.engine as InferenceEngine)
+    isLocalEngine(selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()

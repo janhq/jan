@@ -1,5 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import { useAtomValue, useAtom, useSetAtom } from 'jotai'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { useAtomValue, useAtom } from 'jotai'
 import ModelDropdown from './index'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 import '@testing-library/jest-dom'
@@ -38,7 +38,7 @@ describe('ModelDropdown', () => {
     engine: 'nitro',
   }
 
-  const configuredModels = [remoteModel, localModel]
+  const configuredModels = [remoteModel, localModel, localModel]
 
   const mockConfiguredModel = configuredModels
   const selectedModel = { id: 'selectedModel', name: 'selectedModel' }
@@ -94,8 +94,20 @@ describe('ModelDropdown', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('model-selector')).toBeInTheDocument()
-      expect(screen.getByText('On-device'))
-      expect(screen.getByText('Cloud'))
+      expect(screen.getByText('On-device')).toBeInTheDocument()
+      expect(screen.getByText('Cloud')).toBeInTheDocument()
+    })
+  })
+
+  it('filters models correctly', async () => {
+    render(<ModelDropdown />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-selector')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('Cloud'))
+      fireEvent.change(screen.getByText('Cloud'), {
+        target: { value: 'remote' },
+      })
     })
   })
 })
