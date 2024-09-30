@@ -11,12 +11,12 @@ import { useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
-  ModelParams,
   threadDataReadyAtom,
   threadModelParamsAtom,
   threadStatesAtom,
   threadsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ModelParams } from '@/types/model'
 
 const useThreads = () => {
   const setThreadStates = useSetAtom(threadStatesAtom)

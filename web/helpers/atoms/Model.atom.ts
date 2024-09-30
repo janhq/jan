@@ -1,8 +1,59 @@
 import { ImportingModel, InferenceEngine, Model, ModelFile } from '@janhq/core'
 import { atom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
+
+/**
+ * Enum for the keys used to store models in the local storage.
+ */
+enum ModelStorageAtomKeys {
+  DownloadedModels = 'downloadedModels',
+  AvailableModels = 'availableModels',
+}
+//// Models Atom
+/**
+ * Downloaded Models Atom
+ * This atom stores the list of models that have been downloaded.
+ */
+export const downloadedModelsAtom = atomWithStorage<ModelFile[]>(
+  ModelStorageAtomKeys.DownloadedModels,
+  []
+)
+
+/**
+ * Configured Models Atom
+ * This atom stores the list of models that have been configured and available to download
+ */
+export const configuredModelsAtom = atomWithStorage<ModelFile[]>(
+  ModelStorageAtomKeys.AvailableModels,
+  []
+)
+
+export const removeDownloadedModelAtom = atom(
+  null,
+  (get, set, modelId: string) => {
+    const downloadedModels = get(downloadedModelsAtom)
+
+    set(
+      downloadedModelsAtom,
+      downloadedModels.filter((e) => e.id !== modelId)
+    )
+  }
+)
+
+/**
+ * Atom to store the selected model (from ModelDropdown)
+ */
+export const selectedModelAtom = atom<ModelFile | undefined>(undefined)
+
+/**
+ * Atom to store the expanded engine sections (from ModelDropdown)
+ */
+export const showEngineListModelAtom = atom<string[]>([InferenceEngine.nitro])
+
+/// End Models Atom
+/// Model Download Atom
 
 export const stateModel = atom({ state: 'start', loading: false, model: '' })
-export const activeAssistantModelAtom = atom<Model | undefined>(undefined)
 
 /**
  * Stores the list of models which are being downloaded.
@@ -30,28 +81,20 @@ export const removeDownloadingModelAtom = atom(
   }
 )
 
-export const downloadedModelsAtom = atom<ModelFile[]>([])
-
-export const removeDownloadedModelAtom = atom(
-  null,
-  (get, set, modelId: string) => {
-    const downloadedModels = get(downloadedModelsAtom)
-
-    set(
-      downloadedModelsAtom,
-      downloadedModels.filter((e) => e.id !== modelId)
-    )
-  }
-)
-
-export const configuredModelsAtom = atom<ModelFile[]>([])
-
-export const defaultModelAtom = atom<Model | undefined>(undefined)
+/// End Model Download Atom
+/// Model Import Atom
 
 /// TODO: move this part to another atom
 // store the paths of the models that are being imported
 export const importingModelsAtom = atom<ImportingModel[]>([])
 
+// DEPRECATED: Remove when moving to cortex.cpp
+// Default model template when importing
+export const defaultModelAtom = atom<Model | undefined>(undefined)
+
+/**
+ * Importing progress Atom
+ */
 export const updateImportingModelProgressAtom = atom(
   null,
   (get, set, importId: string, percentage: number) => {
@@ -69,6 +112,9 @@ export const updateImportingModelProgressAtom = atom(
   }
 )
 
+/**
+ * Importing error Atom
+ */
 export const setImportingModelErrorAtom = atom(
   null,
   (get, set, importId: string, error: string) => {
@@ -87,6 +133,9 @@ export const setImportingModelErrorAtom = atom(
   }
 )
 
+/**
+ * Importing success Atom
+ */
 export const setImportingModelSuccessAtom = atom(
   null,
   (get, set, importId: string, modelId: string) => {
@@ -105,6 +154,9 @@ export const setImportingModelSuccessAtom = atom(
   }
 )
 
+/**
+ * Update importing model metadata Atom
+ */
 export const updateImportingModelAtom = atom(
   null,
   (
@@ -131,6 +183,9 @@ export const updateImportingModelAtom = atom(
   }
 )
 
-export const selectedModelAtom = atom<ModelFile | undefined>(undefined)
+/// End Model Import Atom
 
-export const showEngineListModelAtom = atom<string[]>([InferenceEngine.nitro])
+/// ModelDropdown States Atom
+export const isDownloadALocalModelAtom = atom<boolean>(false)
+export const isAnyRemoteModelConfiguredAtom = atom<boolean>(false)
+/// End ModelDropdown States Atom

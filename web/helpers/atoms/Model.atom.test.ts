@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import * as ModelAtoms from './Model.atom'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -22,11 +22,6 @@ describe('Model.atom.ts', () => {
         loading: false,
         model: '',
       })
-    })
-  })
-  describe('activeAssistantModelAtom', () => {
-    it('should initialize as undefined', () => {
-      expect(ModelAtoms.activeAssistantModelAtom.init).toBeUndefined()
     })
   })
 
