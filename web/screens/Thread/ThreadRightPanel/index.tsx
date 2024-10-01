@@ -28,8 +28,11 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-import { localEngines } from '@/utils/modelEngine'
-import { toRuntimeParams, toSettingParams } from '@/utils/modelParam'
+import { isLocalEngine } from '@/utils/modelEngine'
+import {
+  extractInferenceParams,
+  extractModelLoadParams,
+} from '@/utils/modelParam'
 
 import PromptTemplateSetting from './PromptTemplateSetting'
 import Tools from './Tools'
@@ -60,7 +63,7 @@ const ThreadRightPanel = () => {
 
   const isModelSupportRagAndTools =
     selectedModel?.engine === InferenceEngine.openai ||
-    localEngines.includes(selectedModel?.engine as InferenceEngine)
+    isLocalEngine(selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()
@@ -68,14 +71,26 @@ const ThreadRightPanel = () => {
 
   const settings = useMemo(() => {
     // runtime setting
-    const modelRuntimeParams = toRuntimeParams(activeModelParams)
+    const modelRuntimeParams = extractInferenceParams(
+      {
+        ...selectedModel?.parameters,
+        ...activeModelParams,
+      },
+      selectedModel?.parameters
+    )
     const componentDataRuntimeSetting = getConfigurationsData(
       modelRuntimeParams,
       selectedModel
     ).filter((x) => x.key !== 'prompt_template')
 
     // engine setting
-    const modelEngineParams = toSettingParams(activeModelParams)
+    const modelEngineParams = extractModelLoadParams(
+      {
+        ...selectedModel?.settings,
+        ...activeModelParams,
+      },
+      selectedModel?.settings
+    )
     const componentDataEngineSetting = getConfigurationsData(
       modelEngineParams,
       selectedModel
@@ -126,7 +141,10 @@ const ThreadRightPanel = () => {
   }, [activeModelParams, selectedModel])
 
   const promptTemplateSettings = useMemo(() => {
-    const modelEngineParams = toSettingParams(activeModelParams)
+    const modelEngineParams = extractModelLoadParams({
+      ...selectedModel?.settings,
+      ...activeModelParams,
+    })
     const componentDataEngineSetting = getConfigurationsData(
       modelEngineParams,
       selectedModel
@@ -229,7 +247,7 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeThread?.assistants[0].instructions ?? ''}
-                rows={8}
+                autoResize
                 onChange={onAssistantInstructionChanged}
               />
             </div>

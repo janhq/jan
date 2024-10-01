@@ -6,7 +6,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { toGibibytes } from '@/utils/converter'
 
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
@@ -35,7 +35,7 @@ const TableActiveModel = () => {
               })}
             </tr>
           </thead>
-          {activeModel && localEngines.includes(activeModel.engine) ? (
+          {activeModel && isLocalEngine(activeModel.engine) ? (
             <tbody>
               <tr>
                 <td
@@ -79,7 +79,7 @@ const TableActiveModel = () => {
           ) : (
             <tbody>
               <tr className="text-[hsla(var(--text-secondary))]">
-                <td className="p-4">No on-device model running</td>
+                <td className="p-4">No models are loaded into memory</td>
               </tr>
             </tbody>
           )}

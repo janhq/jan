@@ -100,6 +100,7 @@ const DataFolder = () => {
         <div className="flex items-center gap-x-3">
           <div className="relative">
             <Input
+              data-testid="jan-data-folder-input"
               value={janDataFolderPath}
               className="w-full pr-8 sm:w-[240px]"
               disabled

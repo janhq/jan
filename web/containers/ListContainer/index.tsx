@@ -29,7 +29,7 @@ const ListContainer = ({ children }: Props) => {
   }, [])
 
   useEffect(() => {
-    if (isUserManuallyScrollingUp.current === true) return
+    if (isUserManuallyScrollingUp.current === true || !listRef.current) return
     const scrollHeight = listRef.current?.scrollHeight ?? 0
     listRef.current?.scrollTo({
       top: scrollHeight,

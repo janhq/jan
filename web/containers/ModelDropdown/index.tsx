@@ -8,7 +8,7 @@ import {
   Button,
   Input,
   ScrollArea,
-  Select,
+  Tabs,
   useClickOutside,
 } from '@janhq/joi'
 
@@ -40,13 +40,12 @@ import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import {
   getLogoEngine,
   getTitleByEngine,
-  localEngines,
+  isLocalEngine,
   priorityEngine,
 } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 
-import { preserveModelSettingsAtom } from '@/helpers/atoms/AppConfig.atom'
 import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 import {
   configuredModelsAtom,
@@ -71,8 +70,8 @@ const ModelDropdown = ({
   strictedThread = true,
 }: Props) => {
   const { downloadModel } = useDownloadModel()
-  const [searchFilter, setSearchFilter] = useState('all')
-  const [filterOptionsOpen, setFilterOptionsOpen] = useState(false)
+
+  const [searchFilter, setSearchFilter] = useState('local')
   const [searchText, setSearchText] = useState('')
   const [open, setOpen] = useState(false)
   const activeThread = useAtomValue(activeThreadAtom)
@@ -91,14 +90,9 @@ const ModelDropdown = ({
   const featuredModel = configuredModels.filter((x) =>
     x.metadata.tags.includes('Featured')
   )
-  const preserveModelSettings = useAtomValue(preserveModelSettingsAtom)
-
   const { updateThreadMetadata } = useCreateNewThread()
 
-  useClickOutside(() => !filterOptionsOpen && setOpen(false), null, [
-    dropdownOptions,
-    toggle,
-  ])
+  useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
 
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
@@ -107,7 +101,7 @@ const ModelDropdown = ({
   const isModelSupportRagAndTools = useCallback((model: Model) => {
     return (
       model?.engine === InferenceEngine.openai ||
-      localEngines.includes(model?.engine as InferenceEngine)
+      isLocalEngine(model?.engine as InferenceEngine)
     )
   }, [])
 
@@ -118,14 +112,11 @@ const ModelDropdown = ({
           e.name.toLowerCase().includes(searchText.toLowerCase().trim())
         )
         .filter((e) => {
-          if (searchFilter === 'all') {
-            return e.engine
-          }
           if (searchFilter === 'local') {
-            return localEngines.includes(e.engine)
+            return isLocalEngine(e.engine)
           }
           if (searchFilter === 'remote') {
-            return !localEngines.includes(e.engine)
+            return !isLocalEngine(e.engine)
           }
         })
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -155,9 +146,9 @@ const ModelDropdown = ({
 
   useEffect(() => {
     if (!activeThread) return
-    let model = downloadedModels.find(
-      (model) => model.id === activeThread.assistants[0].model.id
-    )
+    const modelId = activeThread?.assistants?.[0]?.model?.id
+
+    let model = downloadedModels.find((model) => model.id === modelId)
     if (!model) {
       model = recommendedModel
     }
@@ -191,27 +182,14 @@ const ModelDropdown = ({
           ],
         })
 
-        // Default setting ctx_len for the model for a better onboarding experience
-        // TODO: When Cortex support hardware instructions, we should remove this
-        const defaultContextLength = preserveModelSettings
-          ? model?.metadata?.default_ctx_len
-          : 2048
-        const defaultMaxTokens = preserveModelSettings
-          ? model?.metadata?.default_max_tokens
-          : 2048
         const overriddenSettings =
-          model?.settings.ctx_len && model.settings.ctx_len > 2048
-            ? { ctx_len: defaultContextLength ?? 2048 }
-            : {}
-        const overriddenParameters =
-          model?.parameters.max_tokens && model.parameters.max_tokens
-            ? { max_tokens: defaultMaxTokens ?? 2048 }
+          model?.settings.ctx_len && model.settings.ctx_len > 4096
+            ? { ctx_len: 4096 }
             : {}
 
         const modelParams = {
           ...model?.parameters,
           ...model?.settings,
-          ...overriddenParameters,
           ...overriddenSettings,
         }
 
@@ -222,6 +200,7 @@ const ModelDropdown = ({
         if (model)
           updateModelParameter(activeThread, {
             params: modelParams,
+            modelPath: model.file_path,
             modelId: model.id,
             engine: model.engine,
           })
@@ -235,7 +214,6 @@ const ModelDropdown = ({
       setThreadModelParams,
       updateModelParameter,
       updateThreadMetadata,
-      preserveModelSettings,
     ]
   )
 
@@ -258,7 +236,6 @@ const ModelDropdown = ({
       for (const extension of extensions) {
         if (typeof extension.getSettings === 'function') {
           const settings = await extension.getSettings()
-
           if (
             (settings && settings.length > 0) ||
             (await extension.installationState()) !== 'NotRequired'
@@ -317,7 +294,7 @@ const ModelDropdown = ({
   }, [setShowEngineListModel, extensionHasSettings])
 
   const isDownloadALocalModel = downloadedModels.some((x) =>
-    localEngines.includes(x.engine)
+    isLocalEngine(x.engine)
   )
 
   if (strictedThread && !activeThread) {
@@ -325,10 +302,14 @@ const ModelDropdown = ({
   }
 
   return (
-    <div className={twMerge('relative', disabled && 'pointer-events-none')}>
+    <div
+      className={twMerge('relative', disabled && 'pointer-events-none')}
+      data-testid="model-selector"
+    >
       <div ref={setToggle}>
         {chatInputMode ? (
           <Badge
+            data-testid="model-selector-badge"
             theme="secondary"
             variant={open ? 'solid' : 'outline'}
             className={twMerge(
@@ -357,19 +338,30 @@ const ModelDropdown = ({
       </div>
       <div
         className={twMerge(
-          'w=80 absolute right-0 z-20 mt-2 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+          'absolute right-0 z-20 mt-2 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
           open ? 'flex' : 'hidden',
           chatInputMode && 'bottom-8 left-0 w-72'
         )}
         ref={setDropdownOptions}
       >
         <div className="w-full">
-          <div className="relative">
+          <div className="p-2 pb-0">
+            <Tabs
+              options={[
+                { name: 'On-device', value: 'local' },
+                { name: 'Cloud', value: 'remote' },
+              ]}
+              tabStyle="segmented"
+              value={searchFilter as string}
+              onValueChange={(value) => setSearchFilter(value)}
+            />
+          </div>
+          <div className="relative border-b border-[hsla(var(--app-border))] py-2">
             <Input
               placeholder="Search"
               value={searchText}
               ref={searchInputRef}
-              className="rounded-none border-x-0 border-t-0 focus-within:ring-0 hover:border-b-[hsla(var(--app-border))]"
+              className="rounded-none border-x-0 border-b-0 border-t-0 focus-within:ring-0 "
               onChange={(e) => setSearchText(e.target.value)}
               suffixIcon={
                 searchText.length > 0 && (
@@ -381,28 +373,10 @@ const ModelDropdown = ({
                 )
               }
             />
-            <div
-              className={twMerge(
-                'absolute right-2 top-1/2 -translate-y-1/2',
-                searchText.length && 'hidden'
-              )}
-            >
-              <Select
-                value={searchFilter}
-                className="h-6 gap-1 px-2"
-                options={[
-                  { name: 'All', value: 'all' },
-                  { name: 'On-device', value: 'local' },
-                  { name: 'Cloud', value: 'remote' },
-                ]}
-                onValueChange={(value) => setSearchFilter(value)}
-                onOpenChange={(open) => setFilterOptionsOpen(open)}
-              />
-            </div>
           </div>
-          <ScrollArea className="h-[calc(100%-36px)] w-full">
+          <ScrollArea className="h-[calc(100%-90px)] w-full">
             {groupByEngine.map((engine, i) => {
-              const apiKey = !localEngines.includes(engine)
+              const apiKey = !isLocalEngine(engine)
                 ? extensionHasSettings.filter((x) => x.provider === engine)[0]
                     ?.apiKey.length > 1
                 : true
@@ -442,7 +416,7 @@ const ModelDropdown = ({
                         </h6>
                       </div>
                       <div className="-mr-2 flex gap-1">
-                        {!localEngines.includes(engine) && (
+                        {!isLocalEngine(engine) && (
                           <SetupRemoteModel engine={engine} />
                         )}
                         {!showModel ? (
@@ -463,7 +437,7 @@ const ModelDropdown = ({
                       </div>
                     </div>
 
-                    {engine === InferenceEngine.nitro &&
+                    {isLocalEngine(engine) &&
                       !isDownloadALocalModel &&
                       showModel &&
                       !searchText.length && (
@@ -528,10 +502,7 @@ const ModelDropdown = ({
                       {filteredDownloadedModels
                         .filter((x) => x.engine === engine)
                         .filter((y) => {
-                          if (
-                            localEngines.includes(y.engine) &&
-                            !searchText.length
-                          ) {
+                          if (isLocalEngine(y.engine) && !searchText.length) {
                             return downloadedModels.find((c) => c.id === y.id)
                           } else {
                             return y
@@ -542,7 +513,7 @@ const ModelDropdown = ({
                           const isDownloading = downloadingModels.some(
                             (md) => md.id === model.id
                           )
-                          const isdDownloaded = downloadedModels.some(
+                          const isDownloaded = downloadedModels.some(
                             (c) => c.id === model.id
                           )
                           return (
@@ -555,12 +526,9 @@ const ModelDropdown = ({
                                   : 'text-[hsla(var(--text-primary))]'
                               )}
                               onClick={() => {
-                                if (
-                                  !apiKey &&
-                                  !localEngines.includes(model.engine)
-                                )
+                                if (!apiKey && !isLocalEngine(model.engine))
                                   return null
-                                if (isdDownloaded) {
+                                if (isDownloaded) {
                                   onClickModelItem(model.id)
                                 }
                               }}
@@ -569,7 +537,7 @@ const ModelDropdown = ({
                                 <p
                                   className={twMerge(
                                     'line-clamp-1',
-                                    !isdDownloaded &&
+                                    !isDownloaded &&
                                       'text-[hsla(var(--text-secondary))]'
                                   )}
                                   title={model.name}
@@ -579,12 +547,12 @@ const ModelDropdown = ({
                                 <ModelLabel metadata={model.metadata} compact />
                               </div>
                               <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                {!isdDownloaded && (
+                                {!isDownloaded && (
                                   <span className="font-medium">
                                     {toGibibytes(model.metadata.size)}
                                   </span>
                                 )}
-                                {!isDownloading && !isdDownloaded ? (
+                                {!isDownloading && !isDownloaded ? (
                                   <DownloadCloudIcon
                                     size={18}
                                     className="cursor-pointer text-[hsla(var(--app-link))]"

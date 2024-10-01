@@ -79,6 +79,7 @@ const SettingDetailTextInputItem = ({
           textAlign={textAlign}
           value={value}
           onChange={(e) => onValueChanged?.(e.target.value)}
+          className="!pr-20"
           suffixIcon={
             <InputExtraActions
               actions={inputActions ?? []}

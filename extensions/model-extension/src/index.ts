@@ -22,6 +22,8 @@ import {
   getFileSize,
   AllQuantizations,
   ModelEvent,
+  ModelFile,
+  dirName,
 } from '@janhq/core'
 
 import { extractFileName } from './helpers/path'
@@ -48,16 +50,7 @@ export default class JanModelExtension extends ModelExtension {
   ]
   private static readonly _tensorRtEngineFormat = '.engine'
   private static readonly _supportedGpuArch = ['ampere', 'ada']
-  private static readonly _safetensorsRegexs = [
-    /model\.safetensors$/,
-    /model-[0-9]+-of-[0-9]+\.safetensors$/,
-  ]
-  private static readonly _pytorchRegexs = [
-    /pytorch_model\.bin$/,
-    /consolidated\.[0-9]+\.pth$/,
-    /pytorch_model-[0-9]+-of-[0-9]+\.bin$/,
-    /.*\.pt$/,
-  ]
+
   interrupted = false
 
   /**
@@ -83,15 +76,32 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async downloadModel(
-    model: Model,
+    model: ModelFile,
     gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void> {
-    // create corresponding directory
+    // Create corresponding directory
     const modelDirPath = await joinPath([JanModelExtension._homeDir, model.id])
     if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
-    const modelJsonPath = await joinPath([modelDirPath, 'model.json'])
+    const modelJsonPath =
+      model.file_path ?? (await joinPath([modelDirPath, 'model.json']))
+
+    // Download HF model - model.json not exist
     if (!(await fs.existsSync(modelJsonPath))) {
+      // It supports only one source for HF download
+      const metadata = await this.fetchModelMetadata(model.sources[0].url)
+      const updatedModel = await this.retrieveGGUFMetadata(metadata)
+      if (updatedModel) {
+        // Update model settings
+        model.settings = {
+          ...model.settings,
+          ...updatedModel.settings,
+        }
+        model.parameters = {
+          ...model.parameters,
+          ...updatedModel.parameters,
+        }
+      }
       await fs.writeFileSync(modelJsonPath, JSON.stringify(model, null, 2))
       events.emit(ModelEvent.OnModelsUpdate, {})
     }
@@ -142,11 +152,15 @@ export default class JanModelExtension extends ModelExtension {
           JanModelExtension._supportedModelFormat
         )
         if (source.filename) {
-          path = await joinPath([modelDirPath, source.filename])
+          path = model.file_path
+            ? await joinPath([await dirName(model.file_path), source.filename])
+            : await joinPath([modelDirPath, source.filename])
         }
+
         const downloadRequest: DownloadRequest = {
           url: source.url,
           localPath: path,
+          modelId: model.id,
         }
         downloadFile(downloadRequest, network)
       }
@@ -156,10 +170,13 @@ export default class JanModelExtension extends ModelExtension {
         model.sources[0]?.url,
         JanModelExtension._supportedModelFormat
       )
-      const path = await joinPath([modelDirPath, fileName])
+      const path = model.file_path
+        ? await joinPath([await dirName(model.file_path), fileName])
+        : await joinPath([modelDirPath, fileName])
       const downloadRequest: DownloadRequest = {
         url: model.sources[0]?.url,
         localPath: path,
+        modelId: model.id,
       }
       downloadFile(downloadRequest, network)
 
@@ -319,9 +336,9 @@ export default class JanModelExtension extends ModelExtension {
    * @param filePath - The path to the model file to delete.
    * @returns A Promise that resolves when the model is deleted.
    */
-  async deleteModel(modelId: string): Promise<void> {
+  async deleteModel(model: ModelFile): Promise<void> {
     try {
-      const dirPath = await joinPath([JanModelExtension._homeDir, modelId])
+      const dirPath = await dirName(model.file_path)
       const jsonFilePath = await joinPath([
         dirPath,
         JanModelExtension._modelMetadataFileName,
@@ -330,6 +347,8 @@ export default class JanModelExtension extends ModelExtension {
         await this.readModelMetadata(jsonFilePath)
       ) as Model
 
+      // TODO: This is so tricky?
+      // Should depend on sources?
       const isUserImportModel =
         modelInfo.metadata?.author?.toLowerCase() === 'user'
       if (isUserImportModel) {
@@ -351,29 +370,10 @@ export default class JanModelExtension extends ModelExtension {
   }
 
   /**
-   * Saves a model file.
-   * @param model - The model to save.
-   * @returns A Promise that resolves when the model is saved.
-   */
-  async saveModel(model: Model): Promise<void> {
-    const jsonFilePath = await joinPath([
-      JanModelExtension._homeDir,
-      model.id,
-      JanModelExtension._modelMetadataFileName,
-    ])
-
-    try {
-      await fs.writeFileSync(jsonFilePath, JSON.stringify(model, null, 2))
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  /**
    * Gets all downloaded models.
    * @returns A Promise that resolves with an array of all models.
    */
-  async getDownloadedModels(): Promise<Model[]> {
+  async getDownloadedModels(): Promise<ModelFile[]> {
     return await this.getModelsMetadata(
       async (modelDir: string, model: Model) => {
         if (!JanModelExtension._offlineInferenceEngine.includes(model.engine))
@@ -425,8 +425,10 @@ export default class JanModelExtension extends ModelExtension {
   ): Promise<string | undefined> {
     // try to find model.json recursively inside each folder
     if (!(await fs.existsSync(folderFullPath))) return undefined
+
     const files: string[] = await fs.readdirSync(folderFullPath)
     if (files.length === 0) return undefined
+
     if (files.includes(JanModelExtension._modelMetadataFileName)) {
       return joinPath([
         folderFullPath,
@@ -446,7 +448,7 @@ export default class JanModelExtension extends ModelExtension {
 
   private async getModelsMetadata(
     selector?: (path: string, model: Model) => Promise<boolean>
-  ): Promise<Model[]> {
+  ): Promise<ModelFile[]> {
     try {
       if (!(await fs.existsSync(JanModelExtension._homeDir))) {
         console.debug('Model folder not found')
@@ -469,6 +471,7 @@ export default class JanModelExtension extends ModelExtension {
           JanModelExtension._homeDir,
           dirName,
         ])
+
         const jsonPath = await this.getModelJsonPath(folderFullPath)
 
         if (await fs.existsSync(jsonPath)) {
@@ -486,6 +489,8 @@ export default class JanModelExtension extends ModelExtension {
               },
             ]
           }
+          model.file_path = jsonPath
+          model.file_name = JanModelExtension._modelMetadataFileName
 
           if (selector && !(await selector?.(dirName, model))) {
             return
@@ -506,7 +511,7 @@ export default class JanModelExtension extends ModelExtension {
               typeof result.value === 'object'
                 ? result.value
                 : JSON.parse(result.value)
-            return model as Model
+            return model as ModelFile
           } catch {
             console.debug(`Unable to parse model metadata: ${result.value}`)
           }
@@ -574,7 +579,7 @@ export default class JanModelExtension extends ModelExtension {
       ])
     )
 
-    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
+    const updatedModel = await this.retrieveGGUFMetadata(metadata)
 
     if (!defaultModel) {
       console.error('Unable to find default model')
@@ -594,18 +599,11 @@ export default class JanModelExtension extends ModelExtension {
       ],
       parameters: {
         ...defaultModel.parameters,
-        stop: eos_id
-          ? [metadata['tokenizer.ggml.tokens'][eos_id] ?? '']
-          : defaultModel.parameters.stop,
+        ...updatedModel.parameters,
       },
       settings: {
         ...defaultModel.settings,
-        prompt_template:
-          metadata?.parsed_chat_template ??
-          defaultModel.settings.prompt_template,
-        ctx_len:
-          metadata?.['llama.context_length'] ?? defaultModel.settings.ctx_len,
-        ngl: (metadata?.['llama.block_count'] ?? 32) + 1,
+        ...updatedModel.settings,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -637,7 +635,7 @@ export default class JanModelExtension extends ModelExtension {
    * Gets all available models.
    * @returns A Promise that resolves with an array of all models.
    */
-  async getConfiguredModels(): Promise<Model[]> {
+  async getConfiguredModels(): Promise<ModelFile[]> {
     return this.getModelsMetadata()
   }
 
@@ -669,7 +667,7 @@ export default class JanModelExtension extends ModelExtension {
     modelBinaryPath: string,
     modelFolderName: string,
     modelFolderPath: string
-  ): Promise<Model> {
+  ): Promise<ModelFile> {
     const fileStats = await fs.fileStat(modelBinaryPath, true)
     const binaryFileSize = fileStats.size
 
@@ -685,9 +683,9 @@ export default class JanModelExtension extends ModelExtension {
       'retrieveGGUFMetadata',
       modelBinaryPath
     )
-    const eos_id = metadata?.['tokenizer.ggml.eos_token_id']
 
     const binaryFileName = await baseName(modelBinaryPath)
+    const updatedModel = await this.retrieveGGUFMetadata(metadata)
 
     const model: Model = {
       ...defaultModel,
@@ -701,19 +699,12 @@ export default class JanModelExtension extends ModelExtension {
       ],
       parameters: {
         ...defaultModel.parameters,
-        stop: eos_id
-          ? [metadata?.['tokenizer.ggml.tokens'][eos_id] ?? '']
-          : defaultModel.parameters.stop,
+        ...updatedModel.parameters,
       },
 
       settings: {
         ...defaultModel.settings,
-        prompt_template:
-          metadata?.parsed_chat_template ??
-          defaultModel.settings.prompt_template,
-        ctx_len:
-          metadata?.['llama.context_length'] ?? defaultModel.settings.ctx_len,
-        ngl: (metadata?.['llama.block_count'] ?? 32) + 1,
+        ...updatedModel.settings,
         llama_model_path: binaryFileName,
       },
       created: Date.now(),
@@ -732,25 +723,21 @@ export default class JanModelExtension extends ModelExtension {
 
     await fs.writeFileSync(modelFilePath, JSON.stringify(model, null, 2))
 
-    return model
+    return {
+      ...model,
+      file_path: modelFilePath,
+      file_name: JanModelExtension._modelMetadataFileName,
+    }
   }
 
-  async updateModelInfo(modelInfo: Partial<Model>): Promise<Model> {
-    const modelId = modelInfo.id
+  async updateModelInfo(modelInfo: Partial<ModelFile>): Promise<ModelFile> {
     if (modelInfo.id == null) throw new Error('Model ID is required')
 
-    const janDataFolderPath = await getJanDataFolderPath()
-    const jsonFilePath = await joinPath([
-      janDataFolderPath,
-      'models',
-      modelId,
-      JanModelExtension._modelMetadataFileName,
-    ])
     const model = JSON.parse(
-      await this.readModelMetadata(jsonFilePath)
-    ) as Model
+      await this.readModelMetadata(modelInfo.file_path)
+    ) as ModelFile
 
-    const updatedModel: Model = {
+    const updatedModel: ModelFile = {
       ...model,
       ...modelInfo,
       parameters: {
@@ -765,9 +752,15 @@ export default class JanModelExtension extends ModelExtension {
         ...model.metadata,
         ...modelInfo.metadata,
       },
+      // Should not persist file_path & file_name
+      file_path: undefined,
+      file_name: undefined,
     }
 
-    await fs.writeFileSync(jsonFilePath, JSON.stringify(updatedModel, null, 2))
+    await fs.writeFileSync(
+      modelInfo.file_path,
+      JSON.stringify(updatedModel, null, 2)
+    )
     return updatedModel
   }
 
@@ -876,5 +869,36 @@ export default class JanModelExtension extends ModelExtension {
       LocalImportModelEvent.onLocalImportModelFinished,
       importedModels
     )
+  }
+
+  /**
+   * Retrieve Model Settings from GGUF Metadata
+   * @param metadata
+   * @returns
+   */
+  async retrieveGGUFMetadata(metadata: any): Promise<Partial<Model>> {
+    const template = await executeOnMain(NODE, 'renderJinjaTemplate', metadata)
+    const defaultModel = DEFAULT_MODEL as Model
+    const eos_id = metadata['tokenizer.ggml.eos_token_id']
+    const architecture = metadata['general.architecture']
+
+    return {
+      settings: {
+        prompt_template: template ?? defaultModel.settings.prompt_template,
+        ctx_len:
+          metadata[`${architecture}.context_length`] ??
+          metadata['llama.context_length'] ??
+          4096,
+        ngl:
+          (metadata[`${architecture}.block_count`] ??
+            metadata['llama.block_count'] ??
+            32) + 1,
+      },
+      parameters: {
+        stop: eos_id
+          ? [metadata?.['tokenizer.ggml.tokens'][eos_id] ?? '']
+          : defaultModel.parameters.stop,
+      },
+    }
   }
 }

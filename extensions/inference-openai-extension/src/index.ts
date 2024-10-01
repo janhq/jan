@@ -6,16 +6,17 @@
  * @module inference-openai-extension/src/index
  */
 
-import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
+import { ModelRuntimeParams, PayloadType, RemoteOAIEngine } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
 
-enum Settings {
+export enum Settings {
   apiKey = 'openai-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',
 }
-
+type OpenAIPayloadType = PayloadType &
+  ModelRuntimeParams & { max_completion_tokens: number }
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -24,6 +25,7 @@ enum Settings {
 export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   inferenceUrl: string = ''
   provider: string = 'openai'
+  previewModels = ['o1-mini', 'o1-preview']
 
   override async onLoad(): Promise<void> {
     super.onLoad()
@@ -62,5 +64,25 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
         this.inferenceUrl = value
       }
     }
+  }
+
+  /**
+   * Tranform the payload before sending it to the inference endpoint.
+   * The new preview models such as o1-mini and o1-preview replaced max_tokens by max_completion_tokens parameter.
+   * Others do not.
+   * @param payload 
+   * @returns 
+   */
+  transformPayload = (payload: OpenAIPayloadType): OpenAIPayloadType => {
+    // Transform the payload for preview models
+    if (this.previewModels.includes(payload.model)) {
+      const { max_tokens, ...params } = payload
+      return {
+        ...params,
+        max_completion_tokens: max_tokens,
+      }
+    }
+    // Pass through for non-preview models
+    return payload
   }
 }

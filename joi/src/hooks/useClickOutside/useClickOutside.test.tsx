@@ -1,55 +1,84 @@
 import React from 'react'
-import { render, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { useClickOutside } from './index'
 
-// Mock component to test the hook
-const TestComponent: React.FC<{ onClickOutside: () => void }> = ({
-  onClickOutside,
+const TestComponent = ({
+  handler,
+  nodes,
+}: {
+  handler: () => void
+  nodes?: (HTMLElement | null)[]
 }) => {
-  const ref = useClickOutside(onClickOutside)
-  return <div ref={ref as React.RefObject<HTMLDivElement>}>Test</div>
+  const ref = useClickOutside(handler, undefined, nodes)
+
+  return (
+    <div ref={ref} data-testid="clickable">
+      Click me
+    </div>
+  )
 }
 
-describe('@joi/hooks/useClickOutside', () => {
-  it('should call handler when clicking outside', () => {
-    const handleClickOutside = jest.fn()
-    const { container } = render(
-      <TestComponent onClickOutside={handleClickOutside} />
-    )
+describe('useClickOutside', () => {
+  afterEach(cleanup)
 
-    act(() => {
-      fireEvent.mouseDown(document.body)
-    })
+  it('should call handler when clicking outside the element', () => {
+    const handler = jest.fn()
+    render(<TestComponent handler={handler} />)
 
-    expect(handleClickOutside).toHaveBeenCalledTimes(1)
+    fireEvent.mouseDown(document.body)
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 
-  it('should not call handler when clicking inside', () => {
-    const handleClickOutside = jest.fn()
-    const { getByText } = render(
-      <TestComponent onClickOutside={handleClickOutside} />
-    )
+  it('should not call handler when clicking inside the element', () => {
+    const handler = jest.fn()
+    render(<TestComponent handler={handler} />)
 
-    act(() => {
-      fireEvent.mouseDown(getByText('Test'))
-    })
-
-    expect(handleClickOutside).not.toHaveBeenCalled()
+    fireEvent.mouseDown(screen.getByTestId('clickable'))
+    expect(handler).not.toHaveBeenCalled()
   })
 
-  it('should work with custom events', () => {
-    const handleClickOutside = jest.fn()
-    const TestComponentWithCustomEvent: React.FC = () => {
-      const ref = useClickOutside(handleClickOutside, ['click'])
-      return <div ref={ref as React.RefObject<HTMLDivElement>}>Test</div>
-    }
+  it('should not call handler if target has data-ignore-outside-clicks attribute', () => {
+    const handler = jest.fn()
+    render(
+      <>
+        <TestComponent handler={handler} />
+        <div data-ignore-outside-clicks>Ignore this</div>
+      </>
+    )
 
-    render(<TestComponentWithCustomEvent />)
+    // Ensure that the div with the attribute is correctly queried
+    fireEvent.mouseDown(screen.getByText('Ignore this'))
+    expect(handler).not.toHaveBeenCalled()
+  })
 
-    act(() => {
-      fireEvent.click(document.body)
-    })
+  it('should call handler when clicking outside if nodes is an empty array', () => {
+    const handler = jest.fn()
+    render(<TestComponent handler={handler} nodes={[]} />)
 
-    expect(handleClickOutside).toHaveBeenCalledTimes(1)
+    fireEvent.mouseDown(document.body)
+    expect(handler).toHaveBeenCalledTimes(1)
+  })
+
+  it('should not call handler if clicking inside nodes', () => {
+    const handler = jest.fn()
+    const node = document.createElement('div')
+    document.body.appendChild(node)
+
+    render(
+      <>
+        <TestComponent handler={handler} nodes={[node]} />
+      </>
+    )
+
+    fireEvent.mouseDown(node)
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('should call handler if nodes is undefined', () => {
+    const handler = jest.fn()
+    render(<TestComponent handler={handler} nodes={undefined} />)
+
+    fireEvent.mouseDown(document.body)
+    expect(handler).toHaveBeenCalledTimes(1)
   })
 })

@@ -107,8 +107,7 @@ const LocalServerLeftPanel = () => {
     <LeftPanelContainer>
       <Fragment>
         <div className="p-3">
-          <h2 className="font-bold">Server Options</h2>
-          <p className="mt-2 leading-relaxed text-[hsla(var(--text-secondary))]">
+          <p className="leading-relaxed text-[hsla(var(--text-secondary))]">
             Start an OpenAI-compatible local HTTP server.
           </p>
         </div>
@@ -130,7 +129,7 @@ const LocalServerLeftPanel = () => {
             {serverEnabled && (
               <Button variant="soft" asChild>
                 <a href={`http://localhost:${port}`} target="_blank">
-                  API Reference <ExternalLinkIcon size={20} className="ml-2" />
+                  API Playground <ExternalLinkIcon size={20} className="ml-2" />
                 </a>
               </Button>
             )}

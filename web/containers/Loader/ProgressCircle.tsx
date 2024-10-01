@@ -22,6 +22,7 @@ const ProgressCircle: React.FC<ProgressCircleProps> = ({
       width={size}
       xmlns="http://www.w3.org/2000/svg"
       viewBox={`0 0 ${size} ${size}`}
+      role="img"
     >
       <circle
         className="opacity-25"

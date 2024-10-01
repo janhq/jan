@@ -14,13 +14,15 @@ import {
   ModelEvent,
   Thread,
   EngineManager,
+  InferenceEngine,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
-import { toRuntimeParams } from '@/utils/modelParam'
+import { isLocalEngine } from '@/utils/modelEngine'
+import { extractInferenceParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
 import {
@@ -211,6 +213,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       // Attempt to generate the title of the Thread when needed
       generateThreadTitle(message, thread)
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
   )
 
@@ -238,6 +241,25 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       return
     }
 
+    // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
+    if (!isLocalEngine(activeModelRef.current?.engine as InferenceEngine)) {
+      const updatedThread: Thread = {
+        ...thread,
+        title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
+        metadata: thread.metadata,
+      }
+      return extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.saveThread({
+          ...updatedThread,
+        })
+        .then(() => {
+          updateThread({
+            ...updatedThread,
+          })
+        })
+    }
+
     // This is the first time message comes in on a new thread
     // Summarize the first message, and make that the title of the Thread
     // 1. Get the summary of the first prompt using whatever engine user is currently using
@@ -256,7 +278,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
       },
     ]
 
-    const runtimeParams = toRuntimeParams(activeModelParamsRef.current)
+    const runtimeParams = extractInferenceParams(activeModelParamsRef.current)
 
     const messageRequest: MessageRequest = {
       id: msgId,

@@ -23,6 +23,7 @@ import {
   ModelEvent,
   getJanDataFolderPath,
   SystemInformation,
+  ModelFile,
 } from '@janhq/core'
 
 /**
@@ -40,7 +41,6 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override nodeModule = NODE
 
   private supportedGpuArch = ['ampere', 'ada']
-  private supportedPlatform = ['win32', 'linux']
 
   override compatibility() {
     return COMPATIBILITY as unknown as Compatibility
@@ -137,7 +137,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.emit(ModelEvent.OnModelsUpdate, {})
   }
 
-  override async loadModel(model: Model): Promise<void> {
+  override async loadModel(model: ModelFile): Promise<void> {
     if ((await this.installationState()) === 'Installed')
       return super.loadModel(model)
 
@@ -190,7 +190,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
       !!info.gpuSetting &&
       !!firstGpu &&
       info.gpuSetting.gpus.length > 0 &&
-      this.supportedPlatform.includes(info.osInfo.platform) &&
+      this.compatibility().platform.includes(info.osInfo.platform) &&
       !!firstGpu.arch &&
       firstGpu.name.toLowerCase().includes('nvidia') &&
       this.supportedGpuArch.includes(firstGpu.arch)

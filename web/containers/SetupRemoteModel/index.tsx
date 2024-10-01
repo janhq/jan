@@ -8,7 +8,7 @@ import { SettingsIcon, PlusIcon } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
-import { localEngines } from '@/utils/modelEngine'
+import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -74,7 +74,7 @@ const SetupRemoteModel = ({ engine }: Props) => {
     )
   }
 
-  const apiKey = !localEngines.includes(engine)
+  const apiKey = !isLocalEngine(engine)
     ? extensionHasSettings.filter((x) => x.provider === engine)[0]?.apiKey
         .length > 1
     : true

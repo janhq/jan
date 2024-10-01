@@ -29,7 +29,7 @@ import { setImportModelStageAtom } from '@/hooks/useImportModel'
 import {
   getLogoEngine,
   getTitleByEngine,
-  localEngines,
+  isLocalEngine,
   priorityEngine,
 } from '@/utils/modelEngine'
 
@@ -222,7 +222,7 @@ const MyModels = () => {
                         </h6>
                       </div>
                       <div className="flex gap-1">
-                        {!localEngines.includes(engine) && (
+                        {!isLocalEngine(engine) && (
                           <SetupRemoteModel engine={engine} />
                         )}
                         {!showModel ? (

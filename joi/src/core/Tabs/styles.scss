@@ -3,6 +3,27 @@
   flex-direction: column;
   width: 100%;
 
+  &--segmented {
+    background-color: hsla(var(--secondary-bg));
+    border-radius: 6px;
+    height: 33px;
+
+    .tabs__list {
+      border: none;
+      justify-content: center;
+      align-items: center;
+      height: 33px;
+    }
+
+    .tabs__trigger[data-state='active'] {
+      background-color: hsla(var(--app-bg));
+      border: none;
+      height: 25px;
+      margin: 0 4px;
+      border-radius: 5px;
+    }
+  }
+
   &__list {
     flex-shrink: 0;
     display: flex;
@@ -14,9 +35,11 @@
     flex: 1;
     height: 38px;
     display: flex;
+    color: hsla(var(--text-secondary));
     align-items: center;
     justify-content: center;
     line-height: 1;
+    font-weight: medium;
     user-select: none;
     &:focus {
       position: relative;
@@ -38,4 +61,5 @@
 .tabs__trigger[data-state='active'] {
   border-bottom: 1px solid hsla(var(--primary-bg));
   font-weight: 600;
+  color: hsla(var(--text-primary));
 }

@@ -53,6 +53,15 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
   const clipboard = useClipboard({ timeout: 1000 })
 
+  function escapeHtml(html: string): string {
+    return html
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+  }
+
   const marked: Marked = new Marked(
     markedHighlight({
       langPrefix: 'hljs',
@@ -69,6 +78,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     }),
     {
       renderer: {
+        html: (html: string) => {
+          return escapeHtml(html) // Escape any HTML
+        },
         link: (href, title, text) => {
           return Renderer.prototype.link
             ?.apply(this, [href, title, text])

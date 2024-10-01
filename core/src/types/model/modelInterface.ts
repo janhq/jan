@@ -1,5 +1,5 @@
 import { GpuSetting } from '../miscellaneous'
-import { Model } from './modelEntity'
+import { Model, ModelFile } from './modelEntity'
 
 /**
  * Model extension for managing models.
@@ -12,7 +12,7 @@ export interface ModelInterface {
    * @returns A Promise that resolves when the model has been downloaded.
    */
   downloadModel(
-    model: Model,
+    model: ModelFile,
     gpuSettings?: GpuSetting,
     network?: { ignoreSSL?: boolean; proxy?: string }
   ): Promise<void>
@@ -29,24 +29,17 @@ export interface ModelInterface {
    * @param modelId - The ID of the model to delete.
    * @returns A Promise that resolves when the model has been deleted.
    */
-  deleteModel(modelId: string): Promise<void>
-
-  /**
-   * Saves a model.
-   * @param model - The model to save.
-   * @returns A Promise that resolves when the model has been saved.
-   */
-  saveModel(model: Model): Promise<void>
+  deleteModel(model: ModelFile): Promise<void>
 
   /**
    * Gets a list of downloaded models.
    * @returns A Promise that resolves with an array of downloaded models.
    */
-  getDownloadedModels(): Promise<Model[]>
+  getDownloadedModels(): Promise<ModelFile[]>
 
   /**
    * Gets a list of configured models.
    * @returns A Promise that resolves with an array of configured models.
    */
-  getConfiguredModels(): Promise<Model[]>
+  getConfiguredModels(): Promise<ModelFile[]>
 }

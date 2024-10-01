@@ -67,6 +67,11 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
     // Initialize Fastify server with logging
     server = fastify({
       logger: new Logger(),
+      // Set body limit to 100MB - Default is 1MB
+      // According to OpenAI - a batch input file can be up to 100 MB in size
+      // Whisper endpoints accept up to 25MB
+      // Vision endpoints accept up to 4MB
+      bodyLimit: 104_857_600
     })
 
     // Register CORS if enabled
