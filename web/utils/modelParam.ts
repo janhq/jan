@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import { ModelRuntimeParams, ModelSettingParams } from '@janhq/core'
 
-import { ModelParams } from '@/helpers/atoms/Thread.atom'
+import { ModelParams } from '@/types/model'
 
 /**
  * Validation rules for model parameters

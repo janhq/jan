@@ -513,7 +513,7 @@ const ModelDropdown = ({
                           const isDownloading = downloadingModels.some(
                             (md) => md.id === model.id
                           )
-                          const isdDownloaded = downloadedModels.some(
+                          const isDownloaded = downloadedModels.some(
                             (c) => c.id === model.id
                           )
                           return (
@@ -528,7 +528,7 @@ const ModelDropdown = ({
                               onClick={() => {
                                 if (!apiKey && !isLocalEngine(model.engine))
                                   return null
-                                if (isdDownloaded) {
+                                if (isDownloaded) {
                                   onClickModelItem(model.id)
                                 }
                               }}
@@ -537,7 +537,7 @@ const ModelDropdown = ({
                                 <p
                                   className={twMerge(
                                     'line-clamp-1',
-                                    !isdDownloaded &&
+                                    !isDownloaded &&
                                       'text-[hsla(var(--text-secondary))]'
                                   )}
                                   title={model.name}
@@ -547,12 +547,12 @@ const ModelDropdown = ({
                                 <ModelLabel metadata={model.metadata} compact />
                               </div>
                               <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                {!isdDownloaded && (
+                                {!isDownloaded && (
                                   <span className="font-medium">
                                     {toGibibytes(model.metadata.size)}
                                   </span>
                                 )}
-                                {!isDownloading && !isdDownloaded ? (
+                                {!isDownloading && !isDownloaded ? (
                                   <DownloadCloudIcon
                                     size={18}
                                     className="cursor-pointer text-[hsla(var(--app-link))]"

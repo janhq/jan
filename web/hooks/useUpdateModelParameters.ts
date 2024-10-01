@@ -18,10 +18,10 @@ import {
 import { extensionManager } from '@/extension'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
-  ModelParams,
   getActiveThreadModelParamsAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ModelParams } from '@/types/model'
 
 export type UpdateModelParameter = {
   params?: ModelParams

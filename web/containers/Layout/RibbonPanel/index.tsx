@@ -16,14 +16,12 @@ import { mainViewStateAtom, showLeftPanelAtom } from '@/helpers/atoms/App.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
+import { isDownloadALocalModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   reduceTransparentAtom,
   selectedSettingAtom,
 } from '@/helpers/atoms/Setting.atom'
-import {
-  isDownloadALocalModelAtom,
-  threadsAtom,
-} from '@/helpers/atoms/Thread.atom'
+import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 export default function RibbonPanel() {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)

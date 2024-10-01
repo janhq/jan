@@ -1,45 +1,91 @@
-import {
-  ModelRuntimeParams,
-  ModelSettingParams,
-  Thread,
-  ThreadContent,
-  ThreadState,
-} from '@janhq/core'
+import { Thread, ThreadContent, ThreadState } from '@janhq/core'
 
 import { atom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
+import { ModelParams } from '@/types/model'
+
+/**
+ * Thread Modal Action Enum
+ */
 export enum ThreadModalAction {
   Clean = 'clean',
   Delete = 'delete',
   EditTitle = 'edit-title',
 }
 
-export const engineParamsUpdateAtom = atom<boolean>(false)
+const ACTIVE_SETTING_INPUT_BOX = 'activeSettingInputBox'
 
+/**
+ * Enum for the keys used to store models in the local storage.
+ */
+enum ThreadStorageAtomKeys {
+  ThreadStates = 'threadStates',
+  ThreadList = 'threadList',
+  ThreadListReady = 'threadListReady',
+}
+
+//// Threads Atom
+/**
+ * Stores all thread states for the current user
+ */
+export const threadStatesAtom = atomWithStorage<Record<string, ThreadState>>(
+  ThreadStorageAtomKeys.ThreadStates,
+  {}
+)
+
+/**
+ * Stores all threads for the current user
+ */
+export const threadsAtom = atomWithStorage<Thread[]>(
+  ThreadStorageAtomKeys.ThreadList,
+  []
+)
+
+/**
+ * Whether thread data is ready or not
+ * */
+export const threadDataReadyAtom = atomWithStorage<boolean>(
+  ThreadStorageAtomKeys.ThreadListReady,
+  false
+)
+
+/**
+ * Store model params at thread level settings
+ */
+export const threadModelParamsAtom = atom<Record<string, ModelParams>>({})
+
+//// End Thread Atom
+
+/// Active Thread Atom
 /**
  * Stores the current active thread id.
  */
 const activeThreadIdAtom = atom<string | undefined>(undefined)
 
+/**
+ * Get the active thread id
+ */
 export const getActiveThreadIdAtom = atom((get) => get(activeThreadIdAtom))
 
+/**
+ * Set the active thread id
+ */
 export const setActiveThreadIdAtom = atom(
   null,
   (_get, set, threadId: string | undefined) => set(activeThreadIdAtom, threadId)
 )
 
-export const waitingToSendMessage = atom<boolean | undefined>(undefined)
-
-export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
 /**
- * Stores all thread states for the current user
+ * Get the current active thread metadata
  */
-export const threadStatesAtom = atom<Record<string, ThreadState>>({})
+export const activeThreadAtom = atom<Thread | undefined>((get) =>
+  get(threadsAtom).find((c) => c.id === get(getActiveThreadIdAtom))
+)
 
-// Whether thread data is ready or not
-export const threadDataReadyAtom = atom<boolean>(false)
-
+/**
+ * Get the active thread state
+ */
 export const activeThreadStateAtom = atom<ThreadState | undefined>((get) => {
   const threadId = get(activeThreadIdAtom)
   if (!threadId) {
@@ -50,6 +96,38 @@ export const activeThreadStateAtom = atom<ThreadState | undefined>((get) => {
   return get(threadStatesAtom)[threadId]
 })
 
+/**
+ * Get the active thread model params
+ */
+export const getActiveThreadModelParamsAtom = atom<ModelParams | undefined>(
+  (get) => {
+    const threadId = get(activeThreadIdAtom)
+    if (!threadId) {
+      console.debug('Active thread id is undefined')
+      return undefined
+    }
+
+    return get(threadModelParamsAtom)[threadId]
+  }
+)
+/// End Active Thread Atom
+
+/// Threads State Atom
+export const engineParamsUpdateAtom = atom<boolean>(false)
+
+/**
+ * Whether the thread is waiting to send a message
+ */
+export const waitingToSendMessage = atom<boolean | undefined>(undefined)
+
+/**
+ * Whether the thread is generating a response
+ */
+export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
+
+/**
+ * Remove a thread state from the atom
+ */
 export const deleteThreadStateAtom = atom(
   null,
   (get, set, threadId: string) => {
@@ -59,6 +137,9 @@ export const deleteThreadStateAtom = atom(
   }
 )
 
+/**
+ * Update the thread state with the new state
+ */
 export const updateThreadWaitingForResponseAtom = atom(
   null,
   (get, set, threadId: string, waitingForResponse: boolean) => {
@@ -71,6 +152,10 @@ export const updateThreadWaitingForResponseAtom = atom(
     set(threadStatesAtom, currentState)
   }
 )
+
+/**
+ * Update the thread last message
+ */
 export const updateThreadStateLastMessageAtom = atom(
   null,
   (get, set, threadId: string, lastContent?: ThreadContent[]) => {
@@ -84,6 +169,9 @@ export const updateThreadStateLastMessageAtom = atom(
   }
 )
 
+/**
+ * Update a thread with the new thread metadata
+ */
 export const updateThreadAtom = atom(
   null,
   (get, set, updatedThread: Thread) => {
@@ -103,33 +191,8 @@ export const updateThreadAtom = atom(
 )
 
 /**
- * Stores all threads for the current user
+ * Update the thread model params
  */
-export const threadsAtom = atom<Thread[]>([])
-
-export const activeThreadAtom = atom<Thread | undefined>((get) =>
-  get(threadsAtom).find((c) => c.id === get(getActiveThreadIdAtom))
-)
-
-/**
- * Store model params at thread level settings
- */
-export const threadModelParamsAtom = atom<Record<string, ModelParams>>({})
-
-export type ModelParams = ModelRuntimeParams | ModelSettingParams
-
-export const getActiveThreadModelParamsAtom = atom<ModelParams | undefined>(
-  (get) => {
-    const threadId = get(activeThreadIdAtom)
-    if (!threadId) {
-      console.debug('Active thread id is undefined')
-      return undefined
-    }
-
-    return get(threadModelParamsAtom)[threadId]
-  }
-)
-
 export const setThreadModelParamsAtom = atom(
   null,
   (get, set, threadId: string, params: ModelParams) => {
@@ -139,12 +202,17 @@ export const setThreadModelParamsAtom = atom(
   }
 )
 
-const ACTIVE_SETTING_INPUT_BOX = 'activeSettingInputBox'
+/**
+ * Settings input box active state
+ */
 export const activeSettingInputBoxAtom = atomWithStorage<boolean>(
   ACTIVE_SETTING_INPUT_BOX,
   false
 )
 
+/**
+ * Whether thread thread is presenting a Modal or not
+ */
 export const modalActionThreadAtom = atom<{
   showModal: ThreadModalAction | undefined
   thread: Thread | undefined
@@ -153,5 +221,4 @@ export const modalActionThreadAtom = atom<{
   thread: undefined,
 })
 
-export const isDownloadALocalModelAtom = atom<boolean>(false)
-export const isAnyRemoteModelConfiguredAtom = atom<boolean>(false)
+/// Ebd Threads State Atom
