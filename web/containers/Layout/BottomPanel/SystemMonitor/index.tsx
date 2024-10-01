@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 
 import { Progress } from '@janhq/joi'
 import { useClickOutside } from '@janhq/joi'
@@ -51,24 +51,27 @@ const SystemMonitor = () => {
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
 
   const { watch, stopWatching } = useGetSystemResources()
+
   useClickOutside(
     () => {
-      setShowSystemMonitorPanel(false)
+      toggleShowSystemMonitorPanel(false)
       setShowFullScreen(false)
     },
     null,
     [control, elementExpand]
   )
 
-  useEffect(() => {
-    // Watch for resource update
-    watch()
-
-    return () => {
-      stopWatching()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const toggleShowSystemMonitorPanel = useCallback(
+    (isShow: boolean) => {
+      setShowSystemMonitorPanel(isShow)
+      if (isShow) {
+        watch()
+      } else {
+        stopWatching()
+      }
+    },
+    [setShowSystemMonitorPanel, stopWatching, watch]
+  )
 
   return (
     <Fragment>
@@ -79,7 +82,7 @@ const SystemMonitor = () => {
           showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))]'
         )}
         onClick={() => {
-          setShowSystemMonitorPanel(!showSystemMonitorPanel)
+          toggleShowSystemMonitorPanel(!showSystemMonitorPanel)
           setShowFullScreen(false)
         }}
       >
@@ -123,7 +126,7 @@ const SystemMonitor = () => {
                 size={16}
                 className="text-[hsla(var(--text-secondary))]"
                 onClick={() => {
-                  setShowSystemMonitorPanel(false)
+                  toggleShowSystemMonitorPanel(false)
                   setShowFullScreen(false)
                 }}
               />
