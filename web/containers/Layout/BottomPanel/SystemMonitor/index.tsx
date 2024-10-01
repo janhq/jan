@@ -77,6 +77,7 @@ const SystemMonitor = () => {
     <Fragment>
       <div
         ref={setControl}
+        data-testid="system-monitoring"
         className={twMerge(
           'flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
           showSystemMonitorPanel && 'bg-[hsla(var(--secondary-bg))]'
