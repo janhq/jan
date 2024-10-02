@@ -58,7 +58,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const recommendModel = ['gemma-2-2b-it', 'llama3.1-8b-instruct']
+  const recommendModel = ['llama3.2-1b-instruct', 'llama3.2-3b-instruct']
 
   const featuredModel = configuredModels.filter((x) => {
     const manualRecommendModel = configuredModels.filter((x) =>
@@ -219,9 +219,6 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     >
                       <div className="w-full text-left">
                         <h6 className="font-medium">{featModel.name}</h6>
-                        <p className="mt-2 font-medium text-[hsla(var(--text-secondary))]">
-                          {featModel.metadata.author}
-                        </p>
                       </div>
 
                       {isDownloading ? (
