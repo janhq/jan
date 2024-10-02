@@ -318,7 +318,9 @@ const ModelDropdown = ({
             )}
             onClick={() => setOpen(!open)}
           >
-            <span className="line-clamp-1 ">{selectedModel?.name}</span>
+            <span className="line-clamp-1 max-w-[286px]">
+              {selectedModel?.name}
+            </span>
           </Badge>
         ) : (
           <Input
