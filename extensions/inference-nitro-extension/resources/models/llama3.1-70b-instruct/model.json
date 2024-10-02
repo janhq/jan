@@ -8,7 +8,7 @@
   "id": "llama3.1-70b-instruct",
   "object": "model",
   "name": "Llama 3.1 70B Instruct Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "Meta's Llama 3.1 excels at general usage situations, including chat, general world knowledge, and coding.",
   "format": "gguf",
   "settings": {
@@ -33,8 +33,7 @@
   "metadata": {
     "author": "MetaAI",
     "tags": [
-      "70B",
-      "Featured"
+      "70B"
     ],
     "size": 42500000000
   },
