@@ -45,6 +45,13 @@ const llama3170bJson = require('./resources/models/llama3.1-70b-instruct/model.j
 const gemma22bJson = require('./resources/models/gemma-2-2b/model.json')
 const gemma29bJson = require('./resources/models/gemma-2-9b/model.json')
 const gemma227bJson = require('./resources/models/gemma-2-27b/model.json')
+const llama321bJson = require('./resources/models/llama3.2-1b-instruct/model.json')
+const llama323bJson = require('./resources/models/llama3.2-3b-instruct/model.json')
+const qwen257bJson = require('./resources/models/qwen2.5-7b-instruct/model.json')
+const qwen25coder7bJson = require('./resources/models/qwen2.5-coder-7b-instruct/model.json')
+const qwen2514bJson = require('./resources/models/qwen2.5-14b-instruct/model.json')
+const qwen2532bJson = require('./resources/models/qwen2.5-32b-instruct/model.json')
+const qwen2572bJson = require('./resources/models/qwen2.5-72b-instruct/model.json')
 
 export default [
   {
@@ -97,6 +104,13 @@ export default [
           gemma22bJson,
           gemma29bJson,
           gemma227bJson,
+          llama321bJson,
+          llama323bJson,
+          qwen257bJson,
+          qwen25coder7bJson,
+          qwen2514bJson,
+          qwen2532bJson,
+          qwen2572bJson,
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),

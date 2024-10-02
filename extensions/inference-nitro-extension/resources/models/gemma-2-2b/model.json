@@ -8,7 +8,7 @@
   "id": "gemma-2-2b-it",
   "object": "model",
   "name": "Gemma 2 2B Q4",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Gemma is built from the same technology with Google's Gemini.",
   "format": "gguf",
   "settings": {
@@ -34,8 +34,7 @@
       "2B",
       "Tiny",
       "Conversational",
-      "Text-generation",
-      "Featured"
+      "Text-generation"
     ],
     "size": 1710000000
   },
