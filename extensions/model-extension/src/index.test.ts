@@ -784,5 +784,63 @@ describe('JanModelExtension', () => {
         expect.anything()
       )
     })
+
+    it('should handle model with valid chat_template', async () => {
+      executeMock.mockResolvedValue('{prompt}')
+      ;(gguf as jest.Mock).mockResolvedValue({
+        metadata: {},
+      })
+      // @ts-ignore
+      global.NODE = 'node'
+      // @ts-ignore
+      global.DEFAULT_MODEL = {
+        parameters: { stop: [] },
+        settings: {
+          prompt_template: '<|im-start|>{prompt}<|im-end|>',
+        },
+      }
+
+      const result = await sut.retrieveGGUFMetadata({})
+
+      expect(result).toEqual({
+        parameters: {
+          stop: [],
+        },
+        settings: {
+          ctx_len: 4096,
+          ngl: 33,
+          prompt_template: '{prompt}',
+        },
+      })
+    })
+
+    it('should handle model without chat_template', async () => {
+      executeMock.mockRejectedValue({})
+      ;(gguf as jest.Mock).mockResolvedValue({
+        metadata: {},
+      })
+      // @ts-ignore
+      global.NODE = 'node'
+      // @ts-ignore
+      global.DEFAULT_MODEL = {
+        parameters: { stop: [] },
+        settings: {
+          prompt_template: '<|im-start|>{prompt}<|im-end|>',
+        },
+      }
+
+      const result = await sut.retrieveGGUFMetadata({})
+
+      expect(result).toEqual({
+        parameters: {
+          stop: [],
+        },
+        settings: {
+          ctx_len: 4096,
+          ngl: 33,
+          prompt_template: '<|im-start|>{prompt}<|im-end|>',
+        },
+      })
+    })
   })
 })
