@@ -16,12 +16,7 @@ export const retrieveGGUFMetadata = async (ggufPath: string) => {
     // Parse metadata and tensor info
     const { metadata } = ggufMetadata(buffer.buffer)
 
-    // Parse jinja template
-    const renderedTemplate = renderJinjaTemplate(metadata)
-    return {
-      ...metadata,
-      parsed_chat_template: renderedTemplate,
-    }
+    return metadata
   } catch (e) {
     console.log('[MODEL_EXT]', e)
   }
