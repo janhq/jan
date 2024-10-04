@@ -577,7 +577,7 @@ export default class JanModelExtension extends ModelExtension {
         dirName,
         binaryFileName,
       ])
-    )
+    ).catch(() => undefined)
 
     const updatedModel = await this.retrieveGGUFMetadata(metadata)
 
@@ -877,8 +877,13 @@ export default class JanModelExtension extends ModelExtension {
    * @returns
    */
   async retrieveGGUFMetadata(metadata: any): Promise<Partial<Model>> {
-    const template = await executeOnMain(NODE, 'renderJinjaTemplate', metadata)
     const defaultModel = DEFAULT_MODEL as Model
+    var template = await executeOnMain(
+      NODE,
+      'renderJinjaTemplate',
+      metadata
+    ).catch(() => undefined)
+
     const eos_id = metadata['tokenizer.ggml.eos_token_id']
     const architecture = metadata['general.architecture']
 
