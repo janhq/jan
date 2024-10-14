@@ -1,0 +1,66 @@
+---
+title: Typescript Library
+description: Cortex Node Client Library
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# Typescript Library
+Cortex provides a robust Typescript client library designed as a **direct substitute for OpenAI's** [Node.js/Typescript library](https://github.com/openai/openai-node), enabling easy integration and streamlined workflows.
+
+## Installation
+Install the package via npm with the following command in your project:
+```js
+npm install @janhq/cortex-node
+```
+
+## Usage
+
+Transitioning to the Cortex Client Library from the OpenAI Client Library involves minimal changes, mostly updating the import statement.
+1. Replace the OpenAI import with Cortex in your application:
+```diff
+- import OpenAI from 'openai';
++ import { Cortex } from '@janhq/cortex-node';
+```
+2. Modify the initialization of the client to use Cortex:
+```diff
+- const openai = new OpenAI({
++ const cortex = new Cortex({
+    baseURL: ['BASE_URL'], // The default base URL for Cortex is 'http://localhost:1337'
+    apiKey: process.env['OPENAI_API_KEY'], // This can be omitted if using the default
+});
+
+```
+### Example Usage
+```js
+import { Cortex } from '@janhq/cortex-node';
+
+const cortex = new Cortex({
+    baseURL: ['http://localhost:1337'],
+    apiKey: process.env['cortex'], 
+});
+
+cortex.models.start('llama3:7b')
+cortex.models.stop('llama3:7b')
+cortex.threads.list()
+```

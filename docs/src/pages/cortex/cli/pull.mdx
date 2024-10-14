@@ -1,0 +1,82 @@
+---
+title: Cortex Pull
+description: Cortex CLI.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# `cortex pull`
+
+This command facilitates downloading machine learning models from various model hubs, including the popular 🤗 [Hugging Face](https://huggingface.co/).
+
+By default, models are downloaded to the `node_modules library path. For additional information on storage paths and options, refer [here](/cortex/cli#storage).
+
+<Callout type="info">
+This command is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Alias
+The following alias is also available for downloading models:
+- `cortex download _`
+
+## Usage
+
+### Preconfigured Models
+
+Reconfigured models (with optimal runtime parameters and templates) are available from the [Jan Model Hub](https://huggingface.co/janhq) on Hugging Face.
+
+Models can be downloaded using a Docker-like interface with the following syntax: `repo_name:branch_name`. Each variant may include different quantizations and sizes, typically organized in the repository’s branches.
+
+Available models include [llama3](https://huggingface.co/janhq/llama3), [mistral](https://huggingface.co/janhq/mistral), [tinyllama](https://huggingface.co/janhq/tinyllama), and [many more](https://huggingface.co/janhq).
+
+<Callout type="info">
+New models will soon be added to HuggingFace's janhq repository.
+</Callout>
+
+```bash
+# Pull a specific variant with `repo_name:branch`
+cortex pull llama3:7b
+```
+You can also download `size`, `format`, and `quantization` variants of each model.
+
+```bash
+cortex pull llama3:8b-instruct-v3-gguf-Q4_K_M
+cortex pull llama3:8b-instruct-v3-tensorrt-llm
+```
+<Callout type="info">
+Model variants are provided via the `branches` in each model's Hugging Face repo.
+</Callout>
+### Hugging Face Models
+
+You can download any GGUF, TensorRT, or supported-format model directly from Hugging Face.
+
+```bash
+# cortex pull org_name/repo_name
+cortex pull microsoft/Phi-3-mini-4k-instruct-gguf
+```
+
+## Options
+
+```
+  -h, --help     display help for command
+```

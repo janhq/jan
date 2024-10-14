@@ -1,0 +1,37 @@
+---
+title: Desktop Installation
+description: Cortex Desktop Installation.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+import childPages from './installation/_meta.json';
+
+# Cortex Desktop Installation
+
+<br/>
+
+<Cards
+  children={Object.keys(childPages).map((key, i) => (
+    <Card
+      key={i}
+      title={childPages[key].title}
+      href={childPages[key].href}
+    />
+  ))}
+/>

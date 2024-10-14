@@ -1,0 +1,55 @@
+---
+title: Quickstart
+description: Cortex Quickstart.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+# Quickstart
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+To get started,  confirm that your system meets the [hardware requirements](/cortex/hardware), and follow the steps below:
+
+```bash
+# 1. Install Cortex using NPM
+npm i -g @janhq/cortex
+
+# 2. Download a GGUF model
+cortex models pull llama3
+
+# 3. Run the model to start chatting
+cortex models run llama3
+
+# 4. (Optional) Run Cortex in OpenAI-compatible server mode
+cortex serve
+```
+<Callout type="info">
+For more details regarding the Cortex server mode, please see here:
+- [Server Endpoint](/cortex/server)
+- [`cortex serve` command](/cortex/cli/serve)
+</Callout>
+
+## What's Next?
+With Cortex now fully operational, you're ready to delve deeper:
+- Explore how to [install Cortex](/cortex/installation) across various hardware environments.
+- Familiarize yourself with the comprehensive set of [Cortex CLI commands](/cortex/cli) available for use.
+- Gain insights into the system’s design by examining the [architecture](/cortex/architecture) of Cortex.
