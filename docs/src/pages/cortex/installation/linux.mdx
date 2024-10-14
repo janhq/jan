@@ -1,0 +1,181 @@
+---
+title: Linux
+description: Install Cortex CLI on Linux.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+---
+
+import { Tabs, Steps } from 'nextra/components'
+import { Callout } from 'nextra/components'
+import FAQBox from '@/components/FaqBox'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+# Linux Installation
+## Prerequisites
+
+### Dependencies
+
+Before installation, ensure that you have installed the following:
+
+- **Node.js**: Required for running the installation.
+- **NPM**: Needed to manage packages.
+
+<Callout type="info">
+The **CPU instruction sets** are not required for the initial installation of Cortex. This dependency will be automatically installed during the Cortex initialization if they are not already on your system.
+
+</Callout>
+
+### Hardware
+
+Ensure that your system meets the following requirements to run Cortex:
+<Tabs items={['OS', 'CPU', 'RAM', 'GPU', 'Disk']}>
+<Tabs.Tab>
+- Debian-based (Supports `.deb` and `AppImage` )
+    - Ubuntu-based
+        - Ubuntu Desktop LTS (official)/ Ubuntu Server LTS (only for server)
+        - Edubuntu (Mainly desktop)
+        - Kubuntu (Desktop only)
+        - Lubuntu (Both desktop and server, though mainly desktop)
+        - Ubuntu Budgie (Mainly desktop)
+        - Ubuntu Cinnamon (Desktop only)
+        - Ubuntu Kylin (Both desktop and server)
+        - Ubuntu MATE (Desktop only)
+- Pacman-based
+    - Arch Linux based
+        - Arch Linux (Mainly desktop)
+        - SteamOS (Desktop only)
+- RPM-based (Supports `.rpm` and `AppImage` )
+- Fedora-based
+    - RHEL-based (Server only)
+- openSUSE (Both desktop and server)
+
+    <Callout type="info">
+    - Please check whether your Linux distribution supports desktop, server, or both environments.
+    
+    </Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+<Tabs items={['Intel', 'AMD']}>
+<Tabs.Tab>
+<Callout type="info">
+- Jan supports a processor that can handle AVX2. For the full list, please see [here](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
+- We support older processors with AVX and AVX-512, though this is not recommended.
+</Callout>
+- Haswell processors (Q2 2013) and newer.
+- Tiger Lake (Q3 2020) and newer for Celeron and Pentium processors.
+</Tabs.Tab>
+<Tabs.Tab>
+<Callout type="info">
+- Jan supports a processor that can handle AVX2. For the full list, please see [here](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
+- We support older processors with AVX and AVX-512, though this is not recommended.
+</Callout>
+- Excavator processors (Q2 2015) and newer.
+</Tabs.Tab>
+</Tabs>
+</Tabs.Tab>
+<Tabs.Tab>
+- 8GB for running up to 3B models (int4).
+- 16GB for running up to 7B models (int4).
+- 32GB for running up to 13B models (int4).
+
+<Callout type="info">
+We support DDR2 RAM as the minimum requirement but recommend using newer generations of RAM for improved performance.
+
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>    
+- 6GB can load the 3B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
+- 8GB can load the 7B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
+- 12GB can load the 13B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
+    
+<Callout type="info">
+Having at least 6GB VRAM when using NVIDIA, AMD, or Intel Arc GPUs is recommended.
+
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>     
+- At least 10GB for app storage and model download.
+</Tabs.Tab>
+</Tabs>
+
+## Cortex Installation
+
+To install Cortex, follow the steps below:
+
+<Steps>
+### Step 1: Install Cortex
+
+Run the following command to install Cortex globally on your machine:
+
+<Callout type="info">
+Install NPM on your machine before proceeding with this step.
+
+</Callout>
+
+```sh
+# Install globally on your system
+npm i -g @janhq/cortex
+```
+<Callout type="info">
+Cortex automatically detects your CPU and GPU, downloading the appropriate CPU instruction sets and required dependencies to optimize GPU performance.
+
+</Callout>
+
+### Step 2: Verify the Installation
+
+1. After installation, you can verify that Cortex is installed correctly by getting help information.
+
+```sh
+# Get the help information
+cortex -h
+```
+2. Cortex is ready to use!
+</Steps>
+## Build from Source
+
+To install Cortex from the source, follow the steps below:
+
+1. Clone the Cortex repository [here](https://github.com/janhq/cortex/tree/dev).
+2. Navigate to the `cortex-js` folder.
+3. Open the terminal and run the following command to build the Cortex project:
+
+```sh
+npx nest build
+```
+
+4. Make the `command.js` executable:
+
+```sh
+chmod +x '[path-to]/cortex/cortex-js/dist/src/command.js'
+```
+
+5. Link the package globally:
+
+```sh
+npm link
+```
+6. Initialize Cortex by following the steps [here](#step-3-initialize-cortex).
+## Uninstall Cortex
+
+Run the following command to uninstall Cortex globally on your machine:
+```sh
+# Uninstall globally on your system
+npm uninstall -g @janhq/cortex
+```

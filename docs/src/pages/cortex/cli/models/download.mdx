@@ -1,0 +1,49 @@
+---
+title: Cortex Models Pull
+description: Cortex models subcommands.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# `cortex models pull`
+
+This command downloads a model. You can use a HuggingFace `MODEL_ID` to download a model.
+
+<Callout type="info">
+This command is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Usage
+
+```bash
+cortex models pull MODEL_ID
+```
+## Alias
+The following alias is also available for downloading models:
+- `cortex models download _`
+
+## Options
+```
+  -m, --model <model_id>  Model Id to start chat with
+  -h, --help              display help for command
+```

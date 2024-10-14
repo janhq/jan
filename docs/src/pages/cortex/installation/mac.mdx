@@ -1,0 +1,147 @@
+---
+title: Mac
+description: Install Cortex CLI on Mac.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+---
+
+import { Tabs, Steps } from 'nextra/components'
+import { Callout } from 'nextra/components'
+import FAQBox from '@/components/FaqBox'
+
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+# Mac Installation
+## Prerequisites
+
+### Dependencies
+
+Before installation, ensure that you have installed the following:
+
+- **Node.js**: Required for running the installation.
+- **NPM**: Needed to manage packages.
+
+<Callout type="info">
+The **CPU instruction sets** are not required for the initial installation of Cortex. This dependency will be automatically installed during the Cortex initialization if they are not already on your system.
+
+</Callout>
+
+### Hardware
+
+Ensure that your system meets the following requirements to run Cortex:
+<Tabs items={['Mac Intel CPU', 'Mac Apple Silicon']}>
+<Tabs.Tab>
+<Tabs items={['Operating System', 'Memory', 'Disk']}>
+<Tabs.Tab>
+- MacOSX 13.6 or higher.
+</Tabs.Tab>
+<Tabs.Tab>
+- 8GB for running up to 3B models.
+- 16GB for running up to 7B models.
+- 32GB for running up to 13B models.
+</Tabs.Tab>
+<Tabs.Tab>
+- At least 10GB for app and model download.
+</Tabs.Tab>
+</Tabs>
+</Tabs.Tab>
+<Tabs.Tab>
+<Tabs items={['Operating System', 'Memory', 'Disk']}>
+<Tabs.Tab>
+- MacOSX 13.6 or higher.
+</Tabs.Tab>
+<Tabs.Tab>
+- 8GB for running up to 3B models.
+- 16GB for running up to 7B models.
+- 32GB for running up to 13B models.
+<Callout type="info">
+Apple Silicon Macs leverage Metal for GPU acceleration, providing faster performance than Intel Macs, which rely solely on CPU processing.
+
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+- At least 10GB for app and model download.
+</Tabs.Tab>
+</Tabs>
+</Tabs.Tab>
+</Tabs>
+## Cortex Installation
+
+To install Cortex, follow the steps below:
+<Steps>
+### Step 1: Install Cortex
+
+Run the following command to install Cortex globally on your machine:
+
+<Callout type="info">
+Install NPM on your machine before proceeding with this step.
+
+</Callout>
+
+```sh
+# Install globally on your system
+npm i -g @janhq/cortex
+```
+<Callout type="info">
+Cortex automatically detects your CPU and GPU, downloading the appropriate CPU instruction sets and required dependencies to optimize GPU performance.
+
+</Callout>
+
+### Step 2: Verify the Installation
+
+1. After installation, you can verify that Cortex is installed correctly by getting help information.
+
+```sh
+# Get the help information
+cortex -h
+```
+2. Cortex is ready to use!
+</Steps>
+## Build from Source
+
+To install Cortex from the source, follow the steps below:
+
+1. Clone the Cortex repository [here](https://github.com/janhq/cortex/tree/dev).
+2. Navigate to the `cortex-js` folder.
+3. Open the terminal and run the following command to build the Cortex project:
+
+```sh
+npx nest build
+```
+
+4. Make the `command.js` executable:
+
+```sh
+chmod +x '[path-to]/cortex/cortex-js/dist/src/command.js'
+```
+
+5. Link the package globally:
+
+```sh
+npm link
+```
+6. Initialize Cortex by following the steps [here](#step-3-initialize-cortex).
+## Uninstall Cortex
+
+Run the following command to uninstall Cortex globally on your machine:
+```sh
+# Uninstall globally using NPM
+npm uninstall -g @janhq/cortex
+```

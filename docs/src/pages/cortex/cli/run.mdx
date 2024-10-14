@@ -1,0 +1,53 @@
+---
+title: Cortex Run
+description: Cortex run command
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# `cortex run`
+
+This command facilitates the initiation of an interactive chat shell with a specified machine learning model.
+
+<Callout type="info">
+This command is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Usage
+
+```bash
+cortex run MODEL_ID
+```
+### Options
+```
+  -t, --thread <thread_id>  Thread Id. If not provided, will create new thread
+  -h, --help                display help for command
+```
+
+## Command Chain
+
+`cortex run` command is a convenience wrapper that automatically executes a sequence of commands to simplify user interactions:
+
+1. [`cortex start`](/cortex/cli/models/start): This command starts the specified model, making it active and ready for interactions.
+2. [`cortex chat`](/cortex/cli/chat): Following model activation, this command opens an interactive chat shell where users can directly communicate with the model.
+

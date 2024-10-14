@@ -1,0 +1,70 @@
+---
+title: Open Interpreter
+description: A step-by-step guide on integrating Jan with Open Interpreter.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Open Interpreter integration,
+    Open Interpreter,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Open Interpreter
+
+## Integrate Open Interpreter with Jan
+
+[Open Interpreter](https://github.com/KillianLucas/open-interpreter/) lets LLMs run code (Python, Javascript, Shell, and more) locally. After installing, you can chat with Open Interpreter through a ChatGPT-like interface in your terminal by running `interpreter`. To integrate Open Interpreter with Jan, follow the steps below:
+
+<Steps>
+
+### Step 1: Install Open Interpreter
+
+1. Install Open Interpreter by running:
+
+```bash
+pip install open-interpreter
+```
+
+2. A Rust compiler is required to install Open Interpreter. If not already installed, run the following command or go to [this page](https://rustup.rs/) if you are running on Windows:
+
+```bash
+sudo apt install rustc
+```
+
+<Callout type='info'>
+ The Rust compiler is necessary for building some native extensions that Open Interpreter requires.
+</Callout>
+
+### Step 2: Configure Jan's Local API Server
+
+Before using Open Interpreter, configure the model in `Settings` > `My Model` for Jan and activate its local API server.
+
+#### Enabling Jan API Server
+
+1. Click the `<>` button to access the **Local API Server** section in Jan.
+
+2. Configure the server settings, including **IP Port**, **Cross-Origin-Resource-Sharing (CORS)**, and **Verbose Server Logs**.
+
+3. Click **Start Server**.
+
+### Step 3: Set the Open Interpreter Environment
+
+1. For integration, provide the API Base (`http://localhost:1337/v1`) and the model ID (e.g., `mistral-ins-7b-q4`) when running Open Interpreter. For example, see the code below:
+
+```zsh
+interpreter --api_base http://localhost:1337/v1 --model mistral-ins-7b-q4
+```
+
+> **Open Interpreter is now ready for use!**
+
+</Steps>

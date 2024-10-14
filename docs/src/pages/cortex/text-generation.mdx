@@ -1,0 +1,86 @@
+---
+title: Overview
+description: Overview.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+import { Tabs } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+# Text Generation
+
+Cortex's Chat API is compatible with OpenAI’s [Chat Completions](https://platform.openai.com/docs/api-reference/chat) endpoint. It is a drop-in replacement for local inference.
+
+For local inference, Cortex is [multi-engine](#multiple-local-engines) and supports the following model formats: 
+
+- `GGUF`: A generalizable LLM format that runs across CPUs and GPUs. Cortex implements a GGUF runtime through [llama.cpp](https://github.com/ggerganov/llama.cpp/).
+- `TensorRT`: A a production-ready, enterprise-grade LLM format optimized for fast inference on NVIDIA GPUs. Cortex implements a TensorRT runtime through [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM).
+
+For remote inference, Cortex routes requests to multiple APIs, while providing a single, easy to use, OpenAI compatible endpoint. [Read more](#remote-api-integration). 
+
+## Usage
+
+<Tabs items={['CLI', 'Javascript', 'CURL']}>
+<Tabs.Tab>
+
+```bash
+# Streaming
+cortex chat --model janhq/TinyLlama-1.1B-Chat-v1.0-GGUF
+```
+</Tabs.Tab>
+</Tabs>
+
+**Read more:** 
+
+- Chat Completion Object
+- Chat Completions API
+- Chat Completions CLI
+
+## Capabilities
+
+### Multiple Local Engines
+
+Cortex scales applications from prototype to production. It runs on CPU-only laptops with Llama.cpp and GPU-accelerated clusters with TensorRT-LLM.
+
+To learn more about how to configure each engine:
+
+- Use llama.cpp
+- Use tensorrt-llm
+
+To learn more about our engine architecture:
+
+- cortex.cpp
+- cortex.llamacpp
+- cortex.tensorRTLLM
+
+### Multiple Remote APIs
+
+Cortex also works as an aggregator to make remote inference requests from a single endpoint. 
+
+Currently, Cortex supports: 
+- OpenAI
+- Groq
+- Cohere
+- Anthropic
+- MistralAI
+- Martian
+- OpenRouter
+

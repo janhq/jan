@@ -1,0 +1,154 @@
+---
+title: Jan
+description: Jan is an open-source, self-hosted alternative to OpenAI's platform - build and run AI on your own desktop or server.
+keywords:
+  [
+    Jan,
+    Jan AI,
+    ChatGPT alternative,
+    OpenAI platform alternative,
+    local API,
+    local AI,
+    private AI,
+    conversational AI,
+    no-subscription fee,
+    large language model,
+    LLM,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+import FAQBox from '@/components/FaqBox'
+
+# Jan
+
+![Jan's Cover Image](./_assets/jan-display.png)
+
+
+Jan is a ChatGPT-alternative that runs 100% offline on your [Desktop](/docs/desktop-installation). Our goal is to make it easy for a layperson[^1] to download and run LLMs and use AI with full control and [privacy](https://www.reuters.com/legal/legalindustry/privacy-paradox-with-ai-2023-10-31/).
+
+Jan is powered by [Cortex](https://cortex.so/), our embeddable local AI engine. 
+
+<Callout>
+**OpenAI-equivalent API:** Jan runs a Cortex Server in the background, which provides an OpenAI-equivalent API at https://localhost:1337. 
+
+You'll be able to use it with [Continue.dev](https://jan.ai/integrations/coding/vscode), [Open Interpreter](https://jan.ai/integrations/function-calling/interpreter), or any OpenAI-compatible app.
+</Callout>
+
+### Features
+
+- [Model Library](https://jan.ai/docs/models/manage-models#add-models) with popular LLMs like Llama3, Gemma or Mistral
+- Connect to [Remote AI APIs](https://jan.ai/docs/remote-inference/openai) like Groq and OpenRouter
+- [Local API Server](https://jan.ai/api-reference) with OpenAI-equivalent API
+- [Extensions](https://jan.ai/docs/extensions) for customizing Jan
+
+### Philosophy
+
+Jan is built to be [User-owned](about#-user-owned):
+- Open source via the [AGPLv3 license](https://github.com/janhq/jan/blob/dev/LICENSE)
+- [Local-first](https://www.inkandswitch.com/local-first/), with all data stored locally
+- Runs 100% offline, with privacy by default
+- We do not [collect or sell user data](/privacy)
+
+<Callout>
+  You can read more about our [philosophy](/about#philosophy) here. 
+</Callout>
+
+### Inspirations
+
+Jan is inspired by the concepts of [Calm Computing](https://en.wikipedia.org/wiki/Calm_technology), and the Disappearing Computer. 
+
+## Acknowledgements
+
+Jan is built on the shoulders of many upstream open-source projects: 
+
+- [Llama.cpp](https://github.com/ggerganov/llama.cpp/blob/master/LICENSE)
+- [LangChain.js](https://github.com/langchain-ai/langchainjs/blob/main/LICENSE)
+- [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM/blob/main/LICENSE)
+- [TheBloke/GGUF](https://huggingface.co/TheBloke)
+- [Scalar](https://github.com/scalar/scalar)
+
+## FAQs
+
+<FAQBox title="What is Jan">
+  Jan runs and trains models (LLMs) on your laptop or desktop computers.
+</FAQBox>
+
+<FAQBox title="How do I use Jan?">
+  Download Jan Desktop on your computer, download a compatible LLM, connect to a remote AI with the API key, and start chatting. You can switch between models as needed.
+</FAQBox>
+
+<FAQBox title="Is Jan compatible with my operating system?">
+  Jan is available for Mac, Windows, and Linux via Docker/Helm, ensuring wide compatibility.
+
+  GPU-wise, Jan supports Nvidia, AMD (through Vulkan), and Intel.
+</FAQBox>
+
+<FAQBox title="Do you use my data?">
+  No. Not even a little. Your usage data is entirely local and private and never leaves your computer.
+
+  We also don't track IP or other identifying information. 
+
+<Callout type="warning">
+If you use Jan in remote/API mode, i.e., chatting with ChatGPT, they may still collect your info.
+</Callout>
+</FAQBox>
+
+<FAQBox title="Do you sell my data?">
+  No, and we never will.
+</FAQBox>
+
+<FAQBox title="How does Jan ensure my data remains private?">
+  Jan prioritizes your privacy by running open-source AI models 100% offline on your computer. Conversations, documents, and files stay private. You can find your own user data at `~/jan` on your local filesystem.
+</FAQBox>
+
+<FAQBox title="What does Jan stand for?">
+  Jan stands for “Just a Name". We are, admittedly, bad at marketing 😂.
+</FAQBox>
+
+<FAQBox title="Can I use Jan without an internet connection?">
+  Yes, Jan defaults to running locally without an internet connection.
+</FAQBox>
+
+<FAQBox title="Are there any costs associated with using Jan?">
+  Jan is free to use. However, if you want to connect to remote APIs, like
+  GPT-4, you will need to put in your own API key.
+</FAQBox>
+
+<FAQBox title="What types of AI models can I download or import with Jan?">
+  You can download popular AI models through Jan's Hub or import any model you choose directly from HuggingFace.
+</FAQBox>
+
+<FAQBox title="How do I customize Jan using the programmable API?">
+ Jan is built like VSCode and Obsidian. It supports 3rd party extensions. In fact, most of the UI-level features were built with extensions in a few lines of code.
+</FAQBox>
+
+<FAQBox title="How can I contribute to Jan's development or suggest features?">
+  Contributions can be made through [GitHub](https://github.com/janhq/jan) and [Discord](https://discord.gg/Exe46xPMbK), where you can also suggest features and make pull requests. No need to ask for permission. We're fully open-source!
+</FAQBox>
+
+<FAQBox title="How can I get involved with the Jan community?">
+  Joining [Jan's Discord server](https://discord.gg/qSwXFx6Krr) is a great way
+  to get involved with the community.
+</FAQBox>
+
+<FAQBox title="How do I troubleshoot issues with installing or using Jan?">
+  For troubleshooting, you should reach out on Discord and check GitHub for
+  assistance and support from the community and the development team.
+</FAQBox>
+
+<FAQBox title="Can I self-host?">
+  Yes! We love the self-hosted movement. Jan is available as a Helm chart/
+  Docker composes which can be run across home servers or even production-level
+  environments.
+</FAQBox>
+
+<FAQBox title="Are you hiring?">
+  We often hire directly from our community. If you want to apply,
+  please see our careers page [here](https://homebrew.bamboohr.com/careers).
+</FAQBox>
+
+
+## Footnotes 
+
+[^1]: Our definition of "Non-technical" == don't need to know how to use Command Line
