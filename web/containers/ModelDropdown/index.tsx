@@ -313,14 +313,12 @@ const ModelDropdown = ({
             theme="secondary"
             variant={open ? 'solid' : 'outline'}
             className={twMerge(
-              'cursor-pointer',
+              'inline-block max-w-[200px] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap',
               open && 'border border-transparent'
             )}
             onClick={() => setOpen(!open)}
           >
-            <span className="line-clamp-1 max-w-[286px]">
-              {selectedModel?.name}
-            </span>
+            <span>{selectedModel?.name}</span>
           </Badge>
         ) : (
           <Input
