@@ -9,11 +9,8 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { getDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
-
 export default function DownloadingState() {
   const downloadStates = useAtomValue(modelDownloadStateAtom)
-  const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const { abortModelDownload } = useDownloadModel()
 
   const totalCurrentProgress = Object.values(downloadStates)
@@ -76,10 +73,7 @@ export default function DownloadingState() {
                       theme="destructive"
                       onClick={() => {
                         if (item?.modelId) {
-                          const model = downloadingModels.find(
-                            (model) => model.id === item.modelId
-                          )
-                          if (model) abortModelDownload(model)
+                          abortModelDownload(item?.modelId)
                         }
                       }}
                     >

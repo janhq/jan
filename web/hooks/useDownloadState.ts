@@ -77,7 +77,7 @@ export const setDownloadStateAtom = atom(
         }
       } else {
         // download in progress
-        if (state.size.total === 0) {
+        if (state.size.total === 0 || !currentState[state.modelId]) {
           // this is initial state, just set the state
           currentState[state.modelId] = state
           set(modelDownloadStateAtom, currentState)

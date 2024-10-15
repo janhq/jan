@@ -55,7 +55,21 @@ export abstract class OAIEngine extends AIEngine {
    * Inference request
    */
   override async inference(data: MessageRequest) {
-    if (data.model?.engine?.toString() !== this.provider) return
+    if (!data.model?.id) {
+      events.emit(MessageEvent.OnMessageResponse, {
+        status: MessageStatus.Error,
+        content: [
+          {
+            type: ContentType.Text,
+            text: {
+              value: 'No model ID provided',
+              annotations: [],
+            },
+          },
+        ],
+      })
+      return
+    }
 
     const timestamp = Date.now()
     const message: ThreadMessage = {
@@ -89,7 +103,6 @@ export abstract class OAIEngine extends AIEngine {
       model: model.id,
       stream: true,
       ...model.parameters,
-      ...(this.provider === 'nitro' ? { engine: 'cortex.llamacpp'} : {}),
     }
     if (this.transformPayload) {
       requestBody = this.transformPayload(requestBody)

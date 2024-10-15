@@ -182,8 +182,8 @@ const ThreadRightPanel = () => {
       })
 
       if (
-        activeThread.assistants[0].model.parameters.max_tokens &&
-        activeThread.assistants[0].model.settings.ctx_len
+        activeThread.assistants[0].model.parameters?.max_tokens &&
+        activeThread.assistants[0].model.settings?.ctx_len
       ) {
         if (
           key === 'max_tokens' &&

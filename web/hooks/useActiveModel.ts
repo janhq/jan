@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { EngineManager, Model, ModelFile } from '@janhq/core'
+import { EngineManager, Model } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -11,7 +11,7 @@ import { vulkanEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
-export const activeModelAtom = atom<ModelFile | undefined>(undefined)
+export const activeModelAtom = atom<Model | undefined>(undefined)
 export const loadModelErrorAtom = atom<string | undefined>(undefined)
 
 type ModelState = {
@@ -37,7 +37,7 @@ export function useActiveModel() {
   const [pendingModelLoad, setPendingModelLoad] = useAtom(pendingModelLoadAtom)
   const isVulkanEnabled = useAtomValue(vulkanEnabledAtom)
 
-  const downloadedModelsRef = useRef<ModelFile[]>([])
+  const downloadedModelsRef = useRef<Model[]>([])
 
   useEffect(() => {
     downloadedModelsRef.current = downloadedModels
@@ -54,11 +54,6 @@ export function useActiveModel() {
     setPendingModelLoad(true)
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
-
-    const error = await stopModel().catch((error: Error) => error)
-    if (error) {
-      return Promise.reject(error)
-    }
 
     setLoadModelError(undefined)
 
@@ -144,7 +139,7 @@ export function useActiveModel() {
     const engine = EngineManager.instance().get(stoppingModel.engine)
     return engine
       ?.unloadModel(stoppingModel)
-      .catch()
+      .catch((e) => console.error(e))
       .then(() => {
         setActiveModel(undefined)
         setStateModel({ state: 'start', loading: false, model: undefined })

@@ -6,8 +6,8 @@ import { FileMetadata } from '../file'
  */
 export type ModelInfo = {
   id: string
-  settings: ModelSettingParams
-  parameters: ModelRuntimeParams
+  settings?: ModelSettingParams
+  parameters?: ModelRuntimeParams
   engine?: InferenceEngine
 }
 
@@ -28,9 +28,10 @@ export enum InferenceEngine {
   nitro_tensorrt_llm = 'nitro-tensorrt-llm',
   cohere = 'cohere',
   nvidia = 'nvidia',
-  cortex_llamacpp = 'cortex.llamacpp',
-  cortex_onnx = 'cortex.onnx',
-  cortex_tensorrtllm = 'cortex.tensorrt-llm',
+  cortex = 'cortex',
+  cortex_llamacpp = 'llama-cpp',
+  cortex_onnx = 'onnxruntime',
+  cortex_tensorrtllm = '.tensorrt-llm',
 }
 
 export type ModelArtifact = {
@@ -153,8 +154,3 @@ export type ModelRuntimeParams = {
 export type ModelInitFailed = Model & {
   error: Error
 }
-
-/**
- * ModelFile is the model.json entity and it's file metadata
- */
-export type ModelFile = Model & FileMetadata

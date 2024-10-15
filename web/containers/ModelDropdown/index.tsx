@@ -88,7 +88,7 @@ const ModelDropdown = ({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
   const featuredModel = configuredModels.filter((x) =>
-    x.metadata.tags.includes('Featured')
+    x.metadata?.tags?.includes('Featured')
   )
   const { updateThreadMetadata } = useCreateNewThread()
 
@@ -200,7 +200,7 @@ const ModelDropdown = ({
         if (model)
           updateModelParameter(activeThread, {
             params: modelParams,
-            modelPath: model.file_path,
+            // modelPath: model.file_path,
             modelId: model.id,
             engine: model.engine,
           })
@@ -444,7 +444,7 @@ const ModelDropdown = ({
                         <ul className="pb-2">
                           {featuredModel.map((model) => {
                             const isDownloading = downloadingModels.some(
-                              (md) => md.id === model.id
+                              (md) => md === model.id
                             )
                             return (
                               <li
@@ -465,13 +465,15 @@ const ModelDropdown = ({
                                 </div>
                                 <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                   <span className="font-medium">
-                                    {toGibibytes(model.metadata.size)}
+                                    {toGibibytes(model.metadata?.size)}
                                   </span>
                                   {!isDownloading ? (
                                     <DownloadCloudIcon
                                       size={18}
                                       className="cursor-pointer text-[hsla(var(--app-link))]"
-                                      onClick={() => downloadModel(model)}
+                                      onClick={() =>
+                                        downloadModel(model.sources[0].url)
+                                      }
                                     />
                                   ) : (
                                     Object.values(downloadStates)
@@ -511,7 +513,7 @@ const ModelDropdown = ({
                         .map((model) => {
                           if (!showModel) return null
                           const isDownloading = downloadingModels.some(
-                            (md) => md.id === model.id
+                            (md) => md === model.id
                           )
                           const isDownloaded = downloadedModels.some(
                             (c) => c.id === model.id
@@ -549,14 +551,16 @@ const ModelDropdown = ({
                               <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                 {!isDownloaded && (
                                   <span className="font-medium">
-                                    {toGibibytes(model.metadata.size)}
+                                    {toGibibytes(model.metadata?.size)}
                                   </span>
                                 )}
                                 {!isDownloading && !isDownloaded ? (
                                   <DownloadCloudIcon
                                     size={18}
                                     className="cursor-pointer text-[hsla(var(--app-link))]"
-                                    onClick={() => downloadModel(model)}
+                                    onClick={() =>
+                                      downloadModel(model.sources[0].url)
+                                    }
                                   />
                                 ) : (
                                   Object.values(downloadStates)
