@@ -17,6 +17,8 @@ fi
 # Use jq to transform the content
 jq '
     .name = "jan-beta" |
+    .productName = "Jan-beta" |
+    .build.appId = "jan-beta.ai.app" |
     .build.productName = "Jan-beta" |
     .build.appId = "jan-beta.ai.app" |
     .build.protocols[0].name = "Jan-beta" |

@@ -96,6 +96,9 @@ jobs:
           cat ./package.json
           echo "------------------------"
           cat ./electron/scripts/uninstaller.nsh
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "github", "owner": "janhq", "repo": "jan", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          cat electron/package.json
 
       - name: Update app version base on tag
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
@@ -138,7 +141,7 @@ jobs:
           AWS_MAX_ATTEMPTS: "5"
 
       - name: Build app and publish app to github
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
         run: |
           make build-and-publish
         env:
@@ -150,6 +153,24 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+
+      - name: Build app and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_MAX_ATTEMPTS: "5"
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          # AZURE_CERT_NAME: homebrewltd
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
