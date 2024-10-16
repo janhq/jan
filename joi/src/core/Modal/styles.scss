@@ -13,7 +13,7 @@ fieldset,
 
   &__content {
     color: hsla(var(--modal-fg));
-    overflow: hidden;
+    overflow: auto;
     background-color: hsla(var(--modal-bg));
     border-radius: 8px;
     font-size: 14px;
