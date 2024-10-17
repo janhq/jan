@@ -30,27 +30,6 @@ export abstract class LocalOAIEngine extends OAIEngine {
    * Load the model.
    */
   override async loadModel(model: Model): Promise<void> {
-    if (model.engine.toString() !== this.provider) return
-    // const modelFolder = await dirName(model.file_path)
-    // const systemInfo = await systemInformation()
-    // const res = await executeOnMain(
-    //   this.nodeModule,
-    //   this.loadModelFunctionName,
-    //   {
-    //     modelFolder,
-    //     model,
-    //   },
-    //   systemInfo
-    // )
-
-    // if (res?.error) {
-    //   events.emit(ModelEvent.OnModelFail, { error: res.error })
-    //   return Promise.reject(res.error)
-    // } else {
-    //   this.loadedModel = model
-    //   events.emit(ModelEvent.OnModelReady, model)
-    //   return Promise.resolve()
-    // }
     return Promise.resolve()
   }
   /**
