@@ -29,6 +29,8 @@ import { isLocalEngine } from '@/utils/modelEngine'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
+import CodeEditor from './CodeEditor'
+
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -163,6 +165,9 @@ const ChatInput = () => {
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
         {renderPreview(fileUpload)}
+
+        <CodeEditor />
+
         <TextArea
           className={twMerge(
             'relative max-h-[400px] resize-none  pr-20',
