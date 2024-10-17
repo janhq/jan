@@ -31,3 +31,17 @@ cat ./package.json.tmp
 
 rm $INPUT_JSON_FILE
 mv ./package.json.tmp $INPUT_JSON_FILE
+
+# Update the layout file
+LAYOUT_FILE_PATH="web/app/layout.tsx"
+
+if [ ! -f "$LAYOUT_FILE_PATH" ]; then
+    echo "File does not exist: $LAYOUT_FILE_PATH"
+    exit 1
+fi
+
+# Perform the replacements
+sed -i -e "s#Jan#Jan-beta#g" "$LAYOUT_FILE_PATH"
+
+# Notify completion
+echo "File has been updated: $LAYOUT_FILE_PATH"
