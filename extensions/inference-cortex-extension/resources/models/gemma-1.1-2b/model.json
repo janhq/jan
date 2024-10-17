@@ -1,0 +1,35 @@
+{
+  "sources": [
+    {
+      "filename": "gemma-1.1-2b-it-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/gemma-1.1-2b-it-GGUF/resolve/main/gemma-1.1-2b-it-Q4_K_M.gguf"
+    }
+  ],
+  "id": "gemma-1.1-2b-it",
+  "object": "model",
+  "name": "Gemma 1.1 2B Q4",
+  "version": "1.3",
+  "description": "Gemma is built from the same technology with Google's Gemini.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 8192,
+    "prompt_template": "<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model",
+    "llama_model_path": "gemma-1.1-2b-it-Q4_K_M.gguf",
+    "ngl": 19
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 8192,
+    "stop": ["<end_of_turn>"],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "Google",
+    "tags": ["2B", "Finetuned", "Tiny"],
+    "size": 1630000000
+  },
+  "engine": "llama-cpp"
+}

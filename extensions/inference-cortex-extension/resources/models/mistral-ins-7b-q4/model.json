@@ -1,0 +1,36 @@
+{
+  "sources": [
+    {
+      "filename": "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Mistral-7B-Instruct-v0.3-GGUF/resolve/main/Mistral-7B-Instruct-v0.3-Q4_K_M.gguf"
+    }
+  ],
+  "id": "mistral-ins-7b-q4",
+  "object": "model",
+  "name": "Mistral 7B Instruct Q4",
+  "version": "1.5",
+  "description": "Mistral 7B Instruct model, specifically designed for a comprehensive understanding of the world.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 32768,
+    "prompt_template": "{system_message} [INST] {prompt} [/INST]",
+    "llama_model_path": "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+    "ngl": 33
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 32768,
+    "stop": ["[/INST]"],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "MistralAI",
+    "tags": ["7B", "Foundational Model"],
+    "size": 4370000000,
+    "cover": "https://raw.githubusercontent.com/janhq/jan/dev/models/mistral-ins-7b-q4/cover.png"
+  },
+  "engine": "llama-cpp"
+}

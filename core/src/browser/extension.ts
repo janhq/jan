@@ -1,6 +1,8 @@
-import { SettingComponentProps } from '../types'
+import { Model, ModelEvent, SettingComponentProps } from '../types'
 import { getJanDataFolderPath, joinPath } from './core'
+import { events } from './events'
 import { fs } from './fs'
+import { ModelManager } from './models'
 
 export enum ExtensionTypeEnum {
   Assistant = 'assistant',
@@ -103,6 +105,22 @@ export abstract class BaseExtension implements ExtensionType {
     return undefined
   }
 
+  /**
+   * Registers models - it persists in-memory shared ModelManager instance's data map.
+   * @param models
+   */
+  async registerModels(models: Model[]): Promise<void> {
+    for (const model of models) {
+      ModelManager.instance().register(model)
+    }
+    events.emit(ModelEvent.OnModelsUpdate, {})
+  }
+
+  /**
+   * Register settings for the extension.
+   * @param settings
+   * @returns
+   */
   async registerSettings(settings: SettingComponentProps[]): Promise<void> {
     if (!this.name) {
       console.error('Extension name is not defined')
@@ -139,6 +157,12 @@ export abstract class BaseExtension implements ExtensionType {
     }
   }
 
+  /**
+   * Get the setting value for the key.
+   * @param key
+   * @param defaultValue
+   * @returns
+   */
   async getSetting<T>(key: string, defaultValue: T) {
     const keySetting = (await this.getSettings()).find((setting) => setting.key === key)
 
@@ -168,6 +192,10 @@ export abstract class BaseExtension implements ExtensionType {
     return
   }
 
+  /**
+   * Get the settings for the extension.
+   * @returns
+   */
   async getSettings(): Promise<SettingComponentProps[]> {
     if (!this.name) return []
 
@@ -189,6 +217,11 @@ export abstract class BaseExtension implements ExtensionType {
     }
   }
 
+  /**
+   * Update the settings for the extension.
+   * @param componentProps
+   * @returns
+   */
   async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {
     if (!this.name) return
 

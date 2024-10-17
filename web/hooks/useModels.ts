@@ -5,8 +5,8 @@ import {
   Model,
   ModelEvent,
   ModelExtension,
-  ModelFile,
   events,
+  ModelManager,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
@@ -14,7 +14,6 @@ import { useSetAtom } from 'jotai'
 import { extensionManager } from '@/extension'
 import {
   configuredModelsAtom,
-  defaultModelAtom,
   downloadedModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
@@ -25,32 +24,22 @@ import {
  */
 const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
-  const setConfiguredModels = useSetAtom(configuredModelsAtom)
-  const setDefaultModel = useSetAtom(defaultModelAtom)
+  const setExtensionModels = useSetAtom(configuredModelsAtom)
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
-      const models = await getLocalDownloadedModels()
+      const models = await getModels()
       setDownloadedModels(models)
     }
 
-    const getConfiguredModels = async () => {
-      const models = await getLocalConfiguredModels()
-      setConfiguredModels(models)
-    }
-
-    const getDefaultModel = async () => {
-      const defaultModel = await getLocalDefaultModel()
-      setDefaultModel(defaultModel)
+    const getExtensionModels = async () => {
+      const models = ModelManager.instance().models.values().toArray()
+      setExtensionModels(models)
     }
 
     // Fetch all data
-    Promise.all([
-      getDownloadedModels(),
-      getConfiguredModels(),
-      getDefaultModel(),
-    ])
-  }, [setDownloadedModels, setConfiguredModels, setDefaultModel])
+    Promise.all([getDownloadedModels(), getExtensionModels()])
+  }, [setDownloadedModels, setExtensionModels])
 
   useEffect(() => {
     // Try get data on mount
@@ -65,22 +54,8 @@ const useModels = () => {
   }, [getData])
 }
 
-// TODO: Deprecated - Remove when moving to cortex.cpp
-const getLocalDefaultModel = async (): Promise<Model | undefined> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getDefaultModel()
-
-// TODO: Deprecated - Remove when moving to cortex.cpp
-const getLocalConfiguredModels = async (): Promise<ModelFile[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getConfiguredModels() ?? []
-
-// TODO: Deprecated - Remove when moving to cortex.cpp
-const getLocalDownloadedModels = async (): Promise<ModelFile[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getDownloadedModels() ?? []
+const getModels = async (): Promise<Model[]> =>
+  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.getModels() ??
+  []
 
 export default useModels

@@ -52,6 +52,21 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType === 'extension') {
         removeInstallingExtension(state.extensionId!)
       } else {
+        state.downloadState = 'error'
+        setDownloadState(state)
+      }
+    },
+    [setDownloadState, removeInstallingExtension]
+  )
+
+  const onFileDownloadStopped = useCallback(
+    (state: DownloadState) => {
+      console.debug('onFileDownloadError', state)
+      if (state.downloadType === 'extension') {
+        removeInstallingExtension(state.extensionId!)
+      } else {
+        state.downloadState = 'error'
+        state.error = 'aborted'
         setDownloadState(state)
       }
     },
@@ -62,6 +77,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
       if (state.downloadType !== 'extension') {
+        state.downloadState = 'end'
         setDownloadState(state)
       }
       events.emit(ModelEvent.OnModelsUpdate, {})
@@ -87,6 +103,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
     events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+    events.on(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
     events.on(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
 
     return () => {

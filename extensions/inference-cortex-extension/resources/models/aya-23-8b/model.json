@@ -1,0 +1,35 @@
+{
+    "sources": [
+      {
+        "filename": "aya-23-8B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/aya-23-8B-GGUF/resolve/main/aya-23-8B-Q4_K_M.gguf"
+      }
+    ],
+    "id": "aya-23-8b",
+    "object": "model",
+    "name": "Aya 23 8B Q4",
+    "version": "1.2",
+    "description": "Aya 23 can talk upto 23 languages fluently.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 8192,
+      "prompt_template": "<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>{system_prompt}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|USER_TOKEN|>{prompt}<|END_OF_TURN_TOKEN|><|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>",
+      "llama_model_path": "aya-23-8B-Q4_K_M.gguf",
+      "ngl": 33
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 8192,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": ["<|END_OF_TURN_TOKEN|>"]
+    },
+    "metadata": {
+      "author": "CohereForAI",
+      "tags": ["7B", "Finetuned"],
+      "size": 5056982144
+    },
+    "engine": "llama-cpp"
+}

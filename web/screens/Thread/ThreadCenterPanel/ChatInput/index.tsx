@@ -191,7 +191,7 @@ const ChatInput = () => {
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
                       !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings.vision_model)
+                      !activeThread?.assistants[0].model.settings?.vision_model)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -216,7 +216,7 @@ const ChatInput = () => {
                   (activeThread?.assistants[0].tools &&
                     !activeThread?.assistants[0].tools[0]?.enabled &&
                     !activeThread?.assistants[0].model.settings
-                      .vision_model && (
+                      ?.vision_model && (
                       <>
                         {fileUpload.length !== 0 && (
                           <span>
@@ -257,13 +257,13 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.vision_model
+                      activeThread?.assistants[0].model.settings?.vision_model
                         ? 'cursor-pointer'
                         : 'cursor-not-allowed opacity-50'
                     )}
                     onClick={() => {
                       if (
-                        activeThread?.assistants[0].model.settings.vision_model
+                        activeThread?.assistants[0].model.settings?.vision_model
                       ) {
                         imageInputRef.current?.click()
                         setShowAttacmentMenus(false)
@@ -276,7 +276,7 @@ const ChatInput = () => {
                 }
                 content="This feature only supports multimodal models."
                 disabled={
-                  activeThread?.assistants[0].model.settings.vision_model
+                  activeThread?.assistants[0].model.settings?.vision_model
                 }
               />
               <Tooltip
@@ -285,7 +285,7 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.text_model ===
+                      activeThread?.assistants[0].model.settings?.text_model ===
                         false
                         ? 'cursor-not-allowed opacity-50'
                         : 'cursor-pointer'
@@ -293,7 +293,7 @@ const ChatInput = () => {
                     onClick={() => {
                       if (
                         activeThread?.assistants[0].model.settings
-                          .text_model !== false
+                          ?.text_model !== false
                       ) {
                         fileInputRef.current?.click()
                         setShowAttacmentMenus(false)
@@ -307,11 +307,11 @@ const ChatInput = () => {
                 content={
                   (!activeThread?.assistants[0].tools ||
                     !activeThread?.assistants[0].tools[0]?.enabled ||
-                    activeThread?.assistants[0].model.settings.text_model ===
+                    activeThread?.assistants[0].model.settings?.text_model ===
                       false) && (
                     <>
-                      {activeThread?.assistants[0].model.settings.text_model ===
-                      false ? (
+                      {activeThread?.assistants[0].model.settings
+                        ?.text_model === false ? (
                         <span>
                           This model does not support text-based retrieval.
                         </span>

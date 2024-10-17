@@ -8,6 +8,7 @@ import Extension from './Extension'
  * Manages the registration and retrieval of extensions.
  */
 export class ExtensionManager {
+  date = new Date().toISOString()
   // Registered extensions
   private extensions = new Map<string, BaseExtension>()
 

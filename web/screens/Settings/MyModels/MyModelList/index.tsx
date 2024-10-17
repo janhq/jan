@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 
-import { InferenceEngine, ModelFile } from '@janhq/core'
+import { InferenceEngine, Model } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import {
@@ -21,7 +21,7 @@ import { isLocalEngine } from '@/utils/modelEngine'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type Props = {
-  model: ModelFile
+  model: Model
   groupTitle?: string
 }
 
@@ -78,7 +78,7 @@ const MyModelList = ({ model }: Props) => {
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">
-                {toGibibytes(model.metadata.size)}
+                {toGibibytes(model.metadata?.size)}
               </Badge>
             </div>
 

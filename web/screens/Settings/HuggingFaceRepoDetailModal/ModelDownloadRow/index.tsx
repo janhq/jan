@@ -1,11 +1,6 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 
-import {
-  DownloadState,
-  HuggingFaceRepoData,
-  Model,
-  Quantization,
-} from '@janhq/core'
+import { DownloadState, HuggingFaceRepoData, Quantization } from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -24,10 +19,7 @@ import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
-import {
-  defaultModelAtom,
-  downloadedModelsAtom,
-} from '@/helpers/atoms/Model.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   index: number
@@ -39,7 +31,6 @@ type Props = {
 }
 
 const ModelDownloadRow: React.FC<Props> = ({
-  repoData,
   downloadUrl,
   fileName,
   fileSize = 0,
@@ -56,44 +47,18 @@ const ModelDownloadRow: React.FC<Props> = ({
   const downloadedModel = downloadedModels.find((md) => md.id === fileName)
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
-  const defaultModel = useAtomValue(defaultModelAtom)
-
-  const model = useMemo(() => {
-    if (!defaultModel) {
-      return undefined
-    }
-
-    const model: Model = {
-      ...defaultModel,
-      sources: [
-        {
-          url: downloadUrl,
-          filename: fileName,
-        },
-      ],
-      id: fileName,
-      name: fileName,
-      created: Date.now(),
-      metadata: {
-        author: 'User',
-        tags: repoData.tags,
-        size: fileSize,
-      },
-    }
-    return model
-  }, [fileName, fileSize, repoData, downloadUrl, defaultModel])
 
   const onAbortDownloadClick = useCallback(() => {
-    if (model) {
-      abortModelDownload(model)
+    if (downloadUrl) {
+      abortModelDownload(downloadUrl)
     }
-  }, [model, abortModelDownload])
+  }, [downloadUrl, abortModelDownload])
 
   const onDownloadClick = useCallback(async () => {
-    if (model) {
-      downloadModel(model)
+    if (downloadUrl) {
+      downloadModel(downloadUrl)
     }
-  }, [model, downloadModel])
+  }, [downloadUrl, downloadModel])
 
   const onUseModelClick = useCallback(async () => {
     if (assistants.length === 0) {
@@ -111,7 +76,7 @@ const ModelDownloadRow: React.FC<Props> = ({
     setHfImportingStage,
   ])
 
-  if (!model) {
+  if (!downloadUrl) {
     return null
   }
 
@@ -144,7 +109,7 @@ const ModelDownloadRow: React.FC<Props> = ({
           variant="soft"
           className="min-w-[98px]"
           onClick={onUseModelClick}
-          data-testid={`use-model-btn-${model.id}`}
+          data-testid={`use-model-btn-${downloadUrl}`}
         >
           Use
         </Button>

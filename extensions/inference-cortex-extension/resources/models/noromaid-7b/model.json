@@ -1,0 +1,35 @@
+{
+  "sources": [
+    {
+      "filename": "Noromaid-7B-0.4-DPO.q4_k_m.gguf",
+      "url": "https://huggingface.co/NeverSleep/Noromaid-7B-0.4-DPO-GGUF/resolve/main/Noromaid-7B-0.4-DPO.q4_k_m.gguf"
+    }
+  ],
+  "id": "noromaid-7b",
+  "object": "model",
+  "name": "Noromaid 7B Q4",
+  "version": "1.2",
+  "description": "The Noromaid 7b model is designed for role-playing with human-like behavior.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 32768,
+    "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+    "llama_model_path": "Noromaid-7B-0.4-DPO.q4_k_m.gguf",
+    "ngl": 33
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 32768,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "NeverSleep",
+    "tags": ["7B", "Finetuned"],
+    "size": 4370000000
+  },
+  "engine": "llama-cpp"
+}

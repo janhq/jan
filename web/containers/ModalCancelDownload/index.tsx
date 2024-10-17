@@ -30,7 +30,7 @@ const ModalCancelDownload = ({ model, isFromList }: Props) => {
   const onAbortDownloadClick = useCallback(() => {
     if (downloadState?.modelId) {
       const model = downloadingModels.find(
-        (model) => model.id === downloadState.modelId
+        (model) => model === downloadState.modelId
       )
       if (model) abortModelDownload(model)
     }

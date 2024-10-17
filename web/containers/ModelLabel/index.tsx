@@ -42,7 +42,7 @@ const ModelLabel = ({ metadata, compact }: Props) => {
     const availableRam =
       settings?.run_mode === 'gpu'
         ? availableVram * 1000000 // MB to bytes
-        : totalRam - usedRam + (activeModel?.metadata.size ?? 0)
+        : totalRam - usedRam + (activeModel?.metadata?.size ?? 0)
     if (minimumRamModel > totalRam) {
       return (
         <NotEnoughMemoryLabel
@@ -59,10 +59,10 @@ const ModelLabel = ({ metadata, compact }: Props) => {
     return null
   }
 
-  return metadata.tags.includes('Coming Soon') ? (
+  return metadata?.tags?.includes('Coming Soon') ? (
     <UnsupportedModel />
   ) : (
-    getLabel(metadata.size ?? 0)
+    getLabel(metadata?.size ?? 0)
   )
 }
 

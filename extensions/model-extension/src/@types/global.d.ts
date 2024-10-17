@@ -1,6 +1,5 @@
 export {}
 declare global {
-  declare const DEFAULT_MODEL: object
   declare const NODE: string
 
   interface Core {

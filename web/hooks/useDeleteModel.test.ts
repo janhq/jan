@@ -16,7 +16,7 @@ describe('useDeleteModel', () => {
   const mockModel: any = {
     id: 'test-model',
     name: 'Test Model',
-    // Add other required properties of ModelFile
+    // Add other required properties of Model
   }
 
   const mockDeleteModel = jest.fn()

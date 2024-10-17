@@ -1,0 +1,36 @@
+{
+    "sources": [
+      {
+        "filename": "Codestral-22B-v0.1-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Codestral-22B-v0.1-GGUF/resolve/main/Codestral-22B-v0.1-Q4_K_M.gguf"
+      }
+    ],
+    "id": "codestral-22b",
+    "object": "model",
+    "name": "Codestral 22B Q4",
+    "version": "1.1",
+    "description": "Latest model from MistralAI optimized for code generation tasks.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 32000,
+      "prompt_template": "{system_message} [INST] {prompt} [/INST]",
+      "llama_model_path": "Codestral-22B-v0.1-Q4_K_M.gguf",
+      "ngl": 57
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 32000,
+      "stop": ["<endofstring>, [/INST]"],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "MistralAI",
+      "tags": ["22B", "Finetuned", "Featured"],
+      "size": 13341237440
+    },
+    "engine": "llama-cpp"
+  }
+  
