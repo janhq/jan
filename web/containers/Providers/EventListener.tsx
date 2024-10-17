@@ -111,6 +111,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+      events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
       events.off(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
     }
   }, [
@@ -118,6 +119,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     onFileDownloadError,
     onFileDownloadSuccess,
     onFileUnzipSuccess,
+    onFileDownloadStopped,
   ])
 
   return (

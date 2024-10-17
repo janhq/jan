@@ -78,7 +78,7 @@ const MyModelList = ({ model }: Props) => {
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">
-                {toGibibytes(model.metadata?.size)}
+                {model.metadata?.size ? toGibibytes(model.metadata?.size) : '-'}
               </Badge>
             </div>
 

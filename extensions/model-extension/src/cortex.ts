@@ -1,9 +1,9 @@
 import PQueue from 'p-queue'
 import ky from 'ky'
 import {
-  DownloadEvent,
   events,
   Model,
+  ModelEvent,
   ModelRuntimeParams,
   ModelSettingParams,
 } from '@janhq/core'
@@ -39,6 +39,11 @@ export class CortexAPI implements ICortexAPI {
     this.subscribeToEvents()
   }
 
+  /**
+   * Fetches a model detail from cortex.cpp
+   * @param model
+   * @returns
+   */
   getModel(model: string): Promise<any> {
     return this.queue.add(() =>
       ky
@@ -48,6 +53,11 @@ export class CortexAPI implements ICortexAPI {
     )
   }
 
+  /**
+   * Fetches models list from cortex.cpp
+   * @param model
+   * @returns
+   */
   getModels(): Promise<Model[]> {
     return this.queue
       .add(() => ky.get(`${API_URL}/models`).json<ModelList>())
@@ -56,6 +66,11 @@ export class CortexAPI implements ICortexAPI {
       )
   }
 
+  /**
+   * Pulls a model from HuggingFace via cortex.cpp
+   * @param model
+   * @returns
+   */
   pullModel(model: string): Promise<void> {
     return this.queue.add(() =>
       ky
@@ -68,6 +83,11 @@ export class CortexAPI implements ICortexAPI {
     )
   }
 
+  /**
+   * Imports a model from a local path via cortex.cpp
+   * @param model
+   * @returns
+   */
   importModel(model: string, modelPath: string): Promise<void> {
     return this.queue.add(() =>
       ky
@@ -78,12 +98,22 @@ export class CortexAPI implements ICortexAPI {
     )
   }
 
+  /**
+   * Deletes a model from cortex.cpp
+   * @param model
+   * @returns
+   */
   deleteModel(model: string): Promise<void> {
     return this.queue.add(() =>
       ky.delete(`${API_URL}/models/${model}`).json().then()
     )
   }
 
+  /**
+   * Update a model in cortex.cpp
+   * @param model
+   * @returns
+   */
   updateModel(model: object): Promise<void> {
     return this.queue.add(() =>
       ky
@@ -92,6 +122,12 @@ export class CortexAPI implements ICortexAPI {
         .then()
     )
   }
+
+  /**
+   * Cancel model pull in cortex.cpp
+   * @param model
+   * @returns
+   */
   cancelModelPull(model: string): Promise<void> {
     return this.queue.add(() =>
       ky
@@ -101,6 +137,10 @@ export class CortexAPI implements ICortexAPI {
     )
   }
 
+  /**
+   * Do health check on cortex.cpp
+   * @returns
+   */
   healthz(): Promise<void> {
     return ky
       .get(`${API_URL}/healthz`, {
@@ -112,6 +152,9 @@ export class CortexAPI implements ICortexAPI {
       .then(() => {})
   }
 
+  /**
+   * Subscribe to cortex.cpp websocket events
+   */
   subscribeToEvents() {
     this.queue.add(
       () =>
@@ -140,12 +183,19 @@ export class CortexAPI implements ICortexAPI {
                 total: total,
               },
             })
+            // Update models list from Hub
+            events.emit(ModelEvent.OnModelsUpdate, {})
           })
           resolve()
         })
     )
   }
 
+  /**
+   * TRansform model to the expected format (e.g. parameters, settings, metadata)
+   * @param model
+   * @returns
+   */
   private transformModel(model: any) {
     model.parameters = setParameters<ModelRuntimeParams>(model)
     model.settings = setParameters<ModelSettingParams>(model)
