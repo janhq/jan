@@ -127,9 +127,10 @@ const LocalServerLeftPanel = () => {
               {serverEnabled ? 'Stop' : 'Start'} Server
             </Button>
             {serverEnabled && (
-              <Button variant="soft" asChild>
+              <Button variant="soft" asChild className="whitespace-nowrap">
                 <a href={`http://localhost:${port}`} target="_blank">
-                  API Playground <ExternalLinkIcon size={20} className="ml-2" />
+                  <span>API Playground</span>{' '}
+                  <ExternalLinkIcon size={20} className="ml-2" />
                 </a>
               </Button>
             )}

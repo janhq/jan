@@ -211,9 +211,6 @@ const Advanced = () => {
     saveSettings({ gpusInUse: updatedGpusInUse })
   }
 
-  const gpuSelectionPlaceHolder =
-    gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
-
   /**
    * Handle click outside
    */
@@ -240,7 +237,7 @@ const Advanced = () => {
         </div>
 
         {/* CPU / GPU switching */}
-        {!isMac && (
+        {!isMac && gpuList.length > 0 && (
           <div className="flex w-full flex-col items-start justify-between border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">
             <div className="flex w-full items-start justify-between">
               <div className="space-y-1">
@@ -326,7 +323,7 @@ const Advanced = () => {
                   value={selectedGpu.join() || ''}
                   className="w-full cursor-pointer"
                   readOnly
-                  placeholder={gpuSelectionPlaceHolder}
+                  placeholder=""
                   suffixIcon={
                     <ChevronDownIcon
                       size={14}

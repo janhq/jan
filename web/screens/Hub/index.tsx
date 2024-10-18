@@ -96,17 +96,19 @@ const HubScreen = () => {
           {!filteredModels.length ? (
             <BlankState title="No search results found" />
           ) : (
-            <div className="mb-4 flex w-full justify-end">
-              <Select
-                value={sortSelected}
-                onValueChange={(value) => {
-                  setSortSelected(value)
-                }}
-                options={sortMenus}
-              />
-            </div>
+            <>
+              <div className="mb-4 flex w-full justify-end">
+                <Select
+                  value={sortSelected}
+                  onValueChange={(value) => {
+                    setSortSelected(value)
+                  }}
+                  options={sortMenus}
+                />
+              </div>
+              <ModelList models={filteredModels} />
+            </>
           )}
-          <ModelList models={filteredModels} />
         </div>
       </ScrollArea>
     </CenterPanelContainer>
