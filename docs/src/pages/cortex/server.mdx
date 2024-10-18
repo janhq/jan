@@ -1,0 +1,47 @@
+---
+title: Command Line Interface
+description: Cortex CLI.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps, Cards, Card } from 'nextra/components'
+import OAICoverage from "@/components/OAICoverage"
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# Server Endpoint
+
+Cortex can run in headless server mode, providing an [OpenAI-API compatible](https://platform.openai.com/docs/api-reference/introduction) endpoint.
+
+## Usage
+
+```
+cortex serve
+```
+
+A full, local AI server will be started on port `7331` (customizable).
+
+## Playground
+
+You can open up an interactive playground at: http://localhost:1337/api, generated from Swagger.
+
+
+## OpenAI Coverage
+
+<OAICoverage endDate='06-21-2024' />

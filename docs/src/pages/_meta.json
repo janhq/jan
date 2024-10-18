@@ -1,0 +1,62 @@
+{
+  "index": {
+    "type": "page",
+    "title": "Homepage",
+    "display": "hidden",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "docs": {
+    "type": "page",
+    "title": "Documentation"
+  },
+  "cortex": {
+    "type": "page",
+    "title": "Cortex",
+    "display": "hidden"
+  },
+  "integrations": {
+    "type": "page",
+    "title": "Integrations",
+    "display": "hidden"
+  },
+  "changelog": {
+    "type": "page",
+    "title": "Changelog",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "about": {
+    "type": "page",
+    "title": "About"
+  },
+  "blog": {
+    "type": "page",
+    "title": "Blog",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "post": {
+    "type": "page",
+    "title": "Post Categories",
+    "display": "hidden"
+  },
+
+  "download": {
+    "type": "page",
+    "theme": {
+      "layout": "raw"
+    }
+  },
+  "privacy": {
+    "title": "Privacy",
+    "display": "hidden"
+  },
+  "support": {
+    "title": "Support",
+    "display": "hidden"
+  }
+}

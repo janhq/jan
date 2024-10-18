@@ -1,0 +1,35 @@
+---
+title: Models
+description: Jan is a ChatGPT-alternative that runs on your computer, with a local API server.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Hardware Setup,
+    GPU,
+  ]
+---
+
+import { Cards, Card } from 'nextra/components'
+import childPages from './models/_meta.json';
+
+# Models
+
+<br/>
+
+<Cards
+  children={Object.keys(childPages).map((key, i) => (
+    <Card
+      key={i}
+      title={childPages[key].title}
+      href={childPages[key].href}
+    />
+  ))}
+/>

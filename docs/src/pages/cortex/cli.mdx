@@ -1,0 +1,54 @@
+---
+title: Command Line Interface
+description: Cortex CLI.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# Cortex
+
+Cortex is a CLI tool used to interact with the Jan application and its various functions.
+
+<Callout type="info">
+Cortex CLI is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Usage
+
+```bash
+cortex [command] [flag]
+```
+### Options
+```
+  -v, --version    Cortex version (default: false)
+  -h, --help       display help for command
+```
+## Sub Commands
+-  [cortex models](/cortex/cli/models): Manage and configure models.
+-  [cortex serve](/cortex/cli/serve): Launch an API endpoint server for the Cortex backend.
+-  [cortex chat](/cortex/cli/chat): Send a chat request to a model.
+-  [cortex init|setup](/cortex/cli/init): Initialize settings and download dependencies for Cortex.
+-  [cortex ps](/cortex/cli/ps): Display active models and their operational status.
+-  [cortex kill](/cortex/cli/kill): Terminate active Cortex processes.
+-  [cortex pull|download](/cortex/cli/pull): Download a model.
+-  [cortex run](/cortex/cli/run): Shortcut to start a model and chat **(EXPERIMENTAL)**.

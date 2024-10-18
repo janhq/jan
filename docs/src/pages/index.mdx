@@ -1,0 +1,41 @@
+---
+title: "Jan: Open source ChatGPT-alternative that runs 100% offline"
+description: "Chat with AI without privact concerns. Jan is an open-source alternative to ChatGPT, running AI models locally on your device."
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    architecture,
+  ]
+---
+
+import Home from "@/components/Home"
+
+export const getStaticProps = async() => {
+  const resReleaseLatest = await fetch('https://api.github.com/repos/janhq/jan/releases/latest')  
+  const resRelease = await fetch('https://api.github.com/repos/janhq/jan/releases')  
+  const resRepo = await fetch('https://api.github.com/repos/janhq/jan')
+  const repo = await resRepo.json()
+  const latestRelease = await resReleaseLatest.json()
+  const release = await resRelease.json()
+
+  return {
+    props: {
+      ssg: {
+        stars: repo.stargazers_count || 2000,
+        lastRelease: latestRelease,
+        release: release,
+        lastVersion: latestRelease.tag_name || 'v.0.0.1'
+      },
+    },
+  }
+}
+
+<Home />

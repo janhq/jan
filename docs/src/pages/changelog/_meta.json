@@ -1,0 +1,8 @@
+{
+  "*": {
+    "type": "page",
+    "theme": {
+      "layout": "default"
+    }
+  }
+}

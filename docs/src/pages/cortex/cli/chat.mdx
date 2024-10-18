@@ -1,0 +1,47 @@
+---
+title: Cortex Chat
+description: Cortex chat command.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# `cortex chat`
+
+This command starts a chat session with a specified model, allowing you to interact directly with it through an interactive chat interface.
+
+<Callout type="info">
+This command is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Usage
+
+```bash
+cortex chat --model MODEL_ID
+```
+### Options
+```
+  -t, --thread <thread_id>  Thread Id. If not provided, will create new thread
+  -m, --message <message>   Message to send to the model
+  -a, --attach              Attach to interactive chat session (default: false)
+  -h, --help                display help for command
+```

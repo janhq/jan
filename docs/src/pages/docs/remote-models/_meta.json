@@ -1,0 +1,38 @@
+{
+  "openai": {
+    "title": "OpenAI API",
+    "href": "/docs/remote-models/openai"
+  },
+  "azure": {
+    "title": "Azure OpenAI API",
+    "href": "/docs/remote-models/azure",
+    "display": "hidden"
+  },
+  "groq": { "title": "Groq API", "href": "/docs/remote-models/groq" },
+  "mistralai": {
+    "title": "Mistral AI API",
+    "href": "/docs/remote-models/mistralai"
+  },
+  "openrouter": { "title": "OpenRouter", "href": "/docs/remote-models/openrouter" },
+  "generic-openai": { "title": "Any OpenAI Compatible API", "href": "/docs/remote-models/generic-openai", "display": "hidden"},
+  "martian": {
+    "title": "Martian API",
+    "href": "/docs/remote-models/martian"
+  },
+  "cohere": {
+    "title": "Cohere API",
+    "href": "/docs/remote-models/cohere"
+  },
+  "anthropic": {
+    "title": "Anthropic API",
+    "href": "/docs/remote-models/anthropic"
+  },
+  "nvidia-nim": {
+    "title": "NVIDIA NIM API",
+    "href": "/docs/remote-models/nvidia-nim"
+  },
+  "triton": {
+    "title": "Triton-TRT-LLM",
+    "href": "/docs/remote-models/triton"
+  }
+}

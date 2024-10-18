@@ -1,0 +1,120 @@
+---
+title: Desktop installation
+description: Get started quickly with Jan, a ChatGPT-alternative that runs on your own computer, with a local API server. Learn how to install Jan and select an AI model to start chatting.
+sidebar_position: 2
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+  ]
+---
+
+import { Tabs } from 'nextra/components'
+import { Callout, Steps } from 'nextra/components'
+
+
+# Quickstart
+<Steps>
+
+### Step 1: Install Jan
+You can run Jan either on your desktop using the Jan desktop app or on a server by installing the Jan server. To get started, check out the [Desktop](/docs/desktop) installation pages.
+
+Once you have installed Jan, you should see the Jan application as shown below without any local model installed:
+<br/>
+
+![Default State](./_assets/default.gif)
+
+<br/>
+
+### Step 2: Turn on the GPU Acceleration (Optional)
+If you have a graphics card, boost model performance by enabling GPU acceleration:
+1. Open Jan application.
+2. Go to **Settings** -> **Advanced Settings** -> **GPU Acceleration**.
+3. Click the Slider and choose your preferred GPU.
+3. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated.
+<Callout type="info">
+Ensure you have installed your GPU driver. Please see [Desktop](/docs/desktop) for more information on activating the GPU acceleration.
+</Callout>
+<br/>
+
+![Turn on GPU acceleration](./_assets/gpu2.gif)
+
+### Step 3: Download a Model
+
+Jan offers various local AI models tailored to different needs, all ready for download directly to your device:
+
+1. Go to the **Hub**.
+2. Select the models that you would like to install. To see model details, click the model name.
+3. You can also paste the Hugging Face model's **ID** or **URL** in the search bar.
+<Callout type="info">
+Ensure you select the appropriate model size by balancing performance, cost, and resource considerations in line with your task's specific requirements and hardware specifications.
+</Callout>
+4. Click the **Download** button.
+<br/>
+
+![Download a Model](./_assets/download-model2.gif)
+
+<br/>
+
+5. Go to the **Thread** tab.
+6. Click the **Model** tab button.
+7. Choose either **On-device** or **Cloud** section.
+8. Adjust the configurations as needed.
+   <Callout type="info">
+    Please see [Model Parameters](/docs/models#model-parameters) for detailed model configuration.
+   </Callout>
+
+<br/>
+
+![Parameters](./_assets/inf.gif)
+
+
+### Step 4: Customize the Assistant Instruction
+Customize Jan's assistant behavior by specifying queries, commands, or requests in the Assistant Instructions field to get the most responses from your assistant. To customize, follow the steps below:
+1. On the **Thread** section, navigate to the right panel.
+2. Select the **Assistant** tab menu.
+3. Provide a specific guideline under the **Instructions** field.
+<br/>
+
+![Assistant Instruction](./_assets/asst.gif)
+
+<br/>
+### Step 5: Start Thread
+
+Once you have downloaded a model and customized your assistant instruction, you can start chatting with the model.
+
+<br/>
+
+![Chat with a Model](./_assets/chat.gif)
+
+<br/>
+
+### Step 6: Connect to a Remote API
+Jan also offers access to remote models hosted on external servers. You can link up with any Remote AI APIs compatible with OpenAI. Jan comes with numerous extensions that facilitate connections to various remote AI APIs. To explore and connect to Remote APIs, follow these steps:
+1. On the **Thread** section, navigate to the right panel.
+2. Select the **Model** tab menu.
+3. Next to the **OpenAI** models -> click the **Gear Icon (⚙️)**.
+4. Enter your OpenAI API **Keys**.
+
+<br/>
+
+![Connect Remote API](./_assets/server-openai2.gif)
+
+<br/>
+</Steps>
+
+## What's Next?
+Now that Jan is up and running, explore further:
+1. Learn how to download and manage your [models](/docs/models).
+2. Customize Jan's [application settings](/docs/settings) according to your preferences.

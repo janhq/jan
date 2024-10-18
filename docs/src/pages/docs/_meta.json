@@ -1,0 +1,44 @@
+{
+  "-- Switcher": {
+    "type": "separator",
+    "title": "Switcher"
+  },
+  "get-started": {
+    "title": "GET STARTED",
+    "type": "separator"
+  },
+  "index": "Overview",
+  "quickstart": {
+    "title": "Quickstart"
+  },
+  "desktop": "Desktop",
+  "data-folder": "Jan Data Folder",
+  "user-guides": {
+    "title": "BASIC USAGE",
+    "type": "separator"
+  },
+  "models": "Models",
+  "tools": "Tools",
+  "assistants": "Assistants",
+  "threads": "Threads",
+  "settings": "Settings",
+  "shortcuts": "Keyboard Shortcuts",
+  "inference-engines": {
+    "title": "MODEL PROVIDER",
+    "type": "separator"
+  },
+  "built-in": "Built-in Models",
+  "remote-models": "Remote APIs",
+  "extensions-separator": {
+    "title": "EXTENSIONS",
+    "type": "separator"
+  },
+  "extensions": "Overview",
+  "installing-extension": "Installing an Extension",
+  "troubleshooting-separator": {
+    "title": "TROUBLESHOOTING",
+    "type": "separator"
+  },
+  "troubleshooting": "Troubleshooting",
+  "error-codes": "Error Codes"
+}

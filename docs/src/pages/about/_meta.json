@@ -1,0 +1,29 @@
+{
+  "about-separator": {
+    "title": "About Us",
+    "type": "separator"
+  },
+  "index": "About",
+  "vision": {
+    "title": "Vision",
+    "display": "hidden"
+  },
+  "team": "Team",
+  "investors": "Investors",
+  "wall-of-love": {
+    "theme": {
+      "toc": false,
+      "layout": "full"
+    }
+  },
+  "acknowledgements": {
+    "display": "hidden"
+  },
+  "handbook-separator": {
+    "title": "Handbook",
+    "display": "hidden"
+  },
+  "handbook": {
+    "display": "hidden"
+  }
+}

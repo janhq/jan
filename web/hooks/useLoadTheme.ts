@@ -18,7 +18,7 @@ import {
 
 type NativeThemeProps = 'light' | 'dark'
 
-export const useLoadTheme = async () => {
+export const useLoadTheme = () => {
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const setThemeOptions = useSetAtom(themesOptionsAtom)
   const setThemePath = useSetAtom(janThemesPathAtom)

@@ -19,8 +19,8 @@ const config = {
   runner: './testRunner.js',
   collectCoverageFrom: ['./**/*.{ts,tsx}'],
   transform: {
-    "^.+\\.tsx?$": [
-      "ts-jest",
+    '^.+\\.tsx?$': [
+      'ts-jest',
       {
         diagnostics: false,
       },

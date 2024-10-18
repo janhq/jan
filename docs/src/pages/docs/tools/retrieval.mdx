@@ -1,0 +1,61 @@
+---
+title: Knowledge Retrieval
+description: A step-by-step guide to chat with PDF documents.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    use tools,
+    rag,
+    retrieval,
+    chat with pdf,
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components' 
+
+# Knowledge Retrieval
+This article lists the capabilities of the Jan platform and guides you through using RAG to chat with PDF documents.
+<Callout type="warning">
+To access this feature, please enable Experimental mode in the [Advanced Settings](/guides/advanced/#enable-the-experimental-mode).
+</Callout>
+
+## Enable the Knowledge Retrieval
+
+To chat with PDFs using RAG in Jan, follow these steps:
+
+1. Create a **new thread**.
+2. Click the **Tools** tab.
+<br/>
+![Retrieval](../_assets/tools.png)
+<br/>
+3. Enable the **Retrieval**.
+<br/>
+![Retrieval](../_assets/retrieval1.png)
+<br/>
+4. Adjust the **Retrieval** settings as needed. These settings include the following:
+
+| Feature               | Description                                                                                                                                                   |
+|-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Retrieval**         | - Utilizes information from uploaded files, automatically retrieving content relevant to your queries for enhanced interaction.<br></br>- Use this for complex inquiries where context from uploaded documents significantly enhances response quality.                                  |
+| **Embedding Model**   | - Converts text into numerical representations for machine understanding.<br></br>- Choose a model based on your needs and available resources, balancing accuracy and computational efficiency.              |
+| **Vector Database**   | - Facilitates quick searches through stored numerical text representations to find relevant information efficiently.<br></br>- Optimize your vector database settings to ensure quick retrieval without sacrificing accuracy, particularly in applications with large data sets.                                           |
+| **Top K**             | - Determines the number of top-ranked documents to retrieve, allowing control over search result relevance.<br></br>- Adjust this setting based on the precision needed. A lower value for more precise, focused searches and a higher value for broader, more comprehensive searches.                                                     |
+| **Chunk Size**        | - Sets the maximum number of tokens per data chunk, which is crucial for managing processing load and maintaining performance.<br></br>- Increase the chunk size for processing large blocks of text efficiently, or decrease it when dealing with smaller, more manageable texts to optimize memory usage.                                           |
+| **Chunk Overlap**     | - Specifies the overlap in tokens between adjacent chunks to ensure continuous context in split text segments.<br></br>- Adjust the overlap to ensure smooth transitions in text analysis, with higher overlap for complex texts where context is critical.                                                  |
+| **Retrieval Template**| - Defines the query structure using variables like `{CONTEXT}` and `{QUESTION}` to tailor searches to specific needs.<br></br>- Customize templates to closely align with your data's structure and the queries' nature, ensuring that retrievals are as relevant as possible.                                               |
+5. Select the model you want to use.
+<Callout type="info">
+To upload an image or GIF, ensure that you are using a multimodal model. If not, you are limited to uploading documents only.
+</Callout>
+6. Click on the 📎 icon in the chat input field.
+7. Select **Document** to upload a document file.
+<br/>
+![Retrieval](../_assets/retrieval2.png)

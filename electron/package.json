@@ -77,7 +77,7 @@
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
-    "test:e2e": "playwright test --workers=1",
+    "test:e2e": "xvfb-maybe -- playwright test --workers=1",
     "copy:assets": "rimraf --glob \"./pre-install/*.tgz\" && cpx \"../pre-install/*.tgz\" \"./pre-install\"",
     "dev": "yarn copy:assets && tsc -p . && electron .",
     "compile": "tsc -p .",
@@ -128,7 +128,8 @@
     "rimraf": "^5.0.5",
     "run-script-os": "^1.1.6",
     "typescript": "^5.3.3",
-    "@reportportal/agent-js-playwright": "^5.1.7"
+    "@reportportal/agent-js-playwright": "^5.1.7",
+    "xvfb-maybe": "^0.2.1"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"

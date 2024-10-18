@@ -1,0 +1,166 @@
+.embla {
+  overflow: hidden;
+}
+.embla__container {
+  display: flex;
+  align-items: flex-start;
+}
+.embla__slide {
+  flex: 0 0 100%;
+}
+
+.react-tweet-theme {
+  --tweet-container-margin: 1.5rem 0;
+  --tweet-header-font-size: 0.9375rem;
+  --tweet-header-line-height: 1.25rem;
+  --tweet-body-font-size: 1.25rem;
+  --tweet-body-font-weight: 400;
+  --tweet-body-line-height: 1.5rem;
+  --tweet-body-margin: 0;
+  --tweet-quoted-container-margin: 0.75rem 0;
+  --tweet-quoted-body-font-size: 0.938rem;
+  --tweet-quoted-body-font-weight: 400;
+  --tweet-quoted-body-line-height: 1.25rem;
+  --tweet-quoted-body-margin: 0.25rem 0 0.75rem 0;
+  --tweet-info-font-size: 0.9375rem;
+  --tweet-info-line-height: 1.25rem;
+  --tweet-actions-font-size: 0.875rem;
+  --tweet-actions-line-height: 1rem;
+  --tweet-actions-font-weight: 700;
+  --tweet-actions-icon-size: 1.25em;
+  --tweet-actions-icon-wrapper-size: calc(
+    var(--tweet-actions-icon-size) + 0.75em
+  );
+  --tweet-replies-font-size: 0.875rem;
+  --tweet-replies-line-height: 1rem;
+  --tweet-replies-font-weight: 700;
+}
+
+.light {
+  .react-tweet-theme {
+    --tweet-skeleton-gradient: linear-gradient(
+      270deg,
+      #fafafa,
+      #eaeaea,
+      #eaeaea,
+      #fafafa
+    );
+    --tweet-border: 1px solid #cfd9de;
+    --tweet-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      Helvetica, Arial, sans-serif;
+    --tweet-font-color: #0f1419;
+    --tweet-font-color-secondary: #536471;
+    --tweet-bg-color: #fff;
+    --tweet-bg-color-hover: #f7f9f9;
+    --tweet-quoted-bg-color-hover: rgba(0, 0, 0, 0.03);
+    --tweet-color-blue-primary: #1d9bf0;
+    --tweet-color-blue-primary-hover: #1a8cd8;
+    --tweet-color-blue-secondary: #006fd6;
+    --tweet-color-blue-secondary-hover: rgba(0, 111, 214, 0.1);
+    --tweet-color-red-primary: #f91880;
+    --tweet-color-red-primary-hover: rgba(249, 24, 128, 0.1);
+    --tweet-color-green-primary: #00ba7c;
+    --tweet-color-green-primary-hover: rgba(0, 186, 124, 0.1);
+    --tweet-twitter-icon-color: var(--tweet-font-color);
+    --tweet-verified-old-color: #829aab;
+    --tweet-verified-blue-color: var(--tweet-color-blue-primary);
+  }
+}
+
+.dark {
+  .react-tweet-theme {
+    --tweet-skeleton-gradient: linear-gradient(
+      270deg,
+      #15202b,
+      #1e2732,
+      #1e2732,
+      #15202b
+    );
+    --tweet-border: 1px solid #425364;
+    --tweet-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      Helvetica, Arial, sans-serif;
+    --tweet-font-color: #f7f9f9;
+    --tweet-font-color-secondary: #8b98a5;
+    --tweet-bg-color: #333333;
+    --tweet-bg-color-hover: #1e2732;
+    --tweet-quoted-bg-color-hover: hsla(0, 0%, 100%, 0.03);
+    --tweet-color-blue-primary: #1d9bf0;
+    --tweet-color-blue-primary-hover: #1a8cd8;
+    --tweet-color-blue-secondary: #6bc9fb;
+    --tweet-color-blue-secondary-hover: rgba(107, 201, 251, 0.1);
+    --tweet-color-red-primary: #f91880;
+    --tweet-color-red-primary-hover: rgba(249, 24, 128, 0.1);
+    --tweet-color-green-primary: #00ba7c;
+    --tweet-color-green-primary-hover: rgba(0, 186, 124, 0.1);
+    --tweet-twitter-icon-color: var(--tweet-font-color);
+    --tweet-verified-old-color: #829aab;
+    --tweet-verified-blue-color: #fff;
+  }
+}
+
+.tweet-wrapper {
+  font-size: 14px;
+  [class*='tweet-container_root__'] {
+    max-width: none;
+  }
+  [class*='actions_'] {
+    display: none;
+  }
+  [class*='authorFollow_'] {
+    display: none;
+  }
+  [class*='tweet-info_info__'] {
+    display: none;
+  }
+  [class*='tweet-body_root__'] {
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+  [class*='tweet-media_root__'] {
+    margin-bottom: 10px;
+  }
+  [class*='tweet-header_brand__'] {
+    display: none;
+  }
+}
+
+.embla__controls {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+}
+.embla__buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+}
+.embla__button {
+  -webkit-tap-highlight-color: rgba(var(--text-high-contrast-rgb-value), 0.5);
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: transparent;
+  touch-action: manipulation;
+  display: inline-flex;
+  text-decoration: none;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  box-shadow: inset 0 0 0 0.2rem var(--detail-medium-contrast);
+  width: 3rem;
+  height: 3rem;
+  z-index: 1;
+  border-radius: 24%;
+  color: var(--text-body);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  @apply border dark:border-gray-600 border-neutral-800;
+}
+.embla__button:disabled {
+  color: var(--detail-high-contrast);
+}
+.embla__button__svg {
+  width: 24%;
+  height: 24%;
+}

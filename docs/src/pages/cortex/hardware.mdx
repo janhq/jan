@@ -1,0 +1,50 @@
+---
+title: Hardware Requirements
+description: Get started quickly with Jan, a ChatGPT-alternative that runs on your own computer, with a local API server. Learn how to install Jan and select an AI model to start chatting.
+sidebar_position: 2
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+  ]
+---
+
+import { Tabs } from 'nextra/components'
+import { Callout, Steps } from 'nextra/components'
+
+# Hardware Requirements
+
+To run LLMs on device, Cortex has the following hardware requirements:
+<Callout type="info">
+These are the general hardware requirements for running Cortex on your system. Please refer to the respective [installation](/cortex/installation) sections for detailed specifications tailored to each environment.
+
+</Callout>
+
+## OS
+- MacOSX 13.6 or higher.
+- Windows 10 or higher.
+- Ubuntu 12.04 and later.
+
+## RAM (CPU Mode)
+- 8GB for running up to 3B models.
+- 16GB for running up to 7B models.
+- 32GB for running up to 13B models.
+
+## VRAM (GPU Mode)
+- 6GB can load the 3B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
+- 8GB can load the 7B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
+- 12GB can load the 13B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
+
+## Disk Space
+- 10GB: The app is 1.02 MB, but models are usually 4GB+

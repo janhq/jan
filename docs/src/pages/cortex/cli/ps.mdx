@@ -1,0 +1,48 @@
+---
+title: Cortex Ps
+description: Cortex ps command.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# `cortex ps`
+
+This command shows the running model and its status.
+
+<Callout type="info">
+This command is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Usage
+
+```bash
+cortex ps
+```
+For example, it returns the following table:
+```bash
+┌─────────┬──────────────────────┬───────────────────┬───────────┬──────────┬─────┬──────┐
+│ (index) │ modelId              │ engine            │ status    │ duration │ ram │ vram │
+├─────────┼──────────────────────┼───────────────────┼───────────┼──────────┼─────┼──────┤
+│ 0       │ 'janhq/tinyllama/1b' │ 'cortex.llamacpp' │ 'running' │ '7s'     │ '-' │ '-'  │
+└─────────┴──────────────────────┴───────────────────┴───────────┴──────────┴─────┴──────┘
+```
