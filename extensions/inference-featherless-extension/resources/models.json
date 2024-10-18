@@ -1,0 +1,28 @@
+  [
+  {
+    "sources": [
+      {
+        "url": "https://featherless.ai"
+      }
+    ],
+    "id": "featherless-auto",
+    "object": "model",
+    "name": "Featherless",
+    "version": "1.0",
+    "description": "Featherless lets you access all of huggingfaces models through their api",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 1024,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Featherless",
+      "tags": ["General", "Big Context Length"]
+    },
+    "engine": "Featherless"
+  }
+]

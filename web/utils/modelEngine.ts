@@ -27,6 +27,8 @@ export const getLogoEngine = (engine: InferenceEngine) => {
       return 'images/ModelProvider/cohere.svg'
     case InferenceEngine.nvidia:
       return 'images/ModelProvider/nvidia.svg'
+    case InferenceEngine.featherless:
+      return 'images/ModelProvider/featherless.svg'
     default:
       return undefined
   }
@@ -62,6 +64,8 @@ export const getTitleByEngine = (engine: InferenceEngine) => {
       return 'OpenAI'
     case InferenceEngine.openrouter:
       return 'OpenRouter'
+    case InferenceEngine.featherless:
+      return 'Featherless'
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1)
   }
