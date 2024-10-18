@@ -66,7 +66,11 @@ jobs:
 
   test-on-macos:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, macOS, macos-desktop]
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: ['macos-latest', 'macos-13']
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -78,40 +82,19 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
-      - name: Get Commit Message for PR
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}})" >> $GITHUB_ENV
-
-      - name: Get Commit Message for push event
-        if: github.event_name == 'push'
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}})" >> $GITHUB_ENV
-
-      - name: 'Config report portal'
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App macos" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
-
       - name: Linter and test
         run: |
-          npm config set registry ${{ secrets.NPM_PROXY }} --global
-          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # TURBO_API: '${{ secrets.TURBO_API }}'
-          # TURBO_TEAM: 'macos'
-          # TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-macos-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: [self-hosted, macOS, macos-desktop]
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runs-on: ['macos-latest', 'macos-13']
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -123,16 +106,8 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Linter and test
         run: |
-          npm config set registry https://registry.npmjs.org --global
-          yarn config set registry https://registry.npmjs.org --global
           make test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -168,30 +143,16 @@ jobs:
           }
           make clean
 
-      - name: Get Commit Message for push event
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
-
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows ${{ matrix.antivirus-tools }}" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
-
       - name: Linter and test
         shell: powershell
         run: |
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'windows'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
+
   test-on-windows-pr:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: windows-desktop-default-windows-security
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -203,44 +164,14 @@ jobs:
         with:
           node-version: 20
 
-      # Clean cache, continue on error
-      - name: 'Cleanup cache'
-        shell: powershell
-        continue-on-error: true
-        run: |
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
-          make clean
-
-      - name: Get Commit Message for PR
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}}" >> $GITHUB_ENV
-
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
-
       - name: Linter and test
         shell: powershell
         run: |
-          npm config set registry ${{ secrets.NPM_PROXY }} --global
-          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'windows'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-windows-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: windows-desktop-default-windows-security
+    runs-on: windows-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -252,28 +183,13 @@ jobs:
         with:
           node-version: 20
 
-      # Clean cache, continue on error
-      - name: 'Cleanup cache'
-        shell: powershell
-        continue-on-error: true
-        run: |
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
-          make clean
-
       - name: Linter and test
         shell: powershell
         run: |
-          npm config set registry https://registry.npmjs.org --global
-          yarn config set registry https://registry.npmjs.org --global
           make test
 
   test-on-ubuntu:
-    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
@@ -286,41 +202,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
-      - name: Get Commit Message for PR
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}}" >> $GITHUB_ENV
-
-      - name: Get Commit Message for push event
-        if: github.event_name == 'push'
-        run: |
-          echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
-
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Linux" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
-
       - name: Linter and test
         run: |
-          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
-          echo -e "Display ID: $DISPLAY"
-          npm config set registry ${{ secrets.NPM_PROXY }} --global
-          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'linux'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   coverage-check:
-    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    runs-on: ubuntu-latest
     needs: base_branch_cov
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
@@ -334,12 +221,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Download code coverage report from base branch
         uses: actions/download-artifact@v4
         with:
@@ -347,17 +228,9 @@ jobs:
 
       - name: Linter and test coverage
         run: |
-          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
-          echo -e "Display ID: $DISPLAY"
-          npm config set registry ${{ secrets.NPM_PROXY }} --global
-          yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make lint
           yarn build:test
           yarn test:coverage
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'linux'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
       - name: Generate Code Coverage report
         id: code-coverage
@@ -370,7 +243,7 @@ jobs:
           show-annotations: 'warning'
 
   test-on-ubuntu-pr-target:
-    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - name: Getting the repo
@@ -383,16 +256,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Linter and test
         run: |
-          export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
-          echo -e "Display ID: $DISPLAY"
-          npm config set registry https://registry.npmjs.org --global
-          yarn config set registry https://registry.npmjs.org --global
           make test
