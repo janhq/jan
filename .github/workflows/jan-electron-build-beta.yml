@@ -1,0 +1,136 @@
+name: Electron Builder - Beta Build
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+-beta"]
+
+jobs:
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  create-draft-release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    permissions:
+      contents: write
+    steps:
+      - name: Extract tag name without v prefix
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
+        env:
+          GITHUB_REF: ${{ github.ref }}
+      - name: Create Draft Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "${{ env.VERSION }}"
+          draft: true
+          prerelease: false
+          generate_release_notes: true
+
+  build-macos-x64:
+    uses: ./.github/workflows/template-build-macos-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+
+  build-macos-arm64:
+    uses: ./.github/workflows/template-build-macos-arm64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+
+  build-linux-x64:
+    uses: ./.github/workflows/template-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+
+  combine-beta-mac-yml:
+    needs: [build-macos-x64, build-macos-arm64, create-draft-release, build-windows-x64, build-linux-x64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: Download mac-x64 artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: beta-mac-x64
+          path: ./beta-mac-x64
+      - name: Download mac-arm artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: beta-mac-arm64
+          path: ./beta-mac-arm64
+
+      - name: 'Merge beta-mac.yml'
+        # unfortunately electron-builder doesn't understand that we have two different releases for mac-x64 and mac-arm, so we need to manually merge the latest files
+        # see https://github.com/electron-userland/electron-builder/issues/5592
+        run: |
+          ls -la .
+          ls -la ./beta-mac-x64
+          ls -la ./beta-mac-arm64
+          ls -la ./electron
+          cp ./electron/merge-latest-ymls.js /tmp/merge-beta-ymls.js
+          npm install js-yaml --prefix /tmp
+          node /tmp/merge-beta-ymls.js ./beta-mac-x64/beta-mac.yml ./beta-mac-arm64/beta-mac.yml ./beta-mac.yml
+          cat ./beta-mac.yml
+      
+      - name: Yet Another Upload Release Asset Action  
+        uses: shogo82148/actions-upload-release-asset@v1.7.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./beta-mac.yml
+          asset_name: beta-mac.yml
+          asset_content_type: text/yaml
+          overwrite: true
+
+      - name: Upload beta-mac.yml
+        run: |
+          aws s3 cp ./beta-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/beta-mac.yml"
+          # sync temp-beta to beta by copy files that are different or new
+          aws s3 sync "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/" "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/beta/"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+
+      - name: set release to prerelease
+        run: |
+          gh release edit v${{ needs.create-draft-release.outputs.version }} --draft=false --prerelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: '/latest/'
+      beta:
+        required: false
+        type: boolean
+        default: false
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -56,17 +60,29 @@ jobs:
           mv /tmp/package.json electron/package.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
-          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "${{ inputs.aws_s3_prefix }}", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-latest", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          cat electron/package.json
+
+      - name: Change App Name for beta version
+        if: inputs.beta == true
+        shell: bash
+        run: |
+          chmod +x .github/scripts/rename-app-beta.sh
+          .github/scripts/rename-app-beta.sh ./electron/package.json
+          chmod +x .github/scripts/rename-workspace-beta.sh
+          .github/scripts/rename-workspace-beta.sh ./package.json
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
+          cat ./package.json
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "github", "owner": "janhq", "repo": "jan", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
 
       - name: Update app version base on tag
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
         run: |
-          if [[ ! "${VERSION_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: Tag is not valid!"
-            exit 1
-          fi
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
@@ -92,13 +108,24 @@ jobs:
           AWS_MAX_ATTEMPTS: "5"
 
       - name: Build and publish app to github
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
         run: |
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
+
+      - name: Build and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_MAX_ATTEMPTS: "5"
 
       - name: Upload Artifact .deb file
         if: inputs.public_provider != 'github'
