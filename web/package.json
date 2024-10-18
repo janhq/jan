@@ -52,7 +52,8 @@
     "uuid": "^9.0.1",
     "zod": "^3.22.4",
     "slate": "latest",
-    "slate-react": "latest"
+    "slate-react": "latest",
+    "slate-history": "latest"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.0.1",

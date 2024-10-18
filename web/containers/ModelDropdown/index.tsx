@@ -306,7 +306,7 @@ const ModelDropdown = ({
       className={twMerge('relative', disabled && 'pointer-events-none')}
       data-testid="model-selector"
     >
-      <div ref={setToggle}>
+      <div className="flex" ref={setToggle}>
         {chatInputMode ? (
           <Badge
             data-testid="model-selector-badge"

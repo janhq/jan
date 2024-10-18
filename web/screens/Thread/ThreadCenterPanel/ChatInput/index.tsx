@@ -29,7 +29,7 @@ import { isLocalEngine } from '@/utils/modelEngine'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
-import CodeEditor from './CodeEditor'
+import RichEditor from './RichEditor'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
@@ -166,11 +166,24 @@ const ChatInput = () => {
       <div className="relative flex w-full flex-col">
         {renderPreview(fileUpload)}
 
-        <CodeEditor />
-
-        <TextArea
+        <RichEditor
           className={twMerge(
-            'relative max-h-[400px] resize-none  pr-20',
+            'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
+            'focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0',
+            'overflow-y-auto',
+            fileUpload.length && 'rounded-t-none',
+            experimentalFeature && 'pl-10',
+            activeSettingInputBox && 'pb-14 pr-16'
+          )}
+          spellCheck={spellCheck}
+          style={{ height: activeSettingInputBox ? '98px' : '44px' }}
+          placeholder="Ask me anything"
+          disabled={stateModel.loading || !activeThread}
+        />
+
+        {/* <TextArea
+          className={twMerge(
+            'relative max-h-[400px] resize-none pr-20',
             fileUpload.length && 'rounded-t-none',
             experimentalFeature && 'pl-10',
             activeSettingInputBox && 'pb-14 pr-16'
@@ -184,7 +197,8 @@ const ChatInput = () => {
           disabled={stateModel.loading || !activeThread}
           value={currentPrompt}
           onChange={onPromptChange}
-        />
+        /> */}
+
         {experimentalFeature && (
           <Tooltip
             trigger={
