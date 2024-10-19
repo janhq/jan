@@ -399,36 +399,5 @@
       ]
     },
     "engine": "groq"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://groq.com"
-      }
-    ],
-    "id": "distil-whisper-large-v3-en",
-    "object": "model",
-    "name": "Groq distil-whisper-large-v3-en",
-    "version": "1.2",
-    "description": "Groq distil-whisper-large-v3-en Model from HuggingFace",
-    "format": "api",
-    "settings": {},
-    "parameters": {
-      "max_tokens": 32768,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
-    },
-    "metadata": {
-      "author": "HuggingFace",
-      "tags": [
-        "General",
-        "Big Context Length"
-      ]
-    },
-    "engine": "groq"
   }
 ]
