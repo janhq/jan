@@ -423,7 +423,11 @@
       "presence_penalty": 0
     },
     "metadata": {
-      "author": "HuggingFace"
+      "author": "HuggingFace",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
     },
     "engine": "groq"
   }
