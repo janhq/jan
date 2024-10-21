@@ -51,7 +51,7 @@ const ChatInput = () => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const spellCheck = useAtomValue(spellCheckAtom)
 
-  const currentPrompt = useAtomValue(currentPromptAtom)
+  const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const [activeSettingInputBox, setActiveSettingInputBox] = useAtom(
     activeSettingInputBoxAtom
   )
@@ -143,6 +143,7 @@ const ChatInput = () => {
         <TextArea
           className="absolute inset-0 top-14 h-0 w-0"
           data-testid="txt-input-chat"
+          onChange={(e) => setCurrentPrompt(e.target.value)}
         />
         {experimentalFeature && (
           <Tooltip
