@@ -87,23 +87,22 @@ export default class JanModelExtension extends ModelExtension {
      * should compare and try import
      */
     let currentModels: Model[] = []
-
-    if (!localStorage.getItem(ExtensionEnum.downloadedModels)) {
-      // Updated from an older version than 0.5.5
-      // Scan through the models folder and import them (Legacy flow)
-      // Return models immediately
-      currentModels = await scanModelsFolder().then((models) => {
-        return models ?? []
-      })
-    } else {
-      try {
+    try {
+      if (!localStorage.getItem(ExtensionEnum.downloadedModels)) {
+        // Updated from an older version than 0.5.5
+        // Scan through the models folder and import them (Legacy flow)
+        // Return models immediately
+        currentModels = await scanModelsFolder().then((models) => {
+          return models ?? []
+        })
+      } else {
         currentModels = JSON.parse(
           localStorage.getItem(ExtensionEnum.downloadedModels)
         ) as Model[]
-      } catch (e) {
-        currentModels = []
-        console.error(e)
       }
+    } catch (e) {
+      currentModels = []
+      console.error(e)
     }
 
     /**
