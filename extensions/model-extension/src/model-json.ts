@@ -57,7 +57,7 @@ export const scanModelsFolder = async (): Promise<Model[]> => {
               !source.url.startsWith(`https://`)
           )
         )
-        if (existFiles.every((exist) => exist)) return true
+        if (existFiles.every((exist) => exist)) return model
 
         const result = await fs
           .readdirSync(await joinPath([_homeDir, dirName]))
