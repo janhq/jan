@@ -1,7 +1,7 @@
 // useModels.test.ts
 
 import { renderHook, act } from '@testing-library/react'
-import { events, ModelEvent } from '@janhq/core'
+import { events, ModelEvent, ModelManager } from '@janhq/core'
 import { extensionManager } from '@/extension'
 
 // Mock dependencies
@@ -11,17 +11,10 @@ jest.mock('@/extension')
 import useModels from './useModels'
 
 // Mock data
-const mockDownloadedModels = [
+const models = [
   { id: 'model-1', name: 'Model 1' },
   { id: 'model-2', name: 'Model 2' },
 ]
-
-const mockConfiguredModels = [
-  { id: 'model-3', name: 'Model 3' },
-  { id: 'model-4', name: 'Model 4' },
-]
-
-const mockDefaultModel = { id: 'default-model', name: 'Default Model' }
 
 describe('useModels', () => {
   beforeEach(() => {
@@ -30,20 +23,23 @@ describe('useModels', () => {
 
   it('should fetch and set models on mount', async () => {
     const mockModelExtension = {
-      getDownloadedModels: jest.fn().mockResolvedValue(mockDownloadedModels),
-      getConfiguredModels: jest.fn().mockResolvedValue(mockConfiguredModels),
-      getDefaultModel: jest.fn().mockResolvedValue(mockDefaultModel),
+      getModels: jest.fn().mockResolvedValue(models),
     } as any
+    ;(ModelManager.instance as jest.Mock).mockReturnValue({
+      models: {
+        values: () => ({
+          toArray: () => {},
+        }),
+      },
+    })
 
     jest.spyOn(extensionManager, 'get').mockReturnValue(mockModelExtension)
 
-    await act(async () => {
+    act(() => {
       renderHook(() => useModels())
     })
 
-    expect(mockModelExtension.getDownloadedModels).toHaveBeenCalled()
-    expect(mockModelExtension.getConfiguredModels).toHaveBeenCalled()
-    expect(mockModelExtension.getDefaultModel).toHaveBeenCalled()
+    expect(mockModelExtension.getModels).toHaveBeenCalled()
   })
 
   it('should remove event listener on unmount', async () => {

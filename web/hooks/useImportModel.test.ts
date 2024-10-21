@@ -18,7 +18,7 @@ describe('useImportModel', () => {
   it('should import models successfully', async () => {
     const mockImportModels = jest.fn().mockResolvedValue(undefined)
     const mockExtension = {
-      importModels: mockImportModels,
+      importModel: mockImportModels,
     } as any
 
     jest.spyOn(extensionManager, 'get').mockReturnValue(mockExtension)
@@ -26,15 +26,16 @@ describe('useImportModel', () => {
     const { result } = renderHook(() => useImportModel())
 
     const models = [
-      { importId: '1', name: 'Model 1', path: '/path/to/model1' },
-      { importId: '2', name: 'Model 2', path: '/path/to/model2' },
+      { modelId: '1', path: '/path/to/model1' },
+      { modelId: '2', path: '/path/to/model2' },
     ] as any
 
     await act(async () => {
       await result.current.importModels(models, 'local' as any)
     })
 
-    expect(mockImportModels).toHaveBeenCalledWith(models, 'local')
+    expect(mockImportModels).toHaveBeenCalledWith('1', '/path/to/model1')
+    expect(mockImportModels).toHaveBeenCalledWith('2', '/path/to/model2')
   })
 
   it('should update model info successfully', async () => {
@@ -42,7 +43,7 @@ describe('useImportModel', () => {
       .fn()
       .mockResolvedValue({ id: 'model-1', name: 'Updated Model' })
     const mockExtension = {
-      updateModelInfo: mockUpdateModelInfo,
+      updateModel: mockUpdateModelInfo,
     } as any
 
     jest.spyOn(extensionManager, 'get').mockReturnValue(mockExtension)

@@ -15,12 +15,13 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
+import { normalizeModelId } from '@/utils/model'
+
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import { normalizeModelId } from '@/utils/model'
 
 type Props = {
   index: number

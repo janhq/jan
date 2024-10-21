@@ -31,7 +31,7 @@ export enum InferenceEngine {
   cortex = 'cortex',
   cortex_llamacpp = 'llama-cpp',
   cortex_onnx = 'onnxruntime',
-  cortex_tensorrtllm = '.tensorrt-llm',
+  cortex_tensorrtllm = 'tensorrt-llm',
 }
 
 export type ModelArtifact = {

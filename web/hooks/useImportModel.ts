@@ -103,6 +103,7 @@ const useImportModel = () => {
 
 const localImportModels = async (
   models: ImportingModel[],
+  // TODO: @louis - We will set this option when cortex.cpp supports it
   optionType: OptionType
 ): Promise<void> => {
   await models

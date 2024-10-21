@@ -35,7 +35,7 @@ describe('useDeleteModel', () => {
       await result.current.deleteModel(mockModel)
     })
 
-    expect(mockDeleteModel).toHaveBeenCalledWith(mockModel)
+    expect(mockDeleteModel).toHaveBeenCalledWith('test-model')
     expect(toaster).toHaveBeenCalledWith({
       title: 'Model Deletion Successful',
       description: `Model ${mockModel.name} has been successfully deleted.`,
@@ -67,7 +67,7 @@ describe('useDeleteModel', () => {
       )
     })
 
-    expect(mockDeleteModel).toHaveBeenCalledWith(mockModel)
+    expect(mockDeleteModel).toHaveBeenCalledWith("test-model")
     expect(toaster).not.toHaveBeenCalled()
   })
 })

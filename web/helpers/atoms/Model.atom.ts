@@ -64,13 +64,13 @@ export const stateModel = atom({ state: 'start', loading: false, model: '' })
 /**
  * Stores the list of models which are being downloaded.
  */
-const downloadingModelsAtom = atom<string[]>([])
+export const downloadingModelsAtom = atom<string[]>([])
 
 export const getDownloadingModelAtom = atom((get) => get(downloadingModelsAtom))
 
 export const addDownloadingModelAtom = atom(null, (get, set, model: string) => {
   const downloadingModels = get(downloadingModelsAtom)
-  if (!downloadingModels.find((e) => e === model)) {
+  if (!downloadingModels.includes(model)) {
     set(downloadingModelsAtom, [...downloadingModels, model])
   }
 })

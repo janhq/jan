@@ -36,11 +36,6 @@ export abstract class LocalOAIEngine extends OAIEngine {
    * Stops the model.
    */
   override async unloadModel(model?: Model) {
-    if (model?.engine && model.engine?.toString() !== this.provider) return Promise.resolve()
-
-    this.loadedModel = undefined
-    await executeOnMain(this.nodeModule, this.unloadModelFunctionName).then(() => {
-      events.emit(ModelEvent.OnModelStopped, {})
-    })
+    return Promise.resolve()
   }
 }
