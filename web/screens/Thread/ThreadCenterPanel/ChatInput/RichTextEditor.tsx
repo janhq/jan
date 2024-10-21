@@ -58,15 +58,15 @@ const initialValue: CustomElement[] = [
   },
 ]
 
-type RichEditorProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>
+type RichTextEditorProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>
 
-const RichEditor = ({
+const RichTextEditor = ({
   className,
   style,
   disabled,
   placeholder,
   spellCheck,
-}: RichEditorProps) => {
+}: RichTextEditorProps) => {
   const [editor] = useState(() => withHistory(withReact(createEditor())))
   const currentLanguage = useRef<string>('plaintext')
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
@@ -398,4 +398,4 @@ const RichEditor = ({
   )
 }
 
-export default RichEditor
+export default RichTextEditor

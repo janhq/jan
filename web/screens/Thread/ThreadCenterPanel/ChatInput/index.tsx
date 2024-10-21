@@ -29,7 +29,7 @@ import { isLocalEngine } from '@/utils/modelEngine'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
-import RichEditor from './RichEditor'
+import RichTextEditor from './RichTextEditor'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
@@ -49,7 +49,6 @@ const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  // const [activeSetting, setActiveSetting] = useState(false)
   const spellCheck = useAtomValue(spellCheckAtom)
 
   const currentPrompt = useAtomValue(currentPromptAtom)
@@ -127,7 +126,7 @@ const ChatInput = () => {
       <div className="relative flex w-full flex-col">
         {renderPreview(fileUpload)}
 
-        <RichEditor
+        <RichTextEditor
           className={twMerge(
             'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
             'focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0',
