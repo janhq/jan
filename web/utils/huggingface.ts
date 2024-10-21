@@ -60,7 +60,7 @@ export const fetchHuggingFaceRepoData = async (
   return data
 }
 
-function toHuggingFaceUrl(repoId: string): string {
+export function toHuggingFaceUrl(repoId: string): string {
   try {
     const url = new URL(repoId)
     if (url.host !== 'huggingface.co') {
@@ -85,7 +85,7 @@ function toHuggingFaceUrl(repoId: string): string {
     return `https://huggingface.co/api/models/${repoId}`
   }
 }
-class InvalidHostError extends Error {
+export class InvalidHostError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'InvalidHostError'
