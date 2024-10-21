@@ -15,6 +15,8 @@ import {
 import { Constants } from './constants'
 import { HubPage } from '../pages/hubPage'
 import { CommonActions } from '../pages/commonActions'
+import { rmSync } from 'fs'
+import * as path from 'path'
 
 export let electronApp: ElectronApplication
 export let page: Page
@@ -103,10 +105,14 @@ export const test = base.extend<
     },
     { auto: true },
   ],
-  
 })
 
 test.beforeAll(async () => {
+  await rmSync(path.join(__dirname, '../../test-data'), {
+    recursive: true,
+    force: true,
+  })
+
   test.setTimeout(TIMEOUT)
   await setupElectron()
   await page.waitForSelector('img[alt="Jan - Logo"]', {
