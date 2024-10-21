@@ -86,25 +86,24 @@ export default class JanModelExtension extends ModelExtension {
      * it would reset app cache and app will not function properly
      * should compare and try import
      */
+    let currentModels: Model[] = []
 
     if (!localStorage.getItem(ExtensionEnum.downloadedModels)) {
       // Updated from an older version than 0.5.5
       // Scan through the models folder and import them (Legacy flow)
       // Return models immediately
-      return scanModelsFolder().then((models) => {
+      currentModels = await scanModelsFolder().then((models) => {
         return models ?? []
       })
-    }
-
-    let currentModels: Model[] = []
-
-    try {
-      currentModels = JSON.parse(
-        localStorage.getItem(ExtensionEnum.downloadedModels)
-      ) as Model[]
-    } catch (e) {
-      currentModels = []
-      console.error(e)
+    } else {
+      try {
+        currentModels = JSON.parse(
+          localStorage.getItem(ExtensionEnum.downloadedModels)
+        ) as Model[]
+      } catch (e) {
+        currentModels = []
+        console.error(e)
+      }
     }
 
     /**
