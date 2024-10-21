@@ -149,7 +149,10 @@ const RichTextEditor = ({
             const codeContent = inlineMatch[1] // Get the content within the backticks
             try {
               hljs.highlight(codeContent, {
-                language: currentLanguage.current,
+                language:
+                  currentLanguage.current.length > 1
+                    ? currentLanguage.current
+                    : 'plaintext',
               }).value
             } catch (err) {
               hljs.highlight(codeContent, {
@@ -179,9 +182,13 @@ const RichTextEditor = ({
             const codeContent = text.trimStart() // Remove leading spaces for highlighting
 
             let highlighted = ''
+            highlighted = hljs.highlightAuto(codeContent).value
             try {
               highlighted = hljs.highlight(codeContent, {
-                language: currentLanguage.current,
+                language:
+                  currentLanguage.current.length > 1
+                    ? currentLanguage.current
+                    : 'plaintext',
               }).value
             } catch (err) {
               highlighted = hljs.highlight(codeContent, {
