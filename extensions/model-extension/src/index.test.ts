@@ -1,5 +1,4 @@
 import JanModelExtension from './index'
-import { Model } from '@janhq/core'
 
 let SETTINGS = []
 // @ts-ignore
@@ -72,7 +71,7 @@ describe('JanModelExtension', () => {
   })
 
   it('should update a model', async () => {
-    const model: Partial<Model> = { id: 'test-model' }
+    const model = { id: 'test-model' }
     const updatedModel = await extension.updateModel(model)
     expect(updatedModel).toEqual({})
     expect(mockCortexAPI.updateModel).toHaveBeenCalledWith(model)

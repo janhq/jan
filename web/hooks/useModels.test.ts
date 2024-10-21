@@ -1,5 +1,4 @@
 // useModels.test.ts
-
 import { renderHook, act } from '@testing-library/react'
 import { events, ModelEvent, ModelManager } from '@janhq/core'
 import { extensionManager } from '@/extension'
@@ -28,7 +27,9 @@ describe('useModels', () => {
     ;(ModelManager.instance as jest.Mock).mockReturnValue({
       models: {
         values: () => ({
-          toArray: () => {},
+          toArray: () => ({
+            filter: () => models,
+          }),
         }),
       },
     })
