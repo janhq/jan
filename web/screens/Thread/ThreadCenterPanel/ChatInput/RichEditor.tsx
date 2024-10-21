@@ -15,6 +15,8 @@ import {
   RenderLeafProps,
 } from 'slate-react'
 
+import { twMerge } from 'tailwind-merge'
+
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -61,6 +63,7 @@ type RichEditorProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>
 const RichEditor = ({
   className,
   style,
+  disabled,
   placeholder,
   spellCheck,
 }: RichEditorProps) => {
@@ -255,7 +258,6 @@ const RichEditor = ({
           </i>
         )
       }
-
       if (leaf.format === 'bold') {
         return (
           <strong className={leaf.className} {...attributes}>
@@ -263,7 +265,6 @@ const RichEditor = ({
           </strong>
         )
       }
-
       if (leaf.code) {
         // Apply syntax highlighting to code blocks
         return (
@@ -321,8 +322,6 @@ const RichEditor = ({
     (event: React.KeyboardEvent) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault()
-        const lastMessage = messages[messages.length - 1]
-        console.log(lastMessage)
         if (messages[messages.length - 1]?.status !== MessageStatus.Pending) {
           sendChatMessage(currentPrompt)
           resetEditor()
@@ -346,7 +345,6 @@ const RichEditor = ({
       if (event.key === 'Tab') {
         const [match] = Editor.nodes(editor, {
           match: (n) => {
-            console.log('Node:', n) // Debugging to inspect the node
             return (n as CustomElement).type === 'code'
           },
           mode: 'lowest',
@@ -368,7 +366,6 @@ const RichEditor = ({
       editor={editor}
       initialValue={initialValue}
       onChange={(value) => {
-        console.log()
         const combinedText = value
           .map((block) => {
             if ('children' in block) {
@@ -386,9 +383,15 @@ const RichEditor = ({
         decorate={decorate} // Pass the decorate function
         renderLeaf={renderLeaf} // Pass the renderLeaf function
         onKeyDown={handleKeyDown}
-        className={className}
+        className={twMerge(
+          className,
+          disabled &&
+            'cursor-not-allowed border-none bg-[hsla(var(--disabled-bg))] text-[hsla(var(--disabled-fg))]'
+        )}
         placeholder={placeholder}
         style={style}
+        disabled={disabled}
+        readOnly={disabled}
         spellCheck={spellCheck}
       />
     </Slate>

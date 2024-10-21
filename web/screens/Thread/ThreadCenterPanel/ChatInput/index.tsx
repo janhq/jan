@@ -42,7 +42,6 @@ import {
   getActiveThreadIdAtom,
   isGeneratingResponseAtom,
   threadStatesAtom,
-  waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
@@ -53,7 +52,7 @@ const ChatInput = () => {
   // const [activeSetting, setActiveSetting] = useState(false)
   const spellCheck = useAtomValue(spellCheckAtom)
 
-  const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
+  const currentPrompt = useAtomValue(currentPromptAtom)
   const [activeSettingInputBox, setActiveSettingInputBox] = useAtom(
     activeSettingInputBoxAtom
   )
@@ -61,7 +60,6 @@ const ChatInput = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
-  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -80,51 +78,14 @@ const ChatInput = () => {
     (threadState) => threadState.waitingForResponse
   )
 
-  const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setCurrentPrompt(e.target.value)
-  }
-
   const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
-
-  useEffect(() => {
-    if (isWaitingToSend && activeThreadId) {
-      setIsWaitingToSend(false)
-      sendChatMessage(currentPrompt)
-    }
-  }, [
-    activeThreadId,
-    isWaitingToSend,
-    currentPrompt,
-    setIsWaitingToSend,
-    sendChatMessage,
-  ])
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus()
     }
   }, [activeThreadId])
-
-  useEffect(() => {
-    if (textareaRef.current?.clientHeight) {
-      textareaRef.current.style.height = activeSettingInputBox
-        ? '100px'
-        : '40px'
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
-      textareaRef.current.style.overflow =
-        textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
-    }
-  }, [textareaRef.current?.clientHeight, currentPrompt, activeSettingInputBox])
-
-  const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
-        sendChatMessage(currentPrompt)
-      else onStopInferenceClick()
-    }
-  }
 
   const onStopInferenceClick = async () => {
     stopInference()
@@ -180,25 +141,7 @@ const ChatInput = () => {
           placeholder="Ask me anything"
           disabled={stateModel.loading || !activeThread}
         />
-
-        {/* <TextArea
-          className={twMerge(
-            'relative max-h-[400px] resize-none pr-20',
-            fileUpload.length && 'rounded-t-none',
-            experimentalFeature && 'pl-10',
-            activeSettingInputBox && 'pb-14 pr-16'
-          )}
-          spellCheck={spellCheck}
-          data-testid="txt-input-chat"
-          style={{ height: activeSettingInputBox ? '100px' : '40px' }}
-          ref={textareaRef}
-          onKeyDown={onKeyDown}
-          placeholder="Ask me anything"
-          disabled={stateModel.loading || !activeThread}
-          value={currentPrompt}
-          onChange={onPromptChange}
-        /> */}
-
+        <TextArea className="hidden" data-testid="txt-input-chat" />
         {experimentalFeature && (
           <Tooltip
             trigger={
@@ -456,30 +399,6 @@ const ChatInput = () => {
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
               </Badge>
-              {/* Temporary disable it */}
-              {/* {experimentalFeature && (
-                <Badge
-                  className="flex cursor-pointer items-center gap-x-1"
-                  theme="secondary"
-                  variant={
-                    activeTabThreadRightPanel === 'tools' ? 'solid' : 'outline'
-                  }
-                  onClick={() => {
-                    setActiveTabThreadRightPanel('tools')
-                    if (matches) {
-                      setShowRightPanel(!showRightPanel)
-                    } else if (!showRightPanel) {
-                      setShowRightPanel(true)
-                    }
-                  }}
-                >
-                  <ShapesIcon
-                    size={16}
-                    className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
-                  />
-                  <span>Tools</span>
-                </Badge>
-              )} */}
             </div>
             <Button
               theme="icon"

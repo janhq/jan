@@ -67,7 +67,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       langPrefix: 'hljs',
       highlight(code, lang) {
         if (lang === undefined || lang === '') {
-          return hljs.highlightAuto(code).value
+          return hljs.highlight(code, { language: 'plaintext' }).value
         }
         try {
           return hljs.highlight(code, { language: lang }).value
