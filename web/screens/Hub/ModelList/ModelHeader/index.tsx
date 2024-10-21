@@ -64,7 +64,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
   const assistants = useAtomValue(assistantsAtom)
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(model.sources[0].url)
+    downloadModel(model.sources[0].url, model.id)
   }, [model, downloadModel])
 
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
@@ -123,17 +123,6 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
       className="cursor-pointer rounded-t-md bg-[hsla(var(--app-bg))]"
       onClick={onClick}
     >
-      {/* TODO: @faisal are we still using cover? */}
-      {/* {model.metadata.cover && imageLoaded && (
-        <div className="relative h-full w-full">
-          <img
-            onError={() => setImageLoaded(false)}
-            src={model.metadata.cover}
-            className="h-[250px] w-full object-cover"
-            alt={`Cover - ${model.id}`}
-          />
-        </div>
-      )} */}
       <div className="flex items-center justify-between px-4 py-2">
         <div className="flex items-center gap-2">
           <span className="line-clamp-1 text-base font-semibold">

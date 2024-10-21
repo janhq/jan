@@ -1,5 +1,4 @@
 import { Model } from './modelEntity'
-import { OptionType } from './modelImport'
 
 /**
  * Model extension for managing models.
@@ -10,14 +9,14 @@ export interface ModelInterface {
    * @param model - The model to download.
    * @returns A Promise that resolves when the model has been downloaded.
    */
-  pullModel(model: string): Promise<void>
+  pullModel(model: string, id?: string): Promise<void>
 
   /**
    * Cancels the download of a specific model.
    * @param {string} modelId - The ID of the model to cancel the download for.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
-  cancelModelPull(modelId: string): Promise<void>
+  cancelModelPull(model: string): Promise<void>
 
   /**
    * Deletes a model.

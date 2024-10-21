@@ -20,6 +20,8 @@ export default [
       replace({
         preventAssignment: true,
         SETTINGS: JSON.stringify(settingJson),
+        API_URL: 'http://127.0.0.1:39291',
+        SOCKET_URL: 'ws://127.0.0.1:39291',
       }),
       // Allow json resolution
       json(),

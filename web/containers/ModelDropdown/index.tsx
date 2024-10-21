@@ -472,7 +472,10 @@ const ModelDropdown = ({
                                       size={18}
                                       className="cursor-pointer text-[hsla(var(--app-link))]"
                                       onClick={() =>
-                                        downloadModel(model.sources[0].url)
+                                        downloadModel(
+                                          model.sources[0].url,
+                                          model.id
+                                        )
                                       }
                                     />
                                   ) : (
@@ -559,7 +562,10 @@ const ModelDropdown = ({
                                     size={18}
                                     className="cursor-pointer text-[hsla(var(--app-link))]"
                                     onClick={() =>
-                                      downloadModel(model.sources[0].url)
+                                      downloadModel(
+                                        model.sources[0].url,
+                                        model.id
+                                      )
                                     }
                                   />
                                 ) : (

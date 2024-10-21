@@ -20,6 +20,7 @@ import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import { normalizeModelId } from '@/utils/model'
 
 type Props = {
   index: number
@@ -50,13 +51,13 @@ const ModelDownloadRow: React.FC<Props> = ({
 
   const onAbortDownloadClick = useCallback(() => {
     if (downloadUrl) {
-      abortModelDownload(downloadUrl)
+      abortModelDownload(normalizeModelId(downloadUrl))
     }
   }, [downloadUrl, abortModelDownload])
 
   const onDownloadClick = useCallback(async () => {
     if (downloadUrl) {
-      downloadModel(downloadUrl)
+      downloadModel(downloadUrl, normalizeModelId(downloadUrl))
     }
   }, [downloadUrl, downloadModel])
 

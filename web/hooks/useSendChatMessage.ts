@@ -216,7 +216,7 @@ export default function useSendChatMessage() {
       ...activeThreadRef.current,
       updated: newMessage.created,
       metadata: {
-        ...(activeThreadRef.current.metadata ?? {}),
+        ...activeThreadRef.current.metadata,
         lastMessage: prompt,
       },
     }
@@ -256,7 +256,6 @@ export default function useSendChatMessage() {
     )
     request.messages = normalizeMessages(request.messages ?? [])
 
-    console.log(requestBuilder.model?.engine ?? modelRequest.engine, request)
     // Request for inference
     EngineManager.instance()
       .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')

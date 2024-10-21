@@ -1,5 +1,5 @@
 import path from 'path'
-import { log, SystemInformation } from '@janhq/core/node'
+import { getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
 import { executableCortexFile } from './execute'
 import { ProcessWatchdog } from './watchdog'
 
@@ -40,9 +40,18 @@ function run(systemInfo?: SystemInformation): Promise<any> {
       executableOptions.enginePath
     )
 
+    const dataFolderPath = getJanDataFolderPath()
     watchdog = new ProcessWatchdog(
       executableOptions.executablePath,
-      ['--start-server', '--port', LOCAL_PORT.toString()],
+      [
+        '--start-server',
+        '--port',
+        LOCAL_PORT.toString(),
+        '--config_file_path',
+        `${path.join(dataFolderPath, '.janrc')}`,
+        '--data_folder_path',
+        dataFolderPath,
+      ],
       {
         cwd: executableOptions.enginePath,
         env: {

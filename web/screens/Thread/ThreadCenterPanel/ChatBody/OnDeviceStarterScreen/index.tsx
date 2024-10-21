@@ -168,7 +168,10 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                                   size={18}
                                   className="cursor-pointer text-[hsla(var(--app-link))]"
                                   onClick={() =>
-                                    downloadModel(model.sources[0].url)
+                                    downloadModel(
+                                      model.sources[0].url,
+                                      model.id
+                                    )
                                   }
                                 />
                               ) : (
@@ -256,7 +259,10 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                             theme="ghost"
                             className="!bg-[hsla(var(--secondary-bg))]"
                             onClick={() =>
-                              downloadModel(featModel.sources[0].url)
+                              downloadModel(
+                                featModel.sources[0].url,
+                                featModel.id
+                              )
                             }
                           >
                             Download

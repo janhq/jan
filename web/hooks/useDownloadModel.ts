@@ -1,11 +1,6 @@
 import { useCallback } from 'react'
 
-import {
-  events,
-  ExtensionTypeEnum,
-  ModelEvent,
-  ModelExtension,
-} from '@janhq/core'
+import { ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -19,13 +14,13 @@ import {
 } from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
-  const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
   const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
+  const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
 
   const downloadModel = useCallback(
-    async (model: string) => {
-      addDownloadingModel(model)
-      localDownloadModel(model).catch((error) => {
+    async (model: string, id?: string) => {
+      addDownloadingModel(id ?? model)
+      downloadLocalModel(model, id).catch((error) => {
         if (error.message) {
           toaster({
             title: 'Download failed',
@@ -37,7 +32,7 @@ export default function useDownloadModel() {
         removeDownloadingModel(model)
       })
     },
-    [addDownloadingModel]
+    [removeDownloadingModel, addDownloadingModel]
   )
 
   const abortModelDownload = useCallback(async (model: string) => {
@@ -50,10 +45,10 @@ export default function useDownloadModel() {
   }
 }
 
-const localDownloadModel = async (model: string) =>
+const downloadLocalModel = async (model: string, id?: string) =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.pullModel(model)
+    ?.pullModel(model, id)
 
 const cancelModelDownload = async (model: string) =>
   extensionManager

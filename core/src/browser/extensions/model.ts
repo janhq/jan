@@ -13,7 +13,7 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
   }
 
   abstract getModels(): Promise<Model[]>
-  abstract pullModel(model: string): Promise<void>
+  abstract pullModel(model: string, id?: string): Promise<void>
   abstract cancelModelPull(modelId: string): Promise<void>
   abstract importModel(model: string, modePath: string): Promise<void>
   abstract updateModel(modelInfo: Partial<Model>): Promise<Model>

@@ -23,11 +23,17 @@ import {
   removeInstallingExtensionAtom,
   setInstallingExtensionAtom,
 } from '@/helpers/atoms/Extension.atom'
+import {
+  addDownloadingModelAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
   const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
+  const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+  const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
@@ -40,6 +46,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
         }
         setInstallingExtension(state.extensionId!, installingExtensionState)
       } else {
+        addDownloadingModel(state.modelId)
         setDownloadState(state)
       }
     },
@@ -54,6 +61,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       } else {
         state.downloadState = 'error'
         setDownloadState(state)
+        removeDownloadingModel(state.modelId)
       }
     },
     [setDownloadState, removeInstallingExtension]
@@ -68,6 +76,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
         state.downloadState = 'error'
         state.error = 'aborted'
         setDownloadState(state)
+        removeDownloadingModel(state.modelId)
       }
     },
     [setDownloadState, removeInstallingExtension]
@@ -79,6 +88,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType !== 'extension') {
         state.downloadState = 'end'
         setDownloadState(state)
+        removeDownloadingModel(state.modelId)
       }
       events.emit(ModelEvent.OnModelsUpdate, {})
     },
