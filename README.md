@@ -17,6 +17,7 @@
   - <a href="https://github.com/janhq/jan/releases">Changelog</a> 
   - <a href="https://github.com/janhq/jan/issues">Bug reports</a> 
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
+  - <a href="https://github.com/NHPT/jan/blob/dev/README_CN.md">简体中文</a>
 </p>
 
 > [!Warning] >**Jan is currently in Development**: Expect breaking changes and bugs!
