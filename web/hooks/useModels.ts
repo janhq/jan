@@ -11,6 +11,8 @@ import {
 
 import { useSetAtom } from 'jotai'
 
+import { isLocalEngine } from '@/utils/modelEngine'
+
 import { extensionManager } from '@/extension'
 import {
   configuredModelsAtom,
@@ -28,8 +30,12 @@ const useModels = () => {
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
-      const models = await getModels()
-      setDownloadedModels(models)
+      const localModels = await getModels()
+      const remoteModels = ModelManager.instance()
+        .models.values()
+        .toArray()
+        .filter((e) => !isLocalEngine(e.engine))
+      setDownloadedModels([...localModels, ...remoteModels])
     }
 
     const getExtensionModels = async () => {
