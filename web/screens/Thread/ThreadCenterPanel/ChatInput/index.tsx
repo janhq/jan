@@ -140,7 +140,10 @@ const ChatInput = () => {
           placeholder="Ask me anything"
           disabled={stateModel.loading || !activeThread}
         />
-        <TextArea className="hidden" data-testid="txt-input-chat" />
+        <TextArea
+          className="absolute inset-0 top-14 h-0 w-0"
+          data-testid="txt-input-chat"
+        />
         {experimentalFeature && (
           <Tooltip
             trigger={
