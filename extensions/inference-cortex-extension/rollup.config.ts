@@ -114,7 +114,7 @@ export default [
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
-        CORTEX_API_URL: JSON.stringify('http://127.0.0.1:39291/v1'),
+        CORTEX_API_URL: JSON.stringify('http://127.0.0.1:39291'),
       }),
       // Allow json resolution
       json(),

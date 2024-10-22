@@ -51,6 +51,7 @@
     "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
     "ky": "^1.7.2",
+    "p-queue": "^8.0.1",
     "rxjs": "^7.8.1",
     "tcp-port-used": "^1.0.2",
     "terminate": "2.6.1",

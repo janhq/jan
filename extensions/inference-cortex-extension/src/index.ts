@@ -16,7 +16,7 @@ import {
   LocalOAIEngine,
   InferenceEngine,
 } from '@janhq/core'
-
+import PQueue from 'p-queue'
 import ky from 'ky'
 
 /**
@@ -28,12 +28,14 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   // DEPRECATED
   nodeModule: string = 'node'
 
+  queue = new PQueue({ concurrency: 1 })
+
   provider: string = InferenceEngine.cortex
 
   /**
    * The URL for making inference requests.
    */
-  inferenceUrl = `${CORTEX_API_URL}/chat/completions`
+  inferenceUrl = `${CORTEX_API_URL}/v1/chat/completions`
 
   /**
    * Subscribes to events emitted by the @janhq/core package.
@@ -47,7 +49,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     // Run the process watchdog
     const systemInfo = await systemInformation()
-    executeOnMain(NODE, 'run', systemInfo)
+    await executeOnMain(NODE, 'run', systemInfo)
+
+    this.queue.add(() => this.healthz())
   }
 
   onUnload(): void {
@@ -61,16 +65,19 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     // Legacy model cache - should import
     if (model.engine === InferenceEngine.nitro && model.file_path) {
       // Try importing the model
-      await ky
-        .post(`${CORTEX_API_URL}/models/${model.id}`, {
-          json: { model: model.id, modelPath: await this.modelPath(model) },
-        })
-        .json()
-        .catch((e) => log(e.message ?? e ?? ''))
+      const modelPath = await this.modelPath(model)
+      await this.queue.add(() =>
+        ky
+          .post(`${CORTEX_API_URL}/v1/models/${model.id}`, {
+            json: { model: model.id, modelPath: modelPath },
+          })
+          .json()
+          .catch((e) => log(e.message ?? e ?? ''))
+      )
     }
 
-    return ky
-      .post(`${CORTEX_API_URL}/models/start`, {
+    return await ky
+      .post(`${CORTEX_API_URL}/v1/models/start`, {
         json: {
           ...model.settings,
           model: model.id,
@@ -89,7 +96,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   override async unloadModel(model: Model): Promise<void> {
     return ky
-      .post(`${CORTEX_API_URL}/models/stop`, {
+      .post(`${CORTEX_API_URL}/v1/models/stop`, {
         json: { model: model.id },
       })
       .json()
@@ -107,5 +114,20 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         model.sources[0]?.url.split('/').pop() ??
         model.id,
     ])
+  }
+
+  /**
+   * Do health check on cortex.cpp
+   * @returns
+   */
+  healthz(): Promise<void> {
+    return ky
+      .get(`${CORTEX_API_URL}/healthz`, {
+        retry: {
+          limit: 10,
+          methods: ['get'],
+        },
+      })
+      .then(() => {})
   }
 }

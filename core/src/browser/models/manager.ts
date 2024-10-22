@@ -18,7 +18,14 @@ export class ModelManager {
    * @param model - The model to register.
    */
   register<T extends Model>(model: T) {
-    this.models.set(model.id, model)
+    if (this.models.has(model.id)) {
+      this.models.set(model.id, {
+        ...model,
+        ...this.models.get(model.id),
+      })
+    } else {
+      this.models.set(model.id, model)
+    }
     events.emit(ModelEvent.OnModelsUpdate, {})
   }
 

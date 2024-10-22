@@ -15,6 +15,8 @@ import {
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
+import { useDebouncedCallback } from 'use-debounce'
+
 import CopyOverInstruction from '@/containers/CopyInstruction'
 import EngineSetting from '@/containers/EngineSetting'
 import ModelDropdown from '@/containers/ModelDropdown'
@@ -168,6 +170,10 @@ const ThreadRightPanel = () => {
     [activeThread, updateThreadMetadata]
   )
 
+  const resetModel = useDebouncedCallback(() => {
+    stopModel()
+  }, 300)
+
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
       if (!activeThread) {
@@ -175,7 +181,7 @@ const ThreadRightPanel = () => {
       }
 
       setEngineParamsUpdate(true)
-      stopModel()
+      resetModel()
 
       updateModelParameter(activeThread, {
         params: { [key]: value },
@@ -207,7 +213,7 @@ const ThreadRightPanel = () => {
         }
       }
     },
-    [activeThread, setEngineParamsUpdate, stopModel, updateModelParameter]
+    [activeThread, resetModel, setEngineParamsUpdate, updateModelParameter]
   )
 
   if (!activeThread) {

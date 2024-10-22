@@ -31,10 +31,9 @@ const useModels = () => {
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
       const localModels = await getModels()
-      const remoteModels = ModelManager.instance()
-        .models.values()
-        .toArray()
-        .filter((e) => !isLocalEngine(e.engine))
+      const hubModels = ModelManager.instance().models.values().toArray()
+
+      const remoteModels = hubModels.filter((e) => !isLocalEngine(e.engine))
       setDownloadedModels([...localModels, ...remoteModels])
     }
 

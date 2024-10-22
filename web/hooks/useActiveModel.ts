@@ -51,6 +51,10 @@ export function useActiveModel() {
       console.debug(`Model ${modelId} is already initialized. Ignore..`)
       return Promise.resolve()
     }
+
+    if (activeModel) {
+      stopModel(activeModel)
+    }
     setPendingModelLoad(true)
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
@@ -113,7 +117,7 @@ export function useActiveModel() {
         setStateModel(() => ({
           state: 'start',
           loading: false,
-          model,
+          undefined,
         }))
 
         if (!pendingModelLoad && abortable) {
@@ -130,28 +134,30 @@ export function useActiveModel() {
       })
   }
 
-  const stopModel = useCallback(async () => {
-    const stoppingModel = activeModel || stateModel.model
-    if (!stoppingModel || (stateModel.state === 'stop' && stateModel.loading))
-      return
+  const stopModel = useCallback(
+    async (model?: Model) => {
+      const stoppingModel = model ?? activeModel ?? stateModel.model
+      if (!stoppingModel || (stateModel.state === 'stop' && stateModel.loading))
+        return
 
-    setStateModel({ state: 'stop', loading: true, model: stoppingModel })
-    const engine = EngineManager.instance().get(stoppingModel.engine)
-    return engine
-      ?.unloadModel(stoppingModel)
-      .catch((e) => console.error(e))
-      .then(() => {
-        setActiveModel(undefined)
-        setStateModel({ state: 'start', loading: false, model: undefined })
-        setPendingModelLoad(false)
-      })
-  }, [
-    activeModel,
-    setActiveModel,
-    setStateModel,
-    setPendingModelLoad,
-    stateModel,
-  ])
+      const engine = EngineManager.instance().get(stoppingModel.engine)
+      return engine
+        ?.unloadModel(stoppingModel)
+        .catch((e) => console.error(e))
+        .then(() => {
+          setActiveModel(undefined)
+          setStateModel({ state: 'start', loading: false, model: undefined })
+          setPendingModelLoad(false)
+        })
+    },
+    [
+      activeModel,
+      setStateModel,
+      setActiveModel,
+      setPendingModelLoad,
+      stateModel,
+    ]
+  )
 
   const stopInference = useCallback(async () => {
     // Loading model

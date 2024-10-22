@@ -199,16 +199,7 @@ const ThreadCenterPanel = () => {
 
           {!engineParamsUpdate && <ModelStart />}
 
-          {reloadModel && (
-            <Fragment>
-              <ModelReload />
-              <div className="mb-2 text-center">
-                <span className="text-[hsla(var(--text-secondary)]">
-                  Model is reloading to apply new changes.
-                </span>
-              </div>
-            </Fragment>
-          )}
+          {reloadModel && <ModelReload />}
 
           {activeModel && isGeneratingResponse && <GenerateResponse />}
           <ChatInput />
