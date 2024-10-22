@@ -53,7 +53,7 @@ export function useActiveModel() {
     }
 
     if (activeModel) {
-      stopModel(activeModel)
+      await stopModel(activeModel)
     }
     setPendingModelLoad(true)
 
