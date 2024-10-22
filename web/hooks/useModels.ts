@@ -59,7 +59,7 @@ const useModels = () => {
 
   useEffect(() => {
     // Try get data on mount
-    reloadData()
+    getData()
 
     // Listen for model updates
     events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
@@ -67,7 +67,7 @@ const useModels = () => {
       // Remove listener on unmount
       events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [reloadData])
+  }, [getData, reloadData])
 }
 
 const getModels = async (): Promise<Model[]> =>
