@@ -25,6 +25,7 @@ const SettingComponent: React.FC<Props> = ({
       case 'slider': {
         const { min, max, step, value } =
           data.controllerProps as SliderComponentProps
+
         return (
           <SliderRightPanel
             key={data.key}
