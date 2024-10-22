@@ -9,6 +9,7 @@ import { CORTEX_DEFAULT_PORT, LOCAL_HOST } from './consts'
  */
 export const startModel = async (modelId: string, settingParams?: ModelSettingParams) => {
   return fetch(`http://${LOCAL_HOST}:${CORTEX_DEFAULT_PORT}/v1/models/start`, {
+    method: 'POST',
     body: JSON.stringify({ model: modelId, ...settingParams }),
   })
 }
@@ -18,6 +19,7 @@ export const startModel = async (modelId: string, settingParams?: ModelSettingPa
  */
 export const stopModel = async (modelId: string) => {
   return fetch(`http://${LOCAL_HOST}:${CORTEX_DEFAULT_PORT}/v1/models/stop`, {
+    method: 'POST',
     body: JSON.stringify({ model: modelId }),
   })
 }

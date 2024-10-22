@@ -31,6 +31,7 @@ describe('useModels', () => {
             filter: () => models,
           }),
         }),
+        get: () => undefined,
       },
     })
 
