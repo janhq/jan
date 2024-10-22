@@ -1,6 +1,5 @@
-import { join } from 'path'
-import { getJanDataFolderPath, getJanExtensionsPath, log } from '../../../helper'
 import { ModelSettingParams } from '../../../../types'
+import { CORTEX_DEFAULT_PORT, LOCAL_HOST } from './consts'
 
 /**
  * Start a model
@@ -9,70 +8,16 @@ import { ModelSettingParams } from '../../../../types'
  * @returns
  */
 export const startModel = async (modelId: string, settingParams?: ModelSettingParams) => {
-  try {
-    await runModel(modelId, settingParams)
-
-    return {
-      message: `Model ${modelId} started`,
-    }
-  } catch (e) {
-    return {
-      error: e,
-    }
-  }
+  return fetch(`http://${LOCAL_HOST}:${CORTEX_DEFAULT_PORT}/v1/models/start`, {
+    body: JSON.stringify({ model: modelId, ...settingParams }),
+  })
 }
 
-/**
- * Run a model using installed cortex extension
- * @param model
- * @param settingParams
- */
-const runModel = async (model: string, settingParams?: ModelSettingParams): Promise<void> => {
-  const janDataFolderPath = getJanDataFolderPath()
-  const modelFolder = join(janDataFolderPath, 'models', model)
-  let module = join(
-    getJanExtensionsPath(),
-    '@janhq',
-    'inference-cortex-extension',
-    'dist',
-    'node',
-    'index.cjs'
-  )
-  // Just reuse the cortex extension implementation, don't duplicate then lost of sync
-  return import(module).then((extension) =>
-    extension
-      .loadModel(
-        {
-          modelFolder,
-          model,
-        },
-        settingParams
-      )
-      .then(() => log(`[SERVER]::Debug: Model is loaded`))
-      .then({
-        message: 'Model started',
-      })
-  )
-}
 /*
- * Stop model and kill nitro process.
+ * Stop model.
  */
-export const stopModel = async (_modelId: string) => {
-  let module = join(
-    getJanExtensionsPath(),
-    '@janhq',
-    'inference-cortex-extension',
-    'dist',
-    'node',
-    'index.cjs'
-  )
-  // Just reuse the cortex extension implementation, don't duplicate then lost of sync
-  return import(module).then((extension) =>
-    extension
-      .unloadModel()
-      .then(() => log(`[SERVER]::Debug: Model is unloaded`))
-      .then({
-        message: 'Model stopped',
-      })
-  )
+export const stopModel = async (modelId: string) => {
+  return fetch(`http://${LOCAL_HOST}:${CORTEX_DEFAULT_PORT}/v1/models/stop`, {
+    body: JSON.stringify({ model: modelId }),
+  })
 }
