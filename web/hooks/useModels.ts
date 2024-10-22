@@ -11,6 +11,8 @@ import {
 
 import { useSetAtom } from 'jotai'
 
+import { useDebouncedCallback } from 'use-debounce'
+
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
@@ -53,17 +55,19 @@ const useModels = () => {
     Promise.all([getDownloadedModels(), getExtensionModels()])
   }, [setDownloadedModels, setExtensionModels])
 
+  const reloadData = useDebouncedCallback(() => getData(), 300)
+
   useEffect(() => {
     // Try get data on mount
-    getData()
+    reloadData()
 
     // Listen for model updates
-    events.on(ModelEvent.OnModelsUpdate, async () => getData())
+    events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
     return () => {
       // Remove listener on unmount
       events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [getData])
+  }, [reloadData])
 }
 
 const getModels = async (): Promise<Model[]> =>

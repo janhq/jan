@@ -99,7 +99,7 @@ export const executableCortexFile = (
     .join('-')
   let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
-  let binaryName = `cortex${extension()}`
+  let binaryName = `cortex-server${extension()}`
 
   return {
     enginePath: path.join(__dirname, '..', 'bin', engineFolder),
