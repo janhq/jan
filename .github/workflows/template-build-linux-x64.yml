@@ -72,10 +72,14 @@ jobs:
           .github/scripts/rename-app-beta.sh ./electron/package.json
           chmod +x .github/scripts/rename-workspace-beta.sh
           .github/scripts/rename-workspace-beta.sh ./package.json
+          chmod +x .github/scripts/rename-uninstaller-beta.sh
+          .github/scripts/rename-uninstaller-beta.sh
           echo "------------------------"
           cat ./electron/package.json
           echo "------------------------"
           cat ./package.json
+          echo "------------------------"
+          cat ./electron/scripts/post-uninstall.sh
           jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "github", "owner": "janhq", "repo": "jan", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
