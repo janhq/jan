@@ -45,6 +45,9 @@
       },
       "icon": "icons/icon.png"
     },
+    "deb": {
+      "afterRemove": "scripts/post-uninstall.sh"
+    },
     "linux": {
       "target": [
         "deb"
