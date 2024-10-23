@@ -27,17 +27,21 @@ function run(systemInfo?: SystemInformation): Promise<any> {
 
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executableOptions.executablePath}`)
-    log(`[CORTEX]::Debug: Cortex engine path: ${executableOptions.enginePath}`)
+    log(`[CORTEX]:: Cortex engine path: ${executableOptions.enginePath}`)
 
     // Add engine path to the PATH and LD_LIBRARY_PATH
     process.env.PATH = (process.env.PATH || '').concat(
       path.delimiter,
-      executableOptions.enginePath
+      executableOptions.enginePath,
+      path.delimiter,
+      executableOptions.binPath
     )
     log(`[CORTEX] PATH: ${process.env.PATH}`)
     process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
       path.delimiter,
-      executableOptions.enginePath
+      executableOptions.enginePath,
+      path.delimiter,
+      executableOptions.binPath
     )
 
     const dataFolderPath = getJanDataFolderPath()

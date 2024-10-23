@@ -6,6 +6,9 @@ import { extensionManager } from '@/extension'
 // Mock dependencies
 jest.mock('@janhq/core')
 jest.mock('@/extension')
+jest.mock('use-debounce', () => ({
+  useDebouncedCallback: jest.fn().mockImplementation((fn) => fn),
+}))
 
 import useModels from './useModels'
 

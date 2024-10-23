@@ -4,6 +4,7 @@ import { cpuInfo } from 'cpu-instructions'
 
 export interface CortexExecutableOptions {
   enginePath: string
+  binPath: string
   executablePath: string
   cudaVisibleDevices: string
   vkVisibleDevices: string
@@ -36,8 +37,8 @@ const os = (): string => {
     ? 'win'
     : process.platform === 'darwin'
       ? process.arch === 'arm64'
-        ? 'mac-arm64'
-        : 'mac-x64'
+        ? 'arm64'
+        : 'x64'
       : 'linux'
 }
 
@@ -66,7 +67,7 @@ const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
  * The CPU instructions that will be set - either 'avx512', 'avx2', 'avx', or 'noavx'.
  * @returns
  */
-const cpuInstructions = () => {
+const cpuInstructions = (): string => {
   if (process.platform === 'darwin') return ''
   return cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX512')
     ? 'avx512'
@@ -84,26 +85,30 @@ const cpuInstructions = () => {
 export const executableCortexFile = (
   gpuSetting?: GpuSetting
 ): CortexExecutableOptions => {
-  let engineFolder = [
-    os(),
-    ...(gpuSetting?.vulkan
-      ? []
+  const cpuInstruction = cpuInstructions()
+  let engineFolder = gpuSetting?.vulkan
+    ? 'vulkan'
+    : process.platform === 'darwin'
+      ? os()
       : [
-          gpuRunMode(gpuSetting) !== 'cuda' ? cpuInstructions() : '',
+          gpuRunMode(gpuSetting) !== 'cuda' ||
+          cpuInstruction === 'avx' ||
+          cpuInstruction === 'noavx'
+            ? cpuInstruction
+            : '',
           gpuRunMode(gpuSetting),
           cudaVersion(gpuSetting),
-        ]),
-    gpuSetting?.vulkan ? 'vulkan' : undefined,
-  ]
-    .filter((e) => !!e)
-    .join('-')
+        ]
+          .filter((e) => !!e)
+          .join('-')
   let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let binaryName = `cortex-server${extension()}`
-
+  const binPath = path.join(__dirname, '..', 'bin')
   return {
-    enginePath: path.join(__dirname, '..', 'bin', engineFolder),
-    executablePath: path.join(__dirname, '..', 'bin', binaryName),
+    enginePath: path.join(binPath, engineFolder),
+    executablePath: path.join(binPath, binaryName),
+    binPath: binPath,
     cudaVisibleDevices,
     vkVisibleDevices,
   }
