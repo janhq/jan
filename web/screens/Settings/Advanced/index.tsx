@@ -237,7 +237,7 @@ const Advanced = () => {
         </div>
 
         {/* CPU / GPU switching */}
-        {!isMac && gpuList.length > 0 && (
+        {!isMac && (
           <div className="flex w-full flex-col items-start justify-between border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">
             <div className="flex w-full items-start justify-between">
               <div className="space-y-1">
@@ -314,81 +314,86 @@ const Advanced = () => {
                 />
               </div>
             </div>
-            <div className="mt-2 flex w-full flex-col rounded-lg px-2 py-4">
-              <label className="mb-2 mr-2 inline-block font-medium">
-                Choose device(s)
-              </label>
-              <div className="relative w-full md:w-1/2" ref={setToggle}>
-                <Input
-                  value={selectedGpu.join() || ''}
-                  className="w-full cursor-pointer"
-                  readOnly
-                  placeholder=""
-                  suffixIcon={
-                    <ChevronDownIcon
-                      size={14}
-                      className={twMerge(open && 'rotate-180')}
-                    />
-                  }
-                  onClick={() => setOpen(!open)}
-                />
-                <div
-                  className={twMerge(
-                    'absolute right-0 top-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
-                    open ? 'flex' : 'hidden'
-                  )}
-                  ref={setDropdownOptions}
-                >
-                  <div className="w-full p-4">
-                    <p>{vulkanEnabled ? 'Vulkan Supported GPUs' : 'Nvidia'}</p>
-                    <div className="py-2">
-                      <div className="rounded-lg">
-                        {gpuList
-                          .filter((gpu) =>
-                            vulkanEnabled
-                              ? gpu.name
-                              : gpu.name?.toLowerCase().includes('nvidia')
-                          )
-                          .map((gpu) => (
-                            <div
-                              key={gpu.id}
-                              className="mt-2 flex items-center space-x-2"
-                            >
-                              <Checkbox
-                                id={`gpu-${gpu.id}`}
-                                name="gpu-nvidia"
-                                value={gpu.id}
-                                checked={gpusInUse.includes(gpu.id)}
-                                onChange={() => handleGPUChange(gpu.id)}
-                                label={
-                                  <span>
-                                    <span>{gpu.name}</span>
-                                    {!vulkanEnabled && (
-                                      <span>{gpu.vram}MB VRAM</span>
-                                    )}
-                                  </span>
-                                }
-                              />
-                            </div>
-                          ))}
-                      </div>
-                      {gpuEnabled && gpusInUse.length > 1 && (
-                        <div className="mt-2 flex items-start space-x-2 text-[hsla(var(--warning-bg))]">
-                          <AlertTriangleIcon
-                            size={16}
-                            className="flex-shrink-0"
-                          />
-                          <p className="text-xs leading-relaxed">
-                            If multi-GPU is enabled with different GPU models or
-                            without NVLink, it could impact token speed.
-                          </p>
+
+            {gpuList.length > 0 && (
+              <div className="mt-2 flex w-full flex-col rounded-lg px-2 py-4">
+                <label className="mb-2 mr-2 inline-block font-medium">
+                  Choose device(s)
+                </label>
+                <div className="relative w-full md:w-1/2" ref={setToggle}>
+                  <Input
+                    value={selectedGpu.join() || ''}
+                    className="w-full cursor-pointer"
+                    readOnly
+                    placeholder=""
+                    suffixIcon={
+                      <ChevronDownIcon
+                        size={14}
+                        className={twMerge(open && 'rotate-180')}
+                      />
+                    }
+                    onClick={() => setOpen(!open)}
+                  />
+                  <div
+                    className={twMerge(
+                      'absolute right-0 top-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+                      open ? 'flex' : 'hidden'
+                    )}
+                    ref={setDropdownOptions}
+                  >
+                    <div className="w-full p-4">
+                      <p>
+                        {vulkanEnabled ? 'Vulkan Supported GPUs' : 'Nvidia'}
+                      </p>
+                      <div className="py-2">
+                        <div className="rounded-lg">
+                          {gpuList
+                            .filter((gpu) =>
+                              vulkanEnabled
+                                ? gpu.name
+                                : gpu.name?.toLowerCase().includes('nvidia')
+                            )
+                            .map((gpu) => (
+                              <div
+                                key={gpu.id}
+                                className="mt-2 flex items-center space-x-2"
+                              >
+                                <Checkbox
+                                  id={`gpu-${gpu.id}`}
+                                  name="gpu-nvidia"
+                                  value={gpu.id}
+                                  checked={gpusInUse.includes(gpu.id)}
+                                  onChange={() => handleGPUChange(gpu.id)}
+                                  label={
+                                    <span>
+                                      <span>{gpu.name}</span>
+                                      {!vulkanEnabled && (
+                                        <span>{gpu.vram}MB VRAM</span>
+                                      )}
+                                    </span>
+                                  }
+                                />
+                              </div>
+                            ))}
                         </div>
-                      )}
+                        {gpuEnabled && gpusInUse.length > 1 && (
+                          <div className="mt-2 flex items-start space-x-2 text-[hsla(var(--warning-bg))]">
+                            <AlertTriangleIcon
+                              size={16}
+                              className="flex-shrink-0"
+                            />
+                            <p className="text-xs leading-relaxed">
+                              If multi-GPU is enabled with different GPU models
+                              or without NVLink, it could impact token speed.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
