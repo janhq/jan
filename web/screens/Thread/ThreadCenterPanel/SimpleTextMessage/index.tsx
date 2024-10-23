@@ -67,7 +67,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       langPrefix: 'hljs',
       highlight(code, lang) {
         if (lang === undefined || lang === '') {
-          return hljs.highlightAuto(code).value
+          return hljs.highlight(code, { language: 'plaintext' }).value
         }
         try {
           return hljs.highlight(code, { language: lang }).value
@@ -276,32 +276,18 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </div>
           )}
 
-          {isUser ? (
-            <>
-              {editMessage === props.id ? (
-                <div>
-                  <EditChatInput message={props} />
-                </div>
-              ) : (
-                <div
-                  className={twMerge(
-                    'message flex flex-col gap-y-2 leading-relaxed',
-                    isUser ? 'whitespace-pre-wrap break-words' : 'p-4'
-                  )}
-                >
-                  {text}
-                </div>
-              )}
-            </>
-          ) : (
-            <div
-              className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed',
-                isUser && 'whitespace-pre-wrap break-words'
-              )}
-              dangerouslySetInnerHTML={{ __html: parsedText }}
-            />
+          {editMessage === props.id && (
+            <div>
+              <EditChatInput message={props} />
+            </div>
           )}
+
+          <div
+            className={twMerge(
+              'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed'
+            )}
+            dangerouslySetInnerHTML={{ __html: parsedText }}
+          />
         </>
       </div>
     </div>

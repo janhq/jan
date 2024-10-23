@@ -29,6 +29,8 @@ import { isLocalEngine } from '@/utils/modelEngine'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
+import RichTextEditor from './RichTextEditor'
+
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -40,7 +42,6 @@ import {
   getActiveThreadIdAtom,
   isGeneratingResponseAtom,
   threadStatesAtom,
-  waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
@@ -48,7 +49,6 @@ const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { stateModel } = useActiveModel()
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  // const [activeSetting, setActiveSetting] = useState(false)
   const spellCheck = useAtomValue(spellCheckAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
@@ -59,7 +59,6 @@ const ChatInput = () => {
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
-  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -78,51 +77,14 @@ const ChatInput = () => {
     (threadState) => threadState.waitingForResponse
   )
 
-  const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setCurrentPrompt(e.target.value)
-  }
-
   const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
-
-  useEffect(() => {
-    if (isWaitingToSend && activeThreadId) {
-      setIsWaitingToSend(false)
-      sendChatMessage(currentPrompt)
-    }
-  }, [
-    activeThreadId,
-    isWaitingToSend,
-    currentPrompt,
-    setIsWaitingToSend,
-    sendChatMessage,
-  ])
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus()
     }
   }, [activeThreadId])
-
-  useEffect(() => {
-    if (textareaRef.current?.clientHeight) {
-      textareaRef.current.style.height = activeSettingInputBox
-        ? '100px'
-        : '40px'
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
-      textareaRef.current.style.overflow =
-        textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
-    }
-  }, [textareaRef.current?.clientHeight, currentPrompt, activeSettingInputBox])
-
-  const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-      e.preventDefault()
-      if (messages[messages.length - 1]?.status !== MessageStatus.Pending)
-        sendChatMessage(currentPrompt)
-      else onStopInferenceClick()
-    }
-  }
 
   const onStopInferenceClick = async () => {
     stopInference()
@@ -163,22 +125,25 @@ const ChatInput = () => {
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
         {renderPreview(fileUpload)}
-        <TextArea
+
+        <RichTextEditor
           className={twMerge(
-            'relative max-h-[400px] resize-none  pr-20',
+            'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
+            'focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0',
+            'overflow-y-auto',
             fileUpload.length && 'rounded-t-none',
             experimentalFeature && 'pl-10',
             activeSettingInputBox && 'pb-14 pr-16'
           )}
           spellCheck={spellCheck}
-          data-testid="txt-input-chat"
-          style={{ height: activeSettingInputBox ? '100px' : '40px' }}
-          ref={textareaRef}
-          onKeyDown={onKeyDown}
+          style={{ height: activeSettingInputBox ? '98px' : '44px' }}
           placeholder="Ask me anything"
           disabled={stateModel.loading || !activeThread}
-          value={currentPrompt}
-          onChange={onPromptChange}
+        />
+        <TextArea
+          className="absolute inset-0 top-14 h-0 w-0"
+          data-testid="txt-input-chat"
+          onChange={(e) => setCurrentPrompt(e.target.value)}
         />
         {experimentalFeature && (
           <Tooltip
@@ -437,30 +402,6 @@ const ChatInput = () => {
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
               </Badge>
-              {/* Temporary disable it */}
-              {/* {experimentalFeature && (
-                <Badge
-                  className="flex cursor-pointer items-center gap-x-1"
-                  theme="secondary"
-                  variant={
-                    activeTabThreadRightPanel === 'tools' ? 'solid' : 'outline'
-                  }
-                  onClick={() => {
-                    setActiveTabThreadRightPanel('tools')
-                    if (matches) {
-                      setShowRightPanel(!showRightPanel)
-                    } else if (!showRightPanel) {
-                      setShowRightPanel(true)
-                    }
-                  }}
-                >
-                  <ShapesIcon
-                    size={16}
-                    className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
-                  />
-                  <span>Tools</span>
-                </Badge>
-              )} */}
             </div>
             <Button
               theme="icon"
