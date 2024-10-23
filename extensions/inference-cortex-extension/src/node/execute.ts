@@ -91,15 +91,15 @@ export const executableCortexFile = (
     : process.platform === 'darwin'
       ? os()
       : [
-          gpuRunMode(gpuSetting) !== 'cuda' ||
-          cpuInstruction === 'avx2'
-            ? cpuInstruction
-            : 'noavx',
-          gpuRunMode(gpuSetting),
-          cudaVersion(gpuSetting),
-        ]
-          .filter((e) => !!e)
-          .join('-')
+        gpuRunMode(gpuSetting) !== 'cuda' ||
+          cpuInstruction === 'avx2' || cpuInstruction === 'avx512'
+          ? cpuInstruction
+          : 'noavx',
+        gpuRunMode(gpuSetting),
+        cudaVersion(gpuSetting),
+      ]
+        .filter((e) => !!e)
+        .join('-')
   let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let binaryName = `cortex-server${extension()}`
