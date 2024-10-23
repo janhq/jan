@@ -12,7 +12,7 @@
   "id": "llava-13b",
   "object": "model",
   "name": "LlaVa 13B Q4",
-  "version": "1.1",
+  "version": "1.2",
   "description": "LlaVa can bring vision understanding to Jan",
   "format": "gguf",
   "settings": {
@@ -24,7 +24,8 @@
     "mmproj": "mmproj-model-f16.gguf"
   },
   "parameters": {
-    "max_tokens": 4096
+    "max_tokens": 4096,
+    "stop": ["</s>"]
   },
   "metadata": {
     "author": "liuhaotian",

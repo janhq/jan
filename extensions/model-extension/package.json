@@ -1,7 +1,7 @@
 {
   "name": "@janhq/model-extension",
   "productName": "Model Management",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "Model Management Extension provides model exploration and seamless downloads",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",

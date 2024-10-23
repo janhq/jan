@@ -411,7 +411,8 @@ export default class JanModelExtension extends ModelExtension {
                     .toLowerCase()
                     .includes(JanModelExtension._tensorRtEngineFormat)
                 )
-              })?.length > 0 // TODO: find better way (can use basename to check the file name with source url)
+                // Check if the number of matched files equals the number of sources
+              })?.length >= model.sources.length
             )
           })
 

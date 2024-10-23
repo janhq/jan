@@ -30,7 +30,6 @@ import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   getActiveThreadIdAtom,
-  waitingToSendMessage,
 } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
@@ -47,7 +46,6 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const setMessages = useSetAtom(setConvoMessagesAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const spellCheck = useAtomValue(spellCheckAtom)
-  const [isWaitingToSend, setIsWaitingToSend] = useAtom(waitingToSendMessage)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const setEditMessage = useSetAtom(editMessageAtom)
   const [showDialog, setshowDialog] = useState(false)
@@ -55,19 +53,6 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const onPromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setEditPrompt(e.target.value)
   }
-
-  useEffect(() => {
-    if (isWaitingToSend && activeThreadId) {
-      setIsWaitingToSend(false)
-      sendChatMessage(editPrompt)
-    }
-  }, [
-    activeThreadId,
-    isWaitingToSend,
-    editPrompt,
-    setIsWaitingToSend,
-    sendChatMessage,
-  ])
 
   useEffect(() => {
     if (textareaRef.current) {

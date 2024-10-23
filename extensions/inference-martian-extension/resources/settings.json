@@ -14,7 +14,7 @@
   {
     "key": "chat-completions-endpoint",
     "title": "Chat Completions Endpoint",
-    "description": "The endpoint to use for chat completions. See the [Martian API documentation](https://docs.withmartian.com/martian-model-router/api-reference/get-chat-completions) for more information.",
+    "description": "The endpoint to use for chat completions. See the [Martian API documentation](https://docs.withmartian.com/martian-model-router/getting-started/quickstart-integrating-martian-into-your-codebase) for more information.",
     "controllerType": "input",
     "controllerProps": {
       "placeholder": "https://withmartian.com/api/openai/v1/chat/completions",
