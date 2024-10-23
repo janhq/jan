@@ -92,10 +92,9 @@ export const executableCortexFile = (
       ? os()
       : [
           gpuRunMode(gpuSetting) !== 'cuda' ||
-          cpuInstruction === 'avx' ||
-          cpuInstruction === 'noavx'
+          cpuInstruction === 'avx2'
             ? cpuInstruction
-            : '',
+            : 'noavx',
           gpuRunMode(gpuSetting),
           cudaVersion(gpuSetting),
         ]
