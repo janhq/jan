@@ -1,0 +1,21 @@
+{
+  "strategy": {
+    "display": "hidden"
+  },
+  "project-management": {
+    "display": "hidden"
+  },
+  "engineering": {
+    "display": "hidden"
+  },
+  "product-design": {
+    "display": "hidden"
+  },
+  "analytics": {
+    "display": "hidden"
+  },
+  "website-docs": {
+    "title": "Website & Docs",
+    "display": "hidden"
+  }
+}

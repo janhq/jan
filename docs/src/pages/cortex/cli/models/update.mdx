@@ -1,0 +1,48 @@
+---
+title: Cortex Models Update
+description: Cortex models subcommands.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Cortex,
+    Jan,
+    LLMs
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Cards, Card } from 'nextra/components'
+
+<Callout type="warning">
+🚧 Cortex is under construction.
+</Callout>
+
+# `cortex models update`
+
+This command updates a model configuration defined by a `MODEL_ID`.
+
+<Callout type="info">
+This command is compatible with all OpenAI and OpenAI-compatible endpoints.
+</Callout>
+
+## Usage
+
+```bash
+cortex models update MODEL_ID OPTIONS
+```
+
+## Options
+```
+  -m, --model <model_id>      Model Id to update
+  -c, --options <options...>  Specify the options to update the model. Syntax: -c option1=value1 option2=value2. For
+                              example: cortex models update -c max_tokens=100 temperature=0.5
+  -h, --help                  display help for command
+```

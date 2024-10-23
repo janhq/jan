@@ -1,0 +1,199 @@
+---
+title: Managing Models
+description: Manage your interaction with AI locally.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    threads,
+    chat history,
+    thread history,
+  ]
+---
+import { Callout, Steps } from 'nextra/components' 
+
+# Overview
+This guide provides comprehensive instructions on adding, customizing, and deleting models within the Jan platform. 
+
+## Add Models
+
+There are various ways to add models to Jan.
+
+Currently, Jan natively supports the following model formats: 
+- GGUF (through a llama.cpp engine)
+- TensorRT (through a TRT-LLM engine)
+
+### Download from Jan Hub
+Jan Hub provides three convenient methods to access machine learning models. Here’s a clear step-by-step guide for each method:
+
+#### 1. Download from the Recommended List
+The Recommended List is a great starting point if you're looking for popular and pre-configured models that work well and quickly on most computers.
+
+1. Open the Jan app and navigate to the Hub.
+<br/>
+![Jan Hub](../_assets/hub.png)
+<br/>
+2. Select models, clicking the `v` dropdown for more information. 
+<Callout type="info">
+Models with the `Recommended` label will likely run faster on your computer.
+</Callout>
+3. Click **Download** to download the model.
+<br/>
+![Download Model](../_assets/download-button.png)
+
+#### 2. Download with HuggingFace Model's ID or URL 
+If you need a specific model from [Hugging Face](https://huggingface.co/models), Jan Hub lets you download it directly using the model’s ID or URL.
+<Callout type="warning">
+Only `GGUF` models are supported for this feature.
+</Callout>
+1. Go to the [Hugging Face](https://huggingface.co/models).
+2. Select the model you want to use.
+3. Copy the Model's ID or URL, for example: `MaziyarPanahi/Mixtral-8x22B-Instruct-v0.1-GGUF` or `https://huggingface.co/MaziyarPanahi/Mixtral-8x22B-Instruct-v0.1-GGUF`.
+4. Return to the Jan app and click on the Hub tab.
+<br/>
+![Jan Hub](../_assets/hub.png)
+<br/>
+5. Paste the **URL** or the **model ID** you have copied into the search bar.
+<br/>
+![Search Bar](../_assets/search-bar.png)
+<br/>
+6. The app will show all available versions of the model.
+7. Click **Download** to download the model.
+<br/>
+![Download Model](../_assets/download-button2.png)
+<br/>
+#### 3. Download with Deep Link
+You can also use Jan's deep link feature to download a specific model from [Hugging Face](https://huggingface.co/models). The deep link format is: `jan://models/huggingface/<model's ID>`.
+<Callout type="warning">
+The deep link feature cannot be used for models that require:
+- API Token.
+- Acceptance of usage agreement.
+
+You will need to download such models manually.
+</Callout>
+1. Go to the [Hugging Face](https://huggingface.co/models).
+2. Select the model you want to use.
+3. Copy the Model's ID or URL, for example: `TheBloke/Magicoder-S-DS-6.7B-GGUF`.
+4. Enter the deep link URL with your chosen model's ID in your browser. For example: `jan://models/huggingface/TheBloke/Magicoder-S-DS-6.7B-GGUF`
+<br/>
+![Paste the URL](../_assets/browser1.png)
+<br/>
+5. A prompt will appear, click **Open** to open the Jan app.
+<br/>
+![Click Open](../_assets/browser2.png)
+<br/>
+6. The app will show all available versions of the model.
+7. Click **Download** to download the model.
+<br/>
+![Download Model](../_assets/download-button3.png)
+<br/>
+### Import or Symlink Local Models
+
+You can also point to existing model binary files on your local filesystem. 
+This is the easiest and most space-efficient way if you have already used other local AI applications.
+
+1. Navigate to the Settings
+<br/>
+![Jan Hub](../_assets/hub.png)
+<br/>
+2. Click on `My Models` at the top.
+<br/>
+![Import Model](../_assets/import.png)
+<br/>
+3. Click the `Import Model` button on the top-right of your screen.
+4. Click the upload icon button.
+<br/>
+![Download Icon](../_assets/download-icon.png)
+<br/>
+4. Import using `.GGUF` file or a folder.
+<br/>
+![Import Model](../_assets/import2.png)
+<br/>
+5. Select the model or the folder containing multiple models.
+
+### Add a Model Manually
+You can also add a specific model that is not available within the **Hub** section by following the steps below:
+1. Open the Jan app.
+2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+<br/>
+![Settings](../_assets/settings.png)
+<br/>
+3. Under the **Settings screen**, click **Advanced Settings**.
+<br/>
+![Settings](../_assets/advance-set.png)
+<br/>
+4. Open the **Jan Data folder**.
+<br/>
+![Jan Data Folder](../_assets/data-folder.png)
+<br/>
+5. Head to the `~/jan/data/models/`.
+6. Make a new model folder and put a file named `model.json` in it.
+7. Insert the following `model.json` default code:
+```json
+{
+  "id": "<unique_identifier_of_the_model>",
+  "object": "<type_of_object, e.g., model, tool>",
+  "name": "<name_of_the_model>",
+  "version": "<version_number>",
+  "description": "<brief_description_of_the_model>",
+  "format": "<format_of_the_model_api_or_other>",
+  "settings": "<additional_settings_as_needed>",
+  "parameters": {
+    "max_tokens": "<maximum_number_of_tokens_the_model_can_generate>",
+    "temperature": "<temperature_setting_for_randomness_in_generation>"
+  },
+  "metadata": {
+    "author": "<name_of_the_creator_or_organization>",
+    "tags": ["<list_of_relevant_tags_describing_the_model>"]
+  },
+  "engine": "<engine_or_platform_the_model_runs_on>",
+  "source": "<url_or_source_of_the_model_information>"
+}
+```
+There are two important fields in `model.json` that you need to set:
+
+#### Settings
+
+This is the field where you can set your engine configurations.
+
+#### Parameters
+
+`parameters` are the adjustable settings that affect how your model operates or processes the data.
+The fields in `parameters` are typically general and can be the same across models. Here is an example of model parameters:
+
+```json
+"parameters":{
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "stream": true,
+  "max_tokens": 4096,
+  "frequency_penalty": 0,
+  "presence_penalty": 0
+}
+```
+
+<Callout type='info'>
+To see the complete list of a model's parameters, please see [Model Parameters](/docs/models#model-parameters).
+</Callout>
+
+## Delete Models
+To delete a model:
+
+1. Go to **Settings**.
+<br/>
+![Settings](../_assets/settings.png)
+<br/>
+2. Go to **My Models**.
+<br/>
+![My Models](../_assets/mymodels.png)
+<br/>
+3. Select the three dots next and select **Delete model**.
+<br/>
+![Delete Model](../_assets/delete.png)

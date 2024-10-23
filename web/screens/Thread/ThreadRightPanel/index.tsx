@@ -251,7 +251,7 @@ const ThreadRightPanel = () => {
                 onChange={onAssistantInstructionChanged}
               />
             </div>
-            {experimentalFeature && <CopyOverInstruction />}
+            <CopyOverInstruction />
           </div>
         </TabsContent>
         <TabsContent value="model">

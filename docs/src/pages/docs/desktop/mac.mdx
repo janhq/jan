@@ -1,0 +1,187 @@
+---
+title: Mac
+description: Get started quickly with Jan, a ChatGPT-alternative that runs on your own computer, with a local API server. Learn how to install Jan and select an AI model to start chatting.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    quickstart,
+    getting started,
+    using AI model,
+    installation,
+    "desktop"
+  ]
+---
+
+import { Tabs } from 'nextra/components'
+import { Callout } from 'nextra/components'
+import FAQBox from '@/components/FaqBox'
+
+
+# Mac Installation
+Jan has been developed as a Mac Universal application, allowing it to run natively on both Apple Silicon and Intel-based Macs.
+
+## Compatibility
+
+Ensure that your system meets the following requirements to use Jan effectively:
+<Tabs items={['Mac Intel CPU', 'Mac Apple Silicon']}>
+<Tabs.Tab>
+<Tabs items={['Operating System', 'Memory', 'Disk']}>
+<Tabs.Tab>
+- MacOSX 13.6 or higher.
+</Tabs.Tab>
+<Tabs.Tab>
+- 8GB for running up to 3B models.
+- 16GB for running up to 7B models.
+- 32GB for running up to 13B models.
+</Tabs.Tab>
+<Tabs.Tab>
+- At least 10GB for app and model download.
+</Tabs.Tab>
+</Tabs>
+</Tabs.Tab>
+<Tabs.Tab>
+<Tabs items={['Operating System', 'Memory', 'Disk']}>
+<Tabs.Tab>
+- MacOSX 13.6 or higher.
+</Tabs.Tab>
+<Tabs.Tab>
+- 8GB for running up to 3B models.
+- 16GB for running up to 7B models.
+- 32GB for running up to 13B models.
+<Callout type="info">
+Apple Silicon Macs leverage Metal for GPU acceleration, providing faster performance than Intel Macs, which rely solely on CPU processing.
+
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+- At least 10GB for app and model download.
+</Tabs.Tab>
+</Tabs>
+</Tabs.Tab>
+</Tabs>
+## Installing Jan
+
+To install Jan, follow the steps below:
+
+### Step 1: Download the Jan Application
+
+Jan provides two types of releases:
+<Tabs items={['Stable Releases', 'Nightly Releases']}>
+<Tabs.Tab>
+#### Stable Releases
+
+Please download Jan from official distributions, or build it from source.
+
+- **Official Website**: [https://jan.ai](https://jan.ai/)
+- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/releases)
+
+<Callout type="info">
+Make sure to verify the URL to ensure that it's the official Jan website and GitHub repository.
+</Callout>
+</Tabs.Tab>
+<Tabs.Tab>
+#### Nightly Releases
+
+Nightly Releases let you test out new features, which may be buggy:
+
+- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/actions/workflows/jan-electron-build-nightly.yml)
+
+<Callout type="info">
+Keep in mind that this build might crash frequently and may contain bugs!
+</Callout>
+</Tabs.Tab>
+</Tabs>
+### Step 2: Install the Jan Application
+
+1. Once you have downloaded the Jan app `.dmg` file, open the file.
+2. Drag the application icon to the Applications folder shortcut.
+3. Wait for the installation process.
+4. Once installed, you can access Jan on your machine.
+
+#### Install Jan with Homebrew
+
+You can also install Jan using the following Homebrew command:
+
+```bash
+brew install --cask jan
+```
+
+<Callout type="warning">
+- Ensure that you have installed Homebrew and its dependencies.
+- Homebrew package installation is currently limited to **Apple Silicon Macs**, with upcoming support for Windows and Linux.
+</Callout>
+
+## Data Folder
+
+By default, Jan is installed in the following directory:
+
+```sh
+# Default installation directory
+~/Library/Application\ Support/Jan/data
+```
+
+<Callout type="info">
+- Please see the [Jan Data Folder](/docs/data-folder) for more details about the data folder structure.
+</Callout>
+
+## Metal Acceleration
+
+Jan is specially designed to work well on Mac Silicon, using `llama.cpp` as its main engine for processing AI tasks efficiently. It **automatically uses [Metal](https://developer.apple.com/documentation/metal)**, Apple's latest technology that can be used for GPU acceleration, so you don’t need to turn on this feature manually.
+
+<Callout type="info">
+💡 Metal, used for GPU acceleration, is not supported on Intel-based Mac devices.
+
+</Callout>
+
+## Uninstalling Jan
+
+To uninstall Jan, follow the steps below:
+
+1. If the app is currently open, exit the app before continuing.
+2. Open the **Finder** menu.
+3. Click the **Applications** option from the sidebar.
+4. Find the **Jan** app or type in the search bar.
+5. Use any of these ways to move the **Jan** app to the Trash:
+- Drag the app to the Trash.
+- Select the app and choose the Move to Trash option.
+- Select the app and press Command-Delete on your keyboard.
+6. Use the following command to delete Jan's user data and app cache:
+```bash
+# Remove all user data
+rm -rf ~/jan
+
+# Delete the application data
+rm -rf ~/Library/Application\ Support/Jan/data
+
+# Delete the application cache
+rm -rf ~/Library/Application\ Support/Jan/cache
+```
+
+{/* ## FAQs
+
+<FAQBox title="What are Nightly Releases, and how can I access them?">
+Nightly Releases allow you to test new features and previews of upcoming stable releases. You can download them from Jan's GitHub repository. However, remember that these builds might contain bugs and crash frequently.
+</FAQBox>
+<FAQBox title="Can I move the Jan data folder to a different location?">
+Yes, you can move the Jan data folder.
+</FAQBox>
+<FAQBox title="How do I enable GPU acceleration for better performance">
+Depending on your Mac type (Apple Silicon or Intel), you won't be able to utilize the GPU acceleration feature if you have a Mac with an Intel processor.
+</FAQBox>
+<FAQBox title="Can I recover the deleted Jan data folder after uninstallation?">
+No, it cannot be restored once you delete the Jan data folder during uninstallation.
+</FAQBox>
+
+<Callout type="info">
+💡 Warning: If you have any trouble during installation, please see our [Troubleshooting](/docs/troubleshooting) guide to resolve your problem.
+
+</Callout>
+*/}

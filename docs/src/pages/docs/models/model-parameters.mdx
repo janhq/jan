@@ -1,0 +1,69 @@
+---
+title: Model Parameters
+description: Manage your interaction with AI locally.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    threads,
+    chat history,
+    thread history,
+  ]
+---
+import { Callout, Steps } from 'nextra/components' 
+
+## Model Parameters
+A model has three main parameters to configure:
+- Inference Parameters
+- Model Parameters
+- Engine Parameters
+
+### Inference Parameters
+Inference parameters are settings that control how an AI model generates outputs. These parameters include the following:
+| Parameter           | Description                                                                                                                                                                  |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Temperature**     | - Influences the randomness of the model's output.<br></br>- A higher temperature leads to more random and diverse responses, while a lower temperature produces more predictable outputs. |
+| **Top P** | - Sets a probability threshold, allowing only the most likely tokens whose cumulative probability exceeds the threshold to be considered for generation.<br></br>- A lower top-P value (e.g., 0.9) may be more suitable for focused, task-oriented applications, while a higher top-P value (e.g., 0.95 or 0.97) may be better for more open-ended, creative tasks. |
+| **Stream**          | - Enables real-time data processing, which is useful for applications needing immediate responses, like live interactions. It accelerates predictions by processing data as it becomes available.<br></br>- Turned on by default. |
+| **Max Tokens**      | - Sets the upper limit on the number of tokens the model can generate in a single output.<br></br>- A higher limit benefits detailed and complex responses, while a lower limit helps maintain conciseness.|
+| **Stop Sequences**  | - Defines specific tokens or phrases that signal the model to stop producing further output.<br></br>- Use common concluding phrases or tokens specific to your application’s domain to ensure outputs terminate appropriately.         |
+| **Frequency Penalty** | - Modifies the likelihood of the model repeating the same words or phrases within a single output, reducing redundancy in the generated text.<br></br>- Increase the penalty to avoid repetition in scenarios where varied language is preferred, such as creative writing or content generation.|
+| **Presence Penalty** | - Encourages the generation of new and varied concepts by penalizing tokens that have already appeared, promoting diversity and novelty in the output.<br></br>- Use a higher penalty for tasks requiring high novelty and variety, such as brainstorming or ideation sessions.|
+
+### Model Parameter
+Model parameters are the settings that define and configure the model's behavior. These parameters include the following:
+| Parameter           | Description                                                                                                                                                                  |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Prompt Template**     | - This predefined text or framework generates responses or predictions. It is a structured guide that the AI model fills in or expands upon during the generation process.<br></br>- For example, a prompt template might include placeholders or specific instructions that direct how the model should formulate its outputs. |
+
+### Engine Parameters
+Engine parameters are the settings that define how the model processes input data and generates output. These parameters include the following:
+| Parameter           | Description                                                                                                                                                                  |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Number of GPU Layers (ngl)** | - This parameter specifies the number of transformer layers in the model that are offloaded to the GPU for accelerated computation. Utilizing the GPU for these layers can significantly reduce inference time due to the parallel processing capabilities of GPUs.<br></br>- Adjusting this parameter can help balance between computational load on the GPU and CPU, potentially improving performance for different deployment scenarios. |
+| **Context Length**  | - This parameter determines the maximum input amount the model can generate responses. The maximum context length varies with the model used. This setting is crucial for the model’s ability to produce coherent and contextually appropriate outputs.<br></br>- For tasks like summarizing long documents that require extensive context, use a higher context length. A lower setting can quicken response times and lessen computational demand for simpler queries or brief interactions. |
+
+<Callout type="info">
+By default, Jan sets the **Context Length** to the maximum supported by your model, which may slow down response times. For lower-spec devices, reduce **Context Length** to **1024** or **2048**, depending on your device's specifications, to improve speed.
+</Callout>
+
+## Customize the Model Settings
+Adjust model settings for a specific conversation:
+
+1. Navigate to a **thread**.
+2. Click the **Model** tab.
+<br/>
+![Specific Conversation](../_assets/model-tab.png)
+3. You can customize the following parameters:
+  - Inference parameters
+  - Model parameters
+  - Engine parameters
+<br/>
+![Specific Conversation](../_assets/model-parameters.png)

@@ -1,0 +1,10 @@
+{
+  "manage-models": {
+    "title": "Managing Models",
+    "href": "/docs/models/manage-models"
+  },
+  "model-parameters": {
+    "title": "Model Parameters",
+    "href": "/docs/models/model-parameters"
+  }
+}

@@ -19,8 +19,7 @@
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
->[!Warning]
->**Jan is currently in Development**: Expect breaking changes and bugs!
+> [!Warning] >**Jan is currently in Development**: Expect breaking changes and bugs!
 
 Jan is an open-source ChatGPT alternative that runs 100% offline on your computer.
 
@@ -45,31 +44,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
     <td style="text-align:center"><b>Stable (Recommended)</b></td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/latest/win-x64'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/windows.png' style="height:14px; width: 14px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/latest/mac-x64'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/latest/mac-arm64'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2/M3/M4</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/latest/linux-amd64-deb'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/latest/linux-amd64-appimage'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
     </td>
@@ -78,31 +77,31 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
     <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/nightly/win-x64'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/windows.png' style="height:14px; width: 14px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
         <b>jan.exe</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/nightly/mac-x64'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>Intel</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/nightly/mac-arm64'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/mac.png' style="height:15px; width: 15px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
         <b>M1/M2/M3/M4</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/nightly/linux-amd64-deb'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.deb</b>
       </a>
     </td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/nightly/linux-amd64-appimage'>
-        <img src='https://github.com/janhq/docs/blob/main/static/img/linux.png' style="height:14px; width: 14px" />
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
         <b>jan.AppImage</b>
       </a>
     </td>

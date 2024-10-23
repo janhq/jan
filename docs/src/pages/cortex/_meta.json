@@ -1,0 +1,136 @@
+{
+  "-- Switcher": {
+    "type": "separator",
+    "title": "Switcher"
+  },
+  "get-started": {
+    "title": "GET STARTED",
+    "type": "separator"
+  },
+  "index": {
+    "title": "Overview",
+    "href": "/cortex"
+  },
+  "quickstart": {
+    "title": "Quickstart"
+  },
+  "hardware": {
+    "title": "Hardware"
+  },
+  "installation": {
+    "title": "Installation"
+  },
+  "basicusage": {
+    "title": "BASIC USAGE",
+    "type": "separator"
+  },
+  "command-line": {
+    "title": "CLI"
+  },
+  "ts-library": {
+    "title": "Typescript Library"
+  },
+  "py-library": {
+    "title": "Python Library"
+  },
+  "server": {
+    "title": "Server Endpoint"
+  },
+  "capabilities": {
+    "title": "CAPABILITIES",
+    "type": "separator"
+  },
+  "text-generation": {
+    "title": "Text Generation"
+  },
+  "function-calling": {
+    "display": "hidden",
+    "title": "Function Calling"
+  },
+  "embeddings": {
+    "display": "hidden",
+    "title": "Embeddings"
+  },
+  "fine-tuning": {
+    "display": "hidden",
+    "title": "Fine-tuning"
+  },
+  "vision": {
+    "display": "hidden",
+    "title": "Vision"
+  },
+  "model-operations": {
+    "display": "hidden",
+    "title": "Model Operations"
+  },
+  "rag": {
+    "display": "hidden",
+    "title": "RAG"
+  },
+  "assistant": {
+    "display": "hidden",
+    "title": "ASSISTANTS",
+    "type": "separator"
+  },
+  "assistants": {
+    "display": "hidden",
+    "title": "Overview"
+  },
+  "commandline": {
+    "title": "COMMAND LINE",
+    "type": "separator"
+  },
+  "cli": {
+    "title": "cortex"
+  },
+  "training-engines": {
+    "display": "hidden",
+    "title": "TRAINING ENGINES"
+  },
+  "extensions": {
+    "display": "hidden",
+    "title": "EXTENSIONS",
+    "type": "separator"
+  },
+  "build-extension": {
+    "display": "hidden",
+    "title": "Build an Extension"
+  },
+  "architectures": {
+    "title": "ARCHITECTURE",
+    "type": "separator"
+  },
+  "architecture": {
+    "title": "Cortex"
+  },
+  "cortex-cpp": {
+    "title": "Cortex.cpp"
+  },
+  "cortex-llamacpp": {
+    "title": "Cortex.llamacpp"
+  },
+  "cortex-tensorrt-llm": {
+    "title": "Cortex.tensorrt-llm",
+    "display": "hidden"
+  },
+  "cortex-python": {
+    "title": "Cortex.python",
+    "display": "hidden"
+  },
+  "cortex-openvino": {
+    "title": "Cortex.OpenVino",
+    "display": "hidden"
+  },
+  "ext-architecture": {
+    "display": "hidden",
+    "title": "Extensions"
+  },
+  "troubleshooting": {
+    "title": "TROUBLESHOOTING",
+    "type": "separator"
+  },
+  "error-codes": {
+    "display": "hidden",
+    "title": "Error Codes"
+  }
+}

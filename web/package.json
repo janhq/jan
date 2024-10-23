@@ -50,7 +50,10 @@
     "ulidx": "^2.3.0",
     "use-debounce": "^10.0.0",
     "uuid": "^9.0.1",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "slate": "latest",
+    "slate-react": "latest",
+    "slate-history": "latest"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.0.1",
@@ -74,7 +77,6 @@
     "eslint-plugin-import": "^2.28.1",
     "eslint-plugin-prettier": "^5.0.1",
     "eslint-plugin-react": "^7.34.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
     "jest-environment-jsdom": "^29.7.0",
     "jest-runner": "^29.7.0",
     "prettier": "^3.0.3",
