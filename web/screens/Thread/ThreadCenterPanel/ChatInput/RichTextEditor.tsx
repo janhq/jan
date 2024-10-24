@@ -301,6 +301,11 @@ const RichTextEditor = ({
       textareaRef.current.style.overflow =
         textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
+
+    if (currentPrompt.length === 0) {
+      resetEditor()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textareaRef.current?.clientHeight, currentPrompt, activeSettingInputBox])
 
   const onStopInferenceClick = async () => {
@@ -317,13 +322,15 @@ const RichTextEditor = ({
 
     // Adjust the height of the textarea to its initial state
     if (textareaRef.current) {
-      textareaRef.current.style.height = '40px' // Reset to the initial height or your desired height
+      textareaRef.current.style.height = activeSettingInputBox
+        ? '100px'
+        : '44px'
       textareaRef.current.style.overflow = 'hidden' // Reset overflow style
     }
 
     // Ensure the editor re-renders decorations
     editor.onChange()
-  }, [editor])
+  }, [activeSettingInputBox, editor])
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
