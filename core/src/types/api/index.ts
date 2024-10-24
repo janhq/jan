@@ -72,6 +72,8 @@ export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
+  onFileDownloadStopped = 'onFileDownloadStopped',
+  onFileDownloadStarted = 'onFileDownloadStarted',
   onFileUnzipSuccess = 'onFileUnzipSuccess',
 }
 

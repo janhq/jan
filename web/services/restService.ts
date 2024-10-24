@@ -9,7 +9,7 @@ export function openExternalUrl(url: string) {
 }
 
 // Define API routes based on different route types
-export const APIRoutes = [...CoreRoutes.map((r) => ({ path: `app`, route: r }))]
+export const APIRoutes = CoreRoutes.map((r) => ({ path: `app`, route: r }))
 
 // Define the restAPI object with methods for each API route
 export const restAPI = {

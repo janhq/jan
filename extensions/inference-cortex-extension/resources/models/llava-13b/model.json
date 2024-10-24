@@ -1,0 +1,36 @@
+{
+  "sources": [
+    {
+      "filename": "llava-v1.6-vicuna-13b.Q4_K_M.gguf",
+      "url": "https://huggingface.co/cjpais/llava-v1.6-vicuna-13b-gguf/resolve/main/llava-v1.6-vicuna-13b.Q4_K_M.gguf"
+    },
+    {
+      "filename": "mmproj-model-f16.gguf",
+      "url": "https://huggingface.co/cjpais/llava-v1.6-vicuna-13b-gguf/resolve/main/mmproj-model-f16.gguf"
+    }
+  ],
+  "id": "llava-13b",
+  "object": "model",
+  "name": "LlaVa 13B Q4",
+  "version": "1.2",
+  "description": "LlaVa can bring vision understanding to Jan",
+  "format": "gguf",
+  "settings": {
+    "vision_model": true,
+    "text_model": false,
+    "ctx_len": 4096,
+    "prompt_template": "\n### Instruction:\n{prompt}\n### Response:\n",
+    "llama_model_path": "llava-v1.6-vicuna-13b.Q4_K_M.gguf",
+    "mmproj": "mmproj-model-f16.gguf"
+  },
+  "parameters": {
+    "max_tokens": 4096,
+    "stop": ["</s>"]
+  },
+  "metadata": {
+    "author": "liuhaotian",
+    "tags": ["Vision"],
+    "size": 7870000000
+  },
+  "engine": "llama-cpp"
+}

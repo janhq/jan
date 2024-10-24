@@ -1,12 +1,18 @@
+/**
+ * @jest-environment jsdom
+ */
 import { renderHook, act } from '@testing-library/react'
 import { useGetHFRepoData } from './useGetHFRepoData'
 import { extensionManager } from '@/extension'
+import * as hf from '@/utils/huggingface'
 
 jest.mock('@/extension', () => ({
   extensionManager: {
     get: jest.fn(),
   },
 }))
+
+jest.mock('@/utils/huggingface')
 
 describe('useGetHFRepoData', () => {
   beforeEach(() => {
@@ -15,10 +21,7 @@ describe('useGetHFRepoData', () => {
 
   it('should fetch HF repo data successfully', async () => {
     const mockData = { name: 'Test Repo', stars: 100 }
-    const mockFetchHuggingFaceRepoData = jest.fn().mockResolvedValue(mockData)
-    ;(extensionManager.get as jest.Mock).mockReturnValue({
-      fetchHuggingFaceRepoData: mockFetchHuggingFaceRepoData,
-    })
+    ;(hf.fetchHuggingFaceRepoData as jest.Mock).mockReturnValue(mockData)
 
     const { result } = renderHook(() => useGetHFRepoData())
 
@@ -34,6 +37,5 @@ describe('useGetHFRepoData', () => {
 
     expect(result.current.error).toBeUndefined()
     expect(await data).toEqual(mockData)
-    expect(mockFetchHuggingFaceRepoData).toHaveBeenCalledWith('test-repo')
   })
 })

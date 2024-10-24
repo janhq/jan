@@ -103,17 +103,24 @@ const useImportModel = () => {
 
 const localImportModels = async (
   models: ImportingModel[],
+  // TODO: @louis - We will set this option when cortex.cpp supports it
   optionType: OptionType
-): Promise<void> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.importModels(models, optionType)
+): Promise<void> => {
+  await models
+    .filter((e) => !!e.modelId)
+    .map((model) => {
+      if (model.modelId)
+        extensionManager
+          .get<ModelExtension>(ExtensionTypeEnum.Model)
+          ?.importModel(model.modelId, model.path)
+    })
+}
 
 const localUpdateModelInfo = async (
   modelInfo: Partial<Model>
 ): Promise<Model | undefined> =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.updateModelInfo(modelInfo)
+    ?.updateModel(modelInfo)
 
 export default useImportModel

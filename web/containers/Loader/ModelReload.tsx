@@ -44,6 +44,11 @@ export default function ModelReload() {
           Reloading model {stateModel.model?.id}
         </span>
       </div>
+      <div className="my-4 mb-2 text-center">
+        <span className="text-[hsla(var(--text-secondary)]">
+          Model is reloading to apply new changes.
+        </span>
+      </div>
     </div>
   )
 }

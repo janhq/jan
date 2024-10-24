@@ -1,5 +1,4 @@
-import { GpuSetting } from '../miscellaneous'
-import { Model, ModelFile } from './modelEntity'
+import { Model } from './modelEntity'
 
 /**
  * Model extension for managing models.
@@ -8,38 +7,41 @@ export interface ModelInterface {
   /**
    * Downloads a model.
    * @param model - The model to download.
-   * @param network - Optional object to specify proxy/whether to ignore SSL certificates.
    * @returns A Promise that resolves when the model has been downloaded.
    */
-  downloadModel(
-    model: ModelFile,
-    gpuSettings?: GpuSetting,
-    network?: { ignoreSSL?: boolean; proxy?: string }
-  ): Promise<void>
+  pullModel(model: string, id?: string): Promise<void>
 
   /**
    * Cancels the download of a specific model.
    * @param {string} modelId - The ID of the model to cancel the download for.
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
-  cancelModelDownload(modelId: string): Promise<void>
+  cancelModelPull(model: string): Promise<void>
 
   /**
    * Deletes a model.
    * @param modelId - The ID of the model to delete.
    * @returns A Promise that resolves when the model has been deleted.
    */
-  deleteModel(model: ModelFile): Promise<void>
+  deleteModel(model: string): Promise<void>
 
   /**
-   * Gets a list of downloaded models.
+   * Gets downloaded models.
    * @returns A Promise that resolves with an array of downloaded models.
    */
-  getDownloadedModels(): Promise<ModelFile[]>
+  getModels(): Promise<Model[]>
 
   /**
-   * Gets a list of configured models.
-   * @returns A Promise that resolves with an array of configured models.
+   * Update a pulled model's metadata
+   * @param model - The model to update.
+   * @returns A Promise that resolves when the model has been updated.
    */
-  getConfiguredModels(): Promise<ModelFile[]>
+  updateModel(model: Partial<Model>): Promise<Model>
+
+  /**
+   * Import an existing model file.
+   * @param model id of the model to import
+   * @param modelPath - path of the model file
+   */
+  importModel(model: string, modePath: string): Promise<void>
 }

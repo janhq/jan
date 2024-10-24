@@ -1,1 +1,1 @@
-npm run lint --fix
+oxlint --fix || npm run lint --fix

@@ -46,8 +46,8 @@ const TableActiveModel = () => {
                 </td>
                 <td className="px-4 py-2">
                   <Badge theme="secondary">
-                    {activeModel.metadata.size
-                      ? toGibibytes(activeModel.metadata.size)
+                    {activeModel.metadata?.size
+                      ? toGibibytes(activeModel.metadata?.size)
                       : '-'}
                   </Badge>
                 </td>

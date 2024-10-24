@@ -69,7 +69,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
       return x.id === recommendModel[0] || x.id === recommendModel[1]
     } else {
       return (
-        x.metadata.tags.includes('Featured') && x.metadata.size < 5000000000
+        x.metadata?.tags?.includes('Featured') && x.metadata?.size < 5000000000
       )
     }
   })
@@ -143,7 +143,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     ) : (
                       filteredModels.map((model) => {
                         const isDownloading = downloadingModels.some(
-                          (md) => md.id === model.id
+                          (md) => md === model.id
                         )
                         return (
                           <div
@@ -161,13 +161,18 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                             </div>
                             <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                               <span className="font-medium">
-                                {toGibibytes(model.metadata.size)}
+                                {toGibibytes(model.metadata?.size)}
                               </span>
                               {!isDownloading ? (
                                 <DownloadCloudIcon
                                   size={18}
                                   className="cursor-pointer text-[hsla(var(--app-link))]"
-                                  onClick={() => downloadModel(model)}
+                                  onClick={() =>
+                                    downloadModel(
+                                      model.sources[0].url,
+                                      model.id
+                                    )
+                                  }
                                 />
                               ) : (
                                 Object.values(downloadStates)
@@ -210,7 +215,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
                 {featuredModel.slice(0, 2).map((featModel) => {
                   const isDownloading = downloadingModels.some(
-                    (md) => md.id === featModel.id
+                    (md) => md === featModel.id
                   )
                   return (
                     <div
@@ -253,12 +258,17 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                           <Button
                             theme="ghost"
                             className="!bg-[hsla(var(--secondary-bg))]"
-                            onClick={() => downloadModel(featModel)}
+                            onClick={() =>
+                              downloadModel(
+                                featModel.sources[0].url,
+                                featModel.id
+                              )
+                            }
                           >
                             Download
                           </Button>
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGibibytes(featModel.metadata.size)}
+                            {toGibibytes(featModel.metadata?.size)}
                           </span>
                         </div>
                       )}

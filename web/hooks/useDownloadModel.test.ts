@@ -13,12 +13,6 @@ jest.mock('jotai', () => ({
 }))
 jest.mock('@janhq/core')
 jest.mock('@/extension/ExtensionManager')
-jest.mock('./useGpuSetting', () => ({
-  __esModule: true,
-  default: () => ({
-    getGpuSettings: jest.fn().mockResolvedValue({ some: 'gpuSettings' }),
-  }),
-}))
 
 describe('useDownloadModel', () => {
   beforeEach(() => {
@@ -29,25 +23,24 @@ describe('useDownloadModel', () => {
   it('should download a model', async () => {
     const mockModel: core.Model = {
       id: 'test-model',
-      sources: [{ filename: 'test.bin' }],
+      sources: [{ filename: 'test.bin', url: 'https://fake.url' }],
     } as core.Model
 
     const mockExtension = {
-      downloadModel: jest.fn().mockResolvedValue(undefined),
+      pullModel: jest.fn().mockResolvedValue(undefined),
     }
     ;(useSetAtom as jest.Mock).mockReturnValue(() => undefined)
     ;(extensionManager.get as jest.Mock).mockReturnValue(mockExtension)
 
     const { result } = renderHook(() => useDownloadModel())
 
-    await act(async () => {
-      await result.current.downloadModel(mockModel)
+    act(() => {
+      result.current.downloadModel(mockModel.sources[0].url, mockModel.id)
     })
 
-    expect(mockExtension.downloadModel).toHaveBeenCalledWith(
-      mockModel,
-      { some: 'gpuSettings' },
-      { ignoreSSL: undefined, proxy: '' }
+    expect(mockExtension.pullModel).toHaveBeenCalledWith(
+      mockModel.sources[0].url,
+      mockModel.id
     )
   })
 
@@ -58,15 +51,18 @@ describe('useDownloadModel', () => {
     } as core.Model
 
     ;(core.joinPath as jest.Mock).mockResolvedValue('/path/to/model/test.bin')
-    ;(core.abortDownload as jest.Mock).mockResolvedValue(undefined)
+    const mockExtension = {
+      cancelModelPull: jest.fn().mockResolvedValue(undefined),
+    }
     ;(useSetAtom as jest.Mock).mockReturnValue(() => undefined)
+    ;(extensionManager.get as jest.Mock).mockReturnValue(mockExtension)
     const { result } = renderHook(() => useDownloadModel())
 
-    await act(async () => {
-      await result.current.abortModelDownload(mockModel)
+    act(() => {
+      result.current.abortModelDownload(mockModel.id)
     })
 
-    expect(core.abortDownload).toHaveBeenCalledWith('/path/to/model/test.bin')
+    expect(mockExtension.cancelModelPull).toHaveBeenCalledWith('test-model')
   })
 
   it('should handle proxy settings', async () => {
@@ -76,7 +72,7 @@ describe('useDownloadModel', () => {
     } as core.Model
 
     const mockExtension = {
-      downloadModel: jest.fn().mockResolvedValue(undefined),
+      pullModel: jest.fn().mockResolvedValue(undefined),
     }
     ;(useSetAtom as jest.Mock).mockReturnValue(() => undefined)
     ;(extensionManager.get as jest.Mock).mockReturnValue(mockExtension)
@@ -85,14 +81,13 @@ describe('useDownloadModel', () => {
 
     const { result } = renderHook(() => useDownloadModel())
 
-    await act(async () => {
-      await result.current.downloadModel(mockModel)
+    act(() => {
+      result.current.downloadModel(mockModel.sources[0].url, mockModel.id)
     })
 
-    expect(mockExtension.downloadModel).toHaveBeenCalledWith(
-      mockModel,
-      expect.objectContaining({ some: 'gpuSettings' }),
-      expect.anything()
+    expect(mockExtension.pullModel).toHaveBeenCalledWith(
+      mockModel.sources[0].url,
+      mockModel.id
     )
   })
 })

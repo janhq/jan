@@ -1,106 +1,42 @@
 import { useCallback } from 'react'
 
-import {
-  Model,
-  ExtensionTypeEnum,
-  ModelExtension,
-  abortDownload,
-  joinPath,
-  ModelArtifact,
-  DownloadState,
-  GpuSetting,
-  ModelFile,
-  dirName,
-} from '@janhq/core'
+import { ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 
-import { setDownloadStateAtom } from './useDownloadState'
-
-import useGpuSetting from './useGpuSetting'
+import { toaster } from '@/containers/Toast'
 
 import { extensionManager } from '@/extension/ExtensionManager'
+
 import {
-  ignoreSslAtom,
-  proxyAtom,
-  proxyEnabledAtom,
-} from '@/helpers/atoms/AppConfig.atom'
-import { addDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
+  addDownloadingModelAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 export default function useDownloadModel() {
-  const ignoreSSL = useAtomValue(ignoreSslAtom)
-  const proxy = useAtomValue(proxyAtom)
-  const proxyEnabled = useAtomValue(proxyEnabledAtom)
-  const setDownloadState = useSetAtom(setDownloadStateAtom)
+  const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
 
-  const { getGpuSettings } = useGpuSetting()
-
   const downloadModel = useCallback(
-    async (model: Model) => {
-      const childProgresses: DownloadState[] = model.sources.map(
-        (source: ModelArtifact) => ({
-          fileName: source.filename,
-          modelId: model.id,
-          time: {
-            elapsed: 0,
-            remaining: 0,
-          },
-          speed: 0,
-          percent: 0,
-          size: {
-            total: 0,
-            transferred: 0,
-          },
-          downloadState: 'downloading',
-        })
-      )
+    async (model: string, id?: string) => {
+      addDownloadingModel(id ?? model)
+      downloadLocalModel(model, id).catch((error) => {
+        if (error.message) {
+          toaster({
+            title: 'Download failed',
+            description: error.message,
+            type: 'error',
+          })
+        }
 
-      // set an initial download state
-      setDownloadState({
-        fileName: '',
-        modelId: model.id,
-        time: {
-          elapsed: 0,
-          remaining: 0,
-        },
-        speed: 0,
-        percent: 0,
-        size: {
-          total: 0,
-          transferred: 0,
-        },
-        children: childProgresses,
-        downloadState: 'downloading',
+        removeDownloadingModel(model)
       })
-
-      addDownloadingModel(model)
-      const gpuSettings = await getGpuSettings()
-      await localDownloadModel(
-        model,
-        ignoreSSL,
-        proxyEnabled ? proxy : '',
-        gpuSettings
-      )
     },
-    [
-      ignoreSSL,
-      proxy,
-      proxyEnabled,
-      getGpuSettings,
-      addDownloadingModel,
-      setDownloadState,
-    ]
+    [removeDownloadingModel, addDownloadingModel]
   )
 
-  const abortModelDownload = useCallback(async (model: Model | ModelFile) => {
-    for (const source of model.sources) {
-      const path =
-        'file_path' in model
-          ? await joinPath([await dirName(model.file_path), source.filename])
-          : await joinPath(['models', model.id, source.filename])
-      await abortDownload(path)
-    }
+  const abortModelDownload = useCallback(async (model: string) => {
+    await cancelModelDownload(model)
   }, [])
 
   return {
@@ -109,12 +45,12 @@ export default function useDownloadModel() {
   }
 }
 
-const localDownloadModel = async (
-  model: Model,
-  ignoreSSL: boolean,
-  proxy: string,
-  gpuSettings?: GpuSetting
-) =>
+const downloadLocalModel = async (model: string, id?: string) =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.downloadModel(model, gpuSettings, { ignoreSSL, proxy })
+    ?.pullModel(model, id)
+
+const cancelModelDownload = async (model: string) =>
+  extensionManager
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.cancelModelPull(model)

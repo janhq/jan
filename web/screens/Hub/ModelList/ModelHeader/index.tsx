@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { ModelFile } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { Button, Badge, Tooltip } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -38,7 +38,7 @@ import {
 } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
-  model: ModelFile
+  model: Model
   onClick: () => void
   open: string
 }
@@ -64,7 +64,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
   const assistants = useAtomValue(assistantsAtom)
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(model)
+    downloadModel(model.sources[0].url, model.id)
   }, [model, downloadModel])
 
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
@@ -81,7 +81,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
     </Button>
   )
 
-  const isDownloading = downloadingModels.some((md) => md.id === model.id)
+  const isDownloading = downloadingModels.some((md) => md === model.id)
 
   const onUseModelClick = useCallback(async () => {
     if (assistants.length === 0) {
@@ -123,17 +123,6 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
       className="cursor-pointer rounded-t-md bg-[hsla(var(--app-bg))]"
       onClick={onClick}
     >
-      {/* TODO: @faisal are we still using cover? */}
-      {/* {model.metadata.cover && imageLoaded && (
-        <div className="relative h-full w-full">
-          <img
-            onError={() => setImageLoaded(false)}
-            src={model.metadata.cover}
-            className="h-[250px] w-full object-cover"
-            alt={`Cover - ${model.id}`}
-          />
-        </div>
-      )} */}
       <div className="flex items-center justify-between px-4 py-2">
         <div className="flex items-center gap-2">
           <span className="line-clamp-1 text-base font-semibold">
@@ -144,7 +133,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
         <div className="inline-flex items-center space-x-2">
           <div className="hidden items-center sm:inline-flex">
             <span className="mr-4 font-semibold">
-              {toGibibytes(model.metadata.size)}
+              {toGibibytes(model.metadata?.size)}
             </span>
             <ModelLabel metadata={model.metadata} />
           </div>

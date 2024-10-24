@@ -8,7 +8,8 @@ jest.mock('../../helper', () => ({
 
 jest.mock('../../helper/path', () => ({
   validatePath: jest.fn().mockReturnValue('path/to/folder'),
-  normalizeFilePath: () => process.platform === 'win32' ? 'C:\\Users\path\\to\\file.gguf' : '/Users/path/to/file.gguf',
+  normalizeFilePath: () =>
+    process.platform === 'win32' ? 'C:\\Users\\path\\to\\file.gguf' : '/Users/path/to/file.gguf',
 }))
 
 jest.mock(

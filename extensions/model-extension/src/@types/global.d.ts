@@ -1,7 +1,8 @@
 export {}
 declare global {
-  declare const DEFAULT_MODEL: object
   declare const NODE: string
+  declare const API_URL: string
+  declare const SOCKET_URL: string
 
   interface Core {
     api: APIFunctions

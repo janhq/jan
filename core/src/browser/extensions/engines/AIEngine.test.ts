@@ -1,8 +1,6 @@
 import { AIEngine } from './AIEngine'
 import { events } from '../../events'
-import { ModelEvent, Model, ModelFile, InferenceEngine } from '../../../types'
-import { EngineManager } from './EngineManager'
-import { fs } from '../../fs'
+import { ModelEvent, Model } from '../../../types'
 
 jest.mock('../../events')
 jest.mock('./EngineManager')
@@ -26,7 +24,7 @@ describe('AIEngine', () => {
   })
 
   it('should load model if provider matches', async () => {
-    const model: ModelFile = { id: 'model1', engine: 'test-provider' } as any
+    const model: any = { id: 'model1', engine: 'test-provider' } as any
 
     await engine.loadModel(model)
 
@@ -34,7 +32,7 @@ describe('AIEngine', () => {
   })
 
   it('should not load model if provider does not match', async () => {
-    const model: ModelFile = { id: 'model1', engine: 'other-provider' } as any
+    const model: any = { id: 'model1', engine: 'other-provider' } as any
 
     await engine.loadModel(model)
 

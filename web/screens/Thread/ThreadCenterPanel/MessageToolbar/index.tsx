@@ -74,7 +74,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           )[
             messages.filter((msg) => msg.role === ChatCompletionRole.Assistant)
               .length - 1
-          ]?.content[0].text.value,
+          ]?.content[0]?.text.value,
         },
       }
 

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
@@ -56,7 +56,7 @@ const ThreadCenterPanel = () => {
   const activeThread = useAtomValue(activeThreadAtom)
 
   const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
-    .vision_model
+    ?.vision_model
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -79,7 +79,7 @@ const ThreadCenterPanel = () => {
         e.dataTransfer.items.length === 1 &&
         ((activeThread?.assistants[0].tools &&
           activeThread?.assistants[0].tools[0]?.enabled) ||
-          activeThread?.assistants[0].model.settings.vision_model)
+          activeThread?.assistants[0].model.settings?.vision_model)
       ) {
         setDragOver(true)
       } else if (
@@ -101,7 +101,7 @@ const ThreadCenterPanel = () => {
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
           !activeThread?.assistants[0].tools[0]?.enabled &&
-          !activeThread?.assistants[0].model.settings.vision_model)
+          !activeThread?.assistants[0].model.settings?.vision_model)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -170,7 +170,7 @@ const ThreadCenterPanel = () => {
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
                           activeThread?.assistants[0].model.settings
-                            .vision_model
+                            ?.vision_model
                             ? 'PDF, JPEG, JPG, PNG'
                             : 'PDF'
                         } format`
@@ -178,7 +178,7 @@ const ThreadCenterPanel = () => {
                   </h6>
                   {!isDragReject && (
                     <p className="mt-2">
-                      {activeThread?.assistants[0].model.settings.vision_model
+                      {activeThread?.assistants[0].model.settings?.vision_model
                         ? 'PDF, JPEG, JPG, PNG'
                         : 'PDF'}
                     </p>
@@ -199,16 +199,7 @@ const ThreadCenterPanel = () => {
 
           {!engineParamsUpdate && <ModelStart />}
 
-          {reloadModel && (
-            <Fragment>
-              <ModelReload />
-              <div className="mb-2 text-center">
-                <span className="text-[hsla(var(--text-secondary)]">
-                  Model is reloading to apply new changes.
-                </span>
-              </div>
-            </Fragment>
-          )}
+          {reloadModel && <ModelReload />}
 
           {activeModel && isGeneratingResponse && <GenerateResponse />}
           <ChatInput />

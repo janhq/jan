@@ -1,0 +1,36 @@
+{
+    "sources": [
+      {
+        "filename": "Qwen2.5-72B-Instruct-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Qwen2.5-72B-Instruct-GGUF/resolve/main/Qwen2.5-72B-Instruct-Q4_K_M.gguf"
+      }
+    ],
+    "id": "qwen2.5-72b-instruct",
+    "object": "model",
+    "name": "Qwen2.5 72B Instruct Q4",
+    "version": "1.0",
+    "description": "The Qwen 2.5 family is specifically designed to excel in math, coding, and other computational tasks",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 32768,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+      "llama_model_path": "Qwen2.5-72B-Instruct-Q4_K_M.gguf",
+      "ngl": 81
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 32768,
+      "stop": ["<|endoftext|>", "<|im_end|>"],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "QwenLM",
+      "tags": ["72B"],
+      "size": 47400000000
+    },
+    "engine": "llama-cpp"
+  }
+  

@@ -4,7 +4,7 @@ import { Model } from '@janhq/core'
 
 import { Modal, Button, Progress, ModalClose } from '@janhq/joi'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
 
@@ -12,7 +12,7 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { getDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
+import { removeDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
@@ -21,20 +21,16 @@ type Props = {
 
 const ModalCancelDownload = ({ model, isFromList }: Props) => {
   const { abortModelDownload } = useDownloadModel()
-  const downloadingModels = useAtomValue(getDownloadingModelAtom)
+  const removeModelDownload = useSetAtom(removeDownloadingModelAtom)
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
   const downloadState = allDownloadStates[model.id]
 
-  const cancelText = `Cancel ${formatDownloadPercentage(downloadState.percent)}`
+  const cancelText = `Cancel ${formatDownloadPercentage(downloadState?.percent ?? 0)}`
 
   const onAbortDownloadClick = useCallback(() => {
-    if (downloadState?.modelId) {
-      const model = downloadingModels.find(
-        (model) => model.id === downloadState.modelId
-      )
-      if (model) abortModelDownload(model)
-    }
-  }, [downloadState, downloadingModels, abortModelDownload])
+    removeModelDownload(model.id)
+    abortModelDownload(downloadState?.modelId ?? model.id)
+  }, [downloadState, abortModelDownload, removeModelDownload, model])
 
   return (
     <Modal
@@ -51,13 +47,13 @@ const ModalCancelDownload = ({ model, isFromList }: Props) => {
               <Progress
                 className="w-[80px]"
                 value={
-                  formatDownloadPercentage(downloadState?.percent, {
+                  formatDownloadPercentage(downloadState?.percent ?? 0, {
                     hidePercentage: true,
                   }) as number
                 }
               />
               <span className="tabular-nums">
-                {formatDownloadPercentage(downloadState.percent)}
+                {formatDownloadPercentage(downloadState?.percent ?? 0)}
               </span>
             </div>
           </Button>

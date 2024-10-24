@@ -1,0 +1,35 @@
+{
+  "sources": [
+    {
+      "filename": "openchat-3.5-0106.Q4_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/openchat-3.5-0106-GGUF/resolve/main/openchat-3.5-0106.Q4_K_M.gguf"
+    }
+  ],
+  "id": "openchat-3.5-7b",
+  "object": "model",
+  "name": "Openchat-3.5 7B Q4",
+  "version": "1.2",
+  "description": "The performance of Openchat surpasses ChatGPT-3.5 and Grok-1 across various benchmarks.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 8192,
+    "prompt_template": "GPT4 Correct User: {prompt}<|end_of_turn|>GPT4 Correct Assistant:",
+    "llama_model_path": "openchat-3.5-0106.Q4_K_M.gguf",
+    "ngl": 33
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 8192,
+    "stop": ["<|end_of_turn|>"],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "Openchat",
+    "tags": ["Recommended", "7B", "Finetuned"],
+    "size": 4370000000
+  },
+  "engine": "llama-cpp"
+}

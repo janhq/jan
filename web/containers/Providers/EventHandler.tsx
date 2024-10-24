@@ -179,6 +179,9 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           setIsGeneratingResponse(false)
         }
         return
+      } else if (message.status === MessageStatus.Error) {
+        setActiveModel(undefined)
+        setStateModel({ state: 'start', loading: false, model: undefined })
       }
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)

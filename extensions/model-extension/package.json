@@ -4,7 +4,6 @@
   "version": "1.0.34",
   "description": "Model Management Extension provides model exploration and seamless downloads",
   "main": "dist/index.js",
-  "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
@@ -36,15 +35,9 @@
     "README.md"
   ],
   "dependencies": {
-    "@huggingface/gguf": "^0.0.11",
-    "@huggingface/jinja": "^0.3.0",
     "@janhq/core": "file:../../core",
-    "hyllama": "^0.2.2",
-    "python-shell": "^5.0.0"
+    "ky": "^1.7.2",
+    "p-queue": "^8.0.1"
   },
-  "bundleDependencies": [
-    "hyllama",
-    "@huggingface/gguf",
-    "@huggingface/jinja"
-  ]
+  "bundleDependencies": []
 }

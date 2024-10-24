@@ -7,9 +7,7 @@ import {
   DownloadEvent,
   DownloadRequest,
   DownloadState,
-  GpuSetting,
   InstallationState,
-  Model,
   baseName,
   downloadFile,
   events,
@@ -23,7 +21,7 @@ import {
   ModelEvent,
   getJanDataFolderPath,
   SystemInformation,
-  ModelFile,
+  Model,
 } from '@janhq/core'
 
 /**
@@ -137,7 +135,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
     events.emit(ModelEvent.OnModelsUpdate, {})
   }
 
-  override async loadModel(model: ModelFile): Promise<void> {
+  override async loadModel(model: Model): Promise<void> {
     if ((await this.installationState()) === 'Installed')
       return super.loadModel(model)
 
@@ -177,7 +175,7 @@ export default class TensorRTLLMExtension extends LocalOAIEngine {
   override async inference(data: MessageRequest) {
     if (!this.loadedModel) return
     // TensorRT LLM Extension supports streaming only
-    if (data.model) data.model.parameters.stream = true
+    if (data.model && data.model.parameters) data.model.parameters.stream = true
     super.inference(data)
   }
 
