@@ -211,6 +211,9 @@ const Advanced = () => {
     saveSettings({ gpusInUse: updatedGpusInUse })
   }
 
+  const gpuSelectionPlaceHolder =
+    gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
+
   /**
    * Handle click outside
    */
@@ -322,13 +325,20 @@ const Advanced = () => {
               <div className="relative w-full md:w-1/2" ref={setToggle}>
                 <Input
                   value={selectedGpu.join() || ''}
-                  className="w-full cursor-pointer"
+                  className={twMerge(
+                    'w-full cursor-pointer',
+                    gpuList.length === 0 && 'pointer-events-none'
+                  )}
                   readOnly
-                  placeholder=""
+                  disabled={gpuList.length === 0}
+                  placeholder={gpuSelectionPlaceHolder}
                   suffixIcon={
                     <ChevronDownIcon
                       size={14}
-                      className={twMerge(open && 'rotate-180')}
+                      className={twMerge(
+                        gpuList.length === 0 && 'pointer-events-none',
+                        open && 'rotate-180'
+                      )}
                     />
                   }
                   onClick={() => setOpen(!open)}
