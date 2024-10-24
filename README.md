@@ -74,7 +74,40 @@ Jan is an open-source ChatGPT alternative that runs 100% offline on your compute
     </td>
   </tr>
   <tr style="text-align:center">
-    <td style="text-align:center"><b>Experimental (Nightly Build)</b></td>
+    <td style="text-align:center"><b>Beta (Preview)</b></td>
+    <td style="text-align:center">
+      <a href='https://app.jan.ai/download/beta/win-x64'>
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
+        <b>jan.exe</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://app.jan.ai/download/beta/mac-x64'>
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>Intel</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://app.jan.ai/download/beta/mac-arm64'>
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
+        <b>M1/M2/M3/M4</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://app.jan.ai/download/beta/linux-amd64-deb'>
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.deb</b>
+      </a>
+    </td>
+    <td style="text-align:center">
+      <a href='https://app.jan.ai/download/beta/linux-amd64-appimage'>
+        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/linux.png' style="height:14px; width: 14px" />
+        <b>jan.AppImage</b>
+      </a>
+    </td>
+  </tr>
+  <tr style="text-align:center">
+    <td style="text-align:center"><b>Nightly Build (Experimental)</b></td>
     <td style="text-align:center">
       <a href='https://app.jan.ai/download/nightly/win-x64'>
         <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/windows.png' style="height:14px; width: 14px" />
