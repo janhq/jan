@@ -200,7 +200,6 @@ const ModelDropdown = ({
         if (model)
           updateModelParameter(activeThread, {
             params: modelParams,
-            // modelPath: model.file_path,
             modelId: model.id,
             engine: model.engine,
           })

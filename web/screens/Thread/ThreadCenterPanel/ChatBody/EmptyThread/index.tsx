@@ -1,6 +1,5 @@
 import { memo } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
