@@ -71,7 +71,7 @@ export const scanModelsFolder = async (): Promise<Model[]> => {
                   file.toLowerCase().endsWith('.gguf') || // GGUF
                   file.toLowerCase().endsWith('.engine') // Tensort-LLM
                 )
-              })?.length > 0 // TODO: find better way (can use basename to check the file name with source url)
+              })?.length >= (model.sources?.length ?? 1)
             )
           })
 

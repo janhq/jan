@@ -69,11 +69,11 @@ export enum DownloadRoute {
 }
 
 export enum DownloadEvent {
-  onFileDownloadUpdate = 'DownloadUpdated',
-  onFileDownloadError = 'DownloadError',
-  onFileDownloadSuccess = 'DownloadSuccess',
-  onFileDownloadStopped = 'DownloadStopped',
-  onFileDownloadStarted = 'DownloadStarted',
+  onFileDownloadUpdate = 'onFileDownloadUpdate',
+  onFileDownloadError = 'onFileDownloadError',
+  onFileDownloadSuccess = 'onFileDownloadSuccess',
+  onFileDownloadStopped = 'onFileDownloadStopped',
+  onFileDownloadStarted = 'onFileDownloadStarted',
   onFileUnzipSuccess = 'onFileUnzipSuccess',
 }
 

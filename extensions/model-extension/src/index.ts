@@ -4,9 +4,15 @@ import {
   InferenceEngine,
   joinPath,
   dirName,
+  ModelManager,
+  abortDownload,
+  DownloadState,
+  events,
+  DownloadEvent,
 } from '@janhq/core'
 import { CortexAPI } from './cortex'
-import { scanModelsFolder } from './model-json'
+import { scanModelsFolder } from './legacy/model-json'
+import { downloadModel } from './legacy/download'
 
 declare const SETTINGS: Array<any>
 
@@ -34,6 +40,9 @@ export default class JanModelExtension extends ModelExtension {
     this.getModels().then((models) => {
       this.registerModels(models)
     })
+
+    // Listen to app download events
+    this.handleDesktopEvents()
   }
 
   /**
@@ -48,6 +57,17 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async pullModel(model: string, id?: string): Promise<void> {
+    if (id) {
+      const model: Model = ModelManager.instance().get(id)
+      // Clip vision model - should not be handled by cortex.cpp
+      // TensorRT model - should not be handled by cortex.cpp
+      if (
+        model.engine === InferenceEngine.nitro_tensorrt_llm ||
+        model.settings.vision_model
+      ) {
+        return downloadModel(model)
+      }
+    }
     /**
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */
@@ -61,10 +81,24 @@ export default class JanModelExtension extends ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelPull(model: string): Promise<void> {
+    if (model) {
+      const modelDto: Model = ModelManager.instance().get(model)
+      // Clip vision model - should not be handled by cortex.cpp
+      // TensorRT model - should not be handled by cortex.cpp
+      if (
+        modelDto.engine === InferenceEngine.nitro_tensorrt_llm ||
+        modelDto.settings.vision_model
+      ) {
+        for (const source of modelDto.sources) {
+          const path = await joinPath(['models', modelDto.id, source.filename])
+          return abortDownload(path)
+        }
+      }
+    }
     /**
      * Sending DELETE to /models/pull/{id} endpoint to cancel a model pull
      */
-    this.cortexAPI.cancelModelPull(model)
+    return this.cortexAPI.cancelModelPull(model)
   }
 
   /**
@@ -87,14 +121,18 @@ export default class JanModelExtension extends ModelExtension {
      * should compare and try import
      */
     let currentModels: Model[] = []
+
+    /**
+     * Legacy models should be supported
+     */
+    let legacyModels = await scanModelsFolder()
+
     try {
       if (!localStorage.getItem(ExtensionEnum.downloadedModels)) {
         // Updated from an older version than 0.5.5
         // Scan through the models folder and import them (Legacy flow)
         // Return models immediately
-        currentModels = await scanModelsFolder().then((models) => {
-          return models ?? []
-        })
+        currentModels = legacyModels
       } else {
         currentModels = JSON.parse(
           localStorage.getItem(ExtensionEnum.downloadedModels)
@@ -116,7 +154,7 @@ export default class JanModelExtension extends ModelExtension {
     await this.cortexAPI.getModels().then((models) => {
       const existingIds = models.map((e) => e.id)
       toImportModels = toImportModels.filter(
-        (e: Model) => !existingIds.includes(e.id)
+        (e: Model) => !existingIds.includes(e.id) && !e.settings?.vision_model
       )
     })
 
@@ -147,13 +185,15 @@ export default class JanModelExtension extends ModelExtension {
     }
 
     /**
-     * All models are imported successfully before
-     * just return models from cortex.cpp
+     * Models are imported successfully before
+     * Now return models from cortex.cpp and merge with legacy models which are not imported
      */
     return (
       this.cortexAPI.getModels().then((models) => {
-        return models
-      }) ?? Promise.resolve([])
+        return models.concat(
+          legacyModels.filter((e) => !models.some((x) => x.id === e.id))
+        )
+      }) ?? Promise.resolve(legacyModels)
     )
   }
 
@@ -174,5 +214,32 @@ export default class JanModelExtension extends ModelExtension {
    */
   async importModel(model: string, modelPath: string): Promise<void> {
     return this.cortexAPI.importModel(model, modelPath)
+  }
+
+  /**
+   * Handle download state from main app
+   */
+  handleDesktopEvents() {
+    if (window && window.electronAPI) {
+      window.electronAPI.onFileDownloadUpdate(
+        async (_event: string, state: DownloadState | undefined) => {
+          if (!state) return
+          state.downloadState = 'downloading'
+          events.emit(DownloadEvent.onFileDownloadUpdate, state)
+        }
+      )
+      window.electronAPI.onFileDownloadError(
+        async (_event: string, state: DownloadState) => {
+          state.downloadState = 'error'
+          events.emit(DownloadEvent.onFileDownloadError, state)
+        }
+      )
+      window.electronAPI.onFileDownloadSuccess(
+        async (_event: string, state: DownloadState) => {
+          state.downloadState = 'end'
+          events.emit(DownloadEvent.onFileDownloadSuccess, state)
+        }
+      )
+    }
   }
 }

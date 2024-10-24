@@ -25,6 +25,14 @@ type ModelList = {
   data: any[]
 }
 
+enum DownloadTypes {
+  DownloadUpdated = 'onFileDownloadUpdate',
+  DownloadError = 'onFileDownloadError',
+  DownloadSuccess = 'onFileDownloadSuccess',
+  DownloadStopped = 'onFileDownloadStopped',
+  DownloadStarted = 'onFileDownloadStarted',
+}
+
 export class CortexAPI implements ICortexAPI {
   queue = new PQueue({ concurrency: 1 })
   socket?: WebSocket = undefined
@@ -159,17 +167,16 @@ export class CortexAPI implements ICortexAPI {
           this.socket.addEventListener('message', (event) => {
             const data = JSON.parse(event.data)
             const transferred = data.task.items.reduce(
-              (accumulator, currentValue) =>
-                accumulator + currentValue.downloadedBytes,
+              (acc, cur) => acc + cur.downloadedBytes,
               0
             )
             const total = data.task.items.reduce(
-              (accumulator, currentValue) => accumulator + currentValue.bytes,
+              (acc, cur) => acc + cur.bytes,
               0
             )
             const percent = (transferred / total || 0) * 100
 
-            events.emit(data.type, {
+            events.emit(DownloadTypes[data.type], {
               modelId: data.task.id,
               percent: percent,
               size: {
@@ -178,7 +185,7 @@ export class CortexAPI implements ICortexAPI {
               },
             })
             // Update models list from Hub
-            if (data.type === DownloadEvent.onFileDownloadSuccess) {
+            if (data.type === DownloadTypes.DownloadSuccess) {
               // Delay for the state update from cortex.cpp
               // Just to be sure
               setTimeout(() => {
