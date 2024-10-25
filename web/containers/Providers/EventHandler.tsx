@@ -15,6 +15,7 @@ import {
   Thread,
   EngineManager,
   InferenceEngine,
+  extractInferenceParams,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
@@ -22,7 +23,6 @@ import { ulid } from 'ulidx'
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
 import { isLocalEngine } from '@/utils/modelEngine'
-import { extractInferenceParams } from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
 import {

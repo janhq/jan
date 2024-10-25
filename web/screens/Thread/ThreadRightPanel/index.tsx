@@ -4,6 +4,8 @@ import {
   InferenceEngine,
   SettingComponentProps,
   SliderComponentProps,
+  extractInferenceParams,
+  extractModelLoadParams,
 } from '@janhq/core'
 import {
   Tabs,
@@ -31,10 +33,6 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { isLocalEngine } from '@/utils/modelEngine'
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import PromptTemplateSetting from './PromptTemplateSetting'
 import Tools from './Tools'

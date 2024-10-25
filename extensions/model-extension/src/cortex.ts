@@ -1,13 +1,7 @@
 import PQueue from 'p-queue'
 import ky from 'ky'
-import {
-  DownloadEvent,
-  events,
-  Model,
-  ModelEvent,
-  ModelRuntimeParams,
-  ModelSettingParams,
-} from '@janhq/core'
+import { events, extractModelLoadParams, Model, ModelEvent } from '@janhq/core'
+import { extractInferenceParams } from '@janhq/core'
 /**
  * cortex.cpp Model APIs interface
  */
@@ -204,20 +198,17 @@ export class CortexAPI implements ICortexAPI {
    * @returns
    */
   private transformModel(model: any) {
-    model.parameters = setParameters<ModelRuntimeParams>(model)
-    model.settings = setParameters<ModelSettingParams>(model)
-    model.metadata = {
+    model.parameters = {
+      ...extractInferenceParams(model),
+      ...model.parameters,
+    }
+    model.settings = {
+      ...extractModelLoadParams(model),
+      ...model.settings,
+    }
+    model.metadata = model.metadata ?? {
       tags: [],
     }
     return model as Model
   }
-}
-
-type FilteredParams<T> = {
-  [K in keyof T]: T[K]
-}
-
-function setParameters<T>(params: T): T {
-  const filteredParams: FilteredParams<T> = { ...params }
-  return filteredParams
 }

@@ -15,7 +15,6 @@ export type ModelInfo = {
  * Represents the inference engine.
  * @stored
  */
-
 export enum InferenceEngine {
   anthropic = 'anthropic',
   mistral = 'mistral',
@@ -34,6 +33,7 @@ export enum InferenceEngine {
   cortex_tensorrtllm = 'tensorrt-llm',
 }
 
+// Represents an artifact of a model, including its filename and URL
 export type ModelArtifact = {
   filename: string
   url: string
@@ -105,6 +105,7 @@ export type Model = {
   engine: InferenceEngine
 }
 
+// Represents metadata associated with a model
 export type ModelMetadata = {
   author: string
   tags: string[]
@@ -125,14 +126,20 @@ export type ModelSettingParams = {
   n_parallel?: number
   cpu_threads?: number
   prompt_template?: string
+  pre_prompt?: string
   system_prompt?: string
   ai_prompt?: string
   user_prompt?: string
+  // path param
+  model_path?: string
+  // legacy path param
   llama_model_path?: string
+  // clip model path
   mmproj?: string
   cont_batching?: boolean
   vision_model?: boolean
   text_model?: boolean
+  engine?: boolean
 }
 
 /**
@@ -151,6 +158,12 @@ export type ModelRuntimeParams = {
   engine?: string
 }
 
+// Represents a model that failed to initialize, including the error
 export type ModelInitFailed = Model & {
   error: Error
 }
+
+/**
+ * ModelParams types
+ */
+export type ModelParams = ModelRuntimeParams | ModelSettingParams

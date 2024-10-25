@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { Accordion, AccordionItem, Input, Tooltip } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AlertTriangleIcon, CheckIcon, CopyIcon, InfoIcon } from 'lucide-react'
@@ -15,11 +16,6 @@ import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'

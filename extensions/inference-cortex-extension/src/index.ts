@@ -10,11 +10,12 @@ import {
   Model,
   executeOnMain,
   systemInformation,
-  log,
   joinPath,
   dirName,
   LocalOAIEngine,
   InferenceEngine,
+  getJanDataFolderPath,
+  extractModelLoadParams,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -62,24 +63,38 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   override async loadModel(
     model: Model & { file_path?: string }
   ): Promise<void> {
-    // Legacy model cache - should import
-    if (model.engine === InferenceEngine.nitro && model.file_path) {
-      // Try importing the model
-      const modelPath = await this.modelPath(model)
-      await this.queue.add(() =>
-        ky
-          .post(`${CORTEX_API_URL}/v1/models/${model.id}`, {
-            json: { model: model.id, modelPath: modelPath },
-          })
-          .json()
-          .catch((e) => log(e.message ?? e ?? ''))
-      )
+    if (
+      model.engine === InferenceEngine.nitro &&
+      model.settings.llama_model_path
+    ) {
+      // Legacy chat model support
+      model.settings = {
+        ...model.settings,
+        llama_model_path: await getModelFilePath(
+          model.id,
+          model.settings.llama_model_path
+        ),
+      }
+    } else {
+      const { llama_model_path, ...settings } = model.settings
+      model.settings = settings
+    }
+
+    if (model.engine === InferenceEngine.nitro && model.settings.mmproj) {
+      // Legacy clip vision model support
+      model.settings = {
+        ...model.settings,
+        mmproj: await getModelFilePath(model.id, model.settings.mmproj),
+      }
+    } else {
+      const { mmproj, ...settings } = model.settings
+      model.settings = settings
     }
 
     return await ky
       .post(`${CORTEX_API_URL}/v1/models/start`, {
         json: {
-          ...model.settings,
+          ...extractModelLoadParams(model.settings),
           model: model.id,
           engine:
             model.engine === InferenceEngine.nitro // Legacy model cache
@@ -131,3 +146,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       .then(() => {})
   }
 }
+
+/// Legacy
+export const getModelFilePath = async (
+  id: string,
+  file: string
+): Promise<string> => {
+  return joinPath([await getJanDataFolderPath(), 'models', id, file])
+}
+///

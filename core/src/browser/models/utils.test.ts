@@ -1,7 +1,10 @@
 // web/utils/modelParam.test.ts
-import { normalizeValue, validationRules } from './modelParam'
-import { extractModelLoadParams } from './modelParam';
-import { extractInferenceParams } from './modelParam';
+import {
+  normalizeValue,
+  validationRules,
+  extractModelLoadParams,
+  extractInferenceParams,
+} from './utils'
 
 describe('validationRules', () => {
   it('should validate temperature correctly', () => {
@@ -151,13 +154,12 @@ describe('validationRules', () => {
   })
 })
 
-
-  it('should normalize invalid values for keys not listed in validationRules', () => {
-    expect(normalizeValue('invalid_key', 'invalid')).toBe('invalid')
-    expect(normalizeValue('invalid_key', 123)).toBe(123)
-    expect(normalizeValue('invalid_key', true)).toBe(true)
-    expect(normalizeValue('invalid_key', false)).toBe(false)
-  })
+it('should normalize invalid values for keys not listed in validationRules', () => {
+  expect(normalizeValue('invalid_key', 'invalid')).toBe('invalid')
+  expect(normalizeValue('invalid_key', 123)).toBe(123)
+  expect(normalizeValue('invalid_key', true)).toBe(true)
+  expect(normalizeValue('invalid_key', false)).toBe(false)
+})
 
 describe('normalizeValue', () => {
   it('should normalize ctx_len correctly', () => {
@@ -192,19 +194,16 @@ describe('normalizeValue', () => {
   })
 })
 
+it('should handle invalid values correctly by falling back to originParams', () => {
+  const modelParams = { temperature: 'invalid', token_limit: -1 }
+  const originParams = { temperature: 0.5, token_limit: 100 }
+  expect(extractInferenceParams(modelParams as any, originParams)).toEqual(originParams)
+})
 
-  it('should handle invalid values correctly by falling back to originParams', () => {
-    const modelParams = { temperature: 'invalid', token_limit: -1 };
-    const originParams = { temperature: 0.5, token_limit: 100 };
-    expect(extractInferenceParams(modelParams, originParams)).toEqual(originParams);
-  });
+it('should return an empty object when no modelParams are provided', () => {
+  expect(extractModelLoadParams()).toEqual({})
+})
 
-
-  it('should return an empty object when no modelParams are provided', () => {
-    expect(extractModelLoadParams()).toEqual({});
-  });
-
-
-  it('should return an empty object when no modelParams are provided', () => {
-    expect(extractInferenceParams()).toEqual({});
-  });
+it('should return an empty object when no modelParams are provided', () => {
+  expect(extractInferenceParams()).toEqual({})
+})

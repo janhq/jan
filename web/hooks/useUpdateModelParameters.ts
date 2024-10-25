@@ -6,14 +6,11 @@ import {
   InferenceEngine,
   Thread,
   ThreadAssistantInfo,
+  extractInferenceParams,
+  extractModelLoadParams,
 } from '@janhq/core'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import { extensionManager } from '@/extension'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'

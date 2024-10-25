@@ -1,26 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/naming-convention */
-import { ModelRuntimeParams, ModelSettingParams } from '@janhq/core'
-
-import { ModelParams } from '@/types/model'
+import { ModelParams, ModelRuntimeParams, ModelSettingParams } from '../../types'
 
 /**
  * Validation rules for model parameters
  */
 export const validationRules: { [key: string]: (value: any) => boolean } = {
-  temperature: (value: any) =>
-    typeof value === 'number' && value >= 0 && value <= 2,
+  temperature: (value: any) => typeof value === 'number' && value >= 0 && value <= 2,
   token_limit: (value: any) => Number.isInteger(value) && value >= 0,
   top_k: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
   top_p: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
   stream: (value: any) => typeof value === 'boolean',
   max_tokens: (value: any) => Number.isInteger(value) && value >= 0,
-  stop: (value: any) =>
-    Array.isArray(value) && value.every((v) => typeof v === 'string'),
-  frequency_penalty: (value: any) =>
-    typeof value === 'number' && value >= 0 && value <= 1,
-  presence_penalty: (value: any) =>
-    typeof value === 'number' && value >= 0 && value <= 1,
+  stop: (value: any) => Array.isArray(value) && value.every((v) => typeof v === 'string'),
+  frequency_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
+  presence_penalty: (value: any) => typeof value === 'number' && value >= 0 && value <= 1,
 
   ctx_len: (value: any) => Number.isInteger(value) && value >= 0,
   ngl: (value: any) => Number.isInteger(value) && value >= 0,
@@ -76,6 +70,7 @@ export const extractInferenceParams = (
     stop: undefined,
     frequency_penalty: undefined,
     presence_penalty: undefined,
+    engine: undefined,
   }
 
   const runtimeParams: ModelRuntimeParams = {}
@@ -119,11 +114,18 @@ export const extractModelLoadParams = (
     embedding: undefined,
     n_parallel: undefined,
     cpu_threads: undefined,
+    pre_prompt: undefined,
+    system_prompt: undefined,
+    ai_prompt: undefined,
+    user_prompt: undefined,
     prompt_template: undefined,
+    model_path: undefined,
     llama_model_path: undefined,
     mmproj: undefined,
+    cont_batching: undefined,
     vision_model: undefined,
     text_model: undefined,
+    engine: undefined,
   }
   const settingParams: ModelSettingParams = {}
 

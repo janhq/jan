@@ -12,6 +12,7 @@ import {
   ToolManager,
   ChatCompletionMessage,
 } from '@janhq/core'
+import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {
@@ -23,10 +24,6 @@ import {
 import { Stack } from '@/utils/Stack'
 import { compressImage, getBase64 } from '@/utils/base64'
 import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
 
