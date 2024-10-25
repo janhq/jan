@@ -1,22 +1,22 @@
 import React from 'react'
 import { BaseExtension, UIManager, UIComponent, events } from '@janhq/core'
 import ReactDOM from 'react-dom/client'
-import { LouisView, AshleyView } from './TabView'
+import { CodePreviewTab, SetupView } from './TabView'
 import { RecordAudio } from './RecordAudio'
 import { AudioLinesIcon } from 'lucide-react'
 
 export default class IchigoSpeechExtension extends BaseExtension {
   async onLoad() {
     UIManager.instance().register(UIComponent.Tab, {
-      name: 'Louis Tab',
-      value: 'louis',
-      render: this.createRootRenderer(LouisView),
+      name: 'Code Preview',
+      value: 'code_preview',
+      render: this.createRootRenderer(CodePreviewTab),
     })
 
     UIManager.instance().register(UIComponent.Tab, {
-      name: 'Ashley Tab',
-      value: 'ashley',
-      render: this.createRootRenderer(AshleyView),
+      name: 'Keys Setup',
+      value: 'keys_setup',
+      render: this.createRootRenderer(SetupView),
     })
 
     UIManager.instance().register(UIComponent.InputChatBox, {

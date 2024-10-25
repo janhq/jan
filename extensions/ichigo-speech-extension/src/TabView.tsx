@@ -1,10 +1,67 @@
 import { Button, Modal } from '@janhq/joi'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
+import * as React from 'react'
+import { events, MessageEvent, ThreadMessage } from '@janhq/core'
+import {
+  LiveProvider,
+  LiveEditor,
+  LiveError,
+  LivePreview,
+} from 'react-live-runner'
 
-export const LouisView = () => {
+const scope = {
+  // scope used by import statement
+  import: {
+    react: React,
+  },
+}
+
+export const CodePreviewTab = () => {
+  const [code, setCode] = useState<string | undefined>()
+
+  useEffect(() => {
+    setCode(localStorage.getItem('latest_preview_code') ?? '')
+  }, [])
+
+  useEffect(() => {
+    events.on(MessageEvent.OnMessageUpdate, (data: ThreadMessage) => {
+      const extractedCode = extractCode(data.content[0]?.text.value ?? '')
+      if (extractedCode && extractedCode.length > 0) {
+        setCode(extractedCode)
+        localStorage.setItem('latest_preview_code', extractedCode)
+      }
+    })
+  }, [setCode])
+
+
+  // Parse all code blocks
+  function extractCode(text: string): string | undefined {
+    // Match content between ``` and ```
+    const codeBlockRegex = /```(?:\w+)?\n([\s\S]*?)\n```/
+
+    const match = text.match(codeBlockRegex)
+    if (match) {
+      return match[1].trim()
+    }
+
+    return undefined
+  }
+
   return (
     <StrictMode>
-      <h4 className="mb-4">Hello, I'm Louis!</h4>
+      <LiveProvider code={code} scope={scope}>
+        <LiveEditor />
+        <LivePreview />
+        <LiveError />
+      </LiveProvider>
+    </StrictMode>
+  )
+}
+
+export const SetupView = () => {
+  return (
+    <StrictMode>
+      <h4>Hello!</h4>
       <Modal
         trigger={<Button>Click Me Open Modal</Button>}
         content={
@@ -16,21 +73,6 @@ export const LouisView = () => {
           </p>
         }
       />
-    </StrictMode>
-  )
-}
-
-export const AshleyView = () => {
-  const handleClick = () => {
-    alert('Hello, I am Alert!')
-  }
-
-  return (
-    <StrictMode>
-      <h4>Hello, I'm Ashley!</h4>
-      <Button onClick={handleClick} className="mt-4">
-        Click Me Open Alert
-      </Button>
     </StrictMode>
   )
 }

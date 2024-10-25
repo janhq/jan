@@ -37,6 +37,7 @@
     "lucide-react": "^0.453.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-live-runner": "^1.0.7",
     "ts-loader": "^9.5.0"
   },
   "files": [
