@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo } from 'react'
 
+import { UIComponent, UIManager } from '@janhq/core'
 import {
   InferenceEngine,
   SettingComponentProps,
@@ -214,6 +215,8 @@ const ThreadRightPanel = () => {
     return null
   }
 
+  const tabsFromExtension = UIManager.instance().get(UIComponent.Tab)
+
   return (
     <RightPanelContainer>
       <Tabs
@@ -230,6 +233,7 @@ const ThreadRightPanel = () => {
                 },
               ]
             : []),
+          ...(tabsFromExtension.length ? tabsFromExtension : []),
         ]}
         value={activeTabThreadRightPanel as string}
         onValueChange={(value) => setActiveTabThreadRightPanel(value)}
@@ -290,6 +294,13 @@ const ThreadRightPanel = () => {
         <TabsContent value="tools">
           <Tools />
         </TabsContent>
+
+        {tabsFromExtension.length > 0 &&
+          tabsFromExtension.map((tab) => (
+            <TabsContent key={tab.value} value={tab.value}>
+              <div className="px-2 py-4" ref={(el) => el && tab.render(el)} />
+            </TabsContent>
+          ))}
       </Tabs>
     </RightPanelContainer>
   )

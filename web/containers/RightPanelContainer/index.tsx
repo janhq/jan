@@ -92,7 +92,7 @@ const RightPanelContainer = ({ children }: Props) => {
     <div
       ref={setRightPanelRef}
       className={twMerge(
-        'relative flex h-full flex-shrink-0 flex-col transition-all duration-100',
+        'relative flex h-full flex-shrink-0 flex-col overflow-hidden transition-all duration-100',
         showRightPanel ? 'opacity-100' : 'w-0 translate-x-full opacity-0',
         isResizing && 'cursor-col-resize',
         matches &&

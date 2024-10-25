@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { InferenceEngine, MessageStatus } from '@janhq/core'
+import {
+  InferenceEngine,
+  MessageStatus,
+  UIComponent,
+  UIManager,
+} from '@janhq/core'
 
 import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
@@ -120,6 +125,10 @@ const ChatInput = () => {
       }
     }
   }
+
+  const inputChatBoxItems = UIManager.instance().get(UIComponent.InputChatBox)
+
+  console.log(inputChatBoxItems)
 
   return (
     <div className="relative p-4 pb-2">
@@ -295,7 +304,28 @@ const ChatInput = () => {
         )}
 
         <div className={twMerge('absolute right-3 top-1.5')}>
-          <div className="flex items-center gap-x-4">
+          <div className="flex items-center gap-x-2">
+            {/* {inputChatBoxItems.map((item) => {
+              return (
+                <div
+                  key={item.render}
+                  className="flex h-8 items-center"
+                  ref={(el) => el && item.render(el)}
+                />
+              )
+            })} */}
+            {inputChatBoxItems.map((item) => {
+              return (
+                <div key={item.name} className="flex h-8 items-center">
+                  <Button theme="icon" onClick={item.onClick}>
+                    <item.icon
+                      className="text-[hsla(var(--text-secondary))]"
+                      size={18}
+                    />
+                  </Button>
+                </div>
+              )
+            })}
             {!activeSettingInputBox && (
               <div className="flex h-8 items-center">
                 <Button

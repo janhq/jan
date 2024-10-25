@@ -33,3 +33,9 @@ export * from './extensions'
  * @module
  */
 export * from './tools'
+
+/**
+ * Export all base views.
+ * @module
+ */
+export * from './views'

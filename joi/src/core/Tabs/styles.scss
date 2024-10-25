@@ -28,6 +28,14 @@
     flex-shrink: 0;
     display: flex;
     border-bottom: 1px solid hsla(var(--app-border));
+    white-space: nowrap;
+    overflow: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  &__list::-webkit-scrollbar {
+    display: none;
   }
 
   &__trigger {
@@ -63,4 +71,8 @@
   border-bottom: 1px solid hsla(var(--primary-bg));
   font-weight: 600;
   color: hsla(var(--text-primary));
+}
+
+:where([data-radix-scroll-area-content]) {
+  min-width: unset !important;
 }
