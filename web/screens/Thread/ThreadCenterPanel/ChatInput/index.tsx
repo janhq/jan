@@ -123,7 +123,7 @@ const ChatInput = () => {
 
   return (
     <div className="relative p-4 pb-2">
-      <div className="relative block">
+      <div className="relative flex w-full flex-col">
         {renderPreview(fileUpload)}
         <RichTextEditor
           className={twMerge(
