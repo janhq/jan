@@ -123,9 +123,8 @@ const ChatInput = () => {
 
   return (
     <div className="relative p-4 pb-2">
-      <div className="relative flex w-full flex-col">
+      <div className="relative block">
         {renderPreview(fileUpload)}
-
         <RichTextEditor
           className={twMerge(
             'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
@@ -141,7 +140,7 @@ const ChatInput = () => {
           disabled={stateModel.loading || !activeThread}
         />
         <TextArea
-          className="absolute inset-0 top-14 h-0 w-0"
+          className="sr-only"
           data-testid="txt-input-chat"
           onChange={(e) => setCurrentPrompt(e.target.value)}
         />
