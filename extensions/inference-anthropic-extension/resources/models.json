@@ -7,7 +7,7 @@
     ],
     "id": "claude-3-opus-20240229",
     "object": "model",
-    "name": "Claude 3 Opus",
+    "name": "Claude 3 Opus 20240229",
     "version": "1.0",
     "description": "Claude 3 Opus is a powerful model suitables for highly complex task.",
     "format": "api",
@@ -31,7 +31,7 @@
     ],
     "id": "claude-3-sonnet-20240229",
     "object": "model",
-    "name": "Claude 3 Sonnet",
+    "name": "Claude 3 Sonnet 20240229",
     "version": "1.0",
     "description": "Claude 3 Sonnet is an ideal model balance of intelligence and speed for enterprise workloads.",
     "format": "api",
@@ -55,7 +55,7 @@
     ],
     "id": "claude-3-haiku-20240307",
     "object": "model",
-    "name": "Claude 3 Haiku",
+    "name": "Claude 3 Haiku 20240307",
     "version": "1.0",
     "description": "Claude 3 Haiku is the fastest model provides near-instant responsiveness.",
     "format": "api",
@@ -79,13 +79,37 @@
     ],
     "id": "claude-3-5-sonnet-20240620",
     "object": "model",
-    "name": "Claude 3.5 Sonnet",
+    "name": "Claude 3.5 Sonnet 20240620",
     "version": "1.0",
     "description": "Claude 3.5 Sonnet raises the industry bar for intelligence, outperforming competitor models and Claude 3 Opus on a wide range of evaluations, with the speed and cost of our mid-tier model, Claude 3 Sonnet.",
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 4096,
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "stream": true
+    },
+    "metadata": {
+      "author": "Anthropic",
+      "tags": ["General", "Big Context Length"]
+    },
+    "engine": "anthropic"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://www.anthropic.com/"
+      }
+    ],
+    "id": "claude-3-5-sonnet-20241022",
+    "object": "model",
+    "name": "Claude 3.5 Sonnet 20241022",
+    "version": "1.0",
+    "description": "Claude 3.5 Sonnet raises the industry bar for intelligence, outperforming competitor models and Claude 3 Opus on a wide range of evaluations, with the speed and cost of our mid-tier model, Claude 3 Sonnet.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
       "temperature": 0.7,
       "stream": true
     },
