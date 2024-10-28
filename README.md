@@ -155,15 +155,9 @@ Download the latest version of Jan at https://jan.ai/ or visit the [GitHub Relea
 
 ## Demo
 
-![Demo](/demo.gif)
-
-
-
 https://github.com/user-attachments/assets/c3592fa2-c504-4d9d-a885-7e00122a50f3
 
-
-
-*Realtime Video: Jan v0.5.7 on a Mac M2, 16GB Sonoma 14.2*
+*Real-time Video: Jan v0.5.7 on a Mac M2, 16GB Sonoma 14.2*
 
 ## Quicklinks
 
