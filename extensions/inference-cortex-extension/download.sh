@@ -23,8 +23,8 @@ if [ "$OS_TYPE" == "Linux" ]; then
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-12-0.tar.gz" -e --strip 1 -o "./bin/noavx-cuda-12-0/engines/cortex.llamacpp" 1
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-11-7.tar.gz" -e --strip 1 -o "./bin/noavx-cuda-11-7/engines/cortex.llamacpp" 1
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-vulkan.tar.gz" -e --strip 1 -o "./bin/vulkan/engines/cortex.llamacpp" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "./bin" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "./bin" 1
+    download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "../../electron/shared" 1
+    download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "../../electron/shared" 1
 
 elif [ "$OS_TYPE" == "Darwin" ]; then
     # macOS downloads

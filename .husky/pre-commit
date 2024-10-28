@@ -1,1 +1,1 @@
-oxlint --fix || npm run lint --fix
+npx oxlint@latest --fix

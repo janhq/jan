@@ -1,5 +1,6 @@
 @echo off
 set BIN_PATH=./bin
+set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
 
 @REM Download cortex.llamacpp binaries
@@ -18,8 +19,8 @@ call .\node_modules\.bin\download %DOWNLOAD_URL%-avx.tar.gz -e --strip 1 -o %BIN
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2.tar.gz -e --strip 1 -o %BIN_PATH%/avx2/engines/cortex.llamacpp
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx512.tar.gz -e --strip 1 -o %BIN_PATH%/avx512/engines/cortex.llamacpp
 call .\node_modules\.bin\download %DOWNLOAD_URL%-vulkan.tar.gz -e --strip 1 -o %BIN_PATH%/vulkan/engines/cortex.llamacpp
-call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-12-0-windows-amd64.tar.gz -e --strip 1 -o %BIN_PATH%
-call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-11-7-windows-amd64.tar.gz -e --strip 1 -o %BIN_PATH%
+call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-12-0-windows-amd64.tar.gz -e --strip 1 -o %SHARED_PATH%
+call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-11-7-windows-amd64.tar.gz -e --strip 1 -o %SHARED_PATH%
 
 
 @REM Loop through each folder and move DLLs (excluding engine.dll)

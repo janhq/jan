@@ -13,6 +13,7 @@ import {
 import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
 import { downloadModel } from './legacy/download'
+import { systemInformation } from '@janhq/core'
 
 declare const SETTINGS: Array<any>
 
@@ -65,7 +66,7 @@ export default class JanModelExtension extends ModelExtension {
         model.engine === InferenceEngine.nitro_tensorrt_llm ||
         model.settings.vision_model
       ) {
-        return downloadModel(model)
+        return downloadModel(model, (await systemInformation()).gpuSetting)
       }
     }
     /**
