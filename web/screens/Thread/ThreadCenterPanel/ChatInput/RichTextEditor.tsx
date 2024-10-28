@@ -5,7 +5,7 @@ import { MessageStatus } from '@janhq/core'
 import hljs from 'highlight.js'
 
 import { useAtom, useAtomValue } from 'jotai'
-import { BaseEditor, createEditor, Editor, Element, Transforms } from 'slate'
+import { BaseEditor, createEditor, Editor, Transforms } from 'slate'
 import { withHistory } from 'slate-history' // Import withHistory
 import {
   Editable,
