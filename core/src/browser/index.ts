@@ -39,3 +39,9 @@ export * from './tools'
  * @module
  */
 export * from './models'
+
+/**
+ * Export all base views.
+ * @module
+ */
+export * from './views'
