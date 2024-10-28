@@ -1,4 +1,4 @@
-import { Model, fs, joinPath } from '@janhq/core'
+import { InferenceEngine, Model, fs, joinPath } from '@janhq/core'
 //// LEGACY MODEL FOLDER ////
 /**
  * Scan through models folder and return downloaded models
@@ -71,7 +71,7 @@ export const scanModelsFolder = async (): Promise<Model[]> => {
                   file.toLowerCase().endsWith('.gguf') || // GGUF
                   file.toLowerCase().endsWith('.engine') // Tensort-LLM
                 )
-              })?.length >= (model.sources?.length ?? 1)
+              })?.length >= (model.engine === InferenceEngine.nitro_tensorrt_llm ? 1 : (model.sources?.length ?? 1))
             )
           })
 

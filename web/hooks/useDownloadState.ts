@@ -108,6 +108,7 @@ export const setDownloadStateAtom = atom(
         )
 
         modelDownloadState.children = updatedChildren
+
         if (isAnyChildDownloadNotReady) {
           // just update the children
           currentState[state.modelId] = modelDownloadState
@@ -115,23 +116,17 @@ export const setDownloadStateAtom = atom(
           return
         }
 
-        const parentTotalSize = modelDownloadState.size.total
-        if (parentTotalSize === 0) {
-          // calculate the total size of the parent by sum all children total size
-          const totalSize = updatedChildren.reduce(
-            (acc, m) => acc + m.size.total,
-            0
-          )
-
-          modelDownloadState.size.total = totalSize
-        }
-
+        const parentTotalSize = updatedChildren.reduce(
+          (acc, m) => acc + m.size.total,
+          0
+        )
         // calculate the total transferred size by sum all children transferred size
         const transferredSize = updatedChildren.reduce(
           (acc, m) => acc + m.size.transferred,
           0
         )
         modelDownloadState.size.transferred = transferredSize
+
         modelDownloadState.percent =
           parentTotalSize === 0 ? 0 : transferredSize / parentTotalSize
         currentState[state.modelId] = modelDownloadState

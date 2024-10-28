@@ -1,4 +1,4 @@
-import { executeOnMain, systemInformation, dirName } from '../../core'
+import { executeOnMain, systemInformation, dirName, joinPath, getJanDataFolderPath } from '../../core'
 import { events } from '../../events'
 import { Model, ModelEvent } from '../../../types'
 import { OAIEngine } from './OAIEngine'
@@ -29,13 +29,46 @@ export abstract class LocalOAIEngine extends OAIEngine {
   /**
    * Load the model.
    */
-  override async loadModel(model: Model): Promise<void> {
-    return Promise.resolve()
+  override async loadModel(model: Model & { file_path?: string }): Promise<void> {
+    if (model.engine.toString() !== this.provider) return
+    const modelFolder = 'file_path' in model && model.file_path ? await dirName(model.file_path) : await this.getModelFilePath(model.id)
+    const systemInfo = await systemInformation()
+    const res = await executeOnMain(
+      this.nodeModule,
+      this.loadModelFunctionName,
+      {
+        modelFolder,
+        model,
+      },
+      systemInfo
+    )
+
+    if (res?.error) {
+      events.emit(ModelEvent.OnModelFail, { error: res.error })
+      return Promise.reject(res.error)
+    } else {
+      this.loadedModel = model
+      events.emit(ModelEvent.OnModelReady, model)
+      return Promise.resolve()
+    }
   }
   /**
    * Stops the model.
    */
   override async unloadModel(model?: Model) {
-    return Promise.resolve()
+    if (model?.engine && model.engine?.toString() !== this.provider) return Promise.resolve()
+
+    this.loadedModel = undefined
+    await executeOnMain(this.nodeModule, this.unloadModelFunctionName).then(() => {
+      events.emit(ModelEvent.OnModelStopped, {})
+    })
   }
+
+  /// Legacy
+  private getModelFilePath = async (
+    id: string,
+  ): Promise<string> => {
+    return joinPath([await getJanDataFolderPath(), 'models', id])
+  }
+  ///
 }

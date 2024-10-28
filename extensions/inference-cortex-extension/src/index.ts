@@ -118,19 +118,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       .then()
   }
 
-  private async modelPath(
-    model: Model & { file_path?: string }
-  ): Promise<string> {
-    if (!model.file_path) return model.id
-    return await joinPath([
-      await dirName(model.file_path),
-      model.sources[0]?.filename ??
-        model.settings?.llama_model_path ??
-        model.sources[0]?.url.split('/').pop() ??
-        model.id,
-    ])
-  }
-
   /**
    * Do health check on cortex.cpp
    * @returns

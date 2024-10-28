@@ -88,7 +88,8 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType !== 'extension') {
         state.downloadState = 'end'
         setDownloadState(state)
-        removeDownloadingModel(state.modelId)
+        if (state.percent !== 0)
+          removeDownloadingModel(state.modelId)
       }
       events.emit(ModelEvent.OnModelsUpdate, {})
     },

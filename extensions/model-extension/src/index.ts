@@ -14,6 +14,7 @@ import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
 import { downloadModel } from './legacy/download'
 import { systemInformation } from '@janhq/core'
+import { deleteModelFiles } from './legacy/delete'
 
 declare const SETTINGS: Array<any>
 
@@ -50,7 +51,7 @@ export default class JanModelExtension extends ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  async onUnload() {}
+  async onUnload() { }
 
   /**
    * Downloads a machine learning model.
@@ -92,7 +93,7 @@ export default class JanModelExtension extends ModelExtension {
       ) {
         for (const source of modelDto.sources) {
           const path = await joinPath(['models', modelDto.id, source.filename])
-          return abortDownload(path)
+          await abortDownload(path)
         }
       }
     }
@@ -108,7 +109,14 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is deleted.
    */
   async deleteModel(model: string): Promise<void> {
+    const modelDto: Model = ModelManager.instance().get(model)
     return this.cortexAPI.deleteModel(model)
+      .catch(e => console.debug(e))
+      .finally(async () => {
+        // Delete legacy model files
+        await deleteModelFiles(modelDto)
+          .catch(e => console.debug(e))
+      })
   }
 
   /**
@@ -174,9 +182,9 @@ export default class JanModelExtension extends ModelExtension {
             await joinPath([
               await dirName(model.file_path),
               model.sources[0]?.filename ??
-                model.settings?.llama_model_path ??
-                model.sources[0]?.url.split('/').pop() ??
-                model.id,
+              model.settings?.llama_model_path ??
+              model.sources[0]?.url.split('/').pop() ??
+              model.id,
             ])
           )
         )
