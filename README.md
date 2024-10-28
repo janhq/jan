@@ -1,6 +1,6 @@
 # Jan - Local AI Assistant
 
-![Jan banner](https://github.com/janhq/jan/assets/89722390/35daac7d-b895-487c-a6ac-6663daaad78e)
+![Jan banner](./JanBanner.png)
 
 <p align="center">
   <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
