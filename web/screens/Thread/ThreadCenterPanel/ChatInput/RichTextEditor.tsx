@@ -129,14 +129,101 @@ const RichTextEditor = ({
         })
       }
 
-      if (Editor.isBlock(editor, node) && node.type === 'code') {
+      // if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
+      //   node.children.forEach((child: { text: any }, childIndex: number) => {
+      //     const text = child.text
+
+      //     // Match code block start and end
+      //     const startMatch = text.match(/^```(\w*)$/)
+      //     const endMatch = text.match(/^```$/)
+
+      //     if (startMatch) {
+      //       // If it's the start of a code block, store the language
+      //       currentLanguage.current = startMatch[1] || 'plaintext'
+      //     } else if (endMatch) {
+      //       // Reset language when code block ends
+      //       currentLanguage.current = 'plaintext'
+      //     } else if (currentLanguage.current !== 'plaintext') {
+      //       // Highlight entire code line if in a code block
+      //       const leadingSpaces = text.match(/^\s*/)?.[0] ?? '' // Capture leading spaces
+      //       const codeContent = text.trimStart() // Remove leading spaces for highlighting
+
+      //       let highlighted = ''
+      //       highlighted = hljs.highlightAuto(codeContent).value
+      //       try {
+      //         highlighted = hljs.highlight(codeContent, {
+      //           language:
+      //             currentLanguage.current.length > 1
+      //               ? currentLanguage.current
+      //               : 'plaintext',
+      //         }).value
+      //       } catch (err) {
+      //         highlighted = hljs.highlight(codeContent, {
+      //           language: 'javascript',
+      //         }).value
+      //       }
+
+      //       const parser = new DOMParser()
+      //       const doc = parser.parseFromString(highlighted, 'text/html')
+
+      //       let slateTextIndex = 0
+
+      //       // Adjust to include leading spaces in the ranges and preserve formatting
+      //       ranges.push({
+      //         anchor: { path: [...path, childIndex], offset: 0 },
+      //         focus: {
+      //           path: [...path, childIndex],
+      //           offset: leadingSpaces.length,
+      //         },
+      //         type: 'code',
+      //         code: true,
+      //         language: currentLanguage.current,
+      //         className: '', // No class for leading spaces
+      //       })
+
+      //       doc.body.childNodes.forEach((childNode) => {
+      //         const childText = childNode.textContent || ''
+      //         const length = childText.length
+      //         const className =
+      //           childNode.nodeType === Node.ELEMENT_NODE
+      //             ? (childNode as HTMLElement).className
+      //             : ''
+
+      //         ranges.push({
+      //           anchor: {
+      //             path: [...path, childIndex],
+      //             offset: slateTextIndex + leadingSpaces.length,
+      //           },
+      //           focus: {
+      //             path: [...path, childIndex],
+      //             offset: slateTextIndex + leadingSpaces.length + length,
+      //           },
+      //           type: 'code',
+      //           code: true,
+      //           language: currentLanguage.current,
+      //           className,
+      //         })
+
+      //         slateTextIndex += length
+      //       })
+      //     } else {
+      //       ranges.push({
+      //         anchor: { path: [...path, childIndex], offset: 0 },
+      //         focus: { path: [...path, childIndex], offset: text.length },
+      //         type: 'paragraph', // Treat as a paragraph
+      //         code: false,
+      //       })
+      //     }
+      //   })
+      // }
+
+      if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
         node.children.forEach((child: { text: any }, childIndex: number) => {
           const text = child.text
 
           // Match code block start and end
           const startMatch = text.match(/^```(\w*)$/)
           const endMatch = text.match(/^```$/)
-          const inlineMatch = text.match(/^`([^`]+)`$/) // Match inline code
 
           if (startMatch) {
             // If it's the start of a code block, store the language
@@ -144,38 +231,6 @@ const RichTextEditor = ({
           } else if (endMatch) {
             // Reset language when code block ends
             currentLanguage.current = 'plaintext'
-          } else if (inlineMatch) {
-            // Apply syntax highlighting to inline code
-            const codeContent = inlineMatch[1] // Get the content within the backticks
-            try {
-              hljs.highlight(codeContent, {
-                language:
-                  currentLanguage.current.length > 1
-                    ? currentLanguage.current
-                    : 'plaintext',
-              }).value
-            } catch (err) {
-              hljs.highlight(codeContent, {
-                language: 'javascript',
-              }).value
-            }
-
-            // Calculate the range for the inline code
-            const length = codeContent.length
-            ranges.push({
-              anchor: {
-                path: [...path, childIndex],
-                offset: inlineMatch.index + 1,
-              },
-              focus: {
-                path: [...path, childIndex],
-                offset: inlineMatch.index + 1 + length,
-              },
-              type: 'code',
-              code: true,
-              language: currentLanguage.current,
-              className: '', // Specify class name if needed
-            })
           } else if (currentLanguage.current !== 'plaintext') {
             // Highlight entire code line if in a code block
             const leadingSpaces = text.match(/^\s*/)?.[0] ?? '' // Capture leading spaces
@@ -206,7 +261,7 @@ const RichTextEditor = ({
               anchor: { path: [...path, childIndex], offset: 0 },
               focus: {
                 path: [...path, childIndex],
-                offset: leadingSpaces.length,
+                offset: slateTextIndex,
               },
               type: 'code',
               code: true,
@@ -240,6 +295,7 @@ const RichTextEditor = ({
               slateTextIndex += length
             })
           } else {
+            currentLanguage.current = 'plaintext'
             ranges.push({
               anchor: { path: [...path, childIndex], offset: 0 },
               focus: { path: [...path, childIndex], offset: text.length },
@@ -340,20 +396,6 @@ const RichTextEditor = ({
           sendChatMessage(currentPrompt)
           resetEditor()
         } else onStopInferenceClick()
-      }
-
-      if (event.key === '`') {
-        // Determine whether any of the currently selected blocks are code blocks.
-        const [match] = Editor.nodes(editor, {
-          match: (n) =>
-            Element.isElement(n) && (n as CustomElement).type === 'code',
-        })
-        // Toggle the block type dependsing on whether there's already a match.
-        Transforms.setNodes(
-          editor,
-          { type: match ? 'paragraph' : 'code' },
-          { match: (n) => Element.isElement(n) && Editor.isBlock(editor, n) }
-        )
       }
 
       if (event.key === 'Tab') {
