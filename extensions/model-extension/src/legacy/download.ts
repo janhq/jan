@@ -19,6 +19,14 @@ export const downloadModel = async (
   const modelDirPath = await joinPath([homedir, model.id])
   if (!(await fs.existsSync(modelDirPath))) await fs.mkdir(modelDirPath)
 
+  const jsonFilePath = await joinPath([modelDirPath, 'model.json'])
+  // Write model.json on download
+  if (!(await fs.existsSync(jsonFilePath)))
+    await fs.writeFileSync(
+      jsonFilePath,
+      JSON.stringify(model, null, 2)
+    )
+
   if (model.engine === InferenceEngine.nitro_tensorrt_llm) {
     if (!gpuSettings || gpuSettings.gpus.length === 0) {
       console.error('No GPU found. Please check your GPU setting.')
