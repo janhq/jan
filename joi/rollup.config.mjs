@@ -38,7 +38,11 @@ export default [
       postcss({
         plugins: [autoprefixer(), tailwindcss(tailwindConfig)],
         sourceMap: true,
-        use: ['sass'],
+        use: {
+          sass: {
+            silenceDeprecations: ['legacy-js-api'],
+          },
+        },
         minimize: true,
         extract: 'main.css',
       }),
