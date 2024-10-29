@@ -51,7 +51,7 @@ export default class JanModelExtension extends ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  async onUnload() { }
+  async onUnload() {}
 
   /**
    * Downloads a machine learning model.
@@ -64,8 +64,9 @@ export default class JanModelExtension extends ModelExtension {
       // Clip vision model - should not be handled by cortex.cpp
       // TensorRT model - should not be handled by cortex.cpp
       if (
-        model.engine === InferenceEngine.nitro_tensorrt_llm ||
-        model.settings.vision_model
+        model &&
+        (model.engine === InferenceEngine.nitro_tensorrt_llm ||
+          model.settings.vision_model)
       ) {
         return downloadModel(model, (await systemInformation()).gpuSetting)
       }
@@ -88,8 +89,9 @@ export default class JanModelExtension extends ModelExtension {
       // Clip vision model - should not be handled by cortex.cpp
       // TensorRT model - should not be handled by cortex.cpp
       if (
-        modelDto.engine === InferenceEngine.nitro_tensorrt_llm ||
-        modelDto.settings.vision_model
+        modelDto &&
+        (modelDto.engine === InferenceEngine.nitro_tensorrt_llm ||
+          modelDto.settings.vision_model)
       ) {
         for (const source of modelDto.sources) {
           const path = await joinPath(['models', modelDto.id, source.filename])
@@ -110,12 +112,13 @@ export default class JanModelExtension extends ModelExtension {
    */
   async deleteModel(model: string): Promise<void> {
     const modelDto: Model = ModelManager.instance().get(model)
-    return this.cortexAPI.deleteModel(model)
-      .catch(e => console.debug(e))
+    return this.cortexAPI
+      .deleteModel(model)
+      .catch((e) => console.debug(e))
       .finally(async () => {
         // Delete legacy model files
-        await deleteModelFiles(modelDto)
-          .catch(e => console.debug(e))
+        if (modelDto)
+          await deleteModelFiles(modelDto).catch((e) => console.debug(e))
       })
   }
 
@@ -179,13 +182,15 @@ export default class JanModelExtension extends ModelExtension {
         toImportModels.map(async (model: Model & { file_path: string }) =>
           this.importModel(
             model.id,
-            await joinPath([
-              await dirName(model.file_path),
-              model.sources[0]?.filename ??
-              model.settings?.llama_model_path ??
-              model.sources[0]?.url.split('/').pop() ??
-              model.id,
-            ])
+            model.sources[0].url.startsWith('http')
+              ? await joinPath([
+                  await dirName(model.file_path),
+                  model.sources[0]?.filename ??
+                    model.settings?.llama_model_path ??
+                    model.sources[0]?.url.split('/').pop() ??
+                    model.id,
+                ]) // Copied models
+              : model.sources[0].url // Symlink models
           )
         )
       )
@@ -197,13 +202,14 @@ export default class JanModelExtension extends ModelExtension {
      * Models are imported successfully before
      * Now return models from cortex.cpp and merge with legacy models which are not imported
      */
-    return (
-      this.cortexAPI.getModels().then((models) => {
+    return await this.cortexAPI
+      .getModels()
+      .then((models) => {
         return models.concat(
           legacyModels.filter((e) => !models.some((x) => x.id === e.id))
         )
-      }) ?? Promise.resolve(legacyModels)
-    )
+      })
+      .catch(() => Promise.resolve(legacyModels))
   }
 
   /**

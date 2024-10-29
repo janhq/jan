@@ -168,7 +168,7 @@ export class CortexAPI implements ICortexAPI {
               (acc, cur) => acc + cur.bytes,
               0
             )
-            const percent = (transferred / total || 0) * 100
+            const percent = total > 0 ? transferred / total : 0
 
             events.emit(DownloadTypes[data.type], {
               modelId: data.task.id,

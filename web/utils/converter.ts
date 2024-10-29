@@ -18,8 +18,8 @@ export const formatDownloadPercentage = (
   input: number,
   options?: { hidePercentage?: boolean }
 ) => {
-  if (options?.hidePercentage) return input * 100
-  return (input * 100).toFixed(2) + '%'
+  if (options?.hidePercentage) return input <= 1 ? input * 100 : input
+  return (input <= 1 ? input * 100 : input).toFixed(2) + '%'
 }
 
 export const formatDownloadSpeed = (input: number | undefined) => {

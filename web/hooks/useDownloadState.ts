@@ -125,6 +125,7 @@ export const setDownloadStateAtom = atom(
           (acc, m) => acc + m.size.transferred,
           0
         )
+        modelDownloadState.size.total = parentTotalSize
         modelDownloadState.size.transferred = transferredSize
 
         modelDownloadState.percent =

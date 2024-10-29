@@ -71,7 +71,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       model.settings = {
         ...model.settings,
         llama_model_path: await getModelFilePath(
-          model.id,
+          model,
           model.settings.llama_model_path
         ),
       }
@@ -84,7 +84,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       // Legacy clip vision model support
       model.settings = {
         ...model.settings,
-        mmproj: await getModelFilePath(model.id, model.settings.mmproj),
+        mmproj: await getModelFilePath(model, model.settings.mmproj),
       }
     } else {
       const { mmproj, ...settings } = model.settings
@@ -136,9 +136,13 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
 /// Legacy
 export const getModelFilePath = async (
-  id: string,
+  model: Model,
   file: string
 ): Promise<string> => {
-  return joinPath([await getJanDataFolderPath(), 'models', id, file])
+  // Symlink to the model file
+  if (!model.sources[0]?.url.startsWith('http')) {
+    return model.sources[0]?.url
+  }
+  return joinPath([await getJanDataFolderPath(), 'models', model.id, file])
 }
 ///
