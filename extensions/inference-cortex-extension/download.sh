@@ -11,7 +11,10 @@ OS_TYPE=$(uname)
 if [ "$OS_TYPE" == "Linux" ]; then
     # Linux downloads
     download "${CORTEX_RELEASE_URL}/v${CORTEX_VERSION}/cortex-${CORTEX_VERSION}-linux-amd64.tar.gz" -e --strip 1 -o "./bin"
-    chmod +x "./bin/cortex"
+    mv ./bin/cortex-server-beta ./bin/cortex-server
+    rm -rf ./bin/cortex
+    rm -rf ./bin/cortex-beta
+    chmod +x "./bin/cortex-server"
 
     # Download engines for Linux
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx.tar.gz" -e --strip 1 -o "./bin/noavx/engines/cortex.llamacpp" 1
@@ -29,7 +32,10 @@ if [ "$OS_TYPE" == "Linux" ]; then
 elif [ "$OS_TYPE" == "Darwin" ]; then
     # macOS downloads
     download "${CORTEX_RELEASE_URL}/v${CORTEX_VERSION}/cortex-${CORTEX_VERSION}-mac-universal.tar.gz" -e --strip 1 -o "./bin" 1
-    chmod +x "./bin/cortex"
+    mv ./bin/cortex-server-beta ./bin/cortex-server
+    rm -rf ./bin/cortex
+    rm -rf ./bin/cortex-beta
+    chmod +x "./bin/cortex-server"
 
     # Download engines for macOS
     download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" -e --strip 1 -o ./bin/arm64/engines/cortex.llamacpp

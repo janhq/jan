@@ -43,7 +43,7 @@ describe('LocalOAIEngine', () => {
   })
 
   it('should load model correctly', async () => {
-    const model: ModelFile = { engine: 'testProvider', file_path: 'path/to/model' } as any
+    const model: any = { engine: 'testProvider', file_path: 'path/to/model' } as any
     const modelFolder = 'path/to'
     const systemInfo = { os: 'testOS' }
     const res = { error: null }

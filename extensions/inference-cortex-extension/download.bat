@@ -22,6 +22,9 @@ call .\node_modules\.bin\download %DOWNLOAD_URL%-vulkan.tar.gz -e --strip 1 -o %
 call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-12-0-windows-amd64.tar.gz -e --strip 1 -o %SHARED_PATH%
 call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-11-7-windows-amd64.tar.gz -e --strip 1 -o %SHARED_PATH%
 
+move %BIN_PATH%\cortex-server-beta.exe %BIN_PATH%\cortex-server.exe
+del %BIN_PATH%\cortex-beta.exe
+del %BIN_PATH%\cortex.exe
 
 @REM Loop through each folder and move DLLs (excluding engine.dll)
 for %%F in (%SUBFOLDERS%) do (
