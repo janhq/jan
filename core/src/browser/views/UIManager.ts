@@ -1,11 +1,11 @@
 // Define an enum for the component types
 export enum UIComponent {
-  Tab = 'right-panel-tab-component',
+  RightPanelTabItem = 'right-panel-tab-item-component',
   InputChatBox = 'input-chat-box-component',
 }
 
 // Define object structures for each component type
-interface Tab {
+interface TabItem {
   name: string
   value: string
   render?: any
@@ -20,7 +20,7 @@ interface InputChatBox {
 
 // Map each `UIComponent` to a corresponding object type
 type TypeObjectMap = {
-  [UIComponent.Tab]: Tab
+  [UIComponent.RightPanelTabItem]: TabItem
   [UIComponent.InputChatBox]: InputChatBox
 }
 
