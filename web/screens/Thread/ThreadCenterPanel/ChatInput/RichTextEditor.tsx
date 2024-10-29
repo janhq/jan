@@ -132,6 +132,20 @@ const RichTextEditor = ({
       if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
         node.children.forEach((child: { text: any }, childIndex: number) => {
           const text = child.text
+          const { selection } = editor
+
+          if (selection) {
+            const selectedNode = Editor.node(editor, selection)
+
+            if (Editor.isBlock(editor, selectedNode[0] as CustomElement)) {
+              const isNodeEmpty = Editor.string(editor, selectedNode[1]) === ''
+
+              if (isNodeEmpty) {
+                // Reset language when a node is cleared
+                currentLanguage.current = 'plaintext'
+              }
+            }
+          }
 
           // Match code block start and end
           const startMatch = text.match(/^```(\w*)$/)
@@ -308,21 +322,6 @@ const RichTextEditor = ({
           sendChatMessage(currentPrompt)
           resetEditor()
         } else onStopInferenceClick()
-      }
-
-      if (event.key === 'Tab') {
-        const [match] = Editor.nodes(editor, {
-          match: (n) => {
-            return (n as CustomElement).type === 'code'
-          },
-          mode: 'lowest',
-        })
-
-        if (match) {
-          event.preventDefault()
-          // Insert a tab character
-          Editor.insertText(editor, '  ') // Insert 2 spaces
-        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
