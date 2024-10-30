@@ -509,7 +509,12 @@ const ModelDropdown = ({
 
                     <ul className="pb-2">
                       {filteredDownloadedModels
-                        .filter((x) => x.engine === engine)
+                        .filter(
+                          (x) =>
+                            x.engine === engine ||
+                            (x.engine === InferenceEngine.nitro &&
+                              engine === InferenceEngine.cortex_llamacpp)
+                        )
                         .filter((y) => {
                           if (isLocalEngine(y.engine) && !searchText.length) {
                             return downloadedModels.find((c) => c.id === y.id)

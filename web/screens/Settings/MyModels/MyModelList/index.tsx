@@ -54,14 +54,14 @@ const MyModelList = ({ model }: Props) => {
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                model.engine !== InferenceEngine.nitro &&
+                !isLocalEngine(model.engine) &&
                   'max-w-none text-[hsla(var(--text-secondary))]'
               )}
               title={model.name}
             >
               {model.name}
             </h6>
-            {model.engine === InferenceEngine.nitro && (
+            {!isLocalEngine(model.engine) && (
               <div className="flex gap-x-8">
                 <p
                   className="line-clamp-1 text-[hsla(var(--text-secondary))] lg:min-w-[160px] lg:max-w-[160px] xl:max-w-none"

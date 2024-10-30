@@ -250,7 +250,12 @@ const MyModels = () => {
                     <div className="mt-2">
                       {filteredDownloadedModels
                         ? filteredDownloadedModels
-                            .filter((x) => x.engine === engine)
+                            .filter(
+                              (x) =>
+                                x.engine === engine ||
+                                (x.engine === InferenceEngine.nitro &&
+                                  engine === InferenceEngine.cortex_llamacpp)
+                            )
                             .map((model) => {
                               if (!showModel) return null
                               return (
