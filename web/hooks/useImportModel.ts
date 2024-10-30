@@ -18,7 +18,11 @@ import { snackbar } from '@/containers/Toast'
 import { FilePathWithSize } from '@/utils/file'
 
 import { extensionManager } from '@/extension'
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  addDownloadingModelAtom,
+  importingModelsAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 export type ImportModelStage =
   | 'NONE'
@@ -49,11 +53,25 @@ export type ModelUpdate = {
 const useImportModel = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const setImportingModels = useSetAtom(importingModelsAtom)
+  const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+  const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
 
   const importModels = useCallback(
-    (models: ImportingModel[], optionType: OptionType) =>
-      localImportModels(models, optionType),
-    []
+    (models: ImportingModel[], optionType: OptionType) => {
+      models
+        .filter((e) => !!e.modelId)
+        .map((model) => {
+          if (model.modelId) {
+            const modelId = model.modelId
+            addDownloadingModel(modelId)
+            extensionManager
+              .get<ModelExtension>(ExtensionTypeEnum.Model)
+              ?.importModel(model.modelId, model.path)
+              .finally(() => removeDownloadingModel(modelId))
+          }
+        })
+    },
+    [addDownloadingModel, removeDownloadingModel]
   )
 
   const updateModelInfo = useCallback(
@@ -99,21 +117,6 @@ const useImportModel = () => {
   )
 
   return { importModels, updateModelInfo, sanitizeFilePaths }
-}
-
-const localImportModels = async (
-  models: ImportingModel[],
-  // TODO: @louis - We will set this option when cortex.cpp supports it
-  optionType: OptionType
-): Promise<void> => {
-  await models
-    .filter((e) => !!e.modelId)
-    .map((model) => {
-      if (model.modelId)
-        extensionManager
-          .get<ModelExtension>(ExtensionTypeEnum.Model)
-          ?.importModel(model.modelId, model.path)
-    })
 }
 
 const localUpdateModelInfo = async (

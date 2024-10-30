@@ -261,8 +261,13 @@ const ModelDropdown = ({
   }, [])
 
   const findByEngine = filteredDownloadedModels
-    .filter((x) => !inActiveEngineProvider.includes(x.engine))
-    .map((x) => x.engine)
+    .map((x) => {
+      // Legacy engine support - they will be grouped under Cortex LlamaCPP
+      if (x.engine === InferenceEngine.nitro)
+        return InferenceEngine.cortex_llamacpp
+      return x.engine
+    })
+    .filter((x) => !inActiveEngineProvider.includes(x))
 
   const groupByEngine = findByEngine
     .filter(function (item, index) {

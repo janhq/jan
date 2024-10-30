@@ -21,7 +21,10 @@ import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  downloadedModelsAtom,
+  getDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 type Props = {
   index: number
@@ -42,11 +45,13 @@ const ModelDownloadRow: React.FC<Props> = ({
   const { downloadModel, abortModelDownload } = useDownloadModel()
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
   const downloadState: DownloadState | undefined = allDownloadStates[fileName]
+  const downloadingModels = useAtomValue(getDownloadingModelAtom)
 
   const { requestCreateNewThread } = useCreateNewThread()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const assistants = useAtomValue(assistantsAtom)
   const downloadedModel = downloadedModels.find((md) => md.id === fileName)
+  const isDownloading = downloadingModels.some((md) => md === fileName)
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
 
@@ -114,7 +119,7 @@ const ModelDownloadRow: React.FC<Props> = ({
         >
           Use
         </Button>
-      ) : downloadState != null ? (
+      ) : isDownloading ? (
         <Button variant="soft">
           <div className="flex items-center space-x-2">
             <span className="inline-block" onClick={onAbortDownloadClick}>
@@ -129,7 +134,7 @@ const ModelDownloadRow: React.FC<Props> = ({
               }
             />
             <span className="tabular-nums">
-              {formatDownloadPercentage(downloadState.percent)}
+              {formatDownloadPercentage(downloadState?.percent)}
             </span>
           </div>
         </Button>
