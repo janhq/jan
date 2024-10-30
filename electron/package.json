@@ -113,7 +113,7 @@
     "@kirillvakalov/nut-tree__nut-js": "4.2.1-2"
   },
   "devDependencies": {
-    "@electron/notarize": "^2.1.0",
+    "@electron/notarize": "^2.3.2",
     "@playwright/test": "^1.38.1",
     "@types/npmcli__arborist": "^5.6.4",
     "@types/pacote": "^11.1.7",
