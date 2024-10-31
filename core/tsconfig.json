@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "moduleResolution": "node",
-    "target": "es5",
+    "target": "ES2015",
     "module": "ES2020",
     "lib": ["es2015", "es2016", "es2017", "dom"],
     "strict": true,
@@ -13,7 +13,7 @@
     "declarationDir": "dist/types",
     "outDir": "dist/lib",
     "importHelpers": true,
-    "types": ["@types/jest"],
+    "types": ["@types/jest"]
   },
   "include": ["src"],
   "exclude": ["**/*.test.ts"]
