@@ -117,7 +117,7 @@ const ModelDownloadRow: React.FC<Props> = ({
 
   return (
     <div className="flex flex-col gap-4 rounded border border-[hsla(var(--app-border))] p-3 md:flex-row md:items-center md:justify-between xl:w-full">
-      <div className="flex justify-between">
+      <div className="flex max-w-[50%] justify-between">
         <div className="flex">
           {quantization && (
             <Badge variant="soft" className="mr-1">
@@ -126,8 +126,7 @@ const ModelDownloadRow: React.FC<Props> = ({
           )}
           <h1
             className={twMerge(
-              'mr-5 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]',
-              quantization && 'max-w-[25ch]'
+              'mr-5 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]'
             )}
             title={fileName}
           >
