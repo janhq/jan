@@ -9,7 +9,7 @@ export interface ModelInterface {
    * @param model - The model to download.
    * @returns A Promise that resolves when the model has been downloaded.
    */
-  pullModel(model: string, id?: string): Promise<void>
+  pullModel(model: string, id?: string, name?: string): Promise<void>
 
   /**
    * Cancels the download of a specific model.
@@ -43,5 +43,5 @@ export interface ModelInterface {
    * @param model id of the model to import
    * @param modelPath - path of the model file
    */
-  importModel(model: string, modePath: string): Promise<void>
+  importModel(model: string, modePath: string, name?: string): Promise<void>
 }

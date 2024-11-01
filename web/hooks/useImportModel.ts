@@ -66,7 +66,7 @@ const useImportModel = () => {
             addDownloadingModel(modelId)
             extensionManager
               .get<ModelExtension>(ExtensionTypeEnum.Model)
-              ?.importModel(model.modelId, model.path)
+              ?.importModel(model.modelId, model.path, model.name)
               .finally(() => removeDownloadingModel(modelId))
           }
         })

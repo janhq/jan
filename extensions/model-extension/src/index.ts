@@ -58,7 +58,7 @@ export default class JanModelExtension extends ModelExtension {
    * @param model - The model to download.
    * @returns A Promise that resolves when the model is downloaded.
    */
-  async pullModel(model: string, id?: string): Promise<void> {
+  async pullModel(model: string, id?: string, name?: string): Promise<void> {
     if (id) {
       const model: Model = ModelManager.instance().get(id)
       // Clip vision model - should not be handled by cortex.cpp
@@ -74,7 +74,7 @@ export default class JanModelExtension extends ModelExtension {
     /**
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */
-    return this.cortexAPI.pullModel(model, id)
+    return this.cortexAPI.pullModel(model, id, name)
   }
 
   /**
@@ -111,14 +111,12 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is deleted.
    */
   async deleteModel(model: string): Promise<void> {
-    const modelDto: Model = ModelManager.instance().get(model)
     return this.cortexAPI
       .deleteModel(model)
       .catch((e) => console.debug(e))
       .finally(async () => {
         // Delete legacy model files
-        if (modelDto)
-          await deleteModelFiles(modelDto).catch((e) => console.debug(e))
+        await deleteModelFiles(model).catch((e) => console.debug(e))
       })
   }
 
@@ -227,8 +225,12 @@ export default class JanModelExtension extends ModelExtension {
    * @param model
    * @param optionType
    */
-  async importModel(model: string, modelPath: string): Promise<void> {
-    return this.cortexAPI.importModel(model, modelPath)
+  async importModel(
+    model: string,
+    modelPath: string,
+    name?: string
+  ): Promise<void> {
+    return this.cortexAPI.importModel(model, modelPath, name)
   }
 
   /**

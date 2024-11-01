@@ -63,7 +63,11 @@ const ModelDownloadRow: React.FC<Props> = ({
 
   const onDownloadClick = useCallback(async () => {
     if (downloadUrl) {
-      downloadModel(downloadUrl, normalizeModelId(downloadUrl))
+      downloadModel(
+        downloadUrl,
+        normalizeModelId(downloadUrl),
+        normalizeModelId(downloadUrl)
+      )
     }
   }, [downloadUrl, downloadModel])
 

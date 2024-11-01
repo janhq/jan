@@ -18,9 +18,9 @@ export default function useDownloadModel() {
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
 
   const downloadModel = useCallback(
-    async (model: string, id?: string) => {
+    async (model: string, id?: string, name?: string) => {
       addDownloadingModel(id ?? model)
-      downloadLocalModel(model, id).catch((error) => {
+      downloadLocalModel(model, id, name).catch((error) => {
         if (error.message) {
           toaster({
             title: 'Download failed',
@@ -45,10 +45,10 @@ export default function useDownloadModel() {
   }
 }
 
-const downloadLocalModel = async (model: string, id?: string) =>
+const downloadLocalModel = async (model: string, id?: string, name?: string) =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.pullModel(model, id)
+    ?.pullModel(model, id, name)
 
 const cancelModelDownload = async (model: string) =>
   extensionManager

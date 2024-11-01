@@ -1,10 +1,10 @@
-import { fs, joinPath, Model } from '@janhq/core'
+import { fs, joinPath } from '@janhq/core'
 
-export const deleteModelFiles = async (model: Model) => {
+export const deleteModelFiles = async (id: string) => {
   try {
-    const dirPath = await joinPath(['file://models', model.id])
+    const dirPath = await joinPath(['file://models', id])
     // remove model folder directory
-    await fs.unlinkSync(dirPath)
+    await fs.rm(dirPath)
   } catch (err) {
     console.error(err)
   }

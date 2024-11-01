@@ -40,7 +40,8 @@ describe('useDownloadModel', () => {
 
     expect(mockExtension.pullModel).toHaveBeenCalledWith(
       mockModel.sources[0].url,
-      mockModel.id
+      mockModel.id,
+      undefined
     )
   })
 
@@ -87,7 +88,8 @@ describe('useDownloadModel', () => {
 
     expect(mockExtension.pullModel).toHaveBeenCalledWith(
       mockModel.sources[0].url,
-      mockModel.id
+      mockModel.id,
+      undefined
     )
   })
 })

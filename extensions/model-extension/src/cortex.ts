@@ -8,8 +8,8 @@ import { extractInferenceParams } from '@janhq/core'
 interface ICortexAPI {
   getModel(model: string): Promise<Model>
   getModels(): Promise<Model[]>
-  pullModel(model: string, id?: string): Promise<void>
-  importModel(path: string, modelPath: string): Promise<void>
+  pullModel(model: string, id?: string, name?: string): Promise<void>
+  importModel(path: string, modelPath: string, name?: string): Promise<void>
   deleteModel(model: string): Promise<void>
   updateModel(model: object): Promise<void>
   cancelModelPull(model: string): Promise<void>
@@ -68,10 +68,10 @@ export class CortexAPI implements ICortexAPI {
    * @param model
    * @returns
    */
-  pullModel(model: string, id?: string): Promise<void> {
+  pullModel(model: string, id?: string, name?: string): Promise<void> {
     return this.queue.add(() =>
       ky
-        .post(`${API_URL}/v1/models/pull`, { json: { model, id } })
+        .post(`${API_URL}/v1/models/pull`, { json: { model, id, name } })
         .json()
         .catch(async (e) => {
           throw (await e.response?.json()) ?? e
@@ -85,10 +85,10 @@ export class CortexAPI implements ICortexAPI {
    * @param model
    * @returns
    */
-  importModel(model: string, modelPath: string): Promise<void> {
+  importModel(model: string, modelPath: string, name?: string): Promise<void> {
     return this.queue.add(() =>
       ky
-        .post(`${API_URL}/v1/models/import`, { json: { model, modelPath } })
+        .post(`${API_URL}/v1/models/import`, { json: { model, modelPath, name } })
         .json()
         .catch((e) => console.debug(e)) // Ignore error
         .then()

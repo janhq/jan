@@ -170,7 +170,8 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                                   onClick={() =>
                                     downloadModel(
                                       model.sources[0].url,
-                                      model.id
+                                      model.id,
+                                      model.name
                                     )
                                   }
                                 />
@@ -261,7 +262,8 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                             onClick={() =>
                               downloadModel(
                                 featModel.sources[0].url,
-                                featModel.id
+                                featModel.id,
+                                featModel.name
                               )
                             }
                           >

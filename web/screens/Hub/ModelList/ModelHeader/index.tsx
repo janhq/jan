@@ -64,7 +64,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
   const assistants = useAtomValue(assistantsAtom)
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(model.sources[0].url, model.id)
+    downloadModel(model.sources[0].url, model.id, model.name)
   }, [model, downloadModel])
 
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null

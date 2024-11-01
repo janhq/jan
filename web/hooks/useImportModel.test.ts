@@ -34,8 +34,8 @@ describe('useImportModel', () => {
       await result.current.importModels(models, 'local' as any)
     })
 
-    expect(mockImportModels).toHaveBeenCalledWith('1', '/path/to/model1')
-    expect(mockImportModels).toHaveBeenCalledWith('2', '/path/to/model2')
+    expect(mockImportModels).toHaveBeenCalledWith('1', '/path/to/model1', undefined)
+    expect(mockImportModels).toHaveBeenCalledWith('2', '/path/to/model2', undefined)
   })
 
   it('should update model info successfully', async () => {
