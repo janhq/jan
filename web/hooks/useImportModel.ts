@@ -4,8 +4,10 @@ import {
   ExtensionTypeEnum,
   ImportingModel,
   Model,
+  ModelEvent,
   ModelExtension,
   OptionType,
+  events,
   fs,
 } from '@janhq/core'
 
@@ -58,18 +60,19 @@ const useImportModel = () => {
 
   const importModels = useCallback(
     (models: ImportingModel[], optionType: OptionType) => {
-      models
-        .filter((e) => !!e.modelId)
-        .map((model) => {
-          if (model.modelId) {
-            const modelId = model.modelId
-            addDownloadingModel(modelId)
-            extensionManager
-              .get<ModelExtension>(ExtensionTypeEnum.Model)
-              ?.importModel(model.modelId, model.path, model.name)
-              .finally(() => removeDownloadingModel(modelId))
-          }
-        })
+      models.map((model) => {
+        const modelId = model.modelId ?? model.path.split('/').pop()
+        if (modelId) {
+          addDownloadingModel(modelId)
+          extensionManager
+            .get<ModelExtension>(ExtensionTypeEnum.Model)
+            ?.importModel(modelId, model.path, model.name)
+            .finally(() => {
+              removeDownloadingModel(modelId)
+              events.emit(ModelEvent.OnModelsUpdate, {})
+            })
+        }
+      })
     },
     [addDownloadingModel, removeDownloadingModel]
   )
