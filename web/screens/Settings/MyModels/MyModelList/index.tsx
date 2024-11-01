@@ -85,7 +85,7 @@ const MyModelList = ({ model }: Props) => {
             <div className="relative flex items-center gap-x-4">
               {stateModel.loading && stateModel.model?.id === model.id ? (
                 <Badge
-                  className="inline-flex items-center space-x-2"
+                  className="inline-flex w-[80px] items-center space-x-2"
                   theme="secondary"
                 >
                   <span className="h-2 w-2 rounded-full bg-gray-500" />
@@ -99,7 +99,7 @@ const MyModelList = ({ model }: Props) => {
                 <Badge
                   theme="success"
                   variant="soft"
-                  className="inline-flex items-center space-x-2"
+                  className="inline-flex w-[80px] items-center space-x-2"
                 >
                   <span className="h-2 w-2 rounded-full bg-green-500" />
                   <span>Active</span>
@@ -107,7 +107,7 @@ const MyModelList = ({ model }: Props) => {
               ) : (
                 <Badge
                   theme="secondary"
-                  className="inline-flex items-center space-x-2"
+                  className="inline-flex w-[80px] items-center space-x-2"
                 >
                   <span className="h-2 w-2 rounded-full bg-gray-500" />
                   <span>Inactive</span>
