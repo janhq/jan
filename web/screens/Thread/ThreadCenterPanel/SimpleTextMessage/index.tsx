@@ -276,18 +276,18 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             </div>
           )}
 
-          {editMessage === props.id && (
+          {editMessage === props.id ? (
             <div>
               <EditChatInput message={props} />
             </div>
+          ) : (
+            <div
+              className={twMerge(
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed'
+              )}
+              dangerouslySetInnerHTML={{ __html: parsedText }}
+            />
           )}
-
-          <div
-            className={twMerge(
-              'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed'
-            )}
-            dangerouslySetInnerHTML={{ __html: parsedText }}
-          />
         </>
       </div>
     </div>
