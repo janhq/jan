@@ -5,7 +5,7 @@ import { MessageStatus } from '@janhq/core'
 import hljs from 'highlight.js'
 
 import { useAtom, useAtomValue } from 'jotai'
-import { BaseEditor, createEditor, Editor, Element, Transforms } from 'slate'
+import { BaseEditor, createEditor, Editor, Transforms } from 'slate'
 import { withHistory } from 'slate-history' // Import withHistory
 import {
   Editable,
@@ -129,14 +129,27 @@ const RichTextEditor = ({
         })
       }
 
-      if (Editor.isBlock(editor, node) && node.type === 'code') {
+      if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
         node.children.forEach((child: { text: any }, childIndex: number) => {
           const text = child.text
+          const { selection } = editor
+
+          if (selection) {
+            const selectedNode = Editor.node(editor, selection)
+
+            if (Editor.isBlock(editor, selectedNode[0] as CustomElement)) {
+              const isNodeEmpty = Editor.string(editor, selectedNode[1]) === ''
+
+              if (isNodeEmpty) {
+                // Reset language when a node is cleared
+                currentLanguage.current = 'plaintext'
+              }
+            }
+          }
 
           // Match code block start and end
           const startMatch = text.match(/^```(\w*)$/)
           const endMatch = text.match(/^```$/)
-          const inlineMatch = text.match(/^`([^`]+)`$/) // Match inline code
 
           if (startMatch) {
             // If it's the start of a code block, store the language
@@ -144,38 +157,6 @@ const RichTextEditor = ({
           } else if (endMatch) {
             // Reset language when code block ends
             currentLanguage.current = 'plaintext'
-          } else if (inlineMatch) {
-            // Apply syntax highlighting to inline code
-            const codeContent = inlineMatch[1] // Get the content within the backticks
-            try {
-              hljs.highlight(codeContent, {
-                language:
-                  currentLanguage.current.length > 1
-                    ? currentLanguage.current
-                    : 'plaintext',
-              }).value
-            } catch (err) {
-              hljs.highlight(codeContent, {
-                language: 'javascript',
-              }).value
-            }
-
-            // Calculate the range for the inline code
-            const length = codeContent.length
-            ranges.push({
-              anchor: {
-                path: [...path, childIndex],
-                offset: inlineMatch.index + 1,
-              },
-              focus: {
-                path: [...path, childIndex],
-                offset: inlineMatch.index + 1 + length,
-              },
-              type: 'code',
-              code: true,
-              language: currentLanguage.current,
-              className: '', // Specify class name if needed
-            })
           } else if (currentLanguage.current !== 'plaintext') {
             // Highlight entire code line if in a code block
             const leadingSpaces = text.match(/^\s*/)?.[0] ?? '' // Capture leading spaces
@@ -206,7 +187,7 @@ const RichTextEditor = ({
               anchor: { path: [...path, childIndex], offset: 0 },
               focus: {
                 path: [...path, childIndex],
-                offset: leadingSpaces.length,
+                offset: slateTextIndex,
               },
               type: 'code',
               code: true,
@@ -240,6 +221,7 @@ const RichTextEditor = ({
               slateTextIndex += length
             })
           } else {
+            currentLanguage.current = 'plaintext'
             ranges.push({
               anchor: { path: [...path, childIndex], offset: 0 },
               focus: { path: [...path, childIndex], offset: text.length },
@@ -301,6 +283,11 @@ const RichTextEditor = ({
       textareaRef.current.style.overflow =
         textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
+
+    if (currentPrompt.length === 0) {
+      resetEditor()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textareaRef.current?.clientHeight, currentPrompt, activeSettingInputBox])
 
   const onStopInferenceClick = async () => {
@@ -317,13 +304,15 @@ const RichTextEditor = ({
 
     // Adjust the height of the textarea to its initial state
     if (textareaRef.current) {
-      textareaRef.current.style.height = '40px' // Reset to the initial height or your desired height
+      textareaRef.current.style.height = activeSettingInputBox
+        ? '100px'
+        : '44px'
       textareaRef.current.style.overflow = 'hidden' // Reset overflow style
     }
 
     // Ensure the editor re-renders decorations
     editor.onChange()
-  }, [editor])
+  }, [activeSettingInputBox, editor])
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -333,35 +322,6 @@ const RichTextEditor = ({
           sendChatMessage(currentPrompt)
           resetEditor()
         } else onStopInferenceClick()
-      }
-
-      if (event.key === '`') {
-        // Determine whether any of the currently selected blocks are code blocks.
-        const [match] = Editor.nodes(editor, {
-          match: (n) =>
-            Element.isElement(n) && (n as CustomElement).type === 'code',
-        })
-        // Toggle the block type dependsing on whether there's already a match.
-        Transforms.setNodes(
-          editor,
-          { type: match ? 'paragraph' : 'code' },
-          { match: (n) => Element.isElement(n) && Editor.isBlock(editor, n) }
-        )
-      }
-
-      if (event.key === 'Tab') {
-        const [match] = Editor.nodes(editor, {
-          match: (n) => {
-            return (n as CustomElement).type === 'code'
-          },
-          mode: 'lowest',
-        })
-
-        if (match) {
-          event.preventDefault()
-          // Insert a tab character
-          Editor.insertText(editor, '  ') // Insert 2 spaces
-        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

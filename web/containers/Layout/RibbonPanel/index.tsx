@@ -95,10 +95,11 @@ export default function RibbonPanel() {
         return (
           <div
             className={twMerge(
-              'relative my-0.5 flex h-8 w-8 items-center justify-center rounded-md hover:bg-[hsla(var(--ribbon-panel-icon-hover))]',
+              'relative my-0.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-[hsla(var(--ribbon-panel-icon-hover))]',
               i === 1 && 'mb-auto'
             )}
             key={i}
+            onClick={() => onMenuClick(menu.state)}
           >
             <Tooltip
               side="right"
@@ -112,7 +113,6 @@ export default function RibbonPanel() {
                       isActive &&
                         'z-10 text-[hsla(var(--ribbon-panel-icon-active))]'
                     )}
-                    onClick={() => onMenuClick(menu.state)}
                   >
                     {menu.icon}
                   </div>

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { Accordion, AccordionItem } from '@janhq/joi'
+import { Accordion, AccordionItem, Input, Tooltip } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
-import { AlertTriangleIcon, InfoIcon } from 'lucide-react'
+import { AlertTriangleIcon, CheckIcon, CopyIcon, InfoIcon } from 'lucide-react'
 
 import EngineSetting from '@/containers/EngineSetting'
 import { modalTroubleShootingAtom } from '@/containers/ModalTroubleShoot'
@@ -11,6 +11,8 @@ import ModelSetting from '@/containers/ModelSetting'
 import RightPanelContainer from '@/containers/RightPanelContainer'
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
+
+import { useClipboard } from '@/hooks/useClipboard'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 
@@ -28,6 +30,8 @@ const LocalServerRightPanel = () => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
   const selectedModel = useAtomValue(selectedModelAtom)
+
+  const clipboard = useClipboard({ timeout: 1000 })
 
   const [currentModelSettingParams, setCurrentModelSettingParams] = useState(
     extractModelLoadParams(selectedModel?.settings)
@@ -91,6 +95,35 @@ const LocalServerRightPanel = () => {
         </div>
 
         <ModelDropdown strictedThread={false} disabled={serverEnabled} />
+
+        <div className="mt-2">
+          <Input
+            value={selectedModel?.id || ''}
+            className="cursor-pointer"
+            readOnly
+            suffixIcon={
+              clipboard.copied ? (
+                <CheckIcon
+                  size={14}
+                  className="text-[hsla(var(--success-bg))]"
+                />
+              ) : (
+                <Tooltip
+                  trigger={
+                    <CopyIcon
+                      size={14}
+                      className="text-[hsla(var(--text-secondary))]"
+                      onClick={() => {
+                        clipboard.copy(selectedModel?.id)
+                      }}
+                    />
+                  }
+                  content="Copy Model ID"
+                />
+              )
+            }
+          />
+        </div>
 
         {loadModelError && serverEnabled && (
           <div className="mt-3 flex space-x-2">

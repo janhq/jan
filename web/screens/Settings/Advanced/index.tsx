@@ -211,6 +211,9 @@ const Advanced = () => {
     saveSettings({ gpusInUse: updatedGpusInUse })
   }
 
+  const gpuSelectionPlaceHolder =
+    gpuList.length > 0 ? 'Select GPU' : "You don't have any compatible GPU"
+
   /**
    * Handle click outside
    */
@@ -315,25 +318,32 @@ const Advanced = () => {
               </div>
             </div>
 
-            {gpuList.length > 0 && (
-              <div className="mt-2 flex w-full flex-col rounded-lg px-2 py-4">
-                <label className="mb-2 mr-2 inline-block font-medium">
-                  Choose device(s)
-                </label>
-                <div className="relative w-full md:w-1/2" ref={setToggle}>
-                  <Input
-                    value={selectedGpu.join() || ''}
-                    className="w-full cursor-pointer"
-                    readOnly
-                    placeholder=""
-                    suffixIcon={
-                      <ChevronDownIcon
-                        size={14}
-                        className={twMerge(open && 'rotate-180')}
-                      />
-                    }
-                    onClick={() => setOpen(!open)}
-                  />
+            <div className="mt-2 flex w-full flex-col rounded-lg px-2 py-4">
+              <label className="mb-2 mr-2 inline-block font-medium">
+                Choose device(s)
+              </label>
+              <div className="relative w-full md:w-1/2" ref={setToggle}>
+                <Input
+                  value={selectedGpu.join() || ''}
+                  className={twMerge(
+                    'w-full cursor-pointer',
+                    gpuList.length === 0 && 'pointer-events-none'
+                  )}
+                  readOnly
+                  disabled={gpuList.length === 0}
+                  placeholder={gpuSelectionPlaceHolder}
+                  suffixIcon={
+                    <ChevronDownIcon
+                      size={14}
+                      className={twMerge(
+                        gpuList.length === 0 && 'pointer-events-none',
+                        open && 'rotate-180'
+                      )}
+                    />
+                  }
+                  onClick={() => setOpen(!open)}
+                />
+                {gpuList.length > 0 && (
                   <div
                     className={twMerge(
                       'absolute right-0 top-0 z-20 mt-10 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
@@ -391,9 +401,9 @@ const Advanced = () => {
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
         )}
 
