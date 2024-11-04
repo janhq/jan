@@ -86,7 +86,6 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
       onChange={onSearchChanged}
       onKeyDown={onKeyDown}
       value={searchText}
-      autoFocus
       clearable={searchText.length > 0}
       onClear={onClear}
     />
