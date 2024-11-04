@@ -1,5 +1,4 @@
 import { Tooltip, useMediaQuery } from '@janhq/joi'
-import { motion as m } from 'framer-motion'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
@@ -109,19 +108,13 @@ export default function RibbonPanel() {
                   <div
                     data-testid={menu.name}
                     className={twMerge(
-                      'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center text-[hsla(var(--ribbon-panel-icon))] ',
+                      'relative flex w-full flex-shrink-0 cursor-pointer items-center justify-center rounded-md p-1.5 text-[hsla(var(--ribbon-panel-icon))]',
                       isActive &&
-                        'z-10 text-[hsla(var(--ribbon-panel-icon-active))]'
+                        'z-10 bg-[hsla(var(--ribbon-panel-icon-active-bg))] text-[hsla(var(--ribbon-panel-icon-active))]'
                     )}
                   >
                     {menu.icon}
                   </div>
-                  {isActive && (
-                    <m.div
-                      className="absolute inset-0 left-0 h-full w-full rounded-md bg-[hsla(var(--ribbon-panel-icon-active-bg))]"
-                      layoutId="active-state-menu"
-                    />
-                  )}
                 </div>
               }
               content={

@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Thread } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
-import { motion as m } from 'framer-motion'
 import { useAtomValue, useSetAtom } from 'jotai'
 import {
   GalleryHorizontalEndIcon,
@@ -118,7 +117,9 @@ const ThreadLeftPanel = () => {
             <div
               key={thread.id}
               className={twMerge(
-                `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-[hsla(var(--left-panel-menu-hover))]`
+                `group/message relative mb-1 flex cursor-pointer flex-col transition-all hover:rounded-lg hover:bg-[hsla(var(--left-panel-menu-hover))]`,
+                activeThreadId === thread.id &&
+                  'rounded-lg bg-[hsla(var(--left-panel-icon-active-bg))]'
               )}
               onClick={() => {
                 onThreadClick(thread)
@@ -208,12 +209,6 @@ const ThreadLeftPanel = () => {
                   </div>
                 </div>
               </div>
-              {activeThreadId === thread.id && (
-                <m.div
-                  className="absolute inset-0 left-0 h-full w-full rounded-lg bg-[hsla(var(--left-panel-icon-active-bg))]"
-                  layoutId="active-thread"
-                />
-              )}
             </div>
           ))}
         </div>
