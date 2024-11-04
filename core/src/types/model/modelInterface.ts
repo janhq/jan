@@ -1,4 +1,5 @@
 import { Model } from './modelEntity'
+import { OptionType } from './modelImport'
 
 /**
  * Model extension for managing models.
@@ -43,5 +44,10 @@ export interface ModelInterface {
    * @param model id of the model to import
    * @param modelPath - path of the model file
    */
-  importModel(model: string, modePath: string, name?: string): Promise<void>
+  importModel(
+    model: string,
+    modePath: string,
+    name?: string,
+    optionType?: OptionType
+  ): Promise<void>
 }

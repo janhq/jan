@@ -1,4 +1,4 @@
-export type OptionType = 'SYMLINK' | 'MOVE_BINARY_FILE'
+export type OptionType = 'symlink' | 'copy'
 
 export type ModelImportOption = {
   type: OptionType

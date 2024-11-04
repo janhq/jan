@@ -9,7 +9,7 @@ interface ICortexAPI {
   getModel(model: string): Promise<Model>
   getModels(): Promise<Model[]>
   pullModel(model: string, id?: string, name?: string): Promise<void>
-  importModel(path: string, modelPath: string, name?: string): Promise<void>
+  importModel(path: string, modelPath: string, name?: string, option?: string): Promise<void>
   deleteModel(model: string): Promise<void>
   updateModel(model: object): Promise<void>
   cancelModelPull(model: string): Promise<void>
@@ -85,10 +85,17 @@ export class CortexAPI implements ICortexAPI {
    * @param model
    * @returns
    */
-  importModel(model: string, modelPath: string, name?: string): Promise<void> {
+  importModel(
+    model: string,
+    modelPath: string,
+    name?: string,
+    option?: string
+  ): Promise<void> {
     return this.queue.add(() =>
       ky
-        .post(`${API_URL}/v1/models/import`, { json: { model, modelPath, name } })
+        .post(`${API_URL}/v1/models/import`, {
+          json: { model, modelPath, name, option },
+        })
         .json()
         .catch((e) => console.debug(e)) // Ignore error
         .then()
@@ -208,6 +215,7 @@ export class CortexAPI implements ICortexAPI {
     }
     model.metadata = model.metadata ?? {
       tags: [],
+      size: model.size ?? model.metadata?.size ?? 0
     }
     return model as Model
   }

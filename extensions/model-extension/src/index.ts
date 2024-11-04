@@ -9,6 +9,7 @@ import {
   DownloadState,
   events,
   DownloadEvent,
+  OptionType
 } from '@janhq/core'
 import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
@@ -228,9 +229,10 @@ export default class JanModelExtension extends ModelExtension {
   async importModel(
     model: string,
     modelPath: string,
-    name?: string
+    name?: string,
+    option?: OptionType
   ): Promise<void> {
-    return this.cortexAPI.importModel(model, modelPath, name)
+    return this.cortexAPI.importModel(model, modelPath, name, option)
   }
 
   /**

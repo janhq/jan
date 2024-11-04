@@ -43,7 +43,19 @@ const useModels = () => {
         .models.values()
         .toArray()
         .filter((e) => !isLocalEngine(e.engine))
-      setDownloadedModels([...localModels, ...remoteModels])
+      const toUpdate = [...localModels, ...remoteModels]
+      setDownloadedModels(toUpdate)
+
+      let isUpdated = false
+      toUpdate.forEach((model) => {
+        if (!ModelManager.instance().models.has(model.id)) {
+          ModelManager.instance().models.set(model.id, model)
+          isUpdated = true
+        }
+      })
+      if (isUpdated) {
+        getExtensionModels()
+      }
     }
 
     const getExtensionModels = async () => {
@@ -52,7 +64,7 @@ const useModels = () => {
     }
 
     // Fetch all data
-    Promise.all([getDownloadedModels(), getExtensionModels()])
+    getExtensionModels().then(getDownloadedModels)
   }, [setDownloadedModels, setExtensionModels])
 
   const reloadData = useDebouncedCallback(() => getData(), 300)

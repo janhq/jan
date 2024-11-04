@@ -3,6 +3,7 @@ import { useCallback } from 'react'
 import {
   ExtensionTypeEnum,
   ImportingModel,
+  LocalImportModelEvent,
   Model,
   ModelEvent,
   ModelExtension,
@@ -66,10 +67,13 @@ const useImportModel = () => {
           addDownloadingModel(modelId)
           extensionManager
             .get<ModelExtension>(ExtensionTypeEnum.Model)
-            ?.importModel(modelId, model.path, model.name)
+            ?.importModel(modelId, model.path, model.name, optionType)
             .finally(() => {
               removeDownloadingModel(modelId)
-              events.emit(ModelEvent.OnModelsUpdate, {})
+              events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
+                importId: model.importId,
+                modelId: modelId,
+              })
             })
         }
       })
