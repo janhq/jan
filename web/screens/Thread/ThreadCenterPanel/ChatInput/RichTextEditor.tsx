@@ -269,10 +269,13 @@ const RichTextEditor = ({
   )
 
   useEffect(() => {
+    if (!ReactEditor.isFocused(editor)) {
+      ReactEditor.focus(editor)
+    }
     if (textareaRef.current) {
       textareaRef.current.focus()
     }
-  }, [activeThreadId])
+  }, [activeThreadId, editor])
 
   useEffect(() => {
     if (textareaRef.current?.clientHeight) {
