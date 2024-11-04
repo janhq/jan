@@ -52,7 +52,7 @@
     "uuid": "^9.0.1",
     "zod": "^3.22.4",
     "slate": "latest",
-    "slate-react": "latest",
+    "slate-react": "0.110.3",
     "slate-history": "latest"
   },
   "devDependencies": {
