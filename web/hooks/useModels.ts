@@ -58,13 +58,13 @@ const useModels = () => {
       }
     }
 
-    const getExtensionModels = async () => {
+    const getExtensionModels = () => {
       const models = ModelManager.instance().models.values().toArray()
       setExtensionModels(models)
     }
-
     // Fetch all data
-    getExtensionModels().then(getDownloadedModels)
+    getExtensionModels()
+    getDownloadedModels()
   }, [setDownloadedModels, setExtensionModels])
 
   const reloadData = useDebouncedCallback(() => getData(), 300)

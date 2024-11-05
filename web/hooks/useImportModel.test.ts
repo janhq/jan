@@ -31,11 +31,11 @@ describe('useImportModel', () => {
     ] as any
 
     await act(async () => {
-      await result.current.importModels(models, 'local' as any)
+      await result.current.importModels(models, 'copy')
     })
 
-    expect(mockImportModels).toHaveBeenCalledWith('1', '/path/to/model1', undefined)
-    expect(mockImportModels).toHaveBeenCalledWith('2', '/path/to/model2', undefined)
+    expect(mockImportModels).toHaveBeenCalledWith('1', '/path/to/model1', undefined,'copy')
+    expect(mockImportModels).toHaveBeenCalledWith('2', '/path/to/model2', undefined, 'copy')
   })
 
   it('should update model info successfully', async () => {

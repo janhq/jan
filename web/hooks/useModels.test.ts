@@ -35,6 +35,8 @@ describe('useModels', () => {
           }),
         }),
         get: () => undefined,
+        has: () => true,
+        // set: () => {}
       },
     })
 
