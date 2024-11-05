@@ -61,7 +61,7 @@ const MyModelList = ({ model }: Props) => {
             >
               {model.name}
             </h6>
-            {!isLocalEngine(model.engine) && (
+            {isLocalEngine(model.engine) && (
               <div className="flex gap-x-8">
                 <p
                   className="line-clamp-1 text-[hsla(var(--text-secondary))] lg:min-w-[160px] lg:max-w-[160px] xl:max-w-none"
