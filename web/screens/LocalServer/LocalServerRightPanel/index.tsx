@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { Accordion, AccordionItem, Input, Tooltip } from '@janhq/joi'
+import { Accordion, AccordionItem, Input } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AlertTriangleIcon, CheckIcon, CopyIcon, InfoIcon } from 'lucide-react'
 
@@ -99,7 +99,7 @@ const LocalServerRightPanel = () => {
         <div className="mt-2">
           <Input
             value={selectedModel?.id || ''}
-            className="cursor-pointer"
+            className="cursor-pointer text-[hsla(var(--text-secondary))]"
             readOnly
             suffixIcon={
               clipboard.copied ? (
@@ -108,17 +108,12 @@ const LocalServerRightPanel = () => {
                   className="text-[hsla(var(--success-bg))]"
                 />
               ) : (
-                <Tooltip
-                  trigger={
-                    <CopyIcon
-                      size={14}
-                      className="text-[hsla(var(--text-secondary))]"
-                      onClick={() => {
-                        clipboard.copy(selectedModel?.id)
-                      }}
-                    />
-                  }
-                  content="Copy Model ID"
+                <CopyIcon
+                  size={14}
+                  className="cursor-pointer text-[hsla(var(--text-secondary))]"
+                  onClick={() => {
+                    clipboard.copy(selectedModel?.id)
+                  }}
                 />
               )
             }
