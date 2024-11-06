@@ -50,12 +50,18 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     // Run the process watchdog
     const systemInfo = await systemInformation()
+    await this.clean()
     await executeOnMain(NODE, 'run', systemInfo)
 
     this.queue.add(() => this.healthz())
+
+    window.addEventListener('beforeunload', () => {
+      this.clean()
+    })
   }
 
   onUnload(): void {
+    this.clean()
     executeOnMain(NODE, 'dispose')
     super.onUnload()
   }
@@ -131,6 +137,20 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         },
       })
       .then(() => {})
+  }
+
+  /**
+   * Clean cortex processes
+   * @returns
+   */
+  clean(): Promise<any> {
+    return ky
+      .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
+        timeout: 2000, // maximum 2 seconds
+      })
+      .catch(() => {
+        // Do nothing
+      })
   }
 }
 
