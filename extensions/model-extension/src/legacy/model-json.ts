@@ -1,5 +1,13 @@
 import { InferenceEngine, Model, fs, joinPath } from '@janhq/core'
 //// LEGACY MODEL FOLDER ////
+const LocalEngines = [
+  InferenceEngine.cortex,
+  InferenceEngine.cortex_llamacpp,
+  InferenceEngine.cortex_tensorrtllm,
+  InferenceEngine.cortex_onnx,
+  InferenceEngine.nitro_tensorrt_llm,
+  InferenceEngine.nitro,
+]
 /**
  * Scan through models folder and return downloaded models
  * @returns
@@ -57,7 +65,11 @@ export const scanModelsFolder = async (): Promise<Model[]> => {
               !source.url.startsWith(`https://`)
           )
         )
-        if (existFiles.every((exist) => exist)) return model
+        if (
+          !LocalEngines.includes(model.engine) ||
+          existFiles.every((exist) => exist)
+        )
+          return model
 
         const result = await fs
           .readdirSync(await joinPath([_homeDir, dirName]))

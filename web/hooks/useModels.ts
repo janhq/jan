@@ -43,7 +43,13 @@ const useModels = () => {
         .models.values()
         .toArray()
         .filter((e) => !isLocalEngine(e.engine))
-      const toUpdate = [...localModels, ...remoteModels]
+      const toUpdate = [
+        ...localModels,
+        ...remoteModels.filter(
+          (e: Model) => !localModels.some((g: Model) => g.id === e.id)
+        ),
+      ]
+
       setDownloadedModels(toUpdate)
 
       let isUpdated = false
