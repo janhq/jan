@@ -18,7 +18,8 @@
       "docs/**/*",
       "scripts/**/*",
       "icons/**/*",
-      "themes"
+      "themes",
+      "shared"
     ],
     "asarUnpack": [
       "pre-install",
@@ -26,7 +27,8 @@
       "docs",
       "scripts",
       "icons",
-      "themes"
+      "themes",
+      "shared"
     ],
     "publish": [
       {

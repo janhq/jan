@@ -71,7 +71,7 @@ describe('isLocalEngine', () => {
   describe('getTitleByEngine', () => {
     it('should return correct title for InferenceEngine.nitro', () => {
       const result = getTitleByEngine(InferenceEngine.nitro)
-      expect(result).toBe('Llama.cpp (Nitro)')
+      expect(result).toBe('Llama.cpp (Cortex)')
     })
 
     it('should return correct title for InferenceEngine.nitro_tensorrt_llm', () => {

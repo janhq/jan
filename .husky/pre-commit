@@ -1,1 +1,1 @@
-npm run lint --fix
+npx oxlint@latest --fix

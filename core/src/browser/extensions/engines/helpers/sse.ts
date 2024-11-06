@@ -10,7 +10,7 @@ export function requestInference(
   requestBody: any,
   model: {
     id: string
-    parameters: ModelRuntimeParams
+    parameters?: ModelRuntimeParams
   },
   controller?: AbortController,
   headers?: HeadersInit,
@@ -22,7 +22,7 @@ export function requestInference(
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Accept': model.parameters.stream ? 'text/event-stream' : 'application/json',
+        'Accept': model.parameters?.stream ? 'text/event-stream' : 'application/json',
         ...headers,
       },
       body: JSON.stringify(requestBody),
@@ -45,7 +45,7 @@ export function requestInference(
           subscriber.complete()
           return
         }
-        if (model.parameters.stream === false) {
+        if (model.parameters?.stream === false) {
           const data = await response.json()
           if (transformResponse) {
             subscriber.next(transformResponse(data))

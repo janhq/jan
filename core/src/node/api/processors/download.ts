@@ -50,11 +50,6 @@ export class Downloader implements Processor {
     const initialDownloadState: DownloadState = {
       modelId,
       fileName,
-      time: {
-        elapsed: 0,
-        remaining: 0,
-      },
-      speed: 0,
       percent: 0,
       size: {
         total: 0,

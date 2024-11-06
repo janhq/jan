@@ -32,13 +32,22 @@ describe('Model.atom.ts', () => {
   })
 
   describe('showEngineListModelAtom', () => {
-    it('should initialize as an empty array', () => {
-      expect(ModelAtoms.showEngineListModelAtom.init).toEqual(['nitro'])
+    it('should initialize with local engines', () => {
+      expect(ModelAtoms.showEngineListModelAtom.init).toEqual([
+        'nitro',
+        'cortex',
+        'llama-cpp',
+        'onnxruntime',
+        'tensorrt-llm',
+      ])
     })
   })
 
   describe('addDownloadingModelAtom', () => {
     it('should add downloading model', async () => {
+      const { result: reset } = renderHook(() =>
+        useSetAtom(ModelAtoms.downloadingModelsAtom)
+      )
       const { result: setAtom } = renderHook(() =>
         useSetAtom(ModelAtoms.addDownloadingModelAtom)
       )
@@ -49,11 +58,16 @@ describe('Model.atom.ts', () => {
         setAtom.current({ id: '1' } as any)
       })
       expect(getAtom.current).toEqual([{ id: '1' }])
+      reset.current([])
     })
   })
 
   describe('removeDownloadingModelAtom', () => {
     it('should remove downloading model', async () => {
+      const { result: reset } = renderHook(() =>
+        useSetAtom(ModelAtoms.downloadingModelsAtom)
+      )
+
       const { result: setAtom } = renderHook(() =>
         useSetAtom(ModelAtoms.addDownloadingModelAtom)
       )
@@ -63,16 +77,21 @@ describe('Model.atom.ts', () => {
       const { result: getAtom } = renderHook(() =>
         useAtomValue(ModelAtoms.getDownloadingModelAtom)
       )
+      expect(getAtom.current).toEqual([])
       act(() => {
-        setAtom.current({ id: '1' } as any)
+        setAtom.current('1')
         removeAtom.current('1')
       })
       expect(getAtom.current).toEqual([])
+      reset.current([])
     })
   })
 
   describe('removeDownloadedModelAtom', () => {
     it('should remove downloaded model', async () => {
+      const { result: reset } = renderHook(() =>
+        useSetAtom(ModelAtoms.downloadingModelsAtom)
+      )
       const { result: setAtom } = renderHook(() =>
         useSetAtom(ModelAtoms.downloadedModelsAtom)
       )
@@ -94,6 +113,7 @@ describe('Model.atom.ts', () => {
         removeAtom.current('1')
       })
       expect(getAtom.current).toEqual([])
+      reset.current([])
     })
   })
 
@@ -282,12 +302,6 @@ describe('Model.atom.ts', () => {
         updateAtom.current('1', 'name', 'description', ['tag'])
       })
       expect(importAtom.current[0]).toEqual([])
-    })
-  })
-
-  describe('defaultModelAtom', () => {
-    it('should initialize as undefined', () => {
-      expect(ModelAtoms.defaultModelAtom.init).toBeUndefined()
     })
   })
 })

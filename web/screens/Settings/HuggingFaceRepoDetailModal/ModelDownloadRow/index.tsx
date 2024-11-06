@@ -1,11 +1,6 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback } from 'react'
 
-import {
-  DownloadState,
-  HuggingFaceRepoData,
-  Model,
-  Quantization,
-} from '@janhq/core'
+import { DownloadState, HuggingFaceRepoData, Quantization } from '@janhq/core'
 import { Badge, Button, Progress } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -20,13 +15,15 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
+import { normalizeModelId } from '@/utils/model'
+
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
 import { importHuggingFaceModelStageAtom } from '@/helpers/atoms/HuggingFace.atom'
 import {
-  defaultModelAtom,
   downloadedModelsAtom,
+  getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
 
 type Props = {
@@ -39,7 +36,6 @@ type Props = {
 }
 
 const ModelDownloadRow: React.FC<Props> = ({
-  repoData,
   downloadUrl,
   fileName,
   fileSize = 0,
@@ -49,51 +45,31 @@ const ModelDownloadRow: React.FC<Props> = ({
   const { downloadModel, abortModelDownload } = useDownloadModel()
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
   const downloadState: DownloadState | undefined = allDownloadStates[fileName]
+  const downloadingModels = useAtomValue(getDownloadingModelAtom)
 
   const { requestCreateNewThread } = useCreateNewThread()
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const assistants = useAtomValue(assistantsAtom)
   const downloadedModel = downloadedModels.find((md) => md.id === fileName)
+  const isDownloading = downloadingModels.some((md) => md === fileName)
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
-  const defaultModel = useAtomValue(defaultModelAtom)
-
-  const model = useMemo(() => {
-    if (!defaultModel) {
-      return undefined
-    }
-
-    const model: Model = {
-      ...defaultModel,
-      sources: [
-        {
-          url: downloadUrl,
-          filename: fileName,
-        },
-      ],
-      id: fileName,
-      name: fileName,
-      created: Date.now(),
-      metadata: {
-        author: 'User',
-        tags: repoData.tags,
-        size: fileSize,
-      },
-    }
-    return model
-  }, [fileName, fileSize, repoData, downloadUrl, defaultModel])
 
   const onAbortDownloadClick = useCallback(() => {
-    if (model) {
-      abortModelDownload(model)
+    if (downloadUrl) {
+      abortModelDownload(normalizeModelId(downloadUrl))
     }
-  }, [model, abortModelDownload])
+  }, [downloadUrl, abortModelDownload])
 
   const onDownloadClick = useCallback(async () => {
-    if (model) {
-      downloadModel(model)
+    if (downloadUrl) {
+      downloadModel(
+        downloadUrl,
+        normalizeModelId(downloadUrl),
+        normalizeModelId(downloadUrl)
+      )
     }
-  }, [model, downloadModel])
+  }, [downloadUrl, downloadModel])
 
   const onUseModelClick = useCallback(async () => {
     if (assistants.length === 0) {
@@ -111,7 +87,7 @@ const ModelDownloadRow: React.FC<Props> = ({
     setHfImportingStage,
   ])
 
-  if (!model) {
+  if (!downloadUrl) {
     return null
   }
 
@@ -145,11 +121,11 @@ const ModelDownloadRow: React.FC<Props> = ({
           variant="soft"
           className="min-w-[98px]"
           onClick={onUseModelClick}
-          data-testid={`use-model-btn-${model.id}`}
+          data-testid={`use-model-btn-${downloadUrl}`}
         >
           Use
         </Button>
-      ) : downloadState != null ? (
+      ) : isDownloading ? (
         <Button variant="soft">
           <div className="flex items-center space-x-2">
             <span className="inline-block" onClick={onAbortDownloadClick}>
@@ -164,7 +140,7 @@ const ModelDownloadRow: React.FC<Props> = ({
               }
             />
             <span className="tabular-nums">
-              {formatDownloadPercentage(downloadState.percent)}
+              {formatDownloadPercentage(downloadState?.percent)}
             </span>
           </div>
         </Button>

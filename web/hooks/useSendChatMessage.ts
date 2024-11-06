@@ -12,6 +12,7 @@ import {
   ToolManager,
   ChatCompletionMessage,
 } from '@janhq/core'
+import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {
@@ -23,10 +24,6 @@ import {
 import { Stack } from '@/utils/Stack'
 import { compressImage, getBase64 } from '@/utils/base64'
 import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
 
@@ -123,64 +120,26 @@ export default function useSendChatMessage() {
   }
 
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
-    if (!activeThreadRef.current) {
-      console.error('No active thread')
-      return
-    }
-    updateThreadWaiting(activeThreadRef.current.id, true)
+    // Delete last response before regenerating
+    const newConvoData = currentMessages
+    let toSendMessage = currentMessage
 
-    const requestBuilder = new MessageRequestBuilder(
-      MessageRequestType.Thread,
-      activeThreadRef.current.assistants[0].model ?? selectedModelRef.current,
-      activeThreadRef.current,
-      currentMessages
-    )
-      .addSystemMessage(activeThreadRef.current.assistants[0]?.instructions)
-      .removeLastAssistantMessage()
+    do {
+      deleteMessage(currentMessage.id)
+      const msg = newConvoData.pop()
+      if (!msg) break
+      toSendMessage = msg
+      deleteMessage(toSendMessage.id ?? '')
+    } while (toSendMessage.role !== ChatCompletionRole.User)
 
-    const modelId =
-      selectedModelRef.current?.id ??
-      activeThreadRef.current.assistants[0].model.id
-
-    if (modelRef.current?.id !== modelId) {
-      const error = await startModel(modelId).catch((error: Error) => error)
-      if (error) {
-        updateThreadWaiting(activeThreadRef.current.id, false)
-        return
-      }
+    if (activeThreadRef.current) {
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.writeMessages(activeThreadRef.current.id, newConvoData)
     }
 
-    setIsGeneratingResponse(true)
-
-    if (currentMessage.role !== ChatCompletionRole.User) {
-      // Delete last response before regenerating
-      deleteMessage(currentMessage.id ?? '')
-      if (activeThreadRef.current) {
-        await extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.writeMessages(
-            activeThreadRef.current.id,
-            currentMessages.filter((msg) => msg.id !== currentMessage.id)
-          )
-      }
-    }
-    // Process message request with Assistants tools
-    const request = await ToolManager.instance().process(
-      requestBuilder.build(),
-      activeThreadRef.current.assistants?.flatMap(
-        (assistant) => assistant.tools ?? []
-      ) ?? []
-    )
-
-    request.messages = normalizeMessages(request.messages ?? [])
-
-    const engine =
-      requestBuilder.model?.engine ?? selectedModelRef.current?.engine ?? ''
-
-    EngineManager.instance().get(engine)?.inference(request)
+    sendChatMessage(toSendMessage.content[0]?.text.value)
   }
-
-  // Define interface extending Array prototype
 
   const sendChatMessage = async (message: string) => {
     if (!message || message.trim().length === 0) return
@@ -254,7 +213,7 @@ export default function useSendChatMessage() {
       ...activeThreadRef.current,
       updated: newMessage.created,
       metadata: {
-        ...(activeThreadRef.current.metadata ?? {}),
+        ...activeThreadRef.current.metadata,
         lastMessage: prompt,
       },
     }

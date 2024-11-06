@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { ModelFile } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { Badge } from '@janhq/joi'
 
 import { twMerge } from 'tailwind-merge'
@@ -12,7 +12,7 @@ import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 import { toGibibytes } from '@/utils/converter'
 
 type Props = {
-  model: ModelFile
+  model: Model
 }
 
 const ModelItem: React.FC<Props> = ({ model }) => {
@@ -34,7 +34,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
           <div className="flex w-full flex-col border-t border-[hsla(var(--app-border))] p-4 ">
             <div className="my-2 inline-flex items-center sm:hidden">
               <span className="mr-4 font-semibold">
-                {toGibibytes(model.metadata.size)}
+                {toGibibytes(model.metadata?.size)}
               </span>
               <ModelLabel metadata={model.metadata} />
             </div>
@@ -49,9 +49,9 @@ const ModelItem: React.FC<Props> = ({ model }) => {
                 <span className="font-semibold ">Author</span>
                 <p
                   className="mt-2 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]"
-                  title={model.metadata.author}
+                  title={model.metadata?.author}
                 >
-                  {model.metadata.author}
+                  {model.metadata?.author}
                 </p>
               </div>
               <div>
@@ -66,7 +66,7 @@ const ModelItem: React.FC<Props> = ({ model }) => {
               <div>
                 <span className="mb-1 font-semibold ">Tags</span>
                 <div className="mt-2 flex flex-wrap gap-x-1 gap-y-1">
-                  {model.metadata.tags.map((tag: string) => (
+                  {model.metadata?.tags?.map((tag: string) => (
                     <Badge key={tag} title={tag} variant="soft">
                       {tag}
                     </Badge>

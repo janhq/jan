@@ -116,7 +116,12 @@ const MyModels = () => {
     getAllSettings()
   }, [])
 
-  const findByEngine = filteredDownloadedModels.map((x) => x.engine)
+  const findByEngine = filteredDownloadedModels.map((x) => {
+    // Legacy engine support - they will be grouped under Cortex LlamaCPP
+    if (x.engine === InferenceEngine.nitro)
+      return InferenceEngine.cortex_llamacpp
+    return x.engine
+  })
   const groupByEngine = findByEngine
     .filter(function (item, index) {
       if (findByEngine.indexOf(item) === index) return item
@@ -245,7 +250,12 @@ const MyModels = () => {
                     <div className="mt-2">
                       {filteredDownloadedModels
                         ? filteredDownloadedModels
-                            .filter((x) => x.engine === engine)
+                            .filter(
+                              (x) =>
+                                x.engine === engine ||
+                                (x.engine === InferenceEngine.nitro &&
+                                  engine === InferenceEngine.cortex_llamacpp)
+                            )
                             .map((model) => {
                               if (!showModel) return null
                               return (

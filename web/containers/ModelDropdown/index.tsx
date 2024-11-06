@@ -88,7 +88,7 @@ const ModelDropdown = ({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
   const featuredModel = configuredModels.filter((x) =>
-    x.metadata.tags.includes('Featured')
+    x.metadata?.tags?.includes('Featured')
   )
   const { updateThreadMetadata } = useCreateNewThread()
 
@@ -200,7 +200,6 @@ const ModelDropdown = ({
         if (model)
           updateModelParameter(activeThread, {
             params: modelParams,
-            modelPath: model.file_path,
             modelId: model.id,
             engine: model.engine,
           })
@@ -262,8 +261,13 @@ const ModelDropdown = ({
   }, [])
 
   const findByEngine = filteredDownloadedModels
-    .filter((x) => !inActiveEngineProvider.includes(x.engine))
-    .map((x) => x.engine)
+    .map((x) => {
+      // Legacy engine support - they will be grouped under Cortex LlamaCPP
+      if (x.engine === InferenceEngine.nitro)
+        return InferenceEngine.cortex_llamacpp
+      return x.engine
+    })
+    .filter((x) => !inActiveEngineProvider.includes(x))
 
   const groupByEngine = findByEngine
     .filter(function (item, index) {
@@ -444,7 +448,7 @@ const ModelDropdown = ({
                         <ul className="pb-2">
                           {featuredModel.map((model) => {
                             const isDownloading = downloadingModels.some(
-                              (md) => md.id === model.id
+                              (md) => md === model.id
                             )
                             return (
                               <li
@@ -465,13 +469,18 @@ const ModelDropdown = ({
                                 </div>
                                 <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                   <span className="font-medium">
-                                    {toGibibytes(model.metadata.size)}
+                                    {toGibibytes(model.metadata?.size)}
                                   </span>
                                   {!isDownloading ? (
                                     <DownloadCloudIcon
                                       size={18}
                                       className="cursor-pointer text-[hsla(var(--app-link))]"
-                                      onClick={() => downloadModel(model)}
+                                      onClick={() =>
+                                        downloadModel(
+                                          model.sources[0].url,
+                                          model.id
+                                        )
+                                      }
                                     />
                                   ) : (
                                     Object.values(downloadStates)
@@ -500,7 +509,12 @@ const ModelDropdown = ({
 
                     <ul className="pb-2">
                       {filteredDownloadedModels
-                        .filter((x) => x.engine === engine)
+                        .filter(
+                          (x) =>
+                            x.engine === engine ||
+                            (x.engine === InferenceEngine.nitro &&
+                              engine === InferenceEngine.cortex_llamacpp)
+                        )
                         .filter((y) => {
                           if (isLocalEngine(y.engine) && !searchText.length) {
                             return downloadedModels.find((c) => c.id === y.id)
@@ -511,7 +525,7 @@ const ModelDropdown = ({
                         .map((model) => {
                           if (!showModel) return null
                           const isDownloading = downloadingModels.some(
-                            (md) => md.id === model.id
+                            (md) => md === model.id
                           )
                           const isDownloaded = downloadedModels.some(
                             (c) => c.id === model.id
@@ -549,14 +563,19 @@ const ModelDropdown = ({
                               <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                 {!isDownloaded && (
                                   <span className="font-medium">
-                                    {toGibibytes(model.metadata.size)}
+                                    {toGibibytes(model.metadata?.size)}
                                   </span>
                                 )}
                                 {!isDownloading && !isDownloaded ? (
                                   <DownloadCloudIcon
                                     size={18}
                                     className="cursor-pointer text-[hsla(var(--app-link))]"
-                                    onClick={() => downloadModel(model)}
+                                    onClick={() =>
+                                      downloadModel(
+                                        model.sources[0].url,
+                                        model.id
+                                      )
+                                    }
                                   />
                                 ) : (
                                   Object.values(downloadStates)
