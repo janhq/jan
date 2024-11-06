@@ -6,6 +6,8 @@ import { useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { setDownloadStateAtom } from './useDownloadState'
+
 import { extensionManager } from '@/extension/ExtensionManager'
 
 import {
@@ -16,10 +18,21 @@ import {
 export default function useDownloadModel() {
   const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+  const setDownloadStates = useSetAtom(setDownloadStateAtom)
 
   const downloadModel = useCallback(
     async (model: string, id?: string, name?: string) => {
       addDownloadingModel(id ?? model)
+      setDownloadStates({
+        modelId: id ?? model,
+        downloadState: 'downloading',
+        fileName: id ?? model,
+        size: {
+          total: 0,
+          transferred: 0,
+        },
+        percent: 0,
+      })
       downloadLocalModel(model, id, name).catch((error) => {
         if (error.message) {
           toaster({
@@ -32,7 +45,7 @@ export default function useDownloadModel() {
         removeDownloadingModel(model)
       })
     },
-    [removeDownloadingModel, addDownloadingModel]
+    [removeDownloadingModel, addDownloadingModel, setDownloadStates]
   )
 
   const abortModelDownload = useCallback(async (model: string) => {

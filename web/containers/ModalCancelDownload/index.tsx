@@ -8,11 +8,12 @@ import { useAtomValue, useSetAtom } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
 
-import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
+import {
+  modelDownloadStateAtom,
+  removeDownloadStateAtom,
+} from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
-
-import { removeDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   model: Model
@@ -21,16 +22,16 @@ type Props = {
 
 const ModalCancelDownload = ({ model, isFromList }: Props) => {
   const { abortModelDownload } = useDownloadModel()
-  const removeModelDownload = useSetAtom(removeDownloadingModelAtom)
+  const removeDownloadState = useSetAtom(removeDownloadStateAtom)
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
   const downloadState = allDownloadStates[model.id]
 
   const cancelText = `Cancel ${formatDownloadPercentage(downloadState?.percent ?? 0)}`
 
   const onAbortDownloadClick = useCallback(() => {
-    removeModelDownload(model.id)
+    removeDownloadState(model.id)
     abortModelDownload(downloadState?.modelId ?? model.id)
-  }, [downloadState, abortModelDownload, removeModelDownload, model])
+  }, [downloadState, abortModelDownload, removeDownloadState, model])
 
   return (
     <Modal

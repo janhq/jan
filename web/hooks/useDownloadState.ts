@@ -10,8 +10,18 @@ import {
 } from '@/helpers/atoms/Model.atom'
 
 // download states
+
 export const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
 
+/**
+ * Remove a download state for a particular model.
+ */
+export const removeDownloadStateAtom = atom(null, (get, set, id: string) => {
+  const currentState = { ...get(modelDownloadStateAtom) }
+  delete currentState[id]
+  set(modelDownloadStateAtom, currentState)
+  set(removeDownloadingModelAtom, id)
+})
 /**
  * Used to set the download state for a particular model.
  */
