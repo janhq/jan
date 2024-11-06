@@ -283,7 +283,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed'
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto break-all leading-relaxed	'
               )}
               dangerouslySetInnerHTML={{ __html: parsedText }}
             />

@@ -25,6 +25,7 @@ import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 
+import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -144,6 +145,8 @@ const ThreadCenterPanel = () => {
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
+  const showSystemMonitorPanel = useAtomValue(showSystemMonitorPanelAtom)
+
   return (
     <CenterPanelContainer>
       <div
@@ -188,7 +191,12 @@ const ThreadCenterPanel = () => {
             </div>
           </div>
         )}
-        <div className="flex h-full w-full flex-col justify-between">
+        <div
+          className={twMerge(
+            'flex h-full w-full flex-col justify-between',
+            showSystemMonitorPanel && 'h-[calc(100%-200px)]'
+          )}
+        >
           {activeThread ? (
             <div className="flex h-full w-full overflow-x-hidden">
               <ChatBody />
