@@ -1,6 +1,6 @@
 import { memo, useState } from 'react'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import {
