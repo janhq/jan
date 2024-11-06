@@ -97,6 +97,9 @@ const LocalServerRightPanel = () => {
             value={selectedModel?.id || ''}
             className="cursor-pointer text-[hsla(var(--text-secondary))]"
             readOnly
+            onClick={() => {
+              clipboard.copy(selectedModel?.id)
+            }}
             suffixIcon={
               clipboard.copied ? (
                 <CheckIcon
@@ -107,9 +110,6 @@ const LocalServerRightPanel = () => {
                 <CopyIcon
                   size={14}
                   className="cursor-pointer text-[hsla(var(--text-secondary))]"
-                  onClick={() => {
-                    clipboard.copy(selectedModel?.id)
-                  }}
                 />
               )
             }
