@@ -61,9 +61,8 @@
   padding: 16px;
   font-size: 14px;
   word-wrap: normal;
-  border-radius: 0.4rem;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
+  border-bottom-left-radius: 0.4rem;
+  border-bottom-right-radius: 0.4rem;
   white-space: normal;
 }
 pre > code {
@@ -103,5 +102,30 @@ pre > code {
   .hljs-keyword,
   .hljs-selector-tag {
     font-weight: bold;
+  }
+}
+
+/* Add this CSS for typing animation */
+.typing-text {
+  display: inline-block;
+  white-space: nowrap;
+  border-right: 2px solid transparent; /* Cursor */
+  animation:
+    typing 3s steps(30) 1s forwards,
+    blink 0.75s step-end infinite;
+}
+
+@keyframes typing {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+@keyframes blink {
+  50% {
+    border-color: transparent;
   }
 }

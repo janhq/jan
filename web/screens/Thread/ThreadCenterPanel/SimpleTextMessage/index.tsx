@@ -1,4 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
+
+import Markdown from 'react-markdown'
+import SyntaxHighlighter from 'react-syntax-highlighter'
 
 import {
   ChatCompletionRole,
@@ -8,13 +11,12 @@ import {
 } from '@janhq/core'
 
 import { Tooltip } from '@janhq/joi'
-import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
-import { FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
-import { markedHighlight } from 'marked-highlight'
-import markedKatex from 'marked-katex-extension'
+import { CopyIcon, FolderOpenIcon } from 'lucide-react'
+import { a11yDark } from 'react-syntax-highlighter/dist/esm/styles/hljs'
+import rehypeKatex from 'rehype-katex'
+import remarkMath from 'remark-math'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -23,6 +25,7 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 import { useClipboard } from '@/hooks/useClipboard'
 import { usePath } from '@/hooks/usePath'
 
+import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
@@ -53,87 +56,12 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
   const clipboard = useClipboard({ timeout: 1000 })
 
-  function escapeHtml(html: string): string {
-    return html
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;')
-  }
-
-  const marked: Marked = new Marked(
-    markedHighlight({
-      langPrefix: 'hljs',
-      highlight(code, lang) {
-        if (lang === undefined || lang === '') {
-          return hljs.highlight(code, { language: 'plaintext' }).value
-        }
-        try {
-          return hljs.highlight(code, { language: lang }).value
-        } catch (err) {
-          return hljs.highlight(code, { language: 'javascript' }).value
-        }
-      },
-    }),
-    {
-      renderer: {
-        html: (html: string) => {
-          return escapeHtml(html) // Escape any HTML
-        },
-        link: (href, title, text) => {
-          return Renderer.prototype.link
-            ?.apply(this, [href, title, text])
-            .replace('<a', "<a target='_blank'")
-        },
-        code(code, lang) {
-          return `
-          <div class="relative code-block group/item overflow-auto">
-            <button class='text-xs copy-action hidden group-hover/item:block p-2 rounded-lg absolute top-6 right-2'>
-              ${
-                clipboard.copied
-                  ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check pointer-events-none text-green-600"><path d="M20 6 9 17l-5-5"/></svg>`
-                  : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
-              }
-            </button>
-            <pre class="hljs">
-              <code class="language-${lang ?? ''}">${code}</code>
-            </pre>
-          </div>
-          `
-        },
-      },
-    }
-  )
-
-  marked.use(markedKatex({ throwOnError: false }))
-
   const { onViewFile, onViewFileContainer } = usePath()
-  const parsedText = marked.parse(text)
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-
-  const codeBlockCopyEvent = useRef((e: Event) => {
-    const target: HTMLElement = e.target as HTMLElement
-    if (typeof target.className !== 'string') return null
-
-    const isCopyActionClassName = target?.className.includes('copy-action')
-
-    if (isCopyActionClassName) {
-      const content = target?.parentNode?.querySelector('code')?.innerText ?? ''
-      clipboard.copy(content)
-    }
-  })
-
-  useEffect(() => {
-    document.addEventListener('click', codeBlockCopyEvent.current)
-    return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      document.removeEventListener('click', codeBlockCopyEvent.current)
-    }
-  }, [])
+  const [copiedMap, setCopiedMap] = useState(new Map())
 
   useEffect(() => {
     if (props.status !== MessageStatus.Pending) {
@@ -285,8 +213,79 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               className={twMerge(
                 'message max-width-[100%] flex flex-col gap-y-2 overflow-auto break-all leading-relaxed	'
               )}
-              dangerouslySetInnerHTML={{ __html: parsedText }}
-            />
+              dir="ltr"
+            >
+              <Markdown
+                remarkPlugins={[remarkMath]}
+                rehypePlugins={[rehypeKatex]}
+                components={{
+                  code(props) {
+                    const { children, className, ...rest } = props
+                    const match = /language-(\w+)/.exec(className || '')
+                    const uniqueKey =
+                      className + String(children).substring(0, 10)
+
+                    return match ? (
+                      <div className="code-block group/item relative my-4 overflow-auto">
+                        <div className="flex select-none items-center justify-between rounded-t-md border-b border-neutral-700 bg-[hsla(var(--app-code-block))] px-4 py-2 font-sans text-xs font-medium text-neutral-200">
+                          <p>{getLanguageFromExtension(match && match[1])}</p>
+                          <div
+                            className="flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-neutral-700"
+                            onClick={() => {
+                              clipboard.copy(
+                                String(children).replace(/\n$/, '')
+                              )
+                              const newCopiedMap = new Map(copiedMap).set(
+                                uniqueKey,
+                                true
+                              )
+                              setCopiedMap(newCopiedMap)
+                              setTimeout(() => {
+                                const resetMap = new Map(newCopiedMap)
+                                resetMap.set(uniqueKey, false)
+                                setCopiedMap(resetMap)
+                              }, 2000)
+                            }}
+                          >
+                            {clipboard.copied && copiedMap.get(uniqueKey) ? (
+                              <>
+                                <CopyIcon size={14} />
+                                <span>copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <CopyIcon size={14} />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <SyntaxHighlighter
+                          showLineNumbers={
+                            String(children).split('\n').length > 2
+                          }
+                          language={
+                            match && match[1] === 'js'
+                              ? 'javascript'
+                              : match[1] || 'javascript'
+                          }
+                          style={a11yDark}
+                          useInlineStyles={false}
+                        >
+                          {String(children).replace(/\n$/, '')}
+                        </SyntaxHighlighter>
+                      </div>
+                    ) : (
+                      <code {...rest} className={className}>
+                        {children}
+                      </code>
+                    )
+                  },
+                }}
+              >
+                {text}
+              </Markdown>
+            </div>
           )}
         </>
       </div>
