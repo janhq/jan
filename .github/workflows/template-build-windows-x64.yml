@@ -79,17 +79,18 @@ jobs:
           jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
-          chmod +x .github/scripts/rename-app.sh
-          .github/scripts/rename-app.sh ./electron/package.json nightly
-          chmod +x .github/scripts/rename-workspace.sh
-          .github/scripts/rename-workspace.sh ./package.json nightly
-          chmod +x .github/scripts/rename-uninstaller.sh
-          .github/scripts/rename-uninstaller.sh nightly
-          echo "------------------------"
-          cat ./electron/package.json
-          echo "------------------------"
-          cat ./package.json
-          echo "------------------------"
+
+          # chmod +x .github/scripts/rename-app.sh
+          # .github/scripts/rename-app.sh ./electron/package.json nightly
+          # chmod +x .github/scripts/rename-workspace.sh
+          # .github/scripts/rename-workspace.sh ./package.json nightly
+          # chmod +x .github/scripts/rename-uninstaller.sh
+          # .github/scripts/rename-uninstaller.sh nightly
+          # echo "------------------------"
+          # cat ./electron/package.json
+          # echo "------------------------"
+          # cat ./package.json
+          # echo "------------------------"
 
       - name: Change App Name for beta version
         if: inputs.beta == true
