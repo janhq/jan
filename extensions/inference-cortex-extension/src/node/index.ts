@@ -33,6 +33,11 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     addEnvPaths(path.join(appResourcePath(), 'shared'))
     addEnvPaths(executableOptions.binPath)
     addEnvPaths(executableOptions.enginePath)
+    // Add the cortex.llamacpp path to the PATH and LD_LIBRARY_PATH
+    // This is required for the cortex engine to run for now since dlls are not moved to the root
+    addEnvPaths(
+      path.join(executableOptions.enginePath, 'engines', 'cortex.llamacpp')
+    )
 
     const dataFolderPath = getJanDataFolderPath()
     watchdog = new ProcessWatchdog(
