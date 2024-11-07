@@ -145,21 +145,6 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
     requireModelReload: false,
     configType: 'runtime',
   },
-  n_parallel: {
-    key: 'n_parallel',
-    title: 'N Parallel',
-    description:
-      'The number of parallel operations. Only set when enable continuous batching.	',
-    controllerType: 'slider',
-    controllerProps: {
-      min: 0,
-      max: 4,
-      step: 1,
-      value: 1,
-    },
-    requireModelReload: true,
-    configType: 'setting',
-  },
   cpu_threads: {
     key: 'cpu_threads',
     title: 'CPU Threads',
