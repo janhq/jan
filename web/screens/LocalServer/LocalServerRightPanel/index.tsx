@@ -95,7 +95,7 @@ const LocalServerRightPanel = () => {
         <div className="mt-2">
           <Input
             value={selectedModel?.id || ''}
-            className="cursor-pointer text-[hsla(var(--text-secondary))]"
+            className="cursor-pointer text-[hsla(var(--text-secondary))] hover:border-[hsla(var(--app-border))] focus-visible:outline-0 focus-visible:ring-0"
             readOnly
             onClick={() => {
               clipboard.copy(selectedModel?.id)
