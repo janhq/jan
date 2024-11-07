@@ -221,19 +221,19 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                   return (
                     <div
                       key={featModel.id}
-                      className="my-2 flex items-center justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
+                      className="my-2 flex items-start justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
                     >
                       <div className="w-full text-left">
-                        <h6 className="font-medium">{featModel.name}</h6>
+                        <h6 className="mt-1.5 font-medium">{featModel.name}</h6>
                       </div>
 
                       {isDownloading ? (
-                        <div className="flex w-full items-center gap-2">
+                        <div className="flex w-full flex-col items-end gap-2">
                           {Object.values(downloadStates)
                             .filter((x) => x.modelId === featModel.id)
                             .map((item, i) => (
                               <div
-                                className="flex w-full items-center gap-2"
+                                className="mt-1.5 flex w-full items-center gap-2"
                                 key={i}
                               >
                                 <Progress
@@ -253,6 +253,9 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                                 </div>
                               </div>
                             ))}
+                          <span className="text-[hsla(var(--text-secondary))]">
+                            {toGibibytes(featModel.metadata?.size)}
+                          </span>
                         </div>
                       ) : (
                         <div className="flex flex-col items-end justify-end gap-2">
