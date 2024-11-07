@@ -209,6 +209,7 @@ const Advanced = () => {
     }
     setGpusInUse(updatedGpusInUse)
     saveSettings({ gpusInUse: updatedGpusInUse })
+    window.core?.api?.relaunch()
   }
 
   const gpuSelectionPlaceHolder =
