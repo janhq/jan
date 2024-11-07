@@ -3,9 +3,12 @@ import { useCallback } from 'react'
 import {
   ExtensionTypeEnum,
   ImportingModel,
+  LocalImportModelEvent,
   Model,
+  ModelEvent,
   ModelExtension,
   OptionType,
+  events,
   fs,
 } from '@janhq/core'
 
@@ -18,7 +21,11 @@ import { snackbar } from '@/containers/Toast'
 import { FilePathWithSize } from '@/utils/file'
 
 import { extensionManager } from '@/extension'
-import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  addDownloadingModelAtom,
+  importingModelsAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 export type ImportModelStage =
   | 'NONE'
@@ -49,11 +56,29 @@ export type ModelUpdate = {
 const useImportModel = () => {
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const setImportingModels = useSetAtom(importingModelsAtom)
+  const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+  const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
 
   const importModels = useCallback(
-    (models: ImportingModel[], optionType: OptionType) =>
-      localImportModels(models, optionType),
-    []
+    (models: ImportingModel[], optionType: OptionType) => {
+      models.map((model) => {
+        const modelId = model.modelId ?? model.path.split('/').pop()
+        if (modelId) {
+          addDownloadingModel(modelId)
+          extensionManager
+            .get<ModelExtension>(ExtensionTypeEnum.Model)
+            ?.importModel(modelId, model.path, model.name, optionType)
+            .finally(() => {
+              removeDownloadingModel(modelId)
+              events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
+                importId: model.importId,
+                modelId: modelId,
+              })
+            })
+        }
+      })
+    },
+    [addDownloadingModel, removeDownloadingModel]
   )
 
   const updateModelInfo = useCallback(
@@ -101,19 +126,11 @@ const useImportModel = () => {
   return { importModels, updateModelInfo, sanitizeFilePaths }
 }
 
-const localImportModels = async (
-  models: ImportingModel[],
-  optionType: OptionType
-): Promise<void> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.importModels(models, optionType)
-
 const localUpdateModelInfo = async (
   modelInfo: Partial<Model>
 ): Promise<Model | undefined> =>
   extensionManager
     .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.updateModelInfo(modelInfo)
+    ?.updateModel(modelInfo)
 
 export default useImportModel

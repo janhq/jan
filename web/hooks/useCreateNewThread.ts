@@ -8,7 +8,7 @@ import {
   ThreadAssistantInfo,
   ThreadState,
   AssistantTool,
-  ModelFile,
+  Model,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -76,7 +76,7 @@ export const useCreateNewThread = () => {
 
   const requestCreateNewThread = async (
     assistant: Assistant,
-    model?: ModelFile | undefined
+    model?: Model | undefined
   ) => {
     // Stop generating if any
     setIsGeneratingResponse(false)

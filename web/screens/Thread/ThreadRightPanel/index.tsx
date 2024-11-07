@@ -4,6 +4,8 @@ import {
   InferenceEngine,
   SettingComponentProps,
   SliderComponentProps,
+  extractInferenceParams,
+  extractModelLoadParams,
 } from '@janhq/core'
 import {
   Tabs,
@@ -14,6 +16,8 @@ import {
 } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+
+import { useDebouncedCallback } from 'use-debounce'
 
 import CopyOverInstruction from '@/containers/CopyInstruction'
 import EngineSetting from '@/containers/EngineSetting'
@@ -29,10 +33,6 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 import { isLocalEngine } from '@/utils/modelEngine'
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import PromptTemplateSetting from './PromptTemplateSetting'
 import Tools from './Tools'
@@ -168,6 +168,10 @@ const ThreadRightPanel = () => {
     [activeThread, updateThreadMetadata]
   )
 
+  const resetModel = useDebouncedCallback(() => {
+    stopModel()
+  }, 300)
+
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
       if (!activeThread) {
@@ -175,15 +179,15 @@ const ThreadRightPanel = () => {
       }
 
       setEngineParamsUpdate(true)
-      stopModel()
+      resetModel()
 
       updateModelParameter(activeThread, {
         params: { [key]: value },
       })
 
       if (
-        activeThread.assistants[0].model.parameters.max_tokens &&
-        activeThread.assistants[0].model.settings.ctx_len
+        activeThread.assistants[0].model.parameters?.max_tokens &&
+        activeThread.assistants[0].model.settings?.ctx_len
       ) {
         if (
           key === 'max_tokens' &&
@@ -207,7 +211,7 @@ const ThreadRightPanel = () => {
         }
       }
     },
-    [activeThread, setEngineParamsUpdate, stopModel, updateModelParameter]
+    [activeThread, resetModel, setEngineParamsUpdate, updateModelParameter]
   )
 
   if (!activeThread) {

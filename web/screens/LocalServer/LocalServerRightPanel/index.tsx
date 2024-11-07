@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { Accordion, AccordionItem, Input, Tooltip } from '@janhq/joi'
+import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
+import { Accordion, AccordionItem, Input } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AlertTriangleIcon, CheckIcon, CopyIcon, InfoIcon } from 'lucide-react'
 
@@ -15,11 +16,6 @@ import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
-
-import {
-  extractInferenceParams,
-  extractModelLoadParams,
-} from '@/utils/modelParam'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
@@ -99,8 +95,11 @@ const LocalServerRightPanel = () => {
         <div className="mt-2">
           <Input
             value={selectedModel?.id || ''}
-            className="cursor-pointer"
+            className="cursor-pointer text-[hsla(var(--text-secondary))] hover:border-[hsla(var(--app-border))] focus-visible:outline-0 focus-visible:ring-0"
             readOnly
+            onClick={() => {
+              clipboard.copy(selectedModel?.id)
+            }}
             suffixIcon={
               clipboard.copied ? (
                 <CheckIcon
@@ -108,17 +107,9 @@ const LocalServerRightPanel = () => {
                   className="text-[hsla(var(--success-bg))]"
                 />
               ) : (
-                <Tooltip
-                  trigger={
-                    <CopyIcon
-                      size={14}
-                      className="text-[hsla(var(--text-secondary))]"
-                      onClick={() => {
-                        clipboard.copy(selectedModel?.id)
-                      }}
-                    />
-                  }
-                  content="Copy Model ID"
+                <CopyIcon
+                  size={14}
+                  className="cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
               )
             }

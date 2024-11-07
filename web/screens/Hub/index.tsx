@@ -52,7 +52,7 @@ const HubScreen = () => {
     } else if (sortSelected === 'featured') {
       return (
         x.name.toLowerCase().includes(searchValue.toLowerCase()) &&
-        x.metadata.tags.includes('Featured')
+        x.metadata?.tags?.includes('Featured')
       )
     } else {
       return x.name.toLowerCase().includes(searchValue.toLowerCase())

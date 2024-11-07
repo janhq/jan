@@ -343,7 +343,7 @@ export const chatCompletions = async (request: any, reply: any) => {
 
   // add engine for new cortex cpp engine
   if (requestedModel.engine === 'nitro') {
-    request.body.engine = 'cortex.llamacpp'
+    request.body.engine = 'llama-cpp'
   }
 
   const fetch = require('node-fetch')

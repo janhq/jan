@@ -1,0 +1,41 @@
+{
+  "sources": [
+    {
+      "filename": "gemma-2-9b-it-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf"
+    }
+  ],
+  "id": "gemma-2-9b-it",
+  "object": "model",
+  "name": "Gemma 2 9B Q4",
+  "version": "1.1",
+  "description": "Gemma is built from the same technology with Google's Gemini.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 8192,
+    "prompt_template": "<bos><start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n<end_of_turn>\n<start_of_turn>model\n",
+    "llama_model_path": "gemma-2-9b-it-Q4_K_M.gguf",
+    "ngl": 43
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 8192,
+    "stop": [
+      "<end_of_turn>"
+    ],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "Google",
+    "tags": [
+      "9B",
+      "Conversational",
+      "Text-generation"
+    ],
+    "size": 5760000000
+  },
+  "engine": "llama-cpp"
+}

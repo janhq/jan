@@ -10,8 +10,18 @@ import {
 } from '@/helpers/atoms/Model.atom'
 
 // download states
+
 export const modelDownloadStateAtom = atom<Record<string, DownloadState>>({})
 
+/**
+ * Remove a download state for a particular model.
+ */
+export const removeDownloadStateAtom = atom(null, (get, set, id: string) => {
+  const currentState = { ...get(modelDownloadStateAtom) }
+  delete currentState[id]
+  set(modelDownloadStateAtom, currentState)
+  set(removeDownloadingModelAtom, id)
+})
 /**
  * Used to set the download state for a particular model.
  */
@@ -77,7 +87,7 @@ export const setDownloadStateAtom = atom(
         }
       } else {
         // download in progress
-        if (state.size.total === 0) {
+        if (state.size.total === 0 || !currentState[state.modelId]) {
           // this is initial state, just set the state
           currentState[state.modelId] = state
           set(modelDownloadStateAtom, currentState)
@@ -108,6 +118,7 @@ export const setDownloadStateAtom = atom(
         )
 
         modelDownloadState.children = updatedChildren
+
         if (isAnyChildDownloadNotReady) {
           // just update the children
           currentState[state.modelId] = modelDownloadState
@@ -115,23 +126,18 @@ export const setDownloadStateAtom = atom(
           return
         }
 
-        const parentTotalSize = modelDownloadState.size.total
-        if (parentTotalSize === 0) {
-          // calculate the total size of the parent by sum all children total size
-          const totalSize = updatedChildren.reduce(
-            (acc, m) => acc + m.size.total,
-            0
-          )
-
-          modelDownloadState.size.total = totalSize
-        }
-
+        const parentTotalSize = updatedChildren.reduce(
+          (acc, m) => acc + m.size.total,
+          0
+        )
         // calculate the total transferred size by sum all children transferred size
         const transferredSize = updatedChildren.reduce(
           (acc, m) => acc + m.size.transferred,
           0
         )
+        modelDownloadState.size.total = parentTotalSize
         modelDownloadState.size.transferred = transferredSize
+
         modelDownloadState.percent =
           parentTotalSize === 0 ? 0 : transferredSize / parentTotalSize
         currentState[state.modelId] = modelDownloadState

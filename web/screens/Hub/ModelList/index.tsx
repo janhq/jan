@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 
-import { ModelFile } from '@janhq/core'
+import { Model } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
@@ -9,16 +9,16 @@ import ModelItem from '@/screens/Hub/ModelList/ModelItem'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
-  models: ModelFile[]
+  models: Model[]
 }
 
 const ModelList = ({ models }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const sortedModels: ModelFile[] = useMemo(() => {
-    const featuredModels: ModelFile[] = []
-    const remoteModels: ModelFile[] = []
-    const localModels: ModelFile[] = []
-    const remainingModels: ModelFile[] = []
+  const sortedModels: Model[] = useMemo(() => {
+    const featuredModels: Model[] = []
+    const remoteModels: Model[] = []
+    const localModels: Model[] = []
+    const remainingModels: Model[] = []
     models.forEach((m) => {
       if (m.metadata?.tags?.includes('Featured')) {
         featuredModels.push(m)
@@ -30,9 +30,9 @@ const ModelList = ({ models }: Props) => {
         remainingModels.push(m)
       }
     })
-    featuredModels.sort((m1, m2) => m1.metadata.size - m2.metadata.size)
-    localModels.sort((m1, m2) => m1.metadata.size - m2.metadata.size)
-    remainingModels.sort((m1, m2) => m1.metadata.size - m2.metadata.size)
+    featuredModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
+    localModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
+    remainingModels.sort((m1, m2) => m1.metadata?.size - m2.metadata?.size)
     remoteModels.sort((m1, m2) => m1.name.localeCompare(m2.name))
     return [
       ...featuredModels,

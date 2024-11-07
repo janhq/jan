@@ -5,16 +5,19 @@ import {
   Model,
   ModelEvent,
   ModelExtension,
-  ModelFile,
   events,
+  ModelManager,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
+import { useDebouncedCallback } from 'use-debounce'
+
+import { isLocalEngine } from '@/utils/modelEngine'
+
 import { extensionManager } from '@/extension'
 import {
   configuredModelsAtom,
-  defaultModelAtom,
   downloadedModelsAtom,
 } from '@/helpers/atoms/Model.atom'
 
@@ -25,62 +28,68 @@ import {
  */
 const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
-  const setConfiguredModels = useSetAtom(configuredModelsAtom)
-  const setDefaultModel = useSetAtom(defaultModelAtom)
+  const setExtensionModels = useSetAtom(configuredModelsAtom)
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
-      const models = await getLocalDownloadedModels()
-      setDownloadedModels(models)
+      const localModels = (await getModels()).map((e) => ({
+        ...e,
+        name: ModelManager.instance().models.get(e.id)?.name ?? e.id,
+        metadata:
+          ModelManager.instance().models.get(e.id)?.metadata ?? e.metadata,
+      }))
+
+      const remoteModels = ModelManager.instance()
+        .models.values()
+        .toArray()
+        .filter((e) => !isLocalEngine(e.engine))
+      const toUpdate = [
+        ...localModels,
+        ...remoteModels.filter(
+          (e: Model) => !localModels.some((g: Model) => g.id === e.id)
+        ),
+      ]
+
+      setDownloadedModels(toUpdate)
+
+      let isUpdated = false
+      toUpdate.forEach((model) => {
+        if (!ModelManager.instance().models.has(model.id)) {
+          ModelManager.instance().models.set(model.id, model)
+          isUpdated = true
+        }
+      })
+      if (isUpdated) {
+        getExtensionModels()
+      }
     }
 
-    const getConfiguredModels = async () => {
-      const models = await getLocalConfiguredModels()
-      setConfiguredModels(models)
+    const getExtensionModels = () => {
+      const models = ModelManager.instance().models.values().toArray()
+      setExtensionModels(models)
     }
-
-    const getDefaultModel = async () => {
-      const defaultModel = await getLocalDefaultModel()
-      setDefaultModel(defaultModel)
-    }
-
     // Fetch all data
-    Promise.all([
-      getDownloadedModels(),
-      getConfiguredModels(),
-      getDefaultModel(),
-    ])
-  }, [setDownloadedModels, setConfiguredModels, setDefaultModel])
+    getExtensionModels()
+    getDownloadedModels()
+  }, [setDownloadedModels, setExtensionModels])
+
+  const reloadData = useDebouncedCallback(() => getData(), 300)
 
   useEffect(() => {
     // Try get data on mount
-    getData()
+    reloadData()
 
     // Listen for model updates
-    events.on(ModelEvent.OnModelsUpdate, async () => getData())
+    events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
     return () => {
       // Remove listener on unmount
       events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [getData])
+  }, [getData, reloadData])
 }
 
-// TODO: Deprecated - Remove when moving to cortex.cpp
-const getLocalDefaultModel = async (): Promise<Model | undefined> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getDefaultModel()
-
-// TODO: Deprecated - Remove when moving to cortex.cpp
-const getLocalConfiguredModels = async (): Promise<ModelFile[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getConfiguredModels() ?? []
-
-// TODO: Deprecated - Remove when moving to cortex.cpp
-const getLocalDownloadedModels = async (): Promise<ModelFile[]> =>
-  extensionManager
-    .get<ModelExtension>(ExtensionTypeEnum.Model)
-    ?.getDownloadedModels() ?? []
+const getModels = async (): Promise<Model[]> =>
+  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.getModels() ??
+  []
 
 export default useModels

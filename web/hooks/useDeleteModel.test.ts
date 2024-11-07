@@ -16,7 +16,7 @@ describe('useDeleteModel', () => {
   const mockModel: any = {
     id: 'test-model',
     name: 'Test Model',
-    // Add other required properties of ModelFile
+    // Add other required properties of Model
   }
 
   const mockDeleteModel = jest.fn()
@@ -35,7 +35,7 @@ describe('useDeleteModel', () => {
       await result.current.deleteModel(mockModel)
     })
 
-    expect(mockDeleteModel).toHaveBeenCalledWith(mockModel)
+    expect(mockDeleteModel).toHaveBeenCalledWith('test-model')
     expect(toaster).toHaveBeenCalledWith({
       title: 'Model Deletion Successful',
       description: `Model ${mockModel.name} has been successfully deleted.`,
@@ -67,7 +67,7 @@ describe('useDeleteModel', () => {
       )
     })
 
-    expect(mockDeleteModel).toHaveBeenCalledWith(mockModel)
+    expect(mockDeleteModel).toHaveBeenCalledWith("test-model")
     expect(toaster).not.toHaveBeenCalled()
   })
 })

@@ -132,20 +132,6 @@ const RichTextEditor = ({
       if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
         node.children.forEach((child: { text: any }, childIndex: number) => {
           const text = child.text
-          const { selection } = editor
-
-          if (selection) {
-            const selectedNode = Editor.node(editor, selection)
-
-            if (Editor.isBlock(editor, selectedNode[0] as CustomElement)) {
-              const isNodeEmpty = Editor.string(editor, selectedNode[1]) === ''
-
-              if (isNodeEmpty) {
-                // Reset language when a node is cleared
-                currentLanguage.current = 'plaintext'
-              }
-            }
-          }
 
           // Match code block start and end
           const startMatch = text.match(/^```(\w*)$/)
@@ -269,10 +255,13 @@ const RichTextEditor = ({
   )
 
   useEffect(() => {
+    if (!ReactEditor.isFocused(editor)) {
+      ReactEditor.focus(editor)
+    }
     if (textareaRef.current) {
       textareaRef.current.focus()
     }
-  }, [activeThreadId])
+  }, [activeThreadId, editor])
 
   useEffect(() => {
     if (textareaRef.current?.clientHeight) {
@@ -343,6 +332,14 @@ const RichTextEditor = ({
           .join('\n')
 
         setCurrentPrompt(combinedText)
+        if (combinedText.trim() === '') {
+          currentLanguage.current = 'plaintext'
+        }
+        const hasCodeBlockStart = combinedText.match(/^```(\w*)/m)
+        // Set language to plaintext if no code block with language identifier is found
+        if (!hasCodeBlockStart) {
+          currentLanguage.current = 'plaintext'
+        }
       }}
     >
       <Editable
