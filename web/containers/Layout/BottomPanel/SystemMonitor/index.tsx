@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useState } from 'react'
 
 import { Progress } from '@janhq/joi'
-import { useClickOutside } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   MonitorIcon,
@@ -44,22 +43,10 @@ const SystemMonitor = () => {
   const [showSystemMonitorPanel, setShowSystemMonitorPanel] = useAtom(
     showSystemMonitorPanelAtom
   )
-  const [control, setControl] = useState<HTMLDivElement | null>(null)
-  const [elementExpand, setElementExpand] = useState<HTMLDivElement | null>(
-    null
-  )
+
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
 
   const { watch, stopWatching } = useGetSystemResources()
-
-  useClickOutside(
-    () => {
-      toggleShowSystemMonitorPanel(false)
-      setShowFullScreen(false)
-    },
-    null,
-    [control, elementExpand]
-  )
 
   const toggleShowSystemMonitorPanel = useCallback(
     (isShow: boolean) => {
@@ -76,7 +63,6 @@ const SystemMonitor = () => {
   return (
     <Fragment>
       <div
-        ref={setControl}
         data-testid="system-monitoring"
         className={twMerge(
           'flex cursor-pointer items-center gap-x-1 rounded px-1 py-0.5 hover:bg-[hsla(var(--secondary-bg))]',
@@ -92,7 +78,6 @@ const SystemMonitor = () => {
       </div>
       {showSystemMonitorPanel && (
         <div
-          ref={setElementExpand}
           className={twMerge(
             'fixed bottom-9 left-[49px] z-50 flex h-[200px] w-[calc(100%-48px)] flex-shrink-0 flex-col border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]',
             showFullScreen && 'h-[calc(100%-63px)]',
