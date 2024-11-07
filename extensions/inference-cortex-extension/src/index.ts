@@ -11,7 +11,6 @@ import {
   executeOnMain,
   systemInformation,
   joinPath,
-  dirName,
   LocalOAIEngine,
   InferenceEngine,
   getJanDataFolderPath,
@@ -97,7 +96,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       model.settings = settings
     }
 
-    return await ky
+    return await this.queue.add(() => ky
       .post(`${CORTEX_API_URL}/v1/models/start`, {
         json: {
           ...extractModelLoadParams(model.settings),
@@ -112,7 +111,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       .catch(async (e) => {
         throw (await e.response?.json()) ?? e
       })
-      .then()
+      .then())
   }
 
   override async unloadModel(model: Model): Promise<void> {
