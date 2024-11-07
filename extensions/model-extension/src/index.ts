@@ -4,12 +4,13 @@ import {
   InferenceEngine,
   joinPath,
   dirName,
+  fs,
   ModelManager,
   abortDownload,
   DownloadState,
   events,
   DownloadEvent,
-  OptionType
+  OptionType,
 } from '@janhq/core'
 import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
@@ -181,7 +182,8 @@ export default class JanModelExtension extends ModelExtension {
         toImportModels.map(async (model: Model & { file_path: string }) =>
           this.importModel(
             model.id,
-            model.sources[0].url.startsWith('http')
+            model.sources[0].url.startsWith('http') ||
+              !(await fs.existsSync(model.sources[0].url))
               ? await joinPath([
                   await dirName(model.file_path),
                   model.sources[0]?.filename ??
@@ -189,7 +191,8 @@ export default class JanModelExtension extends ModelExtension {
                     model.sources[0]?.url.split('/').pop() ??
                     model.id,
                 ]) // Copied models
-              : model.sources[0].url // Symlink models
+              : model.sources[0].url, // Symlink models,
+            model.name
           )
         )
       )

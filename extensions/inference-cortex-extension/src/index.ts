@@ -11,11 +11,11 @@ import {
   executeOnMain,
   systemInformation,
   joinPath,
-  dirName,
   LocalOAIEngine,
   InferenceEngine,
   getJanDataFolderPath,
   extractModelLoadParams,
+  fs,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -97,22 +97,24 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       model.settings = settings
     }
 
-    return await ky
-      .post(`${CORTEX_API_URL}/v1/models/start`, {
-        json: {
-          ...extractModelLoadParams(model.settings),
-          model: model.id,
-          engine:
-            model.engine === InferenceEngine.nitro // Legacy model cache
-              ? InferenceEngine.cortex_llamacpp
-              : model.engine,
-        },
-      })
-      .json()
-      .catch(async (e) => {
-        throw (await e.response?.json()) ?? e
-      })
-      .then()
+    return await this.queue.add(() =>
+      ky
+        .post(`${CORTEX_API_URL}/v1/models/start`, {
+          json: {
+            ...extractModelLoadParams(model.settings),
+            model: model.id,
+            engine:
+              model.engine === InferenceEngine.nitro // Legacy model cache
+                ? InferenceEngine.cortex_llamacpp
+                : model.engine,
+          },
+        })
+        .json()
+        .catch(async (e) => {
+          throw (await e.response?.json()) ?? e
+        })
+        .then()
+    )
   }
 
   override async unloadModel(model: Model): Promise<void> {
@@ -160,7 +162,10 @@ export const getModelFilePath = async (
   file: string
 ): Promise<string> => {
   // Symlink to the model file
-  if (!model.sources[0]?.url.startsWith('http')) {
+  if (
+    !model.sources[0]?.url.startsWith('http') &&
+    (await fs.existsSync(model.sources[0].url))
+  ) {
     return model.sources[0]?.url
   }
   return joinPath([await getJanDataFolderPath(), 'models', model.id, file])

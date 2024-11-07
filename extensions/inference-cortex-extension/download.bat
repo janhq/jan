@@ -7,7 +7,7 @@ set /p CORTEX_VERSION=<./bin/version.txt
 set VERSION=v0.1.35
 set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%/cortex.llamacpp-0.1.35-windows-amd64
 set CUDA_DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%
-set SUBFOLDERS=win-cuda-12-0 win-cuda-11-7 win-noavx win-avx win-avx2 win-avx512 win-vulkan
+set SUBFOLDERS=noavx-cuda-12-0 noavx-cuda-11-7 avx2-cuda-12-0 avx2-cuda-11-7 noavx avx avx2 avx512 vulkan
 
 call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/janhq/cortex/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-12-0.tar.gz -e --strip 1 -o %BIN_PATH%/avx2-cuda-12-0/engines/cortex.llamacpp
