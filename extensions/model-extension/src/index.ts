@@ -9,7 +9,7 @@ import {
   DownloadState,
   events,
   DownloadEvent,
-  OptionType
+  OptionType,
 } from '@janhq/core'
 import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
@@ -189,7 +189,8 @@ export default class JanModelExtension extends ModelExtension {
                     model.sources[0]?.url.split('/').pop() ??
                     model.id,
                 ]) // Copied models
-              : model.sources[0].url // Symlink models
+              : model.sources[0].url, // Symlink models,
+            model.name
           )
         )
       )
