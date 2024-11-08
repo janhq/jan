@@ -9,7 +9,12 @@ interface ICortexAPI {
   getModel(model: string): Promise<Model>
   getModels(): Promise<Model[]>
   pullModel(model: string, id?: string, name?: string): Promise<void>
-  importModel(path: string, modelPath: string, name?: string, option?: string): Promise<void>
+  importModel(
+    path: string,
+    modelPath: string,
+    name?: string,
+    option?: string
+  ): Promise<void>
   deleteModel(model: string): Promise<void>
   updateModel(model: object): Promise<void>
   cancelModelPull(model: string): Promise<void>
@@ -142,6 +147,17 @@ export class CortexAPI implements ICortexAPI {
   }
 
   /**
+   * Check model status
+   * @param model
+   */
+  async getModelStatus(model: string): Promise<boolean> {
+    return this.queue
+      .add(() => ky.get(`${API_URL}/models/status/${model}`))
+      .then((e) => true)
+      .catch(() => false)
+  }
+
+  /**
    * Do health check on cortex.cpp
    * @returns
    */
@@ -215,7 +231,7 @@ export class CortexAPI implements ICortexAPI {
     }
     model.metadata = model.metadata ?? {
       tags: [],
-      size: model.size ?? model.metadata?.size ?? 0
+      size: model.size ?? model.metadata?.size ?? 0,
     }
     return model as Model
   }
