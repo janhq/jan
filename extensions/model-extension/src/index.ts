@@ -239,6 +239,14 @@ export default class JanModelExtension extends ModelExtension {
   }
 
   /**
+   * Check model status
+   * @param model
+   */
+  async isModelLoaded(model: string): Promise<boolean> {
+    return this.cortexAPI.getModelStatus(model)
+  }
+
+  /**
    * Handle download state from main app
    */
   handleDesktopEvents() {

@@ -16,6 +16,7 @@ import {
   EngineManager,
   InferenceEngine,
   extractInferenceParams,
+  ModelExtension,
 } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
@@ -180,8 +181,16 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         }
         return
       } else if (message.status === MessageStatus.Error) {
-        setActiveModel(undefined)
-        setStateModel({ state: 'start', loading: false, model: undefined })
+        ;(async () => {
+          if (
+            !(await extensionManager
+              .get<ModelExtension>(ExtensionTypeEnum.Model)
+              ?.isModelLoaded(activeModelRef.current?.id as string))
+          ) {
+            setActiveModel(undefined)
+            setStateModel({ state: 'start', loading: false, model: undefined })
+          }
+        })()
       }
       // Mark the thread as not waiting for response
       updateThreadWaiting(message.thread_id, false)
