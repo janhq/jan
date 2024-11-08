@@ -302,14 +302,14 @@ export const downloadModel = async (
  * @param request
  * @param reply
  */
-export const getModels = async (request: any, reply: any) => {
+export const models = async (request: any, reply: any) => {
   const fetch = require('node-fetch')
   const headers: Record<string, any> = {
     'Content-Type': 'application/json',
   }
 
   const response = await fetch(`${CORTEX_API_URL}/models`, {
-    method: 'GET',
+    method: request.method,
     headers: headers,
     body: JSON.stringify(request.body),
   })

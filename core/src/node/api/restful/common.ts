@@ -10,7 +10,7 @@ import {
   getMessages,
   retrieveMessage,
   updateThread,
-  getModels,
+  models,
 } from './helper/builder'
 
 import { JanApiRouteConfiguration } from './helper/configuration'
@@ -29,7 +29,7 @@ export const commonRouter = async (app: HttpServer) => {
   Object.keys(JanApiRouteConfiguration).forEach((key) => {
     app.get(`/${key}`, async (_req, _res) => {
       if (key === 'models') {
-        return getModels(_req, _res)
+        return models(_req, _res)
       }
       return getBuilder(JanApiRouteConfiguration[key]).then(normalizeData)
     })
