@@ -6,4 +6,4 @@ export const LOCAL_HOST = '127.0.0.1'
 
 export const SUPPORTED_MODEL_FORMAT = '.gguf'
 
-export const DEFAULT_CHAT_COMPLETION_URL = `http://${LOCAL_HOST}:${CORTEX_DEFAULT_PORT}/v1/chat/completions` // default nitro url
+export const CORTEX_API_URL = `http://${LOCAL_HOST}:${CORTEX_DEFAULT_PORT}/v1` // default nitro url

@@ -10,9 +10,9 @@ import {
 } from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
-import { ContentType, MessageStatus, Model, ThreadMessage } from '../../../../types'
-import { getEngineConfiguration, getJanDataFolderPath } from '../../../helper'
-import { DEFAULT_CHAT_COMPLETION_URL } from './consts'
+import { ContentType, InferenceEngine, MessageStatus, ThreadMessage } from '../../../../types'
+import { getJanDataFolderPath } from '../../../helper'
+import { CORTEX_API_URL } from './consts'
 
 // TODO: Refactor these
 export const getBuilder = async (configuration: RouteConfiguration) => {
@@ -297,57 +297,56 @@ export const downloadModel = async (
   }
 }
 
-export const chatCompletions = async (request: any, reply: any) => {
-  const modelList = await getBuilder(JanApiRouteConfiguration.models)
-  const modelId = request.body.model
-
-  const matchedModels = modelList.filter((model: Model) => model.id === modelId)
-  if (matchedModels.length === 0) {
-    const error = {
-      error: {
-        message: `The model ${request.body.model} does not exist`,
-        type: 'invalid_request_error',
-        param: null,
-        code: 'model_not_found',
-      },
-    }
-    reply.code(404).send(error)
-    return
-  }
-
-  const requestedModel = matchedModels[0]
-
-  const engineConfiguration = await getEngineConfiguration(requestedModel.engine)
-
-  let apiKey: string | undefined = undefined
-  let apiUrl: string = DEFAULT_CHAT_COMPLETION_URL
-
-  if (engineConfiguration) {
-    apiKey = engineConfiguration.api_key
-    apiUrl = engineConfiguration.full_url ?? DEFAULT_CHAT_COMPLETION_URL
-  }
-
+/**
+ * Proxy /models to cortex
+ * @param request
+ * @param reply
+ */
+export const getModels = async (request: any, reply: any) => {
+  const fetch = require('node-fetch')
   const headers: Record<string, any> = {
     'Content-Type': 'application/json',
   }
 
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`
-    headers['api-key'] = apiKey
-  }
+  const response = await fetch(`${CORTEX_API_URL}/models`, {
+    method: 'GET',
+    headers: headers,
+    body: JSON.stringify(request.body),
+  })
 
-  if (requestedModel.engine === 'openai' && request.body.stop) {
-    // openai only allows max 4 stop words
-    request.body.stop = request.body.stop.slice(0, 4)
+  if (response.status !== 200) {
+    // Forward the error response to client via reply
+    const responseBody = await response.text()
+    const responseHeaders = Object.fromEntries(response.headers)
+    reply.code(response.status).headers(responseHeaders).send(responseBody)
+  } else {
+    reply.raw.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    })
+    response.body.pipe(reply.raw)
+  }
+}
+
+/**
+ * Proxy chat completions
+ * @param request
+ * @param reply
+ */
+export const chatCompletions = async (request: any, reply: any) => {
+  const headers: Record<string, any> = {
+    'Content-Type': 'application/json',
   }
 
   // add engine for new cortex cpp engine
-  if (requestedModel.engine === 'nitro') {
-    request.body.engine = 'llama-cpp'
+  if (request.body.engine === InferenceEngine.nitro) {
+    request.body.engine = InferenceEngine.cortex_llamacpp
   }
 
   const fetch = require('node-fetch')
-  const response = await fetch(apiUrl, {
+  const response = await fetch(`${CORTEX_API_URL}/chat/completions`, {
     method: 'POST',
     headers: headers,
     body: JSON.stringify(request.body),
