@@ -35,6 +35,8 @@ const useModels = () => {
       const localModels = (await getModels()).map((e) => ({
         ...e,
         name: ModelManager.instance().models.get(e.id)?.name ?? e.id,
+        settings:
+          ModelManager.instance().models.get(e.id)?.settings ?? e.settings,
         metadata:
           ModelManager.instance().models.get(e.id)?.metadata ?? e.metadata,
       }))
