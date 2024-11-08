@@ -110,7 +110,7 @@ const LoadModelError = () => {
     } else {
       return (
         <div>
-          Apologies, Something’s wrong.&nbsp;
+          Apologies, {`Something's wrong.`}.&nbsp;
           <p>
             Access&nbsp;
             <span

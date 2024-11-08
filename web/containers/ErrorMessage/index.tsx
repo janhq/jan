@@ -73,7 +73,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         >
           {getErrorTitle()}
           <p>
-            Something’s wrong. Access&nbsp;
+            {`Something's wrong.`} Access&nbsp;
             <span
               className="cursor-pointer text-[hsla(var(--app-link))] underline"
               onClick={() => setModalTroubleShooting(true)}
