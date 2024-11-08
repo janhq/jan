@@ -269,6 +269,10 @@ const RichTextEditor = ({
         ? '100px'
         : '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current?.scrollTo({
+        top: textareaRef.current.scrollHeight,
+        behavior: 'instant',
+      })
       textareaRef.current.style.overflow =
         textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
