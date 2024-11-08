@@ -110,9 +110,9 @@ const LoadModelError = () => {
     } else {
       return (
         <div>
-          Apologies, something’s amiss!
+          Apologies, Something’s wrong.&nbsp;
           <p>
-            Jan’s in beta. Access&nbsp;
+            Access&nbsp;
             <span
               className="cursor-pointer text-[hsla(var(--app-link))]"
               onClick={() => setModalTroubleShooting(true)}
