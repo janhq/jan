@@ -38,20 +38,20 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
         (key === 'chunk_overlap' || key === 'chunk_size')
       ) {
         if (
-          activeThread.assistants[0].tools[0]?.settings.chunk_size <
-          activeThread.assistants[0].tools[0]?.settings.chunk_overlap
+          activeThread.assistants[0].tools[0]?.settings?.chunk_size <
+          activeThread.assistants[0].tools[0]?.settings?.chunk_overlap
         ) {
           activeThread.assistants[0].tools[0].settings.chunk_overlap =
             activeThread.assistants[0].tools[0].settings.chunk_size
         }
         if (
           key === 'chunk_size' &&
-          value < activeThread.assistants[0].tools[0].settings.chunk_overlap
+          value < activeThread.assistants[0].tools[0].settings?.chunk_overlap
         ) {
           activeThread.assistants[0].tools[0].settings.chunk_overlap = value
         } else if (
           key === 'chunk_overlap' &&
-          value > activeThread.assistants[0].tools[0].settings.chunk_size
+          value > activeThread.assistants[0].tools[0].settings?.chunk_size
         ) {
           activeThread.assistants[0].tools[0].settings.chunk_size = value
         }

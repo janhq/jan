@@ -10,8 +10,6 @@ import { HNSWLib } from 'langchain/vectorstores/hnswlib'
 import { OpenAIEmbeddings } from 'langchain/embeddings/openai'
 import { readEmbeddingEngine } from './engine'
 
-import path from 'path'
-
 export class Retrieval {
   public chunkSize: number = 100
   public chunkOverlap?: number = 0

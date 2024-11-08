@@ -10,8 +10,6 @@ import { isLocalEngine } from '@/utils/modelEngine'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
-const Column = ['Model', 'Size', '']
-
 const TableActiveModel = () => {
   const { activeModel, stateModel, stopModel } = useActiveModel()
 
@@ -21,33 +19,19 @@ const TableActiveModel = () => {
     <div className="w-1/2">
       <div className="overflow-hidden border-b border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          <thead className="w-full border-b border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))]">
-            <tr>
-              {Column.map((col, i) => {
-                return (
-                  <th
-                    key={i}
-                    className="px-4 py-2 text-left font-normal last:text-center"
-                  >
-                    {col}
-                  </th>
-                )
-              })}
-            </tr>
-          </thead>
           {activeModel && isLocalEngine(activeModel.engine) ? (
             <tbody>
               <tr>
                 <td
-                  className="max-w-[200px] px-4 py-2 font-bold"
+                  className="max-w-[200px] px-4 py-2 font-medium"
                   title={activeModel.name}
                 >
                   <p className="line-clamp-2">{activeModel.name}</p>
                 </td>
                 <td className="px-4 py-2">
                   <Badge theme="secondary">
-                    {activeModel.metadata.size
-                      ? toGibibytes(activeModel.metadata.size)
+                    {activeModel.metadata?.size
+                      ? toGibibytes(activeModel.metadata?.size)
                       : '-'}
                   </Badge>
                 </td>

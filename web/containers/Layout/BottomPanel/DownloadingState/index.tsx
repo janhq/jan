@@ -2,18 +2,19 @@ import { Fragment } from 'react'
 
 import { Progress, Modal, Button } from '@janhq/joi'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import useDownloadModel from '@/hooks/useDownloadModel'
-import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
+import {
+  modelDownloadStateAtom,
+  removeDownloadStateAtom,
+} from '@/hooks/useDownloadState'
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
-import { getDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
-
 export default function DownloadingState() {
   const downloadStates = useAtomValue(modelDownloadStateAtom)
-  const downloadingModels = useAtomValue(getDownloadingModelAtom)
+  const removeDownloadState = useSetAtom(removeDownloadStateAtom)
   const { abortModelDownload } = useDownloadModel()
 
   const totalCurrentProgress = Object.values(downloadStates)
@@ -76,10 +77,8 @@ export default function DownloadingState() {
                       theme="destructive"
                       onClick={() => {
                         if (item?.modelId) {
-                          const model = downloadingModels.find(
-                            (model) => model.id === item.modelId
-                          )
-                          if (model) abortModelDownload(model)
+                          removeDownloadState(item?.modelId)
+                          abortModelDownload(item?.modelId)
                         }
                       }}
                     >

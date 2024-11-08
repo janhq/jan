@@ -1,0 +1,38 @@
+{
+    "sources": [
+      {
+        "url": "https://huggingface.co/bartowski/Phi-3-medium-128k-instruct-GGUF/resolve/main/Phi-3-medium-128k-instruct-Q4_K_M.gguf",
+        "filename": "Phi-3-medium-128k-instruct-Q4_K_M.gguf"
+      }
+    ],
+    "id": "phi3-medium",
+    "object": "model",
+    "name": "Phi-3 Medium Instruct Q4",
+    "version": "1.4",
+    "description": "Phi-3 Medium is Microsoft's latest SOTA model.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 128000,
+      "prompt_template": "<|user|> {prompt}<|end|><|assistant|>",
+      "llama_model_path": "Phi-3-medium-128k-instruct-Q4_K_M.gguf",
+      "ngl": 33
+    },
+    "parameters": {
+      "max_tokens": 128000,
+      "stop": ["<|end|>"],
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Microsoft",
+      "tags": [
+        "14B",
+        "Finetuned"
+      ],
+      "size": 8366000000
+    },
+    "engine": "llama-cpp"
+  }

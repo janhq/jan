@@ -1,0 +1,38 @@
+{
+    "sources": [
+      {
+        "filename": "Hermes-2-Pro-Llama-3-8B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B-GGUF/resolve/main/Hermes-2-Pro-Llama-3-8B-Q4_K_M.gguf"
+      }
+    ],
+    "id": "llama3-hermes-8b",
+    "object": "model",
+    "name": "Hermes Pro Llama 3 8B Q4",
+    "version": "1.2",
+    "description": "Hermes Pro is well-designed for General chat and JSON output.",
+    "format": "gguf",
+    "settings": {
+      "ctx_len": 8192,
+      "prompt_template": "<|im_start|>system\n{system_message}<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant",
+      "llama_model_path": "Hermes-2-Pro-Llama-3-8B-Q4_K_M.gguf",
+      "ngl": 33
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "max_tokens": 8192,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "NousResearch",
+      "tags": [
+        "7B",
+        "Finetuned"
+      ],
+      "size": 4920000000
+    },
+    "engine": "llama-cpp"
+  }

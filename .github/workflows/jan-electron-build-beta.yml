@@ -134,3 +134,25 @@ jobs:
           gh release edit v${{ needs.create-draft-release.outputs.version }} --draft=false --prerelease
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  noti-discord-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, create-draft-release, build-windows-x64, build-linux-x64, combine-beta-mac-yml]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set version to environment variable
+        run: |
+          echo "VERSION=${{ needs.create-draft-release.outputs.version }}" >> $GITHUB_ENV
+
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            Jan-beta App version {{ VERSION }}, has been released, use the following links to download the app with faster speed or visit the Github release page for more information:
+            - Windows: https://delta.jan.ai/beta/jan-beta-win-x64-{{ VERSION }}.exe
+            - macOS Intel: https://delta.jan.ai/beta/jan-beta-mac-x64-{{ VERSION }}.dmg
+            - macOS Apple Silicon: https://delta.jan.ai/beta/jan-beta-mac-arm64-{{ VERSION }}.dmg
+            - Linux Deb: https://delta.jan.ai/beta/jan-beta-linux-amd64-{{ VERSION }}.deb
+            - Linux AppImage: https://delta.jan.ai/beta/jan-beta-linux-x86_64-{{ VERSION }}.AppImage
+            - Github Release URL: https://github.com/janhq/jan/releases/tag/v{{ VERSION }}
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_JAN_BETA }}

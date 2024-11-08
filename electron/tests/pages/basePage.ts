@@ -8,9 +8,8 @@ export class BasePage {
   constructor(
     protected readonly page: Page,
     readonly action: CommonActions,
-    protected containerId: string,
-  ) {
-  }
+    protected containerId: string
+  ) {}
 
   public getValue(key: string) {
     return this.action.getValue(key)
@@ -35,6 +34,12 @@ export class BasePage {
   async verifyContainerVisible() {
     const container = this.page.getByTestId(this.containerId)
     expect(container.isVisible()).toBeTruthy()
+  }
+
+  async scrollToBottom() {
+    await this.page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight)
+    })
   }
 
   async waitUpdateLoader() {
