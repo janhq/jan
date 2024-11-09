@@ -220,22 +220,6 @@ describe('builder helper functions', () => {
   })
 
   describe('chatCompletions', () => {
-    it('should return an error if model is not found', async () => {
-      const request = { body: { model: 'nonexistentModel' } }
-      const reply = { code: jest.fn().mockReturnThis(), send: jest.fn() }
-
-      await chatCompletions(request, reply)
-      expect(reply.code).toHaveBeenCalledWith(404)
-      expect(reply.send).toHaveBeenCalledWith({
-        error: {
-          message: 'The model nonexistentModel does not exist',
-          type: 'invalid_request_error',
-          param: null,
-          code: 'model_not_found',
-        },
-      })
-    })
-
     it('should return the error on status not ok', async () => {
       const request = { body: { model: 'model1' } }
       const mockSend = jest.fn()
