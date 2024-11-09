@@ -114,8 +114,8 @@ jobs:
       - name: Upload latest-mac.yml
         if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
         run: |
-          aws s3 cp ./latest-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/latest-mac.yml"
-          aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/nightly/
+          aws s3 cp ./latest-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-latest/latest-mac.yml"
+          aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-latest/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/latest/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
@@ -123,35 +123,35 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
 
     
-  # noti-discord-nightly-and-update-url-readme:
-  #   needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
-  #   secrets: inherit
-  #   if: github.event_name == 'schedule'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/dev
-  #     build_reason: Nightly
-  #     push_to_branch: dev
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-nightly-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
+    secrets: inherit
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/dev
+      build_reason: Nightly
+      push_to_branch: dev
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  # noti-discord-pre-release-and-update-url-readme:
-  #   needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
-  #   secrets: inherit
-  #   if: github.event_name == 'push'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/dev
-  #     build_reason: Pre-release
-  #     push_to_branch: dev
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-pre-release-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
+    secrets: inherit
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/dev
+      build_reason: Pre-release
+      push_to_branch: dev
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  # noti-discord-manual-and-update-url-readme:
-  #   needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
-  #   secrets: inherit
-  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/dev
-  #     build_reason: Manual
-  #     push_to_branch: dev
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-manual-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
+    secrets: inherit
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/dev
+      build_reason: Manual
+      push_to_branch: dev
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
