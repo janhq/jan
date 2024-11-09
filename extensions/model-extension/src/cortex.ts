@@ -123,10 +123,10 @@ export class CortexAPI implements ICortexAPI {
    * @param model
    * @returns
    */
-  updateModel(model: object): Promise<void> {
+  updateModel(model: Partial<Model>): Promise<void> {
     return this.queue.add(() =>
       ky
-        .patch(`${API_URL}/v1/models/${model}`, { json: { model } })
+        .patch(`${API_URL}/v1/models/${model.id}`, { json: { ...model } })
         .json()
         .then()
     )

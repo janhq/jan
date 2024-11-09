@@ -193,7 +193,13 @@ export default class JanModelExtension extends ModelExtension {
                 ]) // Copied models
               : model.sources[0].url, // Symlink models,
             model.name
-          )
+          ).then((e) => {
+            this.updateModel({
+              id: model.id,
+              ...model.settings,
+              ...model.parameters,
+            } as Partial<Model>)
+          })
         )
       )
 
