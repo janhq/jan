@@ -70,16 +70,17 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
    * Tranform the payload before sending it to the inference endpoint.
    * The new preview models such as o1-mini and o1-preview replaced max_tokens by max_completion_tokens parameter.
    * Others do not.
-   * @param payload 
-   * @returns 
+   * @param payload
+   * @returns
    */
   transformPayload = (payload: OpenAIPayloadType): OpenAIPayloadType => {
     // Transform the payload for preview models
     if (this.previewModels.includes(payload.model)) {
-      const { max_tokens, ...params } = payload
+      const { max_tokens, temperature, top_p, stop, ...params } = payload
       return {
         ...params,
         max_completion_tokens: max_tokens,
+        stream: false // o1 only support stream = false
       }
     }
     // Pass through for non-preview models
