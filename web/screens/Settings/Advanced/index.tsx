@@ -306,7 +306,8 @@ const Advanced = () => {
                           })
                         }
                         // Stop any running model to apply the changes
-                        if (e.target.checked !== gpuEnabled) stopModel().then(() => window.core?.api?.relaunch())
+                        if (e.target.checked !== gpuEnabled)
+                          stopModel().then(() => window.core?.api?.relaunch())
                       }}
                     />
                   }

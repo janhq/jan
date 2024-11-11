@@ -9,7 +9,7 @@ import {
   OptionType,
   events,
   fs,
-  baseName
+  baseName,
 } from '@janhq/core'
 
 import { atom, useSetAtom } from 'jotai'
@@ -62,7 +62,7 @@ const useImportModel = () => {
   const importModels = useCallback(
     (models: ImportingModel[], optionType: OptionType) => {
       models.map(async (model) => {
-        const modelId = model.modelId ?? await baseName(model.path)
+        const modelId = model.modelId ?? (await baseName(model.path))
         if (modelId) {
           addDownloadingModel(modelId)
           extensionManager
