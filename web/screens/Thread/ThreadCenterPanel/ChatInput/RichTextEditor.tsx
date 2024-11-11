@@ -69,6 +69,9 @@ const RichTextEditor = ({
 }: RichTextEditorProps) => {
   const [editor] = useState(() => withHistory(withReact(createEditor())))
   const currentLanguage = useRef<string>('plaintext')
+  const hasStartBackticks = useRef<boolean>(false)
+  const hasEndBackticks = useRef<boolean>(false)
+
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
   const textareaRef = useRef<HTMLDivElement>(null)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
@@ -133,20 +136,31 @@ const RichTextEditor = ({
         node.children.forEach((child: { text: any }, childIndex: number) => {
           const text = child.text
 
+          const codeBlockStartRegex = /```(\w*)/g
+          const matches = [...currentPrompt.matchAll(codeBlockStartRegex)]
+
+          if (matches.length % 2 !== 0) {
+            hasEndBackticks.current = false
+          }
+
           // Match code block start and end
-          const startMatch = text.match(/^```(\w*)$/)
+          const lang = text.match(/^```(\w*)$/)
           const endMatch = text.match(/^```$/)
 
-          if (startMatch) {
+          if (lang) {
             // If it's the start of a code block, store the language
-            currentLanguage.current = startMatch[1] || 'plaintext'
+            currentLanguage.current = lang[1] || 'plaintext'
           } else if (endMatch) {
             // Reset language when code block ends
             currentLanguage.current = 'plaintext'
-          } else if (currentLanguage.current !== 'plaintext') {
+          } else if (
+            hasStartBackticks.current &&
+            hasEndBackticks.current &&
+            currentLanguage.current !== 'plaintext'
+          ) {
             // Highlight entire code line if in a code block
-            const leadingSpaces = text.match(/^\s*/)?.[0] ?? '' // Capture leading spaces
-            const codeContent = text.trimStart() // Remove leading spaces for highlighting
+
+            const codeContent = text.trim() // Remove leading spaces for highlighting
 
             let highlighted = ''
             highlighted = hljs.highlightAuto(codeContent).value
@@ -168,21 +182,9 @@ const RichTextEditor = ({
 
             let slateTextIndex = 0
 
-            // Adjust to include leading spaces in the ranges and preserve formatting
-            ranges.push({
-              anchor: { path: [...path, childIndex], offset: 0 },
-              focus: {
-                path: [...path, childIndex],
-                offset: slateTextIndex,
-              },
-              type: 'code',
-              code: true,
-              language: currentLanguage.current,
-              className: '', // No class for leading spaces
-            })
-
             doc.body.childNodes.forEach((childNode) => {
               const childText = childNode.textContent || ''
+
               const length = childText.length
               const className =
                 childNode.nodeType === Node.ELEMENT_NODE
@@ -192,11 +194,11 @@ const RichTextEditor = ({
               ranges.push({
                 anchor: {
                   path: [...path, childIndex],
-                  offset: slateTextIndex + leadingSpaces.length,
+                  offset: slateTextIndex,
                 },
                 focus: {
                   path: [...path, childIndex],
-                  offset: slateTextIndex + leadingSpaces.length + length,
+                  offset: slateTextIndex + length,
                 },
                 type: 'code',
                 code: true,
@@ -220,7 +222,7 @@ const RichTextEditor = ({
 
       return ranges
     },
-    [editor]
+    [currentPrompt, editor]
   )
 
   // RenderLeaf applies the decoration styles
@@ -269,6 +271,10 @@ const RichTextEditor = ({
         ? '100px'
         : '40px'
       textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current?.scrollTo({
+        top: textareaRef.current.scrollHeight,
+        behavior: 'instant',
+      })
       textareaRef.current.style.overflow =
         textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
@@ -336,9 +342,20 @@ const RichTextEditor = ({
           currentLanguage.current = 'plaintext'
         }
         const hasCodeBlockStart = combinedText.match(/^```(\w*)/m)
+        const hasCodeBlockEnd = combinedText.match(/^```$/m)
+
         // Set language to plaintext if no code block with language identifier is found
         if (!hasCodeBlockStart) {
           currentLanguage.current = 'plaintext'
+          hasStartBackticks.current = false
+        } else {
+          hasStartBackticks.current = true
+        }
+        if (!hasCodeBlockEnd) {
+          currentLanguage.current = 'plaintext'
+          hasEndBackticks.current = false
+        } else {
+          hasEndBackticks.current = true
         }
       }}
     >

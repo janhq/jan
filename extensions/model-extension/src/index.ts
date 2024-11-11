@@ -179,8 +179,8 @@ export default class JanModelExtension extends ModelExtension {
     if (toImportModels.length > 0) {
       // Import models
       await Promise.all(
-        toImportModels.map(async (model: Model & { file_path: string }) =>
-          this.importModel(
+        toImportModels.map(async (model: Model & { file_path: string }) => {
+          return this.importModel(
             model.id,
             model.sources[0].url.startsWith('http') ||
               !(await fs.existsSync(model.sources[0].url))
@@ -193,8 +193,14 @@ export default class JanModelExtension extends ModelExtension {
                 ]) // Copied models
               : model.sources[0].url, // Symlink models,
             model.name
-          )
-        )
+          ).then((e) => {
+            this.updateModel({
+              id: model.id,
+              ...model.settings,
+              ...model.parameters,
+            } as Partial<Model>)
+          })
+        })
       )
 
       return currentModels
@@ -236,6 +242,14 @@ export default class JanModelExtension extends ModelExtension {
     option?: OptionType
   ): Promise<void> {
     return this.cortexAPI.importModel(model, modelPath, name, option)
+  }
+
+  /**
+   * Check model status
+   * @param model
+   */
+  async isModelLoaded(model: string): Promise<boolean> {
+    return this.cortexAPI.getModelStatus(model)
   }
 
   /**

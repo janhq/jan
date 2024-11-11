@@ -7,7 +7,13 @@ import {
 } from '@janhq/core'
 
 import { Input } from '@janhq/joi'
-import { CopyIcon, EyeIcon, FolderOpenIcon } from 'lucide-react'
+import {
+  CheckIcon,
+  CopyIcon,
+  EyeIcon,
+  EyeOffIcon,
+  FolderOpenIcon,
+} from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
 type Props = {
@@ -34,6 +40,7 @@ const SettingDetailTextInputItem = ({
   const { value, type, placeholder, textAlign, inputActions } =
     settingProps.controllerProps as InputComponentProps
   const [obscure, setObscure] = useState(type === 'password')
+  const [copied, setCopied] = useState(false)
 
   const description = marked.parse(settingProps.description ?? '', {
     async: false,
@@ -45,6 +52,10 @@ const SettingDetailTextInputItem = ({
 
   const copy = useCallback(() => {
     navigator.clipboard.writeText(value)
+    if (value.length > 0) {
+      setCopied(true)
+    }
+    setTimeout(() => setCopied(false), 2000) // Reset icon after 2 seconds
   }, [value])
 
   const onAction = useCallback(
@@ -84,6 +95,8 @@ const SettingDetailTextInputItem = ({
             <InputExtraActions
               actions={inputActions ?? []}
               onAction={onAction}
+              copied={copied}
+              obscure={obscure}
             />
           }
         />
@@ -95,33 +108,51 @@ const SettingDetailTextInputItem = ({
 type InputActionProps = {
   actions: InputAction[]
   onAction: (action: InputAction) => void
+  copied: boolean
+  obscure: boolean
 }
 
 const InputExtraActions: React.FC<InputActionProps> = ({
   actions,
   onAction,
+  copied,
+  obscure,
 }) => {
   if (actions.length === 0) return <Fragment />
 
   return (
     <div className="flex flex-row space-x-2">
       {actions.map((action) => {
+        console.log(action)
         switch (action) {
           case 'copy':
-            return (
+            return copied ? (
+              <CheckIcon
+                key={action}
+                size={16}
+                onClick={() => onAction('copy')}
+                className="text-green-600"
+              />
+            ) : (
               <CopyIcon
                 key={action}
                 size={16}
-                onClick={() => onAction(action)}
+                onClick={() => onAction('copy')}
               />
             )
 
           case 'unobscure':
-            return (
+            return obscure ? (
               <EyeIcon
                 key={action}
                 size={16}
-                onClick={() => onAction(action)}
+                onClick={() => onAction('unobscure')}
+              />
+            ) : (
+              <EyeOffIcon
+                key={action}
+                size={16}
+                onClick={() => onAction('unobscure')}
               />
             )
 

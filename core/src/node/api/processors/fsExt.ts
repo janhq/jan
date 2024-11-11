@@ -1,6 +1,6 @@
 import { basename, join } from 'path'
 import fs, { readdirSync } from 'fs'
-import { appResourcePath, normalizeFilePath, validatePath } from '../../helper/path'
+import { appResourcePath, normalizeFilePath } from '../../helper/path'
 import { defaultAppConfig, getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
 import { Processor } from './Processor'
 import { FileStat } from '../../../types'
@@ -61,7 +61,6 @@ export class FSExt implements Processor {
       
       const dataBuffer = Buffer.from(data, 'base64')
       const writePath = join(getJanDataFolderPath(), normalizedPath)
-      validatePath(writePath)
       fs.writeFileSync(writePath, dataBuffer)
     } catch (err) {
       console.error(`writeFile ${path} result: ${err}`)
@@ -69,7 +68,6 @@ export class FSExt implements Processor {
   }
 
   copyFile(src: string, dest: string): Promise<void> {
-    validatePath(dest)
     return new Promise((resolve, reject) => {
       fs.copyFile(src, dest, (err) => {
         if (err) {

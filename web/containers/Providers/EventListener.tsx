@@ -2,7 +2,17 @@ import { PropsWithChildren, useCallback, useEffect } from 'react'
 
 import React from 'react'
 
-import { DownloadEvent, events, DownloadState, ModelEvent } from '@janhq/core'
+import {
+  DownloadEvent,
+  events,
+  DownloadState,
+  ModelEvent,
+  ExtensionTypeEnum,
+  ModelExtension,
+  ModelManager,
+  Model,
+} from '@janhq/core'
+
 import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -18,6 +28,7 @@ import EventHandler from './EventHandler'
 import ModelImportListener from './ModelImportListener'
 import QuickAskListener from './QuickAskListener'
 
+import { extensionManager } from '@/extension'
 import {
   InstallingExtensionState,
   removeInstallingExtensionAtom,
@@ -83,12 +94,24 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   )
 
   const onFileDownloadSuccess = useCallback(
-    (state: DownloadState) => {
+    async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
       if (state.downloadType !== 'extension') {
+        // Update model metadata accordingly
+        const model = ModelManager.instance().models.get(state.modelId)
+        if (model) {
+          await extensionManager
+            .get<ModelExtension>(ExtensionTypeEnum.Model)
+            ?.updateModel({
+              id: model.id,
+              ...model.settings,
+              ...model.parameters,
+            } as Partial<Model>)
+            .catch((e) => console.debug(e))
+        }
         state.downloadState = 'end'
         setDownloadState(state)
-        if (state.percent !== 0) removeDownloadingModel(state.modelId)
+        removeDownloadingModel(state.modelId)
       }
       events.emit(ModelEvent.OnModelsUpdate, {})
     },

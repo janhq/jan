@@ -35,17 +35,3 @@ export function appResourcePath() {
   // server
   return join(global.core.appPath(), '../../..')
 }
-
-export function validatePath(path: string) {
-  const appDataFolderPath = getJanDataFolderPath()
-  const resourcePath = appResourcePath()
-  const applicationSupportPath = global.core?.appPath() ?? resourcePath
-  const absolutePath = resolve(__dirname, path)
-  if (
-    ![appDataFolderPath, resourcePath, applicationSupportPath].some((whiteListedPath) =>
-      absolutePath.startsWith(whiteListedPath)
-    )
-  ) {
-    throw new Error(`Invalid path: ${absolutePath}`)
-  }
-}
