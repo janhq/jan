@@ -21,7 +21,7 @@ const SelectingModelModal = () => {
 
   const onSelectFileClick = useCallback(async () => {
     const platform = (await systemInformation()).osInfo?.platform
-    if (platform === 'win32') {
+    if (platform !== 'darwin') {
       setImportModelStage('CHOOSE_WHAT_TO_IMPORT')
       return
     }
