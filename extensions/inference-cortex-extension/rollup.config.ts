@@ -49,6 +49,8 @@ const llama321bJson = require('./resources/models/llama3.2-1b-instruct/model.jso
 const llama323bJson = require('./resources/models/llama3.2-3b-instruct/model.json')
 const qwen257bJson = require('./resources/models/qwen2.5-7b-instruct/model.json')
 const qwen25coder7bJson = require('./resources/models/qwen2.5-coder-7b-instruct/model.json')
+const qwen25coder14bJson = require('./resources/models/qwen2.5-coder-14b-instruct/model.json')
+const qwen25coder32bJson = require('./resources/models/qwen2.5-coder-32b-instruct/model.json')
 const qwen2514bJson = require('./resources/models/qwen2.5-14b-instruct/model.json')
 const qwen2532bJson = require('./resources/models/qwen2.5-32b-instruct/model.json')
 const qwen2572bJson = require('./resources/models/qwen2.5-72b-instruct/model.json')
@@ -108,6 +110,8 @@ export default [
           llama323bJson,
           qwen257bJson,
           qwen25coder7bJson,
+          qwen25coder14bJson,
+          qwen25coder32bJson,
           qwen2514bJson,
           qwen2532bJson,
           qwen2572bJson,
