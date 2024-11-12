@@ -16,9 +16,22 @@ import {
   getJanDataFolderPath,
   extractModelLoadParams,
   fs,
+  events,
+  ModelEvent
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
+
+/**
+ * Event subscription types of Downloader
+ */
+enum DownloadTypes {
+  DownloadUpdated = 'onFileDownloadUpdate',
+  DownloadError = 'onFileDownloadError',
+  DownloadSuccess = 'onFileDownloadSuccess',
+  DownloadStopped = 'onFileDownloadStopped',
+  DownloadStarted = 'onFileDownloadStarted',
+}
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -26,7 +39,6 @@ import ky from 'ky'
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
 export default class JanInferenceCortexExtension extends LocalOAIEngine {
-  // DEPRECATED
   nodeModule: string = 'node'
 
   queue = new PQueue({ concurrency: 1 })
@@ -37,6 +49,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * The URL for making inference requests.
    */
   inferenceUrl = `${CORTEX_API_URL}/v1/chat/completions`
+
+  /**
+   * Socket instance of events subscription
+   */
+  socket?: WebSocket = undefined
 
   /**
    * Subscribes to events emitted by the @janhq/core package.
@@ -54,6 +71,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     await executeOnMain(NODE, 'run', systemInfo)
 
     this.queue.add(() => this.healthz())
+
+    this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
       this.clean()
@@ -138,7 +157,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
           methods: ['get'],
         },
       })
-      .then(() => {})
+      .then(() => { })
   }
 
   /**
@@ -154,6 +173,50 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         // Do nothing
       })
   }
+
+  /**
+   * Subscribe to cortex.cpp websocket events
+   */
+  subscribeToEvents() {
+    this.queue.add(
+      () =>
+        new Promise<void>((resolve) => {
+          this.socket = new WebSocket(`${CORTEX_SOCKET_URL}/events`)
+
+          this.socket.addEventListener('message', (event) => {
+            const data = JSON.parse(event.data)
+            const transferred = data.task.items.reduce(
+              (acc: number, cur: any) => acc + cur.downloadedBytes,
+              0
+            )
+            const total = data.task.items.reduce(
+              (acc: number, cur: any) => acc + cur.bytes,
+              0
+            )
+            const percent = total > 0 ? transferred / total : 0
+
+            events.emit(DownloadTypes[data.type as keyof typeof DownloadTypes], {
+              modelId: data.task.id,
+              percent: percent,
+              size: {
+                transferred: transferred,
+                total: total,
+              },
+            })
+            // Update models list from Hub
+            if (data.type === DownloadTypes.DownloadSuccess) {
+              // Delay for the state update from cortex.cpp
+              // Just to be sure
+              setTimeout(() => {
+                events.emit(ModelEvent.OnModelsUpdate, {})
+              }, 500)
+            }
+          })
+          resolve()
+        })
+    )
+  }
+
 }
 
 /// Legacy
