@@ -147,6 +147,20 @@ const ThreadCenterPanel = () => {
 
   const showSystemMonitorPanel = useAtomValue(showSystemMonitorPanelAtom)
 
+  const [height, setHeight] = useState<number>(0)
+
+  useEffect(() => {
+    if (showSystemMonitorPanel) {
+      const element = document.querySelector('.system-monitor-panel')
+
+      if (element) {
+        setHeight(element.clientHeight) // You can also use offsetHeight if needed
+      }
+    } else {
+      setHeight(0)
+    }
+  }, [showSystemMonitorPanel])
+
   return (
     <CenterPanelContainer>
       <div
@@ -193,9 +207,10 @@ const ThreadCenterPanel = () => {
         )}
         <div
           className={twMerge(
-            'flex h-full w-full flex-col justify-between',
-            showSystemMonitorPanel && 'h-[calc(100%-200px)]'
+            'flex h-full w-full flex-col justify-between'
+            // showSystemMonitorPanel && `h-[calc(100%-${height}px)]`
           )}
+          style={{ height: `calc(100% - ${height}px)` }}
         >
           {activeThread ? (
             <div className="flex h-full w-full overflow-x-hidden">
