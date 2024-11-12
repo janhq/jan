@@ -1,6 +1,6 @@
 import PQueue from 'p-queue'
 import ky from 'ky'
-import { events, extractModelLoadParams, Model, ModelEvent } from '@janhq/core'
+import {  extractModelLoadParams, Model } from '@janhq/core'
 import { extractInferenceParams } from '@janhq/core'
 /**
  * cortex.cpp Model APIs interface
@@ -24,21 +24,11 @@ type ModelList = {
   data: any[]
 }
 
-enum DownloadTypes {
-  DownloadUpdated = 'onFileDownloadUpdate',
-  DownloadError = 'onFileDownloadError',
-  DownloadSuccess = 'onFileDownloadSuccess',
-  DownloadStopped = 'onFileDownloadStopped',
-  DownloadStarted = 'onFileDownloadStarted',
-}
-
 export class CortexAPI implements ICortexAPI {
   queue = new PQueue({ concurrency: 1 })
-  socket?: WebSocket = undefined
 
   constructor() {
     this.queue.add(() => this.healthz())
-    this.subscribeToEvents()
   }
 
   /**
@@ -170,49 +160,6 @@ export class CortexAPI implements ICortexAPI {
         },
       })
       .then(() => {})
-  }
-
-  /**
-   * Subscribe to cortex.cpp websocket events
-   */
-  subscribeToEvents() {
-    this.queue.add(
-      () =>
-        new Promise<void>((resolve) => {
-          this.socket = new WebSocket(`${SOCKET_URL}/events`)
-
-          this.socket.addEventListener('message', (event) => {
-            const data = JSON.parse(event.data)
-            const transferred = data.task.items.reduce(
-              (acc, cur) => acc + cur.downloadedBytes,
-              0
-            )
-            const total = data.task.items.reduce(
-              (acc, cur) => acc + cur.bytes,
-              0
-            )
-            const percent = total > 0 ? transferred / total : 0
-
-            events.emit(DownloadTypes[data.type], {
-              modelId: data.task.id,
-              percent: percent,
-              size: {
-                transferred: transferred,
-                total: total,
-              },
-            })
-            // Update models list from Hub
-            if (data.type === DownloadTypes.DownloadSuccess) {
-              // Delay for the state update from cortex.cpp
-              // Just to be sure
-              setTimeout(() => {
-                events.emit(ModelEvent.OnModelsUpdate, {})
-              }, 500)
-            }
-          })
-          resolve()
-        })
-    )
   }
 
   /**
