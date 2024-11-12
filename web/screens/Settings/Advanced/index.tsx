@@ -189,7 +189,7 @@ const Advanced = () => {
    * @param gpuId
    * @returns
    */
-  const handleGPUChange = (gpuId: string) => {
+  const handleGPUChange = async (gpuId: string) => {
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
       updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
@@ -208,7 +208,7 @@ const Advanced = () => {
       updatedGpusInUse.push(gpuId)
     }
     setGpusInUse(updatedGpusInUse)
-    saveSettings({ gpusInUse: updatedGpusInUse })
+    await saveSettings({ gpusInUse: updatedGpusInUse })
     window.core?.api?.relaunch()
   }
 
@@ -306,8 +306,13 @@ const Advanced = () => {
                           })
                         }
                         // Stop any running model to apply the changes
-                        if (e.target.checked !== gpuEnabled)
-                          stopModel().then(() => window.location.reload())
+                        if (e.target.checked !== gpuEnabled) {
+                          stopModel().finally(() => {
+                            setTimeout(() => {
+                              window.location.reload()
+                            }, 300)
+                          })
+                        }
                       }}
                     />
                   }
