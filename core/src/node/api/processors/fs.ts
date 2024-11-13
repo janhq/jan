@@ -1,5 +1,5 @@
 import { join, resolve } from 'path'
-import { normalizeFilePath, validatePath } from '../../helper/path'
+import { normalizeFilePath } from '../../helper/path'
 import { getJanDataFolderPath } from '../../helper'
 import { Processor } from './Processor'
 import fs from 'fs'
@@ -36,7 +36,6 @@ export class FileSystem implements Processor {
               return path
             }
             const absolutePath = resolve(path)
-            validatePath(absolutePath)
             return absolutePath
           })
         )
@@ -55,7 +54,6 @@ export class FileSystem implements Processor {
     }
 
     const absolutePath = resolve(path)
-    validatePath(absolutePath)
 
     return new Promise((resolve, reject) => {
       fs.rm(absolutePath, { recursive: true, force: true }, (err) => {
@@ -79,7 +77,6 @@ export class FileSystem implements Processor {
     }
 
     const absolutePath = resolve(path)
-    validatePath(absolutePath)
 
     return new Promise((resolve, reject) => {
       fs.mkdir(absolutePath, { recursive: true }, (err) => {

@@ -1,6 +1,5 @@
+import { CORTEX_DEFAULT_PORT } from './consts'
 
-import { NITRO_DEFAULT_PORT } from './consts';
-
-it('should test NITRO_DEFAULT_PORT', () => {
-  expect(NITRO_DEFAULT_PORT).toBe(3928);
-});
+it('should test CORTEX_DEFAULT_PORT', () => {
+  expect(CORTEX_DEFAULT_PORT).toBe(39291)
+})

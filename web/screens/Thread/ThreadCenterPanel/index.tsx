@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { Fragment, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
@@ -25,6 +25,7 @@ import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 
+import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -56,7 +57,7 @@ const ThreadCenterPanel = () => {
   const activeThread = useAtomValue(activeThreadAtom)
 
   const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
-    .vision_model
+    ?.vision_model
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -79,7 +80,7 @@ const ThreadCenterPanel = () => {
         e.dataTransfer.items.length === 1 &&
         ((activeThread?.assistants[0].tools &&
           activeThread?.assistants[0].tools[0]?.enabled) ||
-          activeThread?.assistants[0].model.settings.vision_model)
+          activeThread?.assistants[0].model.settings?.vision_model)
       ) {
         setDragOver(true)
       } else if (
@@ -101,7 +102,7 @@ const ThreadCenterPanel = () => {
         rejectFiles.length !== 0 ||
         (activeThread?.assistants[0].tools &&
           !activeThread?.assistants[0].tools[0]?.enabled &&
-          !activeThread?.assistants[0].model.settings.vision_model)
+          !activeThread?.assistants[0].model.settings?.vision_model)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -144,6 +145,22 @@ const ThreadCenterPanel = () => {
 
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
+  const showSystemMonitorPanel = useAtomValue(showSystemMonitorPanelAtom)
+
+  const [height, setHeight] = useState<number>(0)
+
+  useEffect(() => {
+    if (showSystemMonitorPanel) {
+      const element = document.querySelector('.system-monitor-panel')
+
+      if (element) {
+        setHeight(element.clientHeight) // You can also use offsetHeight if needed
+      }
+    } else {
+      setHeight(0)
+    }
+  }, [showSystemMonitorPanel])
+
   return (
     <CenterPanelContainer>
       <div
@@ -170,7 +187,7 @@ const ThreadCenterPanel = () => {
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
                           activeThread?.assistants[0].model.settings
-                            .vision_model
+                            ?.vision_model
                             ? 'PDF, JPEG, JPG, PNG'
                             : 'PDF'
                         } format`
@@ -178,7 +195,7 @@ const ThreadCenterPanel = () => {
                   </h6>
                   {!isDragReject && (
                     <p className="mt-2">
-                      {activeThread?.assistants[0].model.settings.vision_model
+                      {activeThread?.assistants[0].model.settings?.vision_model
                         ? 'PDF, JPEG, JPG, PNG'
                         : 'PDF'}
                     </p>
@@ -188,7 +205,13 @@ const ThreadCenterPanel = () => {
             </div>
           </div>
         )}
-        <div className="flex h-full w-full flex-col justify-between">
+        <div
+          className={twMerge(
+            'flex h-full w-full flex-col justify-between'
+            // showSystemMonitorPanel && `h-[calc(100%-${height}px)]`
+          )}
+          style={{ height: `calc(100% - ${height}px)` }}
+        >
           {activeThread ? (
             <div className="flex h-full w-full overflow-x-hidden">
               <ChatBody />
@@ -199,16 +222,7 @@ const ThreadCenterPanel = () => {
 
           {!engineParamsUpdate && <ModelStart />}
 
-          {reloadModel && (
-            <Fragment>
-              <ModelReload />
-              <div className="mb-2 text-center">
-                <span className="text-[hsla(var(--text-secondary)]">
-                  Model is reloading to apply new changes.
-                </span>
-              </div>
-            </Fragment>
-          )}
+          {reloadModel && <ModelReload />}
 
           {activeModel && isGeneratingResponse && <GenerateResponse />}
           <ChatInput />

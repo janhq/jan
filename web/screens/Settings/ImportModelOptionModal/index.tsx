@@ -15,13 +15,13 @@ import { importingModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const importOptions: ModelImportOption[] = [
   {
-    type: 'SYMLINK',
+    type: 'symlink',
     title: 'Keep Original Files & Symlink',
     description:
       'You maintain your model files outside of Jan. Keeping your files where they are, and Jan will create a smart link to them.',
   },
   {
-    type: 'MOVE_BINARY_FILE',
+    type: 'copy',
     title: 'Move model binary file',
     description:
       'Jan will move your model binary file from your current folder into Jan Data Folder.',

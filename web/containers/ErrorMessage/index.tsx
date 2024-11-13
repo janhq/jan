@@ -4,9 +4,8 @@ import {
   MessageStatus,
   ThreadMessage,
 } from '@janhq/core'
-import { Button } from '@janhq/joi'
+
 import { useAtomValue, useSetAtom } from 'jotai'
-import { RefreshCcw } from 'lucide-react'
 
 import AutoLink from '@/containers/AutoLink'
 import ModalTroubleShooting, {
@@ -15,26 +14,16 @@ import ModalTroubleShooting, {
 
 import { MainViewState } from '@/constants/screens'
 
-import useSendChatMessage from '@/hooks/useSendChatMessage'
-
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const { resendChatMessage } = useSendChatMessage()
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-
-  const regenerateMessage = async () => {
-    const lastMessageIndex = messages.length - 1
-    const message = messages[lastMessageIndex]
-    resendChatMessage(message)
-  }
 
   const getErrorTitle = () => {
     switch (message.error_code) {
@@ -77,23 +66,6 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
 
   return (
     <div className="mt-10">
-      {message.status === MessageStatus.Stopped && (
-        <div key={message.id} className="flex flex-col items-center">
-          <span className="mb-3 text-center font-medium text-[hsla(var(--text-secondary))]">
-            Oops! The generation was interrupted. Let&apos;s give it another go!
-          </span>
-          <Button
-            className="w-min"
-            theme="ghost"
-            variant="outline"
-            onClick={regenerateMessage}
-          >
-            <RefreshCcw size={14} className="" />
-            <span className="w-2" />
-            Regenerate
-          </Button>
-        </div>
-      )}
       {message.status === MessageStatus.Error && (
         <div
           key={message.id}
@@ -101,7 +73,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         >
           {getErrorTitle()}
           <p>
-            Jan’s in beta. Access&nbsp;
+            {`Something's wrong.`} Access&nbsp;
             <span
               className="cursor-pointer text-[hsla(var(--app-link))] underline"
               onClick={() => setModalTroubleShooting(true)}

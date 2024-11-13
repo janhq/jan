@@ -47,9 +47,6 @@ async function migrateThemes() {
   const themes = readdirSync(join(appResourcePath(), 'themes'))
   for (const theme of themes) {
     const themePath = join(appResourcePath(), 'themes', theme)
-    if (existsSync(themePath) && !lstatSync(themePath).isDirectory()) {
-      continue
-    }
     await checkAndMigrateTheme(theme, themePath)
   }
 }
@@ -64,21 +61,14 @@ async function checkAndMigrateTheme(
   )
   if (existingTheme) {
     const desTheme = join(janDataThemesFolder, existingTheme)
-    if (!existsSync(desTheme) || !lstatSync(desTheme).isDirectory()) return
-
-    const desThemeData = JSON.parse(
-      readFileSync(join(desTheme, 'theme.json'), 'utf-8')
-    )
-    const sourceThemeData = JSON.parse(
-      readFileSync(join(sourceThemePath, 'theme.json'), 'utf-8')
-    )
-    if (desThemeData.version !== sourceThemeData.version) {
-      console.debug('Updating theme', existingTheme)
-      rmdirSync(desTheme, { recursive: true })
-      cpSync(sourceThemePath, join(janDataThemesFolder, sourceThemeName), {
-        recursive: true,
-      })
+    if (!lstatSync(desTheme).isDirectory()) {
+      return
     }
+    console.debug('Updating theme', existingTheme)
+    rmdirSync(desTheme, { recursive: true })
+    cpSync(sourceThemePath, join(janDataThemesFolder, sourceThemeName), {
+      recursive: true,
+    })
   } else {
     console.debug('Adding new theme', sourceThemeName)
     cpSync(sourceThemePath, join(janDataThemesFolder, sourceThemeName), {

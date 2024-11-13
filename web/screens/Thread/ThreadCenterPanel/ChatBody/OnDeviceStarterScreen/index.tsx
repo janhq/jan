@@ -69,7 +69,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
       return x.id === recommendModel[0] || x.id === recommendModel[1]
     } else {
       return (
-        x.metadata.tags.includes('Featured') && x.metadata.size < 5000000000
+        x.metadata?.tags?.includes('Featured') && x.metadata?.size < 5000000000
       )
     }
   })
@@ -143,7 +143,7 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                     ) : (
                       filteredModels.map((model) => {
                         const isDownloading = downloadingModels.some(
-                          (md) => md.id === model.id
+                          (md) => md === model.id
                         )
                         return (
                           <div
@@ -161,13 +161,19 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                             </div>
                             <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                               <span className="font-medium">
-                                {toGibibytes(model.metadata.size)}
+                                {toGibibytes(model.metadata?.size)}
                               </span>
                               {!isDownloading ? (
                                 <DownloadCloudIcon
                                   size={18}
                                   className="cursor-pointer text-[hsla(var(--app-link))]"
-                                  onClick={() => downloadModel(model)}
+                                  onClick={() =>
+                                    downloadModel(
+                                      model.sources[0].url,
+                                      model.id,
+                                      model.name
+                                    )
+                                  }
                                 />
                               ) : (
                                 Object.values(downloadStates)
@@ -210,24 +216,24 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
                 {featuredModel.slice(0, 2).map((featModel) => {
                   const isDownloading = downloadingModels.some(
-                    (md) => md.id === featModel.id
+                    (md) => md === featModel.id
                   )
                   return (
                     <div
                       key={featModel.id}
-                      className="my-2 flex items-center justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
+                      className="my-2 flex items-start justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
                     >
                       <div className="w-full text-left">
-                        <h6 className="font-medium">{featModel.name}</h6>
+                        <h6 className="mt-1.5 font-medium">{featModel.name}</h6>
                       </div>
 
                       {isDownloading ? (
-                        <div className="flex w-full items-center gap-2">
+                        <div className="flex w-full flex-col items-end gap-2">
                           {Object.values(downloadStates)
                             .filter((x) => x.modelId === featModel.id)
                             .map((item, i) => (
                               <div
-                                className="flex w-full items-center gap-2"
+                                className="mt-1.5 flex w-full items-center gap-2"
                                 key={i}
                               >
                                 <Progress
@@ -247,18 +253,27 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
                                 </div>
                               </div>
                             ))}
+                          <span className="text-[hsla(var(--text-secondary))]">
+                            {toGibibytes(featModel.metadata?.size)}
+                          </span>
                         </div>
                       ) : (
                         <div className="flex flex-col items-end justify-end gap-2">
                           <Button
                             theme="ghost"
                             className="!bg-[hsla(var(--secondary-bg))]"
-                            onClick={() => downloadModel(featModel)}
+                            onClick={() =>
+                              downloadModel(
+                                featModel.sources[0].url,
+                                featModel.id,
+                                featModel.name
+                              )
+                            }
                           >
                             Download
                           </Button>
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGibibytes(featModel.metadata.size)}
+                            {toGibibytes(featModel.metadata?.size)}
                           </span>
                         </div>
                       )}

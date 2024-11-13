@@ -1,6 +1,6 @@
-import { executeOnMain, systemInformation, dirName } from '../../core'
+import { executeOnMain, systemInformation, dirName, joinPath, getJanDataFolderPath } from '../../core'
 import { events } from '../../events'
-import { Model, ModelEvent, ModelFile } from '../../../types'
+import { Model, ModelEvent } from '../../../types'
 import { OAIEngine } from './OAIEngine'
 
 /**
@@ -22,16 +22,16 @@ export abstract class LocalOAIEngine extends OAIEngine {
   override onLoad() {
     super.onLoad()
     // These events are applicable to local inference providers
-    events.on(ModelEvent.OnModelInit, (model: ModelFile) => this.loadModel(model))
+    events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
     events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
   }
 
   /**
    * Load the model.
    */
-  override async loadModel(model: ModelFile): Promise<void> {
+  override async loadModel(model: Model & { file_path?: string }): Promise<void> {
     if (model.engine.toString() !== this.provider) return
-    const modelFolder = await dirName(model.file_path)
+    const modelFolder = 'file_path' in model && model.file_path ? await dirName(model.file_path) : await this.getModelFilePath(model.id)
     const systemInfo = await systemInformation()
     const res = await executeOnMain(
       this.nodeModule,
@@ -63,4 +63,12 @@ export abstract class LocalOAIEngine extends OAIEngine {
       events.emit(ModelEvent.OnModelStopped, {})
     })
   }
+
+  /// Legacy
+  private getModelFilePath = async (
+    id: string,
+  ): Promise<string> => {
+    return joinPath([await getJanDataFolderPath(), 'models', id])
+  }
+  ///
 }

@@ -2,7 +2,17 @@ import { PropsWithChildren, useCallback, useEffect } from 'react'
 
 import React from 'react'
 
-import { DownloadEvent, events, DownloadState, ModelEvent } from '@janhq/core'
+import {
+  DownloadEvent,
+  events,
+  DownloadState,
+  ModelEvent,
+  ExtensionTypeEnum,
+  ModelExtension,
+  ModelManager,
+  Model,
+} from '@janhq/core'
+
 import { useSetAtom } from 'jotai'
 
 import { setDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -18,16 +28,23 @@ import EventHandler from './EventHandler'
 import ModelImportListener from './ModelImportListener'
 import QuickAskListener from './QuickAskListener'
 
+import { extensionManager } from '@/extension'
 import {
   InstallingExtensionState,
   removeInstallingExtensionAtom,
   setInstallingExtensionAtom,
 } from '@/helpers/atoms/Extension.atom'
+import {
+  addDownloadingModelAtom,
+  removeDownloadingModelAtom,
+} from '@/helpers/atoms/Model.atom'
 
 const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
   const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
+  const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
+  const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
@@ -40,10 +57,11 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
         }
         setInstallingExtension(state.extensionId!, installingExtensionState)
       } else {
+        addDownloadingModel(state.modelId)
         setDownloadState(state)
       }
     },
-    [setDownloadState, setInstallingExtension]
+    [addDownloadingModel, setDownloadState, setInstallingExtension]
   )
 
   const onFileDownloadError = useCallback(
@@ -52,21 +70,52 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       if (state.downloadType === 'extension') {
         removeInstallingExtension(state.extensionId!)
       } else {
+        state.downloadState = 'error'
         setDownloadState(state)
+        removeDownloadingModel(state.modelId)
       }
     },
-    [setDownloadState, removeInstallingExtension]
+    [removeInstallingExtension, setDownloadState, removeDownloadingModel]
+  )
+
+  const onFileDownloadStopped = useCallback(
+    (state: DownloadState) => {
+      console.debug('onFileDownloadError', state)
+      if (state.downloadType === 'extension') {
+        removeInstallingExtension(state.extensionId!)
+      } else {
+        state.downloadState = 'error'
+        state.error = 'aborted'
+        setDownloadState(state)
+        removeDownloadingModel(state.modelId)
+      }
+    },
+    [removeInstallingExtension, setDownloadState, removeDownloadingModel]
   )
 
   const onFileDownloadSuccess = useCallback(
-    (state: DownloadState) => {
+    async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
       if (state.downloadType !== 'extension') {
+        // Update model metadata accordingly
+        const model = ModelManager.instance().models.get(state.modelId)
+        if (model) {
+          await extensionManager
+            .get<ModelExtension>(ExtensionTypeEnum.Model)
+            ?.updateModel({
+              id: model.id,
+              ...model.settings,
+              ...model.parameters,
+            } as Partial<Model>)
+            .catch((e) => console.debug(e))
+        }
+        state.downloadState = 'end'
         setDownloadState(state)
+        removeDownloadingModel(state.modelId)
       }
       events.emit(ModelEvent.OnModelsUpdate, {})
     },
-    [setDownloadState]
+    [removeDownloadingModel, setDownloadState]
   )
 
   const onFileUnzipSuccess = useCallback(
@@ -87,6 +136,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     events.on(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
     events.on(DownloadEvent.onFileDownloadError, onFileDownloadError)
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+    events.on(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
     events.on(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
 
     return () => {
@@ -94,6 +144,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
+      events.off(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
       events.off(DownloadEvent.onFileUnzipSuccess, onFileUnzipSuccess)
     }
   }, [
@@ -101,6 +152,7 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
     onFileDownloadError,
     onFileDownloadSuccess,
     onFileUnzipSuccess,
+    onFileDownloadStopped,
   ])
 
   return (

@@ -41,7 +41,7 @@ async function loadModel(
   // e.g. ~/jan/models/llama-2
   let modelFolder = params.modelFolder
 
-  if (params.model.settings.prompt_template) {
+  if (params.model.settings?.prompt_template) {
     const promptTemplate = params.model.settings.prompt_template
     const prompt = promptTemplateConverter(promptTemplate)
     if (prompt?.error) {

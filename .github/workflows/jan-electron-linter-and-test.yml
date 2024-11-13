@@ -319,6 +319,13 @@ jobs:
         #   TURBO_TEAM: 'linux'
         #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: electron/playwright-report/
+          retention-days: 2
+
   coverage-check:
     runs-on: [self-hosted, Linux, ubuntu-desktop]
     needs: base_branch_cov

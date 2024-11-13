@@ -64,55 +64,12 @@ const LoadModelError = () => {
           to continue using it.
         </p>
       )
-    } else if (
-      settings &&
-      settings.run_mode === 'gpu' &&
-      !settings.vulkan &&
-      (!settings.nvidia_driver?.exist || !settings.cuda?.exist)
-    ) {
-      return (
-        <>
-          {!settings?.cuda.exist ? (
-            <p>
-              The CUDA toolkit may be unavailable. Please use the{' '}
-              <span
-                className="cursor-pointer font-medium text-[hsla(var(--app-link))]"
-                onClick={() => {
-                  setMainState(MainViewState.Settings)
-                  if (activeThread?.assistants[0]?.model.engine) {
-                    const engine = EngineManager.instance().get(
-                      activeThread.assistants[0].model.engine
-                    )
-                    engine?.name && setSelectedSettingScreen(engine.name)
-                  }
-                }}
-              >
-                Install Additional Dependencies
-              </span>{' '}
-              setting to proceed with the download / installation process.
-            </p>
-          ) : (
-            <div>
-              Problem with Nvidia drivers. Please follow the{' '}
-              <a
-                className="font-medium text-[hsla(var(--app-link))]"
-                href="https://www.nvidia.com/Download/index.aspx"
-                target="_blank"
-              >
-                Nvidia Drivers guideline
-              </a>{' '}
-              to access installation instructions and ensure proper functioning
-              of the application.
-            </div>
-          )}
-        </>
-      )
     } else {
       return (
         <div>
-          Apologies, something’s amiss!
+          Apologies, {`Something's wrong.`}.&nbsp;
           <p>
-            Jan’s in beta. Access&nbsp;
+            Access&nbsp;
             <span
               className="cursor-pointer text-[hsla(var(--app-link))]"
               onClick={() => setModalTroubleShooting(true)}

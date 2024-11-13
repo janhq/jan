@@ -38,7 +38,7 @@
     "react": "18.2.0",
     "react-circular-progressbar": "^2.1.0",
     "react-dom": "18.2.0",
-    "react-dropzone": "^14.2.3",
+    "react-dropzone": "14.2.3",
     "react-hook-form": "^7.47.0",
     "react-hot-toast": "^2.4.1",
     "react-icons": "^4.12.0",
@@ -52,8 +52,9 @@
     "uuid": "^9.0.1",
     "zod": "^3.22.4",
     "slate": "latest",
-    "slate-react": "latest",
-    "slate-history": "latest"
+    "slate-dom": "0.111.0",
+    "slate-react": "0.110.3",
+    "slate-history": "0.110.3"
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.0.1",

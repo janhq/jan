@@ -73,23 +73,35 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "generic", "url": "${{ secrets.CLOUDFLARE_R2_PUBLIC_URL }}", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-latest", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/latest", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-latest", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
           jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
 
+          # chmod +x .github/scripts/rename-app.sh
+          # .github/scripts/rename-app.sh ./electron/package.json nightly
+          # chmod +x .github/scripts/rename-workspace.sh
+          # .github/scripts/rename-workspace.sh ./package.json nightly
+          # chmod +x .github/scripts/rename-uninstaller.sh
+          # .github/scripts/rename-uninstaller.sh nightly
+          # echo "------------------------"
+          # cat ./electron/package.json
+          # echo "------------------------"
+          # cat ./package.json
+          # echo "------------------------"
+
       - name: Change App Name for beta version
         if: inputs.beta == true
         shell: bash
         run: |
-          chmod +x .github/scripts/rename-app-beta.sh
-          .github/scripts/rename-app-beta.sh ./electron/package.json
-          chmod +x .github/scripts/rename-workspace-beta.sh
-          .github/scripts/rename-workspace-beta.sh ./package.json
-          chmod +x .github/scripts/rename-uninstaller-beta.sh
-          .github/scripts/rename-uninstaller-beta.sh
+          chmod +x .github/scripts/rename-app.sh
+          .github/scripts/rename-app.sh ./electron/package.json beta
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json beta
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh beta
           echo "------------------------"
           cat ./electron/package.json
           echo "------------------------"

@@ -3,7 +3,7 @@
  */
 import { LocalOAIEngine } from './LocalOAIEngine'
 import { events } from '../../events'
-import { ModelEvent, ModelFile, Model } from '../../../types'
+import { ModelEvent, Model } from '../../../types'
 import { executeOnMain, systemInformation, dirName } from '../../core'
 
 jest.mock('../../core', () => ({
@@ -43,7 +43,7 @@ describe('LocalOAIEngine', () => {
   })
 
   it('should load model correctly', async () => {
-    const model: ModelFile = { engine: 'testProvider', file_path: 'path/to/model' } as any
+    const model: any = { engine: 'testProvider', file_path: 'path/to/model' } as any
     const modelFolder = 'path/to'
     const systemInfo = { os: 'testOS' }
     const res = { error: null }
@@ -66,7 +66,7 @@ describe('LocalOAIEngine', () => {
   })
 
   it('should handle load model error', async () => {
-    const model: ModelFile = { engine: 'testProvider', file_path: 'path/to/model' } as any
+    const model: any = { engine: 'testProvider', file_path: 'path/to/model' } as any
     const modelFolder = 'path/to'
     const systemInfo = { os: 'testOS' }
     const res = { error: 'load error' }
@@ -91,9 +91,7 @@ describe('LocalOAIEngine', () => {
 
   it('should not unload model if engine does not match', async () => {
     const model: Model = { engine: 'otherProvider' } as any
-
     await engine.unloadModel(model)
-
     expect(executeOnMain).not.toHaveBeenCalled()
     expect(events.emit).not.toHaveBeenCalledWith(ModelEvent.OnModelStopped, {})
   })

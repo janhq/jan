@@ -125,7 +125,6 @@ const ChatInput = () => {
     <div className="relative p-4 pb-2">
       <div className="relative flex w-full flex-col">
         {renderPreview(fileUpload)}
-
         <RichTextEditor
           className={twMerge(
             'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
@@ -141,7 +140,7 @@ const ChatInput = () => {
           disabled={stateModel.loading || !activeThread}
         />
         <TextArea
-          className="absolute inset-0 top-14 h-0 w-0"
+          className="sr-only"
           data-testid="txt-input-chat"
           onChange={(e) => setCurrentPrompt(e.target.value)}
         />
@@ -156,7 +155,7 @@ const ChatInput = () => {
                     fileUpload.length > 0 ||
                     (activeThread?.assistants[0].tools &&
                       !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings.vision_model)
+                      !activeThread?.assistants[0].model.settings?.vision_model)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -181,7 +180,7 @@ const ChatInput = () => {
                   (activeThread?.assistants[0].tools &&
                     !activeThread?.assistants[0].tools[0]?.enabled &&
                     !activeThread?.assistants[0].model.settings
-                      .vision_model && (
+                      ?.vision_model && (
                       <>
                         {fileUpload.length !== 0 && (
                           <span>
@@ -222,13 +221,13 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.vision_model
+                      activeThread?.assistants[0].model.settings?.vision_model
                         ? 'cursor-pointer'
                         : 'cursor-not-allowed opacity-50'
                     )}
                     onClick={() => {
                       if (
-                        activeThread?.assistants[0].model.settings.vision_model
+                        activeThread?.assistants[0].model.settings?.vision_model
                       ) {
                         imageInputRef.current?.click()
                         setShowAttacmentMenus(false)
@@ -241,7 +240,7 @@ const ChatInput = () => {
                 }
                 content="This feature only supports multimodal models."
                 disabled={
-                  activeThread?.assistants[0].model.settings.vision_model
+                  activeThread?.assistants[0].model.settings?.vision_model
                 }
               />
               <Tooltip
@@ -250,7 +249,7 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings.text_model ===
+                      activeThread?.assistants[0].model.settings?.text_model ===
                         false
                         ? 'cursor-not-allowed opacity-50'
                         : 'cursor-pointer'
@@ -258,7 +257,7 @@ const ChatInput = () => {
                     onClick={() => {
                       if (
                         activeThread?.assistants[0].model.settings
-                          .text_model !== false
+                          ?.text_model !== false
                       ) {
                         fileInputRef.current?.click()
                         setShowAttacmentMenus(false)
@@ -272,11 +271,11 @@ const ChatInput = () => {
                 content={
                   (!activeThread?.assistants[0].tools ||
                     !activeThread?.assistants[0].tools[0]?.enabled ||
-                    activeThread?.assistants[0].model.settings.text_model ===
+                    activeThread?.assistants[0].model.settings?.text_model ===
                       false) && (
                     <>
-                      {activeThread?.assistants[0].model.settings.text_model ===
-                      false ? (
+                      {activeThread?.assistants[0].model.settings
+                        ?.text_model === false ? (
                         <span>
                           This model does not support text-based retrieval.
                         </span>
