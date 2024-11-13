@@ -27,11 +27,3 @@
     @apply inline-flex flex-col border-s-4 border-[hsla(var(--primary-bg))] bg-[hsla(var(--primary-bg-soft))] px-4 py-2;
   }
 }
-
-.code-block {
-  white-space: normal;
-}
-
-pre {
-  max-width: 95vw;
-}
