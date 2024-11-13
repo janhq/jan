@@ -17,7 +17,7 @@ import {
   extractModelLoadParams,
   fs,
   events,
-  ModelEvent
+  ModelEvent,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -44,6 +44,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   queue = new PQueue({ concurrency: 1 })
 
   provider: string = InferenceEngine.cortex
+
+  shouldReconnect = true
 
   /**
    * The URL for making inference requests.
@@ -80,6 +82,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   onUnload(): void {
+    console.log('Clean up cortex.cpp services')
+    this.shouldReconnect = false
     this.clean()
     executeOnMain(NODE, 'dispose')
     super.onUnload()
@@ -157,7 +161,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
           methods: ['get'],
         },
       })
-      .then(() => { })
+      .then(() => {})
   }
 
   /**
@@ -195,14 +199,17 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             )
             const percent = total > 0 ? transferred / total : 0
 
-            events.emit(DownloadTypes[data.type as keyof typeof DownloadTypes], {
-              modelId: data.task.id,
-              percent: percent,
-              size: {
-                transferred: transferred,
-                total: total,
-              },
-            })
+            events.emit(
+              DownloadTypes[data.type as keyof typeof DownloadTypes],
+              {
+                modelId: data.task.id,
+                percent: percent,
+                size: {
+                  transferred: transferred,
+                  total: total,
+                },
+              }
+            )
             // Update models list from Hub
             if (data.type === DownloadTypes.DownloadSuccess) {
               // Delay for the state update from cortex.cpp
@@ -212,11 +219,19 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               }, 500)
             }
           })
+
+          this.socket.onclose = (event) => {
+            console.log('WebSocket closed:', event)
+            if (this.shouldReconnect) {
+              console.log(`Attempting to reconnect...`)
+              setTimeout(() => this.subscribeToEvents(), 1000)
+            }
+          }
+
           resolve()
         })
     )
   }
-
 }
 
 /// Legacy
