@@ -92,9 +92,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
       }
     )
 
-    return codeLines
+    // Join the lines with newline characters for proper formatting
+    return codeLines.join('\n')
   }
-
   function wrapCodeBlocksWithoutVisit() {
     return (tree: { children: any[] }) => {
       tree.children = tree.children.map((node) => {
@@ -138,7 +138,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                         type: 'element',
                         tagName: 'span',
                         properties: {
-                          className: 'text-xs font-medium',
+                          className: 'text-xs font-medium text-gray-300',
                         },
                         children: [
                           {
@@ -160,15 +160,15 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
                             const button = event.currentTarget as HTMLElement
                             button.innerHTML = `
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check pointer-events-none text-green-600"><path d="M20 6 9 17l-5-5"/></svg>
-                          <span>Copied</span>
-                        `
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check pointer-events-none text-green-600"><path d="M20 6 9 17l-5-5"/></svg>
+                              <span>Copied</span>
+                            `
 
                             setTimeout(() => {
                               button.innerHTML = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                            <span>Copy</span>
-                          `
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                <span>Copy</span>
+                              `
                             }, 2000)
                           },
                         },
@@ -390,19 +390,13 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               <Markdown
                 remarkPlugins={[remarkMath]}
                 rehypePlugins={[
-                  rehypeKatex,
+                  [rehypeKatex, { throwOnError: false }],
                   rehypeRaw,
-                  [
-                    rehypeHighlight,
-                    {
-                      detect: false,
-                      ignoreMissing: true,
-                    },
-                  ],
+                  rehypeHighlight,
                   [rehypeHighlightCodeLines, { showLineNumbers: true }],
                   wrapCodeBlocksWithoutVisit,
                 ]}
-                skipHtml
+                skipHtml={true}
               >
                 {text}
               </Markdown>
