@@ -122,36 +122,35 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
 
-    
-  # noti-discord-nightly-and-update-url-readme:
-  #   needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
-  #   secrets: inherit
-  #   if: github.event_name == 'schedule'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/dev
-  #     build_reason: Nightly
-  #     push_to_branch: dev
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-nightly-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
+    secrets: inherit
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/dev
+      build_reason: Nightly
+      push_to_branch: dev
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  # noti-discord-pre-release-and-update-url-readme:
-  #   needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
-  #   secrets: inherit
-  #   if: github.event_name == 'push'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/dev
-  #     build_reason: Pre-release
-  #     push_to_branch: dev
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-pre-release-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
+    secrets: inherit
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/dev
+      build_reason: Pre-release
+      push_to_branch: dev
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  # noti-discord-manual-and-update-url-readme:
-  #   needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
-  #   secrets: inherit
-  #   if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
-  #   uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
-  #   with:
-  #     ref: refs/heads/dev
-  #     build_reason: Manual
-  #     push_to_branch: dev
-  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  noti-discord-manual-and-update-url-readme:
+    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
+    secrets: inherit
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
+    uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
+    with:
+      ref: refs/heads/dev
+      build_reason: Manual
+      push_to_branch: dev
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
