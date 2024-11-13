@@ -108,6 +108,11 @@ const ModelDropdown = ({
   const filteredDownloadedModels = useMemo(
     () =>
       configuredModels
+        .concat(
+          downloadedModels.filter(
+            (e) => !configuredModels.some((x) => x.id === e.id)
+          )
+        )
         .filter((e) =>
           e.name.toLowerCase().includes(searchText.toLowerCase().trim())
         )

@@ -29,7 +29,7 @@ export default function useDropModelBinaries() {
       const importingModels: ImportingModel[] = supportedFiles.map((file) => ({
         importId: uuidv4(),
         modelId: undefined,
-        name: file.name.replace('.gguf', ''),
+        name: file.name.replace(/ /g, '').replace('.gguf', ''),
         description: '',
         path: file.path,
         tags: [],

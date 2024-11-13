@@ -72,20 +72,20 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/latest", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-latest", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
           jq --arg teamid "${{ secrets.APPLE_TEAM_ID }}" '.build.mac.notarize.teamId = $teamid' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
-          # cat electron/package.json
-          # chmod +x .github/scripts/rename-app.sh
-          # .github/scripts/rename-app.sh ./electron/package.json nightly
-          # chmod +x .github/scripts/rename-workspace.sh
-          # .github/scripts/rename-workspace.sh ./package.json nightly
-          # echo "------------------------"
-          # cat ./electron/package.json
-          # echo "------------------------"
+          cat electron/package.json
+          chmod +x .github/scripts/rename-app.sh
+          .github/scripts/rename-app.sh ./electron/package.json nightly
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json nightly
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
 
       - name: Change App Name for beta version
         if: inputs.beta == true

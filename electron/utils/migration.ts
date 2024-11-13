@@ -61,6 +61,9 @@ async function checkAndMigrateTheme(
   )
   if (existingTheme) {
     const desTheme = join(janDataThemesFolder, existingTheme)
+    if (!lstatSync(desTheme).isDirectory()) {
+      return
+    }
     console.debug('Updating theme', existingTheme)
     rmdirSync(desTheme, { recursive: true })
     cpSync(sourceThemePath, join(janDataThemesFolder, sourceThemeName), {
