@@ -68,14 +68,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     super.onLoad()
 
+    this.queue.add(() => this.healthz())
+    this.queue.add(() => this.setDefaultEngine(systemInfo))
     // Run the process watchdog
     const systemInfo = await systemInformation()
     await this.clean()
     await executeOnMain(NODE, 'run', systemInfo)
-
-    this.queue.add(() => this.healthz())
-
-    this.queue.add(() => this.setDefaultEngine(systemInfo))
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
