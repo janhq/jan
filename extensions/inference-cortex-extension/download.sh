@@ -38,8 +38,8 @@ elif [ "$OS_TYPE" == "Darwin" ]; then
     chmod +x "./bin/cortex-server"
 
     # Download engines for macOS
-    download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" -e --strip 1 -o ./bin/arm64/engines/cortex.llamacpp
-    download "${ENGINE_DOWNLOAD_URL}-mac-amd64.tar.gz" -e --strip 1 -o ./bin/x64/engines/cortex.llamacpp
+    download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" -e --strip 1 -o "./bin/engines/cortex.llamacpp/mac-arm64/v0.1.35"
+    download "${ENGINE_DOWNLOAD_URL}-mac-amd64.tar.gz" -e --strip 1 -o "./bin/engines/cortex.llamacpp/mac-amd64/v0.1.35"
 
 else
     echo "Unsupported operating system: $OS_TYPE"

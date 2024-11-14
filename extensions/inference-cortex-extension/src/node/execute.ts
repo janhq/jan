@@ -4,7 +4,6 @@ import { cpuInfo } from 'cpu-instructions'
 
 export interface CortexExecutableOptions {
   enginePath: string
-  binPath: string
   executablePath: string
   cudaVisibleDevices: string
   vkVisibleDevices: string
@@ -21,11 +20,7 @@ const gpuRunMode = (settings?: GpuSetting): string => {
 
   if (!settings) return ''
 
-  return settings.vulkan === true
-    ? 'vulkan'
-    : settings.run_mode === 'cpu'
-      ? ''
-      : 'cuda'
+  return settings.vulkan === true || settings.run_mode === 'cpu' ? '' : 'cuda'
 }
 
 /**
@@ -34,12 +29,12 @@ const gpuRunMode = (settings?: GpuSetting): string => {
  */
 const os = (): string => {
   return process.platform === 'win32'
-    ? 'win'
+    ? 'windows-amd64'
     : process.platform === 'darwin'
       ? process.arch === 'arm64'
-        ? 'arm64'
-        : 'x64'
-      : 'linux'
+        ? 'mac-arm64'
+        : 'mac-amd64'
+      : 'linux-amd64'
 }
 
 /**
@@ -79,36 +74,43 @@ const cpuInstructions = (): string => {
 }
 
 /**
- * Find which executable file to run based on the current platform.
- * @returns The name of the executable file to run.
+ * The executable options for the cortex.cpp extension.
  */
 export const executableCortexFile = (
   gpuSetting?: GpuSetting
 ): CortexExecutableOptions => {
-  const cpuInstruction = cpuInstructions()
-  let engineFolder = gpuSetting?.vulkan
-    ? 'vulkan'
-    : process.platform === 'darwin'
-      ? os()
-      : [
-        gpuRunMode(gpuSetting) !== 'cuda' ||
-          cpuInstruction === 'avx2' || cpuInstruction === 'avx512'
-          ? cpuInstruction
-          : 'noavx',
-        gpuRunMode(gpuSetting),
-        cudaVersion(gpuSetting),
-      ]
-        .filter((e) => !!e)
-        .join('-')
   let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let binaryName = `cortex-server${extension()}`
   const binPath = path.join(__dirname, '..', 'bin')
   return {
-    enginePath: path.join(binPath, engineFolder),
+    enginePath: binPath,
     executablePath: path.join(binPath, binaryName),
-    binPath: binPath,
     cudaVisibleDevices,
     vkVisibleDevices,
   }
+}
+
+/**
+ * Find which variant to run based on the current platform.
+ */
+export const engineVariant = (gpuSetting?: GpuSetting): string => {
+  const cpuInstruction = cpuInstructions()
+  let engineVariant = [
+    os(),
+    gpuSetting?.vulkan
+      ? 'vulkan'
+      : gpuRunMode(gpuSetting) !== 'cuda'
+        ? // CPU mode - support all variants
+          cpuInstruction
+        : // GPU mode - packaged CUDA variants of avx2 and noavx
+          cpuInstruction === 'avx2' || cpuInstruction === 'avx512'
+          ? 'avx2'
+          : 'noavx',
+    gpuRunMode(gpuSetting),
+    cudaVersion(gpuSetting),
+  ]
+    .filter((e) => !!e)
+    .join('-')
+  return engineVariant
 }

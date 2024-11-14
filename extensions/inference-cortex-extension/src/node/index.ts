@@ -1,6 +1,6 @@
 import path from 'path'
 import { getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
-import { executableCortexFile } from './execute'
+import { engineVariant, executableCortexFile } from './execute'
 import { ProcessWatchdog } from './watchdog'
 import { appResourcePath } from '@janhq/core/node'
 
@@ -20,9 +20,9 @@ function run(systemInfo?: SystemInformation): Promise<any> {
       // If ngl is not set or equal to 0, run on CPU with correct instructions
       systemInfo?.gpuSetting
         ? {
-          ...systemInfo.gpuSetting,
-          run_mode: systemInfo.gpuSetting.run_mode,
-        }
+            ...systemInfo.gpuSetting,
+            run_mode: systemInfo.gpuSetting.run_mode,
+          }
         : undefined
     )
 
@@ -31,7 +31,6 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     log(`[CORTEX]:: Cortex engine path: ${executableOptions.enginePath}`)
 
     addEnvPaths(path.join(appResourcePath(), 'shared'))
-    addEnvPaths(executableOptions.binPath)
     addEnvPaths(executableOptions.enginePath)
     // Add the cortex.llamacpp path to the PATH and LD_LIBRARY_PATH
     // This is required for the cortex engine to run for now since dlls are not moved to the root
@@ -81,15 +80,12 @@ function dispose() {
 function addEnvPaths(dest: string) {
   // Add engine path to the PATH and LD_LIBRARY_PATH
   if (process.platform === 'win32') {
-    process.env.PATH = (process.env.PATH || '').concat(
-      path.delimiter,
-      dest,
-    )
+    process.env.PATH = (process.env.PATH || '').concat(path.delimiter, dest)
     log(`[CORTEX] PATH: ${process.env.PATH}`)
   } else {
     process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
       path.delimiter,
-      dest,
+      dest
     )
     log(`[CORTEX] LD_LIBRARY_PATH: ${process.env.LD_LIBRARY_PATH}`)
   }
@@ -105,4 +101,5 @@ export interface CortexProcessInfo {
 export default {
   run,
   dispose,
+  engineVariant,
 }
