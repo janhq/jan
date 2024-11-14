@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 import hljs from 'highlight.js'
-
 import { useAtom, useAtomValue } from 'jotai'
+
 import { BaseEditor, createEditor, Editor, Transforms } from 'slate'
 import { withHistory } from 'slate-history' // Import withHistory
 import {
@@ -270,7 +270,8 @@ const RichTextEditor = ({
       textareaRef.current.style.height = activeSettingInputBox
         ? '100px'
         : '40px'
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
+      textareaRef.current.style.height =
+        textareaRef.current.scrollHeight + 2 + 'px'
       textareaRef.current?.scrollTo({
         top: textareaRef.current.scrollHeight,
         behavior: 'instant',

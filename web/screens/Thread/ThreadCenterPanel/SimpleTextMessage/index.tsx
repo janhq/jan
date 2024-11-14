@@ -1,4 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable @typescript-eslint/naming-convention */
+import React, { useEffect, useState } from 'react'
+
+import Markdown from 'react-markdown'
 
 import {
   ChatCompletionRole,
@@ -8,14 +13,15 @@ import {
 } from '@janhq/core'
 
 import { Tooltip } from '@janhq/joi'
-import hljs from 'highlight.js'
 
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
-import { markedHighlight } from 'marked-highlight'
-import markedKatex from 'marked-katex-extension'
-
+import rehypeHighlight from 'rehype-highlight'
+import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
+import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+import remarkMath from 'remark-math'
+import 'katex/dist/katex.min.css'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
@@ -23,6 +29,7 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 import { useClipboard } from '@/hooks/useClipboard'
 import { usePath } from '@/hooks/usePath'
 
+import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 import { toGibibytes } from '@/utils/converter'
 import { displayDate } from '@/utils/datetime'
 
@@ -53,87 +60,180 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
 
   const clipboard = useClipboard({ timeout: 1000 })
 
-  function escapeHtml(html: string): string {
-    return html
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;')
+  function extractCodeLines(node: { children: { children: any[] }[] }) {
+    const codeLines: any[] = []
+
+    // Helper function to extract text recursively from children
+    function getTextFromNode(node: {
+      type: string
+      value: any
+      children: any[]
+    }): string {
+      if (node.type === 'text') {
+        return node.value
+      } else if (node.children) {
+        return node.children.map(getTextFromNode).join('')
+      }
+      return ''
+    }
+
+    // Traverse each line in the <code> block
+    node.children[0].children.forEach(
+      (lineNode: {
+        type: string
+        tagName: string
+        value: any
+        children: any[]
+      }) => {
+        if (lineNode.type === 'element' && lineNode.tagName === 'span') {
+          const lineContent = getTextFromNode(lineNode)
+          codeLines.push(lineContent)
+        }
+      }
+    )
+
+    // Join the lines with newline characters for proper formatting
+    return codeLines.join('\n')
+  }
+  function wrapCodeBlocksWithoutVisit() {
+    return (tree: { children: any[] }) => {
+      tree.children = tree.children.map((node) => {
+        if (node.tagName === 'pre' && node.children[0]?.tagName === 'code') {
+          const language = node.children[0].properties.className?.[1]?.replace(
+            'language-',
+            ''
+          )
+
+          if (!language) return node
+
+          return {
+            type: 'element',
+            tagName: 'div',
+            properties: {
+              className: ['code-block-wrapper'],
+            },
+            children: [
+              {
+                type: 'element',
+                tagName: 'div',
+                properties: {
+                  className: [
+                    'code-block',
+                    'group/item',
+                    'relative',
+                    'my-4',
+                    'overflow-auto',
+                  ],
+                },
+                children: [
+                  {
+                    type: 'element',
+                    tagName: 'div',
+                    properties: {
+                      className:
+                        'code-header bg-[hsla(var(--app-code-block))] flex justify-between items-center py-2 px-3 border-b border-[hsla(var(--app-border))] rounded-t-lg',
+                    },
+                    children: [
+                      {
+                        type: 'element',
+                        tagName: 'span',
+                        properties: {
+                          className: 'text-xs font-medium text-gray-300',
+                        },
+                        children: [
+                          {
+                            type: 'text',
+                            value: language
+                              ? `${getLanguageFromExtension(language)}`
+                              : 'No file name',
+                          },
+                        ],
+                      },
+                      {
+                        type: 'element',
+                        tagName: 'button',
+                        properties: {
+                          className:
+                            'copy-button ml-auto flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600 focus:outline-none',
+                          onClick: (event: Event) => {
+                            clipboard.copy(extractCodeLines(node))
+
+                            const button = event.currentTarget as HTMLElement
+                            button.innerHTML = `
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check pointer-events-none text-green-600"><path d="M20 6 9 17l-5-5"/></svg>
+                              <span>Copied</span>
+                            `
+
+                            setTimeout(() => {
+                              button.innerHTML = `
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                <span>Copy</span>
+                              `
+                            }, 2000)
+                          },
+                        },
+                        children: [
+                          {
+                            type: 'element',
+                            tagName: 'svg',
+                            properties: {
+                              xmlns: 'http://www.w3.org/2000/svg',
+                              width: '16',
+                              height: '16',
+                              viewBox: '0 0 24 24',
+                              fill: 'none',
+                              stroke: 'currentColor',
+                              strokeWidth: '2',
+                              strokeLinecap: 'round',
+                              strokeLinejoin: 'round',
+                              className:
+                                'lucide lucide-copy pointer-events-none text-gray-400',
+                            },
+                            children: [
+                              {
+                                type: 'element',
+                                tagName: 'rect',
+                                properties: {
+                                  width: '14',
+                                  height: '14',
+                                  x: '8',
+                                  y: '8',
+                                  rx: '2',
+                                  ry: '2',
+                                },
+                                children: [],
+                              },
+                              {
+                                type: 'element',
+                                tagName: 'path',
+                                properties: {
+                                  d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2',
+                                },
+                                children: [],
+                              },
+                            ],
+                          },
+                          { type: 'text', value: 'Copy' },
+                        ],
+                      },
+                    ],
+                  },
+                  node,
+                ],
+              },
+            ],
+          }
+        }
+        return node
+      })
+    }
   }
 
-  const marked: Marked = new Marked(
-    markedHighlight({
-      langPrefix: 'hljs',
-      highlight(code, lang) {
-        if (lang === undefined || lang === '') {
-          return hljs.highlight(code, { language: 'plaintext' }).value
-        }
-        try {
-          return hljs.highlight(code, { language: lang }).value
-        } catch (err) {
-          return hljs.highlight(code, { language: 'javascript' }).value
-        }
-      },
-    }),
-    {
-      renderer: {
-        html: (html: string) => {
-          return escapeHtml(html) // Escape any HTML
-        },
-        link: (href, title, text) => {
-          return Renderer.prototype.link
-            ?.apply(this, [href, title, text])
-            .replace('<a', "<a target='_blank'")
-        },
-        code(code, lang) {
-          return `
-          <div class="relative code-block group/item overflow-auto">
-            <button class='text-xs copy-action hidden group-hover/item:block p-2 rounded-lg absolute top-6 right-2'>
-              ${
-                clipboard.copied
-                  ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-check pointer-events-none text-green-600"><path d="M20 6 9 17l-5-5"/></svg>`
-                  : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
-              }
-            </button>
-            <pre class="hljs">
-              <code class="language-${lang ?? ''}">${code}</code>
-            </pre>
-          </div>
-          `
-        },
-      },
-    }
-  )
-
-  marked.use(markedKatex({ throwOnError: false }))
-
   const { onViewFile, onViewFileContainer } = usePath()
-  const parsedText = marked.parse(text)
   const [tokenCount, setTokenCount] = useState(0)
   const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
   const [tokenSpeed, setTokenSpeed] = useState(0)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-
-  const codeBlockCopyEvent = useRef((e: Event) => {
-    const target: HTMLElement = e.target as HTMLElement
-    if (typeof target.className !== 'string') return null
-
-    const isCopyActionClassName = target?.className.includes('copy-action')
-
-    if (isCopyActionClassName) {
-      const content = target?.parentNode?.querySelector('code')?.innerText ?? ''
-      clipboard.copy(content)
-    }
-  })
-
-  useEffect(() => {
-    document.addEventListener('click', codeBlockCopyEvent.current)
-    return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      document.removeEventListener('click', codeBlockCopyEvent.current)
-    }
-  }, [])
 
   useEffect(() => {
     if (props.status !== MessageStatus.Pending) {
@@ -285,8 +385,22 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
               className={twMerge(
                 'message max-width-[100%] flex flex-col gap-y-2 overflow-auto break-all leading-relaxed	'
               )}
-              dangerouslySetInnerHTML={{ __html: parsedText }}
-            />
+              dir="ltr"
+            >
+              <Markdown
+                remarkPlugins={[remarkMath]}
+                rehypePlugins={[
+                  [rehypeKatex, { throwOnError: false }],
+                  rehypeRaw,
+                  rehypeHighlight,
+                  [rehypeHighlightCodeLines, { showLineNumbers: true }],
+                  wrapCodeBlocksWithoutVisit,
+                ]}
+                skipHtml={true}
+              >
+                {text}
+              </Markdown>
+            </div>
           )}
         </>
       </div>

@@ -13,6 +13,11 @@ const config = {
   moduleNameMapper: {
     // ...
     '^@/(.*)$': '<rootDir>/$1',
+    'react-markdown': '<rootDir>/mock/empty-mock.tsx',
+    'rehype-highlight': '<rootDir>/mock/empty-mock.tsx',
+    'rehype-katex': '<rootDir>/mock/empty-mock.tsx',
+    'rehype-raw': '<rootDir>/mock/empty-mock.tsx',
+    'remark-math': '<rootDir>/mock/empty-mock.tsx',
   },
   // Add more setup options before each test is run
   // setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],

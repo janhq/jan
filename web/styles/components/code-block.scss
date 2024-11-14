@@ -55,22 +55,25 @@
 .hljs {
   overflow: auto;
   display: block;
-  width: auto;
-  background: hsla(var(--app-code-block));
-  color: #f8f8f2;
   padding: 16px;
   font-size: 14px;
-  word-wrap: normal;
+  border-bottom-left-radius: 0.4rem;
+  border-bottom-right-radius: 0.4rem;
+  color: #f8f8f2;
+}
+
+pre {
+  background: hsla(var(--app-code-block));
+  overflow: auto;
+  padding: 8px 16px;
   border-radius: 0.4rem;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-  white-space: normal;
 }
 pre > code {
-  display: block;
   text-indent: 0;
   white-space: pre;
-  max-width: 10vw;
+  font-size: 14px;
+  overflow: auto;
+  color: #f8f8f2;
 }
 
 .hljs-emphasis {
@@ -79,6 +82,14 @@ pre > code {
 
 .hljs-strong {
   font-weight: bold;
+}
+
+.code-block {
+  pre {
+    padding: 0;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
 }
 
 @media screen and (-ms-high-contrast: active) {
@@ -104,4 +115,53 @@ pre > code {
   .hljs-selector-tag {
     font-weight: bold;
   }
+}
+
+.code-block-wrapper {
+  white-space: nowrap;
+}
+
+.code-line {
+  // padding-left: 12px;
+  padding-right: 12px;
+  margin-left: -12px;
+  margin-right: -12px;
+  border-left: 4px solid transparent;
+}
+
+div.code-line:empty {
+  height: 21.5938px;
+}
+
+span.code-line {
+  // min-width: 100%;
+  white-space: pre;
+  display: inline-block;
+  max-width: 10vw;
+}
+
+.code-line.inserted {
+  background-color: var(--color-inserted-line);
+}
+
+.code-line.deleted {
+  background-color: var(--color-deleted-line);
+}
+
+.highlighted-code-line {
+  background-color: var(--color-highlighted-line);
+  border-left: 4px solid var(--color-highlighted-line-indicator);
+}
+
+.numbered-code-line::before {
+  content: attr(data-line-number);
+
+  margin-left: -8px;
+  margin-right: 16px;
+  width: 1rem;
+  font-size: 12px;
+  color: var(--color-text-weak);
+  text-align: right;
+
+  display: inline-block;
 }
