@@ -72,8 +72,6 @@ const LocalServerRightPanel = () => {
     [componentDataEngineSetting]
   )
 
-  console.log(engineSettings)
-
   const modelSettings = useMemo(() => {
     return componentDataRuntimeSetting.filter(
       (x) => x.key !== 'prompt_template'
