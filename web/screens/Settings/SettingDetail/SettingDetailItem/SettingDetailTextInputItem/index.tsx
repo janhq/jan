@@ -123,7 +123,6 @@ const InputExtraActions: React.FC<InputActionProps> = ({
   return (
     <div className="flex flex-row space-x-2">
       {actions.map((action) => {
-        console.log(action)
         switch (action) {
           case 'copy':
             return copied ? (
