@@ -4,8 +4,8 @@ set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
 
 @REM Download cortex.llamacpp binaries
-set VERSION=v0.1.35
-set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%/cortex.llamacpp-0.1.35-windows-amd64
+set VERSION=v0.1.39
+set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%/cortex.llamacpp-0.1.39-windows-amd64
 set CUDA_DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%
 set SUBFOLDERS=noavx-cuda-12-0 noavx-cuda-11-7 avx2-cuda-12-0 avx2-cuda-11-7 noavx avx avx2 avx512 vulkan
 

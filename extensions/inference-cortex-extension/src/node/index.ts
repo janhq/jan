@@ -39,6 +39,10 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     )
 
     const dataFolderPath = getJanDataFolderPath()
+    if (watchdog) {
+      watchdog.terminate()
+    }
+
     watchdog = new ProcessWatchdog(
       executableOptions.executablePath,
       [

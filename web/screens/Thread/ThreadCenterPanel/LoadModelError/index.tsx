@@ -9,8 +9,6 @@ import { MainViewState } from '@/constants/screens'
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
-import { useSettings } from '@/hooks/useSettings'
-
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
@@ -21,7 +19,6 @@ const LoadModelError = () => {
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-  const { settings } = useSettings()
 
   const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
 

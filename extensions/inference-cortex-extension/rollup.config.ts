@@ -120,7 +120,7 @@ export default [
         DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
         CORTEX_API_URL: JSON.stringify('http://127.0.0.1:39291'),
         CORTEX_SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
-        CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.35'),
+        CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.39'),
       }),
       // Allow json resolution
       json(),

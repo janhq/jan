@@ -3,8 +3,8 @@
 # Read CORTEX_VERSION
 CORTEX_VERSION=$(cat ./bin/version.txt)
 CORTEX_RELEASE_URL="https://github.com/janhq/cortex/releases/download"
-ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.35/cortex.llamacpp-0.1.35"
-CUDA_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.35"
+ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.39/cortex.llamacpp-0.1.39"
+CUDA_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.39"
 # Detect platform
 OS_TYPE=$(uname)
 
@@ -38,8 +38,8 @@ elif [ "$OS_TYPE" == "Darwin" ]; then
     chmod +x "./bin/cortex-server"
 
     # Download engines for macOS
-    download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" -e --strip 1 -o "./bin/engines/cortex.llamacpp/mac-arm64/v0.1.35"
-    download "${ENGINE_DOWNLOAD_URL}-mac-amd64.tar.gz" -e --strip 1 -o "./bin/engines/cortex.llamacpp/mac-amd64/v0.1.35"
+    download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" -e --strip 1 -o "./bin/engines/cortex.llamacpp/mac-arm64/v0.1.39"
+    download "${ENGINE_DOWNLOAD_URL}-mac-amd64.tar.gz" -e --strip 1 -o "./bin/engines/cortex.llamacpp/mac-amd64/v0.1.39"
 
 else
     echo "Unsupported operating system: $OS_TYPE"
