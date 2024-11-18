@@ -168,7 +168,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Set default engine variant on launch
    */
   private async setDefaultEngine(systemInfo: SystemInformation) {
-    const variant = await executeOnMain(NODE, 'engineVariant', systemInfo)
+    const variant = await executeOnMain(NODE, 'engineVariant', systemInfo.gpuSetting)
     return ky
       .post(
         `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,

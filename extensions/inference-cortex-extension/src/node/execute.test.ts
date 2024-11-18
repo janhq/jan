@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import { engineVariant, executableCortexFile } from './execute'
-import { GpuSetting } from '@janhq/core'
+import { GpuSetting } from '@janhq/core/node'
 import { cpuInfo } from 'cpu-instructions'
 
 let testSettings: GpuSetting = {
@@ -30,6 +30,11 @@ jest.mock('cpu-instructions', () => ({
 let mockCpuInfo = cpuInfo.cpuInfo as jest.Mock
 mockCpuInfo.mockReturnValue([])
 
+jest.mock('@janhq/core/node', () => ({
+  appResourcePath: () => ".",
+  log: jest.fn()
+}))
+
 describe('test executable cortex file', () => {
   afterAll(function () {
     Object.defineProperty(process, 'platform', {
@@ -46,7 +51,7 @@ describe('test executable cortex file', () => {
     })
     expect(executableCortexFile(testSettings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath:
           originalPlatform === 'darwin'
             ? expect.stringContaining(`cortex-server`)
@@ -61,7 +66,7 @@ describe('test executable cortex file', () => {
     })
     expect(executableCortexFile(testSettings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath:
           originalPlatform === 'darwin'
             ? expect.stringContaining(`cortex-server`)
@@ -84,7 +89,7 @@ describe('test executable cortex file', () => {
     mockCpuInfo.mockReturnValue(['avx'])
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath: expect.stringContaining(`cortex-server.exe`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
@@ -120,7 +125,7 @@ describe('test executable cortex file', () => {
     mockCpuInfo.mockReturnValue(['avx2'])
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath: expect.stringContaining(`cortex-server.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
@@ -156,7 +161,7 @@ describe('test executable cortex file', () => {
     mockCpuInfo.mockReturnValue(['noavx'])
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath: expect.stringContaining(`cortex-server.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
@@ -178,7 +183,7 @@ describe('test executable cortex file', () => {
     mockCpuInfo.mockReturnValue(['noavx'])
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath: expect.stringContaining(`cortex-server`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
@@ -214,7 +219,7 @@ describe('test executable cortex file', () => {
     mockCpuInfo.mockReturnValue(['avx512'])
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath: expect.stringContaining(`cortex-server`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
@@ -249,7 +254,7 @@ describe('test executable cortex file', () => {
     }
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining("shared"),
         executablePath: expect.stringContaining(`cortex-server`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
@@ -274,7 +279,7 @@ describe('test executable cortex file', () => {
 
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining('bin'),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server`),
 
           cudaVisibleDevices: '',
@@ -298,7 +303,7 @@ describe('test executable cortex file', () => {
       mockCpuInfo.mockReturnValue([instruction])
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining('bin'),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server.exe`),
           cudaVisibleDevices: '',
           vkVisibleDevices: '',
@@ -338,7 +343,7 @@ describe('test executable cortex file', () => {
       mockCpuInfo.mockReturnValue([instruction])
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining("shared"),
           executablePath: expect.stringContaining(`cortex-server.exe`),
           cudaVisibleDevices: '0',
           vkVisibleDevices: '0',
@@ -380,7 +385,7 @@ describe('test executable cortex file', () => {
       mockCpuInfo.mockReturnValue([instruction])
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining("shared"),
           executablePath: expect.stringContaining(`cortex-server`),
           cudaVisibleDevices: '0',
           vkVisibleDevices: '0',
@@ -423,7 +428,7 @@ describe('test executable cortex file', () => {
       mockCpuInfo.mockReturnValue([instruction])
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining("shared"),
           executablePath: expect.stringContaining(`cortex-server`),
           cudaVisibleDevices: '0',
           vkVisibleDevices: '0',
@@ -450,7 +455,7 @@ describe('test executable cortex file', () => {
       mockCpuInfo.mockReturnValue([])
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining("shared"),
           executablePath:
             originalPlatform === 'darwin'
               ? expect.stringContaining(`cortex-server`)

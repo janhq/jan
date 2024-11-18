@@ -1,6 +1,6 @@
-import { GpuSetting } from '@janhq/core'
 import * as path from 'path'
 import { cpuInfo } from 'cpu-instructions'
+import { GpuSetting, appResourcePath, log } from '@janhq/core/node'
 
 export interface CortexExecutableOptions {
   enginePath: string
@@ -52,7 +52,7 @@ const extension = (): '.exe' | '' => {
  */
 const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
   const isUsingCuda =
-    settings?.vulkan !== true && settings?.run_mode === 'gpu' && os() !== 'mac'
+    settings?.vulkan !== true && settings?.run_mode === 'gpu' && !os().includes('mac')
 
   if (!isUsingCuda) return undefined
   return settings?.cuda?.version === '11' ? '11-7' : '12-0'
@@ -84,7 +84,7 @@ export const executableCortexFile = (
   let binaryName = `cortex-server${extension()}`
   const binPath = path.join(__dirname, '..', 'bin')
   return {
-    enginePath: binPath,
+    enginePath: path.join(appResourcePath(), 'shared'),
     executablePath: path.join(binPath, binaryName),
     cudaVisibleDevices,
     vkVisibleDevices,
@@ -112,5 +112,7 @@ export const engineVariant = (gpuSetting?: GpuSetting): string => {
   ]
     .filter((e) => !!e)
     .join('-')
+
+  log(`[CORTEX]: Engine variant: ${engineVariant}`)
   return engineVariant
 }
