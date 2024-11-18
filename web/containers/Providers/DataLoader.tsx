@@ -38,9 +38,7 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   const { loadDataModel, isUpdated } = useModels()
   useEffect(() => {
     // Listen for model updates
-    if (isUpdated) {
-      loadDataModel()
-    }
+    loadDataModel()
   }, [isUpdated, loadDataModel])
 
   useEffect(() => {

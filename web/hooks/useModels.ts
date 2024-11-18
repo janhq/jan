@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import {
   ExtensionTypeEnum,
@@ -29,10 +29,15 @@ import {
 const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
+  const hasFetchedDownloadedModels = useRef(false) // Track whether the function has been executed
+
   let isUpdated = false
 
   const getData = useCallback(() => {
+    if (hasFetchedDownloadedModels.current) return
+
     const getDownloadedModels = async () => {
+      hasFetchedDownloadedModels.current = true
       const localModels = (await getModels()).map((e) => ({
         ...e,
         name: ModelManager.instance().models.get(e.id)?.name ?? e.id,
@@ -72,7 +77,7 @@ const useModels = () => {
     // Fetch all data
     getExtensionModels()
     getDownloadedModels()
-  }, [setDownloadedModels, setExtensionModels])
+  }, [])
 
   const reloadData = useDebouncedCallback(() => getData(), 300)
 
@@ -91,7 +96,7 @@ const useModels = () => {
         events.off(ModelEvent.OnModelsUpdate, async () => {})
       }
     }
-  }, [getData, isUpdated, reloadData])
+  }, [isUpdated, reloadData])
 
   return {
     loadDataModel: getData,
