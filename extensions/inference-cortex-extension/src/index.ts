@@ -228,7 +228,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               // Delay for the state update from cortex.cpp
               // Just to be sure
               setTimeout(() => {
-                events.emit(ModelEvent.OnModelsUpdate, {})
+                events.emit(ModelEvent.OnModelsUpdate, {
+                  fetch: true,
+                })
               }, 500)
             }
           })
