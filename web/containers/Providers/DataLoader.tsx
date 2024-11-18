@@ -2,7 +2,12 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import { AppConfiguration, getUserHomePath } from '@janhq/core'
+import {
+  AppConfiguration,
+  events,
+  getUserHomePath,
+  ModelEvent,
+} from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
@@ -30,11 +35,18 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
 
-  useModels()
   useThreads()
   useAssistants()
   useGetSystemResources()
   useLoadTheme()
+
+  const { loadDataModel, isUpdated } = useModels()
+  useEffect(() => {
+    // Listen for model updates
+    if (isUpdated) {
+      loadDataModel()
+    }
+  }, [isUpdated, loadDataModel])
 
   useEffect(() => {
     window.core?.api

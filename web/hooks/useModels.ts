@@ -29,6 +29,7 @@ import {
 const useModels = () => {
   const setDownloadedModels = useSetAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
+  let isUpdated = false
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
@@ -52,10 +53,10 @@ const useModels = () => {
 
       setDownloadedModels(toUpdate)
 
-      let isUpdated = false
       toUpdate.forEach((model) => {
         if (!ModelManager.instance().models.has(model.id)) {
           ModelManager.instance().models.set(model.id, model)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
           isUpdated = true
         }
       })
@@ -75,21 +76,28 @@ const useModels = () => {
 
   const reloadData = useDebouncedCallback(() => getData(), 300)
 
+  const getModels = async (): Promise<Model[]> =>
+    extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.getModels() ?? []
+
   useEffect(() => {
     // Try get data on mount
-    reloadData()
-
-    // Listen for model updates
-    events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
-    return () => {
-      // Remove listener on unmount
-      events.off(ModelEvent.OnModelsUpdate, async () => {})
+    if (isUpdated) {
+      reloadData()
+      // Listen for model updates
+      events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
+      return () => {
+        // Remove listener on unmount
+        events.off(ModelEvent.OnModelsUpdate, async () => {})
+      }
     }
-  }, [getData, reloadData])
-}
+  }, [getData, isUpdated, reloadData])
 
-const getModels = async (): Promise<Model[]> =>
-  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.getModels() ??
-  []
+  return {
+    loadDataModel: getData,
+    isUpdated: isUpdated,
+  }
+}
 
 export default useModels
