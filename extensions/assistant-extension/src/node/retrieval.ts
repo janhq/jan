@@ -8,7 +8,6 @@ import { MemoryVectorStore } from 'langchain/vectorstores/memory'
 import { HNSWLib } from 'langchain/vectorstores/hnswlib'
 
 import { OpenAIEmbeddings } from 'langchain/embeddings/openai'
-import { readEmbeddingEngine } from './engine'
 
 export class Retrieval {
   public chunkSize: number = 100
@@ -28,8 +27,8 @@ export class Retrieval {
     // declare time-weighted retriever and storage
     this.timeWeightedVectorStore = new MemoryVectorStore(
       new OpenAIEmbeddings(
-        { openAIApiKey: 'nitro-embedding' },
-        { basePath: 'http://127.0.0.1:3928/v1' }
+        { openAIApiKey: 'cortex-embedding' },
+        { basePath: 'http://127.0.0.1:39291/v1' }
       )
     )
     this.timeWeightedretriever = new TimeWeightedVectorStoreRetriever({
@@ -49,21 +48,11 @@ export class Retrieval {
   }
 
   public updateEmbeddingEngine(model: string, engine: string): void {
-    // Engine settings are not compatible with the current embedding model params
-    // Switch case manually for now
-    if (engine === 'nitro') {
-      this.embeddingModel = new OpenAIEmbeddings(
-        { openAIApiKey: 'nitro-embedding', model },
-        // TODO: Raw settings
-        { basePath: 'http://127.0.0.1:3928/v1' },
-      )
-    } else {
-      // Fallback to OpenAI Settings
-      const settings = readEmbeddingEngine(engine)
-      this.embeddingModel = new OpenAIEmbeddings({
-        openAIApiKey: settings.api_key,
-      })
-    }
+    this.embeddingModel = new OpenAIEmbeddings(
+      { openAIApiKey: 'cortex-embedding', model },
+      // TODO: Raw settings
+      { basePath: 'http://127.0.0.1:39291/v1' }
+    )
 
     // update time-weighted embedding model
     this.timeWeightedVectorStore.embeddings = this.embeddingModel
