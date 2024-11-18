@@ -18,6 +18,7 @@ import {
   fs,
   events,
   ModelEvent,
+  SystemInformation,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -67,13 +68,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     super.onLoad()
 
+    this.queue.add(() => this.healthz())
+    this.queue.add(() => this.setDefaultEngine(systemInfo))
     // Run the process watchdog
     const systemInfo = await systemInformation()
     await this.clean()
     await executeOnMain(NODE, 'run', systemInfo)
-
-    this.queue.add(() => this.healthz())
-
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -153,7 +153,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Do health check on cortex.cpp
    * @returns
    */
-  healthz(): Promise<void> {
+  private healthz(): Promise<void> {
     return ky
       .get(`${CORTEX_API_URL}/healthz`, {
         retry: {
@@ -165,10 +165,23 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   /**
+   * Set default engine variant on launch
+   */
+  private async setDefaultEngine(systemInfo: SystemInformation) {
+    const variant = await executeOnMain(NODE, 'engineVariant', systemInfo.gpuSetting)
+    return ky
+      .post(
+        `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
+        { json: {} }
+      )
+      .then(() => {})
+  }
+
+  /**
    * Clean cortex processes
    * @returns
    */
-  clean(): Promise<any> {
+  private clean(): Promise<any> {
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
@@ -181,7 +194,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   /**
    * Subscribe to cortex.cpp websocket events
    */
-  subscribeToEvents() {
+  private subscribeToEvents() {
     this.queue.add(
       () =>
         new Promise<void>((resolve) => {
@@ -235,7 +248,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 }
 
 /// Legacy
-export const getModelFilePath = async (
+const getModelFilePath = async (
   model: Model,
   file: string
 ): Promise<string> => {
