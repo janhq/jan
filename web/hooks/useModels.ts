@@ -84,7 +84,6 @@ const useModels = () => {
   useEffect(() => {
     // Try get data on mount
     if (isUpdated) {
-      reloadData()
       // Listen for model updates
       events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
       return () => {

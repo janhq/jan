@@ -2,12 +2,7 @@
 
 import { Fragment, ReactNode, useEffect } from 'react'
 
-import {
-  AppConfiguration,
-  events,
-  getUserHomePath,
-  ModelEvent,
-} from '@janhq/core'
+import { AppConfiguration, getUserHomePath } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
