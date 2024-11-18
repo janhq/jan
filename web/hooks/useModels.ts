@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import {
   ExtensionTypeEnum,
@@ -9,7 +9,7 @@ import {
   ModelManager,
 } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
+import { useSetAtom, useAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -27,17 +27,11 @@ import {
  * and updates the atoms accordingly.
  */
 const useModels = () => {
-  const setDownloadedModels = useSetAtom(downloadedModelsAtom)
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
-  const hasFetchedDownloadedModels = useRef(false) // Track whether the function has been executed
-
-  let isUpdated = false
 
   const getData = useCallback(() => {
-    if (hasFetchedDownloadedModels.current) return
-
     const getDownloadedModels = async () => {
-      hasFetchedDownloadedModels.current = true
       const localModels = (await getModels()).map((e) => ({
         ...e,
         name: ModelManager.instance().models.get(e.id)?.name ?? e.id,
@@ -58,6 +52,8 @@ const useModels = () => {
 
       setDownloadedModels(toUpdate)
 
+      let isUpdated = false
+
       toUpdate.forEach((model) => {
         if (!ModelManager.instance().models.has(model.id)) {
           ModelManager.instance().models.set(model.id, model)
@@ -77,9 +73,21 @@ const useModels = () => {
     // Fetch all data
     getExtensionModels()
     getDownloadedModels()
-  }, [])
+  }, [setDownloadedModels, setExtensionModels])
 
   const reloadData = useDebouncedCallback(() => getData(), 300)
+
+  const updateStates = useCallback(() => {
+    const cachedModels = ModelManager.instance().models.values().toArray()
+    const toUpdate = [
+      ...downloadedModels,
+      ...cachedModels.filter(
+        (e: Model) => !downloadedModels.some((g: Model) => g.id === e.id)
+      ),
+    ]
+
+    setDownloadedModels(toUpdate)
+  }, [downloadedModels, setDownloadedModels])
 
   const getModels = async (): Promise<Model[]> =>
     extensionManager
@@ -87,20 +95,19 @@ const useModels = () => {
       ?.getModels() ?? []
 
   useEffect(() => {
-    // Try get data on mount
-    if (isUpdated) {
-      // Listen for model updates
-      events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
-      return () => {
-        // Remove listener on unmount
-        events.off(ModelEvent.OnModelsUpdate, async () => {})
-      }
+    // Listen for model updates
+    events.on(ModelEvent.OnModelsUpdate, async (data: { fetch?: boolean }) => {
+      if (data.fetch) reloadData()
+      else updateStates()
+    })
+    return () => {
+      // Remove listener on unmount
+      events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [isUpdated, reloadData])
+  }, [reloadData, updateStates])
 
   return {
     loadDataModel: getData,
-    isUpdated: isUpdated,
   }
 }
 

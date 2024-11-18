@@ -29,17 +29,18 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
+  const { loadDataModel } = useModels()
 
   useThreads()
   useAssistants()
   useGetSystemResources()
   useLoadTheme()
 
-  const { loadDataModel, isUpdated } = useModels()
   useEffect(() => {
-    // Listen for model updates
+    // Load data once
     loadDataModel()
-  }, [isUpdated, loadDataModel])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     window.core?.api

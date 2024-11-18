@@ -112,8 +112,8 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
         state.downloadState = 'end'
         setDownloadState(state)
         removeDownloadingModel(state.modelId)
+        events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
       }
-      events.emit(ModelEvent.OnModelsUpdate, {})
     },
     [removeDownloadingModel, setDownloadState]
   )
