@@ -81,7 +81,6 @@ class WindowManager {
     })
 
     windowManager.mainWindow?.on('ready-to-show', function () {
-      // Feature Toggle for Quick Ask
       windowManager.mainWindow?.show()
     })
   }
