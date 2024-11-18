@@ -42,8 +42,9 @@ describe('useModels', () => {
 
     jest.spyOn(extensionManager, 'get').mockReturnValue(mockModelExtension)
 
-    act(() => {
-      renderHook(() => useModels())
+    const { result } = renderHook(() => useModels())
+    await act(() => {
+      result.current?.loadDataModel()
     })
 
     expect(mockModelExtension.getModels).toHaveBeenCalled()

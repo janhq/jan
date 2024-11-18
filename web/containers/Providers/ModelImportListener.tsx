@@ -43,7 +43,7 @@ const ModelImportListener = ({ children }: PropsWithChildren) => {
   const onImportModelSuccess = useCallback(
     (state: ImportingModel) => {
       if (!state.modelId) return
-      events.emit(ModelEvent.OnModelsUpdate, {})
+      events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
       setImportingModelSuccess(state.importId, state.modelId)
     },
     [setImportingModelSuccess]

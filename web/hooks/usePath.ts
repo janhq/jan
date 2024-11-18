@@ -42,39 +42,6 @@ export const usePath = () => {
     openFileExplorer(fullPath)
   }
 
-  const onViewJson = async (type: string) => {
-    // TODO: this logic should be refactored.
-    if (type !== 'Model' && !activeThread) return
-
-    let filePath = undefined
-    const assistantId = activeThread?.assistants[0]?.assistant_id
-    switch (type) {
-      case 'Engine':
-      case 'Thread':
-        filePath = await joinPath([
-          'threads',
-          activeThread?.id ?? '',
-          'thread.json',
-        ])
-        break
-      case 'Model':
-        if (!selectedModel) return
-        filePath = await joinPath(['models', selectedModel.id, 'model.json'])
-        break
-      case 'Assistant':
-      case 'Tools':
-        if (!assistantId) return
-        filePath = await joinPath(['assistants', assistantId, 'assistant.json'])
-        break
-      default:
-        break
-    }
-
-    if (!filePath) return
-    const fullPath = await joinPath([janDataFolderPath, filePath])
-    openFileExplorer(fullPath)
-  }
-
   const onViewFile = async (id: string) => {
     if (!activeThread) return
 
@@ -99,7 +66,6 @@ export const usePath = () => {
 
   return {
     onRevealInFinder,
-    onViewJson,
     onViewFile,
     onViewFileContainer,
   }

@@ -9,7 +9,7 @@ import {
   ModelManager,
 } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
+import { useSetAtom, useAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -27,7 +27,7 @@ import {
  * and updates the atoms accordingly.
  */
 const useModels = () => {
-  const setDownloadedModels = useSetAtom(downloadedModelsAtom)
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
 
   const getData = useCallback(() => {
@@ -53,9 +53,11 @@ const useModels = () => {
       setDownloadedModels(toUpdate)
 
       let isUpdated = false
+
       toUpdate.forEach((model) => {
         if (!ModelManager.instance().models.has(model.id)) {
           ModelManager.instance().models.set(model.id, model)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
           isUpdated = true
         }
       })
@@ -75,21 +77,38 @@ const useModels = () => {
 
   const reloadData = useDebouncedCallback(() => getData(), 300)
 
-  useEffect(() => {
-    // Try get data on mount
-    reloadData()
+  const updateStates = useCallback(() => {
+    const cachedModels = ModelManager.instance().models.values().toArray()
+    const toUpdate = [
+      ...downloadedModels,
+      ...cachedModels.filter(
+        (e: Model) => !downloadedModels.some((g: Model) => g.id === e.id)
+      ),
+    ]
 
+    setDownloadedModels(toUpdate)
+  }, [downloadedModels, setDownloadedModels])
+
+  const getModels = async (): Promise<Model[]> =>
+    extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.getModels() ?? []
+
+  useEffect(() => {
     // Listen for model updates
-    events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
+    events.on(ModelEvent.OnModelsUpdate, async (data: { fetch?: boolean }) => {
+      if (data.fetch) reloadData()
+      else updateStates()
+    })
     return () => {
       // Remove listener on unmount
       events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [getData, reloadData])
-}
+  }, [reloadData, updateStates])
 
-const getModels = async (): Promise<Model[]> =>
-  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.getModels() ??
-  []
+  return {
+    loadDataModel: getData,
+  }
+}
 
 export default useModels

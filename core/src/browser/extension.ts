@@ -113,7 +113,6 @@ export abstract class BaseExtension implements ExtensionType {
     for (const model of models) {
       ModelManager.instance().register(model)
     }
-    events.emit(ModelEvent.OnModelsUpdate, {})
   }
 
   /**

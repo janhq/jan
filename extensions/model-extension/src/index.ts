@@ -40,11 +40,6 @@ export default class JanModelExtension extends ModelExtension {
   async onLoad() {
     this.registerSettings(SETTINGS)
 
-    // Try get models from cortex.cpp
-    this.getModels().then((models) => {
-      this.registerModels(models)
-    })
-
     // Listen to app download events
     this.handleDesktopEvents()
   }
@@ -163,19 +158,27 @@ export default class JanModelExtension extends ModelExtension {
       (e) => e.engine === InferenceEngine.nitro
     )
 
-    await this.cortexAPI.getModels().then((models) => {
-      const existingIds = models.map((e) => e.id)
-      toImportModels = toImportModels.filter(
-        (e: Model) => !existingIds.includes(e.id) && !e.settings?.vision_model
-      )
-    })
+    /**
+     * Fetch models from cortex.cpp
+     */
+    var fetchedModels = await this.cortexAPI.getModels().catch(() => [])
+
+    // Checking if there are models to import
+    const existingIds = fetchedModels.map((e) => e.id)
+    toImportModels = toImportModels.filter(
+      (e: Model) => !existingIds.includes(e.id) && !e.settings?.vision_model
+    )
+
+    /**
+     * There is no model to import
+     * just return fetched models
+     */
+    if (!toImportModels.length) return fetchedModels
 
     console.log('To import models:', toImportModels.length)
     /**
      * There are models to import
-     * do not return models from cortex.cpp yet
-     * otherwise it will reset the app cache
-     * */
+     */
     if (toImportModels.length > 0) {
       // Import models
       await Promise.all(
@@ -202,8 +205,6 @@ export default class JanModelExtension extends ModelExtension {
           })
         })
       )
-
-      return currentModels
     }
 
     /**

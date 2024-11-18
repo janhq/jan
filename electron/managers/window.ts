@@ -28,6 +28,7 @@ class WindowManager {
       ...mainWindowConfig,
       width: bounds.width,
       height: bounds.height,
+      show: false,
       x: bounds.x,
       y: bounds.y,
       webPreferences: {
@@ -77,6 +78,10 @@ class WindowManager {
         evt.preventDefault()
         windowManager.hideMainWindow()
       }
+    })
+
+    windowManager.mainWindow?.on('ready-to-show', function () {
+      windowManager.mainWindow?.show()
     })
   }
 
