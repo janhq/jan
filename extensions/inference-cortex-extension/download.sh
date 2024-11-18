@@ -2,7 +2,7 @@
 
 # Read CORTEX_VERSION
 CORTEX_VERSION=$(cat ./bin/version.txt)
-CORTEX_RELEASE_URL="https://github.com/janhq/cortex/releases/download"
+CORTEX_RELEASE_URL="https://github.com/janhq/cortex.cpp/releases/download"
 ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.39/cortex.llamacpp-0.1.39"
 CUDA_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v0.1.39"
 # Detect platform

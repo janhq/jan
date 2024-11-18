@@ -9,7 +9,7 @@ set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VER
 set CUDA_DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%
 set SUBFOLDERS=noavx-cuda-12-0 noavx-cuda-11-7 avx2-cuda-12-0 avx2-cuda-11-7 noavx avx avx2 avx512 vulkan
 
-call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/janhq/cortex/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
+call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/janhq/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-12-0.tar.gz -e --strip 1 -o %BIN_PATH%/avx2-cuda-12-0/engines/cortex.llamacpp
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-11-7.tar.gz -e --strip 1 -o %BIN_PATH%/avx2-cuda-11-7/engines/cortex.llamacpp
 call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx-cuda-12-0.tar.gz -e --strip 1 -o %BIN_PATH%/noavx-cuda-12-0/engines/cortex.llamacpp
