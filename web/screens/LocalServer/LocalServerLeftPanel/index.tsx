@@ -29,6 +29,7 @@ const LocalServerLeftPanel = () => {
   const [errorRangePort, setErrorRangePort] = useState(false)
   const [errorPrefix, setErrorPrefix] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
+  const [isLoading, setIsLoading] = useState(false)
 
   const { startModel, stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
@@ -66,6 +67,7 @@ const LocalServerLeftPanel = () => {
   const onStartServerClick = async () => {
     if (selectedModel == null) return
     try {
+      setIsLoading(true)
       const isStarted = await window.core?.api?.startServer({
         host,
         port,
@@ -79,8 +81,10 @@ const LocalServerLeftPanel = () => {
         setFirstTimeVisitAPIServer(false)
       }
       startModel(selectedModel.id, false).catch((e) => console.error(e))
+      setIsLoading(false)
     } catch (e) {
       console.error(e)
+      setIsLoading(false)
       toaster({
         title: `Failed to start server!`,
         description: 'Please check Server Logs for more details.',
@@ -93,6 +97,7 @@ const LocalServerLeftPanel = () => {
     window.core?.api?.stopServer()
     setServerEnabled(false)
     setLoadModelError(undefined)
+    setIsLoading(false)
   }
 
   const onToggleServer = async () => {
@@ -117,6 +122,7 @@ const LocalServerLeftPanel = () => {
               block
               theme={serverEnabled ? 'destructive' : 'primary'}
               disabled={
+                isLoading ||
                 stateModel.loading ||
                 errorRangePort ||
                 errorPrefix ||
@@ -124,7 +130,11 @@ const LocalServerLeftPanel = () => {
               }
               onClick={onToggleServer}
             >
-              {serverEnabled ? 'Stop' : 'Start'} Server
+              {isLoading
+                ? 'Starting...'
+                : serverEnabled
+                  ? 'Stop Server'
+                  : 'Start Server'}
             </Button>
             {serverEnabled && (
               <Button variant="soft" asChild className="whitespace-nowrap">

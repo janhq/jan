@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { Button, ScrollArea } from '@janhq/joi'
+import { Button } from '@janhq/joi'
 import { CodeIcon, Paintbrush } from 'lucide-react'
 
 import { InfoIcon } from 'lucide-react'
@@ -26,8 +26,8 @@ const LocalServerCenterPanel = () => {
 
   return (
     <CenterPanelContainer>
-      <div className="flex h-full w-full flex-col overflow-hidden">
-        <div className="sticky top-0 flex  items-center justify-between border-b border-[hsla(var(--app-border))] px-4 py-2">
+      <div className="flex h-full w-full flex-col">
+        <div className="sticky top-0 z-10  flex items-center justify-between border-b border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] px-4 py-2">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button
@@ -72,9 +72,7 @@ const LocalServerCenterPanel = () => {
             </div>
           </div>
         ) : (
-          <ScrollArea className="h-full w-full">
-            <ServerLogs />
-          </ScrollArea>
+          <ServerLogs />
         )}
       </div>
     </CenterPanelContainer>
