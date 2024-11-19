@@ -36,6 +36,7 @@
     "path": "^0.12.7",
     "plop": "^4.0.1",
     "plop-helper-date": "^1.0.0",
+    "posthog-js": "^1.186.3",
     "react": "^18",
     "react-dom": "^18",
     "react-hook-form": "^7.51.1",
