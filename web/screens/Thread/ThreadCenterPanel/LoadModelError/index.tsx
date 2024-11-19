@@ -20,23 +20,8 @@ const LoadModelError = () => {
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
-  const PORT_NOT_AVAILABLE = 'PORT_NOT_AVAILABLE'
-
   const ErrorMessage = () => {
-    if (loadModelError === PORT_NOT_AVAILABLE) {
-      return (
-        <p>
-          Port 3928 is currently unavailable. Check for conflicting apps, or
-          access&nbsp;
-          <span
-            className="cursor-pointer text-[hsla(var(--app-link))]"
-            onClick={() => setModalTroubleShooting(true)}
-          >
-            troubleshooting assistance
-          </span>
-        </p>
-      )
-    } else if (
+    if (
       typeof loadModelError?.includes === 'function' &&
       loadModelError.includes('EXTENSION_IS_NOT_INSTALLED')
     ) {
@@ -63,10 +48,10 @@ const LoadModelError = () => {
       )
     } else {
       return (
-        <div>
-          Apologies, {`Something's wrong.`}.&nbsp;
+        <div className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--text-secondary))]">
+          {loadModelError && <p>{loadModelError}</p>}
           <p>
-            Access&nbsp;
+            {`Something's wrong.`}&nbsp;Access&nbsp;
             <span
               className="cursor-pointer text-[hsla(var(--app-link))]"
               onClick={() => setModalTroubleShooting(true)}

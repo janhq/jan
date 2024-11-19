@@ -27,7 +27,7 @@ import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
 
 import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
 
-import { loadModelErrorAtom, useActiveModel } from './useActiveModel'
+import { useActiveModel } from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import {
@@ -60,10 +60,8 @@ export default function useSendChatMessage() {
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const { activeModel, startModel } = useActiveModel()
-  const loadModelFailed = useAtomValue(loadModelErrorAtom)
 
   const modelRef = useRef<Model | undefined>()
-  const loadModelFailedRef = useRef<string | undefined>()
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const engineParamsUpdate = useAtomValue(engineParamsUpdateAtom)
 
@@ -79,10 +77,6 @@ export default function useSendChatMessage() {
   useEffect(() => {
     modelRef.current = activeModel
   }, [activeModel])
-
-  useEffect(() => {
-    loadModelFailedRef.current = loadModelFailed
-  }, [loadModelFailed])
 
   useEffect(() => {
     activeThreadRef.current = activeThread
