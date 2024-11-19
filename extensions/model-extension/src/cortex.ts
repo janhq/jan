@@ -1,6 +1,6 @@
 import PQueue from 'p-queue'
 import ky from 'ky'
-import {  extractModelLoadParams, Model } from '@janhq/core'
+import { extractModelLoadParams, Model } from '@janhq/core'
 import { extractInferenceParams } from '@janhq/core'
 /**
  * cortex.cpp Model APIs interface
@@ -155,7 +155,8 @@ export class CortexAPI implements ICortexAPI {
     return ky
       .get(`${API_URL}/healthz`, {
         retry: {
-          limit: 10,
+          limit: 20,
+          delay: () => 500,
           methods: ['get'],
         },
       })
