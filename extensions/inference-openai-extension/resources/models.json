@@ -97,11 +97,9 @@
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
+      "temperature": 1,
+      "top_p": 1,
+      "max_tokens": 32768,
       "frequency_penalty": 0,
       "presence_penalty": 0
     },
@@ -125,11 +123,9 @@
     "format": "api",
     "settings": {},
     "parameters": {
-      "max_tokens": 4096,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
+      "temperature": 1,
+      "top_p": 1,
+      "max_tokens": 65536,
       "frequency_penalty": 0,
       "presence_penalty": 0
     },

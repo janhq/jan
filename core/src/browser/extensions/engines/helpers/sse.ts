@@ -45,7 +45,9 @@ export function requestInference(
           subscriber.complete()
           return
         }
-        if (model.parameters?.stream === false) {
+        // There could be overriden stream parameter in the model
+        // that is set in request body (transformed payload)
+        if (requestBody?.stream === false || model.parameters?.stream === false) {
           const data = await response.json()
           if (transformResponse) {
             subscriber.next(transformResponse(data))
