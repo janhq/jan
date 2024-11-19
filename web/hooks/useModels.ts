@@ -9,13 +9,18 @@ import {
   ModelManager,
 } from '@janhq/core'
 
-import { useSetAtom, useAtom } from 'jotai'
+import { useSetAtom, useAtom, useAtomValue } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
+import {
+  ignoreSslAtom,
+  proxyAtom,
+  proxyEnabledAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
@@ -29,6 +34,9 @@ import {
 const useModels = () => {
   const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
+  const proxyEnabled = useAtomValue(proxyEnabledAtom)
+  const proxyUrl = useAtomValue(proxyAtom)
+  const proxyIgnoreSSL = useAtomValue(ignoreSslAtom)
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
@@ -107,8 +115,25 @@ const useModels = () => {
     }
   }, [reloadData, updateStates])
 
+  const configurePullOptions = useCallback(() => {
+    extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.configurePullOptions(
+        proxyEnabled
+          ? {
+              proxy_url: proxyUrl,
+              verify_peer_ssl: !proxyIgnoreSSL,
+            }
+          : {
+              proxy_url: '',
+              verify_peer_ssl: false,
+            }
+      )
+  }, [proxyEnabled, proxyUrl, proxyIgnoreSSL])
+
   return {
     loadDataModel: getData,
+    configurePullOptions,
   }
 }
 

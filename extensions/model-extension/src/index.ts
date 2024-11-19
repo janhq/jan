@@ -228,6 +228,13 @@ export default class JanModelExtension extends ModelExtension {
   }
 
   /**
+   * Configure pull options such as proxy, headers, etc.
+   */
+  async configurePullOptions(options: { [key: string]: any }): Promise<any> {
+    return this.cortexAPI.configs(options).catch((e) => console.debug(e))
+  }
+
+  /**
    * Handle download state from main app
    */
   handleDesktopEvents() {

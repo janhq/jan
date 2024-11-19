@@ -267,7 +267,7 @@ const updateGpuInfo = async () =>
           }
 
           data = await updateCudaExistence(data)
-          console.log(data)
+          console.log('[MONITORING]::Cuda info: ', data)
           writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
           log(`[APP]::${JSON.stringify(data)}`)
           resolve({})
@@ -344,7 +344,7 @@ const updateCudaExistence = async (
             data.cuda.version = match[1]
           }
         }
-        console.log(data)
+        console.log('[MONITORING]::Finalized cuda info update: ', data)
         resolve()
       })
     })
