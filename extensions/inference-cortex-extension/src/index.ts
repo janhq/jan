@@ -100,12 +100,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       // Legacy chat model support
       model.settings = {
         ...model.settings,
-        llama_model_path: model.file_path
-          ? await joinPath([
-              await dirName(model.file_path),
-              model.settings.llama_model_path,
-            ])
-          : await getModelFilePath(model, model.settings.llama_model_path),
+        llama_model_path: await getModelFilePath(
+          model,
+          model.settings.llama_model_path
+        ),
       }
     } else {
       const { llama_model_path, ...settings } = model.settings
@@ -262,7 +260,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
 /// Legacy
 const getModelFilePath = async (
-  model: Model,
+  model: Model & { file_path?: string },
   file: string
 ): Promise<string> => {
   // Symlink to the model file
@@ -271,6 +269,9 @@ const getModelFilePath = async (
     (await fs.existsSync(model.sources[0].url))
   ) {
     return model.sources[0]?.url
+  }
+  if (model.file_path) {
+    await joinPath([await dirName(model.file_path), file])
   }
   return joinPath([await getJanDataFolderPath(), 'models', model.id, file])
 }
