@@ -223,7 +223,9 @@ const Advanced = () => {
     }
     setGpusInUse(updatedGpusInUse)
     await saveSettings({ gpusInUse: updatedGpusInUse })
-    window.core?.api?.relaunch()
+    // Reload window to apply changes
+    // This will trigger engine servers to restart
+    window.location.reload()
   }
 
   const gpuSelectionPlaceHolder =

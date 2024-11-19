@@ -1,5 +1,5 @@
 // useModels.test.ts
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { events, ModelEvent, ModelManager } from '@janhq/core'
 import { extensionManager } from '@/extension'
 
@@ -36,7 +36,6 @@ describe('useModels', () => {
         }),
         get: () => undefined,
         has: () => true,
-        // set: () => {}
       },
     })
 
@@ -46,6 +45,85 @@ describe('useModels', () => {
     await act(() => {
       result.current?.loadDataModel()
     })
+
+    expect(mockModelExtension.getModels).toHaveBeenCalled()
+  })
+
+  it('should return empty on error', async () => {
+    const mockModelExtension = {
+      getModels: jest.fn().mockRejectedValue(new Error('Error')),
+    } as any
+    ;(ModelManager.instance as jest.Mock).mockReturnValue({
+      models: {
+        values: () => ({
+          toArray: () => ({
+            filter: () => models,
+          }),
+        }),
+        get: () => undefined,
+        has: () => true,
+      },
+    })
+
+    jest.spyOn(extensionManager, 'get').mockReturnValue(mockModelExtension)
+
+    const { result } = renderHook(() => useModels())
+
+    await act(() => {
+      result.current?.loadDataModel()
+    })
+
+    expect(mockModelExtension.getModels()).rejects.toThrow()
+  })
+
+  it('should update states on models update', async () => {
+    const mockModelExtension = {
+      getModels: jest.fn().mockResolvedValue(models),
+    } as any
+
+    ;(ModelManager.instance as jest.Mock).mockReturnValue({
+      models: {
+        values: () => ({
+          toArray: () => ({
+            filter: () => models,
+          }),
+        }),
+        get: () => undefined,
+        has: () => true,
+      },
+    })
+
+    jest.spyOn(extensionManager, 'get').mockReturnValue(mockModelExtension)
+    jest.spyOn(events, 'on').mockImplementationOnce((event, cb) => {
+      cb({ fetch: false })
+    })
+    renderHook(() => useModels())
+
+    expect(mockModelExtension.getModels).not.toHaveBeenCalled()
+  })
+
+  it('should update states on models update', async () => {
+    const mockModelExtension = {
+      getModels: jest.fn().mockResolvedValue(models),
+    } as any
+
+    ;(ModelManager.instance as jest.Mock).mockReturnValue({
+      models: {
+        values: () => ({
+          toArray: () => ({
+            filter: () => models,
+          }),
+        }),
+        get: () => undefined,
+        has: () => true,
+      },
+    })
+
+    jest.spyOn(extensionManager, 'get').mockReturnValue(mockModelExtension)
+    jest.spyOn(events, 'on').mockImplementationOnce((event, cb) => {
+      cb({ fetch: true })
+    })
+    renderHook(() => useModels())
 
     expect(mockModelExtension.getModels).toHaveBeenCalled()
   })
