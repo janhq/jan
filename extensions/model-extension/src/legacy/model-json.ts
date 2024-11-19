@@ -12,7 +12,9 @@ const LocalEngines = [
  * Scan through models folder and return downloaded models
  * @returns
  */
-export const scanModelsFolder = async (): Promise<Model[]> => {
+export const scanModelsFolder = async (): Promise<
+  (Model & { file_path?: string })[]
+> => {
   const _homeDir = 'file://models'
   try {
     if (!(await fs.existsSync(_homeDir))) {
@@ -37,7 +39,7 @@ export const scanModelsFolder = async (): Promise<Model[]> => {
 
       const jsonPath = await getModelJsonPath(folderFullPath)
 
-      if (await fs.existsSync(jsonPath)) {
+      if (jsonPath && (await fs.existsSync(jsonPath))) {
         // if we have the model.json file, read it
         let model = await fs.readFileSync(jsonPath, 'utf-8')
 
@@ -83,7 +85,10 @@ export const scanModelsFolder = async (): Promise<Model[]> => {
                   file.toLowerCase().endsWith('.gguf') || // GGUF
                   file.toLowerCase().endsWith('.engine') // Tensort-LLM
                 )
-              })?.length >= (model.engine === InferenceEngine.nitro_tensorrt_llm ? 1 : (model.sources?.length ?? 1))
+              })?.length >=
+                (model.engine === InferenceEngine.nitro_tensorrt_llm
+                  ? 1
+                  : (model.sources?.length ?? 1))
             )
           })
 

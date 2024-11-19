@@ -21,13 +21,6 @@ import { deleteModelFiles } from './legacy/delete'
 declare const SETTINGS: Array<any>
 
 /**
- * Extension enum
- */
-enum ExtensionEnum {
-  downloadedModels = 'downloadedModels',
-}
-
-/**
  * A extension for models
  */
 export default class JanModelExtension extends ModelExtension {
@@ -123,38 +116,15 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getModels(): Promise<Model[]> {
     /**
-     * In this action, if return empty array right away
-     * it would reset app cache and app will not function properly
-     * should compare and try import
-     */
-    let currentModels: Model[] = []
-
-    /**
      * Legacy models should be supported
      */
     let legacyModels = await scanModelsFolder()
-
-    try {
-      if (!localStorage.getItem(ExtensionEnum.downloadedModels)) {
-        // Updated from an older version than 0.5.5
-        // Scan through the models folder and import them (Legacy flow)
-        // Return models immediately
-        currentModels = legacyModels
-      } else {
-        currentModels = JSON.parse(
-          localStorage.getItem(ExtensionEnum.downloadedModels)
-        ) as Model[]
-      }
-    } catch (e) {
-      currentModels = []
-      console.error(e)
-    }
 
     /**
      * Here we are filtering out the models that are not imported
      * and are not using llama.cpp engine
      */
-    var toImportModels = currentModels.filter(
+    var toImportModels = legacyModels.filter(
       (e) => e.engine === InferenceEngine.nitro
     )
 
@@ -196,13 +166,17 @@ export default class JanModelExtension extends ModelExtension {
                 ]) // Copied models
               : model.sources[0].url, // Symlink models,
             model.name
-          ).then((e) => {
-            this.updateModel({
-              id: model.id,
-              ...model.settings,
-              ...model.parameters,
-            } as Partial<Model>)
-          })
+          )
+            .then((e) => {
+              this.updateModel({
+                id: model.id,
+                ...model.settings,
+                ...model.parameters,
+              } as Partial<Model>)
+            })
+            .catch((e) => {
+              console.debug(e)
+            })
         })
       )
     }
