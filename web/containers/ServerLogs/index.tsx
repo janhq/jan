@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { memo, useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 
-import { Button, useClipboard } from '@janhq/joi'
+import { Button, ScrollArea, useClipboard } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { FolderIcon, CheckIcon, CopyIcon } from 'lucide-react'
@@ -22,6 +22,9 @@ const ServerLogs = (props: ServerLogsProps) => {
   const { getLogs } = useLogs()
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const [logs, setLogs] = useState<string[]>([])
+  const listRef = useRef<HTMLDivElement>(null)
+  const prevScrollTop = useRef(0)
+  const isUserManuallyScrollingUp = useRef(false)
 
   const updateLogs = useCallback(
     () =>
@@ -58,13 +61,45 @@ const ServerLogs = (props: ServerLogsProps) => {
 
   const clipboard = useClipboard({ timeout: 1000 })
 
+  const handleScroll = useCallback((event: React.UIEvent<HTMLElement>) => {
+    const currentScrollTop = event.currentTarget.scrollTop
+
+    if (prevScrollTop.current > currentScrollTop) {
+      isUserManuallyScrollingUp.current = true
+    } else {
+      const currentScrollTop = event.currentTarget.scrollTop
+      const scrollHeight = event.currentTarget.scrollHeight
+      const clientHeight = event.currentTarget.clientHeight
+
+      if (currentScrollTop + clientHeight >= scrollHeight) {
+        isUserManuallyScrollingUp.current = false
+      }
+    }
+
+    if (isUserManuallyScrollingUp.current === true) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    prevScrollTop.current = currentScrollTop
+  }, [])
+
+  useEffect(() => {
+    if (isUserManuallyScrollingUp.current === true || !listRef.current) return
+    const scrollHeight = listRef.current?.scrollHeight ?? 0
+    listRef.current?.scrollTo({
+      top: scrollHeight,
+      behavior: 'instant',
+    })
+  }, [listRef.current?.scrollHeight, isUserManuallyScrollingUp, logs])
+
   return (
-    <div
+    <ScrollArea
+      ref={listRef}
       className={twMerge(
-        'p-4 pb-0',
-        !withCopy && 'max-w-[38vw] lg:max-w-[40vw] xl:max-w-[50vw]',
+        'h-[calc(100%-49px)] w-full p-4 py-0',
         logs.length === 0 && 'mx-auto'
       )}
+      onScroll={handleScroll}
     >
       {withCopy && (
         <div className="absolute right-2 top-7">
@@ -107,7 +142,7 @@ const ServerLogs = (props: ServerLogsProps) => {
       )}
       <div className="flex h-full w-full flex-col">
         {logs.length > 0 ? (
-          <code className="inline-block whitespace-break-spaces text-[13px]">
+          <code className="inline-block max-w-[38vw] whitespace-break-spaces text-[13px] lg:max-w-[40vw] xl:max-w-[50vw]">
             {logs.slice(-limit).map((log, i) => {
               return (
                 <p key={i} className="my-2 leading-relaxed">
@@ -256,7 +291,7 @@ const ServerLogs = (props: ServerLogsProps) => {
           </div>
         )}
       </div>
-    </div>
+    </ScrollArea>
   )
 }
 
