@@ -29,7 +29,7 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   const setQuickAskEnabled = useSetAtom(quickAskEnabledAtom)
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
-  const { loadDataModel } = useModels()
+  const { loadDataModel, configurePullOptions } = useModels()
 
   useThreads()
   useAssistants()
@@ -39,6 +39,8 @@ const DataLoader: React.FC<Props> = ({ children }) => {
   useEffect(() => {
     // Load data once
     loadDataModel()
+    // Configure pull options once
+    configurePullOptions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

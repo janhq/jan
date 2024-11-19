@@ -69,11 +69,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     super.onLoad()
 
+    await this.queue.add(() => this.clean())
     this.queue.add(() => this.healthz())
     this.queue.add(() => this.setDefaultEngine(systemInfo))
     // Run the process watchdog
     const systemInfo = await systemInformation()
-    await this.clean()
     await executeOnMain(NODE, 'run', systemInfo)
     this.subscribeToEvents()
 
@@ -160,7 +160,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     return ky
       .get(`${CORTEX_API_URL}/healthz`, {
         retry: {
-          limit: 10,
+          limit: 20,
+          delay: () => 500,
           methods: ['get'],
         },
       })
@@ -192,6 +193,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
+        retry: {
+          limit: 0,
+        },
       })
       .catch(() => {
         // Do nothing
