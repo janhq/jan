@@ -34,7 +34,7 @@ const useModels = () => {
     const getDownloadedModels = async () => {
       const localModels = (await getModels()).map((e) => ({
         ...e,
-        name: ModelManager.instance().models.get(e.id)?.name ?? e.id,
+        name: ModelManager.instance().models.get(e.id)?.name ?? e.name ?? e.id,
         metadata:
           ModelManager.instance().models.get(e.id)?.metadata ?? e.metadata,
       }))
@@ -92,7 +92,8 @@ const useModels = () => {
   const getModels = async (): Promise<Model[]> =>
     extensionManager
       .get<ModelExtension>(ExtensionTypeEnum.Model)
-      ?.getModels() ?? []
+      ?.getModels()
+      .catch(() => []) ?? []
 
   useEffect(() => {
     // Listen for model updates

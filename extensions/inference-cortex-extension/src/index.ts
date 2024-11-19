@@ -19,6 +19,7 @@ import {
   events,
   ModelEvent,
   SystemInformation,
+  dirName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -99,10 +100,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       // Legacy chat model support
       model.settings = {
         ...model.settings,
-        llama_model_path: await getModelFilePath(
-          model,
-          model.settings.llama_model_path
-        ),
+        llama_model_path: model.file_path
+          ? await joinPath([
+              await dirName(model.file_path),
+              model.settings.llama_model_path,
+            ])
+          : await getModelFilePath(model, model.settings.llama_model_path),
       }
     } else {
       const { llama_model_path, ...settings } = model.settings
@@ -168,7 +171,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Set default engine variant on launch
    */
   private async setDefaultEngine(systemInfo: SystemInformation) {
-    const variant = await executeOnMain(NODE, 'engineVariant', systemInfo.gpuSetting)
+    const variant = await executeOnMain(
+      NODE,
+      'engineVariant',
+      systemInfo.gpuSetting
+    )
     return ky
       .post(
         `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
