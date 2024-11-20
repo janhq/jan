@@ -83,6 +83,6 @@ export default class JanInferenceOpenRouterExtension extends RemoteOAIEngine {
 
   transformPayload = (payload: PayloadType) => ({
     ...payload,
-    model: this.model,
+    model: payload.model !== 'open-router-auto' ? payload.model : this.model,
   })
 }

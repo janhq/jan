@@ -145,7 +145,7 @@ export default class JanModelExtension extends ModelExtension {
      */
     if (!toImportModels.length)
       return fetchedModels.concat(
-        legacyModels.filter((e) => e.settings?.vision_model)
+        legacyModels.filter((e) => !fetchedModels.some((x) => x.id === e.id))
       )
 
     console.log('To import models:', toImportModels.length)
