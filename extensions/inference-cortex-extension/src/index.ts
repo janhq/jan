@@ -136,6 +136,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                 ? InferenceEngine.cortex_llamacpp
                 : model.engine,
           },
+          timeout: false,
         })
         .json()
         .catch(async (e) => {
