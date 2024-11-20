@@ -95,7 +95,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     model: Model & { file_path?: string }
   ): Promise<void> {
     if (
-      model.engine === InferenceEngine.nitro &&
+      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
       model.settings.llama_model_path
     ) {
       // Legacy chat model support
@@ -111,7 +111,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       model.settings = settings
     }
 
-    if (model.engine === InferenceEngine.nitro && model.settings.mmproj) {
+    if (
+      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
+      model.settings.mmproj
+    ) {
       // Legacy clip vision model support
       model.settings = {
         ...model.settings,
