@@ -55,7 +55,6 @@
 .hljs {
   overflow: auto;
   display: block;
-  padding: 16px;
   font-size: 14px;
   border-bottom-left-radius: 0.4rem;
   border-bottom-right-radius: 0.4rem;
@@ -65,15 +64,16 @@
 pre {
   background: hsla(var(--app-code-block));
   overflow: auto;
-  padding: 8px 16px;
+
   border-radius: 0.4rem;
 }
 pre > code {
-  text-indent: 0;
   white-space: pre;
   font-size: 14px;
   overflow: auto;
   color: #f8f8f2;
+  display: block;
+  padding: 16px;
 }
 
 .hljs-emphasis {
@@ -155,12 +155,11 @@ span.code-line {
 
 .numbered-code-line::before {
   content: attr(data-line-number);
-
-  margin-left: -8px;
+  margin-left: -4px;
   margin-right: 16px;
-  width: 1rem;
+  width: 1.2rem;
   font-size: 12px;
-  color: var(--color-text-weak);
+  color: hsla(var(--text-tertiary));
   text-align: right;
 
   display: inline-block;

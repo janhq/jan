@@ -104,7 +104,9 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
             ''
           )
 
-          if (!language) return node
+          if (extractCodeLines(node) === '') {
+            return node
+          }
 
           return {
             type: 'element',
@@ -145,7 +147,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                             type: 'text',
                             value: language
                               ? `${getLanguageFromExtension(language)}`
-                              : 'No file name',
+                              : '',
                           },
                         ],
                       },
