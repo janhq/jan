@@ -7,7 +7,6 @@ import {
   SquareCodeIcon,
 } from 'lucide-react'
 
-import posthog from 'posthog-js'
 import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
@@ -35,14 +34,11 @@ export default function RibbonPanel() {
   const threads = useAtomValue(threadsAtom)
   const isDownloadALocalModel = useAtomValue(isDownloadALocalModelAtom)
 
-  const onMenuClick = (state: MainViewState, id: string) => {
+  const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
     if (serverEnabled && state === MainViewState.Thread) return
     if (state === MainViewState.Settings) setSelectedSetting('My Models')
     setMainViewState(state)
-    posthog.capture('mainViewScreen', {
-      screen: id,
-    })
     setEditMessage('')
   }
 
@@ -59,25 +55,21 @@ export default function RibbonPanel() {
         />
       ),
       state: MainViewState.Thread,
-      id: 'thread_screen',
     },
     {
       name: 'Hub',
       icon: <LayoutGridIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.Hub,
-      id: 'hub_screen',
     },
     {
       name: 'Local API Server',
       icon: <SquareCodeIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.LocalServer,
-      id: 'local_api_server_screen',
     },
     {
       name: 'Settings',
       icon: <SettingsIcon size={18} className="flex-shrink-0" />,
       state: MainViewState.Settings,
-      id: 'setting',
     },
   ]
 
@@ -106,7 +98,7 @@ export default function RibbonPanel() {
               i === 1 && 'mb-auto'
             )}
             key={i}
-            onClick={() => onMenuClick(menu.state, menu.id)}
+            onClick={() => onMenuClick(menu.state)}
           >
             <Tooltip
               side="right"
