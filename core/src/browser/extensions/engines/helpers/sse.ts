@@ -38,7 +38,7 @@ export function requestInference(
             errorCode = ErrorCode.InvalidApiKey
           }
           const error = {
-            message: data.error?.message ?? 'Error occurred.',
+            message: data.error?.message ?? data.message ?? 'Error occurred.',
             code: errorCode,
           }
           subscriber.error(error)

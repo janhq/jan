@@ -180,7 +180,11 @@ export default function EventHandler({ children }: { children: ReactNode }) {
           setIsGeneratingResponse(false)
         }
         return
-      } else if (message.status === MessageStatus.Error) {
+      } else if (
+        message.status === MessageStatus.Error &&
+        activeModelRef.current?.engine &&
+        isLocalEngine(activeModelRef.current.engine)
+      ) {
         ;(async () => {
           if (
             !(await extensionManager
