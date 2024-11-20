@@ -80,7 +80,6 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
       return {
         ...params,
         max_completion_tokens: max_tokens,
-        stream: false, // o1 only support stream = false
       }
     }
     // Pass through for non-preview models
