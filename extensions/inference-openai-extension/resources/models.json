@@ -99,6 +99,7 @@
     "parameters": {
       "temperature": 1,
       "top_p": 1,
+      "stream": true,
       "max_tokens": 32768,
       "frequency_penalty": 0,
       "presence_penalty": 0
@@ -126,6 +127,7 @@
       "temperature": 1,
       "top_p": 1,
       "max_tokens": 65536,
+      "stream": true,
       "frequency_penalty": 0,
       "presence_penalty": 0
     },
