@@ -8,7 +8,7 @@ set ENGINE_VERSION=0.1.39
 set VERSION=v0.1.39
 set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%/cortex.llamacpp-0.1.39-windows-amd64
 set CUDA_DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/%VERSION%
-set SUBFOLDERS=noavx-cuda-12-0 noavx-cuda-11-7 avx2-cuda-12-0 avx2-cuda-11-7 noavx avx avx2 avx512 vulkan
+set SUBFOLDERS=windows-amd64-noavx-cuda-12-0 windows-amd64-noavx-cuda-11-7 windows-amd64-avx2-cuda-12-0 windows-amd64-avx2-cuda-11-7 windows-amd64-noavx windows-amd64-avx windows-amd64-avx2 windows-amd64-avx512 windows-amd64-vulkan
 
 call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/janhq/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-12-0.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2-cuda-12-0/v%ENGINE_VERSION%
@@ -29,12 +29,12 @@ del %BIN_PATH%\cortex.exe
 
 @REM Loop through each folder and move DLLs (excluding engine.dll)
 for %%F in (%SUBFOLDERS%) do (
-    echo Processing folder: %SHARED_PATH%\engines\cortex.llamacpp\%%F
+    echo Processing folder: %SHARED_PATH%\engines\cortex.llamacpp\%%F\v%ENGINE_VERSION%
 
     @REM Move all .dll files except engine.dll
-    for %%D in (%SHARED_PATH%\engines\cortex.llamacpp\%%F\*.dll) do (
+    for %%D in (%SHARED_PATH%\engines\cortex.llamacpp\%%F\v%ENGINE_VERSION%\*.dll) do (
         if /I not "%%~nxD"=="engine.dll" (
-            move "%%D" "%SHARED_PATH%"
+            move "%%D" "%BIN_PATH%"
         )
     )
 )
