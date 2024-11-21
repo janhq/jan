@@ -39,14 +39,6 @@ const availableHotkeys = [
     combination: 'Shift Enter',
     description: 'Insert a new line (in input field)',
   },
-  {
-    combination: 'Arrow Up',
-    description: 'Navigate to previous option (within search dialog)',
-  },
-  {
-    combination: 'Arrow Down',
-    description: 'Navigate to next option (within search dialog)',
-  },
 ]
 
 const Hotkeys = () => {
