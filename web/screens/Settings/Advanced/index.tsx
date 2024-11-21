@@ -207,7 +207,12 @@ const Advanced = () => {
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
       updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
-      if (gpuEnabled && updatedGpusInUse.length === 0) {
+      if (
+        gpuEnabled &&
+        updatedGpusInUse.length === 0 &&
+        gpuId &&
+        gpuId.trim()
+      ) {
         // Vulkan support only allow 1 active device at a time
         if (vulkanEnabled) {
           updatedGpusInUse = []
@@ -219,10 +224,10 @@ const Advanced = () => {
       if (vulkanEnabled) {
         updatedGpusInUse = []
       }
-      updatedGpusInUse.push(gpuId)
+      if (gpuId && gpuId.trim()) updatedGpusInUse.push(gpuId)
     }
     setGpusInUse(updatedGpusInUse)
-    await saveSettings({ gpusInUse: updatedGpusInUse })
+    await saveSettings({ gpusInUse: updatedGpusInUse.filter((e) => !!e) })
     // Reload window to apply changes
     // This will trigger engine servers to restart
     window.location.reload()

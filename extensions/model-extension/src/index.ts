@@ -20,6 +20,10 @@ import { deleteModelFiles } from './legacy/delete'
 
 declare const SETTINGS: Array<any>
 
+export enum Settings {
+  huggingfaceToken = 'hugging-face-access-token',
+}
+
 /**
  * A extension for models
  */
@@ -33,8 +37,27 @@ export default class JanModelExtension extends ModelExtension {
   async onLoad() {
     this.registerSettings(SETTINGS)
 
+    // Configure huggingface token if available
+    const huggingfaceToken = await this.getSetting<string>(
+      Settings.huggingfaceToken,
+      undefined
+    )
+    if (huggingfaceToken)
+      this.cortexAPI.configs({ huggingface_token: huggingfaceToken })
+
     // Listen to app download events
     this.handleDesktopEvents()
+  }
+
+  /**
+   * Subscribe to settings update and make change accordingly
+   * @param key
+   * @param value
+   */
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === Settings.huggingfaceToken) {
+      this.cortexAPI.configs({ huggingface_token: value })
+    }
   }
 
   /**
