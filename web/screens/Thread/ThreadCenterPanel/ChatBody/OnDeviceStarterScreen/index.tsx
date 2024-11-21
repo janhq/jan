@@ -85,9 +85,9 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
 
   const remoteModelEngine = remoteModel.map((x) => x.engine)
 
-  const groupByEngine = remoteModelEngine
-    .filter((item, index) => remoteModelEngine.indexOf(item) === index)
-    .sort((a, b) => a.localeCompare(b))
+  const groupByEngine = remoteModelEngine.filter(function (item, index) {
+    if (remoteModelEngine.indexOf(item) === index) return item
+  })
 
   const itemsPerRow = 5
 
@@ -99,7 +99,10 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
     return rows
   }
 
-  const rows = getRows(groupByEngine, itemsPerRow)
+  const rows = getRows(
+    groupByEngine.sort((a, b) => a.localeCompare(b)),
+    itemsPerRow
+  )
 
   const refDropdown = useClickOutside(() => setIsOpen(false))
 
