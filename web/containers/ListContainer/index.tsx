@@ -25,6 +25,11 @@ const ListContainer = ({ children }: Props) => {
         isUserManuallyScrollingUp.current = false
       }
     }
+
+    if (isUserManuallyScrollingUp.current === true) {
+      event.preventDefault()
+      event.stopPropagation()
+    }
     prevScrollTop.current = currentScrollTop
   }, [])
 

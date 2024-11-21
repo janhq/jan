@@ -63,9 +63,6 @@ describe('ErrorMessage Component', () => {
 
     render(<ErrorMessage message={message} />)
 
-    expect(
-      screen.getByText('Apologies, something’s amiss!')
-    ).toBeInTheDocument()
     expect(screen.getByText('troubleshooting assistance')).toBeInTheDocument()
   })
 

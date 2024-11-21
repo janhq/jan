@@ -9,13 +9,18 @@ import {
   ModelManager,
 } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
+import { useSetAtom, useAtom, useAtomValue } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
+import {
+  ignoreSslAtom,
+  proxyAtom,
+  proxyEnabledAtom,
+} from '@/helpers/atoms/AppConfig.atom'
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
@@ -27,14 +32,17 @@ import {
  * and updates the atoms accordingly.
  */
 const useModels = () => {
-  const setDownloadedModels = useSetAtom(downloadedModelsAtom)
+  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
+  const proxyEnabled = useAtomValue(proxyEnabledAtom)
+  const proxyUrl = useAtomValue(proxyAtom)
+  const proxyIgnoreSSL = useAtomValue(ignoreSslAtom)
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
       const localModels = (await getModels()).map((e) => ({
         ...e,
-        name: ModelManager.instance().models.get(e.id)?.name ?? e.id,
+        name: ModelManager.instance().models.get(e.id)?.name ?? e.name ?? e.id,
         metadata:
           ModelManager.instance().models.get(e.id)?.metadata ?? e.metadata,
       }))
@@ -53,9 +61,11 @@ const useModels = () => {
       setDownloadedModels(toUpdate)
 
       let isUpdated = false
+
       toUpdate.forEach((model) => {
         if (!ModelManager.instance().models.has(model.id)) {
           ModelManager.instance().models.set(model.id, model)
+          // eslint-disable-next-line react-hooks/exhaustive-deps
           isUpdated = true
         }
       })
@@ -75,21 +85,56 @@ const useModels = () => {
 
   const reloadData = useDebouncedCallback(() => getData(), 300)
 
-  useEffect(() => {
-    // Try get data on mount
-    reloadData()
+  const updateStates = useCallback(() => {
+    const cachedModels = ModelManager.instance().models.values().toArray()
+    const toUpdate = [
+      ...downloadedModels,
+      ...cachedModels.filter(
+        (e: Model) => !downloadedModels.some((g: Model) => g.id === e.id)
+      ),
+    ]
 
+    setDownloadedModels(toUpdate)
+  }, [downloadedModels, setDownloadedModels])
+
+  const getModels = async (): Promise<Model[]> =>
+    extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.getModels()
+      .catch(() => []) ?? []
+
+  useEffect(() => {
     // Listen for model updates
-    events.on(ModelEvent.OnModelsUpdate, async () => reloadData())
+    events.on(ModelEvent.OnModelsUpdate, async (data: { fetch?: boolean }) => {
+      if (data.fetch) reloadData()
+      else updateStates()
+    })
     return () => {
       // Remove listener on unmount
       events.off(ModelEvent.OnModelsUpdate, async () => {})
     }
-  }, [getData, reloadData])
-}
+  }, [reloadData, updateStates])
 
-const getModels = async (): Promise<Model[]> =>
-  extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model)?.getModels() ??
-  []
+  const configurePullOptions = useCallback(() => {
+    extensionManager
+      .get<ModelExtension>(ExtensionTypeEnum.Model)
+      ?.configurePullOptions(
+        proxyEnabled
+          ? {
+              proxy_url: proxyUrl,
+              verify_peer_ssl: !proxyIgnoreSSL,
+            }
+          : {
+              proxy_url: '',
+              verify_peer_ssl: false,
+            }
+      )
+  }, [proxyEnabled, proxyUrl, proxyIgnoreSSL])
+
+  return {
+    loadDataModel: getData,
+    configurePullOptions,
+  }
+}
 
 export default useModels

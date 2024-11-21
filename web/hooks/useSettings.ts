@@ -53,7 +53,7 @@ export const useSettings = () => {
     const settings = await readSettings()
     if (runMode != null) settings.run_mode = runMode
     if (notify != null) settings.notify = notify
-    if (gpusInUse != null) settings.gpus_in_use = gpusInUse
+    if (gpusInUse != null) settings.gpus_in_use = gpusInUse.filter((e) => !!e)
     if (vulkan != null) {
       settings.vulkan = vulkan
       // GPU enabled, set run_mode to 'gpu'

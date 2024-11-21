@@ -114,15 +114,14 @@ jobs:
       - name: Upload latest-mac.yml
         if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
         run: |
-          aws s3 cp ./latest-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-latest/latest-mac.yml"
-          aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-latest/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/latest/
+          aws s3 cp ./latest-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/latest-mac.yml"
+          aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/nightly/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
 
-    
   noti-discord-nightly-and-update-url-readme:
     needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, combine-latest-mac-yml]
     secrets: inherit

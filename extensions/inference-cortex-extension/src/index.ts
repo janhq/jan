@@ -18,6 +18,8 @@ import {
   fs,
   events,
   ModelEvent,
+  SystemInformation,
+  dirName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -67,13 +69,13 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     super.onLoad()
 
+    this.queue.add(() => this.clean())
+    
     // Run the process watchdog
     const systemInfo = await systemInformation()
-    await this.clean()
-    await executeOnMain(NODE, 'run', systemInfo)
-
+    this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
     this.queue.add(() => this.healthz())
-
+    this.queue.add(() => this.setDefaultEngine(systemInfo))
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -93,7 +95,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     model: Model & { file_path?: string }
   ): Promise<void> {
     if (
-      model.engine === InferenceEngine.nitro &&
+      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
       model.settings.llama_model_path
     ) {
       // Legacy chat model support
@@ -109,7 +111,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       model.settings = settings
     }
 
-    if (model.engine === InferenceEngine.nitro && model.settings.mmproj) {
+    if (
+      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
+      model.settings.mmproj
+    ) {
       // Legacy clip vision model support
       model.settings = {
         ...model.settings,
@@ -131,6 +136,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                 ? InferenceEngine.cortex_llamacpp
                 : model.engine,
           },
+          timeout: false,
         })
         .json()
         .catch(async (e) => {
@@ -153,11 +159,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Do health check on cortex.cpp
    * @returns
    */
-  healthz(): Promise<void> {
+  private healthz(): Promise<void> {
     return ky
       .get(`${CORTEX_API_URL}/healthz`, {
         retry: {
-          limit: 10,
+          limit: 20,
+          delay: () => 500,
           methods: ['get'],
         },
       })
@@ -165,13 +172,33 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   /**
+   * Set default engine variant on launch
+   */
+  private async setDefaultEngine(systemInfo: SystemInformation) {
+    const variant = await executeOnMain(
+      NODE,
+      'engineVariant',
+      systemInfo.gpuSetting
+    )
+    return ky
+      .post(
+        `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
+        { json: {} }
+      )
+      .then(() => {})
+  }
+
+  /**
    * Clean cortex processes
    * @returns
    */
-  clean(): Promise<any> {
+  private clean(): Promise<any> {
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
+        retry: {
+          limit: 0,
+        },
       })
       .catch(() => {
         // Do nothing
@@ -181,7 +208,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   /**
    * Subscribe to cortex.cpp websocket events
    */
-  subscribeToEvents() {
+  private subscribeToEvents() {
     this.queue.add(
       () =>
         new Promise<void>((resolve) => {
@@ -215,7 +242,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               // Delay for the state update from cortex.cpp
               // Just to be sure
               setTimeout(() => {
-                events.emit(ModelEvent.OnModelsUpdate, {})
+                events.emit(ModelEvent.OnModelsUpdate, {
+                  fetch: true,
+                })
               }, 500)
             }
           })
@@ -235,8 +264,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 }
 
 /// Legacy
-export const getModelFilePath = async (
-  model: Model,
+const getModelFilePath = async (
+  model: Model & { file_path?: string },
   file: string
 ): Promise<string> => {
   // Symlink to the model file
@@ -245,6 +274,9 @@ export const getModelFilePath = async (
     (await fs.existsSync(model.sources[0].url))
   ) {
     return model.sources[0]?.url
+  }
+  if (model.file_path) {
+    await joinPath([await dirName(model.file_path), file])
   }
   return joinPath([await getJanDataFolderPath(), 'models', model.id, file])
 }

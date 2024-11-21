@@ -38,14 +38,16 @@ export function requestInference(
             errorCode = ErrorCode.InvalidApiKey
           }
           const error = {
-            message: data.error?.message ?? 'Error occurred.',
+            message: data.error?.message ?? data.message ?? 'Error occurred.',
             code: errorCode,
           }
           subscriber.error(error)
           subscriber.complete()
           return
         }
-        if (model.parameters?.stream === false) {
+        // There could be overriden stream parameter in the model
+        // that is set in request body (transformed payload)
+        if (requestBody?.stream === false || model.parameters?.stream === false) {
           const data = await response.json()
           if (transformResponse) {
             subscriber.next(transformResponse(data))

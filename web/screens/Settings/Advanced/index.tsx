@@ -20,9 +20,12 @@ import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import { useDebouncedCallback } from 'use-debounce'
+
 import { snackbar, toaster } from '@/containers/Toast'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
+import useModels from '@/hooks/useModels'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -65,6 +68,7 @@ const Advanced = () => {
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
+  const { configurePullOptions } = useModels()
 
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
 
@@ -79,6 +83,15 @@ const Advanced = () => {
     })
 
   /**
+   * There could be a case where the state update is not synced
+   * so that retrieving state value from other hooks would not be accurate
+   * there is also a case where state update persist everytime user type in the input
+   */
+  const updatePullOptions = useDebouncedCallback(
+    () => configurePullOptions(),
+    300
+  )
+  /**
    * Handle proxy change
    */
   const onProxyChange = useCallback(
@@ -90,8 +103,9 @@ const Advanced = () => {
       } else {
         setProxy('')
       }
+      updatePullOptions()
     },
-    [setPartialProxy, setProxy]
+    [setPartialProxy, setProxy, updatePullOptions]
   )
 
   /**
@@ -193,7 +207,12 @@ const Advanced = () => {
     let updatedGpusInUse = [...gpusInUse]
     if (updatedGpusInUse.includes(gpuId)) {
       updatedGpusInUse = updatedGpusInUse.filter((id) => id !== gpuId)
-      if (gpuEnabled && updatedGpusInUse.length === 0) {
+      if (
+        gpuEnabled &&
+        updatedGpusInUse.length === 0 &&
+        gpuId &&
+        gpuId.trim()
+      ) {
         // Vulkan support only allow 1 active device at a time
         if (vulkanEnabled) {
           updatedGpusInUse = []
@@ -205,11 +224,13 @@ const Advanced = () => {
       if (vulkanEnabled) {
         updatedGpusInUse = []
       }
-      updatedGpusInUse.push(gpuId)
+      if (gpuId && gpuId.trim()) updatedGpusInUse.push(gpuId)
     }
     setGpusInUse(updatedGpusInUse)
-    await saveSettings({ gpusInUse: updatedGpusInUse })
-    window.core?.api?.relaunch()
+    await saveSettings({ gpusInUse: updatedGpusInUse.filter((e) => !!e) })
+    // Reload window to apply changes
+    // This will trigger engine servers to restart
+    window.location.reload()
   }
 
   const gpuSelectionPlaceHolder =
@@ -452,7 +473,10 @@ const Advanced = () => {
             <Switch
               data-testid="proxy-switch"
               checked={proxyEnabled}
-              onChange={() => setProxyEnabled(!proxyEnabled)}
+              onChange={() => {
+                setProxyEnabled(!proxyEnabled)
+                updatePullOptions()
+              }}
             />
             <div className="w-full">
               <Input
@@ -481,7 +505,10 @@ const Advanced = () => {
           <Switch
             data-testid="ignore-ssl-switch"
             checked={ignoreSSL}
-            onChange={(e) => setIgnoreSSL(e.target.checked)}
+            onChange={(e) => {
+              setIgnoreSSL(e.target.checked)
+              updatePullOptions()
+            }}
           />
         </div>
 

@@ -19,8 +19,10 @@ import { getConfigurationsData } from '@/utils/componentSettings'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const LocalServerRightPanel = () => {
+  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
@@ -48,8 +50,17 @@ const LocalServerRightPanel = () => {
     selectedModel
   )
 
+  const modelEngineParams = extractModelLoadParams(
+    {
+      ...selectedModel?.settings,
+      ...activeModelParams,
+    },
+    selectedModel?.settings
+  )
+
   const componentDataEngineSetting = getConfigurationsData(
-    currentModelSettingParams
+    modelEngineParams,
+    selectedModel
   )
 
   const engineSettings = useMemo(
@@ -57,6 +68,7 @@ const LocalServerRightPanel = () => {
       componentDataEngineSetting.filter(
         (x) => x.key !== 'prompt_template' && x.key !== 'embedding'
       ),
+
     [componentDataEngineSetting]
   )
 

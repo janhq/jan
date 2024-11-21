@@ -9,7 +9,6 @@ import {
   OptionType,
   events,
   fs,
-  baseName,
 } from '@janhq/core'
 
 import { atom, useAtomValue, useSetAtom } from 'jotai'

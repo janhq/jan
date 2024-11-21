@@ -76,11 +76,10 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
   transformPayload = (payload: OpenAIPayloadType): OpenAIPayloadType => {
     // Transform the payload for preview models
     if (this.previewModels.includes(payload.model)) {
-      const { max_tokens, temperature, top_p, stop, ...params } = payload
+      const { max_tokens, stop, ...params } = payload
       return {
         ...params,
         max_completion_tokens: max_tokens,
-        stream: false // o1 only support stream = false
       }
     }
     // Pass through for non-preview models
