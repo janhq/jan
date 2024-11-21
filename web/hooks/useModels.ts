@@ -89,13 +89,13 @@ const useModels = () => {
     const cachedModels = ModelManager.instance().models.values().toArray()
     const toUpdate = [
       ...downloadedModels,
-      ...cachedModels.filter(
-        (e: Model) => !downloadedModels.some((g: Model) => g.id === e.id)
+      ...cachedModels.filter((e) => !isLocalEngine(e.engine) && !downloadedModels.some((g: Model) => g.id === e.id)
       ),
     ]
 
     setDownloadedModels(toUpdate)
-  }, [downloadedModels, setDownloadedModels])
+    setExtensionModels(cachedModels)
+  }, [downloadedModels, setDownloadedModels, setExtensionModels])
 
   const getModels = async (): Promise<Model[]> =>
     extensionManager
