@@ -89,7 +89,10 @@ const useModels = () => {
     const cachedModels = ModelManager.instance().models.values().toArray()
     const toUpdate = [
       ...downloadedModels,
-      ...cachedModels.filter((e) => !isLocalEngine(e.engine) && !downloadedModels.some((g: Model) => g.id === e.id)
+      ...cachedModels.filter(
+        (e) =>
+          !isLocalEngine(e.engine) &&
+          !downloadedModels.some((g: Model) => g.id === e.id)
       ),
     ]
 
