@@ -53,11 +53,9 @@ const LocalServerLeftPanel = () => {
     ? {
         ...selectedModel,
         object: selectedModel.object || '',
-        settings: {
-          ...(typeof localAPIserverModelParams === 'object'
-            ? { ...(localAPIserverModelParams as ModelSettingParams) }
-            : { ...selectedModel.settings }),
-        } as ModelSettingParams,
+        settings: (typeof localAPIserverModelParams === 'object'
+          ? { ...(localAPIserverModelParams as ModelSettingParams) }
+          : { ...selectedModel.settings }) as ModelSettingParams,
       }
     : undefined
 
