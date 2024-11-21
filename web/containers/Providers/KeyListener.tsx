@@ -8,6 +8,8 @@ import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
+import { useStarterScreen } from '@/hooks/useStarterScreen'
+
 import {
   mainViewStateAtom,
   showLeftPanelAtom,
@@ -32,6 +34,7 @@ export default function KeyListener({ children }: Props) {
   const assistants = useAtomValue(assistantsAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const setModalActionThread = useSetAtom(modalActionThreadAtom)
+  const { isShowStarterScreen } = useStarterScreen()
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -60,7 +63,7 @@ export default function KeyListener({ children }: Props) {
         return
       }
 
-      if (e.code === 'KeyN' && prefixKey) {
+      if (e.code === 'KeyN' && prefixKey && !isShowStarterScreen) {
         if (mainViewState !== MainViewState.Thread) return
         requestCreateNewThread(assistants[0])
         setMainViewState(MainViewState.Thread)
@@ -82,6 +85,7 @@ export default function KeyListener({ children }: Props) {
   }, [
     activeThread,
     assistants,
+    isShowStarterScreen,
     mainViewState,
     requestCreateNewThread,
     setMainViewState,
