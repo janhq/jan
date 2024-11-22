@@ -447,10 +447,12 @@ const Advanced = () => {
                 model performance (reload needed).
               </p>
             </div>
-            <Switch
-              checked={vulkanEnabled}
-              onChange={(e) => updateVulkanEnabled(e.target.checked)}
-            />
+            <div className="flex-sharink-0">
+              <Switch
+                checked={vulkanEnabled}
+                onChange={(e) => updateVulkanEnabled(e.target.checked)}
+              />
+            </div>
           </div>
         )}
 
