@@ -99,7 +99,10 @@ const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
     return rows
   }
 
-  const rows = getRows(groupByEngine, itemsPerRow)
+  const rows = getRows(
+    groupByEngine.sort((a, b) => a.localeCompare(b)),
+    itemsPerRow
+  )
 
   const refDropdown = useClickOutside(() => setIsOpen(false))
 
