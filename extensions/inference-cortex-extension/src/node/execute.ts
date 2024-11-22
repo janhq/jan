@@ -1,6 +1,6 @@
 import * as path from 'path'
-import { cpuInfo } from 'cpu-instructions'
 import { GpuSetting, appResourcePath, log } from '@janhq/core/node'
+import { fork } from 'child_process'
 
 export interface CortexExecutableOptions {
   enginePath: string
@@ -52,7 +52,9 @@ const extension = (): '.exe' | '' => {
  */
 const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
   const isUsingCuda =
-    settings?.vulkan !== true && settings?.run_mode === 'gpu' && !os().includes('mac')
+    settings?.vulkan !== true &&
+    settings?.run_mode === 'gpu' &&
+    !os().includes('mac')
 
   if (!isUsingCuda) return undefined
   return settings?.cuda?.version === '11' ? '11-7' : '12-0'
@@ -62,15 +64,29 @@ const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
  * The CPU instructions that will be set - either 'avx512', 'avx2', 'avx', or 'noavx'.
  * @returns
  */
-const cpuInstructions = (): string => {
+const cpuInstructions = async (): Promise<string> => {
   if (process.platform === 'darwin') return ''
-  return cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX512')
-    ? 'avx512'
-    : cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX2')
-      ? 'avx2'
-      : cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX')
-        ? 'avx'
-        : 'noavx'
+
+  const child = fork(path.join(__dirname, './cpuInfo.js')) // Path to the child process file
+
+  return new Promise((resolve, reject) => {
+    child.on('message', (cpuInfo?: string) => {
+      resolve(cpuInfo ?? 'noavx')
+      child.kill() // Kill the child process after receiving the result
+    })
+
+    child.on('error', (err) => {
+      resolve('noavx')
+      child.kill()
+    })
+
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        resolve('noavx')
+        child.kill()
+      }
+    })
+  })
 }
 
 /**
@@ -94,8 +110,11 @@ export const executableCortexFile = (
 /**
  * Find which variant to run based on the current platform.
  */
-export const engineVariant = (gpuSetting?: GpuSetting): string => {
-  const cpuInstruction = cpuInstructions()
+export const engineVariant = async (
+  gpuSetting?: GpuSetting
+): Promise<string> => {
+  const cpuInstruction = await cpuInstructions()
+  log(`[CORTEX]: CPU instruction: ${cpuInstruction}`)
   let engineVariant = [
     os(),
     gpuSetting?.vulkan

@@ -17,13 +17,15 @@ import { useClipboard } from '@/hooks/useClipboard'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
 
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import {
+  LocalAPIserverModelParamsAtom,
+  serverEnabledAtom,
+} from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
-import { getActiveThreadModelParamsAtom } from '@/helpers/atoms/Thread.atom'
 
 const LocalServerRightPanel = () => {
-  const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
+  const setLocalAPIserverModelParams = useSetAtom(LocalAPIserverModelParamsAtom)
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
 
@@ -35,12 +37,19 @@ const LocalServerRightPanel = () => {
     extractModelLoadParams(selectedModel?.settings)
   )
 
+  const overriddenSettings =
+    selectedModel?.settings.ctx_len && selectedModel.settings.ctx_len > 2048
+      ? { ctx_len: 4096 }
+      : {}
+
   useEffect(() => {
     if (selectedModel) {
-      setCurrentModelSettingParams(
-        extractModelLoadParams(selectedModel?.settings)
-      )
+      setCurrentModelSettingParams({
+        ...selectedModel?.settings,
+        ...overriddenSettings,
+      })
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedModel])
 
   const modelRuntimeParams = extractInferenceParams(selectedModel?.settings)
@@ -50,17 +59,8 @@ const LocalServerRightPanel = () => {
     selectedModel
   )
 
-  const modelEngineParams = extractModelLoadParams(
-    {
-      ...selectedModel?.settings,
-      ...activeModelParams,
-    },
-    selectedModel?.settings
-  )
-
   const componentDataEngineSetting = getConfigurationsData(
-    modelEngineParams,
-    selectedModel
+    currentModelSettingParams
   )
 
   const engineSettings = useMemo(
@@ -78,15 +78,26 @@ const LocalServerRightPanel = () => {
     )
   }, [componentDataRuntimeSetting])
 
+  const onUpdateParams = useCallback(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setLocalAPIserverModelParams(() => {
+      return { ...currentModelSettingParams }
+    })
+  }, [currentModelSettingParams, setLocalAPIserverModelParams])
+
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean) => {
-      setCurrentModelSettingParams({
-        ...currentModelSettingParams,
+      setCurrentModelSettingParams((prevParams) => ({
+        ...prevParams,
         [key]: value,
-      })
+      }))
     },
-    [currentModelSettingParams]
+    []
   )
+
+  useEffect(() => {
+    onUpdateParams()
+  }, [currentModelSettingParams, onUpdateParams])
 
   return (
     <RightPanelContainer>
@@ -156,6 +167,7 @@ const LocalServerRightPanel = () => {
             <ModelSetting
               componentProps={modelSettings}
               onValueChanged={onValueChanged}
+              disabled={serverEnabled}
             />
           </AccordionItem>
         )}
@@ -165,6 +177,7 @@ const LocalServerRightPanel = () => {
             <EngineSetting
               componentData={engineSettings}
               onValueChanged={onValueChanged}
+              disabled={serverEnabled}
             />
           </AccordionItem>
         )}

@@ -17,6 +17,14 @@ jest.mock('@janhq/core', () => ({
   fs: {
     rm: jest.fn(),
   },
+  EngineManager: {
+    instance: jest.fn().mockReturnValue({
+      get: jest.fn(),
+      engines: {
+        values: jest.fn().mockReturnValue([])
+      }
+    }),
+  },
 }))
 
 describe('useFactoryReset', () => {

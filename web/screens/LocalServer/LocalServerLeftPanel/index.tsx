@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useState } from 'react'
 
+import { EngineManager, Model, ModelSettingParams } from '@janhq/core'
 import { Button, Tooltip, Select, Input, Checkbox } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -22,7 +23,10 @@ import {
   hostOptions,
 } from '@/helpers/atoms/ApiServer.atom'
 
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import {
+  LocalAPIserverModelParamsAtom,
+  serverEnabledAtom,
+} from '@/helpers/atoms/LocalServer.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 
 const LocalServerLeftPanel = () => {
@@ -31,7 +35,7 @@ const LocalServerLeftPanel = () => {
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
   const [isLoading, setIsLoading] = useState(false)
 
-  const { startModel, stateModel } = useActiveModel()
+  const { stateModel } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const [isCorsEnabled, setIsCorsEnabled] = useAtom(apiServerCorsEnabledAtom)
@@ -42,8 +46,18 @@ const LocalServerLeftPanel = () => {
   const [port, setPort] = useAtom(apiServerPortAtom)
   const [prefix, setPrefix] = useAtom(apiServerPrefix)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
-
+  const localAPIserverModelParams = useAtomValue(LocalAPIserverModelParamsAtom)
   const FIRST_TIME_VISIT_API_SERVER = 'firstTimeVisitAPIServer'
+
+  const model: Model | undefined = selectedModel
+    ? {
+        ...selectedModel,
+        object: selectedModel.object || '',
+        settings: (typeof localAPIserverModelParams === 'object'
+          ? { ...(localAPIserverModelParams as ModelSettingParams) }
+          : { ...selectedModel.settings }) as ModelSettingParams,
+      }
+    : undefined
 
   const [firstTimeVisitAPIServer, setFirstTimeVisitAPIServer] =
     useState<boolean>(false)
@@ -80,7 +94,9 @@ const LocalServerLeftPanel = () => {
         localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
         setFirstTimeVisitAPIServer(false)
       }
-      startModel(selectedModel.id, false).catch((e) => console.error(e))
+      const engine = EngineManager.instance().get((model as Model).engine)
+      engine?.loadModel(model as Model)
+      // startModel(selectedModel.id, false).catch((e) => console.error(e))
       setIsLoading(false)
     } catch (e) {
       console.error(e)
