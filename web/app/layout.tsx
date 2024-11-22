@@ -4,8 +4,6 @@ import { Metadata } from 'next'
 
 import '@/styles/main.scss'
 
-import { CSPostHogProvider } from './posthog'
-
 export const metadata: Metadata = {
   title: 'Jan',
   description:
@@ -15,12 +13,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: PropsWithChildren) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <CSPostHogProvider>
-        <body className="h-screen font-sans text-sm antialiased">
-          <div className="dragable-bar" />
-          {children}
-        </body>
-      </CSPostHogProvider>
+      <body className="h-screen font-sans text-sm antialiased">
+        <div className="dragable-bar" />
+        {children}
+      </body>
     </html>
   )
 }
