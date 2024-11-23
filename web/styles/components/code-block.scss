@@ -159,8 +159,13 @@ span.code-line {
   margin-right: 16px;
   width: 1.2rem;
   font-size: 12px;
-  color: hsla(var(--text-tertiary));
+  color: rgba($color: #fff, $alpha: 0.4);
   text-align: right;
-
   display: inline-block;
+}
+
+.code-header {
+  &--border {
+    border-bottom: 1px solid rgba($color: #fff, $alpha: 0.1);
+  }
 }
