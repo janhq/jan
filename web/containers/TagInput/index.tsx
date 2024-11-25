@@ -59,23 +59,25 @@ const TagInput = ({
           }
         }}
       />
-      <div className="mt-2 flex min-h-[2.5rem] flex-wrap items-center gap-2 overflow-y-auto">
-        {value.map((item, idx) => (
-          <Badge key={idx} theme="secondary">
-            {item}
-            <button
-              type="button"
-              className="ml-1.5 w-3 bg-transparent"
-              onClick={() => {
-                onValueChanged &&
-                  onValueChanged(value.filter((i) => i !== item))
-              }}
-            >
-              <XIcon className="w-3" />
-            </button>
-          </Badge>
-        ))}
-      </div>
+      {value.length > 0 && (
+        <div className="mt-2 flex min-h-[2.5rem] flex-wrap items-center gap-2 overflow-y-auto">
+          {value.map((item, idx) => (
+            <Badge key={idx} theme="secondary">
+              {item}
+              <button
+                type="button"
+                className="ml-1.5 w-3 bg-transparent"
+                onClick={() => {
+                  onValueChanged &&
+                    onValueChanged(value.filter((i) => i !== item))
+                }}
+              >
+                <XIcon className="w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
