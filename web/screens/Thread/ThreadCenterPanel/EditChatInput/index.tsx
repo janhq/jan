@@ -90,7 +90,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           newMessages
         )
         .then(() => {
-          sendChatMessage(editPrompt)
+          sendChatMessage(editPrompt, newMessages)
         })
     }
   }

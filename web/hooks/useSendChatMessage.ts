@@ -135,7 +135,10 @@ export default function useSendChatMessage() {
     sendChatMessage(toSendMessage.content[0]?.text.value)
   }
 
-  const sendChatMessage = async (message: string) => {
+  const sendChatMessage = async (
+    message: string,
+    messages?: ThreadMessage[]
+  ) => {
     if (!message || message.trim().length === 0) return
 
     if (!activeThreadRef.current) {
@@ -187,7 +190,7 @@ export default function useSendChatMessage() {
         parameters: runtimeParams,
       },
       activeThreadRef.current,
-      currentMessages
+      messages ?? currentMessages
     ).addSystemMessage(activeThreadRef.current.assistants[0].instructions)
 
     requestBuilder.pushMessage(prompt, base64Blob, fileUpload[0]?.type)
