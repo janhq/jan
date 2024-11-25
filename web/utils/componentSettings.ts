@@ -60,11 +60,14 @@ export const getConfigurationsData = (
         componentSetting.controllerProps.placeholder = placeholder
     } else if ('checkbox' === componentSetting.controllerType) {
       const checked = keySetting as boolean
-
       if ('value' in componentSetting.controllerProps)
         componentSetting.controllerProps.value = checked
+    } else if ('tag' === componentSetting.controllerType) {
+      if ('value' in componentSetting.controllerProps)
+        componentSetting.controllerProps.value = keySetting as string
     }
     componentData.push(componentSetting)
   })
+
   return componentData
 }

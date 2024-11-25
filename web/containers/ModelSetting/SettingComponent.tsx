@@ -8,11 +8,15 @@ import {
 import Checkbox from '@/containers/Checkbox'
 import ModelConfigInput from '@/containers/ModelConfigInput'
 import SliderRightPanel from '@/containers/SliderRightPanel'
+import TagInput from '@/containers/TagInput'
 
 type Props = {
   componentProps: SettingComponentProps[]
   disabled?: boolean
-  onValueUpdated: (key: string, value: string | number | boolean) => void
+  onValueUpdated: (
+    key: string,
+    value: string | number | boolean | string[]
+  ) => void
 }
 
 const SettingComponent: React.FC<Props> = ({
@@ -53,7 +57,24 @@ const SettingComponent: React.FC<Props> = ({
             name={data.key}
             description={data.description}
             placeholder={placeholder}
-            value={textValue}
+            value={textValue as string}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
+          />
+        )
+      }
+
+      case 'tag': {
+        const { placeholder, value: textValue } =
+          data.controllerProps as InputComponentProps
+        return (
+          <TagInput
+            title={data.title}
+            disabled={disabled}
+            key={data.key}
+            name={data.key}
+            description={data.description}
+            placeholder={placeholder}
+            value={textValue as string[]}
             onValueChanged={(value) => onValueUpdated(data.key, value)}
           />
         )

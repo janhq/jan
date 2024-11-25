@@ -5,7 +5,10 @@ import SettingDetailToggleItem from './SettingDetailToggleItem'
 
 type Props = {
   componentProps: SettingComponentProps[]
-  onValueUpdated: (key: string, value: string | number | boolean) => void
+  onValueUpdated: (
+    key: string,
+    value: string | number | boolean | string[]
+  ) => void
 }
 
 const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {

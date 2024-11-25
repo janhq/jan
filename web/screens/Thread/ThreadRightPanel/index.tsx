@@ -173,7 +173,7 @@ const ThreadRightPanel = () => {
   }, 300)
 
   const onValueChanged = useCallback(
-    (key: string, value: string | number | boolean) => {
+    (key: string, value: string | number | boolean | string[]) => {
       if (!activeThread) {
         return
       }
