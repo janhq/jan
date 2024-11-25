@@ -26,7 +26,7 @@ const PromptTemplateSetting: React.FC<Props> = ({ componentData }) => {
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const onValueChanged = useCallback(
-    (key: string, value: string | number | boolean) => {
+    (key: string, value: string | number | boolean | string[]) => {
       if (!activeThread) return
 
       setEngineParamsUpdate(true)

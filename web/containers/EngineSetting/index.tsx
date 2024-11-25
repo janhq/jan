@@ -4,7 +4,10 @@ import SettingComponentBuilder from '@/containers/ModelSetting/SettingComponent'
 
 type Props = {
   componentData: SettingComponentProps[]
-  onValueChanged: (key: string, value: string | number | boolean) => void
+  onValueChanged: (
+    key: string,
+    value: string | number | boolean | string[]
+  ) => void
   disabled?: boolean
 }
 
