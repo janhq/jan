@@ -133,7 +133,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                     tagName: 'div',
                     properties: {
                       className:
-                        'code-header bg-[hsla(var(--app-code-block))] flex justify-between items-center py-2 px-3 border-b border-[hsla(var(--app-border))] rounded-t-lg',
+                        'code-header bg-[hsla(var(--app-code-block))] flex justify-between items-center py-2 px-3 code-header--border rounded-t-lg',
                     },
                     children: [
                       {
