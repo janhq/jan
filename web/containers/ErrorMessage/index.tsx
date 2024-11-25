@@ -29,7 +29,6 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     switch (message.error_code) {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
-      case ErrorCode.InvalidRequestError:
         return (
           <span data-testid="invalid-API-key-error">
             Invalid API key. Please check your API key from{' '}
