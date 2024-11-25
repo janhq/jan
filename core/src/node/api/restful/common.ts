@@ -1,7 +1,6 @@
 import { HttpServer } from '../HttpServer'
 import {
   chatCompletions,
-  deleteBuilder,
   downloadModel,
   getBuilder,
   retrieveBuilder,
@@ -14,8 +13,6 @@ import {
 } from './helper/builder'
 
 import { JanApiRouteConfiguration } from './helper/configuration'
-import { startModel, stopModel } from './helper/startStopModel'
-import { ModelSettingParams } from '../../../types'
 
 export const commonRouter = async (app: HttpServer) => {
   const normalizeData = (data: any) => {
@@ -28,19 +25,25 @@ export const commonRouter = async (app: HttpServer) => {
   // Read & Delete :: Threads | Models | Assistants
   Object.keys(JanApiRouteConfiguration).forEach((key) => {
     app.get(`/${key}`, async (_req, _res) => {
-      if (key === 'models') {
+      if (key.includes('models')) {
         return models(_req, _res)
       }
       return getBuilder(JanApiRouteConfiguration[key]).then(normalizeData)
     })
 
-    app.get(`/${key}/:id`, async (request: any) =>
-      retrieveBuilder(JanApiRouteConfiguration[key], request.params.id)
-    )
+    app.get(`/${key}/:id`, async (_req: any, _res: any) => {
+      if (key.includes('models')) {
+        return models(_req, _res)
+      }
+      return retrieveBuilder(JanApiRouteConfiguration[key], _req.params.id)
+    })
 
-    app.delete(`/${key}/:id`, async (request: any) =>
-      deleteBuilder(JanApiRouteConfiguration[key], request.params.id)
-    )
+    app.delete(`/${key}/:id`, async (_req: any, _res: any) => {
+      if (key.includes('models')) {
+        return models(_req, _res)
+      }
+      return retrieveBuilder(JanApiRouteConfiguration[key], _req.params.id)
+    })
   })
 
   // Threads
@@ -70,16 +73,9 @@ export const commonRouter = async (app: HttpServer) => {
     })
   )
 
-  app.put(`/models/:modelId/start`, async (request: any) => {
-    let settingParams: ModelSettingParams | undefined = undefined
-    if (Object.keys(request.body).length !== 0) {
-      settingParams = JSON.parse(request.body) as ModelSettingParams
-    }
+  app.post(`/models/start`, async (request: any, reply: any) => models(request, reply))
 
-    return startModel(request.params.modelId, settingParams)
-  })
-
-  app.put(`/models/:modelId/stop`, async (request: any) => stopModel(request.params.modelId))
+  app.post(`/models/stop`, async (request: any, reply: any) => models(request, reply))
 
   // Chat Completion
   app.post(`/chat/completions`, async (request: any, reply: any) => chatCompletions(request, reply))

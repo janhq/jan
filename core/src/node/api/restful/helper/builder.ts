@@ -73,34 +73,6 @@ export const retrieveBuilder = async (configuration: RouteConfiguration, id: str
   return filteredData
 }
 
-export const deleteBuilder = async (configuration: RouteConfiguration, id: string) => {
-  if (configuration.dirName === 'assistants' && id === 'jan') {
-    return {
-      message: 'Cannot delete Jan assistant',
-    }
-  }
-
-  const directoryPath = join(getJanDataFolderPath(), configuration.dirName)
-  try {
-    const data = await retrieveBuilder(configuration, id)
-    if (!data) {
-      return {
-        message: 'Not found',
-      }
-    }
-
-    const objectPath = join(directoryPath, id)
-    rmdirSync(objectPath, { recursive: true })
-    return {
-      id: id,
-      object: configuration.delete.object,
-      deleted: true,
-    }
-  } catch (ex) {
-    console.error(ex)
-  }
-}
-
 export const getMessages = async (threadId: string): Promise<ThreadMessage[]> => {
   const threadDirPath = join(getJanDataFolderPath(), 'threads', threadId)
   const messageFile = 'messages.jsonl'
@@ -308,7 +280,7 @@ export const models = async (request: any, reply: any) => {
     'Content-Type': 'application/json',
   }
 
-  const response = await fetch(`${CORTEX_API_URL}/models`, {
+  const response = await fetch(`${CORTEX_API_URL}/models${request.url.split('/models')[1] ?? ""}`, {
     method: request.method,
     headers: headers,
     body: JSON.stringify(request.body),

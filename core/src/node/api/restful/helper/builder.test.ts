@@ -1,17 +1,7 @@
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  appendFileSync,
-  rmdirSync,
-} from 'fs'
-import { join } from 'path'
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'fs'
 import {
   getBuilder,
   retrieveBuilder,
-  deleteBuilder,
   getMessages,
   retrieveMessage,
   createThread,
@@ -79,34 +69,6 @@ describe('builder helper functions', () => {
 
       const result = await retrieveBuilder(mockConfiguration, 'model1')
       expect(result).toEqual({ id: 'model1' })
-    })
-  })
-
-  describe('deleteBuilder', () => {
-    it('should return a message if trying to delete Jan assistant', async () => {
-      const result = await deleteBuilder({ ...mockConfiguration, dirName: 'assistants' }, 'jan')
-      expect(result).toEqual({ message: 'Cannot delete Jan assistant' })
-    })
-
-    it('should return a message if data is not found', async () => {
-      ;(existsSync as jest.Mock).mockReturnValue(true)
-      ;(readdirSync as jest.Mock).mockReturnValue(['file1'])
-      ;(readFileSync as jest.Mock).mockReturnValue(JSON.stringify({ id: 'model1' }))
-
-      const result = await deleteBuilder(mockConfiguration, 'nonexistentId')
-      expect(result).toEqual({ message: 'Not found' })
-    })
-
-    it('should delete the directory and return success message', async () => {
-      ;(existsSync as jest.Mock).mockReturnValue(true)
-      ;(readdirSync as jest.Mock).mockReturnValue(['file1'])
-      ;(readFileSync as jest.Mock).mockReturnValue(JSON.stringify({ id: 'model1' }))
-
-      const result = await deleteBuilder(mockConfiguration, 'model1')
-      expect(rmdirSync).toHaveBeenCalledWith(join('/mock/path', 'mockDir', 'model1'), {
-        recursive: true,
-      })
-      expect(result).toEqual({ id: 'model1', object: 'mockObject', deleted: true })
     })
   })
 
