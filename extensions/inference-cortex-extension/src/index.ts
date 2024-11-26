@@ -70,7 +70,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     super.onLoad()
 
     this.queue.add(() => this.clean())
-    
+
     // Run the process watchdog
     const systemInfo = await systemInformation()
     this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
@@ -251,6 +251,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
           this.socket.onclose = (event) => {
             console.log('WebSocket closed:', event)
+            events.emit(ModelEvent.OnModelStopped, {})
             if (this.shouldReconnect) {
               console.log(`Attempting to reconnect...`)
               setTimeout(() => this.subscribeToEvents(), 1000)
