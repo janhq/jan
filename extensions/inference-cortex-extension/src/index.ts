@@ -180,12 +180,20 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       'engineVariant',
       systemInfo.gpuSetting
     )
-    return ky
-      .post(
-        `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
-        { json: {} }
-      )
-      .then(() => {})
+    return (
+      ky
+        // Fallback support for legacy API
+        .post(
+          `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
+          {
+            json: {
+              version: CORTEX_ENGINE_VERSION,
+              variant,
+            },
+          }
+        )
+        .then(() => {})
+    )
   }
 
   /**
