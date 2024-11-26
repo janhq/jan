@@ -9,7 +9,7 @@
   "scripts": {
     "test": "jest",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts --configPlugin @rollup/plugin-typescript --bundleConfigAsCjs",
-    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",

@@ -23,7 +23,7 @@ install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
-	yarn global add turbo@1.13.2
+	npm install -g turbo@1.13.2
 	yarn build:core
 	yarn build:server
 	yarn install

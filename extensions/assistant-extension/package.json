@@ -10,9 +10,9 @@
   "scripts": {
     "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
     "build": "yarn clean:modules && tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:linux": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob || true&& yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob || true&& yarn build && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "devDependencies": {
@@ -27,8 +27,8 @@
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
-    "typescript": "^5.3.3",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "typescript": "^5.3.3"
   },
   "dependencies": {
     "@janhq/core": "file:../../core",

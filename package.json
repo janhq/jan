@@ -8,13 +8,6 @@
       "electron",
       "web",
       "server"
-    ],
-    "nohoist": [
-      "joi",
-      "core",
-      "electron",
-      "web",
-      "server"
     ]
   },
   "scripts": {
@@ -33,11 +26,11 @@
     "dev:server": "yarn copy:assets && yarn workspace @janhq/server dev",
     "dev": "turbo run dev --parallel --filter=!@janhq/server",
     "build:server": "yarn copy:assets && cd server && yarn install && yarn run build",
-    "build:core": "cd core && yarn install && yarn run build",
+    "build:core": "cd core && yarn install && yarn build",
     "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:extensions": "rimraf ./pre-install/*.tgz && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish && cd .. && yarn pre-install",
+    "build:extensions": "rimraf ./pre-install/*.tgz || true && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish && cd .. && yarn pre-install",
     "build:test": "yarn copy:assets && turbo run @janhq/web#build && cpx \"web/out/**\" \"electron/renderer/\" && turbo run build:test",
     "build": "yarn build:web && yarn build:electron",
     "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
@@ -53,5 +46,6 @@
     "run-script-os": "^1.1.6",
     "wait-on": "^7.0.1"
   },
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

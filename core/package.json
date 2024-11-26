@@ -8,8 +8,9 @@
   ],
   "homepage": "https://jan.ai",
   "license": "AGPL-3.0",
+  "browser": "dist/core.es5.js",
   "main": "dist/core.es5.js",
-  "module": "dist/core.cjs.js",
+  "module": "dist/index.cjs.js",
   "typings": "dist/types/index.d.ts",
   "files": [
     "dist",
@@ -36,13 +37,13 @@
     "lint": "tslint --project tsconfig.json -t codeFrame 'src/**/*.ts' 'test/**/*.ts'",
     "test": "jest",
     "prebuild": "rimraf dist",
-    "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "start": "rollup -c rollup.config.ts -w"
+    "build": "rollup -c rollup.config.ts"
   },
   "devDependencies": {
     "@rollup/plugin-replace": "^5.0.5",
     "@types/jest": "^29.5.12",
-    "@types/node": "^20.11.4",
+    "@types/node": "^22.10.0",
+    "@types/pacote": "^11.1.8",
     "eslint": "8.57.0",
     "eslint-plugin-jest": "^27.9.0",
     "jest": "^29.7.0",
