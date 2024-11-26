@@ -1,7 +1,9 @@
 import {
+  AppConfigurationEventName,
   GpuSetting,
   MonitoringExtension,
   OperatingSystemInfo,
+  events,
   executeOnMain,
 } from '@janhq/core'
 
@@ -37,6 +39,7 @@ export default class JanMonitoringExtension extends MonitoringExtension {
 
     // Attempt to fetch nvidia info
     await executeOnMain(NODE, 'updateNvidiaInfo')
+    events.emit(AppConfigurationEventName.OnConfigurationUpdate, {})
   }
 
   onSettingUpdate<T>(key: string, value: T): void {

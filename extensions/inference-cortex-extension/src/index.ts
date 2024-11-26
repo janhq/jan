@@ -20,6 +20,7 @@ import {
   ModelEvent,
   SystemInformation,
   dirName,
+  AppConfigurationEventName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -70,7 +71,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     super.onLoad()
 
     this.queue.add(() => this.clean())
-    
+
     // Run the process watchdog
     const systemInfo = await systemInformation()
     this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
@@ -80,6 +81,15 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     window.addEventListener('beforeunload', () => {
       this.clean()
+    })
+
+    const currentMode = systemInfo.gpuSetting?.run_mode
+
+    events.on(AppConfigurationEventName.OnConfigurationUpdate, async () => {
+      const systemInfo = await systemInformation()
+      // Update run mode on settings update
+      if (systemInfo.gpuSetting?.run_mode !== currentMode)
+        this.setDefaultEngine(systemInfo)
     })
   }
 
