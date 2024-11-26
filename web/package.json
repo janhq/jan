@@ -19,7 +19,7 @@
     "autoprefixer": "10.4.16",
     "class-variance-authority": "^0.7.0",
     "framer-motion": "^10.16.4",
-    "highlight.js": "^11.9.0",
+    "highlight.js": "^11.10.0",
     "jotai": "^2.6.0",
     "katex": "^0.16.10",
     "lodash": "^4.17.21",
@@ -83,5 +83,8 @@
     "rimraf": "^5.0.5",
     "ts-jest": "^29.2.5",
     "typescript": "^5.3.3"
+  },
+  "resolutions": {
+    "highlight.js": "11.10.0"
   }
 }
