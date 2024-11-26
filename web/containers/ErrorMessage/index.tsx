@@ -52,7 +52,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         )
       default:
         return (
-          <p>
+          <p data-testid="passthrough-error-message">
             {message.content[0]?.text?.value && (
               <AutoLink text={message.content[0].text.value} />
             )}

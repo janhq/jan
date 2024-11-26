@@ -49,11 +49,7 @@ describe('ErrorMessage Component', () => {
 
     render(<ErrorMessage message={message} />)
 
-    expect(
-      screen.getByText(
-        `You didn't provide an API key. You need to provide your API key in an Authorization header using Bearer auth (i.e. Authorization: Bearer YOUR_KEY), or as the password field (with blank username) if you're accessing the API from your browser and are prompted for a username and password. You can obtain an API key from https://platform.openai.com/account/api-keys.`
-      )
-    ).toBeInTheDocument()
+    expect(screen.getByTestId('invalid-API-key-error')).toBeInTheDocument()
     expect(screen.getByText('Settings')).toBeInTheDocument()
   })
 
