@@ -89,7 +89,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       const systemInfo = await systemInformation()
       // Update run mode on settings update
       if (systemInfo.gpuSetting?.run_mode !== currentMode)
-        this.setDefaultEngine(systemInfo)
+        this.queue.add(() => this.setDefaultEngine(systemInfo))
     })
   }
 
