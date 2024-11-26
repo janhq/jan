@@ -1,4 +1,4 @@
-import { AllQuantizations, getFileSize, HuggingFaceRepoData } from '@janhq/core'
+import { AllQuantizations, HuggingFaceRepoData } from '@janhq/core'
 
 /**
  * Fetches data from a Hugging Face repository.
@@ -39,21 +39,19 @@ export const fetchHuggingFaceRepoData = async (
     )
   }
 
-  const promises: Promise<number>[] = []
-
   // fetching file sizes
   const url = new URL(sanitizedUrl)
   const paths = url.pathname.split('/').filter((e) => e.trim().length > 0)
 
+  const repoTree: { path: string; size: number }[] = await fetch(
+    `https://huggingface.co/api/models/${paths[2]}/${paths[3]}/tree/main`
+  ).then((res) => res.json())
+
   for (const sibling of data.siblings) {
     const downloadUrl = `https://huggingface.co/${paths[2]}/${paths[3]}/resolve/main/${sibling.rfilename}`
     sibling.downloadUrl = downloadUrl
-    promises.push(getFileSize(downloadUrl))
-  }
-
-  const result = await Promise.all(promises)
-  for (let i = 0; i < data.siblings.length; i++) {
-    data.siblings[i].fileSize = result[i]
+    sibling.fileSize =
+      repoTree.find((file) => file.path === sibling.rfilename)?.size ?? 0
   }
 
   AllQuantizations.forEach((quantization) => {

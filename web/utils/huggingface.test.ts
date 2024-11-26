@@ -3,11 +3,8 @@ import {
   toHuggingFaceUrl,
   InvalidHostError,
 } from './huggingface'
-import { getFileSize } from '@janhq/core'
 
-// Mock the getFileSize function
 jest.mock('@janhq/core', () => ({
-  getFileSize: jest.fn(),
   AllQuantizations: ['q4_0', 'q4_1', 'q5_0', 'q5_1', 'q8_0'],
 }))
 
@@ -38,9 +35,15 @@ describe('huggingface utils', () => {
       }
 
       ;(global.fetch as jest.Mock).mockResolvedValue({
-        json: jest.fn().mockResolvedValue(mockResponse),
+        json: jest
+          .fn()
+          .mockResolvedValueOnce(mockResponse)
+          .mockResolvedValueOnce([{
+            path: 'model-q4_0.gguf', size: 1000000,
+          },{
+            path: 'model-q4_0.gguf', size: 2000
+          }]),
       })
-      ;(getFileSize as jest.Mock).mockResolvedValue(1000000)
 
       const result = await fetchHuggingFaceRepoData('user/repo')
 
