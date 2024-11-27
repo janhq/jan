@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
@@ -232,4 +232,4 @@ const ThreadCenterPanel = () => {
   )
 }
 
-export default ThreadCenterPanel
+export default memo(ThreadCenterPanel)

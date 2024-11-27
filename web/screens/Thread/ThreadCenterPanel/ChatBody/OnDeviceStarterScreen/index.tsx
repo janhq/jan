@@ -24,6 +24,8 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
+import { useStarterScreen } from '@/hooks/useStarterScreen'
+
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import {
   getLogoEngine,
@@ -38,16 +40,8 @@ import {
 } from '@/helpers/atoms/Model.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-type Props = {
-  extensionHasSettings: {
-    name?: string
-    setting: string
-    apiKey: string
-    provider: string
-  }[]
-}
-
-const OnDeviceStarterScreen = ({ extensionHasSettings }: Props) => {
+const OnDeviceStarterScreen = () => {
+  const { extensionHasSettings } = useStarterScreen()
   const [searchValue, setSearchValue] = useState('')
   const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)

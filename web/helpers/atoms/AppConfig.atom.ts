@@ -12,14 +12,35 @@ export const janDataFolderPathAtom = atom('')
 
 export const experimentalFeatureEnabledAtom = atomWithStorage(
   EXPERIMENTAL_FEATURE,
-  false
+  false,
+  undefined,
+  { getOnInit: true }
 )
 
-export const proxyEnabledAtom = atomWithStorage(PROXY_FEATURE_ENABLED, false)
-export const proxyAtom = atomWithStorage(HTTPS_PROXY_FEATURE, '')
+export const proxyEnabledAtom = atomWithStorage(
+  PROXY_FEATURE_ENABLED,
+  false,
+  undefined,
+  { getOnInit: true }
+)
+export const proxyAtom = atomWithStorage(HTTPS_PROXY_FEATURE, '', undefined, {
+  getOnInit: true,
+})
 
-export const ignoreSslAtom = atomWithStorage(IGNORE_SSL, false)
-export const vulkanEnabledAtom = atomWithStorage(VULKAN_ENABLED, false)
-export const quickAskEnabledAtom = atomWithStorage(QUICK_ASK_ENABLED, false)
+export const ignoreSslAtom = atomWithStorage(IGNORE_SSL, false, undefined, {
+  getOnInit: true,
+})
+export const vulkanEnabledAtom = atomWithStorage(
+  VULKAN_ENABLED,
+  false,
+  undefined,
+  { getOnInit: true }
+)
+export const quickAskEnabledAtom = atomWithStorage(
+  QUICK_ASK_ENABLED,
+  false,
+  undefined,
+  { getOnInit: true }
+)
 
 export const hostAtom = atom('http://localhost:1337/')

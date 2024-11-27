@@ -1,4 +1,9 @@
+import { memo } from 'react'
+
+import { motion as m } from 'framer-motion'
 import { useAtomValue } from 'jotai'
+
+import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -31,7 +36,26 @@ const MainViewContainer = () => {
       break
   }
 
-  return children
+  return (
+    <div className={twMerge('relative flex w-full')}>
+      <div className="w-full">
+        <m.div
+          key={mainViewState}
+          initial={{ opacity: 0, y: -8 }}
+          className="h-full"
+          animate={{
+            opacity: 1,
+            y: 0,
+            transition: {
+              duration: 0.25,
+            },
+          }}
+        >
+          {children}
+        </m.div>
+      </div>
+    </div>
+  )
 }
 
-export default MainViewContainer
+export default memo(MainViewContainer)
