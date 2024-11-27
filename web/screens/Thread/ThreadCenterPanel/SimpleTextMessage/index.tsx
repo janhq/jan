@@ -14,6 +14,7 @@ import {
 
 import { Tooltip } from '@janhq/joi'
 
+import latex from 'highlight.js/lib/languages/latex'
 import { useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
 import rehypeHighlight from 'rehype-highlight'
@@ -394,7 +395,16 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 rehypePlugins={[
                   [rehypeKatex, { throwOnError: false }],
                   rehypeRaw,
-                  rehypeHighlight,
+                  [
+                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                    // @ts-ignore
+                    rehypeHighlight,
+                    {
+                      languages: { latex },
+                      subset: false,
+                      plainText: ['txt', 'text'],
+                    },
+                  ],
                   [rehypeHighlightCodeLines, { showLineNumbers: true }],
                   wrapCodeBlocksWithoutVisit,
                 ]}
