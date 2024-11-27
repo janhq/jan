@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Badge, Input, Tooltip } from '@janhq/joi'
 
@@ -12,6 +12,75 @@ type Props = {
   placeholder: string
   value: string[]
   onValueChanged?: (e: string | number | boolean | string[]) => void
+}
+
+function TooltipBadge({
+  item,
+  value,
+  onValueChanged,
+}: {
+  item: string
+  value: string[]
+  onValueChanged?: (e: string[]) => void
+}) {
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [isEllipsized, setIsEllipsized] = useState(false)
+
+  useEffect(() => {
+    if (textRef.current) {
+      setIsEllipsized(textRef.current.scrollWidth > textRef.current.clientWidth)
+    }
+  }, [item])
+
+  return (
+    <div className="relative">
+      {isEllipsized ? (
+        <Tooltip
+          trigger={
+            <div className="relative">
+              <Badge theme="secondary" className="text-ellipsis">
+                <span
+                  ref={textRef}
+                  className="inline-block max-w-[100px] overflow-hidden text-ellipsis whitespace-nowrap"
+                >
+                  {item}
+                </span>
+                <button
+                  type="button"
+                  className="ml-1.5 w-3 bg-transparent"
+                  onClick={() => {
+                    onValueChanged &&
+                      onValueChanged(value.filter((i) => i !== item))
+                  }}
+                >
+                  <XIcon className="w-3" />
+                </button>
+              </Badge>
+            </div>
+          }
+          content={item}
+        />
+      ) : (
+        <Badge theme="secondary" className="relative">
+          <span
+            ref={textRef}
+            className="max-w-[90px] overflow-hidden text-ellipsis"
+          >
+            {item}
+          </span>
+          <button
+            type="button"
+            className="ml-1.5 w-3 bg-transparent"
+            onClick={() => {
+              onValueChanged && onValueChanged(value.filter((i) => i !== item))
+            }}
+          >
+            <XIcon className="w-3" />
+          </button>
+        </Badge>
+      )}
+    </div>
+  )
 }
 
 const TagInput = ({
@@ -60,22 +129,17 @@ const TagInput = ({
         }}
       />
       {value.length > 0 && (
-        <div className="mt-2 flex min-h-[2.5rem] flex-wrap items-center gap-2 overflow-y-auto">
-          {value.map((item, idx) => (
-            <Badge key={idx} theme="secondary">
-              {item}
-              <button
-                type="button"
-                className="ml-1.5 w-3 bg-transparent"
-                onClick={() => {
-                  onValueChanged &&
-                    onValueChanged(value.filter((i) => i !== item))
-                }}
-              >
-                <XIcon className="w-3" />
-              </button>
-            </Badge>
-          ))}
+        <div className="relative mt-2 flex min-h-[2.5rem] flex-wrap items-center gap-2">
+          {value.map((item, idx) => {
+            return (
+              <TooltipBadge
+                key={idx}
+                item={item}
+                value={value}
+                onValueChanged={onValueChanged}
+              />
+            )
+          })}
         </div>
       )}
     </div>
