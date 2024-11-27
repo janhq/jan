@@ -1,12 +1,8 @@
-import { ReactNode, useCallback, useEffect, useRef } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useRef } from 'react'
 
 import { ScrollArea } from '@janhq/joi'
 
-type Props = {
-  children: ReactNode
-}
-
-const ListContainer = ({ children }: Props) => {
+const ListContainer = ({ children }: PropsWithChildren) => {
   const listRef = useRef<HTMLDivElement>(null)
   const prevScrollTop = useRef(0)
   const isUserManuallyScrollingUp = useRef(false)

@@ -9,18 +9,14 @@ import {
   ModelManager,
 } from '@janhq/core'
 
-import { useSetAtom, useAtom, useAtomValue } from 'jotai'
+import { useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
-import {
-  ignoreSslAtom,
-  proxyAtom,
-  proxyEnabledAtom,
-} from '@/helpers/atoms/AppConfig.atom'
+
 import {
   configuredModelsAtom,
   downloadedModelsAtom,
@@ -32,11 +28,8 @@ import {
  * and updates the atoms accordingly.
  */
 const useModels = () => {
-  const [downloadedModels, setDownloadedModels] = useAtom(downloadedModelsAtom)
+  const setDownloadedModels = useSetAtom(downloadedModelsAtom)
   const setExtensionModels = useSetAtom(configuredModelsAtom)
-  const proxyEnabled = useAtomValue(proxyEnabledAtom)
-  const proxyUrl = useAtomValue(proxyAtom)
-  const proxyIgnoreSSL = useAtomValue(ignoreSslAtom)
 
   const getData = useCallback(() => {
     const getDownloadedModels = async () => {
@@ -87,18 +80,17 @@ const useModels = () => {
 
   const updateStates = useCallback(() => {
     const cachedModels = ModelManager.instance().models.values().toArray()
-    const toUpdate = [
+    setDownloadedModels((downloadedModels) => [
       ...downloadedModels,
       ...cachedModels.filter(
         (e) =>
           !isLocalEngine(e.engine) &&
           !downloadedModels.some((g: Model) => g.id === e.id)
       ),
-    ]
+    ])
 
-    setDownloadedModels(toUpdate)
     setExtensionModels(cachedModels)
-  }, [downloadedModels, setDownloadedModels, setExtensionModels])
+  }, [setDownloadedModels, setExtensionModels])
 
   const getModels = async (): Promise<Model[]> =>
     extensionManager
@@ -118,25 +110,8 @@ const useModels = () => {
     }
   }, [reloadData, updateStates])
 
-  const configurePullOptions = useCallback(() => {
-    extensionManager
-      .get<ModelExtension>(ExtensionTypeEnum.Model)
-      ?.configurePullOptions(
-        proxyEnabled
-          ? {
-              proxy_url: proxyUrl,
-              verify_peer_ssl: !proxyIgnoreSSL,
-            }
-          : {
-              proxy_url: '',
-              verify_peer_ssl: false,
-            }
-      )
-  }, [proxyEnabled, proxyUrl, proxyIgnoreSSL])
-
   return {
-    loadDataModel: getData,
-    configurePullOptions,
+    getData,
   }
 }
 

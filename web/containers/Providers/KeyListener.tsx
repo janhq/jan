@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, ReactNode, useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -22,11 +22,7 @@ import {
   ThreadModalAction,
 } from '@/helpers/atoms/Thread.atom'
 
-type Props = {
-  children: ReactNode
-}
-
-export default function KeyListener({ children }: Props) {
+export default function KeyListener() {
   const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
   const setShowRightPanel = useSetAtom(showRightPanelAtom)
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
@@ -94,5 +90,5 @@ export default function KeyListener({ children }: Props) {
     setShowRightPanel,
   ])
 
-  return <Fragment>{children}</Fragment>
+  return <Fragment></Fragment>
 }
