@@ -68,9 +68,9 @@ const ThreadLeftPanel = () => {
       threadDataReady &&
       assistants.length > 0 &&
       threads.length === 0 &&
-      (recommendedModel || downloadedModels[0])
+      (downloadedModels[0] || recommendedModel)
     ) {
-      const model = recommendedModel || downloadedModels[0]
+      const model = downloadedModels[0] || recommendedModel
       requestCreateNewThread(assistants[0], model)
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
