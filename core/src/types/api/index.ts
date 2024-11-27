@@ -27,6 +27,7 @@ export enum NativeRoute {
 
   quickAskSizeUpdated = 'quickAskSizeUpdated',
   ackDeepLink = 'ackDeepLink',
+  factoryReset = 'factoryReset'
 }
 
 /**

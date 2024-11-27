@@ -3,7 +3,6 @@ import { app } from 'electron'
 import { join } from 'path'
 import {
   rmdirSync,
-  readFileSync,
   existsSync,
   mkdirSync,
   readdirSync,

@@ -12,6 +12,9 @@ import {
 } from '@janhq/core/node'
 import { SelectFileOption } from '@janhq/core'
 import { menu } from '../utils/menu'
+import { migrate } from '../utils/migration'
+import { createUserSpace } from '../utils/path'
+import { setupExtensions } from '../utils/extension'
 
 const isMac = process.platform === 'darwin'
 
@@ -33,14 +36,28 @@ export function handleAppIPCs() {
     nativeTheme.themeSource = 'light'
   })
 
+  /**
+   * Handles the "setCloseApp" IPC message by closing the main application window.
+   * This effectively closes the application if no other windows are open.
+   */
   ipcMain.handle(NativeRoute.setCloseApp, () => {
     windowManager.mainWindow?.close()
   })
 
+  /**
+   * Handles the "setMinimizeApp" IPC message by minimizing the main application window.
+   * The window will be minimized to the system's taskbar or dock.
+   */
   ipcMain.handle(NativeRoute.setMinimizeApp, () => {
     windowManager.mainWindow?.minimize()
   })
 
+  /**
+   * Handles the "setMaximizeApp" IPC message. It toggles the maximization state of the main window.
+   * If the window is currently maximized, it will be un-maximized (restored to its previous size).
+   * If the window is not maximized, it will be maximized to fill the screen.
+   * @param _event - The IPC event object.
+   */
   ipcMain.handle(NativeRoute.setMaximizeApp, async (_event) => {
     if (windowManager.mainWindow?.isMaximized()) {
       windowManager.mainWindow.unmaximize()
@@ -104,6 +121,11 @@ export function handleAppIPCs() {
     }
   })
 
+  /**
+   * Handles the "selectDirectory" IPC message to open a dialog for selecting a directory.
+   * If no main window is found, logs an error and exits.
+   * @returns {string} The path of the selected directory, or nothing if canceled.
+   */
   ipcMain.handle(NativeRoute.selectDirectory, async () => {
     const mainWindow = windowManager.mainWindow
     if (!mainWindow) {
@@ -122,6 +144,14 @@ export function handleAppIPCs() {
     }
   })
 
+  /**
+   * Handles the "selectFiles" IPC message to open a dialog for selecting files.
+   * Allows options for setting the dialog title, button label, and selection properties.
+   * Logs an error if no main window is found.
+   * @param _event - The IPC event object.
+   * @param option - Options for customizing file selection dialog.
+   * @returns {string[]} An array of selected file paths, or nothing if canceled.
+   */
   ipcMain.handle(
     NativeRoute.selectFiles,
     async (_event, option?: SelectFileOption) => {
@@ -156,11 +186,20 @@ export function handleAppIPCs() {
     }
   )
 
+  /**
+   * Handles the "hideQuickAskWindow" IPC message to hide the quick ask window.
+   * @returns A promise that resolves when the window is hidden.
+   */
   ipcMain.handle(
     NativeRoute.hideQuickAskWindow,
     async (): Promise<void> => windowManager.hideQuickAskWindow()
   )
 
+  /**
+   * Handles the "sendQuickAskInput" IPC message to send user input to the main window.
+   * @param _event - The IPC event object.
+   * @param input - User input string to be sent.
+   */
   ipcMain.handle(
     NativeRoute.sendQuickAskInput,
     async (_event, input: string): Promise<void> => {
@@ -171,6 +210,12 @@ export function handleAppIPCs() {
     }
   )
 
+  /**
+   * Handles the "showOpenMenu" IPC message to show the context menu at given coordinates.
+   * Only applicable on non-Mac platforms.
+   * @param e - The event object.
+   * @param args - Contains coordinates where the menu should appear.
+   */
   ipcMain.handle(NativeRoute.showOpenMenu, function (e, args) {
     if (!isMac && windowManager.mainWindow) {
       menu.popup({
@@ -181,23 +226,55 @@ export function handleAppIPCs() {
     }
   })
 
+  /**
+   * Handles the "hideMainWindow" IPC message to hide the main application window.
+   * @returns A promise that resolves when the window is hidden.
+   */
   ipcMain.handle(
     NativeRoute.hideMainWindow,
     async (): Promise<void> => windowManager.hideMainWindow()
   )
 
+  /**
+   * Handles the "showMainWindow" IPC message to show the main application window.
+   * @returns A promise that resolves when the window is shown.
+   */
   ipcMain.handle(
     NativeRoute.showMainWindow,
     async (): Promise<void> => windowManager.showMainWindow()
   )
 
+  /**
+   * Handles the "quickAskSizeUpdated" IPC message to update the size of the quick ask window.
+   * Resizes window by the given height offset.
+   * @param _event - The IPC event object.
+   * @param heightOffset - The amount of height to increase.
+   * @returns A promise that resolves when the window is resized.
+   */
   ipcMain.handle(
     NativeRoute.quickAskSizeUpdated,
     async (_event, heightOffset: number): Promise<void> =>
       windowManager.expandQuickAskWindow(heightOffset)
   )
 
+  /**
+   * Handles the "ackDeepLink" IPC message to acknowledge a deep link.
+   * Triggers handling of deep link in the application.
+   * @param _event - The IPC event object.
+   * @returns A promise that resolves when the deep link is acknowledged.
+   */
   ipcMain.handle(NativeRoute.ackDeepLink, async (_event): Promise<void> => {
     windowManager.ackDeepLink()
+  })
+
+  /**
+   * Handles the "factoryReset" IPC message to reset the application to its initial state.
+   * Clears loaded modules, recreates user space, runs migrations, and sets up extensions.
+   * @param _event - The IPC event object.
+   * @returns A promise that resolves after the reset operations are complete.
+   */
+  ipcMain.handle(NativeRoute.factoryReset, async (_event): Promise<void> => {
+    ModuleManager.instance.clearImportedModules()
+    return createUserSpace().then(migrate).then(setupExtensions)
   })
 }
