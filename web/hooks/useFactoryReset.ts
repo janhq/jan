@@ -62,13 +62,17 @@ export default function useFactoryReset() {
         await window.core?.api?.updateAppConfiguration(configuration)
       }
 
+      // Perform factory reset
+      await window.core?.api?.factoryReset()
+
       // 4: Clear app local storage
       setFactoryResetState(FactoryResetState.ClearLocalStorage)
       // reset the localStorage
       localStorage.clear()
 
+      window.core = undefined
       // 5: Relaunch the app
-      await window.core?.api?.relaunch()
+      window.location.reload()
     },
     [defaultJanDataFolder, stopModel, setFactoryResetState]
   )
