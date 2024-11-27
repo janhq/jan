@@ -25,7 +25,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import { snackbar, toaster } from '@/containers/Toast'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import useModels from '@/hooks/useModels'
+import { useConfigurations } from '@/hooks/useConfigurations'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -68,7 +68,7 @@ const Advanced = () => {
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
-  const { configurePullOptions } = useModels()
+  const { configurePullOptions } = useConfigurations()
 
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
 

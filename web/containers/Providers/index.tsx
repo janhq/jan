@@ -5,7 +5,7 @@ import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 import { Toaster } from 'react-hot-toast'
 
 import Loader from '@/containers/Loader'
-import EventListenerWrapper from '@/containers/Providers/EventListener'
+import EventListener from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 
 import ThemeWrapper from '@/containers/Providers/Theme'
@@ -23,6 +23,8 @@ import DataLoader from './DataLoader'
 import DeepLinkListener from './DeepLinkListener'
 import KeyListener from './KeyListener'
 import Responsive from './Responsive'
+
+import SettingsHandler from './SettingsHandler'
 
 import { extensionManager } from '@/extension'
 
@@ -76,16 +78,14 @@ const Providers = ({ children }: PropsWithChildren) => {
         {settingUp && <Loader description="Preparing Update..." />}
         {setupCore && activated && (
           <>
-            <Responsive>
-              <KeyListener>
-                <EventListenerWrapper>
-                  <DataLoader>
-                    <DeepLinkListener>{children}</DeepLinkListener>
-                  </DataLoader>
-                </EventListenerWrapper>
-                <Toaster />
-              </KeyListener>
-            </Responsive>
+            <Responsive />
+            <KeyListener />
+            <EventListener />
+            <DataLoader />
+            <SettingsHandler />
+            <DeepLinkListener />
+            <Toaster />
+            {children}
           </>
         )}
       </JotaiWrapper>

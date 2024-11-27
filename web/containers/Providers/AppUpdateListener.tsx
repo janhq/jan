@@ -1,4 +1,4 @@
-import { Fragment, PropsWithChildren, useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { AppUpdateInfo } from '@janhq/core'
 import { useSetAtom } from 'jotai'
@@ -8,7 +8,7 @@ import {
   updateVersionErrorAtom,
 } from '@/helpers/atoms/App.atom'
 
-const AppUpdateListener = ({ children }: PropsWithChildren) => {
+const AppUpdateListener = () => {
   const setProgress = useSetAtom(appDownloadProgressAtom)
   const setUpdateVersionError = useSetAtom(updateVersionErrorAtom)
 
@@ -39,7 +39,7 @@ const AppUpdateListener = ({ children }: PropsWithChildren) => {
     }
   }, [setProgress, setUpdateVersionError])
 
-  return <Fragment>{children}</Fragment>
+  return <Fragment></Fragment>
 }
 
 export default AppUpdateListener
