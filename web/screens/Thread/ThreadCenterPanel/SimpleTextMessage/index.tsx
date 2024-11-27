@@ -95,7 +95,6 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
     // Join the lines with newline characters for proper formatting
     return codeLines.join('\n')
   }
-
   function wrapCodeBlocksWithoutVisit() {
     return (tree: { children: any[] }) => {
       tree.children = tree.children.map((node) => {
@@ -395,12 +394,7 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
                 rehypePlugins={[
                   [rehypeKatex, { throwOnError: false }],
                   rehypeRaw,
-                  [
-                    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-                    // @ts-ignore
-                    rehypeHighlight,
-                    { subset: false, plainText: ['txt', 'text'] },
-                  ],
+                  rehypeHighlight,
                   [rehypeHighlightCodeLines, { showLineNumbers: true }],
                   wrapCodeBlocksWithoutVisit,
                 ]}
