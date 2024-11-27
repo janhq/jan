@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import { MessageStatus } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
@@ -44,4 +46,4 @@ const ChatBody = () => {
   )
 }
 
-export default ChatBody
+export default memo(ChatBody)

@@ -1,22 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue } from 'jotai'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
-import {
-  downloadedModelsAtom,
-  selectedModelAtom,
-} from '@/helpers/atoms/Model.atom'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 export function useStarterScreen() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const threads = useAtomValue(threadsAtom)
-  const setSelectedModel = useSetAtom(selectedModelAtom)
-  const isDownloadALocalModel = downloadedModels.some((x) =>
-    isLocalEngine(x.engine)
+
+  const isDownloadALocalModel = useMemo(
+    () => downloadedModels.some((x) => isLocalEngine(x.engine)),
+    [downloadedModels]
   )
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<
@@ -24,9 +22,6 @@ export function useStarterScreen() {
   >([])
 
   useEffect(() => {
-    if (isDownloadALocalModel) {
-      setSelectedModel(downloadedModels[0])
-    }
     const getAllSettings = async () => {
       const extensionsMenu: {
         name?: string
@@ -66,12 +61,16 @@ export function useStarterScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isAnyRemoteModelConfigured = extensionHasSettings.some(
-    (x) => x.apiKey.length > 1
+  const isAnyRemoteModelConfigured = useMemo(
+    () => extensionHasSettings.some((x) => x.apiKey.length > 1),
+    [extensionHasSettings]
   )
 
-  const isShowStarterScreen =
-    !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length
+  const isShowStarterScreen = useMemo(
+    () =>
+      !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length,
+    [isAnyRemoteModelConfigured, isDownloadALocalModel, threads]
+  )
 
   return {
     extensionHasSettings,
