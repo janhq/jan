@@ -71,10 +71,7 @@ const ThreadLeftPanel = () => {
       threads.length === 0 &&
       downloadedModels.length > 0
     ) {
-      const model = downloadedModels.filter(
-        (model) => model.engine === InferenceEngine.cortex_llamacpp
-      )
-      requestCreateNewThread(assistants[0], model[0])
+      requestCreateNewThread(assistants[0], recommendedModel)
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
     }

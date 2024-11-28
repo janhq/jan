@@ -30,11 +30,14 @@ export default function useRecommendedModel() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
 
   const getAndSortDownloadedModels = useCallback(async (): Promise<Model[]> => {
-    const models = downloadedModels.sort((a, b) =>
-      a.engine !== InferenceEngine.nitro && b.engine === InferenceEngine.nitro
-        ? 1
-        : -1
-    )
+    const models = downloadedModels
+      .filter((model) => model.engine === InferenceEngine.cortex_llamacpp)
+      .sort((a, b) =>
+        a.engine !== InferenceEngine.cortex_llamacpp &&
+        b.engine === InferenceEngine.cortex_llamacpp
+          ? 1
+          : -1
+      )
     setSortedModels(models)
     return models
   }, [downloadedModels])
@@ -43,6 +46,7 @@ export default function useRecommendedModel() {
     Model | undefined
   > => {
     const models = await getAndSortDownloadedModels()
+
     if (!activeThread) return
     const modelId = activeThread.assistants[0]?.model.id
     const model = models.find((model) => model.id === modelId)
