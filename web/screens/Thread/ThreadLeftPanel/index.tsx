@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { InferenceEngine, Thread } from '@janhq/core'
+import { Thread } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
