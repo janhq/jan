@@ -63,15 +63,15 @@ const ThreadLeftPanel = () => {
    * This will create a new thread if there are assistants available
    * and there are no threads available
    */
+
   useEffect(() => {
     if (
       threadDataReady &&
       assistants.length > 0 &&
       threads.length === 0 &&
-      (downloadedModels[0] || recommendedModel)
+      downloadedModels.length > 0
     ) {
-      const model = downloadedModels[0] || recommendedModel
-      requestCreateNewThread(assistants[0], model)
+      requestCreateNewThread(assistants[0], recommendedModel)
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
     }
