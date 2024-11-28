@@ -61,16 +61,12 @@ const ChatBody = memo(
       <ListContainer>
         {messages.map((message, index) => (
           <div key={message.id}>
-            {message.status !== MessageStatus.Error && (
-              <ChatItem {...message} key={message.id} />
-            )}
-
-            {!loadModelError &&
-              index === messages.length - 1 &&
-              message.status !== MessageStatus.Pending &&
-              message.status !== MessageStatus.Ready && (
-                <ErrorMessage message={message} />
-              )}
+            <ChatItem
+              {...message}
+              key={message.id}
+              loadModelError={loadModelError}
+              isCurrentMessage={index === messages.length - 1}
+            />
           </div>
         ))}
 
