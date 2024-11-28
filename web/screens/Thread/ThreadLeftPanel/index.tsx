@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Thread } from '@janhq/core'
+import { InferenceEngine, Thread } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -71,7 +71,11 @@ const ThreadLeftPanel = () => {
       threads.length === 0 &&
       downloadedModels.length > 0
     ) {
-      requestCreateNewThread(assistants[0], recommendedModel)
+      const model = downloadedModels.filter(
+        (model) => model.engine === InferenceEngine.cortex_llamacpp
+      )
+      const selectedModel = model[0] || recommendedModel
+      requestCreateNewThread(assistants[0], selectedModel)
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
     }
