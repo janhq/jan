@@ -188,7 +188,7 @@ export default function ModelHandler() {
             // If this is the first update, just set the lastTimestamp and return
             return {
               lastTimestamp: currentTimestamp,
-              tokenSpeed: 1,
+              tokenSpeed: 0,
               tokenCount: 1,
               message: message.id,
             }
