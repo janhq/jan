@@ -64,7 +64,7 @@ describe('huggingface utils', () => {
       })
 
       await expect(fetchHuggingFaceRepoData('user/repo')).rejects.toThrow(
-        'user/repo is not supported. Only GGUF models are supported.'
+        'Only GGUF models are currently supported.'
       )
     })
 
