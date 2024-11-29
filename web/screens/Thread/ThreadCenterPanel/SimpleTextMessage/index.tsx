@@ -45,6 +45,7 @@ import { RelativeImage } from './RelativeImage'
 import {
   editMessageAtom,
   getCurrentChatMessagesAtom,
+  tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -233,31 +234,8 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
   }
 
   const { onViewFile, onViewFileContainer } = usePath()
-  const [tokenCount, setTokenCount] = useState(0)
-  const [lastTimestamp, setLastTimestamp] = useState<number | undefined>()
-  const [tokenSpeed, setTokenSpeed] = useState(0)
+  const tokenSpeed = useAtomValue(tokenSpeedAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-
-  useEffect(() => {
-    if (props.status !== MessageStatus.Pending) {
-      return
-    }
-    const currentTimestamp = new Date().getTime() // Get current time in milliseconds
-    if (!lastTimestamp) {
-      // If this is the first update, just set the lastTimestamp and return
-      if (props.content[0]?.text?.value !== '')
-        setLastTimestamp(currentTimestamp)
-      return
-    }
-
-    const timeDiffInSeconds = (currentTimestamp - lastTimestamp) / 1000 // Time difference in seconds
-    const totalTokenCount = tokenCount + 1
-    const averageTokenSpeed = totalTokenCount / timeDiffInSeconds // Calculate average token speed
-
-    setTokenSpeed(averageTokenSpeed)
-    setTokenCount(totalTokenCount)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.content])
 
   return (
     <div className="group relative mx-auto max-w-[700px] p-4">
@@ -308,10 +286,11 @@ const SimpleTextMessage: React.FC<ThreadMessage> = (props) => {
         >
           <MessageToolbar message={props} />
         </div>
-        {messages[messages.length - 1]?.id === props.id &&
-          (props.status === MessageStatus.Pending || tokenSpeed > 0) && (
+        {tokenSpeed &&
+          tokenSpeed.message === props.id &&
+          tokenSpeed.tokenSpeed > 0 && (
             <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Token Speed: {Number(tokenSpeed).toFixed(2)}t/s
+              Token Speed: {Number(tokenSpeed.tokenSpeed).toFixed(2)}t/s
             </p>
           )}
       </div>

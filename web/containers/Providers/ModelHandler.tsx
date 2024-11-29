@@ -30,6 +30,7 @@ import {
   getCurrentChatMessagesAtom,
   addNewMessageAtom,
   updateMessageAtom,
+  tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
@@ -62,6 +63,7 @@ export default function ModelHandler() {
   const activeModelRef = useRef(activeModel)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
+  const setTokenSpeed = useSetAtom(tokenSpeedAtom)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -179,6 +181,31 @@ export default function ModelHandler() {
         if (message.content.length) {
           setIsGeneratingResponse(false)
         }
+
+        setTokenSpeed((prev) => {
+          const currentTimestamp = new Date().getTime() // Get current time in milliseconds
+          if (!prev) {
+            // If this is the first update, just set the lastTimestamp and return
+            return {
+              lastTimestamp: currentTimestamp,
+              tokenSpeed: 0,
+              tokenCount: 1,
+              message: message.id,
+            }
+          }
+
+          const timeDiffInSeconds =
+            (currentTimestamp - prev.lastTimestamp) / 1000 // Time difference in seconds
+          const totalTokenCount = prev.tokenCount + 1
+          const averageTokenSpeed =
+            totalTokenCount / (timeDiffInSeconds > 0 ? timeDiffInSeconds : 1) // Calculate average token speed
+          return {
+            ...prev,
+            tokenSpeed: averageTokenSpeed,
+            tokenCount: totalTokenCount,
+            message: message.id,
+          }
+        })
         return
       } else if (
         message.status === MessageStatus.Error &&
