@@ -34,9 +34,7 @@ export const fetchHuggingFaceRepoData = async (
   const data = response as HuggingFaceRepoData
 
   if (data.tags.indexOf('gguf') === -1) {
-    throw new Error(
-      `${repoId} is not supported. Only GGUF models are supported.`
-    )
+    throw new Error(`Only GGUF models are currently supported.`)
   }
 
   // fetching file sizes
