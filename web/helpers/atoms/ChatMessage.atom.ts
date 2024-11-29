@@ -11,13 +11,22 @@ import {
   updateThreadStateLastMessageAtom,
 } from './Thread.atom'
 
+import { TokenSpeed } from '@/types/token'
+
 /**
  * Stores all chat messages for all threads
  */
 export const chatMessages = atom<Record<string, ThreadMessage[]>>({})
 
+/**
+ * Stores the status of the messages load for each thread
+ */
 export const readyThreadsMessagesAtom = atom<Record<string, boolean>>({})
 
+/**
+ * Store the token speed for current message
+ */
+export const tokenSpeedAtom = atom<TokenSpeed | undefined>(undefined)
 /**
  * Return the chat messages for the current active conversation
  */
