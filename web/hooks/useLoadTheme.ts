@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 
 import { fs, joinPath } from '@janhq/core'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import cssVars from '@/utils/jsonToCssVariables'
 
@@ -20,8 +20,8 @@ type NativeThemeProps = 'light' | 'dark'
 
 export const useLoadTheme = () => {
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
-  const setThemeOptions = useSetAtom(themesOptionsAtom)
-  const setThemePath = useSetAtom(janThemesPathAtom)
+  const [themeOptions, setThemeOptions] = useAtom(themesOptionsAtom)
+  const [themePath, setThemePath] = useAtom(janThemesPathAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
   const { setTheme } = useTheme()
@@ -84,11 +84,23 @@ export const useLoadTheme = () => {
     setThemePath,
   ])
 
-  useEffect(() => {
-    getThemes()
+  const applyTheme = useCallback(async () => {
+    if (!themeData || !themeOptions || !themePath) {
+      await getThemes()
+    } else {
+      const variables = cssVars(themeData.variables)
+      const headTag = document.getElementsByTagName('head')[0]
+      const styleTag = document.createElement('style')
+      styleTag.innerHTML = `:root {${variables}}`
+      headTag.appendChild(styleTag)
+    }
     setNativeTheme(themeData?.nativeTheme as NativeThemeProps)
+  }, [themeData, themeOptions, themePath, getThemes])
+
+  useEffect(() => {
+    applyTheme()
   }, [
-    getThemes,
+    applyTheme,
     selectedIdTheme,
     setNativeTheme,
     setSelectedIdTheme,
