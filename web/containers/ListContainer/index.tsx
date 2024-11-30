@@ -1,15 +1,30 @@
-import { ReactNode, useCallback, useEffect, useRef } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useRef } from 'react'
 
 import { ScrollArea } from '@janhq/joi'
 
-type Props = {
-  children: ReactNode
-}
+import { useAtomValue } from 'jotai'
 
-const ListContainer = ({ children }: Props) => {
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+
+const ListContainer = ({ children }: PropsWithChildren) => {
   const listRef = useRef<HTMLDivElement>(null)
   const prevScrollTop = useRef(0)
   const isUserManuallyScrollingUp = useRef(false)
+  const activeThread = useAtomValue(activeThreadAtom)
+  const prevActiveThread = useRef(activeThread)
+
+  // Handle active thread changes
+  useEffect(() => {
+    if (prevActiveThread.current?.id !== activeThread?.id) {
+      isUserManuallyScrollingUp.current = false
+      const scrollHeight = listRef.current?.scrollHeight ?? 0
+      listRef.current?.scrollTo({
+        top: scrollHeight,
+        behavior: 'instant',
+      })
+      prevActiveThread.current = activeThread // Update the previous active thread reference
+    }
+  }, [activeThread])
 
   const handleScroll = useCallback((event: React.UIEvent<HTMLElement>) => {
     const currentScrollTop = event.currentTarget.scrollTop
@@ -24,6 +39,11 @@ const ListContainer = ({ children }: Props) => {
       if (currentScrollTop + clientHeight >= scrollHeight) {
         isUserManuallyScrollingUp.current = false
       }
+    }
+
+    if (isUserManuallyScrollingUp.current === true) {
+      event.preventDefault()
+      event.stopPropagation()
     }
     prevScrollTop.current = currentScrollTop
   }, [])

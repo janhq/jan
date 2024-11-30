@@ -27,11 +27,8 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
 
   const getErrorTitle = () => {
     switch (message.error_code) {
-      case ErrorCode.Unknown:
-        return 'Apologies, something’s amiss!'
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
-      case ErrorCode.InvalidRequestError:
         return (
           <span data-testid="invalid-API-key-error">
             Invalid API key. Please check your API key from{' '}
@@ -55,17 +52,17 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         )
       default:
         return (
-          <>
+          <p data-testid="passthrough-error-message">
             {message.content[0]?.text?.value && (
               <AutoLink text={message.content[0].text.value} />
             )}
-          </>
+          </p>
         )
     }
   }
 
   return (
-    <div className="mt-10">
+    <div className="mx-auto mt-10 max-w-[700px]">
       {message.status === MessageStatus.Error && (
         <div
           key={message.id}

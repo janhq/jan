@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 
 import { useAtomValue } from 'jotai'
 
@@ -12,8 +12,9 @@ export function useStarterScreen() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const threads = useAtomValue(threadsAtom)
 
-  const isDownloadALocalModel = downloadedModels.some((x) =>
-    isLocalEngine(x.engine)
+  const isDownloadALocalModel = useMemo(
+    () => downloadedModels.some((x) => isLocalEngine(x.engine)),
+    [downloadedModels]
   )
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<
@@ -57,14 +58,19 @@ export function useStarterScreen() {
       setExtensionHasSettings(extensionsMenu)
     }
     getAllSettings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isAnyRemoteModelConfigured = extensionHasSettings.some(
-    (x) => x.apiKey.length > 1
+  const isAnyRemoteModelConfigured = useMemo(
+    () => extensionHasSettings.some((x) => x.apiKey.length > 1),
+    [extensionHasSettings]
   )
 
-  const isShowStarterScreen =
-    !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length
+  const isShowStarterScreen = useMemo(
+    () =>
+      !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length,
+    [isAnyRemoteModelConfigured, isDownloadALocalModel, threads]
+  )
 
   return {
     extensionHasSettings,

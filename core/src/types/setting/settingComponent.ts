@@ -12,7 +12,7 @@ export type SettingComponentProps = {
 
 export type ConfigType = 'runtime' | 'setting'
 
-export type ControllerType = 'slider' | 'checkbox' | 'input'
+export type ControllerType = 'slider' | 'checkbox' | 'input' | 'tag'
 
 export type InputType = 'password' | 'text' | 'email' | 'number' | 'tel' | 'url'
 
@@ -22,7 +22,7 @@ export type InputAction = InputActionsTuple[number]
 
 export type InputComponentProps = {
   placeholder: string
-  value: string
+  value: string | string[]
   type?: InputType
   textAlign?: 'left' | 'right'
   inputActions?: InputAction[]

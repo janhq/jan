@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { Thread } from '@janhq/core'
+import { InferenceEngine, Thread } from '@janhq/core'
 
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -63,15 +63,19 @@ const ThreadLeftPanel = () => {
    * This will create a new thread if there are assistants available
    * and there are no threads available
    */
+
   useEffect(() => {
     if (
       threadDataReady &&
       assistants.length > 0 &&
       threads.length === 0 &&
-      (recommendedModel || downloadedModels[0])
+      downloadedModels.length > 0
     ) {
-      const model = recommendedModel || downloadedModels[0]
-      requestCreateNewThread(assistants[0], model)
+      const model = downloadedModels.filter(
+        (model) => model.engine === InferenceEngine.cortex_llamacpp
+      )
+      const selectedModel = model[0] || recommendedModel
+      requestCreateNewThread(assistants[0], selectedModel)
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
     }

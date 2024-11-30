@@ -16,7 +16,9 @@ enum ModelStorageAtomKeys {
  */
 export const downloadedModelsAtom = atomWithStorage<Model[]>(
   ModelStorageAtomKeys.DownloadedModels,
-  []
+  [],
+  undefined,
+  { getOnInit: true }
 )
 
 /**
@@ -25,7 +27,9 @@ export const downloadedModelsAtom = atomWithStorage<Model[]>(
  */
 export const configuredModelsAtom = atomWithStorage<Model[]>(
   ModelStorageAtomKeys.AvailableModels,
-  []
+  [],
+  undefined,
+  { getOnInit: true }
 )
 
 export const removeDownloadedModelAtom = atom(

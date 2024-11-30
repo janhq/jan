@@ -1,10 +1,12 @@
-import { fs, joinPath } from '@janhq/core'
+import { dirName, fs } from '@janhq/core'
+import { scanModelsFolder } from './model-json'
 
 export const deleteModelFiles = async (id: string) => {
   try {
-    const dirPath = await joinPath(['file://models', id])
+    const models = await scanModelsFolder()
+    const dirPath = models.find((e) => e.id === id)?.file_path
     // remove model folder directory
-    await fs.rm(dirPath)
+    if (dirPath) await fs.rm(await dirName(dirPath))
   } catch (err) {
     console.error(err)
   }

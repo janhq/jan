@@ -1,4 +1,4 @@
-import { Fragment, ReactNode, useCallback, useEffect, useRef } from 'react'
+import { Fragment, useCallback, useEffect, useRef } from 'react'
 
 import {
   ChatCompletionMessage,
@@ -30,6 +30,7 @@ import {
   getCurrentChatMessagesAtom,
   addNewMessageAtom,
   updateMessageAtom,
+  tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
@@ -43,7 +44,7 @@ import {
 const maxWordForThreadTitle = 10
 const defaultThreadTitle = 'New Thread'
 
-export default function EventHandler({ children }: { children: ReactNode }) {
+export default function ModelHandler() {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
@@ -62,6 +63,7 @@ export default function EventHandler({ children }: { children: ReactNode }) {
   const activeModelRef = useRef(activeModel)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
+  const setTokenSpeed = useSetAtom(tokenSpeedAtom)
 
   useEffect(() => {
     threadsRef.current = threads
@@ -179,8 +181,37 @@ export default function EventHandler({ children }: { children: ReactNode }) {
         if (message.content.length) {
           setIsGeneratingResponse(false)
         }
+
+        setTokenSpeed((prev) => {
+          const currentTimestamp = new Date().getTime() // Get current time in milliseconds
+          if (!prev) {
+            // If this is the first update, just set the lastTimestamp and return
+            return {
+              lastTimestamp: currentTimestamp,
+              tokenSpeed: 0,
+              tokenCount: 1,
+              message: message.id,
+            }
+          }
+
+          const timeDiffInSeconds =
+            (currentTimestamp - prev.lastTimestamp) / 1000 // Time difference in seconds
+          const totalTokenCount = prev.tokenCount + 1
+          const averageTokenSpeed =
+            totalTokenCount / (timeDiffInSeconds > 0 ? timeDiffInSeconds : 1) // Calculate average token speed
+          return {
+            ...prev,
+            tokenSpeed: averageTokenSpeed,
+            tokenCount: totalTokenCount,
+            message: message.id,
+          }
+        })
         return
-      } else if (message.status === MessageStatus.Error) {
+      } else if (
+        message.status === MessageStatus.Error &&
+        activeModelRef.current?.engine &&
+        isLocalEngine(activeModelRef.current.engine)
+      ) {
         ;(async () => {
           if (
             !(await extensionManager
@@ -329,5 +360,5 @@ export default function EventHandler({ children }: { children: ReactNode }) {
     }
   }, [onNewMessageResponse, onMessageResponseUpdate, onModelStopped])
 
-  return <Fragment>{children}</Fragment>
+  return <Fragment></Fragment>
 }

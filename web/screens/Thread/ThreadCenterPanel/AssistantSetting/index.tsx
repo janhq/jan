@@ -24,7 +24,7 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
 
   const onValueChanged = useCallback(
-    (key: string, value: string | number | boolean) => {
+    (key: string, value: string | number | boolean | string[]) => {
       if (!activeThread) return
       const shouldReloadModel =
         componentData.find((x) => x.key === key)?.requireModelReload ?? false

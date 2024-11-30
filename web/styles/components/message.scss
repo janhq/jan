@@ -1,5 +1,6 @@
 .message {
   white-space: pre-line;
+  word-break: break-word;
   font-size: 16px;
   ul,
   ol {
@@ -26,12 +27,4 @@
   blockquote {
     @apply inline-flex flex-col border-s-4 border-[hsla(var(--primary-bg))] bg-[hsla(var(--primary-bg-soft))] px-4 py-2;
   }
-}
-
-.code-block {
-  white-space: normal;
-}
-
-pre {
-  max-width: 95vw;
 }

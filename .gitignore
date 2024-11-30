@@ -47,3 +47,4 @@ coverage
 .yarnrc
 test_results.html
 *.tsbuildinfo
+electron/shared/**

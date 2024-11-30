@@ -17,10 +17,10 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
     key: 'stop',
     title: 'Stop',
     description: `Defines specific tokens or phrases that signal the model to stop producing further output, allowing you to control the length and coherence of the output.`,
-    controllerType: 'input',
+    controllerType: 'tag',
     controllerProps: {
-      placeholder: 'Stop',
-      value: '',
+      placeholder: 'Enter stop words',
+      value: [''],
     },
     requireModelReload: false,
     configType: 'runtime',

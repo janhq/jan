@@ -20,11 +20,8 @@ import { deleteModelFiles } from './legacy/delete'
 
 declare const SETTINGS: Array<any>
 
-/**
- * Extension enum
- */
-enum ExtensionEnum {
-  downloadedModels = 'downloadedModels',
+export enum Settings {
+  huggingfaceToken = 'hugging-face-access-token',
 }
 
 /**
@@ -40,13 +37,27 @@ export default class JanModelExtension extends ModelExtension {
   async onLoad() {
     this.registerSettings(SETTINGS)
 
-    // Try get models from cortex.cpp
-    this.getModels().then((models) => {
-      this.registerModels(models)
-    })
+    // Configure huggingface token if available
+    const huggingfaceToken = await this.getSetting<string>(
+      Settings.huggingfaceToken,
+      undefined
+    )
+    if (huggingfaceToken)
+      this.cortexAPI.configs({ huggingface_token: huggingfaceToken })
 
     // Listen to app download events
     this.handleDesktopEvents()
+  }
+
+  /**
+   * Subscribe to settings update and make change accordingly
+   * @param key
+   * @param value
+   */
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === Settings.huggingfaceToken) {
+      this.cortexAPI.configs({ huggingface_token: value })
+    }
   }
 
   /**
@@ -128,54 +139,42 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getModels(): Promise<Model[]> {
     /**
-     * In this action, if return empty array right away
-     * it would reset app cache and app will not function properly
-     * should compare and try import
-     */
-    let currentModels: Model[] = []
-
-    /**
      * Legacy models should be supported
      */
     let legacyModels = await scanModelsFolder()
-
-    try {
-      if (!localStorage.getItem(ExtensionEnum.downloadedModels)) {
-        // Updated from an older version than 0.5.5
-        // Scan through the models folder and import them (Legacy flow)
-        // Return models immediately
-        currentModels = legacyModels
-      } else {
-        currentModels = JSON.parse(
-          localStorage.getItem(ExtensionEnum.downloadedModels)
-        ) as Model[]
-      }
-    } catch (e) {
-      currentModels = []
-      console.error(e)
-    }
 
     /**
      * Here we are filtering out the models that are not imported
      * and are not using llama.cpp engine
      */
-    var toImportModels = currentModels.filter(
+    var toImportModels = legacyModels.filter(
       (e) => e.engine === InferenceEngine.nitro
     )
 
-    await this.cortexAPI.getModels().then((models) => {
-      const existingIds = models.map((e) => e.id)
-      toImportModels = toImportModels.filter(
-        (e: Model) => !existingIds.includes(e.id) && !e.settings?.vision_model
+    /**
+     * Fetch models from cortex.cpp
+     */
+    var fetchedModels = await this.cortexAPI.getModels().catch(() => [])
+
+    // Checking if there are models to import
+    const existingIds = fetchedModels.map((e) => e.id)
+    toImportModels = toImportModels.filter(
+      (e: Model) => !existingIds.includes(e.id) && !e.settings?.vision_model
+    )
+
+    /**
+     * There is no model to import
+     * just return fetched models
+     */
+    if (!toImportModels.length)
+      return fetchedModels.concat(
+        legacyModels.filter((e) => !fetchedModels.some((x) => x.id === e.id))
       )
-    })
 
     console.log('To import models:', toImportModels.length)
     /**
      * There are models to import
-     * do not return models from cortex.cpp yet
-     * otherwise it will reset the app cache
-     * */
+     */
     if (toImportModels.length > 0) {
       // Import models
       await Promise.all(
@@ -193,17 +192,19 @@ export default class JanModelExtension extends ModelExtension {
                 ]) // Copied models
               : model.sources[0].url, // Symlink models,
             model.name
-          ).then((e) => {
-            this.updateModel({
-              id: model.id,
-              ...model.settings,
-              ...model.parameters,
-            } as Partial<Model>)
-          })
+          )
+            .then((e) => {
+              this.updateModel({
+                id: model.id,
+                ...model.settings,
+                ...model.parameters,
+              } as Partial<Model>)
+            })
+            .catch((e) => {
+              console.debug(e)
+            })
         })
       )
-
-      return currentModels
     }
 
     /**
@@ -250,6 +251,13 @@ export default class JanModelExtension extends ModelExtension {
    */
   async isModelLoaded(model: string): Promise<boolean> {
     return this.cortexAPI.getModelStatus(model)
+  }
+
+  /**
+   * Configure pull options such as proxy, headers, etc.
+   */
+  async configurePullOptions(options: { [key: string]: any }): Promise<any> {
+    return this.cortexAPI.configs(options).catch((e) => console.debug(e))
   }
 
   /**

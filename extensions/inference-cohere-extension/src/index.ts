@@ -113,6 +113,8 @@ export default class JanInferenceCohereExtension extends RemoteOAIEngine {
   }
 
   transformResponse = (data: any) => {
-    return typeof data === 'object' ? data.text : JSON.parse(data).text ?? ''
+    return typeof data === 'object'
+      ? data.text
+      : (JSON.parse(data.replace('data: ', '').trim()).text ?? '')
   }
 }

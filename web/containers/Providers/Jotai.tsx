@@ -1,12 +1,8 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { PropsWithChildren } from 'react'
 
 import { Provider, atom } from 'jotai'
-
-type Props = {
-  children: ReactNode
-}
 
 export const editPromptAtom = atom<string>('')
 export const currentPromptAtom = atom<string>('')
@@ -16,7 +12,7 @@ export const searchAtom = atom<string>('')
 
 export const selectedTextAtom = atom('')
 
-export default function JotaiWrapper({ children }: Props) {
+export default function JotaiWrapper({ children }: PropsWithChildren) {
   return <Provider>{children}</Provider>
 }
 

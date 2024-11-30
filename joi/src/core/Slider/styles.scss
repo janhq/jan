@@ -6,6 +6,11 @@
   touch-action: none;
   height: 16px;
 
+  &--disabled {
+    cursor: not-allowed;
+    opacity: 0.2;
+  }
+
   &__track {
     background-color: hsla(var(--slider-track-bg));
     position: relative;

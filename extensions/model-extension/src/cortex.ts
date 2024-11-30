@@ -1,6 +1,6 @@
 import PQueue from 'p-queue'
 import ky from 'ky'
-import {  extractModelLoadParams, Model } from '@janhq/core'
+import { extractModelLoadParams, Model } from '@janhq/core'
 import { extractInferenceParams } from '@janhq/core'
 /**
  * cortex.cpp Model APIs interface
@@ -18,6 +18,7 @@ interface ICortexAPI {
   deleteModel(model: string): Promise<void>
   updateModel(model: object): Promise<void>
   cancelModelPull(model: string): Promise<void>
+  configs(body: { [key: string]: any }): Promise<void>
 }
 
 type ModelList = {
@@ -52,7 +53,7 @@ export class CortexAPI implements ICortexAPI {
    */
   getModels(): Promise<Model[]> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/models`).json<ModelList>())
+      .add(() => ky.get(`${API_URL}/v1/models`).json<ModelList>())
       .then((e) =>
         typeof e === 'object' ? e.data.map((e) => this.transformModel(e)) : []
       )
@@ -104,7 +105,7 @@ export class CortexAPI implements ICortexAPI {
    */
   deleteModel(model: string): Promise<void> {
     return this.queue.add(() =>
-      ky.delete(`${API_URL}/models/${model}`).json().then()
+      ky.delete(`${API_URL}/v1/models/${model}`).json().then()
     )
   }
 
@@ -130,7 +131,7 @@ export class CortexAPI implements ICortexAPI {
   cancelModelPull(model: string): Promise<void> {
     return this.queue.add(() =>
       ky
-        .delete(`${API_URL}/models/pull`, { json: { taskId: model } })
+        .delete(`${API_URL}/v1/models/pull`, { json: { taskId: model } })
         .json()
         .then()
     )
@@ -142,7 +143,7 @@ export class CortexAPI implements ICortexAPI {
    */
   async getModelStatus(model: string): Promise<boolean> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/models/status/${model}`))
+      .add(() => ky.get(`${API_URL}/v1/models/status/${model}`))
       .then((e) => true)
       .catch(() => false)
   }
@@ -155,11 +156,22 @@ export class CortexAPI implements ICortexAPI {
     return ky
       .get(`${API_URL}/healthz`, {
         retry: {
-          limit: 10,
+          limit: 20,
+          delay: () => 500,
           methods: ['get'],
         },
       })
       .then(() => {})
+  }
+
+  /**
+   * Configure model pull options
+   * @param body
+   */
+  configs(body: { [key: string]: any }): Promise<void> {
+    return this.queue.add(() =>
+      ky.patch(`${API_URL}/v1/configs`, { json: body }).then(() => {})
+    )
   }
 
   /**

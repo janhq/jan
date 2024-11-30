@@ -1,11 +1,11 @@
-import { Fragment, PropsWithChildren, useEffect, useRef } from 'react'
+import { Fragment, useEffect, useRef } from 'react'
 
 import { useMediaQuery } from '@janhq/joi'
 import { useAtom } from 'jotai'
 
 import { showLeftPanelAtom, showRightPanelAtom } from '@/helpers/atoms/App.atom'
 
-const Responsive = ({ children }: PropsWithChildren) => {
+const Responsive = () => {
   const matches = useMediaQuery('(max-width: 880px)')
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
@@ -30,7 +30,7 @@ const Responsive = ({ children }: PropsWithChildren) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches, setShowLeftPanel, setShowRightPanel])
 
-  return <Fragment>{children}</Fragment>
+  return <Fragment></Fragment>
 }
 
 export default Responsive

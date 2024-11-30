@@ -135,25 +135,4 @@ export class Downloader implements Processor {
   pauseDownload(_observer: any, fileName: any) {
     DownloadManager.instance.networkRequests[fileName]?.pause()
   }
-
-  async getFileSize(_observer: any, url: string): Promise<number> {
-    return new Promise((resolve, reject) => {
-      const request = require('request')
-      request(
-        {
-          url,
-          method: 'HEAD',
-        },
-        function (err: any, response: any) {
-          if (err) {
-            console.error('Getting file size failed:', err)
-            reject(err)
-          } else {
-            const size: number = response.headers['content-length'] ?? -1
-            resolve(size)
-          }
-        }
-      )
-    })
-  }
 }

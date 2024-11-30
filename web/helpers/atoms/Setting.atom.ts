@@ -13,10 +13,22 @@ export const REDUCE_TRANSPARENT = 'reduceTransparent'
 export const SPELL_CHECKING = 'spellChecking'
 export const themesOptionsAtom = atom<{ name: string; value: string }[]>([])
 export const janThemesPathAtom = atom<string | undefined>(undefined)
-export const selectedThemeIdAtom = atomWithStorage<string>(THEME, '')
+export const selectedThemeIdAtom = atomWithStorage<string>(
+  THEME,
+  '',
+  undefined,
+  { getOnInit: true }
+)
 export const themeDataAtom = atom<Theme | undefined>(undefined)
 export const reduceTransparentAtom = atomWithStorage<boolean>(
   REDUCE_TRANSPARENT,
-  false
+  false,
+  undefined,
+  { getOnInit: true }
 )
-export const spellCheckAtom = atomWithStorage<boolean>(SPELL_CHECKING, false)
+export const spellCheckAtom = atomWithStorage<boolean>(
+  SPELL_CHECKING,
+  false,
+  undefined,
+  { getOnInit: true }
+)

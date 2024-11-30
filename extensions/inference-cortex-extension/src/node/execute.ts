@@ -1,10 +1,9 @@
-import { GpuSetting } from '@janhq/core'
 import * as path from 'path'
-import { cpuInfo } from 'cpu-instructions'
+import { GpuSetting, appResourcePath, log } from '@janhq/core/node'
+import { fork } from 'child_process'
 
 export interface CortexExecutableOptions {
   enginePath: string
-  binPath: string
   executablePath: string
   cudaVisibleDevices: string
   vkVisibleDevices: string
@@ -21,11 +20,7 @@ const gpuRunMode = (settings?: GpuSetting): string => {
 
   if (!settings) return ''
 
-  return settings.vulkan === true
-    ? 'vulkan'
-    : settings.run_mode === 'cpu'
-      ? ''
-      : 'cuda'
+  return settings.vulkan === true || settings.run_mode === 'cpu' ? '' : 'cuda'
 }
 
 /**
@@ -34,12 +29,12 @@ const gpuRunMode = (settings?: GpuSetting): string => {
  */
 const os = (): string => {
   return process.platform === 'win32'
-    ? 'win'
+    ? 'windows-amd64'
     : process.platform === 'darwin'
       ? process.arch === 'arm64'
-        ? 'arm64'
-        : 'x64'
-      : 'linux'
+        ? 'mac-arm64'
+        : 'mac-amd64'
+      : 'linux-amd64'
 }
 
 /**
@@ -57,7 +52,9 @@ const extension = (): '.exe' | '' => {
  */
 const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
   const isUsingCuda =
-    settings?.vulkan !== true && settings?.run_mode === 'gpu' && os() !== 'mac'
+    settings?.vulkan !== true &&
+    settings?.run_mode === 'gpu' &&
+    !os().includes('mac')
 
   if (!isUsingCuda) return undefined
   return settings?.cuda?.version === '11' ? '11-7' : '12-0'
@@ -67,48 +64,74 @@ const cudaVersion = (settings?: GpuSetting): '11-7' | '12-0' | undefined => {
  * The CPU instructions that will be set - either 'avx512', 'avx2', 'avx', or 'noavx'.
  * @returns
  */
-const cpuInstructions = (): string => {
+const cpuInstructions = async (): Promise<string> => {
   if (process.platform === 'darwin') return ''
-  return cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX512')
-    ? 'avx512'
-    : cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX2')
-      ? 'avx2'
-      : cpuInfo.cpuInfo().some((e) => e.toUpperCase() === 'AVX')
-        ? 'avx'
-        : 'noavx'
+
+  const child = fork(path.join(__dirname, './cpuInfo.js')) // Path to the child process file
+
+  return new Promise((resolve, reject) => {
+    child.on('message', (cpuInfo?: string) => {
+      resolve(cpuInfo ?? 'noavx')
+      child.kill() // Kill the child process after receiving the result
+    })
+
+    child.on('error', (err) => {
+      resolve('noavx')
+      child.kill()
+    })
+
+    child.on('exit', (code) => {
+      if (code !== 0) {
+        resolve('noavx')
+        child.kill()
+      }
+    })
+  })
 }
 
 /**
- * Find which executable file to run based on the current platform.
- * @returns The name of the executable file to run.
+ * The executable options for the cortex.cpp extension.
  */
 export const executableCortexFile = (
   gpuSetting?: GpuSetting
 ): CortexExecutableOptions => {
-  const cpuInstruction = cpuInstructions()
-  let engineFolder = gpuSetting?.vulkan
-    ? 'vulkan'
-    : process.platform === 'darwin'
-      ? os()
-      : [
-        gpuRunMode(gpuSetting) !== 'cuda' ||
-          cpuInstruction === 'avx2' || cpuInstruction === 'avx512'
-          ? cpuInstruction
-          : 'noavx',
-        gpuRunMode(gpuSetting),
-        cudaVersion(gpuSetting),
-      ]
-        .filter((e) => !!e)
-        .join('-')
   let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
   let binaryName = `cortex-server${extension()}`
   const binPath = path.join(__dirname, '..', 'bin')
   return {
-    enginePath: path.join(binPath, engineFolder),
+    enginePath: path.join(appResourcePath(), 'shared'),
     executablePath: path.join(binPath, binaryName),
-    binPath: binPath,
     cudaVisibleDevices,
     vkVisibleDevices,
   }
+}
+
+/**
+ * Find which variant to run based on the current platform.
+ */
+export const engineVariant = async (
+  gpuSetting?: GpuSetting
+): Promise<string> => {
+  const cpuInstruction = await cpuInstructions()
+  log(`[CORTEX]: CPU instruction: ${cpuInstruction}`)
+  let engineVariant = [
+    os(),
+    gpuSetting?.vulkan
+      ? 'vulkan'
+      : gpuRunMode(gpuSetting) !== 'cuda'
+        ? // CPU mode - support all variants
+          cpuInstruction
+        : // GPU mode - packaged CUDA variants of avx2 and noavx
+          cpuInstruction === 'avx2' || cpuInstruction === 'avx512'
+          ? 'avx2'
+          : 'noavx',
+    gpuRunMode(gpuSetting),
+    cudaVersion(gpuSetting),
+  ]
+    .filter((e) => !!e)
+    .join('-')
+
+  log(`[CORTEX]: Engine variant: ${engineVariant}`)
+  return engineVariant
 }

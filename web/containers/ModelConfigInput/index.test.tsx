@@ -2,7 +2,6 @@ import '@testing-library/jest-dom'
 import React from 'react'
 import { render, fireEvent } from '@testing-library/react'
 import ModelConfigInput from './index'
-import { Tooltip } from '@janhq/joi'
 
 // Mocking the Tooltip component to simplify testing
 jest.mock('@janhq/joi', () => ({

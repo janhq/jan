@@ -1,4 +1,4 @@
-import { PropsWithChildren, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import React from 'react'
 
@@ -23,7 +23,7 @@ import { toaster } from '../Toast'
 
 import AppUpdateListener from './AppUpdateListener'
 import ClipboardListener from './ClipboardListener'
-import EventHandler from './EventHandler'
+import ModelHandler from './ModelHandler'
 
 import ModelImportListener from './ModelImportListener'
 import QuickAskListener from './QuickAskListener'
@@ -39,7 +39,7 @@ import {
   removeDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
 
-const EventListenerWrapper = ({ children }: PropsWithChildren) => {
+const EventListener = () => {
   const setDownloadState = useSetAtom(setDownloadStateAtom)
   const setInstallingExtension = useSetAtom(setInstallingExtensionAtom)
   const removeInstallingExtension = useSetAtom(removeInstallingExtensionAtom)
@@ -112,8 +112,8 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
         state.downloadState = 'end'
         setDownloadState(state)
         removeDownloadingModel(state.modelId)
+        events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
       }
-      events.emit(ModelEvent.OnModelsUpdate, {})
     },
     [removeDownloadingModel, setDownloadState]
   )
@@ -156,16 +156,14 @@ const EventListenerWrapper = ({ children }: PropsWithChildren) => {
   ])
 
   return (
-    <AppUpdateListener>
-      <ClipboardListener>
-        <ModelImportListener>
-          <QuickAskListener>
-            <EventHandler>{children}</EventHandler>
-          </QuickAskListener>
-        </ModelImportListener>
-      </ClipboardListener>
-    </AppUpdateListener>
+    <>
+      <AppUpdateListener />
+      <ClipboardListener />
+      <ModelImportListener />
+      <QuickAskListener />
+      <ModelHandler />
+    </>
   )
 }
 
-export default EventListenerWrapper
+export default EventListener

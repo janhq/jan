@@ -259,15 +259,15 @@ const updateGpuInfo = async () =>
             data.gpu_highest_vram = highestVramId
           } else {
             data.gpus = []
-            data.gpu_highest_vram = ''
+            data.gpu_highest_vram = undefined
           }
 
           if (!data.gpus_in_use || data.gpus_in_use.length === 0) {
-            data.gpus_in_use = [data.gpu_highest_vram]
+            data.gpus_in_use = data.gpu_highest_vram ? [data.gpu_highest_vram].filter(e => !!e) : []
           }
 
           data = await updateCudaExistence(data)
-          console.log(data)
+          console.log('[MONITORING]::Cuda info: ', data)
           writeFileSync(GPU_INFO_FILE, JSON.stringify(data, null, 2))
           log(`[APP]::${JSON.stringify(data)}`)
           resolve({})
@@ -344,7 +344,7 @@ const updateCudaExistence = async (
             data.cuda.version = match[1]
           }
         }
-        console.log(data)
+        console.log('[MONITORING]::Finalized cuda info update: ', data)
         resolve()
       })
     })

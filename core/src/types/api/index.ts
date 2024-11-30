@@ -27,6 +27,7 @@ export enum NativeRoute {
 
   quickAskSizeUpdated = 'quickAskSizeUpdated',
   ackDeepLink = 'ackDeepLink',
+  factoryReset = 'factoryReset'
 }
 
 /**
@@ -65,7 +66,6 @@ export enum DownloadRoute {
   pauseDownload = 'pauseDownload',
   resumeDownload = 'resumeDownload',
   getDownloadProgress = 'getDownloadProgress',
-  getFileSize = 'getFileSize',
 }
 
 export enum DownloadEvent {

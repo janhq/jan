@@ -6,7 +6,10 @@ import SettingComponentBuilder from './SettingComponent'
 
 type Props = {
   componentProps: SettingComponentProps[]
-  onValueChanged: (key: string, value: string | number | boolean) => void
+  onValueChanged: (
+    key: string,
+    value: string | number | boolean | string[]
+  ) => void
   disabled?: boolean
 }
 

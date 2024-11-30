@@ -1,12 +1,14 @@
 'use client'
 
-import { Fragment, ReactNode, useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+
+import { useStarterScreen } from '@/hooks/useStarterScreen'
 
 import {
   mainViewStateAtom,
@@ -20,11 +22,7 @@ import {
   ThreadModalAction,
 } from '@/helpers/atoms/Thread.atom'
 
-type Props = {
-  children: ReactNode
-}
-
-export default function KeyListener({ children }: Props) {
+export default function KeyListener() {
   const setShowLeftPanel = useSetAtom(showLeftPanelAtom)
   const setShowRightPanel = useSetAtom(showRightPanelAtom)
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
@@ -32,6 +30,7 @@ export default function KeyListener({ children }: Props) {
   const assistants = useAtomValue(assistantsAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const setModalActionThread = useSetAtom(modalActionThreadAtom)
+  const { isShowStarterScreen } = useStarterScreen()
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -60,7 +59,7 @@ export default function KeyListener({ children }: Props) {
         return
       }
 
-      if (e.code === 'KeyN' && prefixKey) {
+      if (e.code === 'KeyN' && prefixKey && !isShowStarterScreen) {
         if (mainViewState !== MainViewState.Thread) return
         requestCreateNewThread(assistants[0])
         setMainViewState(MainViewState.Thread)
@@ -82,6 +81,7 @@ export default function KeyListener({ children }: Props) {
   }, [
     activeThread,
     assistants,
+    isShowStarterScreen,
     mainViewState,
     requestCreateNewThread,
     setMainViewState,
@@ -90,5 +90,5 @@ export default function KeyListener({ children }: Props) {
     setShowRightPanel,
   ])
 
-  return <Fragment>{children}</Fragment>
+  return <Fragment></Fragment>
 }

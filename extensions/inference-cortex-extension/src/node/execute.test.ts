@@ -1,7 +1,8 @@
 import { describe, expect, it } from '@jest/globals'
-import { executableCortexFile } from './execute'
-import { GpuSetting } from '@janhq/core'
+import { engineVariant, executableCortexFile } from './execute'
+import { GpuSetting } from '@janhq/core/node'
 import { cpuInfo } from 'cpu-instructions'
+import { fork } from 'child_process'
 
 let testSettings: GpuSetting = {
   run_mode: 'cpu',
@@ -30,11 +31,51 @@ jest.mock('cpu-instructions', () => ({
 let mockCpuInfo = cpuInfo.cpuInfo as jest.Mock
 mockCpuInfo.mockReturnValue([])
 
+jest.mock('@janhq/core/node', () => ({
+  appResourcePath: () => '.',
+  log: jest.fn(),
+}))
+jest.mock('child_process', () => ({
+  fork: jest.fn(),
+}))
+const mockFork = fork as jest.Mock
+
 describe('test executable cortex file', () => {
   afterAll(function () {
     Object.defineProperty(process, 'platform', {
       value: originalPlatform,
     })
+  })
+
+  it('executes on MacOS', () => {
+    const mockProcess = {
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('noavx')
+        }
+      }),
+      send: jest.fn(),
+    }
+    Object.defineProperty(process, 'platform', {
+      value: 'darwin',
+    })
+    Object.defineProperty(process, 'arch', {
+      value: 'arm64',
+    })
+    expect(executableCortexFile(testSettings)).toEqual(
+      expect.objectContaining({
+        enginePath: expect.stringContaining('shared'),
+        executablePath:
+          originalPlatform === 'darwin'
+            ? expect.stringContaining(`cortex-server`)
+            : expect.anything(),
+        cudaVisibleDevices: '',
+        vkVisibleDevices: '',
+      })
+    )
+
+    mockFork.mockReturnValue(mockProcess)
+    expect(engineVariant(testSettings)).resolves.toEqual('mac-arm64')
   })
 
   it('executes on MacOS', () => {
@@ -44,25 +85,23 @@ describe('test executable cortex file', () => {
     Object.defineProperty(process, 'arch', {
       value: 'arm64',
     })
-    expect(executableCortexFile(testSettings)).toEqual(
-      expect.objectContaining({
-        enginePath: expect.stringContaining(`arm64`),
-        binPath: expect.stringContaining(`bin`),
-        executablePath:
-          originalPlatform === 'darwin'
-            ? expect.stringContaining(`cortex-server`)
-            : expect.anything(),
-        cudaVisibleDevices: '',
-        vkVisibleDevices: '',
-      })
-    )
+
+    const mockProcess = {
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('noavx')
+        }
+      }),
+      send: jest.fn(),
+    }
+    mockFork.mockReturnValue(mockProcess)
     Object.defineProperty(process, 'arch', {
       value: 'x64',
     })
+
     expect(executableCortexFile(testSettings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`x64`),
-        binPath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining('shared'),
         executablePath:
           originalPlatform === 'darwin'
             ? expect.stringContaining(`cortex-server`)
@@ -71,6 +110,7 @@ describe('test executable cortex file', () => {
         vkVisibleDevices: '',
       })
     )
+    expect(engineVariant(testSettings)).resolves.toEqual('mac-amd64')
   })
 
   it('executes on Windows CPU', () => {
@@ -81,16 +121,25 @@ describe('test executable cortex file', () => {
       ...testSettings,
       run_mode: 'cpu',
     }
-    mockCpuInfo.mockReturnValue(['avx'])
+    const mockProcess = {
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('avx')
+        }
+      }),
+      send: jest.fn(),
+    }
+    mockFork.mockReturnValue(mockProcess)
+
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`avx`),
-        binPath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining('shared'),
         executablePath: expect.stringContaining(`cortex-server.exe`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
     )
+    expect(engineVariant()).resolves.toEqual('windows-amd64-avx')
   })
 
   it('executes on Windows Cuda 11', () => {
@@ -117,15 +166,26 @@ describe('test executable cortex file', () => {
         },
       ],
     }
-    mockCpuInfo.mockReturnValue(['avx2'])
+
+    const mockProcess = {
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('avx2')
+        }
+      }),
+      send: jest.fn(),
+    }
+    mockFork.mockReturnValue(mockProcess)
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`avx2-cuda-11-7`),
-        binPath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining('shared'),
         executablePath: expect.stringContaining(`cortex-server.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
+    )
+    expect(engineVariant(settings)).resolves.toEqual(
+      'windows-amd64-avx2-cuda-11-7'
     )
   })
 
@@ -153,15 +213,35 @@ describe('test executable cortex file', () => {
         },
       ],
     }
-    mockCpuInfo.mockReturnValue(['noavx'])
+    mockFork.mockReturnValue({
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('noavx')
+        }
+      }),
+      send: jest.fn(),
+    })
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`noavx-cuda-12-0`),
-        binPath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining('shared'),
         executablePath: expect.stringContaining(`cortex-server.exe`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
+    )
+    expect(engineVariant(settings)).resolves.toEqual(
+      'windows-amd64-noavx-cuda-12-0'
+    )
+    mockFork.mockReturnValue({
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('avx512')
+        }
+      }),
+      send: jest.fn(),
+    })
+    expect(engineVariant(settings)).resolves.toEqual(
+      'windows-amd64-avx2-cuda-12-0'
     )
   })
 
@@ -173,15 +253,23 @@ describe('test executable cortex file', () => {
       ...testSettings,
       run_mode: 'cpu',
     }
-    mockCpuInfo.mockReturnValue(['noavx'])
+    mockFork.mockReturnValue({
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('noavx')
+        }
+      }),
+      send: jest.fn(),
+    })
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`noavx`),
+        enginePath: expect.stringContaining('shared'),
         executablePath: expect.stringContaining(`cortex-server`),
         cudaVisibleDevices: '',
         vkVisibleDevices: '',
       })
     )
+    expect(engineVariant()).resolves.toEqual('linux-amd64-noavx')
   })
 
   it('executes on Linux Cuda 11', () => {
@@ -208,15 +296,25 @@ describe('test executable cortex file', () => {
         },
       ],
     }
+
+    mockFork.mockReturnValue({
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('avx512')
+        }
+      }),
+      send: jest.fn(),
+    })
+
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`cuda-11-7`),
-        binPath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining('shared'),
         executablePath: expect.stringContaining(`cortex-server`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
     )
+    expect(engineVariant(settings)).resolves.toBe('linux-amd64-avx2-cuda-11-7')
   })
 
   it('executes on Linux Cuda 12', () => {
@@ -243,14 +341,24 @@ describe('test executable cortex file', () => {
         },
       ],
     }
+    mockFork.mockReturnValue({
+      on: jest.fn((event, callback) => {
+        if (event === 'message') {
+          callback('avx2')
+        }
+      }),
+      send: jest.fn(),
+    })
     expect(executableCortexFile(settings)).toEqual(
       expect.objectContaining({
-        enginePath: expect.stringContaining(`cuda-12-0`),
-        binPath: expect.stringContaining(`bin`),
+        enginePath: expect.stringContaining('shared'),
         executablePath: expect.stringContaining(`cortex-server`),
         cudaVisibleDevices: '0',
         vkVisibleDevices: '0',
       })
+    )
+    expect(engineVariant(settings)).resolves.toEqual(
+      'linux-amd64-avx2-cuda-12-0'
     )
   })
 
@@ -266,17 +374,26 @@ describe('test executable cortex file', () => {
 
     const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
     cpuInstructions.forEach((instruction) => {
-      mockCpuInfo.mockReturnValue([instruction])
+      mockFork.mockReturnValue({
+        on: jest.fn((event, callback) => {
+          if (event === 'message') {
+            callback(instruction)
+          }
+        }),
+        send: jest.fn(),
+      })
 
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(instruction),
-          binPath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server`),
 
           cudaVisibleDevices: '',
           vkVisibleDevices: '',
         })
+      )
+      expect(engineVariant(settings)).resolves.toEqual(
+        `linux-amd64-${instruction}`
       )
     })
   })
@@ -291,15 +408,24 @@ describe('test executable cortex file', () => {
     }
     const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
     cpuInstructions.forEach((instruction) => {
-      mockCpuInfo.mockReturnValue([instruction])
+      mockFork.mockReturnValue({
+        on: jest.fn((event, callback) => {
+          if (event === 'message') {
+            callback(instruction)
+          }
+        }),
+        send: jest.fn(),
+      })
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(instruction),
-          binPath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server.exe`),
           cudaVisibleDevices: '',
           vkVisibleDevices: '',
         })
+      )
+      expect(engineVariant(settings)).resolves.toEqual(
+        `windows-amd64-${instruction}`
       )
     })
   })
@@ -331,15 +457,24 @@ describe('test executable cortex file', () => {
     }
     const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
     cpuInstructions.forEach((instruction) => {
-      mockCpuInfo.mockReturnValue([instruction])
+      mockFork.mockReturnValue({
+        on: jest.fn((event, callback) => {
+          if (event === 'message') {
+            callback(instruction)
+          }
+        }),
+        send: jest.fn(),
+      })
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`cuda-12-0`),
-          binPath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server.exe`),
           cudaVisibleDevices: '0',
           vkVisibleDevices: '0',
         })
+      )
+      expect(engineVariant(settings)).resolves.toEqual(
+        `windows-amd64-${instruction === 'avx512' || instruction === 'avx2' ? 'avx2' : 'noavx'}-cuda-12-0`
       )
     })
   })
@@ -371,15 +506,24 @@ describe('test executable cortex file', () => {
       ],
     }
     cpuInstructions.forEach((instruction) => {
-      mockCpuInfo.mockReturnValue([instruction])
+      mockFork.mockReturnValue({
+        on: jest.fn((event, callback) => {
+          if (event === 'message') {
+            callback(instruction)
+          }
+        }),
+        send: jest.fn(),
+      })
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`cuda-12-0`),
-          binPath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server`),
           cudaVisibleDevices: '0',
           vkVisibleDevices: '0',
         })
+      )
+      expect(engineVariant(settings)).resolves.toEqual(
+        `linux-amd64-${instruction === 'avx512' || instruction === 'avx2' ? 'avx2' : 'noavx'}-cuda-12-0`
       )
     })
   })
@@ -412,16 +556,23 @@ describe('test executable cortex file', () => {
       ],
     }
     cpuInstructions.forEach((instruction) => {
-      mockCpuInfo.mockReturnValue([instruction])
+      mockFork.mockReturnValue({
+        on: jest.fn((event, callback) => {
+          if (event === 'message') {
+            callback(instruction)
+          }
+        }),
+        send: jest.fn(),
+      })
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`vulkan`),
-          binPath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining('shared'),
           executablePath: expect.stringContaining(`cortex-server`),
           cudaVisibleDevices: '0',
           vkVisibleDevices: '0',
         })
       )
+      expect(engineVariant(settings)).resolves.toEqual(`linux-amd64-vulkan`)
     })
   })
 
@@ -439,11 +590,17 @@ describe('test executable cortex file', () => {
         ...testSettings,
         run_mode: 'cpu',
       }
-      mockCpuInfo.mockReturnValue([])
+      mockFork.mockReturnValue({
+        on: jest.fn((event, callback) => {
+          if (event === 'message') {
+            callback('noavx')
+          }
+        }),
+        send: jest.fn(),
+      })
       expect(executableCortexFile(settings)).toEqual(
         expect.objectContaining({
-          enginePath: expect.stringContaining(`x64`),
-          binPath: expect.stringContaining(`bin`),
+          enginePath: expect.stringContaining('shared'),
           executablePath:
             originalPlatform === 'darwin'
               ? expect.stringContaining(`cortex-server`)

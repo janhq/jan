@@ -1,8 +1,8 @@
 {
     "sources": [
       {
-        "url": "https://huggingface.co/cortexso/phi3/resolve/main/model.gguf",
-        "filename": "model.gguf"
+        "url": "https://huggingface.co/bartowski/Phi-3-mini-4k-instruct-GGUF/resolve/main/Phi-3-mini-4k-instruct-Q4_K_M.gguf",
+        "filename": "Phi-3-mini-4k-instruct-Q4_K_M.gguf"
       }
     ],
     "id": "phi3-3.8b",
@@ -14,7 +14,7 @@
     "settings": {
       "ctx_len": 4096,
       "prompt_template": "<|user|>\n{prompt}<|end|>\n<|assistant|>\n",
-      "llama_model_path": "model.gguf",
+      "llama_model_path": "Phi-3-mini-4k-instruct-Q4_K_M.gguf",
       "ngl": 33
     },
     "parameters": {

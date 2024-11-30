@@ -51,7 +51,7 @@ const SettingDetailTextInputItem = ({
   }, [])
 
   const copy = useCallback(() => {
-    navigator.clipboard.writeText(value)
+    navigator.clipboard.writeText(value as string)
     if (value.length > 0) {
       setCopied(true)
     }
@@ -123,7 +123,6 @@ const InputExtraActions: React.FC<InputActionProps> = ({
   return (
     <div className="flex flex-row space-x-2">
       {actions.map((action) => {
-        console.log(action)
         switch (action) {
           case 'copy':
             return copied ? (

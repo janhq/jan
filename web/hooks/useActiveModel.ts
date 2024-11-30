@@ -26,15 +26,13 @@ export const stateModelAtom = atom<ModelState>({
   model: undefined,
 })
 
-const pendingModelLoadAtom = atom<boolean>(false)
-
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
-  const [pendingModelLoad, setPendingModelLoad] = useAtom(pendingModelLoadAtom)
+  const pendingModelLoad = useRef(false)
   const isVulkanEnabled = useAtomValue(vulkanEnabledAtom)
 
   const downloadedModelsRef = useRef<Model[]>([])
@@ -55,7 +53,7 @@ export function useActiveModel() {
     if (activeModel) {
       await stopModel(activeModel)
     }
-    setPendingModelLoad(true)
+    pendingModelLoad.current = true
 
     let model = downloadedModelsRef?.current.find((e) => e.id === modelId)
 
@@ -120,16 +118,16 @@ export function useActiveModel() {
           undefined,
         }))
 
-        if (!pendingModelLoad && abortable) {
+        if (!pendingModelLoad.current && abortable) {
           return Promise.reject(new Error('aborted'))
         }
 
         toaster({
           title: 'Failed!',
-          description: `Model ${model.id} failed to start.`,
+          description: `Model ${model.id} failed to start. ${error.message ?? ''}`,
           type: 'error',
         })
-        setLoadModelError(error)
+        setLoadModelError(error.message ?? error)
         return Promise.reject(error)
       })
   }
@@ -147,16 +145,10 @@ export function useActiveModel() {
         .then(() => {
           setActiveModel(undefined)
           setStateModel({ state: 'start', loading: false, model: undefined })
-          setPendingModelLoad(false)
+          pendingModelLoad.current = false
         })
     },
-    [
-      activeModel,
-      setStateModel,
-      setActiveModel,
-      setPendingModelLoad,
-      stateModel,
-    ]
+    [activeModel, setStateModel, setActiveModel, stateModel]
   )
 
   const stopInference = useCallback(async () => {

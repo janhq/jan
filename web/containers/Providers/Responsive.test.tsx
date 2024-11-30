@@ -45,17 +45,6 @@ describe('Responsive', () => {
     })
   })
 
-  it('renders children correctly', () => {
-    const { getByText } = render(
-      <Responsive>
-        <div>Child Content</div>
-      </Responsive>
-    )
-
-    // Check if the child content is rendered
-    expect(getByText('Child Content')).toBeInTheDocument()
-  })
-
   it('hides left and right panels on small screens', () => {
     // Simulate mobile view
     window.matchMedia = jest.fn().mockImplementation((query) => ({
@@ -64,11 +53,7 @@ describe('Responsive', () => {
       removeListener: jest.fn(),
     }))
 
-    render(
-      <Responsive>
-        <div>Child Content</div>
-      </Responsive>
-    )
+    render(<Responsive />)
 
     // Check that the left and right panel states were updated to false
     expect(mockSetShowLeftPanel).toHaveBeenCalledWith(false)
@@ -83,11 +68,7 @@ describe('Responsive', () => {
       removeListener: jest.fn(),
     }))
 
-    render(
-      <Responsive>
-        <div>Child Content</div>
-      </Responsive>
-    )
+    render(<Responsive />)
 
     // Change back to desktop view
     window.matchMedia = jest.fn().mockImplementation((query) => ({
@@ -97,11 +78,7 @@ describe('Responsive', () => {
     }))
 
     // Call the effect manually to simulate the component re-rendering
-    const rerender = render(
-      <Responsive>
-        <div>Child Content</div>
-      </Responsive>
-    )
+    const rerender = render(<Responsive />)
 
     // Check that the last known states were restored (which were true initially)
     expect(mockSetShowLeftPanel).toHaveBeenCalledWith(true)

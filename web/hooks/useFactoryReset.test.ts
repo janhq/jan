@@ -17,6 +17,14 @@ jest.mock('@janhq/core', () => ({
   fs: {
     rm: jest.fn(),
   },
+  EngineManager: {
+    instance: jest.fn().mockReturnValue({
+      get: jest.fn(),
+      engines: {
+        values: jest.fn().mockReturnValue([]),
+      },
+    }),
+  },
 }))
 
 describe('useFactoryReset', () => {
@@ -37,6 +45,7 @@ describe('useFactoryReset', () => {
         getAppConfigurations: mockGetAppConfigurations,
         updateAppConfiguration: mockUpdateAppConfiguration,
         relaunch: mockRelaunch,
+        factoryReset: jest.fn(),
       },
     }
     mockGetAppConfigurations.mockResolvedValue({
@@ -72,7 +81,6 @@ describe('useFactoryReset', () => {
     expect(mockSetFactoryResetState).toHaveBeenCalledWith(
       FactoryResetState.ClearLocalStorage
     )
-    expect(mockRelaunch).toHaveBeenCalled()
   })
 
   it('should keep current folder when specified', async () => {

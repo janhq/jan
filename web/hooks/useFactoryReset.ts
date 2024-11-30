@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { fs, AppConfiguration } from '@janhq/core'
+import { fs, AppConfiguration, EngineManager } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useActiveModel } from './useActiveModel'
@@ -37,6 +37,15 @@ export default function useFactoryReset() {
       // 1: Stop running model
       setFactoryResetState(FactoryResetState.StoppingModel)
       await stopModel()
+
+      await Promise.all(
+        EngineManager.instance()
+          .engines.values()
+          .map(async (engine) => {
+            await engine.onUnload()
+          })
+      )
+
       await new Promise((resolve) => setTimeout(resolve, 4000))
 
       // 2: Delete the old jan data folder
@@ -53,13 +62,17 @@ export default function useFactoryReset() {
         await window.core?.api?.updateAppConfiguration(configuration)
       }
 
+      // Perform factory reset
+      await window.core?.api?.factoryReset()
+
       // 4: Clear app local storage
       setFactoryResetState(FactoryResetState.ClearLocalStorage)
       // reset the localStorage
       localStorage.clear()
 
+      window.core = undefined
       // 5: Relaunch the app
-      await window.core?.api?.relaunch()
+      window.location.reload()
     },
     [defaultJanDataFolder, stopModel, setFactoryResetState]
   )

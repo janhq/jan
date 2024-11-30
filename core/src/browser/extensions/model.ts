@@ -12,6 +12,7 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
     return ExtensionTypeEnum.Model
   }
 
+  abstract configurePullOptions(configs: { [key: string]: any }): Promise<any>
   abstract getModels(): Promise<Model[]>
   abstract pullModel(model: string, id?: string, name?: string): Promise<void>
   abstract cancelModelPull(modelId: string): Promise<void>
