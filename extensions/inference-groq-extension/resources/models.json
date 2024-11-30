@@ -67,11 +67,289 @@
         "url": "https://groq.com"
       }
     ],
+    "id": "llama-3.1-70b-versatile",
+    "object": "model",
+    "name": "Groq Llama 3.1 70b Versatile",
+    "version": "1.1",
+    "description": "Groq Llama 3.1 70b Versatile with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8000,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.1-8b-instant",
+    "object": "model",
+    "name": "Groq Llama 3.1 8b Instant",
+    "version": "1.1",
+    "description": "Groq Llama 3.1 8b with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8000,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.2-11b-text-preview",
+    "object": "model",
+    "name": "Groq Llama 3.2 11b Text Preview",
+    "version": "1.1",
+    "description": "Groq Llama 3.2 11b Text Preview with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.2-11b-vision-preview",
+    "object": "model",
+    "name": "Groq Llama 3.2 11b Vision Preview",
+    "version": "1.1",
+    "description": "Groq Llama 3.2 11b Vision Preview with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.2-1b-preview",
+    "object": "model",
+    "name": "Groq Llama 3.2 1b Preview",
+    "version": "1.1",
+    "description": "Groq Llama 3.2 1b Preview with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.2-3b-preview",
+    "object": "model",
+    "name": "Groq Llama 3.2 3b Preview",
+    "version": "1.1",
+    "description": "Groq Llama 3.2 3b Preview with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.2-90b-text-preview",
+    "object": "model",
+    "name": "Groq Llama 3.2 90b Text Preview",
+    "version": "1.1",
+    "description": "Groq Llama 3.2 90b Text Preview with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "llama-3.2-90b-vision-preview",
+    "object": "model",
+    "name": "Groq Llama 3.2 90b Vision Preview",
+    "version": "1.1",
+    "description": "Groq Llama 3.2 90b Vision Preview with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Meta",
+      "tags": [
+        "General",
+        "Big Context Length"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
     "id": "gemma-7b-it",
     "object": "model",
     "name": "Groq Gemma 7B Instruct",
     "version": "1.2",
     "description": "Groq Gemma 7B Instruct with supercharged speed!",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Google",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "groq"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://groq.com"
+      }
+    ],
+    "id": "gemma2-9b-it",
+    "object": "model",
+    "name": "Groq Gemma 9B Instruct",
+    "version": "1.2",
+    "description": "Groq Gemma 9b Instruct with supercharged speed!",
     "format": "api",
     "settings": {},
     "parameters": {
