@@ -66,7 +66,7 @@ const LoadModelError = () => {
   }
 
   return (
-    <div className="mt-10">
+    <div className="flex flex-1">
       <div className="flex w-full flex-col items-center text-center font-medium">
         <p className="w-[90%]">
           <ErrorMessage />

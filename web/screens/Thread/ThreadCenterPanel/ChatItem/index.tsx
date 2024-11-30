@@ -52,7 +52,7 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
 
   return (
     <>
-      {status !== MessageStatus.Error && content.length > 0 && (
+      {status !== MessageStatus.Error && content?.length > 0 && (
         <div ref={ref} className="relative">
           <SimpleTextMessage {...message} content={content} status={status} />
         </div>
