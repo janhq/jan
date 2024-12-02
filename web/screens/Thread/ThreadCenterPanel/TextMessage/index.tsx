@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react'
 
-import { ChatCompletionRole, ThreadMessage } from '@janhq/core'
+import { ChatCompletionRole, ContentType, ThreadMessage } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 import 'katex/dist/katex.min.css'
@@ -13,6 +13,8 @@ import { displayDate } from '@/utils/datetime'
 import EditChatInput from '../EditChatInput'
 import MessageToolbar from '../MessageToolbar'
 
+import DocMessage from './DocMessage'
+import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 
 import {
@@ -22,7 +24,7 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
-const TextMessage: React.FC<ThreadMessage> = (props) => {
+const MessageContainer: React.FC<ThreadMessage> = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const editMessage = useAtomValue(editMessageAtom)
@@ -33,6 +35,10 @@ const TextMessage: React.FC<ThreadMessage> = (props) => {
 
   const text = useMemo(
     () => props.content[0]?.text?.value ?? '',
+    [props.content]
+  )
+  const messageType = useMemo(
+    () => props.content[0]?.type ?? '',
     [props.content]
   )
 
@@ -101,6 +107,17 @@ const TextMessage: React.FC<ThreadMessage> = (props) => {
         )}
       >
         <>
+          {messageType === ContentType.Image && (
+            <ImageMessage content={props.content[0]} />
+          )}
+          {messageType === ContentType.Pdf && (
+            <DocMessage
+              id={props.id}
+              name={props.content[0]?.text?.name}
+              size={props.content[0]?.text?.size}
+            />
+          )}
+
           {editMessage === props.id ? (
             <div>
               <EditChatInput message={props} />
@@ -121,4 +138,4 @@ const TextMessage: React.FC<ThreadMessage> = (props) => {
   )
 }
 
-export default React.memo(TextMessage)
+export default React.memo(MessageContainer)
