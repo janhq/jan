@@ -10,7 +10,7 @@ import {
 
 import ErrorMessage from '@/containers/ErrorMessage'
 
-import SimpleTextMessage from '../SimpleTextMessage'
+import MessageContainer from '../TextMessage'
 
 type Ref = HTMLDivElement
 
@@ -54,7 +54,7 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
     <>
       {status !== MessageStatus.Error && content?.length > 0 && (
         <div ref={ref} className="relative">
-          <SimpleTextMessage {...message} content={content} status={status} />
+          <MessageContainer {...message} content={content} status={status} />
         </div>
       )}
       {errorMessage && !message.loadModelError && (
