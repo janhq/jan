@@ -3,7 +3,6 @@ import { joinPath } from './core'
 import { openFileExplorer } from './core'
 import { getJanDataFolderPath } from './core'
 import { abortDownload } from './core'
-import { getFileSize } from './core'
 import { executeOnMain } from './core'
 
 describe('test core apis', () => {
@@ -64,18 +63,6 @@ describe('test core apis', () => {
     const result = await abortDownload(fileName)
     expect(globalThis.core.api.abortDownload).toHaveBeenCalledWith(fileName)
     expect(result).toBe('aborted')
-  })
-
-  it('should get file size', async () => {
-    const url = 'http://example.com/file'
-    globalThis.core = {
-      api: {
-        getFileSize: jest.fn().mockResolvedValue(1024),
-      },
-    }
-    const result = await getFileSize(url)
-    expect(globalThis.core.api.getFileSize).toHaveBeenCalledWith(url)
-    expect(result).toBe(1024)
   })
 
   it('should execute function on main process', async () => {

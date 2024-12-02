@@ -25,7 +25,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import { snackbar, toaster } from '@/containers/Toast'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-import useModels from '@/hooks/useModels'
+import { useConfigurations } from '@/hooks/useConfigurations'
 import { useSettings } from '@/hooks/useSettings'
 
 import DataFolder from './DataFolder'
@@ -68,7 +68,7 @@ const Advanced = () => {
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
-  const { configurePullOptions } = useModels()
+  const { configurePullOptions } = useConfigurations()
 
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
 
@@ -438,7 +438,7 @@ const Advanced = () => {
         {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
         {!isMac && experimentalEnabled && (
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-            <div className="flex-shrink-0 space-y-1">
+            <div className="space-y-1">
               <div className="flex gap-x-2">
                 <h6 className="font-semibold capitalize">Vulkan Support</h6>
               </div>
@@ -447,11 +447,12 @@ const Advanced = () => {
                 model performance (reload needed).
               </p>
             </div>
-
-            <Switch
-              checked={vulkanEnabled}
-              onChange={(e) => updateVulkanEnabled(e.target.checked)}
-            />
+            <div className="flex-sharink-0">
+              <Switch
+                checked={vulkanEnabled}
+                onChange={(e) => updateVulkanEnabled(e.target.checked)}
+              />
+            </div>
           </div>
         )}
 

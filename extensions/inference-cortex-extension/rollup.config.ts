@@ -117,10 +117,10 @@ export default [
           qwen2572bJson,
         ]),
         NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
-        DEFAULT_SETTINGS: JSON.stringify(defaultSettingJson),
+        SETTINGS: JSON.stringify(defaultSettingJson),
         CORTEX_API_URL: JSON.stringify('http://127.0.0.1:39291'),
         CORTEX_SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
-        CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.39'),
+        CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.40'),
       }),
       // Allow json resolution
       json(),

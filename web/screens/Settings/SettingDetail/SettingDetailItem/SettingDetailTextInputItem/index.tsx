@@ -51,7 +51,7 @@ const SettingDetailTextInputItem = ({
   }, [])
 
   const copy = useCallback(() => {
-    navigator.clipboard.writeText(value)
+    navigator.clipboard.writeText(value as string)
     if (value.length > 0) {
       setCopied(true)
     }

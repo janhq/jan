@@ -1,33 +1,59 @@
 [
   {
-    "key": "test",
-    "title": "Test",
-    "description": "Test",
-    "controllerType": "input",
-    "controllerProps": {
-      "placeholder": "Test",
-      "value": ""
-    }
-  },
-  {
-    "key": "embedding",
-    "title": "Embedding",
-    "description": "Whether to enable embedding.",
+    "key": "cont_batching",
+    "title": "Continuous batching",
+    "description": "The number of parallel operations",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": true
     }
   },
   {
-    "key": "ctx_len",
-    "title": "Context Length",
-    "description": "The context length for model operations varies; the maximum depends on the specific model used.",
-    "controllerType": "slider",
+    "key": "n_parallel",
+    "title": "Parallel operations",
+    "description": "The number of parallel operations",
+    "controllerType": "input",
     "controllerProps": {
-      "min": 0,
-      "max": 4096,
-      "step": 128,
-      "value": 2048
+      "value": "4",
+      "placeholder": "4"
+    }
+  },
+  {
+    "key": "flash_attn",
+    "title": "Flash Attention enabled",
+    "description": "To enable Flash Attention, default is true",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+
+  {
+    "key": "caching_enabled",
+    "title": "Caching enabled",
+    "description": "To enable prompt caching or not",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
+    "key": "cache_type",
+    "title": "KV Cache Type",
+    "description": "KV cache type: f16, q8_0, q4_0, default is f16 (change this could break the model).",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "f16",
+      "value": "f16"
+    }
+  },
+  {
+    "key": "use_mmap",
+    "title": "To enable mmap",
+    "description": "To enable mmap, default is true",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
     }
   }
 ]

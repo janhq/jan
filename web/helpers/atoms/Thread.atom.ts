@@ -207,7 +207,9 @@ export const setThreadModelParamsAtom = atom(
  */
 export const activeSettingInputBoxAtom = atomWithStorage<boolean>(
   ACTIVE_SETTING_INPUT_BOX,
-  false
+  false,
+  undefined,
+  { getOnInit: true }
 )
 
 /**

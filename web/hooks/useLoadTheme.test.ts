@@ -4,6 +4,11 @@ import { fs, joinPath } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useLoadTheme } from './useLoadTheme'
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import {
+  selectedThemeIdAtom,
+  themeDataAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 // Mock dependencies
 jest.mock('next-themes')
@@ -36,10 +41,25 @@ describe('useLoadTheme', () => {
 
   it('should load theme and set variables', async () => {
     // Mock Jotai hooks
-    ;(useAtomValue as jest.Mock).mockReturnValue(mockJanDataFolderPath)
+    ;(useAtomValue as jest.Mock).mockImplementation((atom) => {
+      switch (atom) {
+        case janDataFolderPathAtom:
+          return mockJanDataFolderPath
+        default:
+          return undefined
+      }
+    })
     ;(useSetAtom as jest.Mock).mockReturnValue(jest.fn())
-    ;(useAtom as jest.Mock).mockReturnValue([mockSelectedThemeId, jest.fn()])
-    ;(useAtom as jest.Mock).mockReturnValue([mockThemeData, jest.fn()])
+    ;(useAtom as jest.Mock).mockImplementation((atom) => {
+      switch (atom) {
+        case selectedThemeIdAtom:
+          return [mockSelectedThemeId, jest.fn()]
+        case themeDataAtom:
+          return [mockThemeData, jest.fn()]
+        default:
+          return [undefined, jest.fn()]
+      }
+    })
 
     // Mock fs and joinPath
     ;(fs.readdirSync as jest.Mock).mockResolvedValue(['joi-light', 'joi-dark'])

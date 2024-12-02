@@ -46,8 +46,7 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
         errMessage = err.message
       }
       toaster({
-        title: 'Failed to get Hugging Face models',
-        description: errMessage,
+        title: errMessage,
         type: 'error',
       })
       console.error(err)

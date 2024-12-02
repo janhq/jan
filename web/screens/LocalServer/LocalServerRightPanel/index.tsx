@@ -86,7 +86,7 @@ const LocalServerRightPanel = () => {
   }, [currentModelSettingParams, setLocalAPIserverModelParams])
 
   const onValueChanged = useCallback(
-    (key: string, value: string | number | boolean) => {
+    (key: string, value: string | number | boolean | string[]) => {
       setCurrentModelSettingParams((prevParams) => ({
         ...prevParams,
         [key]: value,

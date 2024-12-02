@@ -49,7 +49,7 @@ const LoadModelError = () => {
     } else {
       return (
         <div className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--text-secondary))]">
-          {loadModelError && <p>{loadModelError}</p>}
+          {loadModelError && <p className="capitalize">{loadModelError}</p>}
           <p>
             {`Something's wrong.`}&nbsp;Access&nbsp;
             <span
@@ -66,7 +66,7 @@ const LoadModelError = () => {
   }
 
   return (
-    <div className="mt-10">
+    <div className="flex flex-1">
       <div className="flex w-full flex-col items-center text-center font-medium">
         <p className="w-[90%]">
           <ErrorMessage />

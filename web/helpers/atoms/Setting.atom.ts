@@ -11,12 +11,39 @@ export const janSettingScreenAtom = atom<SettingScreen[]>([])
 export const THEME = 'themeAppearance'
 export const REDUCE_TRANSPARENT = 'reduceTransparent'
 export const SPELL_CHECKING = 'spellChecking'
-export const themesOptionsAtom = atom<{ name: string; value: string }[]>([])
-export const janThemesPathAtom = atom<string | undefined>(undefined)
-export const selectedThemeIdAtom = atomWithStorage<string>(THEME, '')
-export const themeDataAtom = atom<Theme | undefined>(undefined)
+export const THEME_DATA = 'themeData'
+export const THEME_OPTIONS = 'themeOptions'
+export const THEME_PATH = 'themePath'
+export const themesOptionsAtom = atomWithStorage<
+  { name: string; value: string }[]
+>(THEME_OPTIONS, [], undefined, { getOnInit: true })
+export const janThemesPathAtom = atomWithStorage<string | undefined>(
+  THEME_PATH,
+  undefined,
+  undefined,
+  { getOnInit: true }
+)
+export const selectedThemeIdAtom = atomWithStorage<string>(
+  THEME,
+  '',
+  undefined,
+  { getOnInit: true }
+)
+export const themeDataAtom = atomWithStorage<Theme | undefined>(
+  THEME_DATA,
+  undefined,
+  undefined,
+  { getOnInit: true }
+)
 export const reduceTransparentAtom = atomWithStorage<boolean>(
   REDUCE_TRANSPARENT,
-  false
+  false,
+  undefined,
+  { getOnInit: true }
 )
-export const spellCheckAtom = atomWithStorage<boolean>(SPELL_CHECKING, false)
+export const spellCheckAtom = atomWithStorage<boolean>(
+  SPELL_CHECKING,
+  false,
+  undefined,
+  { getOnInit: true }
+)

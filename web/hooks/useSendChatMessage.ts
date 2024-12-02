@@ -34,6 +34,7 @@ import {
   addNewMessageAtom,
   deleteMessageAtom,
   getCurrentChatMessagesAtom,
+  tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
@@ -45,7 +46,6 @@ import {
   updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
-export const queuedMessageAtom = atom(false)
 export const reloadModelAtom = atom(false)
 
 export default function useSendChatMessage() {
@@ -70,7 +70,7 @@ export default function useSendChatMessage() {
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const activeThreadRef = useRef<Thread | undefined>()
-  const setQueuedMessage = useSetAtom(queuedMessageAtom)
+  const setTokenSpeed = useSetAtom(tokenSpeedAtom)
 
   const selectedModelRef = useRef<Model | undefined>()
 
@@ -135,7 +135,10 @@ export default function useSendChatMessage() {
     sendChatMessage(toSendMessage.content[0]?.text.value)
   }
 
-  const sendChatMessage = async (message: string) => {
+  const sendChatMessage = async (
+    message: string,
+    messages?: ThreadMessage[]
+  ) => {
     if (!message || message.trim().length === 0) return
 
     if (!activeThreadRef.current) {
@@ -144,6 +147,7 @@ export default function useSendChatMessage() {
     }
 
     if (engineParamsUpdate) setReloadModel(true)
+    setTokenSpeed(undefined)
 
     const runtimeParams = extractInferenceParams(activeModelParams)
     const settingParams = extractModelLoadParams(activeModelParams)
@@ -187,7 +191,7 @@ export default function useSendChatMessage() {
         parameters: runtimeParams,
       },
       activeThreadRef.current,
-      currentMessages
+      messages ?? currentMessages
     ).addSystemMessage(activeThreadRef.current.assistants[0].instructions)
 
     requestBuilder.pushMessage(prompt, base64Blob, fileUpload[0]?.type)
@@ -228,9 +232,7 @@ export default function useSendChatMessage() {
     }
 
     if (modelRef.current?.id !== modelId) {
-      setQueuedMessage(true)
       const error = await startModel(modelId).catch((error: Error) => error)
-      setQueuedMessage(false)
       if (error) {
         updateThreadWaiting(activeThreadRef.current.id, false)
         return

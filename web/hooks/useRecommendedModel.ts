@@ -31,7 +31,8 @@ export default function useRecommendedModel() {
 
   const getAndSortDownloadedModels = useCallback(async (): Promise<Model[]> => {
     const models = downloadedModels.sort((a, b) =>
-      a.engine !== InferenceEngine.nitro && b.engine === InferenceEngine.nitro
+      a.engine !== InferenceEngine.cortex_llamacpp &&
+      b.engine === InferenceEngine.cortex_llamacpp
         ? 1
         : -1
     )
@@ -43,6 +44,7 @@ export default function useRecommendedModel() {
     Model | undefined
   > => {
     const models = await getAndSortDownloadedModels()
+
     if (!activeThread) return
     const modelId = activeThread.assistants[0]?.model.id
     const model = models.find((model) => model.id === modelId)

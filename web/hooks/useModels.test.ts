@@ -43,7 +43,7 @@ describe('useModels', () => {
 
     const { result } = renderHook(() => useModels())
     await act(() => {
-      result.current?.loadDataModel()
+      result.current?.getData()
     })
 
     expect(mockModelExtension.getModels).toHaveBeenCalled()
@@ -70,7 +70,7 @@ describe('useModels', () => {
     const { result } = renderHook(() => useModels())
 
     await act(() => {
-      result.current?.loadDataModel()
+      result.current?.getData()
     })
 
     expect(mockModelExtension.getModels()).rejects.toThrow()

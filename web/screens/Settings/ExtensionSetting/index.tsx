@@ -44,7 +44,7 @@ const ExtensionSetting = () => {
 
   const onValueChanged = async (
     key: string,
-    value: string | number | boolean
+    value: string | number | boolean | string[]
   ) => {
     // find the key in settings state, update it and set the state back
     const newSettings = settings.map((setting) => {
