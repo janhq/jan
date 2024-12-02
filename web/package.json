@@ -16,6 +16,7 @@
   "dependencies": {
     "@janhq/core": "link:./core",
     "@janhq/joi": "link:./joi",
+    "@tanstack/react-virtual": "^3.10.9",
     "autoprefixer": "10.4.16",
     "class-variance-authority": "^0.7.0",
     "framer-motion": "^10.16.4",
