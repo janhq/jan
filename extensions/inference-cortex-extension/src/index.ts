@@ -36,6 +36,15 @@ enum DownloadTypes {
   DownloadStarted = 'onFileDownloadStarted',
 }
 
+export enum Settings {
+  n_parallel = 'n_parallel',
+  cont_batching = 'cont_batching',
+  caching_enabled = 'caching_enabled',
+  flash_attn = 'flash_attn',
+  cache_type = 'cache_type',
+  use_mmap = 'use_mmap',
+}
+
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
  * The class provides methods for initializing and stopping a model, and for making inference requests.
@@ -50,6 +59,14 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   shouldReconnect = true
 
+  /** Default Engine model load settings */
+  n_parallel: number = 4
+  cont_batching: boolean = true
+  caching_enabled: boolean = true
+  flash_attn: boolean = true
+  use_mmap: boolean = true
+  cache_type: string = 'f16'
+
   /**
    * The URL for making inference requests.
    */
@@ -60,6 +77,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    */
   socket?: WebSocket = undefined
 
+  abortControllers = new Map<string, AbortController>()
+
   /**
    * Subscribes to events emitted by the @janhq/core package.
    */
@@ -69,6 +88,23 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.registerModels(models)
 
     super.onLoad()
+
+    // Register Settings
+    this.registerSettings(SETTINGS)
+
+    this.n_parallel =
+      Number(await this.getSetting<string>(Settings.n_parallel, '4')) ?? 4
+    this.cont_batching = await this.getSetting<boolean>(
+      Settings.cont_batching,
+      true
+    )
+    this.caching_enabled = await this.getSetting<boolean>(
+      Settings.caching_enabled,
+      true
+    )
+    this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
+    this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
+    this.cache_type = await this.getSetting<string>(Settings.cache_type, 'f16')
 
     this.queue.add(() => this.clean())
 
@@ -99,6 +135,22 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.clean()
     await executeOnMain(NODE, 'dispose')
     super.onUnload()
+  }
+
+  onSettingUpdate<T>(key: string, value: T): void {
+    if (key === Settings.n_parallel && typeof value === 'string') {
+      this.n_parallel = Number(value) ?? 1
+    } else if (key === Settings.cont_batching && typeof value === 'boolean') {
+      this.cont_batching = value as boolean
+    } else if (key === Settings.caching_enabled && typeof value === 'boolean') {
+      this.caching_enabled = value as boolean
+    } else if (key === Settings.flash_attn && typeof value === 'boolean') {
+      this.flash_attn = value as boolean
+    } else if (key === Settings.cache_type && typeof value === 'string') {
+      this.cache_type = value as string
+    } else if (key === Settings.use_mmap && typeof value === 'boolean') {
+      this.use_mmap = value as boolean
+    }
   }
 
   override async loadModel(
@@ -134,6 +186,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       const { mmproj, ...settings } = model.settings
       model.settings = settings
     }
+    const controller = new AbortController()
+    const { signal } = controller
+
+    this.abortControllers.set(model.id, controller)
 
     return await this.queue.add(() =>
       ky
@@ -145,13 +201,21 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               model.engine === InferenceEngine.nitro // Legacy model cache
                 ? InferenceEngine.cortex_llamacpp
                 : model.engine,
+            cont_batching: this.cont_batching,
+            n_parallel: this.n_parallel,
+            caching_enabled: this.caching_enabled,
+            flash_attn: this.flash_attn,
+            cache_type: this.cache_type,
+            use_mmap: this.use_mmap,
           },
           timeout: false,
+          signal,
         })
         .json()
         .catch(async (e) => {
           throw (await e.response?.json()) ?? e
         })
+        .finally(() => this.abortControllers.delete(model.id))
         .then()
     )
   }
@@ -162,6 +226,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         json: { model: model.id },
       })
       .json()
+      .finally(() => {
+        this.abortControllers.get(model.id)?.abort()
+      })
       .then()
   }
 

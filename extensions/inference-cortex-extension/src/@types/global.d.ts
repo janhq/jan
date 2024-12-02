@@ -2,7 +2,7 @@ declare const NODE: string
 declare const CORTEX_API_URL: string
 declare const CORTEX_SOCKET_URL: string
 declare const CORTEX_ENGINE_VERSION: string
-declare const DEFAULT_SETTINGS: Array<any>
+declare const SETTINGS: Array<any>
 declare const MODELS: Array<any>
 
 /**
