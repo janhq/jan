@@ -18,9 +18,8 @@ import { useClipboard } from '@/hooks/useClipboard'
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 
 export const MarkdownTextMessage = memo(
-  ({ text, id }: { id: string; text: string }) => {
+  ({ text }: { id: string; text: string }) => {
     const clipboard = useClipboard({ timeout: 1000 })
-    console.log('rerender', id)
 
     function extractCodeLines(node: { children: { children: any[] }[] }) {
       const codeLines: any[] = []
