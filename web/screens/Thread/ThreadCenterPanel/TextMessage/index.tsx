@@ -125,7 +125,7 @@ const MessageContainer: React.FC<ThreadMessage> = (props) => {
           ) : (
             <div
               className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-auto leading-relaxed'
+                'message max-width-[100%] flex flex-col gap-y-2 overflow-x-auto overflow-y-hidden leading-relaxed'
               )}
               dir="ltr"
             >
