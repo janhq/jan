@@ -1,17 +1,12 @@
 import React, { useMemo } from 'react'
 
-import { ChatCompletionRole, ContentType, ThreadMessage } from '@janhq/core'
-
-import { Tooltip } from '@janhq/joi'
+import { ChatCompletionRole, ThreadMessage } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
-import { FolderOpenIcon } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import { twMerge } from 'tailwind-merge'
 
 import LogoMark from '@/containers/Brand/Logo/Mark'
-
-import { usePath } from '@/hooks/usePath'
 
 import { displayDate } from '@/utils/datetime'
 
