@@ -54,7 +54,12 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
     <>
       {status !== MessageStatus.Error && content?.length > 0 && (
         <div ref={ref} className="relative">
-          <MessageContainer {...message} content={content} status={status} />
+          <MessageContainer
+            {...message}
+            content={content}
+            status={status}
+            isCurrentMessage={message.isCurrentMessage ?? false}
+          />
         </div>
       )}
       {errorMessage && !message.loadModelError && (
