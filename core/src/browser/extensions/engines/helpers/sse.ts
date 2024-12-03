@@ -77,6 +77,11 @@ export function requestInference(
                   const toParse = cachedLines + line
                   if (!line.includes('data: [DONE]')) {
                     const data = JSON.parse(toParse.replace('data: ', ''))
+                    if ('error' in data) {
+                      subscriber.error(data.error)
+                      subscriber.complete()
+                      return
+                    }
                     content += data.choices[0]?.delta?.content ?? ''
                     if (content.startsWith('assistant: ')) {
                       content = content.replace('assistant: ', '')
