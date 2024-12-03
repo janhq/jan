@@ -19,19 +19,18 @@ import { MarkdownTextMessage } from './MarkdownTextMessage'
 
 import {
   editMessageAtom,
-  getCurrentChatMessagesAtom,
   tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
-const MessageContainer: React.FC<ThreadMessage> = (props) => {
+const MessageContainer: React.FC<
+  ThreadMessage & { isCurrentMessage: boolean }
+> = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const editMessage = useAtomValue(editMessageAtom)
   const activeThread = useAtomValue(activeThreadAtom)
-
   const tokenSpeed = useAtomValue(tokenSpeedAtom)
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const text = useMemo(
     () => props.content[0]?.text?.value ?? '',
@@ -81,16 +80,6 @@ const MessageContainer: React.FC<ThreadMessage> = (props) => {
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created)}
         </p>
-        <div
-          className={twMerge(
-            'absolute right-0 cursor-pointer transition-all',
-            messages[messages.length - 1]?.id === props.id && !isUser
-              ? 'absolute -bottom-8 right-4'
-              : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
-          )}
-        >
-          <MessageToolbar message={props} />
-        </div>
         {tokenSpeed &&
           tokenSpeed.message === props.id &&
           tokenSpeed.tokenSpeed > 0 && (
@@ -100,39 +89,52 @@ const MessageContainer: React.FC<ThreadMessage> = (props) => {
           )}
       </div>
 
-      <div
-        className={twMerge(
-          'w-full',
-          !isUser && !text.includes(' ') && 'break-all'
-        )}
-      >
-        <>
-          {messageType === ContentType.Image && (
-            <ImageMessage content={props.content[0]} />
+      <div className="flex w-full flex-col">
+        <div
+          className={twMerge(
+            'absolute right-0 order-1 mt-2 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
+            props.isCurrentMessage && !isUser
+              ? 'relative order-2 flex justify-end'
+              : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
-          {messageType === ContentType.Pdf && (
-            <DocMessage
-              id={props.id}
-              name={props.content[0]?.text?.name}
-              size={props.content[0]?.text?.size}
-            />
+        >
+          <MessageToolbar message={props} />
+        </div>
+        <div
+          className={twMerge(
+            'order-2 w-full',
+            !isUser && !text.includes(' ') && 'break-all',
+            props.isCurrentMessage && !isUser && 'order-1'
           )}
+        >
+          <>
+            {messageType === ContentType.Image && (
+              <ImageMessage content={props.content[0]} />
+            )}
+            {messageType === ContentType.Pdf && (
+              <DocMessage
+                id={props.id}
+                name={props.content[0]?.text?.name}
+                size={props.content[0]?.text?.size}
+              />
+            )}
 
-          {editMessage === props.id ? (
-            <div>
-              <EditChatInput message={props} />
-            </div>
-          ) : (
-            <div
-              className={twMerge(
-                'message max-width-[100%] flex flex-col gap-y-2 overflow-x-auto overflow-y-hidden leading-relaxed'
-              )}
-              dir="ltr"
-            >
-              <MarkdownTextMessage id={props.id} text={text} />
-            </div>
-          )}
-        </>
+            {editMessage === props.id ? (
+              <div>
+                <EditChatInput message={props} />
+              </div>
+            ) : (
+              <div
+                className={twMerge(
+                  'message max-width-[100%] flex flex-col gap-y-2 overflow-x-auto overflow-y-hidden leading-relaxed'
+                )}
+                dir="ltr"
+              >
+                <MarkdownTextMessage id={props.id} text={text} />
+              </div>
+            )}
+          </>
+        </div>
       </div>
     </div>
   )
