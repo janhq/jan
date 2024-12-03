@@ -368,23 +368,23 @@ When you start a chat with a model and encounter a Something's Amiss error, here
 4. Confirm your V/RAM accessibility, mainly if using virtual RAM.
 5. Nvidia GPU users should download [CUDA](https://developer.nvidia.com/cuda-downloads).
 6. Linux users, ensure your system meets the requirements of gcc 11, g++ 11, cpp 11, or higher. Refer to this [link](#troubleshooting-nvidia-gpu) for details.
-7. You might use the wrong port when you [check the app logs](#how-to-get-error-logs) and encounter the Bind address failed at 127.0.0.1:3928 error. To check the port status, try using the `netstat` command, like the following:
+7. You might use the wrong port when you [check the app logs](#how-to-get-error-logs) and encounter the Bind address failed at 127.0.0.1:39291 error. To check the port status, try using the `netstat` command, like the following:
 
 <Tabs items={['Mac', 'Windows', 'Linux']}>
     <Tabs.Tab >
         ```bash
-        netstat -an | grep 3928
+        netstat -an | grep 39291
         ```
     </Tabs.Tab>
     <Tabs.Tab >
         ```bash
-        netstat -ano | find "3928" 
-        tasklist /fi "PID eq 3928"
+        netstat -ano | find "39291" 
+        tasklist /fi "PID eq 39291"
         ```
     </Tabs.Tab>
     <Tabs.Tab >
         ```bash
-        netstat -anpe | grep "3928" 
+        netstat -anpe | grep "39291" 
         ```
     </Tabs.Tab>
 </Tabs>
