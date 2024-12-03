@@ -88,7 +88,7 @@ const ChatBody = memo(
     }
 
     return (
-      <div className="scroll-area flex h-full w-full flex-col overflow-x-hidden">
+      <div className="flex h-full w-full flex-col overflow-x-hidden">
         <div
           ref={parentRef}
           className="List"
