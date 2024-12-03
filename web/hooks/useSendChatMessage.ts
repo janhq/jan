@@ -10,7 +10,6 @@ import {
   ConversationalExtension,
   EngineManager,
   ToolManager,
-  ChatCompletionMessage,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -21,7 +20,6 @@ import {
   fileUploadAtom,
 } from '@/containers/Providers/Jotai'
 
-import { Stack } from '@/utils/Stack'
 import { compressImage, getBase64 } from '@/utils/base64'
 import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
 
@@ -85,33 +83,6 @@ export default function useSendChatMessage() {
   useEffect(() => {
     selectedModelRef.current = selectedModel
   }, [selectedModel])
-
-  const normalizeMessages = (
-    messages: ChatCompletionMessage[]
-  ): ChatCompletionMessage[] => {
-    const stack = new Stack<ChatCompletionMessage>()
-    for (const message of messages) {
-      if (stack.isEmpty()) {
-        stack.push(message)
-        continue
-      }
-      const topMessage = stack.peek()
-
-      if (message.role === topMessage.role) {
-        // add an empty message
-        stack.push({
-          role:
-            topMessage.role === ChatCompletionRole.User
-              ? ChatCompletionRole.Assistant
-              : ChatCompletionRole.User,
-          content: '.', // some model requires not empty message
-        })
-      }
-      stack.push(message)
-    }
-
-    return stack.reverseOutput()
-  }
 
   const resendChatMessage = async (currentMessage: ThreadMessage) => {
     // Delete last response before regenerating
@@ -247,7 +218,6 @@ export default function useSendChatMessage() {
         (assistant) => assistant.tools ?? []
       ) ?? []
     )
-    request.messages = normalizeMessages(request.messages ?? [])
 
     // Request for inference
     EngineManager.instance()

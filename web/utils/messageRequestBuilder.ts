@@ -15,6 +15,8 @@ import { ulid } from 'ulidx'
 
 import { FileType } from '@/containers/Providers/Jotai'
 
+import { Stack } from '@/utils/Stack'
+
 export class MessageRequestBuilder {
   msgId: string
   type: MessageRequestType
@@ -36,7 +38,7 @@ export class MessageRequestBuilder {
       .filter((e) => e.status !== MessageStatus.Error)
       .map<ChatCompletionMessage>((msg) => ({
         role: msg.role,
-        content: msg.content[0]?.text.value ?? '',
+        content: msg.content[0]?.text.value ?? '.',
       }))
   }
 
@@ -130,12 +132,39 @@ export class MessageRequestBuilder {
     return this
   }
 
+  normalizeMessages = (
+    messages: ChatCompletionMessage[]
+  ): ChatCompletionMessage[] => {
+    const stack = new Stack<ChatCompletionMessage>()
+    for (const message of messages) {
+      if (stack.isEmpty()) {
+        stack.push(message)
+        continue
+      }
+      const topMessage = stack.peek()
+
+      if (message.role === topMessage.role) {
+        // add an empty message
+        stack.push({
+          role:
+            topMessage.role === ChatCompletionRole.User
+              ? ChatCompletionRole.Assistant
+              : ChatCompletionRole.User,
+          content: '.', // some model requires not empty message
+        })
+      }
+      stack.push(message)
+    }
+
+    return stack.reverseOutput()
+  }
+
   build(): MessageRequest {
     return {
       id: this.msgId,
       type: this.type,
       threadId: this.thread.id,
-      messages: this.messages,
+      messages: this.normalizeMessages(this.messages),
       model: this.model,
       thread: this.thread,
     }
