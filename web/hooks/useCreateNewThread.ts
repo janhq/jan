@@ -105,14 +105,21 @@ export const useCreateNewThread = () => {
       enabled: true,
       settings: assistant.tools && assistant.tools[0].settings,
     }
-    const overriddenSettings =
-      defaultModel?.settings.ctx_len && defaultModel.settings.ctx_len > 2048
-        ? { ctx_len: 4096 }
-        : {}
 
-    const overriddenParameters = defaultModel?.parameters.max_tokens
-      ? { max_tokens: 4096 }
-      : {}
+    // Default context length is 8192
+    const defaultContextLength = Math.min(
+      8192,
+      defaultModel?.settings.ctx_len ?? 8192
+    )
+
+    const overriddenSettings = {
+      ctx_len: defaultContextLength,
+    }
+
+    // Use ctx length by default
+    const overriddenParameters = {
+      max_tokens: defaultContextLength,
+    }
 
     const createdAt = Date.now()
     let instructions: string | undefined = assistant.instructions

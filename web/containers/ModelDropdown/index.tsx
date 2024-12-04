@@ -187,15 +187,19 @@ const ModelDropdown = ({
           ],
         })
 
-        const overriddenSettings =
-          model?.settings.ctx_len && model.settings.ctx_len > 4096
-            ? { ctx_len: 4096 }
-            : {}
+        const defaultContextLength = Math.min(
+          8192,
+          model?.settings.ctx_len ?? 8192
+        )
+        const overriddenParameters = {
+          ctx_len: Math.min(8192, model?.settings.ctx_len ?? 8192),
+          max_tokens: defaultContextLength,
+        }
 
         const modelParams = {
           ...model?.parameters,
           ...model?.settings,
-          ...overriddenSettings,
+          ...overriddenParameters,
         }
 
         // Update model parameter to the thread state
