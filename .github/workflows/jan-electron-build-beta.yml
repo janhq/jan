@@ -34,18 +34,8 @@ jobs:
           prerelease: false
           generate_release_notes: true
 
-  build-macos-x64:
-    uses: ./.github/workflows/template-build-macos-x64.yml
-    secrets: inherit
-    needs: [get-update-version]
-    with:
-      ref: ${{ github.ref }}
-      public_provider: github
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      beta: true
-
-  build-macos-arm64:
-    uses: ./.github/workflows/template-build-macos-arm64.yml
+  build-macos:
+    uses: ./.github/workflows/template-build-macos.yml
     secrets: inherit
     needs: [get-update-version]
     with:
@@ -74,53 +64,14 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       beta: true
 
-  combine-beta-mac-yml:
-    needs: [build-macos-x64, build-macos-arm64, create-draft-release, build-windows-x64, build-linux-x64]
+  sync-temp-to-latest:
+    needs: [build-macos, create-draft-release, build-windows-x64, build-linux-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Getting the repo
-        uses: actions/checkout@v3
-
-      - name: Download mac-x64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: beta-mac-x64
-          path: ./beta-mac-x64
-      - name: Download mac-arm artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: beta-mac-arm64
-          path: ./beta-mac-arm64
-
-      - name: 'Merge beta-mac.yml'
-        # unfortunately electron-builder doesn't understand that we have two different releases for mac-x64 and mac-arm, so we need to manually merge the latest files
-        # see https://github.com/electron-userland/electron-builder/issues/5592
+      - name: Sync temp to latest
         run: |
-          ls -la .
-          ls -la ./beta-mac-x64
-          ls -la ./beta-mac-arm64
-          ls -la ./electron
-          cp ./electron/merge-latest-ymls.js /tmp/merge-beta-ymls.js
-          npm install js-yaml --prefix /tmp
-          node /tmp/merge-beta-ymls.js ./beta-mac-x64/beta-mac.yml ./beta-mac-arm64/beta-mac.yml ./beta-mac.yml
-          cat ./beta-mac.yml
-      
-      - name: Yet Another Upload Release Asset Action  
-        uses: shogo82148/actions-upload-release-asset@v1.7.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-          asset_path: ./beta-mac.yml
-          asset_name: beta-mac.yml
-          asset_content_type: text/yaml
-          overwrite: true
-
-      - name: Upload beta-mac.yml
-        run: |
-          aws s3 cp ./beta-mac.yml "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/beta-mac.yml"
           # sync temp-beta to beta by copy files that are different or new
           aws s3 sync "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/" "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/beta/"
         env:
@@ -136,7 +87,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   noti-discord-and-update-url-readme:
-    needs: [build-macos-x64, build-macos-arm64, create-draft-release, build-windows-x64, build-linux-x64, combine-beta-mac-yml]
+    needs: [build-macos, create-draft-release, build-windows-x64, build-linux-x64, sync-temp-to-latest]
     runs-on: ubuntu-latest
     steps:
       - name: Set version to environment variable
@@ -149,8 +100,7 @@ jobs:
           args: |
             Jan-beta App version {{ VERSION }}, has been released, use the following links to download the app with faster speed or visit the Github release page for more information:
             - Windows: https://delta.jan.ai/beta/jan-beta-win-x64-{{ VERSION }}.exe
-            - macOS Intel: https://delta.jan.ai/beta/jan-beta-mac-x64-{{ VERSION }}.dmg
-            - macOS Apple Silicon: https://delta.jan.ai/beta/jan-beta-mac-arm64-{{ VERSION }}.dmg
+            - macOS Universal: https://delta.jan.ai/beta/jan-beta-mac-universal-{{ VERSION }}.dmg
             - Linux Deb: https://delta.jan.ai/beta/jan-beta-linux-amd64-{{ VERSION }}.deb
             - Linux AppImage: https://delta.jan.ai/beta/jan-beta-linux-x86_64-{{ VERSION }}.AppImage
             - Github Release URL: https://github.com/janhq/jan/releases/tag/v{{ VERSION }}
