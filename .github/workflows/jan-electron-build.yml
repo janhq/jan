@@ -33,17 +33,8 @@ jobs:
           draft: true
           prerelease: false
 
-  build-macos-x64:
-    uses: ./.github/workflows/template-build-macos-x64.yml
-    secrets: inherit
-    needs: [get-update-version]
-    with:
-      ref: ${{ github.ref }}
-      public_provider: github
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-
-  build-macos-arm64:
-    uses: ./.github/workflows/template-build-macos-arm64.yml
+  build-macos:
+    uses: ./.github/workflows/template-build-macos.yml
     secrets: inherit
     needs: [get-update-version]
     with:
@@ -69,52 +60,8 @@ jobs:
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  combine-latest-mac-yml:
-    needs: [build-macos-x64, build-macos-arm64, create-draft-release]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Getting the repo
-        uses: actions/checkout@v3
-
-      - name: Download mac-x64 artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: latest-mac-x64
-          path: ./latest-mac-x64
-      - name: Download mac-arm artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: latest-mac-arm64
-          path: ./latest-mac-arm64
-
-      - name: 'Merge latest-mac.yml'
-        # unfortunately electron-builder doesn't understand that we have two different releases for mac-x64 and mac-arm, so we need to manually merge the latest files
-        # see https://github.com/electron-userland/electron-builder/issues/5592
-        run: |
-          ls -la .
-          ls -la ./latest-mac-x64
-          ls -la ./latest-mac-arm64
-          ls -la ./electron
-          cp ./electron/merge-latest-ymls.js /tmp/merge-latest-ymls.js
-          npm install js-yaml --prefix /tmp
-          node /tmp/merge-latest-ymls.js ./latest-mac-x64/latest-mac.yml ./latest-mac-arm64/latest-mac.yml ./latest-mac.yml
-          cat ./latest-mac.yml
-      
-      - name: Yet Another Upload Release Asset Action  
-        uses: shogo82148/actions-upload-release-asset@v1.7.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-          asset_path: ./latest-mac.yml
-          asset_name: latest-mac.yml
-          asset_content_type: text/yaml
-          overwrite: true
-
   update_release_draft:
-    needs: [build-macos-x64, build-macos-arm64, build-windows-x64, build-linux-x64, combine-latest-mac-yml]
+    needs: [build-macos, build-windows-x64, build-linux-x64]
     permissions:
       # write permission is required to create a github release
       contents: write

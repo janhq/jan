@@ -52,7 +52,10 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         )
       default:
         return (
-          <p data-testid="passthrough-error-message" className="capitalize">
+          <p
+            data-testid="passthrough-error-message"
+            className="first-letter:uppercase"
+          >
             {message.content[0]?.text?.value && (
               <AutoLink text={message.content[0].text.value} />
             )}

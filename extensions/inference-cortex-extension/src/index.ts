@@ -334,13 +334,22 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             }
           })
 
+          /**
+           * This is to handle the server segfault issue
+           */
           this.socket.onclose = (event) => {
             console.log('WebSocket closed:', event)
+            // Notify app to update model running state
             events.emit(ModelEvent.OnModelStopped, {})
+
+            // Reconnect to the /events websocket
             if (this.shouldReconnect) {
               console.log(`Attempting to reconnect...`)
               setTimeout(() => this.subscribeToEvents(), 1000)
             }
+
+            // Queue up health check
+            this.queue.add(() => this.healthz())
           }
 
           resolve()

@@ -43,7 +43,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-13
+    runs-on: macos-latest
     environment: production
     permissions:
       contents: write
@@ -78,7 +78,7 @@ jobs:
           jq --arg teamid "${{ secrets.APPLE_TEAM_ID }}" '.build.mac.notarize.teamId = $teamid' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
 
-          cat electron/package.json
+          # cat electron/package.json
           chmod +x .github/scripts/rename-app.sh
           .github/scripts/rename-app.sh ./electron/package.json nightly
           chmod +x .github/scripts/rename-workspace.sh
@@ -192,19 +192,5 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-mac-x64-${{ inputs.new_version }}
+          name: jan-mac-universal-${{ inputs.new_version }}
           path: ./electron/dist/*.dmg
-
-      - name: Upload Artifact
-        if: inputs.beta == false
-        uses: actions/upload-artifact@v4
-        with:
-          name: latest-mac-x64
-          path: ./electron/dist/latest-mac.yml
-
-      - name: Upload Artifact
-        if: inputs.beta == true
-        uses: actions/upload-artifact@v4
-        with:
-          name: beta-mac-x64
-          path: ./electron/dist/beta-mac.yml
