@@ -14,9 +14,11 @@ import LoadModelError from '../LoadModelError'
 import EmptyThread from './EmptyThread'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ChatConfigurator = memo(() => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
+  const currentThread = useAtomValue(activeThreadAtom)
 
   const [current, setCurrent] = useState<ThreadMessage[]>([])
   const loadModelError = useAtomValue(loadModelErrorAtom)
@@ -31,12 +33,12 @@ const ChatConfigurator = memo(() => {
 
   useEffect(() => {
     if (
-      messages?.length !== current?.length ||
-      !isMessagesIdentificial(messages, current)
+      !isMessagesIdentificial(messages, current) ||
+      messages.some((e) => e.thread_id !== currentThread?.id)
     ) {
       setCurrent(messages)
     }
-  }, [messages, current, loadModelError])
+  }, [messages, current, loadModelError, currentThread])
 
   if (!messages.length) return <EmptyThread />
   return (
@@ -119,7 +121,7 @@ const ChatBody = memo(
             >
               {items.map((virtualRow) => (
                 <div
-                  key={virtualRow.key}
+                  key={messages[virtualRow.index]?.id}
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                 >
