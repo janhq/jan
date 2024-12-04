@@ -21,7 +21,8 @@
     "ctx_len": 4096,
     "prompt_template": "\n### Instruction:\n{prompt}\n### Response:\n",
     "llama_model_path": "llava-v1.6-mistral-7b.Q4_K_M.gguf",
-    "mmproj": "mmproj-model-f16.gguf"
+    "mmproj": "mmproj-model-f16.gguf",
+    "ngl": 33
   },
   "parameters": {
     "max_tokens": 4096,
