@@ -134,7 +134,7 @@ export default function ModelHandler() {
 
       // Remove non-alphanumeric characters
       const cleanedMessageContent = messageContent
-        .replace(/[^a-z0-9\s]/gi, '')
+        .replace(/[^\p{L}\s]+/gu, '')
         .trim()
 
       // Split the message into words
@@ -146,6 +146,9 @@ export default function ModelHandler() {
         )
         return
       }
+
+      // Do not persist empty message
+      if (!cleanedMessageContent.trim().length) return
 
       const updatedThread: Thread = {
         ...thread,
