@@ -11,15 +11,14 @@ const Responsive = () => {
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
 
   // Refs to store the last known state of the panels
-  const lastLeftPanelState = useRef<boolean>(true)
-  const lastRightPanelState = useRef<boolean>(true)
+  const lastLeftPanelState = useRef<boolean>(showLeftPanel)
+  const lastRightPanelState = useRef<boolean>(showRightPanel)
 
   useEffect(() => {
     if (matches) {
       // Store the last known state before closing the panels
       lastLeftPanelState.current = showLeftPanel
       lastRightPanelState.current = showRightPanel
-
       setShowLeftPanel(false)
       setShowRightPanel(false)
     } else {
