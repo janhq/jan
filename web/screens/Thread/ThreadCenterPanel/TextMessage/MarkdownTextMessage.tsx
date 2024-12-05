@@ -5,14 +5,14 @@ import React, { memo } from 'react'
 
 import Markdown from 'react-markdown'
 
-import latex from 'highlight.js/lib/languages/latex'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import remarkMath from 'remark-math'
-import 'katex/dist/katex.min.css'
 
+import 'katex/dist/katex.min.css'
+import 'highlight.js/styles/atom-one-dark.css'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
@@ -199,16 +199,7 @@ export const MarkdownTextMessage = memo(
           rehypePlugins={[
             [rehypeKatex, { throwOnError: false }],
             rehypeRaw,
-            [
-              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-              // @ts-ignore
-              rehypeHighlight,
-              {
-                languages: { latex },
-                subset: false,
-                plainText: ['txt', 'text'],
-              },
-            ],
+            rehypeHighlight,
             [rehypeHighlightCodeLines, { showLineNumbers: true }],
             wrapCodeBlocksWithoutVisit,
           ]}
