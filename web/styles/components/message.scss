@@ -5,8 +5,9 @@
   ul,
   ol {
     list-style: auto;
-    padding-left: 24px;
+    padding-left: 16px;
     white-space: normal;
+    list-style-position: inside;
   }
 
   ul {
