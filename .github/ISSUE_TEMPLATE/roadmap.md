@@ -1,3 +1,12 @@
+---
+name: Roadmap
+about: Plan Roadmap items with subtasks
+title: 'roadmap: '
+labels: 'type: planning'
+assignees: ''
+
+---
+
 ## Goal
 
 ## Tasklist
