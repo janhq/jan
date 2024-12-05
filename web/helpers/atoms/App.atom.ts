@@ -15,7 +15,9 @@ export const showLeftPanelAtom = atom<boolean>(true)
 
 export const showRightPanelAtom = atomWithStorage<boolean>(
   SHOW_RIGHT_PANEL,
-  false
+  false,
+  undefined,
+  { getOnInit: true }
 )
 
 export const showSystemMonitorPanelAtom = atom<boolean>(false)
