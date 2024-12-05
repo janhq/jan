@@ -18,14 +18,14 @@ import { isLocalEngine } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const defaultDesc = () => {
     return (

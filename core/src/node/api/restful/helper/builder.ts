@@ -6,7 +6,6 @@ import {
   mkdirSync,
   appendFileSync,
   createWriteStream,
-  rmdirSync,
 } from 'fs'
 import { JanApiRouteConfiguration, RouteConfiguration } from './configuration'
 import { join } from 'path'
@@ -126,7 +125,7 @@ export const createThread = async (thread: any) => {
     }
   }
 
-  const threadId = generateThreadId(thread.assistants[0].assistant_id)
+  const threadId = generateThreadId(thread.assistants[0]?.assistant_id)
   try {
     const updatedThread = {
       ...thread,
@@ -280,7 +279,7 @@ export const models = async (request: any, reply: any) => {
     'Content-Type': 'application/json',
   }
 
-  const response = await fetch(`${CORTEX_API_URL}/models${request.url.split('/models')[1] ?? ""}`, {
+  const response = await fetch(`${CORTEX_API_URL}/models${request.url.split('/models')[1] ?? ''}`, {
     method: request.method,
     headers: headers,
     body: JSON.stringify(request.body),

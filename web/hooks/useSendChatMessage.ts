@@ -10,6 +10,7 @@ import {
   ConversationalExtension,
   EngineManager,
   ToolManager,
+  ThreadAssistantInfo,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -28,6 +29,7 @@ import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
 import { useActiveModel } from './useActiveModel'
 
 import { extensionManager } from '@/extension/ExtensionManager'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   addNewMessageAtom,
   deleteMessageAtom,
@@ -48,6 +50,7 @@ export const reloadModelAtom = atom(false)
 
 export default function useSendChatMessage() {
   const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateThread = useSetAtom(updateThreadAtom)
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
@@ -68,6 +71,7 @@ export default function useSendChatMessage() {
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const activeThreadRef = useRef<Thread | undefined>()
+  const activeAssistantRef = useRef<ThreadAssistantInfo | undefined>()
   const setTokenSpeed = useSetAtom(tokenSpeedAtom)
 
   const selectedModelRef = useRef<Model | undefined>()
@@ -84,36 +88,37 @@ export default function useSendChatMessage() {
     selectedModelRef.current = selectedModel
   }, [selectedModel])
 
-  const resendChatMessage = async (currentMessage: ThreadMessage) => {
+  useEffect(() => {
+    activeAssistantRef.current = activeAssistant
+  }, [activeAssistant])
+
+  const resendChatMessage = async () => {
     // Delete last response before regenerating
-    const newConvoData = currentMessages
-    let toSendMessage = currentMessage
+    const newConvoData = Array.from(currentMessages)
+    let toSendMessage = newConvoData.pop()
 
-    do {
-      deleteMessage(currentMessage.id)
-      const msg = newConvoData.pop()
-      if (!msg) break
-      toSendMessage = msg
-      deleteMessage(toSendMessage.id ?? '')
-    } while (toSendMessage.role !== ChatCompletionRole.User)
-
-    if (activeThreadRef.current) {
+    while (toSendMessage && toSendMessage?.role !== ChatCompletionRole.User) {
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(activeThreadRef.current.id, newConvoData)
+        ?.deleteMessage(toSendMessage.thread_id, toSendMessage.id)
+        .catch(console.error)
+      deleteMessage(toSendMessage.id ?? '')
+      toSendMessage = newConvoData.pop()
     }
 
-    sendChatMessage(toSendMessage.content[0]?.text.value)
+    if (toSendMessage?.content[0]?.text?.value)
+      sendChatMessage(toSendMessage.content[0].text.value, true)
   }
 
   const sendChatMessage = async (
     message: string,
+    isResend: boolean = false,
     messages?: ThreadMessage[]
   ) => {
     if (!message || message.trim().length === 0) return
 
-    if (!activeThreadRef.current) {
-      console.error('No active thread')
+    if (!activeThreadRef.current || !activeAssistantRef.current) {
+      console.error('No active thread or assistant')
       return
     }
 
@@ -139,11 +144,11 @@ export default function useSendChatMessage() {
     }
 
     const modelRequest =
-      selectedModelRef?.current ?? activeThreadRef.current.assistants[0].model
+      selectedModelRef?.current ?? activeAssistantRef.current?.model
 
     // Fallback support for previous broken threads
-    if (activeThreadRef.current?.assistants[0]?.model?.id === '*') {
-      activeThreadRef.current.assistants[0].model = {
+    if (activeAssistantRef.current?.model?.id === '*') {
+      activeAssistantRef.current.model = {
         id: modelRequest.id,
         settings: modelRequest.settings,
         parameters: modelRequest.parameters,
@@ -163,46 +168,49 @@ export default function useSendChatMessage() {
       },
       activeThreadRef.current,
       messages ?? currentMessages
-    ).addSystemMessage(activeThreadRef.current.assistants[0].instructions)
+    ).addSystemMessage(activeAssistantRef.current?.instructions)
 
-    requestBuilder.pushMessage(prompt, base64Blob, fileUpload[0]?.type)
+    if (!isResend) {
+      requestBuilder.pushMessage(prompt, base64Blob, fileUpload[0]?.type)
 
-    // Build Thread Message to persist
-    const threadMessageBuilder = new ThreadMessageBuilder(
-      requestBuilder
-    ).pushMessage(prompt, base64Blob, fileUpload)
+      // Build Thread Message to persist
+      const threadMessageBuilder = new ThreadMessageBuilder(
+        requestBuilder
+      ).pushMessage(prompt, base64Blob, fileUpload)
 
-    const newMessage = threadMessageBuilder.build()
+      const newMessage = threadMessageBuilder.build()
 
-    // Push to states
-    addNewMessage(newMessage)
+      // Update thread state
+      const updatedThread: Thread = {
+        ...activeThreadRef.current,
+        updated: newMessage.created,
+        metadata: {
+          ...activeThreadRef.current.metadata,
+          lastMessage: prompt,
+        },
+      }
+      updateThread(updatedThread)
 
-    // Update thread state
-    const updatedThread: Thread = {
-      ...activeThreadRef.current,
-      updated: newMessage.created,
-      metadata: {
-        ...activeThreadRef.current.metadata,
-        lastMessage: prompt,
-      },
+      // Add message
+      const createdMessage = await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.createMessage(newMessage)
+
+      if (!createdMessage) return
+
+      // Push to states
+      addNewMessage(createdMessage)
     }
-    updateThread(updatedThread)
-
-    // Add message
-    await extensionManager
-      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-      ?.addNewMessage(newMessage)
 
     // Start Model if not started
     const modelId =
-      selectedModelRef.current?.id ??
-      activeThreadRef.current.assistants[0].model.id
+      selectedModelRef.current?.id ?? activeAssistantRef.current?.model.id
 
     if (base64Blob) {
       setFileUpload([])
     }
 
-    if (modelRef.current?.id !== modelId) {
+    if (modelRef.current?.id !== modelId && modelId) {
       const error = await startModel(modelId).catch((error: Error) => error)
       if (error) {
         updateThreadWaiting(activeThreadRef.current.id, false)

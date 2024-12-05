@@ -6,6 +6,7 @@ import { atom, useAtomValue } from 'jotai'
 
 import { activeModelAtom } from './useActiveModel'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -28,6 +29,7 @@ export default function useRecommendedModel() {
   const [recommendedModel, setRecommendedModel] = useState<Model | undefined>()
   const activeThread = useAtomValue(activeThreadAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const getAndSortDownloadedModels = useCallback(async (): Promise<Model[]> => {
     const models = downloadedModels.sort((a, b) =>
@@ -45,8 +47,8 @@ export default function useRecommendedModel() {
   > => {
     const models = await getAndSortDownloadedModels()
 
-    if (!activeThread) return
-    const modelId = activeThread.assistants[0]?.model.id
+    if (!activeThread || !activeAssistant) return
+    const modelId = activeAssistant.model.id
     const model = models.find((model) => model.id === modelId)
 
     if (model) {

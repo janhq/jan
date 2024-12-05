@@ -38,6 +38,7 @@ import PromptTemplateSetting from './PromptTemplateSetting'
 import Tools from './Tools'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
@@ -53,6 +54,7 @@ const ENGINE_SETTINGS = 'Engine Settings'
 
 const ThreadRightPanel = () => {
   const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
@@ -154,18 +156,18 @@ const ThreadRightPanel = () => {
 
   const onAssistantInstructionChanged = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      if (activeThread)
+      if (activeThread && activeAssistant)
         updateThreadMetadata({
           ...activeThread,
           assistants: [
             {
-              ...activeThread.assistants[0],
+              ...activeAssistant,
               instructions: e.target.value || '',
             },
           ],
         })
     },
-    [activeThread, updateThreadMetadata]
+    [activeAssistant, activeThread, updateThreadMetadata]
   )
 
   const resetModel = useDebouncedCallback(() => {
@@ -174,7 +176,7 @@ const ThreadRightPanel = () => {
 
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean | string[]) => {
-      if (!activeThread) {
+      if (!activeThread || !activeAssistant) {
         return
       }
 
@@ -186,32 +188,38 @@ const ThreadRightPanel = () => {
       })
 
       if (
-        activeThread.assistants[0].model.parameters?.max_tokens &&
-        activeThread.assistants[0].model.settings?.ctx_len
+        activeAssistant.model.parameters?.max_tokens &&
+        activeAssistant.model.settings?.ctx_len
       ) {
         if (
           key === 'max_tokens' &&
-          Number(value) > activeThread.assistants[0].model.settings.ctx_len
+          Number(value) > activeAssistant.model.settings.ctx_len
         ) {
           updateModelParameter(activeThread, {
             params: {
-              max_tokens: activeThread.assistants[0].model.settings.ctx_len,
+              max_tokens: activeAssistant.model.settings.ctx_len,
             },
           })
         }
         if (
           key === 'ctx_len' &&
-          Number(value) < activeThread.assistants[0].model.parameters.max_tokens
+          Number(value) < activeAssistant.model.parameters.max_tokens
         ) {
           updateModelParameter(activeThread, {
             params: {
-              max_tokens: activeThread.assistants[0].model.settings.ctx_len,
+              max_tokens: activeAssistant.model.settings.ctx_len,
             },
           })
         }
       }
     },
-    [activeThread, resetModel, setEngineParamsUpdate, updateModelParameter]
+    [
+      activeAssistant,
+      activeThread,
+      resetModel,
+      setEngineParamsUpdate,
+      updateModelParameter,
+    ]
   )
 
   if (!activeThread) {
@@ -250,7 +258,7 @@ const ThreadRightPanel = () => {
               <TextArea
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
-                value={activeThread?.assistants[0].instructions ?? ''}
+                value={activeAssistant?.instructions ?? ''}
                 autoResize
                 onChange={onAssistantInstructionChanged}
               />

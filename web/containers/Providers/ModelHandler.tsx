@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef } from 'react'
+import { Fragment, use, useCallback, useEffect, useRef } from 'react'
 
 import {
   ChatCompletionMessage,
@@ -31,6 +31,7 @@ import {
   addNewMessageAtom,
   updateMessageAtom,
   tokenSpeedAtom,
+  deleteMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
@@ -49,6 +50,7 @@ export default function ModelHandler() {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const deleteMessage = useSetAtom(deleteMessageAtom)
   const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
@@ -86,7 +88,7 @@ export default function ModelHandler() {
   }, [activeModelParams])
 
   const onNewMessageResponse = useCallback(
-    (message: ThreadMessage) => {
+    async (message: ThreadMessage) => {
       if (message.type === MessageRequestType.Thread) {
         addNewMessage(message)
       }
@@ -154,12 +156,15 @@ export default function ModelHandler() {
         ...thread,
 
         title: cleanedMessageContent,
-        metadata: thread.metadata,
+        metadata: {
+          ...thread.metadata,
+          title: cleanedMessageContent,
+        },
       }
 
       extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread({
+        ?.modifyThread({
           ...updatedThread,
         })
         .then(() => {
@@ -233,7 +238,9 @@ export default function ModelHandler() {
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       if (!thread) return
+
       const messageContent = message.content[0]?.text?.value
+
       const metadata = {
         ...thread.metadata,
         ...(messageContent && { lastMessage: messageContent }),
@@ -246,15 +253,19 @@ export default function ModelHandler() {
 
       extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread({
+        ?.modifyThread({
           ...thread,
           metadata,
         })
-
-      // If this is not the summary of the Thread, don't need to add it to the Thread
-      extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.addNewMessage(message)
+      ;(async () => {
+        const updatedMessage = await extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.createMessage(message)
+        if (updatedMessage) {
+          deleteMessage(message.id)
+          addNewMessage(updatedMessage)
+        }
+      })()
 
       // Attempt to generate the title of the Thread when needed
       generateThreadTitle(message, thread)
@@ -279,7 +290,9 @@ export default function ModelHandler() {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (thread.title?.trim() !== defaultThreadTitle) {
+    if (
+      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
+    ) {
       return
     }
 
@@ -292,11 +305,14 @@ export default function ModelHandler() {
       const updatedThread: Thread = {
         ...thread,
         title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
-        metadata: thread.metadata,
+        metadata: {
+          ...thread.metadata,
+          title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
+        },
       }
       return extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread({
+        ?.modifyThread({
           ...updatedThread,
         })
         .then(() => {

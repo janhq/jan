@@ -11,20 +11,20 @@ export interface MessageInterface {
    * @param {ThreadMessage} message - The message to be added.
    * @returns {Promise<void>} A promise that resolves when the message has been added.
    */
-  addNewMessage(message: ThreadMessage): Promise<void>
-
-  /**
-   * Writes an array of messages to a specific thread.
-   * @param {string} threadId - The ID of the thread to write the messages to.
-   * @param {ThreadMessage[]} messages - The array of messages to be written.
-   * @returns {Promise<void>} A promise that resolves when the messages have been written.
-   */
-  writeMessages(threadId: string, messages: ThreadMessage[]): Promise<void>
+  createMessage(message: ThreadMessage): Promise<ThreadMessage>
 
   /**
    * Retrieves all messages from a specific thread.
    * @param {string} threadId - The ID of the thread to retrieve the messages from.
    * @returns {Promise<ThreadMessage[]>} A promise that resolves to an array of messages from the thread.
    */
-  getAllMessages(threadId: string): Promise<ThreadMessage[]>
+  listMessages(threadId: string): Promise<ThreadMessage[]>
+
+  /**
+   * Deletes a specific message from a thread.
+   * @param {string} threadId - The ID of the thread from which the message will be deleted.
+   * @param {string} messageId - The ID of the message to be deleted.
+   * @returns {Promise<void>} A promise that resolves when the message has been successfully deleted.
+   */
+  deleteMessage(threadId: string, messageId: string): Promise<void>
 }

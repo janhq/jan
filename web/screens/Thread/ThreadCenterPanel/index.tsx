@@ -27,6 +27,7 @@ import RequestDownloadModel from './RequestDownloadModel'
 
 import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 import {
@@ -55,9 +56,9 @@ const ThreadCenterPanel = () => {
   const setFileUpload = useSetAtom(fileUploadAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
-  const acceptedFormat: Accept = activeThread?.assistants[0].model.settings
-    ?.vision_model
+  const acceptedFormat: Accept = activeAssistant?.model.settings?.vision_model
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -78,14 +79,13 @@ const ThreadCenterPanel = () => {
       if (!experimentalFeature) return
       if (
         e.dataTransfer.items.length === 1 &&
-        ((activeThread?.assistants[0].tools &&
-          activeThread?.assistants[0].tools[0]?.enabled) ||
-          activeThread?.assistants[0].model.settings?.vision_model)
+        ((activeAssistant?.tools && activeAssistant?.tools[0]?.enabled) ||
+          activeAssistant?.model.settings?.vision_model)
       ) {
         setDragOver(true)
       } else if (
-        activeThread?.assistants[0].tools &&
-        !activeThread?.assistants[0].tools[0]?.enabled
+        activeAssistant?.tools &&
+        !activeAssistant?.tools[0]?.enabled
       ) {
         setDragRejected({ code: 'retrieval-off' })
       } else {
@@ -100,9 +100,9 @@ const ThreadCenterPanel = () => {
         !files ||
         files.length !== 1 ||
         rejectFiles.length !== 0 ||
-        (activeThread?.assistants[0].tools &&
-          !activeThread?.assistants[0].tools[0]?.enabled &&
-          !activeThread?.assistants[0].model.settings?.vision_model)
+        (activeAssistant?.tools &&
+          !activeAssistant?.tools[0]?.enabled &&
+          !activeAssistant?.model.settings?.vision_model)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -110,10 +110,7 @@ const ThreadCenterPanel = () => {
       setDragOver(false)
     },
     onDropRejected: (e) => {
-      if (
-        activeThread?.assistants[0].tools &&
-        !activeThread?.assistants[0].tools[0]?.enabled
-      ) {
+      if (activeAssistant?.tools && !activeAssistant?.tools[0]?.enabled) {
         setDragRejected({ code: 'retrieval-off' })
       } else {
         setDragRejected({ code: e[0].errors[0].code })
@@ -186,8 +183,7 @@ const ThreadCenterPanel = () => {
                   <h6 className="font-bold">
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
-                          activeThread?.assistants[0].model.settings
-                            ?.vision_model
+                          activeAssistant?.model.settings?.vision_model
                             ? 'PDF, JPEG, JPG, PNG'
                             : 'PDF'
                         } format`
@@ -195,7 +191,7 @@ const ThreadCenterPanel = () => {
                   </h6>
                   {!isDragReject && (
                     <p className="mt-2">
-                      {activeThread?.assistants[0].model.settings?.vision_model
+                      {activeAssistant?.model.settings?.vision_model
                         ? 'PDF, JPEG, JPG, PNG'
                         : 'PDF'}
                     </p>

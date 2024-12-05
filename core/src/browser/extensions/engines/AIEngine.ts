@@ -2,7 +2,6 @@ import { events } from '../../events'
 import { BaseExtension } from '../../extension'
 import { MessageRequest, Model, ModelEvent } from '../../../types'
 import { EngineManager } from './EngineManager'
-import { ModelManager } from '../../models/manager'
 
 /**
  * Base AIEngine
