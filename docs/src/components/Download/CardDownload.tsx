@@ -18,17 +18,12 @@ type SystemType = {
 
 const systemsTemplate: SystemType[] = [
   {
-    name: 'Mac M1, M2, M3',
-    label: 'Apple Silicon',
+    name: 'Mac ',
+    label: 'Universal',
     logo: FaApple,
-    fileFormat: '{appname}-mac-arm64-{tag}.dmg',
+    fileFormat: '{appname}-mac-universal-{tag}.dmg',
   },
-  {
-    name: 'Mac (Intel)',
-    label: 'Apple Intel',
-    logo: FaApple,
-    fileFormat: '{appname}-mac-x64-{tag}.dmg',
-  },
+
   {
     name: 'Windows',
     label: 'Standard (64-bit)',
