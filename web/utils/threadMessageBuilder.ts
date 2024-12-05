@@ -6,9 +6,9 @@ import {
   ThreadMessage,
 } from '@janhq/core'
 
-import { FileInfo } from '@/containers/Providers/Jotai'
-
 import { MessageRequestBuilder } from './messageRequestBuilder'
+
+import { FileInfo } from '@/types/file'
 
 export class ThreadMessageBuilder {
   messageRequest: MessageRequestBuilder
