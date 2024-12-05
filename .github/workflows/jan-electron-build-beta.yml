@@ -70,6 +70,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
       - name: Sync temp to latest
         run: |
           # sync temp-beta to beta by copy files that are different or new
