@@ -47,7 +47,7 @@ From PCs to multi-GPU clusters, Jan & Cortex supports universal architectures:
   <tr style="text-align:center">
     <td style="text-align:center"><b>Version Type</b></td>
     <td style="text-align:center"><b>Windows</b></td>
-    <td colspan="2" style="text-align:center"><b>MacOS</b></td>
+    <td style="text-align:center"><b>MacOS Universal</b></td>
     <td colspan="2" style="text-align:center"><b>Linux</b></td>
   </tr>
   <tr style="text-align:center">
@@ -59,15 +59,9 @@ From PCs to multi-GPU clusters, Jan & Cortex supports universal architectures:
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://app.jan.ai/download/latest/mac-x64'>
+      <a href='https://app.jan.ai/download/latest/mac-universal'>
         <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>Intel</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/latest/mac-arm64'>
-        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>M1/M2/M3/M4</b>
+        <b>jan.dmg</b>
       </a>
     </td>
     <td style="text-align:center">
@@ -92,15 +86,9 @@ From PCs to multi-GPU clusters, Jan & Cortex supports universal architectures:
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://app.jan.ai/download/beta/mac-x64'>
+      <a href='https://app.jan.ai/download/beta/mac-universal'>
         <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>Intel</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/beta/mac-arm64'>
-        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>M1/M2/M3/M4</b>
+        <b>jan.dmg</b>
       </a>
     </td>
     <td style="text-align:center">
@@ -125,15 +113,9 @@ From PCs to multi-GPU clusters, Jan & Cortex supports universal architectures:
       </a>
     </td>
     <td style="text-align:center">
-      <a href='https://app.jan.ai/download/nightly/mac-x64'>
+      <a href='https://app.jan.ai/download/nightly/mac-universal'>
         <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>Intel</b>
-      </a>
-    </td>
-    <td style="text-align:center">
-      <a href='https://app.jan.ai/download/nightly/mac-arm64'>
-        <img src='https://github.com/janhq/jan/blob/dev/docs/static/img/mac.png' style="height:15px; width: 15px" />
-        <b>M1/M2/M3/M4</b>
+        <b>jan.dmg</b>
       </a>
     </td>
     <td style="text-align:center">
