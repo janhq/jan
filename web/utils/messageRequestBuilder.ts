@@ -13,9 +13,9 @@ import {
 } from '@janhq/core'
 import { ulid } from 'ulidx'
 
-import { FileType } from '@/containers/Providers/Jotai'
-
 import { Stack } from '@/utils/Stack'
+
+import { FileType } from '@/types/file'
 
 export class MessageRequestBuilder {
   msgId: string
