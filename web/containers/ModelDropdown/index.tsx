@@ -10,6 +10,7 @@ import {
   ScrollArea,
   Tabs,
   useClickOutside,
+  useOnlineStatus,
 } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -18,6 +19,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   DownloadCloudIcon,
+  WifiOff,
   XIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
@@ -93,6 +95,8 @@ const ModelDropdown = ({
   const { updateThreadMetadata } = useCreateNewThread()
 
   useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
+
+  const { isOnline } = useOnlineStatus()
 
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
@@ -544,12 +548,16 @@ const ModelDropdown = ({
                               key={model.id}
                               className={twMerge(
                                 'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                                !apiKey
+                                (!apiKey || !isOnline) &&
+                                  !isLocalEngine(model.engine)
                                   ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
                                   : 'text-[hsla(var(--text-primary))]'
                               )}
                               onClick={() => {
-                                if (!apiKey && !isLocalEngine(model.engine))
+                                if (
+                                  (!apiKey || !isOnline) &&
+                                  !isLocalEngine(model.engine)
+                                )
                                   return null
                                 if (isDownloaded) {
                                   onClickModelItem(model.id)
@@ -613,6 +621,12 @@ const ModelDropdown = ({
                 </div>
               )
             })}
+            {!isOnline && searchFilter === 'remote' && (
+              <div className="sticky bottom-0 flex items-start gap-2 border-t border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] p-3 text-[hsla(var(--text-secondary))]">
+                <WifiOff />
+                <p>No internet connection. Please use on-device models.</p>
+              </div>
+            )}
           </ScrollArea>
         </div>
       </div>
