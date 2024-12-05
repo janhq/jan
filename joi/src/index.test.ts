@@ -39,5 +39,6 @@ describe('Exports', () => {
     expect(components.useClickOutside).toBeDefined()
     expect(components.useOs).toBeDefined()
     expect(components.useMediaQuery).toBeDefined()
+    expect(components.useOnlineStatus).toBeDefined()
   })
 })
