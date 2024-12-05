@@ -19,6 +19,7 @@ import {
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
 import { ModelParams } from '@/types/model'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 
 export type UpdateModelParameter = {
   params?: ModelParams
@@ -29,11 +30,13 @@ export type UpdateModelParameter = {
 
 export default function useUpdateModelParameters() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const [selectedModel] = useAtom(selectedModelAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
 
   const updateModelParameter = useCallback(
     async (thread: Thread, settings: UpdateModelParameter) => {
+      if (!activeAssistant) return
       const toUpdateSettings = processStopWords(settings.params ?? {})
       const updatedModelParams = settings.modelId
         ? toUpdateSettings
@@ -48,30 +51,18 @@ export default function useUpdateModelParameters() {
       setThreadModelParams(thread.id, updatedModelParams)
       const runtimeParams = extractInferenceParams(updatedModelParams)
       const settingParams = extractModelLoadParams(updatedModelParams)
-
-      const assistants = thread.assistants.map(
-        (assistant: ThreadAssistantInfo) => {
-          assistant.model.parameters = runtimeParams
-          assistant.model.settings = settingParams
-          if (selectedModel) {
-            assistant.model.id = settings.modelId ?? selectedModel?.id
-            assistant.model.engine = settings.engine ?? selectedModel?.engine
-          }
-          return assistant
-        }
-      )
-
-      // update thread
-      const updatedThread: Thread = {
-        ...thread,
-        assistants,
-      }
-
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(updatedThread)
+        ?.modifyThreadAssistant(thread.id, {
+          ...activeAssistant,
+          model: {
+            ...activeAssistant?.model,
+            parameters: runtimeParams,
+            settings: settingParams,
+          },
+        })
     },
-    [activeModelParams, selectedModel, setThreadModelParams]
+    [activeModelParams, selectedModel, activeAssistant, setThreadModelParams]
   )
 
   const processStopWords = (params: ModelParams): ModelParams => {

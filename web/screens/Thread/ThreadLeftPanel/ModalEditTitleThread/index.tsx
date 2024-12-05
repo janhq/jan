@@ -15,13 +15,15 @@ const ModalEditTitleThread = () => {
   const [modalActionThread, setModalActionThread] = useAtom(
     modalActionThreadAtom
   )
-  const [title, setTitle] = useState(modalActionThread.thread?.title as string)
+  const [title, setTitle] = useState(
+    modalActionThread.thread?.metadata?.title as string
+  )
 
   useLayoutEffect(() => {
-    if (modalActionThread.thread?.title) {
-      setTitle(modalActionThread.thread?.title)
+    if (modalActionThread.thread?.metadata?.title) {
+      setTitle(modalActionThread.thread?.metadata?.title as string)
     }
-  }, [modalActionThread.thread?.title])
+  }, [modalActionThread.thread?.metadata])
 
   const onUpdateTitle = useCallback(
     (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
@@ -30,6 +32,10 @@ const ModalEditTitleThread = () => {
       updateThreadMetadata({
         ...modalActionThread?.thread,
         title: title || 'New Thread',
+        metadata: {
+          ...modalActionThread?.thread.metadata,
+          title: title || 'New Thread',
+        },
       })
     },
     [modalActionThread?.thread, title, updateThreadMetadata]

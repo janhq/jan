@@ -154,12 +154,15 @@ export default function ModelHandler() {
         ...thread,
 
         title: cleanedMessageContent,
-        metadata: thread.metadata,
+        metadata: {
+          ...thread.metadata,
+          title: cleanedMessageContent,
+        },
       }
 
       extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread({
+        ?.modifyThread({
           ...updatedThread,
         })
         .then(() => {
@@ -233,7 +236,9 @@ export default function ModelHandler() {
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
       if (!thread) return
+
       const messageContent = message.content[0]?.text?.value
+
       const metadata = {
         ...thread.metadata,
         ...(messageContent && { lastMessage: messageContent }),
@@ -246,15 +251,14 @@ export default function ModelHandler() {
 
       extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread({
+        ?.modifyThread({
           ...thread,
           metadata,
         })
 
-      // If this is not the summary of the Thread, don't need to add it to the Thread
       extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.addNewMessage(message)
+        ?.createMessage(message)
 
       // Attempt to generate the title of the Thread when needed
       generateThreadTitle(message, thread)
@@ -279,7 +283,9 @@ export default function ModelHandler() {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (thread.title?.trim() !== defaultThreadTitle) {
+    if (
+      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
+    ) {
       return
     }
 
@@ -292,11 +298,14 @@ export default function ModelHandler() {
       const updatedThread: Thread = {
         ...thread,
         title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
-        metadata: thread.metadata,
+        metadata: {
+          ...thread.metadata,
+          title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
+        },
       }
       return extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread({
+        ?.modifyThread({
           ...updatedThread,
         })
         .then(() => {

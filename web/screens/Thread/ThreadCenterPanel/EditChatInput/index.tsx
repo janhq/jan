@@ -80,19 +80,15 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
     setEditMessage('')
     const messageIdx = messages.findIndex((msg) => msg.id === message.id)
     const newMessages = messages.slice(0, messageIdx)
-    if (activeThread) {
-      setMessages(activeThread.id, newMessages)
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          activeThread.id,
-          // Remove all of the messages below this
-          newMessages
-        )
-        .then(() => {
-          sendChatMessage(editPrompt, newMessages)
-        })
-    }
+    const toDeleteMessages = messages.slice(messageIdx + 1)
+    await Promise.all(
+      toDeleteMessages.map(async (message) =>
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.deleteMessage(message.thread_id, message.id)
+      )
+    )
+    sendChatMessage(editPrompt, newMessages)
   }
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

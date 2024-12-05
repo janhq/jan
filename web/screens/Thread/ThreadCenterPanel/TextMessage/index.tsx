@@ -17,11 +17,11 @@ import DocMessage from './DocMessage'
 import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   editMessageAtom,
   tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const MessageContainer: React.FC<
   ThreadMessage & { isCurrentMessage: boolean }
@@ -29,7 +29,7 @@ const MessageContainer: React.FC<
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const editMessage = useAtomValue(editMessageAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const tokenSpeed = useAtomValue(tokenSpeedAtom)
 
   const text = useMemo(
@@ -75,10 +75,10 @@ const MessageContainer: React.FC<
         >
           {isUser
             ? props.role
-            : (activeThread?.assistants[0].assistant_name ?? props.role)}
+            : (activeAssistant?.assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
-          {displayDate(props.created)}
+          {props.created && displayDate(props.created ?? new Date())}
         </p>
         {tokenSpeed &&
           tokenSpeed.message === props.id &&

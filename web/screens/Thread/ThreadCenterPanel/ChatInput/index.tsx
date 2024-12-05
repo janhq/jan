@@ -33,6 +33,7 @@ import RichTextEditor from './RichTextEditor'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
@@ -67,6 +68,7 @@ const ChatInput = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
   const threadStates = useAtomValue(threadStatesAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
 
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
@@ -153,9 +155,9 @@ const ChatInput = () => {
                 onClick={(e) => {
                   if (
                     fileUpload.length > 0 ||
-                    (activeThread?.assistants[0].tools &&
-                      !activeThread?.assistants[0].tools[0]?.enabled &&
-                      !activeThread?.assistants[0].model.settings?.vision_model)
+                    (activeAssistant?.tools &&
+                      !activeAssistant?.tools[0]?.enabled &&
+                      !activeAssistant?.model.settings?.vision_model)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -171,16 +173,15 @@ const ChatInput = () => {
             }
             disabled={
               isModelSupportRagAndTools &&
-              activeThread?.assistants[0].tools &&
-              activeThread?.assistants[0].tools[0]?.enabled
+              activeAssistant?.tools &&
+              activeAssistant?.tools[0]?.enabled
             }
             content={
               <>
                 {fileUpload.length > 0 ||
-                  (activeThread?.assistants[0].tools &&
-                    !activeThread?.assistants[0].tools[0]?.enabled &&
-                    !activeThread?.assistants[0].model.settings
-                      ?.vision_model && (
+                  (activeAssistant?.tools &&
+                    !activeAssistant?.tools[0]?.enabled &&
+                    !activeAssistant?.model.settings?.vision_model && (
                       <>
                         {fileUpload.length !== 0 && (
                           <span>
@@ -188,9 +189,8 @@ const ChatInput = () => {
                             time.
                           </span>
                         )}
-                        {activeThread?.assistants[0].tools &&
-                          activeThread?.assistants[0].tools[0]?.enabled ===
-                            false &&
+                        {activeAssistant?.tools &&
+                          activeAssistant?.tools[0]?.enabled === false &&
                           isModelSupportRagAndTools && (
                             <span>
                               Turn on Retrieval in Tools settings to use this
@@ -221,14 +221,12 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeThread?.assistants[0].model.settings?.vision_model
+                      activeAssistant?.model.settings?.vision_model
                         ? 'cursor-pointer'
                         : 'cursor-not-allowed opacity-50'
                     )}
                     onClick={() => {
-                      if (
-                        activeThread?.assistants[0].model.settings?.vision_model
-                      ) {
+                      if (activeAssistant?.model.settings?.vision_model) {
                         imageInputRef.current?.click()
                         setShowAttacmentMenus(false)
                       }
@@ -239,9 +237,7 @@ const ChatInput = () => {
                   </li>
                 }
                 content="This feature only supports multimodal models."
-                disabled={
-                  activeThread?.assistants[0].model.settings?.vision_model
-                }
+                disabled={activeAssistant?.model.settings?.vision_model}
               />
               <Tooltip
                 side="bottom"
@@ -261,8 +257,8 @@ const ChatInput = () => {
                   </li>
                 }
                 content={
-                  (!activeThread?.assistants[0].tools ||
-                    !activeThread?.assistants[0].tools[0]?.enabled) && (
+                  (!activeAssistant?.tools ||
+                    !activeAssistant?.tools[0]?.enabled) && (
                     <span>
                       Turn on Retrieval in Assistant Settings to use this
                       feature.

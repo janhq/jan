@@ -58,12 +58,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
       // Should also delete error messages to clear out the error state
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          thread.id,
-          messages.filter(
-            (msg) => msg.id !== message.id && msg.status !== MessageStatus.Error
-          )
-        )
+        ?.deleteMessage(thread.id, message.id)
+        .catch((e) => {})
 
       const updatedThread: Thread = {
         ...thread,

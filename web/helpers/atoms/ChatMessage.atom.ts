@@ -6,6 +6,8 @@ import {
 } from '@janhq/core'
 import { atom } from 'jotai'
 
+import { atomWithStorage } from 'jotai/utils'
+
 import {
   getActiveThreadIdAtom,
   updateThreadStateLastMessageAtom,
@@ -13,15 +15,23 @@ import {
 
 import { TokenSpeed } from '@/types/token'
 
+const CHAT_MESSAGE_NAME = 'chatMessages'
 /**
  * Stores all chat messages for all threads
  */
-export const chatMessages = atom<Record<string, ThreadMessage[]>>({})
+export const chatMessages = atomWithStorage<Record<string, ThreadMessage[]>>(
+  CHAT_MESSAGE_NAME,
+  {},
+  undefined,
+  { getOnInit: true }
+)
 
 /**
  * Stores the status of the messages load for each thread
  */
-export const readyThreadsMessagesAtom = atom<Record<string, boolean>>({})
+export const readyThreadsMessagesAtom = atomWithStorage<
+  Record<string, boolean>
+>('currentThreadMessages', {}, undefined, { getOnInit: true })
 
 /**
  * Store the token speed for current message
@@ -34,6 +44,7 @@ export const getCurrentChatMessagesAtom = atom<ThreadMessage[]>((get) => {
   const activeThreadId = get(getActiveThreadIdAtom)
   if (!activeThreadId) return []
   const messages = get(chatMessages)[activeThreadId]
+  if (!Array.isArray(messages)) return []
   return messages ?? []
 })
 

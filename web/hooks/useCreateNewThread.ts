@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 
 import {
-  Assistant,
   ConversationalExtension,
   ExtensionTypeEnum,
   Thread,
@@ -9,6 +8,7 @@ import {
   ThreadState,
   AssistantTool,
   Model,
+  Assistant,
 } from '@janhq/core'
 import { atom, useAtomValue, useSetAtom } from 'jotai'
 
@@ -27,6 +27,7 @@ import useSetActiveThread from './useSetActiveThread'
 import { extensionManager } from '@/extension'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
@@ -34,7 +35,6 @@ import {
   updateThreadAtom,
   setThreadModelParamsAtom,
   isGeneratingResponseAtom,
-  activeThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
@@ -64,7 +64,7 @@ export const useCreateNewThread = () => {
   const copyOverInstructionEnabled = useAtomValue(
     copyOverInstructionEnabledAtom
   )
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
@@ -75,7 +75,7 @@ export const useCreateNewThread = () => {
   const { stopInference } = useActiveModel()
 
   const requestCreateNewThread = async (
-    assistant: Assistant,
+    assistant: (ThreadAssistantInfo & { id: string; name: string }) | Assistant,
     model?: Model | undefined
   ) => {
     // Stop generating if any
@@ -124,7 +124,7 @@ export const useCreateNewThread = () => {
     const createdAt = Date.now()
     let instructions: string | undefined = assistant.instructions
     if (copyOverInstructionEnabled) {
-      instructions = activeThread?.assistants[0]?.instructions ?? undefined
+      instructions = activeAssistant?.instructions ?? undefined
     }
     const assistantInfo: ThreadAssistantInfo = {
       assistant_id: assistant.id,
@@ -147,25 +147,35 @@ export const useCreateNewThread = () => {
       assistants: [assistantInfo],
       created: createdAt,
       updated: createdAt,
+      metadata: {
+        title: 'New Thread',
+      },
     }
 
     // add the new thread on top of the thread list to the state
     //TODO: Why do we have thread list then thread states? Should combine them
-    createNewThread(thread)
+    try {
+      const createdThread = await persistNewThread(thread, assistantInfo)
+      if (!createdThread) throw 'Thread creation failed'
+      createNewThread(createdThread)
 
-    setSelectedModel(defaultModel)
-    setThreadModelParams(thread.id, {
-      ...defaultModel?.settings,
-      ...defaultModel?.parameters,
-      ...overriddenSettings,
-    })
+      setSelectedModel(defaultModel)
+      setThreadModelParams(thread.id, {
+        ...defaultModel?.settings,
+        ...defaultModel?.parameters,
+        ...overriddenSettings,
+      })
 
-    // Delete the file upload state
-    setFileUpload([])
-    // Update thread metadata
-    await updateThreadMetadata(thread)
-
-    setActiveThread(thread)
+      // Delete the file upload state
+      setFileUpload([])
+      setActiveThread(createdThread)
+    } catch (ex) {
+      return toaster({
+        title: 'Thread created failed.',
+        description: `To avoid piling up empty threads, please reuse previous one before creating new.`,
+        type: 'error',
+      })
+    }
   }
 
   const updateThreadMetadata = useCallback(
@@ -174,10 +184,28 @@ export const useCreateNewThread = () => {
 
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.saveThread(thread)
+        ?.modifyThread(thread)
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.modifyThreadAssistant(thread.id, thread.assistants[0])
     },
     [updateThread]
   )
+
+  const persistNewThread = async (
+    thread: Thread,
+    assistantInfo: ThreadAssistantInfo
+  ): Promise<Thread | undefined> => {
+    return await extensionManager
+      .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+      ?.createThread(thread)
+      .then(async (thread) => {
+        await extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.createThreadAssistant(thread.id, assistantInfo)
+        return thread
+      })
+  }
 
   return {
     requestCreateNewThread,

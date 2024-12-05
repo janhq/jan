@@ -46,6 +46,7 @@ import {
 
 import { extensionManager } from '@/extension'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
 import {
   configuredModelsAtom,
@@ -75,6 +76,7 @@ const ModelDropdown = ({
   const [searchText, setSearchText] = useState('')
   const [open, setOpen] = useState(false)
   const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
@@ -151,17 +153,24 @@ const ModelDropdown = ({
 
   useEffect(() => {
     if (!activeThread) return
-    const modelId = activeThread?.assistants?.[0]?.model?.id
+    const modelId = activeAssistant?.model?.id
 
     let model = downloadedModels.find((model) => model.id === modelId)
     if (!model) {
       model = recommendedModel
     }
     setSelectedModel(model)
-  }, [recommendedModel, activeThread, downloadedModels, setSelectedModel])
+  }, [
+    recommendedModel,
+    activeThread,
+    downloadedModels,
+    setSelectedModel,
+    activeAssistant?.model?.id,
+  ])
 
   const onClickModelItem = useCallback(
     async (modelId: string) => {
+      if (!activeAssistant) return
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
       setOpen(false)
@@ -172,14 +181,14 @@ const ModelDropdown = ({
           ...activeThread,
           assistants: [
             {
-              ...activeThread.assistants[0],
+              ...activeAssistant,
               tools: [
                 {
                   type: 'retrieval',
                   enabled: isModelSupportRagAndTools(model as Model),
                   settings: {
-                    ...(activeThread.assistants[0].tools &&
-                      activeThread.assistants[0].tools[0]?.settings),
+                    ...(activeAssistant.tools &&
+                      activeAssistant.tools[0]?.settings),
                   },
                 },
               ],
@@ -215,13 +224,14 @@ const ModelDropdown = ({
       }
     },
     [
+      activeAssistant,
       downloadedModels,
-      activeThread,
       setSelectedModel,
+      activeThread,
+      updateThreadMetadata,
       isModelSupportRagAndTools,
       setThreadModelParams,
       updateModelParameter,
-      updateThreadMetadata,
     ]
   )
 
