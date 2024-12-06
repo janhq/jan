@@ -16,13 +16,13 @@ import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = PropsWithChildren
 
-const DEFAULT_RIGTH_PANEL_WIDTH = 280
-const RIGHT_PANEL_WIDTH = 'rightPanelWidth'
+const DEFAULT_RIGHT_PANEL_WIDTH = 280
+export const RIGHT_PANEL_WIDTH = 'rightPanelWidth'
 
 const RightPanelContainer = ({ children }: Props) => {
   const [isResizing, setIsResizing] = useState(false)
   const [threadRightPanelWidth, setRightPanelWidth] = useState(
-    Number(localStorage.getItem(RIGHT_PANEL_WIDTH)) || DEFAULT_RIGTH_PANEL_WIDTH
+    Number(localStorage.getItem(RIGHT_PANEL_WIDTH)) || DEFAULT_RIGHT_PANEL_WIDTH
   )
   const [rightPanelRef, setRightPanelRef] = useState<HTMLDivElement | null>(
     null
@@ -55,11 +55,11 @@ const RightPanelContainer = ({ children }: Props) => {
               mouseMoveEvent.clientX <
             200
           ) {
-            setRightPanelWidth(DEFAULT_RIGTH_PANEL_WIDTH)
+            setRightPanelWidth(DEFAULT_RIGHT_PANEL_WIDTH)
             setIsResizing(false)
             localStorage.setItem(
               RIGHT_PANEL_WIDTH,
-              String(DEFAULT_RIGTH_PANEL_WIDTH)
+              String(DEFAULT_RIGHT_PANEL_WIDTH)
             )
             setShowRightPanel(false)
           } else {
@@ -77,8 +77,8 @@ const RightPanelContainer = ({ children }: Props) => {
 
   useEffect(() => {
     if (localStorage.getItem(RIGHT_PANEL_WIDTH) === null) {
-      setRightPanelWidth(DEFAULT_RIGTH_PANEL_WIDTH)
-      localStorage.setItem(RIGHT_PANEL_WIDTH, String(DEFAULT_RIGTH_PANEL_WIDTH))
+      setRightPanelWidth(DEFAULT_RIGHT_PANEL_WIDTH)
+      localStorage.setItem(RIGHT_PANEL_WIDTH, String(DEFAULT_RIGHT_PANEL_WIDTH))
     }
     window.addEventListener('mousemove', resize)
     window.addEventListener('mouseup', stopResizing)

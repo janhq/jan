@@ -17,7 +17,7 @@ import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 type Props = PropsWithChildren
 
 const DEFAULT_LEFT_PANEL_WIDTH = 200
-const LEFT_PANEL_WIDTH = 'leftPanelWidth'
+export const LEFT_PANEL_WIDTH = 'leftPanelWidth'
 
 const LeftPanelContainer = ({ children }: Props) => {
   const [leftPanelRef, setLeftPanelRef] = useState<HTMLDivElement | null>(null)
