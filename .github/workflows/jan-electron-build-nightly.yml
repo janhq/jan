@@ -12,6 +12,8 @@ on:
           - none
           - aws-s3
         default: none
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   set-public-provider:
@@ -32,6 +34,9 @@ jobs:
               echo "::set-output name=ref::refs/heads/dev"
             elif [ "${{ github.event_name }}" == "push" ]; then
               echo "::set-output name=public_provider::aws-s3"
+              echo "::set-output name=ref::${{ github.ref }}"
+            elif [ "${{ github.event_name }}" == "pull_request_review" ]; then
+              echo "::set-output name=public_provider::none"
               echo "::set-output name=ref::${{ github.ref }}"
             else
               echo "::set-output name=public_provider::none"
@@ -116,3 +121,24 @@ jobs:
       build_reason: Manual
       push_to_branch: dev
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+
+  comment-pr-build-url:
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_review'
+    steps:
+      - name: Set up GitHub CLI
+        run: |
+          curl -sSL https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.tar.gz | tar xz
+          sudo cp gh_2.33.0_linux_amd64/bin/gh /usr/local/bin/
+
+      - name: Comment build URL on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL=${{ github.event.pull_request.html_url }}
+          RUN_ID=${{ github.run_id }}
+          COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
+          gh pr comment $PR_URL --body "$COMMENT"
+    
