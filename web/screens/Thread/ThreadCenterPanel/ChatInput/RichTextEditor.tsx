@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, ClipboardEvent } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 import hljs from 'highlight.js'
@@ -67,7 +67,7 @@ const RichTextEditor = ({
   placeholder,
   spellCheck,
 }: RichTextEditorProps) => {
-  const [editor] = useState(() => withHistory(withReact(createEditor())))
+  const editor = useMemo(() => withHistory(withReact(createEditor())), [])
   const currentLanguage = useRef<string>('plaintext')
   const hasStartBackticks = useRef<boolean>(false)
   const hasEndBackticks = useRef<boolean>(false)
@@ -79,6 +79,8 @@ const RichTextEditor = ({
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { sendChatMessage } = useSendChatMessage()
   const { stopInference } = useActiveModel()
+
+  const largeContentThreshold = 1000
 
   // The decorate function identifies code blocks and marks the ranges
   const decorate = useCallback(
@@ -324,6 +326,16 @@ const RichTextEditor = ({
     [currentPrompt, editor, messages]
   )
 
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const clipboardData = event.clipboardData || (window as any).clipboardData
+    const pastedData = clipboardData.getData('text')
+
+    if (pastedData.length > largeContentThreshold) {
+      event.preventDefault() // Prevent the default paste behavior
+      Transforms.insertText(editor, pastedData) // Insert the content directly into the editor
+    }
+  }
+
   return (
     <Slate
       editor={editor}
@@ -362,9 +374,18 @@ const RichTextEditor = ({
     >
       <Editable
         ref={textareaRef}
-        decorate={decorate} // Pass the decorate function
+        decorate={(entry) => {
+          // Skip decorate if content exceeds threshold
+          if (
+            currentPrompt.length > largeContentThreshold ||
+            !currentPrompt.length
+          )
+            return []
+          return decorate(entry)
+        }}
         renderLeaf={renderLeaf} // Pass the renderLeaf function
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste} // Add the custom paste handler
         className={twMerge(
           className,
           disabled &&
