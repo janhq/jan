@@ -44,7 +44,6 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   }
 
   const getErrorTitle = () => {
-    console.log(message)
     switch (message.error_code) {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
