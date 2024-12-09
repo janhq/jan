@@ -67,7 +67,9 @@
     "version": "1.1",
     "description": "OpenAI GPT 4o is a new flagship model with fast speed and high quality",
     "format": "api",
-    "settings": {},
+    "settings": {
+      "vision_model": true
+    },
     "parameters": {
       "max_tokens": 4096,
       "temperature": 0.7,

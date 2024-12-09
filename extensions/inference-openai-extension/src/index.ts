@@ -74,6 +74,11 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
    * @returns
    */
   transformPayload = (payload: OpenAIPayloadType): OpenAIPayloadType => {
+    // Remove empty stop words
+    if (payload.stop?.length === 0) {
+      const { stop, ...params } = payload
+      payload = params
+    }
     // Transform the payload for preview models
     if (this.previewModels.includes(payload.model)) {
       const { max_tokens, stop, ...params } = payload
