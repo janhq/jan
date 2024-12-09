@@ -68,6 +68,6 @@ const useThreads = () => {
 const getLocalThreads = async (): Promise<Thread[]> =>
   (await extensionManager
     .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-    ?.getThreads()) ?? []
+    ?.listThreads()) ?? []
 
 export default useThreads

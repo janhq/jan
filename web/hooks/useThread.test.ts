@@ -78,7 +78,7 @@ describe('useThreads', () => {
     // Mock extensionManager
     const mockGetThreads = jest.fn().mockResolvedValue(mockThreads)
     ;(extensionManager.get as jest.Mock).mockReturnValue({
-      getThreads: mockGetThreads,
+      listThreads: mockGetThreads,
     })
 
     const { result } = renderHook(() => useThreads())
@@ -119,7 +119,7 @@ describe('useThreads', () => {
   it('should handle empty threads', async () => {
     // Mock empty threads
     ;(extensionManager.get as jest.Mock).mockReturnValue({
-      getThreads: jest.fn().mockResolvedValue([]),
+      listThreads: jest.fn().mockResolvedValue([]),
     })
 
     const mockSetThreadStates = jest.fn()

@@ -1,12 +1,10 @@
 import { ExtensionTypeEnum, Thread, ConversationalExtension } from '@janhq/core'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension'
-import {
-  readyThreadsMessagesAtom,
-  setConvoMessagesAtom,
-} from '@/helpers/atoms/ChatMessage.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
+import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   setActiveThreadIdAtom,
   setThreadModelParamsAtom,
@@ -17,21 +15,27 @@ export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const setThreadMessage = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
-  const readyMessageThreads = useAtomValue(readyThreadsMessagesAtom)
+  const setActiveAssistant = useSetAtom(activeAssistantAtom)
 
   const setActiveThread = async (thread: Thread) => {
-    // Load local messages only if there are no messages in the state
-    if (!readyMessageThreads[thread?.id]) {
-      const messages = await getLocalThreadMessage(thread?.id)
-      setThreadMessage(thread?.id, messages)
-    }
+    if (!thread?.id) return
 
     setActiveThreadId(thread?.id)
-    const modelParams: ModelParams = {
-      ...thread?.assistants[0]?.model?.parameters,
-      ...thread?.assistants[0]?.model?.settings,
+
+    try {
+      const assistantInfo = await getThreadAssistant(thread.id)
+      setActiveAssistant(assistantInfo)
+      // Load local messages only if there are no messages in the state
+      const messages = await getLocalThreadMessage(thread.id).catch(() => [])
+      const modelParams: ModelParams = {
+        ...assistantInfo?.model?.parameters,
+        ...assistantInfo?.model?.settings,
+      }
+      setThreadModelParams(thread?.id, modelParams)
+      setThreadMessage(thread.id, messages)
+    } catch (e) {
+      console.error(e)
     }
-    setThreadModelParams(thread?.id, modelParams)
   }
 
   return { setActiveThread }
@@ -40,4 +44,9 @@ export default function useSetActiveThread() {
 const getLocalThreadMessage = async (threadId: string) =>
   extensionManager
     .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-    ?.getAllMessages(threadId) ?? []
+    ?.listMessages(threadId) ?? []
+
+const getThreadAssistant = async (threadId: string) =>
+  extensionManager
+    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    ?.getThreadAssistant(threadId)

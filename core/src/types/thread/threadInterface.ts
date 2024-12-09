@@ -11,15 +11,23 @@ export interface ThreadInterface {
    * @abstract
    * @returns {Promise<Thread[]>} A promise that resolves to an array of threads.
    */
-  getThreads(): Promise<Thread[]>
+  listThreads(): Promise<Thread[]>
 
   /**
-   * Saves a thread.
+   * Create a thread.
    * @abstract
    * @param {Thread} thread - The thread to save.
    * @returns {Promise<void>} A promise that resolves when the thread is saved.
    */
-  saveThread(thread: Thread): Promise<void>
+  createThread(thread: Thread): Promise<Thread>
+
+  /**
+   * modify a thread.
+   * @abstract
+   * @param {Thread} thread - The thread to save.
+   * @returns {Promise<void>} A promise that resolves when the thread is saved.
+   */
+  modifyThread(thread: Thread): Promise<void>
 
   /**
    * Deletes a thread.

@@ -10,15 +10,15 @@ import { MainViewState } from '@/constants/screens'
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const LoadModelError = () => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const ErrorMessage = () => {
     if (
@@ -33,9 +33,9 @@ const LoadModelError = () => {
             className="cursor-pointer font-medium text-[hsla(var(--app-link))]"
             onClick={() => {
               setMainState(MainViewState.Settings)
-              if (activeThread?.assistants[0]?.model.engine) {
+              if (activeAssistant?.model.engine) {
                 const engine = EngineManager.instance().get(
-                  activeThread.assistants[0].model.engine
+                  activeAssistant.model.engine
                 )
                 engine?.name && setSelectedSettingScreen(engine.name)
               }

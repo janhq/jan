@@ -16,14 +16,14 @@ import { MainViewState } from '@/constants/screens'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const getErrorTitle = () => {
     switch (message.error_code) {
@@ -37,9 +37,9 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               onClick={() => {
                 setMainState(MainViewState.Settings)
 
-                if (activeThread?.assistants[0]?.model.engine) {
+                if (activeAssistant?.model.engine) {
                   const engine = EngineManager.instance().get(
-                    activeThread.assistants[0].model.engine
+                    activeAssistant?.model.engine
                   )
                   engine?.name && setSelectedSettingScreen(engine.name)
                 }

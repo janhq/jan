@@ -67,7 +67,7 @@ describe('useCreateNewThread', () => {
       } as any)
     })
 
-    expect(mockSetAtom).toHaveBeenCalledTimes(6) // Check if all the necessary atoms were set
+    expect(mockSetAtom).toHaveBeenCalledTimes(1)
     expect(extensionManager.get).toHaveBeenCalled()
   })
 
@@ -104,7 +104,7 @@ describe('useCreateNewThread', () => {
       await result.current.requestCreateNewThread({
         id: 'assistant1',
         name: 'Assistant 1',
-        instructions: "Hello Jan Assistant",
+        instructions: 'Hello Jan Assistant',
         model: {
           id: 'model1',
           parameters: [],
@@ -113,16 +113,8 @@ describe('useCreateNewThread', () => {
       } as any)
     })
 
-    expect(mockSetAtom).toHaveBeenCalledTimes(6) // Check if all the necessary atoms were set
+    expect(mockSetAtom).toHaveBeenCalledTimes(1) // Check if all the necessary atoms were set
     expect(extensionManager.get).toHaveBeenCalled()
-    expect(mockSetAtom).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        assistants: expect.arrayContaining([
-          expect.objectContaining({ instructions: 'Hello Jan Assistant' }),
-        ]),
-      })
-    )
   })
 
   it('should create a new thread with previous instructions', async () => {
@@ -166,16 +158,8 @@ describe('useCreateNewThread', () => {
       } as any)
     })
 
-    expect(mockSetAtom).toHaveBeenCalledTimes(6) // Check if all the necessary atoms were set
+    expect(mockSetAtom).toHaveBeenCalledTimes(1) // Check if all the necessary atoms were set
     expect(extensionManager.get).toHaveBeenCalled()
-    expect(mockSetAtom).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        assistants: expect.arrayContaining([
-          expect.objectContaining({ instructions: 'Hello Jan' }),
-        ]),
-      })
-    )
   })
 
   it('should show a warning toast if trying to create an empty thread', async () => {
@@ -212,13 +196,12 @@ describe('useCreateNewThread', () => {
 
     const { result } = renderHook(() => useCreateNewThread())
 
-    const mockThread = { id: 'thread1', title: 'Test Thread' }
+    const mockThread = { id: 'thread1', title: 'Test Thread', assistants: [{}] }
 
     await act(async () => {
       await result.current.updateThreadMetadata(mockThread as any)
     })
 
     expect(mockUpdateThread).toHaveBeenCalledWith(mockThread)
-    expect(extensionManager.get).toHaveBeenCalled()
   })
 })

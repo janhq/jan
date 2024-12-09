@@ -58,12 +58,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
       // Should also delete error messages to clear out the error state
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          thread.id,
-          messages.filter(
-            (msg) => msg.id !== message.id && msg.status !== MessageStatus.Error
-          )
-        )
+        ?.deleteMessage(thread.id, message.id)
+        .catch(console.error)
 
       const updatedThread: Thread = {
         ...thread,
@@ -87,10 +83,6 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
 
   const onEditClick = async () => {
     setEditMessage(message.id ?? '')
-  }
-
-  const onRegenerateClick = async () => {
-    resendChatMessage(message)
   }
 
   if (message.status === MessageStatus.Pending) return null
@@ -122,7 +114,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
             ContentType.Pdf && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onRegenerateClick}
+              onClick={resendChatMessage}
             >
               <Tooltip
                 trigger={

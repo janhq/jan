@@ -2,8 +2,7 @@ import { renderHook, act } from '@testing-library/react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import useDeleteThread from './useDeleteThread'
 import { extensionManager } from '@/extension/ExtensionManager'
-import { toaster } from '@/containers/Toast'
-
+import { useCreateNewThread } from './useCreateNewThread'
 // Mock the necessary dependencies
 // Mock dependencies
 jest.mock('jotai', () => ({
@@ -12,6 +11,7 @@ jest.mock('jotai', () => ({
   useAtom: jest.fn(),
   atom: jest.fn(),
 }))
+jest.mock('./useCreateNewThread')
 jest.mock('@/extension/ExtensionManager')
 jest.mock('@/containers/Toast')
 
@@ -27,8 +27,13 @@ describe('useDeleteThread', () => {
     ]
     const mockSetThreads = jest.fn()
     ;(useAtom as jest.Mock).mockReturnValue([mockThreads, mockSetThreads])
+    ;(useSetAtom as jest.Mock).mockReturnValue(() => {})
+    ;(useCreateNewThread as jest.Mock).mockReturnValue({})
 
-    const mockDeleteThread = jest.fn()
+    const mockDeleteThread = jest.fn().mockImplementation(() => ({
+      catch: () => jest.fn,
+    }))
+
     extensionManager.get = jest.fn().mockReturnValue({
       deleteThread: mockDeleteThread,
     })
@@ -50,12 +55,17 @@ describe('useDeleteThread', () => {
     const mockCleanMessages = jest.fn()
     ;(useSetAtom as jest.Mock).mockReturnValue(() => mockCleanMessages)
     ;(useAtomValue as jest.Mock).mockReturnValue(['thread 1'])
+    const mockCreateNewThread = jest.fn()
+    ;(useCreateNewThread as jest.Mock).mockReturnValue({
+      requestCreateNewThread: mockCreateNewThread,
+    })
 
-    const mockWriteMessages = jest.fn()
     const mockSaveThread = jest.fn()
+    const mockDeleteThread = jest.fn().mockResolvedValue({})
     extensionManager.get = jest.fn().mockReturnValue({
-      writeMessages: mockWriteMessages,
       saveThread: mockSaveThread,
+      getThreadAssistant: jest.fn().mockResolvedValue({}),
+      deleteThread: mockDeleteThread,
     })
 
     const { result } = renderHook(() => useDeleteThread())
@@ -64,20 +74,18 @@ describe('useDeleteThread', () => {
       await result.current.cleanThread('thread1')
     })
 
-    expect(mockWriteMessages).toHaveBeenCalled()
-    expect(mockSaveThread).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'thread1',
-        title: 'New Thread',
-        metadata: expect.objectContaining({ lastMessage: undefined }),
-      })
-    )
+    expect(mockDeleteThread).toHaveBeenCalled()
+    expect(mockCreateNewThread).toHaveBeenCalled()
   })
 
   it('should handle errors when deleting a thread', async () => {
     const mockThreads = [{ id: 'thread1', title: 'Thread 1' }]
     const mockSetThreads = jest.fn()
     ;(useAtom as jest.Mock).mockReturnValue([mockThreads, mockSetThreads])
+    const mockCreateNewThread = jest.fn()
+    ;(useCreateNewThread as jest.Mock).mockReturnValue({
+      requestCreateNewThread: mockCreateNewThread,
+    })
 
     const mockDeleteThread = jest
       .fn()
@@ -98,8 +106,6 @@ describe('useDeleteThread', () => {
 
     expect(mockDeleteThread).toHaveBeenCalledWith('thread1')
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(Error))
-    expect(mockSetThreads).not.toHaveBeenCalled()
-    expect(toaster).not.toHaveBeenCalled()
 
     consoleErrorSpy.mockRestore()
   })
