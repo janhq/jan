@@ -7,8 +7,9 @@ import Markdown from 'react-markdown'
 
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
+
 import rehypeKatex from 'rehype-katex'
-import rehypeRaw from 'rehype-raw'
+
 import remarkMath from 'remark-math'
 
 import 'katex/dist/katex.min.css'
@@ -198,12 +199,10 @@ export const MarkdownTextMessage = memo(
           remarkPlugins={[remarkMath]}
           rehypePlugins={[
             [rehypeKatex, { throwOnError: false }],
-            rehypeRaw,
             rehypeHighlight,
             [rehypeHighlightCodeLines, { showLineNumbers: true }],
             wrapCodeBlocksWithoutVisit,
           ]}
-          skipHtml={true}
         >
           {text}
         </Markdown>
