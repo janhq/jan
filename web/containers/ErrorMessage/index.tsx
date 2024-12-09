@@ -25,30 +25,52 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   const activeThread = useAtomValue(activeThreadAtom)
 
+  const defaultDesc = () => {
+    return (
+      <>
+        <p>
+          {`Something's wrong.`} Access&nbsp;
+          <span
+            className="cursor-pointer text-[hsla(var(--app-link))] underline"
+            onClick={() => setModalTroubleShooting(true)}
+          >
+            troubleshooting assistance
+          </span>
+          &nbsp;now.
+        </p>
+        <ModalTroubleShooting />
+      </>
+    )
+  }
+
   const getErrorTitle = () => {
+    console.log(message)
     switch (message.error_code) {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
         return (
-          <span data-testid="invalid-API-key-error">
-            Invalid API key. Please check your API key from{' '}
-            <button
-              className="font-medium text-[hsla(var(--app-link))] underline"
-              onClick={() => {
-                setMainState(MainViewState.Settings)
+          <>
+            <span data-testid="invalid-API-key-error">
+              Invalid API key. Please check your API key from{' '}
+              <button
+                className="font-medium text-[hsla(var(--app-link))] underline"
+                onClick={() => {
+                  setMainState(MainViewState.Settings)
 
-                if (activeThread?.assistants[0]?.model.engine) {
-                  const engine = EngineManager.instance().get(
-                    activeThread.assistants[0].model.engine
-                  )
-                  engine?.name && setSelectedSettingScreen(engine.name)
-                }
-              }}
-            >
-              Settings
-            </button>{' '}
-            and try again.
-          </span>
+                  if (activeThread?.assistants[0]?.model.engine) {
+                    const engine = EngineManager.instance().get(
+                      activeThread.assistants[0].model.engine
+                    )
+                    engine?.name && setSelectedSettingScreen(engine.name)
+                  }
+                }}
+              >
+                Settings
+              </button>{' '}
+              and try again.
+            </span>
+            {defaultDesc}
+          </>
         )
       default:
         return (
@@ -56,8 +78,16 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             data-testid="passthrough-error-message"
             className="first-letter:uppercase"
           >
-            {message.content[0]?.text?.value && (
-              <AutoLink text={message.content[0].text.value} />
+            {message.content[0]?.text?.value === 'Failed to fetch' ? (
+              <p>
+                No internet connection. <br /> Switch to an on-device model or
+                check connection.
+              </p>
+            ) : (
+              <>
+                <AutoLink text={message.content[0].text.value} />
+                {defaultDesc}
+              </>
             )}
           </p>
         )
@@ -65,24 +95,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   }
 
   return (
-    <div className="mx-auto mt-10 max-w-[700px]">
+    <div className="mx-auto my-6 max-w-[700px]">
       {message.status === MessageStatus.Error && (
         <div
           key={message.id}
           className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--text-secondary))]"
         >
           {getErrorTitle()}
-          <p>
-            {`Something's wrong.`} Access&nbsp;
-            <span
-              className="cursor-pointer text-[hsla(var(--app-link))] underline"
-              onClick={() => setModalTroubleShooting(true)}
-            >
-              troubleshooting assistance
-            </span>
-            &nbsp;now.
-          </p>
-          <ModalTroubleShooting />
         </div>
       )}
     </div>
