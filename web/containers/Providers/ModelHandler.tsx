@@ -1,4 +1,4 @@
-import { Fragment, use, useCallback, useEffect, useRef } from 'react'
+import { Fragment, useCallback, useEffect, useRef } from 'react'
 
 import {
   ChatCompletionMessage,

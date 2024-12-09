@@ -7,6 +7,8 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import AssistantSetting from './index'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 
 jest.mock('jotai', () => {
   const originalModule = jest.requireActual('jotai')
@@ -68,6 +70,7 @@ describe('AssistantSetting Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
+    jest.useFakeTimers()
   })
 
   test('renders AssistantSetting component with proper data', async () => {
@@ -75,7 +78,14 @@ describe('AssistantSetting Component', () => {
     ;(useSetAtom as jest.Mock).mockImplementationOnce(
       () => setEngineParamsUpdate
     )
-    ;(useAtomValue as jest.Mock).mockImplementationOnce(() => mockActiveThread)
+    ;(useAtomValue as jest.Mock).mockImplementation((atom) => {
+      switch (atom) {
+        case activeThreadAtom:
+          return mockActiveThread
+        case activeAssistantAtom:
+          return {}
+      }
+    })
     const updateThreadMetadata = jest.fn()
     ;(useActiveModel as jest.Mock).mockReturnValueOnce({ stopModel: jest.fn() })
     ;(useCreateNewThread as jest.Mock).mockReturnValueOnce({
@@ -98,7 +108,14 @@ describe('AssistantSetting Component', () => {
     const setEngineParamsUpdate = jest.fn()
     const updateThreadMetadata = jest.fn()
     const stopModel = jest.fn()
-    ;(useAtomValue as jest.Mock).mockImplementationOnce(() => mockActiveThread)
+    ;(useAtomValue as jest.Mock).mockImplementation((atom) => {
+      switch (atom) {
+        case activeThreadAtom:
+          return mockActiveThread
+        case activeAssistantAtom:
+          return {}
+      }
+    })
     ;(useSetAtom as jest.Mock).mockImplementation(() => setEngineParamsUpdate)
     ;(useActiveModel as jest.Mock).mockReturnValueOnce({ stopModel })
     ;(useCreateNewThread as jest.Mock).mockReturnValueOnce({

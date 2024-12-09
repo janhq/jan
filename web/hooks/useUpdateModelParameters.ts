@@ -82,6 +82,7 @@ export default function useUpdateModelParameters() {
         },
       }
       setActiveAssistant(assistantInfo)
+
       updateAssistantCallback(thread.id, assistantInfo)
     },
     [
