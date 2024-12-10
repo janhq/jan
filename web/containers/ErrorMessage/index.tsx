@@ -14,6 +14,8 @@ import ModalTroubleShooting, {
 
 import { MainViewState } from '@/constants/screens'
 
+import { isLocalEngine } from '@/utils/modelEngine'
+
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
@@ -44,6 +46,10 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   }
 
   const getErrorTitle = () => {
+    const engine =
+      activeThread?.assistants[0]?.model.engine &&
+      EngineManager.instance().get(activeThread.assistants[0].model.engine)
+
     switch (message.error_code) {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
@@ -55,20 +61,14 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 className="font-medium text-[hsla(var(--app-link))] underline"
                 onClick={() => {
                   setMainState(MainViewState.Settings)
-
-                  if (activeThread?.assistants[0]?.model.engine) {
-                    const engine = EngineManager.instance().get(
-                      activeThread.assistants[0].model.engine
-                    )
-                    engine?.name && setSelectedSettingScreen(engine.name)
-                  }
+                  engine?.name && setSelectedSettingScreen(engine.name)
                 }}
               >
                 Settings
               </button>{' '}
               and try again.
             </span>
-            {defaultDesc}
+            {defaultDesc()}
           </>
         )
       default:
@@ -77,15 +77,16 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             data-testid="passthrough-error-message"
             className="first-letter:uppercase"
           >
-            {message.content[0]?.text?.value === 'Failed to fetch' ? (
-              <p>
+            {message.content[0]?.text?.value === 'Failed to fetch' &&
+            !isLocalEngine(String(engine?.name)) ? (
+              <span>
                 No internet connection. <br /> Switch to an on-device model or
                 check connection.
-              </p>
+              </span>
             ) : (
               <>
                 <AutoLink text={message.content[0].text.value} />
-                {defaultDesc}
+                {defaultDesc()}
               </>
             )}
           </p>
