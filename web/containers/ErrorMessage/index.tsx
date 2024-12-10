@@ -47,6 +47,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
 
   const getErrorTitle = () => {
     const engine =
+      activeThread &&
       activeThread?.assistants[0]?.model.engine &&
       EngineManager.instance().get(activeThread.assistants[0].model.engine)
 
