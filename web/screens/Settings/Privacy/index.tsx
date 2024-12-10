@@ -1,8 +1,9 @@
 import { fs } from '@janhq/core'
 import { Button, Input, ScrollArea, Switch } from '@janhq/joi'
-
 import { useAtom, useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
+
+import posthog from 'posthog-js'
 
 import { toaster } from '@/containers/Toast'
 
@@ -81,7 +82,15 @@ const Privacy = () => {
           <div className="flex-shrink-0">
             <Switch
               checked={productAnalytic}
-              onChange={(e) => setProductAnalytic(e.target.checked)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  posthog.opt_in_capturing()
+                  posthog.capture('user_opt_in', { timestamp: new Date() })
+                } else {
+                  posthog.opt_out_capturing()
+                }
+                setProductAnalytic(e.target.checked)
+              }}
             />
           </div>
         </div>

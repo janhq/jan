@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
+import posthog from 'posthog-js'
 import { twMerge } from 'tailwind-merge'
 
 import BottomPanel from '@/containers/Layout/BottomPanel'
@@ -38,11 +39,20 @@ import {
   reduceTransparentAtom,
 } from '@/helpers/atoms/Setting.atom'
 
+if (typeof window !== 'undefined') {
+  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY || '', {
+    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || '',
+    autocapture: false,
+    person_profiles: 'always',
+    persistence: 'localStorage',
+  })
+}
+
 const BaseLayout = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
-  const setProductAnalytic = useSetAtom(productAnalyticAtom)
+  const [productAnalytic, setProductAnalytic] = useAtom(productAnalyticAtom)
   const [productAnalyticPrompt, setProductAnalyticPrompt] = useAtom(
     productAnalyticPromptAtom
   )
@@ -56,10 +66,17 @@ const BaseLayout = () => {
       }
       return () => clearTimeout(timer)
     }, 3000) // 3 seconds delay
-    // }, 0) // 3 seconds delay
 
     return () => clearTimeout(timer) // Cleanup timer on unmount
   }, [productAnalyticPrompt])
+
+  useEffect(() => {
+    if (productAnalytic) {
+      posthog.opt_in_capturing()
+    } else {
+      posthog.opt_out_capturing()
+    }
+  }, [productAnalytic])
 
   useEffect(() => {
     if (localStorage.getItem(SUCCESS_SET_NEW_DESTINATION) === 'true') {
@@ -81,6 +98,12 @@ const BaseLayout = () => {
     setProductAnalytic(isAllowed)
     setProductAnalyticPrompt(false)
     setShowProductAnalyticPrompt(false)
+    if (isAllowed) {
+      posthog.opt_in_capturing()
+      posthog.capture('user_opt_in', { timestamp: new Date() })
+    } else {
+      posthog.opt_out_capturing()
+    }
   }
 
   return (
