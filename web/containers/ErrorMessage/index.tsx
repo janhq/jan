@@ -45,11 +45,13 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     )
   }
 
+  const getEngine = () => {
+    const engineName = activeThread?.assistants?.[0]?.model?.engine
+    return engineName ? EngineManager.instance().get(engineName) : null
+  }
+
   const getErrorTitle = () => {
-    const engine =
-      activeThread &&
-      activeThread?.assistants[0]?.model.engine &&
-      EngineManager.instance().get(activeThread.assistants[0].model.engine)
+    const engine = getEngine()
 
     switch (message.error_code) {
       case ErrorCode.InvalidApiKey:
@@ -79,6 +81,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             className="first-letter:uppercase"
           >
             {message.content[0]?.text?.value === 'Failed to fetch' &&
+            engine &&
             !isLocalEngine(String(engine?.name)) ? (
               <span>
                 No internet connection. <br /> Switch to an on-device model or
