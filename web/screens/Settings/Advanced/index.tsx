@@ -2,11 +2,10 @@
 
 import { useEffect, useState, useCallback, ChangeEvent } from 'react'
 
-import { openExternalUrl, fs, AppConfiguration } from '@janhq/core'
+import { openExternalUrl, AppConfiguration } from '@janhq/core'
 
 import {
   ScrollArea,
-  Button,
   Switch,
   Input,
   Tooltip,
@@ -179,24 +178,6 @@ const Advanced = () => {
     }
     setUseGpuIfPossible()
   }, [readSettings, setGpuList, setGpuEnabled, setGpusInUse, setVulkanEnabled])
-
-  /**
-   * Clear logs
-   * @returns
-   */
-  const clearLogs = async () => {
-    try {
-      await fs.rm(`file://logs`)
-    } catch (err) {
-      console.error('Error clearing logs: ', err)
-    }
-
-    toaster({
-      title: 'Logs cleared',
-      description: 'All logs have been cleared.',
-      type: 'success',
-    })
-  }
 
   /**
    * Handle GPU Change
@@ -447,7 +428,7 @@ const Advanced = () => {
                 model performance (reload needed).
               </p>
             </div>
-            <div className="flex-sharink-0">
+            <div className="flex-shrink-0">
               <Switch
                 checked={vulkanEnabled}
                 onChange={(e) => updateVulkanEnabled(e.target.checked)}
@@ -541,25 +522,6 @@ const Advanced = () => {
             />
           </div>
         )}
-
-        {/* Clear log */}
-        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="flex-shrink-0 space-y-1">
-            <div className="flex gap-x-2">
-              <h6 className="font-semibold capitalize">Clear logs</h6>
-            </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Clear all logs from Jan app.
-            </p>
-          </div>
-          <Button
-            data-testid="clear-logs"
-            theme="destructive"
-            onClick={clearLogs}
-          >
-            Clear
-          </Button>
-        </div>
 
         {/* Factory Reset */}
         <FactoryReset />
