@@ -40,8 +40,8 @@ import {
 } from '@/helpers/atoms/Setting.atom'
 
 if (typeof window !== 'undefined') {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY || '', {
-    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || '',
+  posthog.init(POSTHOG_KEY, {
+    api_host: POSTHOG_HOST,
     autocapture: false,
     person_profiles: 'always',
     persistence: 'localStorage',
@@ -73,6 +73,7 @@ const BaseLayout = () => {
   useEffect(() => {
     if (productAnalytic) {
       posthog.opt_in_capturing()
+      posthog.register({ app_version: VERSION })
     } else {
       posthog.opt_out_capturing()
     }
@@ -102,6 +103,7 @@ const BaseLayout = () => {
       posthog.opt_in_capturing()
       posthog.capture('user_opt_in', { timestamp: new Date() })
     } else {
+      posthog.capture('user_opt_out', { timestamp: new Date() })
       posthog.opt_out_capturing()
     }
   }
