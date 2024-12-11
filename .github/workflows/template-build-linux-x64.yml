@@ -111,8 +111,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
@@ -122,6 +122,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
@@ -131,8 +133,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
 
       - name: Upload Artifact .deb file
         if: inputs.public_provider != 'github'

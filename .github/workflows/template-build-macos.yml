@@ -140,18 +140,18 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: "/tmp/codesign.p12"
+          CSC_LINK: '/tmp/codesign.p12'
           CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APP_PATH: "."
+          APP_PATH: '.'
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
@@ -159,15 +159,17 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: "/tmp/codesign.p12"
+          CSC_LINK: '/tmp/codesign.p12'
           CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APP_PATH: "."
+          APP_PATH: '.'
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
@@ -175,18 +177,18 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: "/tmp/codesign.p12"
+          CSC_LINK: '/tmp/codesign.p12'
           CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APP_PATH: "."
+          APP_PATH: '.'
           DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'

@@ -149,8 +149,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
 
       - name: Build app and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
@@ -160,6 +160,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
           ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -175,8 +177,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -190,4 +192,3 @@ jobs:
         with:
           name: jan-win-x64-${{ inputs.new_version }}
           path: ./electron/dist/*.exe
-
