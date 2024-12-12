@@ -14,8 +14,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@janhq/core": "link:./core",
-    "@janhq/joi": "link:./joi",
+    "@janhq/core": "latest",
+    "@janhq/joi": "latest",
     "@tanstack/react-virtual": "^3.10.9",
     "autoprefixer": "10.4.16",
     "class-variance-authority": "^0.7.0",

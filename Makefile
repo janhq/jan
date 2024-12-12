@@ -10,21 +10,13 @@ REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 all:
 	@echo "Specify a target to run"
 
-# Builds the UI kit
-build-joi:
-ifeq ($(OS),Windows_NT)
-	cd joi && yarn config set network-timeout 300000 && yarn install && yarn build
-else
-	cd joi && yarn install && yarn build
-endif
 
 # Installs yarn dependencies and builds core and extensions
-install-and-build: build-joi
+install-and-build:
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
 	yarn global add turbo@1.13.2
-	yarn build:core
 	yarn build:server
 	yarn install
 	yarn build:extensions

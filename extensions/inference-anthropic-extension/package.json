@@ -26,7 +26,7 @@
     "ts-loader": "^9.5.0"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "latest",
     "fetch-retry": "^5.0.6",
     "ulidx": "^2.3.0"
   },

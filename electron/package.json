@@ -99,7 +99,7 @@
   },
   "dependencies": {
     "@alumna/reflect": "^1.1.3",
-    "@janhq/core": "link:./core",
+    "@janhq/core": "latest",
     "@janhq/server": "link:./server",
     "@npmcli/arborist": "^7.1.0",
     "electron-store": "^8.1.0",

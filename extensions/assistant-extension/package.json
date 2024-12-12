@@ -32,7 +32,7 @@
     "run-script-os": "^1.1.6"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "latest",
     "@langchain/community": "0.0.13",
     "hnswlib-node": "^1.4.2",
     "langchain": "^0.0.214",
