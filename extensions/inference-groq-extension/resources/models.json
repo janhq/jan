@@ -67,37 +67,6 @@
         "url": "https://groq.com"
       }
     ],
-    "id": "llama-3.1-70b-versatile",
-    "object": "model",
-    "name": "Groq Llama 3.1 70b Versatile",
-    "version": "1.1",
-    "description": "Groq Llama 3.1 70b Versatile with supercharged speed!",
-    "format": "api",
-    "settings": {},
-    "parameters": {
-      "max_tokens": 8000,
-      "temperature": 0.7,
-      "top_p": 0.95,
-      "stream": true,
-      "stop": [],
-      "frequency_penalty": 0,
-      "presence_penalty": 0
-    },
-    "metadata": {
-      "author": "Meta",
-      "tags": [
-        "General",
-        "Big Context Length"
-      ]
-    },
-    "engine": "groq"
-  },
-  {
-    "sources": [
-      {
-        "url": "https://groq.com"
-      }
-    ],
     "id": "llama-3.1-8b-instant",
     "object": "model",
     "name": "Groq Llama 3.1 8b Instant",
