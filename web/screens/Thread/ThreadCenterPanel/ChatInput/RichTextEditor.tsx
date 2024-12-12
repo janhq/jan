@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useMemo, useRef, ClipboardEvent } from 'react'
 
 import { MessageStatus } from '@janhq/core'
-import hljs from 'highlight.js'
 import { useAtom, useAtomValue } from 'jotai'
 
 import { BaseEditor, createEditor, Editor, Transforms } from 'slate'
@@ -134,97 +133,9 @@ const RichTextEditor = ({
         })
       }
 
-      if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
-        node.children.forEach((child: { text: any }, childIndex: number) => {
-          const text = child.text
-
-          const codeBlockStartRegex = /```(\w*)/g
-          const matches = [...currentPrompt.matchAll(codeBlockStartRegex)]
-
-          if (matches.length % 2 !== 0) {
-            hasEndBackticks.current = false
-          }
-
-          // Match code block start and end
-          const lang = text.match(/^```(\w*)$/)
-          const endMatch = text.match(/^```$/)
-
-          if (lang) {
-            // If it's the start of a code block, store the language
-            currentLanguage.current = lang[1] || 'plaintext'
-          } else if (endMatch) {
-            // Reset language when code block ends
-            currentLanguage.current = 'plaintext'
-          } else if (
-            hasStartBackticks.current &&
-            hasEndBackticks.current &&
-            currentLanguage.current !== 'plaintext'
-          ) {
-            // Highlight entire code line if in a code block
-
-            const codeContent = text.trim() // Remove leading spaces for highlighting
-
-            let highlighted = ''
-            highlighted = hljs.highlightAuto(codeContent).value
-            try {
-              highlighted = hljs.highlight(codeContent, {
-                language:
-                  currentLanguage.current.length > 1
-                    ? currentLanguage.current
-                    : 'plaintext',
-              }).value
-            } catch (err) {
-              highlighted = hljs.highlight(codeContent, {
-                language: 'javascript',
-              }).value
-            }
-
-            const parser = new DOMParser()
-            const doc = parser.parseFromString(highlighted, 'text/html')
-
-            let slateTextIndex = 0
-
-            doc.body.childNodes.forEach((childNode) => {
-              const childText = childNode.textContent || ''
-
-              const length = childText.length
-              const className =
-                childNode.nodeType === Node.ELEMENT_NODE
-                  ? (childNode as HTMLElement).className
-                  : ''
-
-              ranges.push({
-                anchor: {
-                  path: [...path, childIndex],
-                  offset: slateTextIndex,
-                },
-                focus: {
-                  path: [...path, childIndex],
-                  offset: slateTextIndex + length,
-                },
-                type: 'code',
-                code: true,
-                language: currentLanguage.current,
-                className,
-              })
-
-              slateTextIndex += length
-            })
-          } else {
-            currentLanguage.current = 'plaintext'
-            ranges.push({
-              anchor: { path: [...path, childIndex], offset: 0 },
-              focus: { path: [...path, childIndex], offset: text.length },
-              type: 'paragraph', // Treat as a paragraph
-              code: false,
-            })
-          }
-        })
-      }
-
       return ranges
     },
-    [currentPrompt, editor]
+    [editor]
   )
 
   // RenderLeaf applies the decoration styles
