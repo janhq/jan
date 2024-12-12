@@ -5,7 +5,6 @@
   "module": "dist/esm/index.js",
   "types": "dist/index.d.ts",
   "description": "A collection of UI component",
-  "private": true,
   "files": [
     "dist"
   ],
