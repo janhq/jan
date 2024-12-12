@@ -10,14 +10,16 @@ REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 all:
 	@echo "Specify a target to run"
 
+# Builds the server package
+build-server:
+	cd server && yarn && yarn build
 
 # Installs yarn dependencies and builds core and extensions
-install-and-build:
+install-and-build: build-server
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
 	yarn global add turbo@1.13.2
-	yarn build:server
 	yarn install
 	yarn build:extensions
 
