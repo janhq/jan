@@ -100,9 +100,6 @@ jobs:
           make test
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-          # TURBO_API: '${{ secrets.TURBO_API }}'
-          # TURBO_TEAM: 'macos'
-          # TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-macos-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
@@ -163,10 +160,7 @@ jobs:
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'windows'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
+       
   test-on-windows-pr:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)  || github.event_name == 'workflow_dispatch'
     runs-on: windows-desktop-default-windows-security
@@ -199,10 +193,6 @@ jobs:
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'windows'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
   test-on-windows-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
@@ -214,7 +204,7 @@ jobs:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
@@ -262,10 +252,6 @@ jobs:
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'linux'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -304,10 +290,6 @@ jobs:
           make lint
           yarn build:test
           yarn test:coverage
-        # env:
-        #   TURBO_API: '${{ secrets.TURBO_API }}'
-        #   TURBO_TEAM: 'linux'
-        #   TURBO_TOKEN: '${{ secrets.TURBO_TOKEN }}'
 
       - name: Generate Code Coverage report
         id: code-coverage

@@ -19,7 +19,6 @@ install-and-build: build-server
 ifeq ($(OS),Windows_NT)
 	yarn config set network-timeout 300000
 endif
-	yarn global add turbo@1.13.2
 	yarn install
 	yarn build:extensions
 
@@ -111,7 +110,7 @@ build: check-file-counts
 
 clean:
 ifeq ($(OS),Windows_NT)
-	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo -Recurse -Directory | Remove-Item -Recurse -Force"
+	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json -Recurse -File | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include yarn.lock -Recurse -File | Remove-Item -Recurse -Force"
 	-powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz"
@@ -124,7 +123,6 @@ else ifeq ($(shell uname -s),Linux)
 	find . -name "dist" -type d -exec rm -rf '{}' +
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
-	find . -name ".turbo" -type d -exec rm -rf '{}' +
 	find . -name "packake-lock.json" -type f -exec rm -rf '{}' +
 	find . -name "yarn.lock" -type f -exec rm -rf '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
@@ -139,7 +137,6 @@ else
 	find . -name "dist" -type d -exec rm -rf '{}' +
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
-	find . -name ".turbo" -type d -exec rm -rf '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
 	find . -name "yarn.lock" -type f -exec rm -rf '{}' +
 	rm -rf ./pre-install/*.tgz
