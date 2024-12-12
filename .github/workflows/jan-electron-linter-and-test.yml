@@ -78,12 +78,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Get Commit Message for PR
         if: github.event_name == 'pull_request'
         run: |
@@ -100,6 +94,7 @@ jobs:
 
       - name: Linter and test
         run: |
+          yarn config set install.prefer-offline true
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
@@ -123,14 +118,9 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Linter and test
         run: |
+          yarn config set install.prefer-offline true
           npm config set registry https://registry.npmjs.org --global
           yarn config set registry https://registry.npmjs.org --global
           make test
@@ -155,19 +145,6 @@ jobs:
         with:
           node-version: 20
 
-      # Clean cache, continue on error
-      - name: 'Cleanup cache'
-        shell: powershell
-        continue-on-error: true
-        run: |
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
-          make clean
-
       - name: Get Commit Message for push event
         if: github.event_name == 'push'
         shell: bash
@@ -182,6 +159,7 @@ jobs:
       - name: Linter and test
         shell: powershell
         run: |
+          yarn config set install.prefer-offline true
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
@@ -199,22 +177,9 @@ jobs:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
-
-      # Clean cache, continue on error
-      - name: 'Cleanup cache'
-        shell: powershell
-        continue-on-error: true
-        run: |
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
-          make clean
 
       - name: Get Commit Message for PR
         if: github.event_name == 'pull_request'
@@ -230,6 +195,7 @@ jobs:
       - name: Linter and test
         shell: powershell
         run: |
+          yarn config set install.prefer-offline true
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make test
@@ -252,22 +218,10 @@ jobs:
         with:
           node-version: 20
 
-      # Clean cache, continue on error
-      - name: 'Cleanup cache'
-        shell: powershell
-        continue-on-error: true
-        run: |
-          $path = "$Env:APPDATA\jan"
-          if (Test-Path $path) {
-              Remove-Item "\\?\$path" -Recurse -Force
-          } else {
-              Write-Output "Folder does not exist."
-          }
-          make clean
-
       - name: Linter and test
         shell: powershell
         run: |
+          yarn config set install.prefer-offline true
           npm config set registry https://registry.npmjs.org --global
           yarn config set registry https://registry.npmjs.org --global
           make test
@@ -285,12 +239,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
-
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
 
       - name: Get Commit Message for PR
         if: github.event_name == 'pull_request'
@@ -341,12 +289,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Download code coverage report from base branch
         uses: actions/download-artifact@v4
         with:
@@ -356,6 +298,7 @@ jobs:
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
+          yarn config set install.prefer-offline true
           npm config set registry ${{ secrets.NPM_PROXY }} --global
           yarn config set registry ${{ secrets.NPM_PROXY }} --global
           make lint
@@ -390,16 +333,11 @@ jobs:
         with:
           node-version: 20
 
-      - name: 'Cleanup cache'
-        continue-on-error: true
-        run: |
-          rm -rf ~/jan
-          make clean
-
       - name: Linter and test
         run: |
           export DISPLAY=$(w -h | awk 'NR==1 {print $2}')
           echo -e "Display ID: $DISPLAY"
+          yarn config set install.prefer-offline true
           npm config set registry https://registry.npmjs.org --global
           yarn config set registry https://registry.npmjs.org --global
           make test
