@@ -15,6 +15,7 @@ test('Select GPT model from Hub and Chat with Invalid API Key', async ({
 
   await page.getByTestId('txt-input-chat').fill('dummy value')
 
+  await page.getByTestId('btn-deny-product-analytics').click({ force: true })
   await page.getByTestId('btn-send-chat').click({ force: true })
 
   await page.waitForFunction(

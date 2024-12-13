@@ -191,6 +191,7 @@ const BaseLayout = () => {
                 Allow
               </Button>
               <Button
+                data-testid="btn-deny-product-analytics"
                 theme="ghost"
                 variant="outline"
                 onClick={() => {
