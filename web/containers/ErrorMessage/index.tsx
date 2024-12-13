@@ -46,7 +46,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   }
 
   const getEngine = () => {
-    const engineName = activeThread?.assistants?.[0]?.model?.engine
+    const engineName = activeAssistant?.model?.engine
     return engineName ? EngineManager.instance().get(engineName) : null
   }
 

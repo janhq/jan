@@ -97,7 +97,7 @@ export enum ErrorCode {
  */
 export enum ContentType {
   Text = 'text',
-  Image = 'image',
+  Image = 'image_url',
   Pdf = 'pdf',
 }
 
