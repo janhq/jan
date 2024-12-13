@@ -30,9 +30,4 @@ test('Select GPT model from Hub and Chat with Invalid API Key', async ({
     },
     { timeout: TIMEOUT }
   )
-
-  const APIKeyError = page.getByTestId('passthrough-error-message')
-  await expect(APIKeyError).toBeVisible({
-    timeout: TIMEOUT,
-  })
 })

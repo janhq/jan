@@ -71,6 +71,27 @@ const BaseLayout = () => {
         disable_session_recording: true,
         person_profiles: 'always',
         persistence: 'localStorage',
+        opt_out_capturing_by_default: true,
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        sanitize_properties: function (properties) {
+          const denylist = [
+            '$pathname',
+            '$initial_pathname',
+            '$current_url',
+            '$initial_current_url',
+            '$host',
+            '$initial_host',
+            '$initial_person_info',
+          ]
+
+          denylist.forEach((key) => {
+            if (properties[key]) {
+              properties[key] = null // Set each denied property to null
+            }
+          })
+
+          return properties
+        },
       })
       posthog.opt_in_capturing()
       posthog.register({ app_version: VERSION })
