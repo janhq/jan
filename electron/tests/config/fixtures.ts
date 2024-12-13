@@ -122,6 +122,5 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  // temporally disabling this due to the config for parallel testing WIP
-  // teardownElectron()
+  teardownElectron()
 })
