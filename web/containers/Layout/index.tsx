@@ -39,15 +39,6 @@ import {
   reduceTransparentAtom,
 } from '@/helpers/atoms/Setting.atom'
 
-if (typeof window !== 'undefined') {
-  posthog.init(POSTHOG_KEY, {
-    api_host: POSTHOG_HOST,
-    autocapture: false,
-    person_profiles: 'always',
-    persistence: 'localStorage',
-  })
-}
-
 const BaseLayout = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const importModelStage = useAtomValue(getImportModelStageAtom)
@@ -72,6 +63,15 @@ const BaseLayout = () => {
 
   useEffect(() => {
     if (productAnalytic) {
+      posthog.init(POSTHOG_KEY, {
+        api_host: POSTHOG_HOST,
+        autocapture: false,
+        capture_pageview: false,
+        capture_pageleave: false,
+        disable_session_recording: true,
+        person_profiles: 'always',
+        persistence: 'localStorage',
+      })
       posthog.opt_in_capturing()
       posthog.register({ app_version: VERSION })
     } else {
@@ -101,9 +101,7 @@ const BaseLayout = () => {
     setShowProductAnalyticPrompt(false)
     if (isAllowed) {
       posthog.opt_in_capturing()
-      posthog.capture('user_opt_in', { timestamp: new Date() })
     } else {
-      posthog.capture('user_opt_out', { timestamp: new Date() })
       posthog.opt_out_capturing()
     }
   }
@@ -176,7 +174,7 @@ const BaseLayout = () => {
             <p className="text-[hsla(var(--text-secondary))]">
               To improve Jan, we collect anonymous data to understand feature
               usage. Your chats and personal information are never tracked. You
-              can change this anytime in &nbsp;
+              can change this anytime in&nbsp;
               <span className="font-semibold">{`Settings > Privacy.`}</span>
             </p>
             <p className="mt-6 text-[hsla(var(--text-secondary))]">

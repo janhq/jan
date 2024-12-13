@@ -85,9 +85,7 @@ const Privacy = () => {
               onChange={(e) => {
                 if (e.target.checked) {
                   posthog.opt_in_capturing()
-                  posthog.capture('user_opt_in', { timestamp: new Date() })
                 } else {
-                  posthog.capture('user_opt_out', { timestamp: new Date() })
                   posthog.opt_out_capturing()
                 }
                 setProductAnalytic(e.target.checked)
