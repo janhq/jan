@@ -38,7 +38,9 @@ export const getLogoEngine = (engine: InferenceEngine) => {
  * @param engine
  * @returns
  */
-export const isLocalEngine = (engine: string) => {
+export const isLocalEngine = (engine?: string) => {
+  if (!engine) return false
+
   const engineObj = EngineManager.instance().get(engine)
   if (!engineObj) return false
   return (

@@ -19,6 +19,7 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import { isLocalEngine } from '@/utils/modelEngine'
 import { useActiveModel } from './useActiveModel'
 import useRecommendedModel from './useRecommendedModel'
 
@@ -113,12 +114,14 @@ export const useCreateNewThread = () => {
     )
 
     const overriddenSettings = {
-      ctx_len: defaultContextLength,
+      ctx_len: !isLocalEngine(model?.engine) ? undefined : defaultContextLength,
     }
 
     // Use ctx length by default
     const overriddenParameters = {
-      max_tokens: defaultContextLength,
+      max_tokens: !isLocalEngine(model?.engine)
+        ? (model?.parameters.token_limit ?? 8192)
+        : defaultContextLength,
     }
 
     const createdAt = Date.now()
