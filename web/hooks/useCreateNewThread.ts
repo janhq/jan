@@ -20,6 +20,7 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { toaster } from '@/containers/Toast'
 
 import { isLocalEngine } from '@/utils/modelEngine'
+
 import { useActiveModel } from './useActiveModel'
 import useRecommendedModel from './useRecommendedModel'
 
@@ -168,7 +169,7 @@ export const useCreateNewThread = () => {
       })
 
       // Delete the file upload state
-      setFileUpload([])
+      setFileUpload(undefined)
       setActiveThread(createdThread)
     } catch (ex) {
       return toaster({

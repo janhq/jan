@@ -8,7 +8,7 @@ import { FileInfo } from '@/types/file'
 
 export const editPromptAtom = atom<string>('')
 export const currentPromptAtom = atom<string>('')
-export const fileUploadAtom = atom<FileInfo[]>([])
+export const fileUploadAtom = atom<FileInfo | undefined>()
 
 export const searchAtom = atom<string>('')
 

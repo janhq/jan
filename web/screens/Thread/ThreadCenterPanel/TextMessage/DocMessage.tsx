@@ -11,15 +11,7 @@ import { openFileTitle } from '@/utils/titleUtils'
 
 import Icon from '../FileUploadPreview/Icon'
 
-const DocMessage = ({
-  id,
-  name,
-  size,
-}: {
-  id: string
-  name?: string
-  size?: number
-}) => {
+const DocMessage = ({ id, name }: { id: string; name?: string }) => {
   const { onViewFile, onViewFileContainer } = usePath()
 
   return (
@@ -44,9 +36,9 @@ const DocMessage = ({
         <h6 className="line-clamp-1 w-4/5 font-medium">
           {name?.replaceAll(/[-._]/g, ' ')}
         </h6>
-        <p className="text-[hsla(var(--text-secondary)]">
+        {/* <p className="text-[hsla(var(--text-secondary)]">
           {toGibibytes(Number(size))}
-        </p>
+        </p> */}
       </div>
     </div>
   )

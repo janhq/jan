@@ -33,13 +33,18 @@ const MessageContainer: React.FC<
   const tokenSpeed = useAtomValue(tokenSpeedAtom)
 
   const text = useMemo(
-    () => props.content[0]?.text?.value ?? '',
+    () =>
+      props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? '',
     [props.content]
   )
-  const messageType = useMemo(
-    () => props.content[0]?.type ?? '',
+
+  const image = useMemo(
+    () =>
+      props.content.find((e) => e.type === ContentType.Image)?.image_url?.url,
     [props.content]
   )
+
+  const attachedFile = useMemo(() => 'attachments' in props, [props])
 
   return (
     <div className="group relative mx-auto max-w-[700px] p-4">
@@ -108,16 +113,8 @@ const MessageContainer: React.FC<
           )}
         >
           <>
-            {messageType === ContentType.Image && (
-              <ImageMessage content={props.content[0]} />
-            )}
-            {messageType === ContentType.Pdf && (
-              <DocMessage
-                id={props.id}
-                name={props.content[0]?.text?.name}
-                size={props.content[0]?.text?.size}
-              />
-            )}
+            {image && <ImageMessage image={image} />}
+            {attachedFile && <DocMessage id={props.id} name={props.id} />}
 
             {editMessage === props.id ? (
               <div>

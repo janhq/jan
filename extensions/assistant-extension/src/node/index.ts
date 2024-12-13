@@ -9,13 +9,14 @@ export function toolRetrievalUpdateTextSplitter(
   retrieval.updateTextSplitter(chunkSize, chunkOverlap)
 }
 export async function toolRetrievalIngestNewDocument(
+  thread: string,
   file: string,
   model: string,
   engine: string,
   useTimeWeighted: boolean
 ) {
-  const filePath = path.join(getJanDataFolderPath(), normalizeFilePath(file))
-  const threadPath = path.dirname(filePath.replace('files', ''))
+  const threadPath = path.join(getJanDataFolderPath(), 'threads', thread)
+  const filePath = path.join(getJanDataFolderPath(), 'files', file)
   retrieval.updateEmbeddingEngine(model, engine)
   return retrieval
     .ingestAgentKnowledge(filePath, `${threadPath}/memory`, useTimeWeighted)

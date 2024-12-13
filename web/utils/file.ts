@@ -1,4 +1,6 @@
 import { baseName } from '@janhq/core'
+import Uppy from '@uppy/core'
+import XHR from '@uppy/xhr-upload'
 
 export type FilePathWithSize = {
   path: string
@@ -26,4 +28,18 @@ export const getFileInfoFromFile = async (
     }
   }
   return result
+}
+
+export const uploader = () => {
+  const uppy = new Uppy().use(XHR, {
+    endpoint: 'http://127.0.0.1:39291/v1/files',
+    method: 'POST',
+    fieldName: 'file',
+    formData: true,
+    limit: 1,
+  })
+  uppy.setMeta({
+    purpose: 'assistants',
+  })
+  return uppy
 }

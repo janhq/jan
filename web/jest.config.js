@@ -37,5 +37,5 @@ const config = {
 // module.exports = createJestConfig(config)
 module.exports = async () => ({
   ...(await createJestConfig(config)()),
-  transformIgnorePatterns: ['/node_modules/(?!(layerr)/)'],
+  transformIgnorePatterns: ['/node_modules/(?!(layerr|nanoid|@uppy|preact)/)'],
 })

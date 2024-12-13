@@ -134,11 +134,9 @@ export default function useSendChatMessage() {
     setCurrentPrompt('')
     setEditPrompt('')
 
-    let base64Blob = fileUpload[0]
-      ? await getBase64(fileUpload[0].file)
-      : undefined
+    let base64Blob = fileUpload ? await getBase64(fileUpload.file) : undefined
 
-    if (base64Blob && fileUpload[0]?.type === 'image') {
+    if (base64Blob && fileUpload?.type === 'image') {
       // Compress image
       base64Blob = await compressImage(base64Blob, 512)
     }
@@ -171,7 +169,7 @@ export default function useSendChatMessage() {
     ).addSystemMessage(activeAssistantRef.current?.instructions)
 
     if (!isResend) {
-      requestBuilder.pushMessage(prompt, base64Blob, fileUpload[0]?.type)
+      requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
 
       // Build Thread Message to persist
       const threadMessageBuilder = new ThreadMessageBuilder(
@@ -207,7 +205,7 @@ export default function useSendChatMessage() {
       selectedModelRef.current?.id ?? activeAssistantRef.current?.model.id
 
     if (base64Blob) {
-      setFileUpload([])
+      setFileUpload(undefined)
     }
 
     if (modelRef.current?.id !== modelId && modelId) {
@@ -222,9 +220,7 @@ export default function useSendChatMessage() {
     // Process message request with Assistants tools
     const request = await ToolManager.instance().process(
       requestBuilder.build(),
-      activeThreadRef.current.assistants?.flatMap(
-        (assistant) => assistant.tools ?? []
-      ) ?? []
+      activeAssistantRef?.current.tools ?? []
     )
 
     // Request for inference

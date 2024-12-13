@@ -24,6 +24,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
+import { uploader } from '@/utils/file'
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import FileUploadPreview from '../FileUploadPreview'
@@ -71,6 +72,7 @@ const ChatInput = () => {
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
 
+  const upload = uploader()
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
@@ -104,18 +106,26 @@ const ChatInput = () => {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    setFileUpload([{ file: file, type: 'pdf' }])
+    upload.addFile(file)
+    upload.upload().then((data) => {
+      setFileUpload({
+        file: file,
+        type: 'pdf',
+        id: data?.successful?.[0]?.response?.body?.id,
+        name: data?.successful?.[0]?.response?.body?.filename,
+      })
+    })
   }
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-    setFileUpload([{ file: file, type: 'image' }])
+    setFileUpload({ file: file, type: 'image' })
   }
 
   const renderPreview = (fileUpload: any) => {
-    if (fileUpload.length > 0) {
-      if (fileUpload[0].type === 'image') {
+    if (fileUpload) {
+      if (fileUpload.type === 'image') {
         return <ImageUploadPreview file={fileUpload[0].file} />
       } else {
         return <FileUploadPreview />
@@ -132,7 +142,7 @@ const ChatInput = () => {
             'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
             'focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0',
             'overflow-y-auto',
-            fileUpload.length && 'rounded-t-none',
+            fileUpload && 'rounded-t-none',
             experimentalFeature && 'pl-10',
             activeSettingInputBox && 'pb-14 pr-16'
           )}
@@ -154,7 +164,7 @@ const ChatInput = () => {
                 className="absolute left-3 top-2.5"
                 onClick={(e) => {
                   if (
-                    fileUpload.length > 0 ||
+                    !!fileUpload ||
                     (activeAssistant?.tools &&
                       !activeAssistant?.tools[0]?.enabled &&
                       !activeAssistant?.model.settings?.vision_model)
@@ -178,12 +188,12 @@ const ChatInput = () => {
             }
             content={
               <>
-                {fileUpload.length > 0 ||
+                {!!fileUpload ||
                   (activeAssistant?.tools &&
                     !activeAssistant?.tools[0]?.enabled &&
                     !activeAssistant?.model.settings?.vision_model && (
                       <>
-                        {fileUpload.length !== 0 && (
+                        {!!fileUpload && (
                           <span>
                             Currently, we only support 1 attachment at the same
                             time.

@@ -1,6 +1,5 @@
-import { memo, useMemo } from 'react'
+import { memo } from 'react'
 
-import { ThreadContent } from '@janhq/core'
 import { Tooltip } from '@janhq/joi'
 
 import { FolderOpenIcon } from 'lucide-react'
@@ -11,21 +10,13 @@ import { openFileTitle } from '@/utils/titleUtils'
 
 import { RelativeImage } from '../TextMessage/RelativeImage'
 
-const ImageMessage = ({ content }: { content: ThreadContent }) => {
+const ImageMessage = ({ image }: { image: string }) => {
   const { onViewFile, onViewFileContainer } = usePath()
-
-  const annotation = useMemo(
-    () => content?.text?.annotations[0] ?? '',
-    [content]
-  )
 
   return (
     <div className="group/image relative mb-2 inline-flex cursor-pointer overflow-hidden rounded-xl">
       <div className="left-0 top-0 z-20 h-full w-full group-hover/image:inline-block">
-        <RelativeImage
-          src={annotation}
-          onClick={() => onViewFile(annotation)}
-        />
+        <RelativeImage src={image} onClick={() => onViewFile(image)} />
       </div>
       <Tooltip
         trigger={

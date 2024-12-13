@@ -22,6 +22,8 @@ import { reloadModelAtom } from '@/hooks/useSendChatMessage'
 
 import ChatBody from '@/screens/Thread/ThreadCenterPanel/ChatBody'
 
+import { uploader } from '@/utils/file'
+
 import ChatInput from './ChatInput'
 import RequestDownloadModel from './RequestDownloadModel'
 
@@ -57,7 +59,7 @@ const ThreadCenterPanel = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
-
+  const upload = uploader()
   const acceptedFormat: Accept = activeAssistant?.model.settings?.vision_model
     ? {
         'application/pdf': ['.pdf'],
@@ -93,7 +95,7 @@ const ThreadCenterPanel = () => {
       }
     },
     onDragLeave: () => setDragOver(false),
-    onDrop: (files, rejectFiles) => {
+    onDrop: async (files, rejectFiles) => {
       // Retrieval file drag and drop is experimental feature
       if (!experimentalFeature) return
       if (
@@ -106,7 +108,19 @@ const ThreadCenterPanel = () => {
       )
         return
       const imageType = files[0]?.type.includes('image')
-      setFileUpload([{ file: files[0], type: imageType ? 'image' : 'pdf' }])
+      if (imageType) {
+        setFileUpload({ file: files[0], type: 'image' })
+      } else {
+        upload.addFile(files[0])
+        upload.upload().then((data) => {
+          setFileUpload({
+            file: files[0],
+            type: imageType ? 'image' : 'pdf',
+            id: data?.successful?.[0]?.response?.body?.id,
+            name: data?.successful?.[0]?.response?.body?.filename,
+          })
+        })
+      }
       setDragOver(false)
     },
     onDropRejected: (e) => {
