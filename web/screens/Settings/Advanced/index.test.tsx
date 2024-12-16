@@ -91,20 +91,6 @@ describe('Advanced', () => {
     expect(experimentalToggle).not.toBeChecked()
   })
 
-  it('clears logs', async () => {
-    const jestMock = jest.fn()
-    jest.spyOn(toast, 'toaster').mockImplementation(jestMock)
-
-    render(<Advanced />)
-    let clearLogsButton
-    await waitFor(() => {
-      clearLogsButton = screen.getByTestId(/clear-logs/i)
-      fireEvent.click(clearLogsButton)
-    })
-    expect(clearLogsButton).toBeInTheDocument()
-    expect(jestMock).toHaveBeenCalled()
-  })
-
   it('toggles proxy enabled', async () => {
     render(<Advanced />)
     let proxyToggle

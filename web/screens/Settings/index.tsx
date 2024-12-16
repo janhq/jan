@@ -15,6 +15,7 @@ export const SettingScreenList = [
   'My Models',
   'Appearance',
   'Keyboard Shortcuts',
+  'Privacy',
   'Advanced Settings',
   'Extensions',
 ] as const

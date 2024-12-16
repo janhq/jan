@@ -109,7 +109,7 @@ const RightPanelContainer = ({ children }: Props) => {
           <Fragment>
             <div
               className={twMerge(
-                'group/resize absolute left-0 top-0 z-[9999] h-full w-1 flex-shrink-0 flex-grow-0 resize-x blur-sm hover:cursor-col-resize hover:bg-[hsla(var(--resize-bg))]',
+                'group/resize absolute left-0 top-0 z-40 h-full w-1 flex-shrink-0 flex-grow-0 resize-x blur-sm hover:cursor-col-resize hover:bg-[hsla(var(--resize-bg))]',
                 isResizing && 'cursor-col-resize bg-[hsla(var(--resize-bg))]',
                 !reduceTransparent && 'shadow-sm'
               )}
