@@ -55,7 +55,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
       .slice(-1)[0]
 
     if (thread) {
-      // Should also delete error messages to clear out the error state
+      // TODO: Should also delete error messages to clear out the error state
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.deleteMessage(thread.id, message.id)

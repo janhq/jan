@@ -158,7 +158,7 @@ export const useCreateNewThread = () => {
     //TODO: Why do we have thread list then thread states? Should combine them
     try {
       const createdThread = await persistNewThread(thread, assistantInfo)
-      if (!createdThread) throw 'Thread creation failed'
+      if (!createdThread) throw 'Thread created failed.'
       createNewThread(createdThread)
 
       setSelectedModel(defaultModel)

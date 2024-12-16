@@ -81,10 +81,7 @@ const ThreadLeftPanel = () => {
       )
       const selectedModel = model[0] || recommendedModel
       requestCreateNewThread(
-        {
-          ...assistants[0],
-          ...activeAssistant,
-        },
+        { ...assistants[0], ...activeAssistant },
         selectedModel
       )
     } else if (threadDataReady && !activeThreadId) {

@@ -30,9 +30,13 @@ export const getFileInfoFromFile = async (
   return result
 }
 
+/**
+ * This function creates an Uppy instance with XHR plugin for file upload to the server.
+ * @returns Uppy instance
+ */
 export const uploader = () => {
   const uppy = new Uppy().use(XHR, {
-    endpoint: 'http://127.0.0.1:39291/v1/files',
+    endpoint: `${API_BASE_URL}/v1/files`,
     method: 'POST',
     fieldName: 'file',
     formData: true,

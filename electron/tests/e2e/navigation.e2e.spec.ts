@@ -2,11 +2,8 @@ import { expect } from '@playwright/test'
 import { page, test, TIMEOUT } from '../config/fixtures'
 
 test('renders left navigation panel', async () => {
-  const settingsBtn = await page
-    .getByTestId('Thread')
-    .first()
-    .isEnabled({ timeout: TIMEOUT })
-  expect([settingsBtn].filter((e) => !e).length).toBe(0)
+  const threadBtn = page.getByTestId('Thread').first()
+  await expect(threadBtn).toBeVisible({ timeout: TIMEOUT })
   // Chat section should be there
   await page.getByTestId('Local API Server').first().click({
     timeout: TIMEOUT,

@@ -176,9 +176,7 @@ const ThreadRightPanel = () => {
 
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean | string[]) => {
-      if (!activeThread || !activeAssistant) {
-        return
-      }
+      if (!activeThread || !activeAssistant) return
 
       setEngineParamsUpdate(true)
       resetModel()

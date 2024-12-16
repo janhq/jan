@@ -33,7 +33,7 @@ const nextConfig = {
         ANALYTICS_ID: JSON.stringify(process.env.ANALYTICS_ID),
         ANALYTICS_HOST: JSON.stringify(process.env.ANALYTICS_HOST),
         API_BASE_URL: JSON.stringify(
-          process.env.API_BASE_URL ?? 'http://localhost:1337'
+          process.env.API_BASE_URL ?? 'http://127.0.0.1:39291'
         ),
         isMac: process.platform === 'darwin',
         isWindows: process.platform === 'win32',
