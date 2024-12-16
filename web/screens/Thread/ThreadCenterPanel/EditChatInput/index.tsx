@@ -72,7 +72,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }, [editPrompt])
 
   useEffect(() => {
-    setEditPrompt(message.content[0]?.text?.value)
+    if (message.content?.[0]?.text?.value)
+      setEditPrompt(message.content[0].text.value)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
