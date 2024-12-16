@@ -329,7 +329,7 @@ export default function ModelHandler() {
 
     if (!threadMessages || threadMessages.length === 0) return
 
-    const summarizeFirstPrompt = `Summarize in a ${maxWordForThreadTitle}-word Title. Give the title only. "${threadMessages[0].content[0].text.value}"`
+    const summarizeFirstPrompt = `Summarize in a ${maxWordForThreadTitle}-word Title. Give the title only. "${threadMessages[0]?.content[0]?.text?.value}"`
 
     // Prompt: Given this query from user {query}, return to me the summary in 10 words as the title
     const msgId = ulid()
@@ -346,6 +346,7 @@ export default function ModelHandler() {
       id: msgId,
       threadId: message.thread_id,
       type: MessageRequestType.Summary,
+      attachments: [],
       messages,
       model: {
         ...activeModelRef.current,
