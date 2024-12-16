@@ -133,10 +133,7 @@ const MyModelList = ({ model }: Props) => {
                         <div
                           className={twMerge(
                             'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                            serverEnabled &&
-                              activeModel &&
-                              activeModel.id !== model.id &&
-                              'pointer-events-none cursor-not-allowed opacity-40'
+                            serverEnabled && 'cursor-not-allowed opacity-40'
                           )}
                           onClick={() => {
                             onModelActionClick(model.id)
@@ -172,8 +169,7 @@ const MyModelList = ({ model }: Props) => {
                     <div
                       className={twMerge(
                         'flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                        serverEnabled &&
-                          'pointer-events-none cursor-not-allowed opacity-40'
+                        serverEnabled && ' cursor-not-allowed opacity-40'
                       )}
                       onClick={() => {
                         setTimeout(async () => {
