@@ -80,24 +80,27 @@ const MessageContainer: React.FC<
         <p className="text-xs font-medium text-gray-400">
           {displayDate(props.created)}
         </p>
-        {tokenSpeed &&
-          tokenSpeed.message === props.id &&
-          tokenSpeed.tokenSpeed > 0 && (
-            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Token Speed: {Number(tokenSpeed.tokenSpeed).toFixed(2)}t/s
-            </p>
-          )}
       </div>
 
-      <div className="flex w-full flex-col">
+      <div className="flex w-full flex-col ">
         <div
           className={twMerge(
             'absolute right-0 order-1 mt-2 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
             props.isCurrentMessage && !isUser
-              ? 'relative order-2 flex justify-end'
+              ? 'relative left-0 order-2 flex w-full justify-between'
               : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
+          <div>
+            {tokenSpeed &&
+              tokenSpeed.message === props.id &&
+              tokenSpeed.tokenSpeed > 0 && (
+                <p className="text-xs font-medium text-[hsla(var(--text-secondary))]">
+                  Token Speed: {Number(tokenSpeed.tokenSpeed).toFixed(2)}t/s
+                </p>
+              )}
+          </div>
+
           <MessageToolbar message={props} />
         </div>
         <div
