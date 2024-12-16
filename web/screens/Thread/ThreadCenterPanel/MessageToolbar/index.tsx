@@ -70,7 +70,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           )[
             messages.filter((msg) => msg.role === ChatCompletionRole.Assistant)
               .length - 1
-          ]?.content[0]?.text.value,
+          ]?.content[0]?.text?.value,
         },
       }
 
@@ -110,8 +110,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
 
         {message.id === messages[messages.length - 1]?.id &&
           messages[messages.length - 1].status !== MessageStatus.Error &&
-          messages[messages.length - 1].content[0]?.type !==
-            ContentType.Pdf && (
+          !messages[messages.length - 1].attachments?.length && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={resendChatMessage}
