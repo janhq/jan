@@ -23,6 +23,8 @@ import {
   tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 
+import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
+
 const MessageContainer: React.FC<
   ThreadMessage & { isCurrentMessage: boolean }
 > = (props) => {
@@ -31,6 +33,7 @@ const MessageContainer: React.FC<
   const editMessage = useAtomValue(editMessageAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const tokenSpeed = useAtomValue(tokenSpeedAtom)
+  const chatWidth = useAtomValue(chatWidthAtom)
 
   const text = useMemo(
     () =>
@@ -47,7 +50,12 @@ const MessageContainer: React.FC<
   const attachedFile = useMemo(() => 'attachments' in props, [props])
 
   return (
-    <div className="group relative mx-auto max-w-[700px] p-4">
+    <div
+      className={twMerge(
+        'group relative mx-auto p-4',
+        chatWidth === 'compact' && 'max-w-[700px]'
+      )}
+    >
       <div
         className={twMerge(
           'mb-2 flex items-center justify-start gap-x-2',

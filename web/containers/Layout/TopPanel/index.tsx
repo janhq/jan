@@ -144,7 +144,7 @@ const TopPanel = () => {
             theme="icon"
             onClick={() => {
               setMainViewState(MainViewState.Settings)
-              setSelectedSetting('Appearance')
+              setSelectedSetting('Preferences')
             }}
           >
             <PaletteIcon size={16} className="cursor-pointer" />

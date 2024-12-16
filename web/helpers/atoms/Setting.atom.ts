@@ -16,6 +16,7 @@ export const PRODUCT_ANALYTIC_PROMPT = 'productAnalyticPrompt'
 export const THEME_DATA = 'themeData'
 export const THEME_OPTIONS = 'themeOptions'
 export const THEME_PATH = 'themePath'
+export const CHAT_WIDTH = 'chatWidth'
 export const themesOptionsAtom = atomWithStorage<
   { name: string; value: string }[]
 >(THEME_OPTIONS, [], undefined, { getOnInit: true })
@@ -58,6 +59,12 @@ export const productAnalyticAtom = atomWithStorage<boolean>(
 export const productAnalyticPromptAtom = atomWithStorage<boolean>(
   PRODUCT_ANALYTIC_PROMPT,
   true,
+  undefined,
+  { getOnInit: true }
+)
+export const chatWidthAtom = atomWithStorage<string>(
+  CHAT_WIDTH,
+  'full',
   undefined,
   { getOnInit: true }
 )

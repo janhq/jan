@@ -17,7 +17,7 @@ const SettingDetail = () => {
     case 'Extensions':
       return <ExtensionCatalog />
 
-    case 'Appearance':
+    case 'Preferences':
       return <AppearanceOptions />
 
     case 'Keyboard Shortcuts':
