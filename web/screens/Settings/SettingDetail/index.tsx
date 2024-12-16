@@ -6,6 +6,7 @@ import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hotkeys from '@/screens/Settings/Hotkeys'
 import MyModels from '@/screens/Settings/MyModels'
+import Privacy from '@/screens/Settings/Privacy'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
@@ -21,6 +22,9 @@ const SettingDetail = () => {
 
     case 'Keyboard Shortcuts':
       return <Hotkeys />
+
+    case 'Privacy':
+      return <Privacy />
 
     case 'Advanced Settings':
       return <Advanced />
