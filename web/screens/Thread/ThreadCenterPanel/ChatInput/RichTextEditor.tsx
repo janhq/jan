@@ -225,7 +225,11 @@ const RichTextEditor = ({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        event.nativeEvent.isComposing === false
+      ) {
         event.preventDefault()
         if (messages[messages.length - 1]?.status !== MessageStatus.Pending) {
           sendChatMessage(currentPrompt)
