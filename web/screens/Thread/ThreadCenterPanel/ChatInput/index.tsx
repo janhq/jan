@@ -90,6 +90,12 @@ const ChatInput = () => {
     }
   }, [activeThreadId])
 
+  useEffect(() => {
+    if (!selectedModel && !activeSettingInputBox) {
+      setActiveSettingInputBox(true)
+    }
+  }, [activeSettingInputBox, selectedModel, setActiveSettingInputBox])
+
   const onStopInferenceClick = async () => {
     stopInference()
   }
@@ -297,6 +303,7 @@ const ChatInput = () => {
                 </Button>
               </div>
             )}
+
             {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
             !isGeneratingResponse &&
             !isStreamingResponse ? (
@@ -340,55 +347,53 @@ const ChatInput = () => {
           </div>
         </div>
 
-        {activeSettingInputBox && (
-          <div
-            className={twMerge(
-              'absolute bottom-[5px] left-[1px] flex w-[calc(100%-10px)] items-center justify-between rounded-b-lg bg-[hsla(var(--center-panel-bg))] p-3 pr-0',
-              !activeThread && 'bg-transparent',
-              stateModel.loading && 'bg-transparent'
-            )}
-          >
-            <div className="flex items-center gap-x-2">
-              <ModelDropdown chatInputMode />
-              <Badge
-                theme="secondary"
-                className={twMerge(
-                  'flex cursor-pointer items-center gap-x-1',
-                  activeTabThreadRightPanel === 'model' &&
-                    'border border-transparent'
-                )}
-                variant={
-                  activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
+        <div
+          className={twMerge(
+            'absolute bottom-[5px] left-[1px] flex w-[calc(100%-10px)] items-center justify-between rounded-b-lg bg-[hsla(var(--center-panel-bg))] p-3 pr-0',
+            !activeThread && 'bg-transparent',
+            !activeSettingInputBox && 'hidden',
+            stateModel.loading && 'bg-transparent'
+          )}
+        >
+          <div className="flex items-center gap-x-2">
+            <ModelDropdown chatInputMode />
+            <Badge
+              theme="secondary"
+              className={twMerge(
+                'flex cursor-pointer items-center gap-x-1',
+                activeTabThreadRightPanel === 'model' &&
+                  'border border-transparent'
+              )}
+              variant={
+                activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
+              }
+              onClick={() => {
+                // TODO @faisal: should be refactor later and better experience beetwen tab and toggle button
+                if (showRightPanel && activeTabThreadRightPanel !== 'model') {
+                  setShowRightPanel(true)
+                  setActiveTabThreadRightPanel('model')
                 }
-                onClick={() => {
-                  // TODO @faisal: should be refactor later and better experience beetwen tab and toggle button
-                  if (showRightPanel && activeTabThreadRightPanel !== 'model') {
-                    setShowRightPanel(true)
-                    setActiveTabThreadRightPanel('model')
-                  }
-                  if (showRightPanel && activeTabThreadRightPanel === 'model') {
-                    setShowRightPanel(false)
-                    setActiveTabThreadRightPanel(undefined)
-                  }
-                  if (activeTabThreadRightPanel === undefined) {
-                    setShowRightPanel(true)
-                    setActiveTabThreadRightPanel('model')
-                  }
-                  if (
-                    !showRightPanel &&
-                    activeTabThreadRightPanel !== 'model'
-                  ) {
-                    setShowRightPanel(true)
-                    setActiveTabThreadRightPanel('model')
-                  }
-                }}
-              >
-                <Settings2Icon
-                  size={16}
-                  className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
-                />
-              </Badge>
-            </div>
+                if (showRightPanel && activeTabThreadRightPanel === 'model') {
+                  setShowRightPanel(false)
+                  setActiveTabThreadRightPanel(undefined)
+                }
+                if (activeTabThreadRightPanel === undefined) {
+                  setShowRightPanel(true)
+                  setActiveTabThreadRightPanel('model')
+                }
+                if (!showRightPanel && activeTabThreadRightPanel !== 'model') {
+                  setShowRightPanel(true)
+                  setActiveTabThreadRightPanel('model')
+                }
+              }}
+            >
+              <Settings2Icon
+                size={16}
+                className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
+              />
+            </Badge>
+          </div>
+          {selectedModel && (
             <Button
               theme="icon"
               onClick={() => setActiveSettingInputBox(false)}
@@ -398,8 +403,8 @@ const ChatInput = () => {
                 className="cursor-pointer text-[hsla(var(--text-secondary))]"
               />
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <input
