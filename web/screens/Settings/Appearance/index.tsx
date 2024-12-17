@@ -6,6 +6,8 @@ import { fs, joinPath } from '@janhq/core'
 import { Button, Select, Switch } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import {
   chatWidthAtom,
   janThemesPathAtom,
@@ -19,7 +21,7 @@ import {
 export default function AppearanceOptions() {
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
   const themeOptions = useAtomValue(themesOptionsAtom)
-  const { setTheme } = useTheme()
+  const { setTheme, theme } = useTheme()
   const janThemesPath = useAtomValue(janThemesPathAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [reduceTransparent, setReduceTransparent] = useAtom(
@@ -29,11 +31,17 @@ export default function AppearanceOptions() {
   const [chatWidth, setChatWidth] = useAtom(chatWidthAtom)
 
   const chatWidthOption = [
-    { name: 'Full Width', value: 'full', img: 'images/full-width.png' },
+    {
+      name: 'Full Width',
+      value: 'full',
+      img: 'images/full-width.png',
+      darkImg: 'images/full-width-dark.png',
+    },
     {
       name: 'Compact Width',
       value: 'compact',
       img: 'images/compact-width.png',
+      darkImg: 'images/compact-width-dark.png',
     },
   ]
 
@@ -123,26 +131,44 @@ export default function AppearanceOptions() {
                   <label
                     className="relative cursor-pointer"
                     htmlFor={option.name}
+                    onClick={() => setChatWidth(option.value)}
                   >
                     <img
-                      src={option.img}
+                      src={theme === 'dark' ? option.darkImg : option.img}
                       alt={option.value}
                       width={140}
-                      className="rounded-lg"
+                      className={twMerge(
+                        'rounded-lg border-2 border-[hsla(var(--app-border))] bg-[hsla(var(--secondary-bg))] transition-all',
+                        chatWidth === option.value &&
+                          'border-[hsla(var(--primary-bg))]'
+                      )}
                     />
                     <p className="my-2 font-medium">{option.name}</p>
-                    <div className="relative">
-                      <input
-                        name="chatWidth"
-                        value={option.value}
-                        checked={chatWidth === option.value}
-                        onChange={() => setChatWidth(option.value)}
-                        type="radio"
-                        className="peer h-5 w-5 cursor-pointer appearance-none rounded-full border border-[hsla(var(--app-border))] transition-all checked:border-[hsla(var(--primary-bg))]"
-                        id={option.name}
-                      />
-                      <span className="absolute left-1/2 top-1/2 -mt-[3px] h-3 w-3 -translate-x-1/2 -translate-y-1/2 transform rounded-full bg-[hsla(var(--primary-bg))] opacity-0 transition-opacity duration-200 peer-checked:opacity-100"></span>
-                    </div>
+                    {chatWidth === option.value && (
+                      <div className="absolute right-2 top-2 ">
+                        <svg
+                          width="24"
+                          height="24"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          xmlns="http://www.w3.org/2000/svg"
+                        >
+                          <rect
+                            width="16"
+                            height="16"
+                            rx="8"
+                            className="fill-[hsla(var(--primary-bg))]"
+                          />
+                          <path
+                            d="M11.1111 5.66699L6.83333 9.94477L4.88889 8.00033"
+                            stroke="white"
+                            strokeWidth="0.886667"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+                    )}
                   </label>
                 </div>
               )
