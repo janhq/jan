@@ -6,7 +6,7 @@ import {
 } from '@janhq/core'
 import { atom } from 'jotai'
 
-import { atomWithStorage } from 'jotai/utils'
+import { atomWithStorage, createJSONStorage } from 'jotai/utils'
 
 import {
   getActiveThreadIdAtom,
@@ -16,13 +16,16 @@ import {
 import { TokenSpeed } from '@/types/token'
 
 const CHAT_MESSAGE_NAME = 'chatMessages'
+const storage = createJSONStorage<Record<string, ThreadMessage[]>>(
+  () => sessionStorage
+)
 /**
  * Stores all chat messages for all threads
  */
 export const chatMessages = atomWithStorage<Record<string, ThreadMessage[]>>(
   CHAT_MESSAGE_NAME,
   {},
-  undefined,
+  storage,
   { getOnInit: true }
 )
 
