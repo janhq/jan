@@ -37,6 +37,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
+import { manualRecommendationModel } from '@/utils/model'
 import {
   getLogoEngine,
   getTitleByEngine,
@@ -96,10 +97,9 @@ const ModelDropdown = ({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
 
-  const recommendModel = ['llama3.2-1b-instruct', 'llama3.2-3b-instruct']
   const featuredModel = configuredModels.filter(
     (x) =>
-      recommendModel.includes(x.id) &&
+      manualRecommendationModel.includes(x.id) &&
       x.metadata?.tags?.includes('Featured') &&
       x.metadata?.size < 5000000000
   )
