@@ -163,44 +163,38 @@ const LocalServerLeftPanel = () => {
           </div>
         </div>
 
-        <Tooltip
-          trigger={
-            <div className="p-3">
-              <p className="mb-2 block font-semibold">Server Options</p>
+        <div className="p-3">
+          <p className="mb-2 block font-semibold">Server Options</p>
 
-              <div className="flex w-full">
-                <Select
-                  value={host}
-                  onValueChange={(e) => setHost(e)}
-                  disabled={serverEnabled}
-                  options={hostOptions}
-                  block
-                />
-              </div>
+          <div className="flex w-full">
+            <Select
+              value={host}
+              onValueChange={(e) => setHost(e)}
+              disabled={serverEnabled}
+              options={hostOptions}
+              block
+            />
+          </div>
 
-              <div className="relative z-50 mt-2 block">
-                <Input
-                  className={twMerge(
-                    errorRangePort && 'border-[hsla(var(--destructive-bg))]'
-                  )}
-                  type="number"
-                  value={port}
-                  onChange={(e) => {
-                    handleChangePort(e.target.value)
-                  }}
-                  maxLength={5}
-                  disabled={serverEnabled}
-                />
-              </div>
-
-              {errorRangePort && (
-                <p className="mt-2 text-xs text-[hsla(var(--destructive-bg))]">{`The port range should be from 0 to 65536`}</p>
+          <div className="relative z-50 mt-2 block">
+            <Input
+              className={twMerge(
+                errorRangePort && 'border-[hsla(var(--destructive-bg))]'
               )}
-            </div>
-          }
-          disabled={!serverEnabled}
-          content="Settings cannot be modified while the server is running"
-        />
+              type="number"
+              value={port}
+              onChange={(e) => {
+                handleChangePort(e.target.value)
+              }}
+              maxLength={5}
+              disabled={serverEnabled}
+            />
+          </div>
+
+          {errorRangePort && (
+            <p className="mt-2 text-xs text-[hsla(var(--destructive-bg))]">{`The port range should be from 0 to 65536`}</p>
+          )}
+        </div>
 
         <div className="space-y-4 px-3">
           <div className="block">

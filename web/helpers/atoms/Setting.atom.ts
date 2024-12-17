@@ -11,6 +11,8 @@ export const janSettingScreenAtom = atom<SettingScreen[]>([])
 export const THEME = 'themeAppearance'
 export const REDUCE_TRANSPARENT = 'reduceTransparent'
 export const SPELL_CHECKING = 'spellChecking'
+export const PRODUCT_ANALYTIC = 'productAnalytic'
+export const PRODUCT_ANALYTIC_PROMPT = 'productAnalyticPrompt'
 export const THEME_DATA = 'themeData'
 export const THEME_OPTIONS = 'themeOptions'
 export const THEME_PATH = 'themePath'
@@ -44,6 +46,18 @@ export const reduceTransparentAtom = atomWithStorage<boolean>(
 export const spellCheckAtom = atomWithStorage<boolean>(
   SPELL_CHECKING,
   false,
+  undefined,
+  { getOnInit: true }
+)
+export const productAnalyticAtom = atomWithStorage<boolean>(
+  PRODUCT_ANALYTIC,
+  false,
+  undefined,
+  { getOnInit: true }
+)
+export const productAnalyticPromptAtom = atomWithStorage<boolean>(
+  PRODUCT_ANALYTIC_PROMPT,
+  true,
   undefined,
   { getOnInit: true }
 )
