@@ -17,7 +17,7 @@ type Props = {
 
 const ThreadPanels = memo(({ isShowStarterScreen }: Props) => {
   return isShowStarterScreen ? (
-    <OnDeviceStarterScreen />
+    <OnDeviceStarterScreen isShowStarterScreen={isShowStarterScreen} />
   ) : (
     <>
       <ThreadLeftPanel />

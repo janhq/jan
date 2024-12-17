@@ -18,19 +18,24 @@ import {
 } from '@/helpers/atoms/App.atom'
 import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
-const CenterPanelContainer = ({ children }: PropsWithChildren) => {
+type Props = {
+  isShowStarterScreen?: boolean
+} & PropsWithChildren
+
+const CenterPanelContainer = ({ children, isShowStarterScreen }: Props) => {
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const matches = useMediaQuery('(max-width: 880px)')
   const showLeftPanel = useAtomValue(showLeftPanelAtom)
   const showRightPanel = useAtomValue(showRightPanelAtom)
   const mainViewState = useAtomValue(mainViewStateAtom)
+
   return (
     <div
       className={twMerge('flex h-full w-full')}
       style={{
         maxWidth: matches
           ? '100%'
-          : mainViewState === MainViewState.Thread
+          : mainViewState === MainViewState.Thread && !isShowStarterScreen
             ? `calc(100% - (${showRightPanel ? Number(localStorage.getItem(RIGHT_PANEL_WIDTH)) : 0}px + ${showLeftPanel ? Number(localStorage.getItem(LEFT_PANEL_WIDTH)) : 0}px))`
             : '100%',
       }}

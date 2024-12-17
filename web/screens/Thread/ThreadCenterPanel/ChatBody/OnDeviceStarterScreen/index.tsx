@@ -40,7 +40,11 @@ import {
 } from '@/helpers/atoms/Model.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-const OnDeviceStarterScreen = () => {
+type Props = {
+  isShowStarterScreen?: boolean
+}
+
+const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const { extensionHasSettings } = useStarterScreen()
   const [searchValue, setSearchValue] = useState('')
   const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
@@ -103,7 +107,7 @@ const OnDeviceStarterScreen = () => {
   const [visibleRows, setVisibleRows] = useState(1)
 
   return (
-    <CenterPanelContainer>
+    <CenterPanelContainer isShowStarterScreen={isShowStarterScreen}>
       <ScrollArea className="flex h-full w-full items-center">
         <div className="relative mt-4 flex h-full w-full flex-col items-center justify-center">
           <div className="mx-auto flex h-full w-3/4 flex-col items-center justify-center py-16 text-center">
