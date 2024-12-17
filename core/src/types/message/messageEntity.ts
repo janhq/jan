@@ -27,9 +27,9 @@ export type ThreadMessage = {
   /** The status of this message. **/
   status: MessageStatus
   /** The timestamp indicating when this message was created. Represented in Unix time. **/
-  created: number
+  created_at: number
   /** The timestamp indicating when this message was updated. Represented in Unix time. **/
-  updated: number
+  completed_at: number
   /** The additional metadata of this message. **/
   metadata?: Record<string, unknown>
 

@@ -6,7 +6,10 @@ export const isToday = (timestamp: number) => {
 export const displayDate = (timestamp?: string | number | Date) => {
   if (!timestamp) return 'N/A'
 
-  const date = new Date(timestamp)
+  const date =
+    typeof timestamp === 'number'
+      ? new Date(timestamp * 1000)
+      : new Date(timestamp)
 
   let displayDate = `${date.toLocaleDateString(undefined, {
     day: '2-digit',

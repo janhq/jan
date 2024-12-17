@@ -80,8 +80,8 @@ export abstract class OAIEngine extends AIEngine {
       role: ChatCompletionRole.Assistant,
       content: [],
       status: MessageStatus.Pending,
-      created: timestamp,
-      updated: timestamp,
+      created_at: timestamp,
+      completed_at: timestamp,
       object: 'thread.message',
     }
 

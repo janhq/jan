@@ -91,7 +91,7 @@ const MessageContainer: React.FC<
             : (activeAssistant?.assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
-          {props.created && displayDate(props.created ?? new Date())}
+          {props.created_at && displayDate(props.created_at ?? new Date())}
         </p>
       </div>
 
@@ -125,7 +125,9 @@ const MessageContainer: React.FC<
         >
           <>
             {image && <ImageMessage image={image} />}
-            {attachedFile && <DocMessage id={props.id} name={props.id} />}
+            {attachedFile && (
+              <DocMessage id={props.attachments?.[0]?.file_id ?? props.id} />
+            )}
 
             {editMessage === props.id ? (
               <div>

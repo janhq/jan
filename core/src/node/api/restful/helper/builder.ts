@@ -194,8 +194,8 @@ export const createMessage = async (threadId: string, message: any) => {
       id: msgId,
       thread_id: threadId,
       status: MessageStatus.Ready,
-      created: createdAt,
-      updated: createdAt,
+      created_at: createdAt,
+      completed_at: createdAt,
       object: 'thread.message',
       role: message.role,
       content: [
