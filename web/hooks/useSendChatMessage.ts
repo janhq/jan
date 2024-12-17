@@ -181,7 +181,7 @@ export default function useSendChatMessage() {
       // Update thread state
       const updatedThread: Thread = {
         ...activeThreadRef.current,
-        updated: newMessage.created,
+        updated: newMessage.created_at,
         metadata: {
           ...activeThreadRef.current.metadata,
           lastMessage: prompt,
