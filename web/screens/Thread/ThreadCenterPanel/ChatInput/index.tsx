@@ -126,7 +126,7 @@ const ChatInput = () => {
   const renderPreview = (fileUpload: any) => {
     if (fileUpload) {
       if (fileUpload.type === 'image') {
-        return <ImageUploadPreview file={fileUpload[0].file} />
+        return <ImageUploadPreview file={fileUpload.file} />
       } else {
         return <FileUploadPreview />
       }

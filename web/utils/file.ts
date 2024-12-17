@@ -47,3 +47,12 @@ export const uploader = () => {
   })
   return uppy
 }
+
+/**
+ * Get the file information from the server.
+ */
+export const getFileInfo = (id: string) => {
+  return fetch(`${API_BASE_URL}/v1/files/${id}`)
+    .then((e) => e.json())
+    .catch(() => undefined)
+}

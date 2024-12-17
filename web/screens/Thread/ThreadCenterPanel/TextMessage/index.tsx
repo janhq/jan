@@ -125,7 +125,9 @@ const MessageContainer: React.FC<
         >
           <>
             {image && <ImageMessage image={image} />}
-            {attachedFile && <DocMessage id={props.id} name={props.id} />}
+            {attachedFile && (
+              <DocMessage id={props.attachments?.[0]?.file_id ?? props.id} />
+            )}
 
             {editMessage === props.id ? (
               <div>
