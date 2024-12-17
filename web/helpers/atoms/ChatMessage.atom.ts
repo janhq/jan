@@ -19,11 +19,20 @@ const CHAT_MESSAGE_NAME = 'chatMessages'
 /**
  * Stores all chat messages for all threads
  */
-export const chatMessages = atomWithStorage<Record<string, ThreadMessage[]>>(
-  CHAT_MESSAGE_NAME,
-  {},
-  undefined,
-  { getOnInit: true }
+export const chatMessagesStorage = atomWithStorage<
+  Record<string, ThreadMessage[]>
+>(CHAT_MESSAGE_NAME, {}, undefined, { getOnInit: true })
+
+export const cachedMessages = atom<Record<string, ThreadMessage[]>>()
+/**
+ * Retrieve chat messages for all threads
+ */
+export const chatMessages = atom(
+  (get) => get(cachedMessages) ?? get(chatMessagesStorage),
+  (_get, set, newValue: Record<string, ThreadMessage[]>) => {
+    set(cachedMessages, newValue)
+    ;(() => set(chatMessagesStorage, newValue))()
+  }
 )
 
 /**
