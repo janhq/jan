@@ -18,14 +18,14 @@ import { isLocalEngine } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const defaultDesc = () => {
     return (
@@ -46,7 +46,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   }
 
   const getEngine = () => {
-    const engineName = activeThread?.assistants?.[0]?.model?.engine
+    const engineName = activeAssistant?.model?.engine
     return engineName ? EngineManager.instance().get(engineName) : null
   }
 
@@ -89,7 +89,9 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               </span>
             ) : (
               <>
-                <AutoLink text={message.content[0].text.value} />
+                {message?.content[0]?.text?.value && (
+                  <AutoLink text={message?.content[0]?.text?.value} />
+                )}
                 {defaultDesc()}
               </>
             )}

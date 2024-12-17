@@ -17,11 +17,11 @@ import DocMessage from './DocMessage'
 import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   editMessageAtom,
   tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const MessageContainer: React.FC<
   ThreadMessage & { isCurrentMessage: boolean }
@@ -29,17 +29,22 @@ const MessageContainer: React.FC<
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const editMessage = useAtomValue(editMessageAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const tokenSpeed = useAtomValue(tokenSpeedAtom)
 
   const text = useMemo(
-    () => props.content[0]?.text?.value ?? '',
+    () =>
+      props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? '',
     [props.content]
   )
-  const messageType = useMemo(
-    () => props.content[0]?.type ?? '',
+
+  const image = useMemo(
+    () =>
+      props.content.find((e) => e.type === ContentType.Image)?.image_url?.url,
     [props.content]
   )
+
+  const attachedFile = useMemo(() => 'attachments' in props, [props])
 
   return (
     <div className="group relative mx-auto max-w-[700px] p-4">
@@ -75,10 +80,10 @@ const MessageContainer: React.FC<
         >
           {isUser
             ? props.role
-            : (activeThread?.assistants[0].assistant_name ?? props.role)}
+            : (activeAssistant?.assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
-          {displayDate(props.created)}
+          {props.created && displayDate(props.created ?? new Date())}
         </p>
       </div>
 
@@ -111,16 +116,8 @@ const MessageContainer: React.FC<
           )}
         >
           <>
-            {messageType === ContentType.Image && (
-              <ImageMessage content={props.content[0]} />
-            )}
-            {messageType === ContentType.Pdf && (
-              <DocMessage
-                id={props.id}
-                name={props.content[0]?.text?.name}
-                size={props.content[0]?.text?.size}
-              />
-            )}
+            {image && <ImageMessage image={image} />}
+            {attachedFile && <DocMessage id={props.id} name={props.id} />}
 
             {editMessage === props.id ? (
               <div>

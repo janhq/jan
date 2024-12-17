@@ -2,6 +2,7 @@ import { openFileExplorer, joinPath, baseName } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -9,13 +10,14 @@ export const usePath = () => {
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const onRevealInFinder = async (type: string) => {
     // TODO: this logic should be refactored.
     if (type !== 'Model' && !activeThread) return
 
     let filePath = undefined
-    const assistantId = activeThread?.assistants[0]?.assistant_id
+    const assistantId = activeAssistant?.assistant_id
     switch (type) {
       case 'Engine':
       case 'Thread':

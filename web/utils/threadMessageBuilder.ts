@@ -1,4 +1,5 @@
 import {
+  Attachment,
   ChatCompletionRole,
   ContentType,
   MessageStatus,
@@ -14,6 +15,7 @@ export class ThreadMessageBuilder {
   messageRequest: MessageRequestBuilder
 
   content: ThreadContent[] = []
+  attachments: Attachment[] = []
 
   constructor(messageRequest: MessageRequestBuilder) {
     this.messageRequest = messageRequest
@@ -24,6 +26,7 @@ export class ThreadMessageBuilder {
     return {
       id: this.messageRequest.msgId,
       thread_id: this.messageRequest.thread.id,
+      attachments: this.attachments,
       role: ChatCompletionRole.User,
       status: MessageStatus.Ready,
       created: timestamp,
@@ -36,31 +39,9 @@ export class ThreadMessageBuilder {
   pushMessage(
     prompt: string,
     base64: string | undefined,
-    fileUpload: FileInfo[]
+    fileUpload?: FileInfo
   ) {
-    if (base64 && fileUpload[0]?.type === 'image') {
-      this.content.push({
-        type: ContentType.Image,
-        text: {
-          value: prompt,
-          annotations: [base64],
-        },
-      })
-    }
-
-    if (base64 && fileUpload[0]?.type === 'pdf') {
-      this.content.push({
-        type: ContentType.Pdf,
-        text: {
-          value: prompt,
-          annotations: [base64],
-          name: fileUpload[0].file.name,
-          size: fileUpload[0].file.size,
-        },
-      })
-    }
-
-    if (prompt && !base64) {
+    if (prompt) {
       this.content.push({
         type: ContentType.Text,
         text: {
@@ -69,6 +50,26 @@ export class ThreadMessageBuilder {
         },
       })
     }
+    if (base64 && fileUpload?.type === 'image') {
+      this.content.push({
+        type: ContentType.Image,
+        image_url: {
+          url: base64,
+        },
+      })
+    }
+
+    if (base64 && fileUpload?.type === 'pdf') {
+      this.attachments.push({
+        file_id: fileUpload.id,
+        tools: [
+          {
+            type: 'file_search',
+          },
+        ],
+      })
+    }
+
     return this
   }
 }

@@ -29,7 +29,7 @@ const ImageUploadPreview: React.FC<Props> = ({ file }) => {
   }
 
   const onDeleteClick = () => {
-    setFileUpload([])
+    setFileUpload(undefined)
     setCurrentPrompt('')
   }
 

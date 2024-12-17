@@ -108,7 +108,7 @@ export const test = base.extend<
 })
 
 test.beforeAll(async () => {
-  await rmSync(path.join(__dirname, '../../test-data'), {
+  rmSync(path.join(__dirname, '../../test-data'), {
     recursive: true,
     force: true,
   })
@@ -122,6 +122,5 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  // temporally disabling this due to the config for parallel testing WIP
   // teardownElectron()
 })

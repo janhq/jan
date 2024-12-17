@@ -1,3 +1,4 @@
+import { CodeInterpreterTool } from '../assistant'
 import { ChatCompletionMessage, ChatCompletionRole } from '../inference'
 import { ModelInfo } from '../model'
 import { Thread } from '../thread'
@@ -15,6 +16,10 @@ export type ThreadMessage = {
   thread_id: string
   /** The assistant id of this thread. **/
   assistant_id?: string
+  /**
+   * A list of files attached to the message, and the tools they were added to.
+   */
+  attachments?: Array<Attachment> | null
   /** The role of the author of this message. **/
   role: ChatCompletionRole
   /** The content of this message. **/
@@ -51,6 +56,11 @@ export type MessageRequest = {
    * The assistant id of the message request.
    */
   assistantId?: string
+
+  /**
+   * A list of files attached to the message, and the tools they were added to.
+   */
+  attachments: Array<Attachment> | null
 
   /** Messages for constructing a chat completion request **/
   messages?: ChatCompletionMessage[]
@@ -97,8 +107,7 @@ export enum ErrorCode {
  */
 export enum ContentType {
   Text = 'text',
-  Image = 'image',
-  Pdf = 'pdf',
+  Image = 'image_url',
 }
 
 /**
@@ -108,8 +117,15 @@ export enum ContentType {
 export type ContentValue = {
   value: string
   annotations: string[]
-  name?: string
-  size?: number
+}
+
+/**
+ * The `ImageContentValue` type defines the shape of a content value object of image type
+ * @data_transfer_object
+ */
+export type ImageContentValue = {
+  detail?: string
+  url?: string
 }
 
 /**
@@ -118,5 +134,37 @@ export type ContentValue = {
  */
 export type ThreadContent = {
   type: ContentType
-  text: ContentValue
+  text?: ContentValue
+  image_url?: ImageContentValue
+}
+
+export interface Attachment {
+  /**
+   * The ID of the file to attach to the message.
+   */
+  file_id?: string
+
+  /**
+   * The tools to add this file to.
+   */
+  tools?: Array<CodeInterpreterTool | Attachment.AssistantToolsFileSearchTypeOnly>
+}
+
+export namespace Attachment {
+  export interface AssistantToolsFileSearchTypeOnly {
+    /**
+     * The type of tool being defined: `file_search`
+     */
+    type: 'file_search'
+  }
+}
+
+/**
+ * On an incomplete message, details about why the message is incomplete.
+ */
+export interface IncompleteDetails {
+  /**
+   * The reason the message is incomplete.
+   */
+  reason: 'content_filter' | 'max_tokens' | 'run_cancelled' | 'run_expired' | 'run_failed'
 }

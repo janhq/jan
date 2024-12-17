@@ -72,7 +72,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   }, [editPrompt])
 
   useEffect(() => {
-    setEditPrompt(message.content[0]?.text?.value)
+    if (message.content?.[0]?.text?.value)
+      setEditPrompt(message.content[0].text.value)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -80,19 +81,17 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
     setEditMessage('')
     const messageIdx = messages.findIndex((msg) => msg.id === message.id)
     const newMessages = messages.slice(0, messageIdx)
-    if (activeThread) {
-      setMessages(activeThread.id, newMessages)
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          activeThread.id,
-          // Remove all of the messages below this
-          newMessages
-        )
-        .then(() => {
-          sendChatMessage(editPrompt, newMessages)
-        })
-    }
+    const toDeleteMessages = messages.slice(messageIdx)
+    const threadId = messages[0].thread_id
+    await Promise.all(
+      toDeleteMessages.map(async (message) =>
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.deleteMessage(message.thread_id, message.id)
+      )
+    )
+    setMessages(threadId, newMessages)
+    sendChatMessage(editPrompt, false, newMessages)
   }
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

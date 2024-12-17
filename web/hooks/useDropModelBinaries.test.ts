@@ -1,3 +1,6 @@
+/**
+ * @jest-environment jsdom
+ */
 // useDropModelBinaries.test.ts
 
 import { renderHook, act } from '@testing-library/react'
@@ -18,6 +21,7 @@ jest.mock('jotai', () => ({
 jest.mock('uuid')
 jest.mock('@/utils/file')
 jest.mock('@/containers/Toast')
+jest.mock("@uppy/core")
 
 describe('useDropModelBinaries', () => {
   const mockSetImportingModels = jest.fn()
