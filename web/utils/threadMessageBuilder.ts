@@ -29,8 +29,8 @@ export class ThreadMessageBuilder {
       attachments: this.attachments,
       role: ChatCompletionRole.User,
       status: MessageStatus.Ready,
-      created: timestamp,
-      updated: timestamp,
+      created_at: timestamp,
+      completed_at: timestamp,
       object: 'thread.message',
       content: this.content,
     }
