@@ -27,6 +27,7 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import { useStarterScreen } from '@/hooks/useStarterScreen'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import { manualRecommendationModel } from '@/utils/model'
 import {
   getLogoEngine,
   getTitleByEngine,
@@ -56,15 +57,16 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const recommendModel = ['llama3.2-1b-instruct', 'llama3.2-3b-instruct']
-
   const featuredModel = configuredModels.filter((x) => {
     const manualRecommendModel = configuredModels.filter((x) =>
-      recommendModel.includes(x.id)
+      manualRecommendationModel.includes(x.id)
     )
 
     if (manualRecommendModel.length === 2) {
-      return x.id === recommendModel[0] || x.id === recommendModel[1]
+      return (
+        x.id === manualRecommendationModel[0] ||
+        x.id === manualRecommendationModel[1]
+      )
     } else {
       return (
         x.metadata?.tags?.includes('Featured') && x.metadata?.size < 5000000000

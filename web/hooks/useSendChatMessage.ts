@@ -15,6 +15,7 @@ import {
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
+import { modelDropdownStateAtom } from '@/containers/ModelDropdown'
 import {
   currentPromptAtom,
   editPromptAtom,
@@ -73,6 +74,7 @@ export default function useSendChatMessage() {
   const activeThreadRef = useRef<Thread | undefined>()
   const activeAssistantRef = useRef<ThreadAssistantInfo | undefined>()
   const setTokenSpeed = useSetAtom(tokenSpeedAtom)
+  const setModelDropdownState = useSetAtom(modelDropdownStateAtom)
 
   const selectedModelRef = useRef<Model | undefined>()
 
@@ -119,6 +121,11 @@ export default function useSendChatMessage() {
 
     if (!activeThreadRef.current || !activeAssistantRef.current) {
       console.error('No active thread or assistant')
+      return
+    }
+
+    if (selectedModelRef.current?.id === undefined) {
+      setModelDropdownState(true)
       return
     }
 

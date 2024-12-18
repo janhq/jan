@@ -23,6 +23,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   getActiveThreadIdAtom,
   activeSettingInputBoxAtom,
@@ -78,7 +79,7 @@ const RichTextEditor = ({
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { sendChatMessage } = useSendChatMessage()
   const { stopInference } = useActiveModel()
-
+  const selectedModel = useAtomValue(selectedModelAtom)
   const largeContentThreshold = 1000
 
   // The decorate function identifies code blocks and marks the ranges
@@ -233,7 +234,9 @@ const RichTextEditor = ({
         event.preventDefault()
         if (messages[messages.length - 1]?.status !== MessageStatus.Pending) {
           sendChatMessage(currentPrompt)
-          resetEditor()
+          if (selectedModel) {
+            resetEditor()
+          }
         } else onStopInferenceClick()
       }
     },

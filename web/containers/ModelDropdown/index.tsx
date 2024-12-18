@@ -12,7 +12,7 @@ import {
   useClickOutside,
 } from '@janhq/joi'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {
   ChevronDownIcon,
@@ -37,6 +37,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
+import { manualRecommendationModel } from '@/utils/model'
 import {
   getLogoEngine,
   getTitleByEngine,
@@ -65,16 +66,21 @@ type Props = {
   disabled?: boolean
 }
 
+export const modelDropdownStateAtom = atom(false)
+
 const ModelDropdown = ({
   disabled,
   chatInputMode,
   strictedThread = true,
 }: Props) => {
   const { downloadModel } = useDownloadModel()
+  const [modelDropdownState, setModelDropdownState] = useAtom(
+    modelDropdownStateAtom
+  )
 
   const [searchFilter, setSearchFilter] = useState('local')
   const [searchText, setSearchText] = useState('')
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState<boolean>(modelDropdownState)
   const activeThread = useAtomValue(activeThreadAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
@@ -84,20 +90,36 @@ const ModelDropdown = ({
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
+
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { updateModelParameter } = useUpdateModelParameters()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
-  const featuredModel = configuredModels.filter((x) =>
-    x.metadata?.tags?.includes('Featured')
+
+  const featuredModel = configuredModels.filter(
+    (x) =>
+      manualRecommendationModel.includes(x.id) &&
+      x.metadata?.tags?.includes('Featured') &&
+      x.metadata?.size < 5000000000
   )
   const { updateThreadMetadata } = useCreateNewThread()
 
-  useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
+  useClickOutside(() => handleChangeStateOpen(false), null, [
+    dropdownOptions,
+    toggle,
+  ])
 
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
+  )
+
+  const handleChangeStateOpen = useCallback(
+    (state: boolean) => {
+      setOpen(state)
+      setModelDropdownState(state)
+    },
+    [setModelDropdownState]
   )
 
   const isModelSupportRagAndTools = useCallback((model: Model) => {
@@ -146,6 +168,12 @@ const ModelDropdown = ({
   )
 
   useEffect(() => {
+    if (modelDropdownState && chatInputMode) {
+      setOpen(modelDropdownState)
+    }
+  }, [chatInputMode, modelDropdownState])
+
+  useEffect(() => {
     if (open && searchInputRef.current) {
       searchInputRef.current.focus()
     }
@@ -157,7 +185,7 @@ const ModelDropdown = ({
 
     let model = downloadedModels.find((model) => model.id === modelId)
     if (!model) {
-      model = recommendedModel
+      model = undefined
     }
     setSelectedModel(model)
   }, [
@@ -343,14 +371,21 @@ const ModelDropdown = ({
               'inline-block max-w-[200px] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap',
               open && 'border border-transparent'
             )}
-            onClick={() => setOpen(!open)}
+            onClick={() => handleChangeStateOpen(!open)}
           >
-            <span>{selectedModel?.name}</span>
+            <span
+              className={twMerge(
+                !selectedModel && 'text-[hsla(var(--text-tertiary))]'
+              )}
+            >
+              {selectedModel?.name || 'Select Model'}
+            </span>
           </Badge>
         ) : (
           <Input
             value={selectedModel?.name || ''}
             className="cursor-pointer"
+            placeholder="Select Model"
             disabled={disabled}
             readOnly
             suffixIcon={

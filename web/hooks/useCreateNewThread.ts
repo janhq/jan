@@ -22,7 +22,6 @@ import { toaster } from '@/containers/Toast'
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { useActiveModel } from './useActiveModel'
-import useRecommendedModel from './useRecommendedModel'
 
 import useSetActiveThread from './useSetActiveThread'
 
@@ -71,8 +70,6 @@ export const useCreateNewThread = () => {
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
-  const { recommendedModel, downloadedModels } = useRecommendedModel()
-
   const threads = useAtomValue(threadsAtom)
   const { stopInference } = useActiveModel()
 
@@ -84,7 +81,7 @@ export const useCreateNewThread = () => {
     setIsGeneratingResponse(false)
     stopInference()
 
-    const defaultModel = model ?? recommendedModel ?? downloadedModels[0]
+    const defaultModel = model
 
     if (!model) {
       // if we have model, which means user wants to create new thread from Model hub. Allow them.
