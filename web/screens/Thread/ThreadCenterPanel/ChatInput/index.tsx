@@ -94,9 +94,9 @@ const ChatInput = () => {
     stopInference()
   }
 
-  const isModelSupportRagAndTools =
-    selectedModel?.engine === InferenceEngine.openai ||
-    isLocalEngine(selectedModel?.engine as InferenceEngine)
+  const isModelSupportRagAndTools = isLocalEngine(
+    selectedModel?.engine as InferenceEngine
+  )
 
   /**
    * Handles the change event of the extension file input element by setting the file name state.
@@ -182,7 +182,7 @@ const ChatInput = () => {
               </Button>
             }
             disabled={
-              isModelSupportRagAndTools &&
+              !isModelSupportRagAndTools &&
               activeAssistant?.tools &&
               activeAssistant?.tools[0]?.enabled
             }
@@ -231,7 +231,8 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeAssistant?.model.settings?.vision_model
+                      activeAssistant?.model.settings?.vision_model ||
+                        isModelSupportRagAndTools
                         ? 'cursor-pointer'
                         : 'cursor-not-allowed opacity-50'
                     )}
@@ -255,11 +256,15 @@ const ChatInput = () => {
                   <li
                     className={twMerge(
                       'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      'cursor-pointer'
+                      isModelSupportRagAndTools
+                        ? 'cursor-pointer'
+                        : 'cursor-not-allowed opacity-50'
                     )}
                     onClick={() => {
-                      fileInputRef.current?.click()
-                      setShowAttacmentMenus(false)
+                      if (isModelSupportRagAndTools) {
+                        fileInputRef.current?.click()
+                        setShowAttacmentMenus(false)
+                      }
                     }}
                   >
                     <FileTextIcon size={16} />

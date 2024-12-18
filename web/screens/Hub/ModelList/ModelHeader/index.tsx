@@ -71,7 +71,6 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
 
   let downloadButton = (
     <Button
-      className="z-50"
       onClick={(e) => {
         e.stopPropagation()
         onDownloadClick()
