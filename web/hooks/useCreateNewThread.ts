@@ -115,13 +115,15 @@ export const useCreateNewThread = () => {
     )
 
     const overriddenSettings = {
-      ctx_len: !isLocalEngine(model?.engine) ? undefined : defaultContextLength,
+      ctx_len: !isLocalEngine(defaultModel?.engine)
+        ? undefined
+        : defaultContextLength,
     }
 
     // Use ctx length by default
     const overriddenParameters = {
-      max_tokens: !isLocalEngine(model?.engine)
-        ? (model?.parameters.token_limit ?? 8192)
+      max_tokens: !isLocalEngine(defaultModel?.engine)
+        ? (defaultModel?.parameters.token_limit ?? 8192)
         : defaultContextLength,
     }
 
