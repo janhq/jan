@@ -23,6 +23,7 @@ import { isLocalEngine } from '@/utils/modelEngine'
 
 import { useActiveModel } from './useActiveModel'
 
+import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
@@ -73,6 +74,8 @@ export const useCreateNewThread = () => {
   const threads = useAtomValue(threadsAtom)
   const { stopInference } = useActiveModel()
 
+  const { recommendedModel } = useRecommendedModel()
+
   const requestCreateNewThread = async (
     assistant: (ThreadAssistantInfo & { id: string; name: string }) | Assistant,
     model?: Model | undefined
@@ -81,7 +84,7 @@ export const useCreateNewThread = () => {
     setIsGeneratingResponse(false)
     stopInference()
 
-    const defaultModel = model
+    const defaultModel = model || recommendedModel
 
     if (!model) {
       // if we have model, which means user wants to create new thread from Model hub. Allow them.

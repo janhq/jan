@@ -67,6 +67,7 @@ export default function useRecommendedModel() {
     if (models.length === 0) {
       // if we have no downloaded models, then can't recommend anything
       console.debug("No downloaded models, can't recommend anything")
+      setRecommendedModel(undefined)
       return
     }
 
