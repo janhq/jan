@@ -4,9 +4,15 @@ import { atomWithStorage } from 'jotai/utils'
 
 export const assistantsAtom = atom<Assistant[]>([])
 
+export const cachedAssistantAtom = atomWithStorage<
+  ThreadAssistantInfo | undefined
+>('activeAssistant', undefined, undefined, { getOnInit: true })
 /**
  * Get the current active assistant
  */
-export const activeAssistantAtom = atomWithStorage<
-  ThreadAssistantInfo | undefined
->('activeAssistant', undefined, undefined, { getOnInit: true })
+export const activeAssistantAtom = atom(
+  (get) => get(cachedAssistantAtom) ?? get(assistantsAtom)[0],
+  (_get, set, newAssistant: ThreadAssistantInfo) => {
+    set(cachedAssistantAtom, newAssistant)
+  }
+)
