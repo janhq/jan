@@ -1,6 +1,9 @@
 export const isToday = (timestamp: number) => {
   const today = new Date()
-  return today.setHours(0, 0, 0, 0) === new Date(timestamp).setHours(0, 0, 0, 0)
+  return (
+    today.setHours(0, 0, 0, 0) ===
+    new Date(timestamp * 1000).setHours(0, 0, 0, 0)
+  )
 }
 
 export const displayDate = (timestamp?: string | number | Date) => {

@@ -127,7 +127,7 @@ export default class JanAssistantExtension extends AssistantExtension {
     thread_location: undefined,
     id: 'jan',
     object: 'assistant',
-    created_at: Date.now(),
+    created_at: Date.now() / 1000,
     name: 'Jan',
     description: 'A default assistant that can use all downloaded models',
     model: '*',
