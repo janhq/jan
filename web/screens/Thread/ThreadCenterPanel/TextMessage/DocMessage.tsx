@@ -2,11 +2,18 @@ import { memo, useEffect, useState } from 'react'
 
 import { usePath } from '@/hooks/usePath'
 
+import { toGibibytes } from '@/utils/converter'
 import { getFileInfo } from '@/utils/file'
 
 import Icon from '../FileUploadPreview/Icon'
 
-const DocMessage = ({ id }: { id: string }) => {
+const DocMessage = ({
+  id,
+  metadata,
+}: {
+  id: string
+  metadata: Record<string, unknown> | undefined
+}) => {
   const { onViewFile } = usePath()
   const [fileInfo, setFileInfo] = useState<
     { filename: string; id: string } | undefined
@@ -29,10 +36,14 @@ const DocMessage = ({ id }: { id: string }) => {
       <Icon type="pdf" />
       <div className="w-full">
         <h6 className="line-clamp-1 w-4/5 overflow-hidden font-medium">
-          {fileInfo?.filename}
+          {metadata && 'filename' in metadata
+            ? (metadata.filename as string)
+            : fileInfo?.filename}
         </h6>
         <p className="text-[hsla(var(--text-secondary)] line-clamp-1 overflow-hidden truncate">
-          {fileInfo?.id ?? id}
+          {metadata && 'size' in metadata
+            ? toGibibytes(Number(metadata.size))
+            : (fileInfo?.id ?? id)}
         </p>
       </div>
     </div>
