@@ -257,10 +257,19 @@ export default function ModelHandler() {
           ...thread,
           metadata,
         })
+
+      if (message.status === MessageStatus.Error) {
+        message.metadata = {
+          ...message.metadata,
+          error: message.content[0]?.text?.value,
+          error_code: message.error_code,
+        }
+      }
       ;(async () => {
         const updatedMessage = await extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.createMessage(message)
+          .catch(() => undefined)
         if (updatedMessage) {
           deleteMessage(message.id)
           addNewMessage(updatedMessage)

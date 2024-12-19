@@ -30,20 +30,23 @@ describe('ErrorMessage Component', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
-    ;(useAtomValue as jest.Mock).mockReturnValue([])
-    ;(useSetAtom as jest.Mock).mockReturnValue(mockSetMainState)
-    ;(useSetAtom as jest.Mock).mockReturnValue(mockSetSelectedSettingScreen)
-    ;(useSetAtom as jest.Mock).mockReturnValue(mockSetModalTroubleShooting)
-    ;(useSendChatMessage as jest.Mock).mockReturnValue({
-      resendChatMessage: mockResendChatMessage,
-    })
+      ; (useAtomValue as jest.Mock).mockReturnValue([])
+      ; (useSetAtom as jest.Mock).mockReturnValue(mockSetMainState)
+      ; (useSetAtom as jest.Mock).mockReturnValue(mockSetSelectedSettingScreen)
+      ; (useSetAtom as jest.Mock).mockReturnValue(mockSetModalTroubleShooting)
+      ; (useSendChatMessage as jest.Mock).mockReturnValue({
+        resendChatMessage: mockResendChatMessage,
+      })
   })
 
   it('renders error message with InvalidApiKey correctly', () => {
     const message: ThreadMessage = {
       id: '1',
-      status: MessageStatus.Error,
-      error_code: ErrorCode.InvalidApiKey,
+      metadata: {
+        error: MessageStatus.Error,
+        error_code: ErrorCode.InvalidApiKey,
+      },
+      status: "completed",
       content: [{ text: { value: 'Invalid API Key' } }],
     } as ThreadMessage
 
@@ -56,8 +59,11 @@ describe('ErrorMessage Component', () => {
   it('renders general error message correctly', () => {
     const message: ThreadMessage = {
       id: '1',
-      status: MessageStatus.Error,
-      error_code: ErrorCode.Unknown,
+      status: "completed",
+      metadata: {
+        error: MessageStatus.Error,
+        error_code: ErrorCode.Unknown
+      },
       content: [{ text: { value: 'Unknown error occurred' } }],
     } as ThreadMessage
 
@@ -69,9 +75,11 @@ describe('ErrorMessage Component', () => {
   it('opens troubleshooting modal when link is clicked', () => {
     const message: ThreadMessage = {
       id: '1',
-      status: MessageStatus.Error,
-      error_code: ErrorCode.Unknown,
-      content: [{ text: { value: 'Unknown error occurred' } }],
+      status: "completed",
+      metadata: {
+        error: MessageStatus.Error,
+        error_code: ErrorCode.Unknown,
+      }, content: [{ text: { value: 'Unknown error occurred' } }],
     } as ThreadMessage
 
     render(<ErrorMessage message={message} />)

@@ -200,6 +200,7 @@ export default function useSendChatMessage() {
       const createdMessage = await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.createMessage(newMessage)
+        .catch(() => undefined)
 
       if (!createdMessage) return
 
