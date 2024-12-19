@@ -261,6 +261,7 @@ export default function ModelHandler() {
         const updatedMessage = await extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.createMessage(message)
+          .catch(() => undefined)
         if (updatedMessage) {
           deleteMessage(message.id)
           addNewMessage(updatedMessage)

@@ -230,8 +230,10 @@ export const useCreateNewThread = () => {
         await extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.createThreadAssistant(thread.id, assistantInfo)
+          .catch(console.error)
         return thread
       })
+      .catch(() => undefined)
   }
 
   return {

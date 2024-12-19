@@ -89,7 +89,7 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.deleteMessage(message.thread_id, message.id)
       )
-    )
+    ).catch(console.error)
     setMessages(threadId, newMessages)
     sendChatMessage(editPrompt, false, newMessages)
   }
