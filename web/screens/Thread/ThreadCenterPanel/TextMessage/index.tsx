@@ -88,7 +88,9 @@ const MessageContainer: React.FC<
         >
           {isUser
             ? props.role
-            : (activeAssistant?.assistant_name ?? props.role)}
+            : 'assistant_name' in activeAssistant
+              ? activeAssistant?.assistant_name
+              : props.role}
         </div>
         <p className="text-xs font-medium text-gray-400">
           {props.created_at && displayDate(props.created_at ?? new Date())}
