@@ -264,6 +264,9 @@ export default function ModelHandler() {
         if (updatedMessage) {
           deleteMessage(message.id)
           addNewMessage(updatedMessage)
+          setTokenSpeed((prev) =>
+            prev ? { ...prev, message: updatedMessage.id } : undefined
+          )
         }
       })()
 
