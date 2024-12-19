@@ -1,23 +1,19 @@
-import { memo, useEffect, useState } from 'react'
+import { memo } from 'react'
 
 import { usePath } from '@/hooks/usePath'
 
-import { getFileInfo } from '@/utils/file'
+import { toGibibytes } from '@/utils/converter'
 
 import Icon from '../FileUploadPreview/Icon'
 
-const DocMessage = ({ id }: { id: string }) => {
+const DocMessage = ({
+  id,
+  metadata,
+}: {
+  id: string
+  metadata: Record<string, unknown> | undefined
+}) => {
   const { onViewFile } = usePath()
-  const [fileInfo, setFileInfo] = useState<
-    { filename: string; id: string } | undefined
-  >()
-  useEffect(() => {
-    if (!fileInfo) {
-      getFileInfo(id).then((data) => {
-        setFileInfo(data)
-      })
-    }
-  }, [fileInfo, id])
 
   return (
     <div className="group/file bg-secondary relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg p-4">
@@ -29,10 +25,14 @@ const DocMessage = ({ id }: { id: string }) => {
       <Icon type="pdf" />
       <div className="w-full">
         <h6 className="line-clamp-1 w-4/5 overflow-hidden font-medium">
-          {fileInfo?.filename}
+          {metadata && 'filename' in metadata
+            ? (metadata.filename as string)
+            : id}
         </h6>
         <p className="text-[hsla(var(--text-secondary)] line-clamp-1 overflow-hidden truncate">
-          {fileInfo?.id ?? id}
+          {metadata && 'size' in metadata
+            ? toGibibytes(Number(metadata.size))
+            : id}
         </p>
       </div>
     </div>

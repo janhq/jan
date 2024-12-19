@@ -23,9 +23,7 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
   const [content, setContent] = useState<ThreadContent[]>(message.content)
   const [status, setStatus] = useState<MessageStatus>(message.status)
   const [errorMessage, setErrorMessage] = useState<ThreadMessage | undefined>(
-    message.isCurrentMessage && message.status === MessageStatus.Error
-      ? message
-      : undefined
+    message.isCurrentMessage && !!message?.metadata?.error ? message : undefined
   )
 
   function onMessageUpdate(data: ThreadMessage) {
@@ -52,16 +50,18 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
 
   return (
     <>
-      {status !== MessageStatus.Error && content?.length > 0 && (
-        <div ref={ref} className="relative">
-          <MessageContainer
-            {...message}
-            content={content}
-            status={status}
-            isCurrentMessage={message.isCurrentMessage ?? false}
-          />
-        </div>
-      )}
+      {status !== MessageStatus.Error &&
+        !message.metadata?.error &&
+        content?.length > 0 && (
+          <div ref={ref} className="relative">
+            <MessageContainer
+              {...message}
+              content={content}
+              status={status}
+              isCurrentMessage={message.isCurrentMessage ?? false}
+            />
+          </div>
+        )}
       {errorMessage && !message.loadModelError && (
         <ErrorMessage message={errorMessage} />
       )}

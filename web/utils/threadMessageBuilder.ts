@@ -16,6 +16,7 @@ export class ThreadMessageBuilder {
 
   content: ThreadContent[] = []
   attachments: Attachment[] = []
+  metadata: Record<string, unknown> = {}
 
   constructor(messageRequest: MessageRequestBuilder) {
     this.messageRequest = messageRequest
@@ -33,6 +34,7 @@ export class ThreadMessageBuilder {
       completed_at: timestamp,
       object: 'thread.message',
       content: this.content,
+      metadata: this.metadata,
     }
   }
 
@@ -68,6 +70,10 @@ export class ThreadMessageBuilder {
           },
         ],
       })
+      this.metadata = {
+        filename: fileUpload.name,
+        size: fileUpload.file?.size,
+      }
     }
 
     return this
