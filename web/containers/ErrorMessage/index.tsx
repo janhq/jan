@@ -53,7 +53,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const getErrorTitle = () => {
     const engine = getEngine()
 
-    switch (message.error_code) {
+    switch (message.metadata?.error_code) {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
         return (
@@ -102,7 +102,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
 
   return (
     <div className="mx-auto my-6 max-w-[700px]">
-      {message.status === MessageStatus.Error && (
+      {!!message.metadata?.error && (
         <div
           key={message.id}
           className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--text-secondary))]"

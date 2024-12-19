@@ -109,7 +109,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           )}
 
         {message.id === messages[messages.length - 1]?.id &&
-          messages[messages.length - 1].status !== MessageStatus.Error &&
+          !messages[messages.length - 1]?.metadata?.error &&
           !messages[messages.length - 1].attachments?.length && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"

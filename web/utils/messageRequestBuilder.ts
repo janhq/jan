@@ -6,7 +6,6 @@ import {
   ChatCompletionRole,
   MessageRequest,
   MessageRequestType,
-  MessageStatus,
   ModelInfo,
   Thread,
   ThreadMessage,
@@ -35,7 +34,7 @@ export class MessageRequestBuilder {
     this.model = model
     this.thread = thread
     this.messages = messages
-      .filter((e) => e.status !== MessageStatus.Error)
+      .filter((e) => !e.metadata?.error)
       .map<ChatCompletionMessage>((msg) => ({
         role: msg.role,
         content: msg.content[0]?.text?.value ?? '.',
