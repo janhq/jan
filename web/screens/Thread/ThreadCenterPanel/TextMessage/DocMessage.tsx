@@ -1,9 +1,8 @@
-import { memo, useEffect, useState } from 'react'
+import { memo } from 'react'
 
 import { usePath } from '@/hooks/usePath'
 
 import { toGibibytes } from '@/utils/converter'
-import { getFileInfo } from '@/utils/file'
 
 import Icon from '../FileUploadPreview/Icon'
 
@@ -15,16 +14,6 @@ const DocMessage = ({
   metadata: Record<string, unknown> | undefined
 }) => {
   const { onViewFile } = usePath()
-  const [fileInfo, setFileInfo] = useState<
-    { filename: string; id: string } | undefined
-  >()
-  useEffect(() => {
-    if (!fileInfo) {
-      getFileInfo(id).then((data) => {
-        setFileInfo(data)
-      })
-    }
-  }, [fileInfo, id])
 
   return (
     <div className="group/file bg-secondary relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg p-4">
@@ -38,12 +27,12 @@ const DocMessage = ({
         <h6 className="line-clamp-1 w-4/5 overflow-hidden font-medium">
           {metadata && 'filename' in metadata
             ? (metadata.filename as string)
-            : fileInfo?.filename}
+            : id}
         </h6>
         <p className="text-[hsla(var(--text-secondary)] line-clamp-1 overflow-hidden truncate">
           {metadata && 'size' in metadata
             ? toGibibytes(Number(metadata.size))
-            : (fileInfo?.id ?? id)}
+            : id}
         </p>
       </div>
     </div>
