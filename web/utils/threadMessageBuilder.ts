@@ -22,7 +22,7 @@ export class ThreadMessageBuilder {
   }
 
   build(): ThreadMessage {
-    const timestamp = Date.now()
+    const timestamp = Date.now() / 1000
     return {
       id: this.messageRequest.msgId,
       thread_id: this.messageRequest.thread.id,

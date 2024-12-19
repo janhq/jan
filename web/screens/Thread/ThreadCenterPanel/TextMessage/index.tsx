@@ -91,7 +91,8 @@ const MessageContainer: React.FC<
             : (activeAssistant?.assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
-          {props.created_at && displayDate(props.created_at ?? new Date())}
+          {props.created_at &&
+            displayDate(props.created_at ?? Date.now() / 1000)}
         </p>
       </div>
 

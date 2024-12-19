@@ -71,7 +71,7 @@ export abstract class OAIEngine extends AIEngine {
       return
     }
 
-    const timestamp = Date.now()
+    const timestamp = Date.now() / 1000
     const message: ThreadMessage = {
       id: ulid(),
       thread_id: data.threadId,

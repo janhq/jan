@@ -71,7 +71,6 @@ const ThreadLeftPanel = () => {
   useEffect(() => {
     if (
       threadDataReady &&
-      activeAssistant &&
       assistants.length > 0 &&
       threads.length === 0 &&
       downloadedModels.length > 0
@@ -81,7 +80,9 @@ const ThreadLeftPanel = () => {
       )
       const selectedModel = model[0] || recommendedModel
       requestCreateNewThread(
-        { ...assistants[0], ...activeAssistant },
+        activeAssistant
+          ? { ...assistants[0], ...activeAssistant }
+          : assistants[0],
         selectedModel
       )
     } else if (threadDataReady && !activeThreadId) {

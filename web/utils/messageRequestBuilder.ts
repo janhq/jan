@@ -15,7 +15,7 @@ import { ulid } from 'ulidx'
 
 import { Stack } from '@/utils/Stack'
 
-import { FileInfo, FileType } from '@/types/file'
+import { FileInfo } from '@/types/file'
 
 export class MessageRequestBuilder {
   msgId: string
