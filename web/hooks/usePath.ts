@@ -1,4 +1,4 @@
-import { openFileExplorer, joinPath, baseName, fs } from '@janhq/core'
+import { openFileExplorer, joinPath, baseName } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { getFileInfo } from '@/utils/file'
