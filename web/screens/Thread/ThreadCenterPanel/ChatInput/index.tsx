@@ -188,9 +188,8 @@ const ChatInput = () => {
               </Button>
             }
             disabled={
-              !isModelSupportRagAndTools &&
-              activeAssistant?.tools &&
-              activeAssistant?.tools[0]?.enabled
+              !isModelSupportRagAndTools ||
+              (activeAssistant?.tools && activeAssistant?.tools[0]?.enabled)
             }
             content={
               <>

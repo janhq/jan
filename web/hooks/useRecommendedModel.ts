@@ -76,7 +76,7 @@ export default function useRecommendedModel() {
     // if we don't have [lastUsedModelId], then we can just use the first model
     // in the downloaded list
     if (!lastUsedModelId) {
-      setRecommendedModel(models[0])
+      setRecommendedModel(undefined)
       return
     }
 
@@ -87,7 +87,7 @@ export default function useRecommendedModel() {
       console.debug(
         `Last used model ${lastUsedModelId} not found, using first model in list ${models[0].id}}`
       )
-      setRecommendedModel(models[0])
+      setRecommendedModel(undefined)
       return
     }
 
