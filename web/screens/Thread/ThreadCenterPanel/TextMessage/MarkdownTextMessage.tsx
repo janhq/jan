@@ -19,8 +19,14 @@ import { useClipboard } from '@/hooks/useClipboard'
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 
 export const MarkdownTextMessage = memo(
-  ({ text }: { id: string; text: string }) => {
+  ({ text, isUser }: { id: string; text: string; isUser: boolean }) => {
     const clipboard = useClipboard({ timeout: 1000 })
+
+    // Escapes headings
+    function preprocessMarkdown(text: string): string {
+      if (!isUser) return text
+      return text.replace(/^#{1,6} /gm, (match) => `\\${match}`)
+    }
 
     function extractCodeLines(node: { children: { children: any[] }[] }) {
       const codeLines: any[] = []
@@ -204,7 +210,7 @@ export const MarkdownTextMessage = memo(
             wrapCodeBlocksWithoutVisit,
           ]}
         >
-          {text}
+          {preprocessMarkdown(text)}
         </Markdown>
       </>
     )
