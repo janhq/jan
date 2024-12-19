@@ -67,6 +67,7 @@ export default function useRecommendedModel() {
     if (models.length === 0) {
       // if we have no downloaded models, then can't recommend anything
       console.debug("No downloaded models, can't recommend anything")
+      setRecommendedModel(undefined)
       return
     }
 
@@ -76,7 +77,7 @@ export default function useRecommendedModel() {
     // if we don't have [lastUsedModelId], then we can just use the first model
     // in the downloaded list
     if (!lastUsedModelId) {
-      setRecommendedModel(undefined)
+      setRecommendedModel(models[0])
       return
     }
 
@@ -87,7 +88,7 @@ export default function useRecommendedModel() {
       console.debug(
         `Last used model ${lastUsedModelId} not found, using first model in list ${models[0].id}}`
       )
-      setRecommendedModel(undefined)
+      setRecommendedModel(models[0])
       return
     }
 
