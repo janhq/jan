@@ -35,7 +35,7 @@ const BottomPanel = () => {
   return (
     <div
       className={twMerge(
-        'fixed bottom-0 left-0 z-50 flex h-9 w-full items-center justify-between px-3 text-xs',
+        'fixed bottom-0 left-0 z-40 flex h-9 w-full items-center justify-between px-3 text-xs',
         reduceTransparent &&
           'border-t border-[hsla(var(--app-border))] bg-[hsla(var(--bottom-panel-bg))]'
       )}

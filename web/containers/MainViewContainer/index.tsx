@@ -37,7 +37,7 @@ const MainViewContainer = () => {
   }
 
   return (
-    <div className={twMerge('relative flex w-full')}>
+    <div className={twMerge('relative flex w-[calc(100%-48px)]')}>
       <div className="w-full">
         <m.div
           key={mainViewState}

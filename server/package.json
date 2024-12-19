@@ -8,7 +8,8 @@
   "homepage": "https://jan.ai",
   "description": "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers.",
   "files": [
-    "build/**"
+    "build/**",
+    "cortex.json"
   ],
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
@@ -19,14 +20,15 @@
   "dependencies": {
     "@alumna/reflect": "^1.1.3",
     "@cyclic.sh/s3fs": "^1.2.9",
-    "@fastify/cors": "^8.4.2",
+    "@fastify/cors": "^10.0.1",
+    "@fastify/http-proxy": "^10.0.0",
     "@fastify/static": "^6.12.0",
-    "@fastify/swagger": "^8.13.0",
-    "@fastify/swagger-ui": "2.0.1",
+    "@fastify/swagger": "^9.4.0",
+    "@fastify/swagger-ui": "5.2.0",
     "@janhq/core": "link:./core",
     "@npmcli/arborist": "^7.3.1",
     "dotenv": "^16.3.1",
-    "fastify": "^4.24.3",
+    "fastify": "^5.2.0",
     "fetch-retry": "^5.0.6",
     "node-fetch": "2",
     "request": "^2.88.2",

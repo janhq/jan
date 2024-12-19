@@ -3,7 +3,6 @@ import { basename, dirname, isAbsolute, join, relative } from 'path'
 import { Processor } from './Processor'
 import {
   log as writeLog,
-  appResourcePath,
   getAppConfigurations as appConfiguration,
   updateAppConfiguration,
   normalizeFilePath,
@@ -91,8 +90,6 @@ export class App implements Processor {
       port: args?.port,
       isCorsEnabled: args?.isCorsEnabled,
       isVerboseEnabled: args?.isVerboseEnabled,
-      schemaPath: join(appResourcePath(), 'docs', 'openapi', 'jan.yaml'),
-      baseDir: join(appResourcePath(), 'docs', 'openapi'),
       prefix: args?.prefix,
     })
   }

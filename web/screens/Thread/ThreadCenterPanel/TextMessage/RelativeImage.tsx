@@ -7,7 +7,7 @@ export const RelativeImage = ({
   onClick,
 }: {
   src: string
-  onClick: () => void
+  onClick?: () => void
 }) => {
   const [path, setPath] = useState<string>('')
 
@@ -17,9 +17,12 @@ export const RelativeImage = ({
     })
   }, [])
   return (
-    <button onClick={onClick}>
+    <button
+      onClick={onClick}
+      className={onClick ? 'cursor-pointer' : 'cursor-default'}
+    >
       <img
-        className="aspect-auto h-[300px] cursor-pointer"
+        className="aspect-auto h-[300px]"
         alt={src}
         src={src.includes('files/') ? `file://${path}/${src}` : src}
       />

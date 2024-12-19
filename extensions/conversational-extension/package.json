@@ -18,12 +18,14 @@
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
+    "ts-loader": "^9.5.0",
     "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0"
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core"
+    "@janhq/core": "file:../../core",
+    "ky": "^1.7.2",
+    "p-queue": "^8.0.1"
   },
   "engines": {
     "node": ">=18.0.0"

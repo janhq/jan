@@ -1,5 +1,4 @@
-import { join, resolve } from 'path'
-import { getJanDataFolderPath } from './config'
+import { join } from 'path'
 
 /**
  * Normalize file path
@@ -35,3 +34,4 @@ export function appResourcePath() {
   // server
   return join(global.core.appPath(), '../../..')
 }
+

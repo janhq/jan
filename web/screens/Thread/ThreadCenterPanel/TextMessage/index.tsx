@@ -17,11 +17,13 @@ import DocMessage from './DocMessage'
 import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   editMessageAtom,
   tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+
+import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 
 const MessageContainer: React.FC<
   ThreadMessage & { isCurrentMessage: boolean }
@@ -29,20 +31,31 @@ const MessageContainer: React.FC<
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
   const editMessage = useAtomValue(editMessageAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const tokenSpeed = useAtomValue(tokenSpeedAtom)
+  const chatWidth = useAtomValue(chatWidthAtom)
 
   const text = useMemo(
-    () => props.content[0]?.text?.value ?? '',
-    [props.content]
-  )
-  const messageType = useMemo(
-    () => props.content[0]?.type ?? '',
+    () =>
+      props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? '',
     [props.content]
   )
 
+  const image = useMemo(
+    () =>
+      props.content.find((e) => e.type === ContentType.Image)?.image_url?.url,
+    [props.content]
+  )
+
+  const attachedFile = useMemo(() => 'attachments' in props, [props])
+
   return (
-    <div className="group relative mx-auto max-w-[700px] p-4">
+    <div
+      className={twMerge(
+        'group relative mx-auto p-4',
+        chatWidth === 'compact' && 'max-w-[700px]'
+      )}
+    >
       <div
         className={twMerge(
           'mb-2 flex items-center justify-start gap-x-2',
@@ -75,29 +88,33 @@ const MessageContainer: React.FC<
         >
           {isUser
             ? props.role
-            : (activeThread?.assistants[0].assistant_name ?? props.role)}
+            : (activeAssistant?.assistant_name ?? props.role)}
         </div>
         <p className="text-xs font-medium text-gray-400">
-          {displayDate(props.created)}
+          {props.created_at &&
+            displayDate(props.created_at ?? Date.now() / 1000)}
         </p>
-        {tokenSpeed &&
-          tokenSpeed.message === props.id &&
-          tokenSpeed.tokenSpeed > 0 && (
-            <p className="absolute right-8 text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Token Speed: {Number(tokenSpeed.tokenSpeed).toFixed(2)}t/s
-            </p>
-          )}
       </div>
 
-      <div className="flex w-full flex-col">
+      <div className="flex w-full flex-col ">
         <div
           className={twMerge(
             'absolute right-0 order-1 mt-2 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
             props.isCurrentMessage && !isUser
-              ? 'relative order-2 flex justify-end'
+              ? 'relative left-0 order-2 flex w-full justify-between'
               : 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
           )}
         >
+          <div>
+            {tokenSpeed &&
+              tokenSpeed.message === props.id &&
+              tokenSpeed.tokenSpeed > 0 && (
+                <p className="text-xs font-medium text-[hsla(var(--text-secondary))]">
+                  Token Speed: {Number(tokenSpeed.tokenSpeed).toFixed(2)}t/s
+                </p>
+              )}
+          </div>
+
           <MessageToolbar message={props} />
         </div>
         <div
@@ -108,14 +125,11 @@ const MessageContainer: React.FC<
           )}
         >
           <>
-            {messageType === ContentType.Image && (
-              <ImageMessage content={props.content[0]} />
-            )}
-            {messageType === ContentType.Pdf && (
+            {image && <ImageMessage image={image} />}
+            {attachedFile && (
               <DocMessage
-                id={props.id}
-                name={props.content[0]?.text?.name}
-                size={props.content[0]?.text?.size}
+                id={props.attachments?.[0]?.file_id ?? props.id}
+                metadata={props.metadata}
               />
             )}
 
@@ -130,7 +144,11 @@ const MessageContainer: React.FC<
                 )}
                 dir="ltr"
               >
-                <MarkdownTextMessage id={props.id} text={text} />
+                <MarkdownTextMessage
+                  id={props.id}
+                  text={text}
+                  isUser={isUser}
+                />
               </div>
             )}
           </>

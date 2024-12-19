@@ -24,14 +24,9 @@ type GpuInfo = {
 
 const systemsTemplate: SystemType[] = [
   {
-    name: 'Download for Mac (M1/M2/M3)',
+    name: 'Download for Mac',
     logo: FaApple,
-    fileFormat: '{appname}-mac-arm64-{tag}.dmg',
-  },
-  {
-    name: 'Download for Mac (Intel)',
-    logo: FaApple,
-    fileFormat: '{appname}-mac-x64-{tag}.dmg',
+    fileFormat: '{appname}-mac-universal-{tag}.dmg',
   },
   {
     name: 'Download for Windows',
@@ -66,27 +61,20 @@ const DropdownDownload = ({ lastRelease }: Props) => {
     type: '',
   })
 
-  const changeDefaultSystem = useCallback(
-    async (systems: SystemType[]) => {
-      const userAgent = navigator.userAgent
-      if (userAgent.includes('Windows')) {
-        // windows user
-        setDefaultSystem(systems[2])
-      } else if (userAgent.includes('Linux')) {
-        // linux user
-        setDefaultSystem(systems[3])
-      } else if (userAgent.includes('Mac OS')) {
-        if (gpuInfo.type === 'Apple Silicon') {
-          setDefaultSystem(systems[0])
-        } else {
-          setDefaultSystem(systems[1])
-        }
-      } else {
-        setDefaultSystem(systems[1])
-      }
-    },
-    [gpuInfo.type]
-  )
+  const changeDefaultSystem = useCallback(async (systems: SystemType[]) => {
+    const userAgent = navigator.userAgent
+    if (userAgent.includes('Windows')) {
+      // windows user
+      setDefaultSystem(systems[2])
+    } else if (userAgent.includes('Linux')) {
+      // linux user
+      setDefaultSystem(systems[3])
+    } else if (userAgent.includes('Mac OS')) {
+      setDefaultSystem(systems[0])
+    } else {
+      setDefaultSystem(systems[1])
+    }
+  }, [])
 
   function getUnmaskedInfo(gl: WebGLRenderingContext): {
     renderer: string

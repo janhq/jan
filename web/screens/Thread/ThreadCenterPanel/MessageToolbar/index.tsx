@@ -55,15 +55,11 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
       .slice(-1)[0]
 
     if (thread) {
-      // Should also delete error messages to clear out the error state
+      // TODO: Should also delete error messages to clear out the error state
       await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.writeMessages(
-          thread.id,
-          messages.filter(
-            (msg) => msg.id !== message.id && msg.status !== MessageStatus.Error
-          )
-        )
+        ?.deleteMessage(thread.id, message.id)
+        .catch(console.error)
 
       const updatedThread: Thread = {
         ...thread,
@@ -74,7 +70,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           )[
             messages.filter((msg) => msg.role === ChatCompletionRole.Assistant)
               .length - 1
-          ]?.content[0]?.text.value,
+          ]?.content[0]?.text?.value,
         },
       }
 
@@ -87,10 +83,6 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
 
   const onEditClick = async () => {
     setEditMessage(message.id ?? '')
-  }
-
-  const onRegenerateClick = async () => {
-    resendChatMessage(message)
   }
 
   if (message.status === MessageStatus.Pending) return null
@@ -117,12 +109,11 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
           )}
 
         {message.id === messages[messages.length - 1]?.id &&
-          messages[messages.length - 1].status !== MessageStatus.Error &&
-          messages[messages.length - 1].content[0]?.type !==
-            ContentType.Pdf && (
+          !messages[messages.length - 1]?.metadata?.error &&
+          !messages[messages.length - 1].attachments?.length && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onRegenerateClick}
+              onClick={resendChatMessage}
             >
               <Tooltip
                 trigger={

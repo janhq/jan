@@ -1,4 +1,10 @@
-import { Thread, ThreadInterface, ThreadMessage, MessageInterface } from '../../types'
+import {
+  Thread,
+  ThreadInterface,
+  ThreadMessage,
+  MessageInterface,
+  ThreadAssistantInfo,
+} from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
 /**
@@ -17,10 +23,21 @@ export abstract class ConversationalExtension
     return ExtensionTypeEnum.Conversational
   }
 
-  abstract getThreads(): Promise<Thread[]>
-  abstract saveThread(thread: Thread): Promise<void>
+  abstract listThreads(): Promise<Thread[]>
+  abstract createThread(thread: Partial<Thread>): Promise<Thread>
+  abstract modifyThread(thread: Thread): Promise<void>
   abstract deleteThread(threadId: string): Promise<void>
-  abstract addNewMessage(message: ThreadMessage): Promise<void>
-  abstract writeMessages(threadId: string, messages: ThreadMessage[]): Promise<void>
-  abstract getAllMessages(threadId: string): Promise<ThreadMessage[]>
+  abstract createMessage(message: Partial<ThreadMessage>): Promise<ThreadMessage>
+  abstract deleteMessage(threadId: string, messageId: string): Promise<void>
+  abstract listMessages(threadId: string): Promise<ThreadMessage[]>
+  abstract getThreadAssistant(threadId: string): Promise<ThreadAssistantInfo>
+  abstract createThreadAssistant(
+    threadId: string,
+    assistant: ThreadAssistantInfo
+  ): Promise<ThreadAssistantInfo>
+  abstract modifyThreadAssistant(
+    threadId: string,
+    assistant: ThreadAssistantInfo
+  ): Promise<ThreadAssistantInfo>
+  abstract modifyMessage(message: ThreadMessage): Promise<ThreadMessage>
 }

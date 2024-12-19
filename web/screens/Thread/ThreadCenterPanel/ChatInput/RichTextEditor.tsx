@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, ClipboardEvent } from 'react'
 
 import { MessageStatus } from '@janhq/core'
-import hljs from 'highlight.js'
 import { useAtom, useAtomValue } from 'jotai'
 
 import { BaseEditor, createEditor, Editor, Transforms } from 'slate'
@@ -24,6 +23,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
+import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   getActiveThreadIdAtom,
   activeSettingInputBoxAtom,
@@ -67,7 +67,7 @@ const RichTextEditor = ({
   placeholder,
   spellCheck,
 }: RichTextEditorProps) => {
-  const [editor] = useState(() => withHistory(withReact(createEditor())))
+  const editor = useMemo(() => withHistory(withReact(createEditor())), [])
   const currentLanguage = useRef<string>('plaintext')
   const hasStartBackticks = useRef<boolean>(false)
   const hasEndBackticks = useRef<boolean>(false)
@@ -79,6 +79,8 @@ const RichTextEditor = ({
   const messages = useAtomValue(getCurrentChatMessagesAtom)
   const { sendChatMessage } = useSendChatMessage()
   const { stopInference } = useActiveModel()
+  const selectedModel = useAtomValue(selectedModelAtom)
+  const largeContentThreshold = 1000
 
   // The decorate function identifies code blocks and marks the ranges
   const decorate = useCallback(
@@ -132,97 +134,9 @@ const RichTextEditor = ({
         })
       }
 
-      if (Editor.isBlock(editor, node) && node.type === 'paragraph') {
-        node.children.forEach((child: { text: any }, childIndex: number) => {
-          const text = child.text
-
-          const codeBlockStartRegex = /```(\w*)/g
-          const matches = [...currentPrompt.matchAll(codeBlockStartRegex)]
-
-          if (matches.length % 2 !== 0) {
-            hasEndBackticks.current = false
-          }
-
-          // Match code block start and end
-          const lang = text.match(/^```(\w*)$/)
-          const endMatch = text.match(/^```$/)
-
-          if (lang) {
-            // If it's the start of a code block, store the language
-            currentLanguage.current = lang[1] || 'plaintext'
-          } else if (endMatch) {
-            // Reset language when code block ends
-            currentLanguage.current = 'plaintext'
-          } else if (
-            hasStartBackticks.current &&
-            hasEndBackticks.current &&
-            currentLanguage.current !== 'plaintext'
-          ) {
-            // Highlight entire code line if in a code block
-
-            const codeContent = text.trim() // Remove leading spaces for highlighting
-
-            let highlighted = ''
-            highlighted = hljs.highlightAuto(codeContent).value
-            try {
-              highlighted = hljs.highlight(codeContent, {
-                language:
-                  currentLanguage.current.length > 1
-                    ? currentLanguage.current
-                    : 'plaintext',
-              }).value
-            } catch (err) {
-              highlighted = hljs.highlight(codeContent, {
-                language: 'javascript',
-              }).value
-            }
-
-            const parser = new DOMParser()
-            const doc = parser.parseFromString(highlighted, 'text/html')
-
-            let slateTextIndex = 0
-
-            doc.body.childNodes.forEach((childNode) => {
-              const childText = childNode.textContent || ''
-
-              const length = childText.length
-              const className =
-                childNode.nodeType === Node.ELEMENT_NODE
-                  ? (childNode as HTMLElement).className
-                  : ''
-
-              ranges.push({
-                anchor: {
-                  path: [...path, childIndex],
-                  offset: slateTextIndex,
-                },
-                focus: {
-                  path: [...path, childIndex],
-                  offset: slateTextIndex + length,
-                },
-                type: 'code',
-                code: true,
-                language: currentLanguage.current,
-                className,
-              })
-
-              slateTextIndex += length
-            })
-          } else {
-            currentLanguage.current = 'plaintext'
-            ranges.push({
-              anchor: { path: [...path, childIndex], offset: 0 },
-              focus: { path: [...path, childIndex], offset: text.length },
-              type: 'paragraph', // Treat as a paragraph
-              code: false,
-            })
-          }
-        })
-      }
-
       return ranges
     },
-    [currentPrompt, editor]
+    [editor]
   )
 
   // RenderLeaf applies the decoration styles
@@ -312,17 +226,33 @@ const RichTextEditor = ({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        event.nativeEvent.isComposing === false
+      ) {
         event.preventDefault()
         if (messages[messages.length - 1]?.status !== MessageStatus.Pending) {
           sendChatMessage(currentPrompt)
-          resetEditor()
+          if (selectedModel) {
+            resetEditor()
+          }
         } else onStopInferenceClick()
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentPrompt, editor, messages]
   )
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const clipboardData = event.clipboardData || (window as any).clipboardData
+    const pastedData = clipboardData.getData('text')
+
+    if (pastedData.length > largeContentThreshold) {
+      event.preventDefault() // Prevent the default paste behavior
+      Transforms.insertText(editor, pastedData) // Insert the content directly into the editor
+    }
+  }
 
   return (
     <Slate
@@ -362,9 +292,18 @@ const RichTextEditor = ({
     >
       <Editable
         ref={textareaRef}
-        decorate={decorate} // Pass the decorate function
+        decorate={(entry) => {
+          // Skip decorate if content exceeds threshold
+          if (
+            currentPrompt.length > largeContentThreshold ||
+            !currentPrompt.length
+          )
+            return []
+          return decorate(entry)
+        }}
         renderLeaf={renderLeaf} // Pass the renderLeaf function
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste} // Add the custom paste handler
         className={twMerge(
           className,
           disabled &&

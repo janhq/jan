@@ -1,4 +1,5 @@
 import {
+  Attachment,
   ChatCompletionRole,
   ContentType,
   MessageStatus,
@@ -6,61 +7,43 @@ import {
   ThreadMessage,
 } from '@janhq/core'
 
-import { FileInfo } from '@/containers/Providers/Jotai'
-
 import { MessageRequestBuilder } from './messageRequestBuilder'
+
+import { FileInfo } from '@/types/file'
 
 export class ThreadMessageBuilder {
   messageRequest: MessageRequestBuilder
 
   content: ThreadContent[] = []
+  attachments: Attachment[] = []
+  metadata: Record<string, unknown> = {}
 
   constructor(messageRequest: MessageRequestBuilder) {
     this.messageRequest = messageRequest
   }
 
   build(): ThreadMessage {
-    const timestamp = Date.now()
+    const timestamp = Date.now() / 1000
     return {
       id: this.messageRequest.msgId,
       thread_id: this.messageRequest.thread.id,
+      attachments: this.attachments,
       role: ChatCompletionRole.User,
       status: MessageStatus.Ready,
-      created: timestamp,
-      updated: timestamp,
+      created_at: timestamp,
+      completed_at: timestamp,
       object: 'thread.message',
       content: this.content,
+      metadata: this.metadata,
     }
   }
 
   pushMessage(
     prompt: string,
     base64: string | undefined,
-    fileUpload: FileInfo[]
+    fileUpload?: FileInfo
   ) {
-    if (base64 && fileUpload[0]?.type === 'image') {
-      this.content.push({
-        type: ContentType.Image,
-        text: {
-          value: prompt,
-          annotations: [base64],
-        },
-      })
-    }
-
-    if (base64 && fileUpload[0]?.type === 'pdf') {
-      this.content.push({
-        type: ContentType.Pdf,
-        text: {
-          value: prompt,
-          annotations: [base64],
-          name: fileUpload[0].file.name,
-          size: fileUpload[0].file.size,
-        },
-      })
-    }
-
-    if (prompt && !base64) {
+    if (prompt) {
       this.content.push({
         type: ContentType.Text,
         text: {
@@ -69,6 +52,30 @@ export class ThreadMessageBuilder {
         },
       })
     }
+    if (base64 && fileUpload?.type === 'image') {
+      this.content.push({
+        type: ContentType.Image,
+        image_url: {
+          url: base64,
+        },
+      })
+    }
+
+    if (base64 && fileUpload?.type === 'pdf') {
+      this.attachments.push({
+        file_id: fileUpload.id,
+        tools: [
+          {
+            type: 'file_search',
+          },
+        ],
+      })
+      this.metadata = {
+        filename: fileUpload.name,
+        size: fileUpload.file?.size,
+      }
+    }
+
     return this
   }
 }

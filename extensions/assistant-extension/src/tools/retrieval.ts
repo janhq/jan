@@ -35,6 +35,7 @@ export class RetrievalTool extends InferenceTool {
         await executeOnMain(
           NODE,
           'toolRetrievalIngestNewDocument',
+          data.thread?.id,
           docFile,
           data.model?.id,
           data.model?.engine,

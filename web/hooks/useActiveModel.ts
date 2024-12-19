@@ -8,8 +8,8 @@ import { toaster } from '@/containers/Toast'
 import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 
 import { vulkanEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
+import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
 export const loadModelErrorAtom = atom<string | undefined>(undefined)
@@ -28,12 +28,12 @@ export const stateModelAtom = atom<ModelState>({
 
 export function useActiveModel() {
   const [activeModel, setActiveModel] = useAtom(activeModelAtom)
-  const activeThread = useAtomValue(activeThreadAtom)
   const [stateModel, setStateModel] = useAtom(stateModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setLoadModelError = useSetAtom(loadModelErrorAtom)
   const pendingModelLoad = useRef(false)
   const isVulkanEnabled = useAtomValue(vulkanEnabledAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
 
   const downloadedModelsRef = useRef<Model[]>([])
 
@@ -79,12 +79,12 @@ export function useActiveModel() {
     }
 
     /// Apply thread model settings
-    if (activeThread?.assistants[0]?.model.id === modelId) {
+    if (activeAssistant?.model.id === modelId) {
       model = {
         ...model,
         settings: {
           ...model.settings,
-          ...activeThread.assistants[0].model.settings,
+          ...activeAssistant?.model.settings,
         },
       }
     }

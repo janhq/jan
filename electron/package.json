@@ -15,7 +15,6 @@
       "build/**/*.{js,map}",
       "pre-install",
       "themes",
-      "docs/**/*",
       "scripts/**/*",
       "icons/**/*",
       "themes",

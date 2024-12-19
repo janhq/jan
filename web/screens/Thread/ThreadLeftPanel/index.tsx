@@ -20,7 +20,10 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 import useSetActiveThread from '@/hooks/useSetActiveThread'
 
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+import {
+  activeAssistantAtom,
+  assistantsAtom,
+} from '@/helpers/atoms/Assistant.atom'
 import { editMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import {
@@ -34,6 +37,7 @@ import {
 const ThreadLeftPanel = () => {
   const threads = useAtomValue(threadsAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
+  const activeAssistant = useAtomValue(activeAssistantAtom)
   const { setActiveThread } = useSetActiveThread()
   const assistants = useAtomValue(assistantsAtom)
   const threadDataReady = useAtomValue(threadDataReadyAtom)
@@ -75,7 +79,12 @@ const ThreadLeftPanel = () => {
         (model) => model.engine === InferenceEngine.cortex_llamacpp
       )
       const selectedModel = model[0] || recommendedModel
-      requestCreateNewThread(assistants[0], selectedModel)
+      requestCreateNewThread(
+        activeAssistant
+          ? { ...assistants[0], ...activeAssistant }
+          : assistants[0],
+        selectedModel
+      )
     } else if (threadDataReady && !activeThreadId) {
       setActiveThread(threads[0])
     }
@@ -88,6 +97,7 @@ const ThreadLeftPanel = () => {
     setActiveThread,
     recommendedModel,
     downloadedModels,
+    activeAssistant,
   ])
 
   const onContextMenu = (event: React.MouseEvent, thread: Thread) => {
@@ -138,7 +148,7 @@ const ThreadLeftPanel = () => {
                     activeThreadId && 'font-medium'
                   )}
                 >
-                  {thread.title}
+                  {thread.title ?? thread.metadata?.title}
                 </h1>
               </div>
               <div

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ThreadMessage } from '@janhq/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -57,7 +57,10 @@ const ChatBody = memo(
     loadModelError?: string
   }) => {
     // The scrollable element for your list
-    const parentRef = useRef(null)
+    const parentRef = useRef<HTMLDivElement>(null)
+    const prevScrollTop = useRef(0)
+    const isUserManuallyScrollingUp = useRef(false)
+    const currentThread = useAtomValue(activeThreadAtom)
 
     const count = useMemo(
       () => (messages?.length ?? 0) + (loadModelError ? 1 : 0),
@@ -71,28 +74,60 @@ const ChatBody = memo(
       estimateSize: () => 35,
       overscan: 5,
     })
+
     useEffect(() => {
-      if (count > 0 && messages && virtualizer) {
-        virtualizer.scrollToIndex(count - 1)
+      // Delay the scroll until the DOM is updated
+      if (parentRef.current) {
+        requestAnimationFrame(() => {
+          if (parentRef.current) {
+            parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+            virtualizer.scrollToIndex(count - 1)
+          }
+        })
       }
-    }, [count, virtualizer, messages, loadModelError])
+    }, [count, currentThread?.id, virtualizer])
 
     const items = virtualizer.getVirtualItems()
+
     virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
       item,
       _,
       instance
     ) => {
+      if (isUserManuallyScrollingUp.current === true) return false
       return (
         // item.start < (instance.scrollOffset ?? 0) &&
         instance.scrollDirection !== 'backward'
       )
     }
 
+    const handleScroll = useCallback((event: React.UIEvent<HTMLElement>) => {
+      const currentScrollTop = event.currentTarget.scrollTop
+
+      if (prevScrollTop.current > currentScrollTop) {
+        isUserManuallyScrollingUp.current = true
+      } else {
+        const currentScrollTop = event.currentTarget.scrollTop
+        const scrollHeight = event.currentTarget.scrollHeight
+        const clientHeight = event.currentTarget.clientHeight
+
+        if (currentScrollTop + clientHeight >= scrollHeight) {
+          isUserManuallyScrollingUp.current = false
+        }
+      }
+
+      if (isUserManuallyScrollingUp.current === true) {
+        event.preventDefault()
+        event.stopPropagation()
+      }
+      prevScrollTop.current = currentScrollTop
+    }, [])
+
     return (
       <div className="flex h-full w-full flex-col overflow-x-hidden">
         <div
           ref={parentRef}
+          onScroll={handleScroll}
           className="List"
           style={{
             flex: 1,

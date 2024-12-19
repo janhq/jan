@@ -17,7 +17,12 @@ module.exports = {
     filename: 'index.js', // Adjust the output file name as needed
     library: { type: 'module' }, // Specify ESM output format
   },
-  plugins: [new webpack.DefinePlugin({})],
+  plugins: [
+    new webpack.DefinePlugin({
+      API_URL: JSON.stringify('http://127.0.0.1:39291'),
+      SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
+    }),
+  ],
   resolve: {
     extensions: ['.ts', '.js'],
   },

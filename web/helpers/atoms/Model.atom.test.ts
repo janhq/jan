@@ -58,7 +58,9 @@ describe('Model.atom.ts', () => {
         setAtom.current({ id: '1' } as any)
       })
       expect(getAtom.current).toEqual([{ id: '1' }])
-      reset.current([])
+      act(() => {
+        reset.current([])
+      })
     })
   })
 
@@ -83,7 +85,9 @@ describe('Model.atom.ts', () => {
         removeAtom.current('1')
       })
       expect(getAtom.current).toEqual([])
-      reset.current([])
+      act(() => {
+        reset.current([])
+      })
     })
   })
 
@@ -113,7 +117,9 @@ describe('Model.atom.ts', () => {
         removeAtom.current('1')
       })
       expect(getAtom.current).toEqual([])
-      reset.current([])
+      act(() => {
+        reset.current([])
+      })
     })
   })
 

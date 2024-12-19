@@ -71,7 +71,7 @@ export abstract class OAIEngine extends AIEngine {
       return
     }
 
-    const timestamp = Date.now()
+    const timestamp = Date.now() / 1000
     const message: ThreadMessage = {
       id: ulid(),
       thread_id: data.threadId,
@@ -80,8 +80,8 @@ export abstract class OAIEngine extends AIEngine {
       role: ChatCompletionRole.Assistant,
       content: [],
       status: MessageStatus.Pending,
-      created: timestamp,
-      updated: timestamp,
+      created_at: timestamp,
+      completed_at: timestamp,
       object: 'thread.message',
     }
 
