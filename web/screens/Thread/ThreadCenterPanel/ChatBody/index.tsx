@@ -57,9 +57,10 @@ const ChatBody = memo(
     loadModelError?: string
   }) => {
     // The scrollable element for your list
-    const parentRef = useRef(null)
+    const parentRef = useRef<HTMLDivElement>(null)
     const prevScrollTop = useRef(0)
     const isUserManuallyScrollingUp = useRef(false)
+    const currentThread = useAtomValue(activeThreadAtom)
 
     const count = useMemo(
       () => (messages?.length ?? 0) + (loadModelError ? 1 : 0),
@@ -73,20 +74,18 @@ const ChatBody = memo(
       estimateSize: () => 35,
       overscan: 5,
     })
-    useEffect(() => {
-      if (isUserManuallyScrollingUp.current === true || !parentRef.current)
-        return
 
-      if (count > 0 && messages && virtualizer) {
-        virtualizer.scrollToIndex(count - 1)
+    useEffect(() => {
+      // Delay the scroll until the DOM is updated
+      if (parentRef.current) {
+        requestAnimationFrame(() => {
+          if (parentRef.current) {
+            parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+            virtualizer.scrollToIndex(count - 1)
+          }
+        })
       }
-    }, [
-      count,
-      virtualizer,
-      messages,
-      loadModelError,
-      isUserManuallyScrollingUp,
-    ])
+    }, [count, currentThread?.id, virtualizer])
 
     const items = virtualizer.getVirtualItems()
 
