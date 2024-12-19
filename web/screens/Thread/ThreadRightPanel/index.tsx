@@ -268,34 +268,38 @@ const ThreadRightPanel = () => {
           <div className="flex flex-col gap-4 px-2 py-4">
             <ModelDropdown />
           </div>
-          <Accordion defaultValue={[]}>
-            {settings.runtimeSettings.length !== 0 && (
-              <AccordionItem
-                title={INFERENCE_SETTINGS}
-                value={INFERENCE_SETTINGS}
-              >
-                <ModelSetting
-                  componentProps={settings.runtimeSettings}
-                  onValueChanged={onValueChanged}
-                />
-              </AccordionItem>
-            )}
+          {selectedModel && (
+            <Accordion defaultValue={[]}>
+              {settings.runtimeSettings.length !== 0 && (
+                <AccordionItem
+                  title={INFERENCE_SETTINGS}
+                  value={INFERENCE_SETTINGS}
+                >
+                  <ModelSetting
+                    componentProps={settings.runtimeSettings}
+                    onValueChanged={onValueChanged}
+                  />
+                </AccordionItem>
+              )}
 
-            {promptTemplateSettings.length !== 0 && (
-              <AccordionItem title={MODEL_SETTINGS} value={MODEL_SETTINGS}>
-                <PromptTemplateSetting componentData={promptTemplateSettings} />
-              </AccordionItem>
-            )}
+              {promptTemplateSettings.length !== 0 && (
+                <AccordionItem title={MODEL_SETTINGS} value={MODEL_SETTINGS}>
+                  <PromptTemplateSetting
+                    componentData={promptTemplateSettings}
+                  />
+                </AccordionItem>
+              )}
 
-            {settings.engineSettings.length !== 0 && (
-              <AccordionItem title={ENGINE_SETTINGS} value={ENGINE_SETTINGS}>
-                <EngineSetting
-                  componentData={settings.engineSettings}
-                  onValueChanged={onValueChanged}
-                />
-              </AccordionItem>
-            )}
-          </Accordion>
+              {settings.engineSettings.length !== 0 && (
+                <AccordionItem title={ENGINE_SETTINGS} value={ENGINE_SETTINGS}>
+                  <EngineSetting
+                    componentData={settings.engineSettings}
+                    onValueChanged={onValueChanged}
+                  />
+                </AccordionItem>
+              )}
+            </Accordion>
+          )}
         </TabsContent>
         <TabsContent value="tools">
           <Tools />
