@@ -1,9 +1,9 @@
 import fastify from 'fastify'
 import dotenv from 'dotenv'
-import { v1Router, log, getJanExtensionsPath } from '@janhq/core/node'
-import { join } from 'path'
+import { log } from '@janhq/core/node'
 import tcpPortUsed from 'tcp-port-used'
 import { Logger } from './helpers/logger'
+import CORTEX_SCHEMA from './cortex.json'
 
 // Load environment variables
 dotenv.config()
@@ -66,34 +66,29 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
 
     // Initialize Fastify server with logging
     server = fastify({
-      logger: new Logger(),
+      loggerInstance: new Logger(),
       // Set body limit to 100MB - Default is 1MB
       // According to OpenAI - a batch input file can be up to 100 MB in size
       // Whisper endpoints accept up to 25MB
       // Vision endpoints accept up to 4MB
-      bodyLimit: 104_857_600
+      bodyLimit: 104_857_600,
     })
 
     // Register CORS if enabled
     if (corsEnabled) await server.register(require('@fastify/cors'), {})
 
+    CORTEX_SCHEMA.servers[0].url = configs?.prefix ?? '/v1'
     // Register Swagger for API documentation
     await server.register(require('@fastify/swagger'), {
       mode: 'static',
       specification: {
-        path: configs?.schemaPath ?? './../docs/openapi/jan.yaml',
-        baseDir: configs?.baseDir ?? './../docs/openapi',
-        postProcessor: function (swaggerObject: any) {
-          swaggerObject.servers[0].url = configs?.prefix ?? '/v1'
-          return swaggerObject
-        },
+        document: CORTEX_SCHEMA,
       },
     })
 
     // Register Swagger UI
     await server.register(require('@fastify/swagger-ui'), {
       routePrefix: '/',
-      baseDir: configs?.baseDir ?? join(__dirname, '../..', './docs/openapi'),
       uiConfig: {
         docExpansion: 'full',
         deepLinking: false,
@@ -102,26 +97,12 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       transformSpecificationClone: true,
     })
 
-    // Register static file serving for extensions
-    // TODO: Watch extension files changes and reload
-    await server.register(
-      (childContext: any, _: any, done: any) => {
-        childContext.register(require('@fastify/static'), {
-          root: getJanExtensionsPath(),
-          wildcard: false,
-        })
+    server.register(require('@fastify/http-proxy'), {
+      upstream: 'http://127.0.0.1:39291/v1',
+      prefix: configs?.prefix ?? '/v1',
+      http2: false,
+    })
 
-        done()
-      },
-      { prefix: 'extensions' }
-    )
-
-    // Register proxy middleware
-    if (configs?.storageAdataper)
-      server.addHook('preHandler', configs.storageAdataper)
-
-    // Register API routes
-    await server.register(v1Router, { prefix: configs?.prefix ?? '/v1' })
     // Start listening for requests
     await server
       .listen({

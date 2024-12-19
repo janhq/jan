@@ -19,7 +19,7 @@ type MessageList = {
  * JSONConversationalExtension is a ConversationalExtension implementation that provides
  * functionality for managing threads.
  */
-export default class JSONConversationalExtension extends ConversationalExtension {
+export default class CortexConversationalExtension extends ConversationalExtension {
   queue = new PQueue({ concurrency: 1 })
 
   /**

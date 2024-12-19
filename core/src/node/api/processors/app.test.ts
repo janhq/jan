@@ -2,7 +2,6 @@ jest.mock('../../helper', () => ({
   ...jest.requireActual('../../helper'),
   getJanDataFolderPath: () => './app',
 }))
-import { dirname } from 'path'
 import { App } from './app'
 
 it('should call stopServer', () => {
