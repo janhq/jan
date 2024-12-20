@@ -106,7 +106,7 @@ const ChatBody = memo(
           virtualizer.scrollToIndex(count - 1)
         }
       })
-    }, [count, currentThread?.id, virtualizer, isStreamingResponse])
+    }, [count, currentThread?.id, virtualizer])
 
     const items = virtualizer.getVirtualItems()
 
