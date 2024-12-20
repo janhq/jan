@@ -141,6 +141,13 @@ const ChatBody = memo(
           isUserManuallyScrollingUp.current = false
         }
 
+        const scrollHeight = event.currentTarget.scrollHeight
+        const clientHeight = event.currentTarget.clientHeight
+
+        if (currentScrollTop + clientHeight >= scrollHeight) {
+          isUserManuallyScrollingUp.current = false
+        }
+
         if (isUserManuallyScrollingUp.current === true) {
           event.preventDefault()
           event.stopPropagation()
