@@ -91,7 +91,6 @@ const ChatBody = memo(
         requestAnimationFrame(() => {
           if (parentRef.current) {
             parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-            virtualizer.scrollToIndex(count - 1)
           }
         })
       }
@@ -99,34 +98,40 @@ const ChatBody = memo(
 
     useEffect(() => {
       // Delay the scroll until the DOM is updated
-      if (parentRef.current) {
-        isUserManuallyScrollingUp.current = false
-        requestAnimationFrame(() => {
-          if (parentRef.current) {
-            parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-            virtualizer.scrollToIndex(count - 1)
+      isUserManuallyScrollingUp.current = false
+      requestAnimationFrame(() => {
+        if (parentRef.current) {
+          parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+          virtualizer.scrollToIndex(count - 1)
+
+          virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+            item,
+            _,
+            instance
+          ) => {
+            if (
+              isUserManuallyScrollingUp.current === true &&
+              isStreamingResponse
+            )
+              return false
+            return (
+              // item.start < (instance.scrollOffset ?? 0) &&
+              instance.scrollDirection !== 'backward'
+            )
           }
-        })
-      }
-    }, [count, currentThread?.id, virtualizer])
+        }
+      })
+    }, [count, currentThread?.id, isStreamingResponse, virtualizer])
 
     const items = virtualizer.getVirtualItems()
-
-    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
-      item,
-      _,
-      instance
-    ) => {
-      if (isUserManuallyScrollingUp.current === true) return false
-      return (
-        // item.start < (instance.scrollOffset ?? 0) &&
-        instance.scrollDirection !== 'backward'
-      )
-    }
 
     const handleScroll = useCallback(
       (event: React.UIEvent<HTMLElement>) => {
         const currentScrollTop = event.currentTarget.scrollTop
+
+        if (!isStreamingResponse) {
+          isUserManuallyScrollingUp.current = false
+        }
 
         if (prevScrollTop.current > currentScrollTop && isStreamingResponse) {
           isUserManuallyScrollingUp.current = true
