@@ -98,14 +98,16 @@ const ChatBody = memo(
 
     useEffect(() => {
       // Delay the scroll until the DOM is updated
-      isUserManuallyScrollingUp.current = false
+      if (isStreamingResponse) {
+        isUserManuallyScrollingUp.current = false
+      }
       requestAnimationFrame(() => {
         if (parentRef.current) {
           parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
           virtualizer.scrollToIndex(count - 1)
         }
       })
-    }, [count, currentThread?.id, virtualizer])
+    }, [count, currentThread?.id, virtualizer, isStreamingResponse])
 
     const items = virtualizer.getVirtualItems()
 
