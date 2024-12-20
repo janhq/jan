@@ -98,9 +98,8 @@ const ChatBody = memo(
 
     useEffect(() => {
       // Delay the scroll until the DOM is updated
-      if (isStreamingResponse) {
-        isUserManuallyScrollingUp.current = false
-      }
+
+      isUserManuallyScrollingUp.current = false
       requestAnimationFrame(() => {
         if (parentRef.current) {
           parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
