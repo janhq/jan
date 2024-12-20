@@ -244,6 +244,7 @@ export default function ModelHandler() {
       const metadata = {
         ...thread.metadata,
         ...(messageContent && { lastMessage: messageContent }),
+        updated_at: Date.now(),
       }
 
       updateThread({

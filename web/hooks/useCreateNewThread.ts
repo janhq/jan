@@ -153,6 +153,7 @@ export const useCreateNewThread = () => {
       updated: createdAt,
       metadata: {
         title: 'New Thread',
+        updated_at: Date.now(),
       },
     }
 
