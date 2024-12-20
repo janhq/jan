@@ -23,9 +23,7 @@ const EmptyThread = () => {
       <LogoMark className="mx-auto mb-2 animate-wave" width={32} height={32} />
       {showOnboardingStep ? (
         <>
-          <p className="mt-1 font-medium">
-            {`You don't have a local model yet.`}
-          </p>
+          <p className="mt-1 font-medium">{`You don't have any model`}</p>
           <Button
             onClick={() => setMainViewState(MainViewState.Hub)}
             variant="soft"
