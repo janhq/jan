@@ -53,7 +53,7 @@ export class CortexAPI implements ICortexAPI {
    */
   getModels(): Promise<Model[]> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/v1/models`).json<ModelList>())
+      .add(() => ky.get(`${API_URL}/v1/models?limit=-1`).json<ModelList>())
       .then((e) =>
         typeof e === 'object' ? e.data.map((e) => this.transformModel(e)) : []
       )
