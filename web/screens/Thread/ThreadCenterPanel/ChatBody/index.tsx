@@ -103,27 +103,24 @@ const ChatBody = memo(
         if (parentRef.current) {
           parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
           virtualizer.scrollToIndex(count - 1)
-
-          virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
-            item,
-            _,
-            instance
-          ) => {
-            if (
-              isUserManuallyScrollingUp.current === true &&
-              isStreamingResponse
-            )
-              return false
-            return (
-              // item.start < (instance.scrollOffset ?? 0) &&
-              instance.scrollDirection !== 'backward'
-            )
-          }
         }
       })
-    }, [count, currentThread?.id, isStreamingResponse, virtualizer])
+    }, [count, currentThread?.id, virtualizer])
 
     const items = virtualizer.getVirtualItems()
+
+    virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (
+      item,
+      _,
+      instance
+    ) => {
+      if (isUserManuallyScrollingUp.current === true && isStreamingResponse)
+        return false
+      return (
+        // item.start < (instance.scrollOffset ?? 0) &&
+        instance.scrollDirection !== 'backward'
+      )
+    }
 
     const handleScroll = useCallback(
       (event: React.UIEvent<HTMLElement>) => {
@@ -133,16 +130,14 @@ const ChatBody = memo(
           isUserManuallyScrollingUp.current = false
         }
 
+        if (isGeneratingResponse) {
+          isUserManuallyScrollingUp.current = false
+        }
+
         if (prevScrollTop.current > currentScrollTop && isStreamingResponse) {
           isUserManuallyScrollingUp.current = true
         } else {
-          const currentScrollTop = event.currentTarget.scrollTop
-          const scrollHeight = event.currentTarget.scrollHeight
-          const clientHeight = event.currentTarget.clientHeight
-
-          if (currentScrollTop + clientHeight >= scrollHeight) {
-            isUserManuallyScrollingUp.current = false
-          }
+          isUserManuallyScrollingUp.current = false
         }
 
         if (isUserManuallyScrollingUp.current === true) {
@@ -151,7 +146,7 @@ const ChatBody = memo(
         }
         prevScrollTop.current = currentScrollTop
       },
-      [isStreamingResponse]
+      [isStreamingResponse, isGeneratingResponse]
     )
 
     return (
