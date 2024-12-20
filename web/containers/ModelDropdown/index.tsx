@@ -378,14 +378,14 @@ const ModelDropdown = ({
                 !selectedModel && 'text-[hsla(var(--text-tertiary))]'
               )}
             >
-              {selectedModel?.name || 'Select Model'}
+              {selectedModel?.name || 'Select a model'}
             </span>
           </Badge>
         ) : (
           <Input
             value={selectedModel?.name || ''}
             className="cursor-pointer"
-            placeholder="Select Model"
+            placeholder="Select a model"
             disabled={disabled}
             readOnly
             suffixIcon={
