@@ -37,9 +37,16 @@ export default function useDeleteThread() {
     async (threadId: string) => {
       const thread = threads.find((c) => c.id === threadId)
       if (!thread) return
+      const availableThreads = threads.filter((c) => c.id !== threadId)
+      setThreads(availableThreads)
+
+      // delete the thread state
+      deleteThreadState(threadId)
+
       const assistantInfo = await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.getThreadAssistant(thread.id)
+        .catch(console.error)
 
       if (!assistantInfo) return
       const model = models.find((c) => c.id === assistantInfo?.model?.id)

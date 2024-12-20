@@ -302,15 +302,10 @@ export default function ModelHandler() {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (
-      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
-    ) {
+    if ((thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle)
       return
-    }
 
-    if (!activeModelRef.current) {
-      return
-    }
+    if (!activeModelRef.current) return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (!isLocalEngine(activeModelRef.current?.engine as InferenceEngine)) {
@@ -332,6 +327,7 @@ export default function ModelHandler() {
             ...updatedThread,
           })
         })
+        .catch(console.error)
     }
 
     // This is the first time message comes in on a new thread
