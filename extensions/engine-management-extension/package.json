@@ -1,0 +1,39 @@
+{
+  "name": "@janhq/engine-management-extension",
+  "productName": "Engine Management",
+  "version": "1.0.0",
+  "description": "This extension enables manage engines",
+  "main": "dist/index.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "MIT",
+  "scripts": {
+    "test": "jest",
+    "build": "tsc -b . && webpack --config webpack.config.js",
+    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "ts-loader": "^9.5.0",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "@janhq/core": "file:../../core",
+    "ky": "^1.7.2",
+    "p-queue": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ],
+  "bundleDependencies": []
+}
