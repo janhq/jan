@@ -51,6 +51,7 @@
     "slate-dom": "0.111.0",
     "slate-history": "0.110.3",
     "slate-react": "0.110.3",
+    "swr": "^2.2.5",
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "3.3.5",
     "ulidx": "^2.3.0",
