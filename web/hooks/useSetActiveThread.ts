@@ -1,11 +1,15 @@
 import { ExtensionTypeEnum, Thread, ConversationalExtension } from '@janhq/core'
 
-import { useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { extensionManager } from '@/extension'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { setConvoMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
+  setConvoMessagesAtom,
+  subscribedGeneratingMessageAtom,
+} from '@/helpers/atoms/ChatMessage.atom'
+import {
+  getActiveThreadIdAtom,
   setActiveThreadIdAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -13,14 +17,18 @@ import { ModelParams } from '@/types/model'
 
 export default function useSetActiveThread() {
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
-  const setThreadMessage = useSetAtom(setConvoMessagesAtom)
+  const activeThreadId = useAtomValue(getActiveThreadIdAtom)
+  const setThreadMessages = useSetAtom(setConvoMessagesAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const setActiveAssistant = useSetAtom(activeAssistantAtom)
+  const [messageSubscriber, setMessageSubscriber] = useAtom(
+    subscribedGeneratingMessageAtom
+  )
 
   const setActiveThread = async (thread: Thread) => {
-    if (!thread?.id) return
+    if (!thread?.id || activeThreadId === thread.id) return
 
-    setActiveThreadId(thread?.id)
+    setActiveThreadId(thread.id)
 
     try {
       const assistantInfo = await getThreadAssistant(thread.id)
@@ -32,7 +40,8 @@ export default function useSetActiveThread() {
         ...assistantInfo?.model?.settings,
       }
       setThreadModelParams(thread?.id, modelParams)
-      setThreadMessage(thread.id, messages)
+      setThreadMessages(thread.id, messages)
+      if (messageSubscriber.thread_id !== thread.id) setMessageSubscriber({})
     } catch (e) {
       console.error(e)
     }
