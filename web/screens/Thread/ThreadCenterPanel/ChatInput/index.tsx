@@ -231,30 +231,24 @@ const ChatInput = () => {
             )}
           >
             <ul>
-              <Tooltip
-                trigger={
-                  <li
-                    className={twMerge(
-                      'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                      activeAssistant?.model.settings?.vision_model ||
-                        isModelSupportRagAndTools
-                        ? 'cursor-pointer'
-                        : 'cursor-not-allowed opacity-50'
-                    )}
-                    onClick={() => {
-                      if (activeAssistant?.model.settings?.vision_model) {
-                        imageInputRef.current?.click()
-                        setShowAttacmentMenus(false)
-                      }
-                    }}
-                  >
-                    <ImageIcon size={16} />
-                    <span className="font-medium">Image</span>
-                  </li>
-                }
-                content="This feature only supports multimodal models."
-                disabled={activeAssistant?.model.settings?.vision_model}
-              />
+              <li
+                className={twMerge(
+                  'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
+                  activeAssistant?.model.settings?.vision_model &&
+                    isModelSupportRagAndTools
+                    ? 'cursor-pointer'
+                    : 'cursor-not-allowed opacity-50'
+                )}
+                onClick={() => {
+                  if (activeAssistant?.model.settings?.vision_model) {
+                    imageInputRef.current?.click()
+                    setShowAttacmentMenus(false)
+                  }
+                }}
+              >
+                <ImageIcon size={16} />
+                <span className="font-medium">Image</span>
+              </li>
               <Tooltip
                 side="bottom"
                 trigger={
