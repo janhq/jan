@@ -33,28 +33,11 @@ import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
-  threadStatesAtom,
   updateThreadAtom,
   setThreadModelParamsAtom,
   isGeneratingResponseAtom,
+  createNewThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
-
-const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
-  // create thread state for this new thread
-  const currentState = { ...get(threadStatesAtom) }
-
-  const threadState: ThreadState = {
-    hasMore: false,
-    waitingForResponse: false,
-    lastMessage: undefined,
-  }
-  currentState[newThread.id] = threadState
-  set(threadStatesAtom, currentState)
-
-  // add the new thread on top of the thread list to the state
-  const threads = get(threadsAtom)
-  set(threadsAtom, [newThread, ...threads])
-})
 
 export const useCreateNewThread = () => {
   const createNewThread = useSetAtom(createNewThreadAtom)

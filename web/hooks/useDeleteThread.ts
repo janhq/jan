@@ -19,13 +19,12 @@ import {
   threadsAtom,
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
   const [threads, setThreads] = useAtom(threadsAtom)
-  const { requestCreateNewThread } = useCreateNewThread()
-  const assistants = useAtomValue(assistantsAtom)
-  const models = useAtomValue(downloadedModelsAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
@@ -35,43 +34,37 @@ export default function useDeleteThread() {
 
   const cleanThread = useCallback(
     async (threadId: string) => {
-      const thread = threads.find((c) => c.id === threadId)
-      if (!thread) return
-      const availableThreads = threads.filter((c) => c.id !== threadId)
-      setThreads(availableThreads)
-
-      // delete the thread state
-      deleteThreadState(threadId)
-
-      const assistantInfo = await extensionManager
+      const messages = await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.getThreadAssistant(thread.id)
+        ?.listMessages(threadId)
         .catch(console.error)
-
-      if (!assistantInfo) return
-      const model = models.find((c) => c.id === assistantInfo?.model?.id)
-
-      requestCreateNewThread(
-        {
-          ...assistantInfo,
-          id: assistants[0].id,
-          name: assistants[0].name,
-        },
-        model
-          ? {
-              ...model,
-              parameters: assistantInfo?.model?.parameters ?? {},
-              settings: assistantInfo?.model?.settings ?? {},
-            }
-          : undefined
-      )
-      // Delete this thread
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.deleteThread(threadId)
-        .catch(console.error)
+      if (messages) {
+        messages.forEach((message) => {
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.deleteMessage(threadId, message.id)
+            .catch(console.error)
+        })
+        const thread = threads.find((e) => e.id === threadId)
+        if (thread) {
+          const updatedThread = {
+            ...thread,
+            metadata: {
+              ...thread.metadata,
+              title: 'New Thread',
+              lastMessage: '',
+            },
+          }
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.modifyThread(updatedThread)
+            .catch(console.error)
+          updateThread(updatedThread)
+        }
+      }
+      deleteMessages(threadId)
     },
-    [assistants, models, requestCreateNewThread, threads]
+    [deleteMessages, threads, updateThread]
   )
 
   const deleteThread = async (threadId: string) => {

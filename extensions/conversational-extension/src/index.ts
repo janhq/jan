@@ -147,7 +147,9 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async getThreadAssistant(threadId: string): Promise<ThreadAssistantInfo> {
     return this.queue.add(() =>
-      ky.get(`${API_URL}/v1/assistants/${threadId}?limit=-1`).json<ThreadAssistantInfo>()
+      ky
+        .get(`${API_URL}/v1/assistants/${threadId}?limit=-1`)
+        .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
   }
   /**
@@ -188,7 +190,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * Do health check on cortex.cpp
    * @returns
    */
-  healthz(): Promise<void> {
+  async healthz(): Promise<void> {
     return ky
       .get(`${API_URL}/healthz`, {
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
