@@ -175,6 +175,17 @@ export const updateMessageAtom = atom(
       // Update thread last message
       if (text.length)
         set(updateThreadStateLastMessageAtom, conversationId, text)
+    } else {
+      set(addNewMessageAtom, {
+        id,
+        thread_id: conversationId,
+        content: text,
+        status,
+        role: ChatCompletionRole.Assistant,
+        created_at: Date.now() / 1000,
+        completed_at: Date.now() / 1000,
+        object: 'thread.message',
+      })
     }
   }
 )
