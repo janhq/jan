@@ -13,6 +13,7 @@ import {
   useGetLatestReleasedEngine,
   setDefaultEngineVariant,
   installEngine,
+  updateEngine,
   uninstallEngine,
   useGetReleasedEnginesByVersion,
 } from '@/hooks/useEngineManagement'
@@ -39,8 +40,6 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     defaultEngineVariant?.version as string,
     os()
   )
-
-  console.log(latestReleasedEngine)
 
   const isEngineUpdated =
     latestReleasedEngine &&
@@ -69,7 +68,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
 
   useEffect(() => {
     if (defaultEngineVariant?.variant) {
-      setSelectedVariants(defaultEngineVariant.variant)
+      setSelectedVariants(defaultEngineVariant.variant || '')
     }
   }, [defaultEngineVariant])
 
@@ -113,13 +112,15 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                 <div className="flex items-center gap-x-3">
                   <Button
                     disabled={isEngineUpdated}
-                    // onClick={() => {
-                    //   installEngine(engine, {
-                    //     variant: item.name,
-                    //     version: String(defaultEngineVariant?.version),
-                    //   })
-                    //   mutateInstalledEngines()
-                    // }}
+                    onClick={() => {
+                      updateEngine(engine)
+                        .then(() => {
+                          mutateInstalledEngines()
+                        })
+                        .catch((error) => {
+                          console.error('Error updating engine:', error)
+                        })
+                    }}
                   >
                     {!isEngineUpdated ? 'Update now' : 'Updated'}
                   </Button>
@@ -150,6 +151,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                   <div className="flex w-full">
                     <Select
                       value={selectedVariants}
+                      placeholder="Select variant"
                       onValueChange={(e) => handleChangeVariant(e)}
                       options={options}
                       block
@@ -226,7 +228,15 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                                         defaultEngineVariant?.version
                                       ),
                                     })
-                                    mutateInstalledEngines()
+                                      .then(() => {
+                                        mutateInstalledEngines()
+                                      })
+                                      .catch((error) => {
+                                        console.error(
+                                          'Error updating engine:',
+                                          error
+                                        )
+                                      })
                                   }}
                                 >
                                   Download
