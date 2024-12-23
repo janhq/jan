@@ -1,34 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
+import { Button, ScrollArea, Badge, Input } from '@janhq/joi'
 
-import { Button, ScrollArea, Badge, Switch, Input } from '@janhq/joi'
-import { useAtom } from 'jotai'
 import { SearchIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
-import SetupRemoteModel from '@/containers/SetupRemoteModel'
-
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
-
-type EngineExtension = {
-  provider: InferenceEngine
-} & Extension
 
 const ExtensionCatalog = () => {
   const [coreActiveExtensions, setCoreActiveExtensions] = useState<Extension[]>(
     []
   )
-  const [engineActiveExtensions, setEngineActiveExtensions] = useState<
-    EngineExtension[]
-  >([])
+
   const [searchText, setSearchText] = useState('')
   const [showLoading, setShowLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -67,7 +56,6 @@ const ExtensionCatalog = () => {
       }
 
       setCoreActiveExtensions(extensionsMenu)
-      setEngineActiveExtensions(engineMenu as any)
     }
     getAllSettings()
   }, [])
@@ -113,23 +101,6 @@ const ExtensionCatalog = () => {
     }
   }
 
-  const [inActiveEngineProvider, setInActiveEngineProvider] = useAtom(
-    inActiveEngineProviderAtom
-  )
-
-  const onSwitchChange = useCallback(
-    (name: string) => {
-      if (inActiveEngineProvider.includes(name)) {
-        setInActiveEngineProvider(
-          [...inActiveEngineProvider].filter((x) => x !== name)
-        )
-      } else {
-        setInActiveEngineProvider([...inActiveEngineProvider, name])
-      }
-    },
-    [inActiveEngineProvider, setInActiveEngineProvider]
-  )
-
   return (
     <>
       <ScrollArea className="h-full w-full">
@@ -158,61 +129,6 @@ const ExtensionCatalog = () => {
         </div>
 
         <div className="block w-full px-4">
-          {engineActiveExtensions.length !== 0 && (
-            <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
-              <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Model Providers
-              </h6>
-            </div>
-          )}
-          {engineActiveExtensions
-            .filter((x) => x.name.includes(searchText.toLowerCase().trim()))
-            .sort((a, b) => a.provider.localeCompare(b.provider))
-            .map((item, i) => {
-              return (
-                <div
-                  key={i}
-                  className="flex w-full flex-col items-start justify-between py-3 sm:flex-row"
-                >
-                  <div className="w-full flex-shrink-0 space-y-1.5">
-                    <div className="flex items-center justify-between gap-x-2">
-                      <div className="flex items-center gap-x-2">
-                        <h6 className="line-clamp-1 font-semibold">
-                          {item.productName?.replace('Inference Engine', '') ??
-                            formatExtensionsName(item.name)}
-                        </h6>
-                        <Badge variant="outline" theme="secondary">
-                          v{item.version}
-                        </Badge>
-                        <p>{item.provider}</p>
-                      </div>
-                      <div className="flex items-center gap-x-2">
-                        {!inActiveEngineProvider.includes(item.provider) && (
-                          <SetupRemoteModel engine={item.provider} />
-                        )}
-                        <Switch
-                          checked={
-                            !inActiveEngineProvider.includes(item.provider)
-                          }
-                          onChange={() => onSwitchChange(item.provider)}
-                        />
-                      </div>
-                    </div>
-                    {
-                      <div
-                        className="w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))] sm:w-4/5"
-                        dangerouslySetInnerHTML={{
-                          __html: marked.parse(item.description ?? '', {
-                            async: false,
-                          }),
-                        }}
-                      />
-                    }
-                  </div>
-                </div>
-              )
-            })}
-
           {coreActiveExtensions.length > 0 && (
             <div className="mb-3 mt-8 border-b border-[hsla(var(--app-border))] pb-4">
               <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
