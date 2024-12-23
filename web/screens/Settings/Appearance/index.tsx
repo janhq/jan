@@ -8,9 +8,10 @@ import { useAtom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+
 import {
   chatWidthAtom,
-  janThemesPathAtom,
   reduceTransparentAtom,
   selectedThemeIdAtom,
   spellCheckAtom,
@@ -21,8 +22,8 @@ import {
 export default function AppearanceOptions() {
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
   const themeOptions = useAtomValue(themesOptionsAtom)
+  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const { setTheme, theme } = useTheme()
-  const janThemesPath = useAtomValue(janThemesPathAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [reduceTransparent, setReduceTransparent] = useAtom(
     reduceTransparentAtom
@@ -48,6 +49,7 @@ export default function AppearanceOptions() {
   const handleClickTheme = useCallback(
     async (e: string) => {
       setSelectedIdTheme(e)
+      const janThemesPath = await joinPath([janDataFolderPath, 'themes'])
       const filePath = await joinPath([`${janThemesPath}/${e}`, `theme.json`])
       const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
       setThemeData(theme)
@@ -59,7 +61,7 @@ export default function AppearanceOptions() {
       }
     },
     [
-      janThemesPath,
+      janDataFolderPath,
       reduceTransparent,
       setReduceTransparent,
       setSelectedIdTheme,
