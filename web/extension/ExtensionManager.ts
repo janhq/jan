@@ -2,6 +2,8 @@
 
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
+import WebExtensions from './../extensions.json'
+
 import Extension from './Extension'
 
 /**
@@ -99,21 +101,26 @@ export class ExtensionManager {
    * @returns An array of extensions.
    */
   async getActive(): Promise<Extension[]> {
-    const res = await window.core?.api?.getActiveExtensions()
-    if (!res || !Array.isArray(res)) return []
+    if (window.electronAPI) {
+      const res = await window.core?.api?.getActiveExtensions()
 
-    const extensions: Extension[] = res.map(
-      (ext: any) =>
-        new Extension(
-          ext.url,
-          ext.name,
-          ext.productName,
-          ext.active,
-          ext.description,
-          ext.version
-        )
-    )
-    return extensions
+      if (!res || !Array.isArray(res)) return []
+
+      const extensions: Extension[] = res.map(
+        (ext: any) =>
+          new Extension(
+            ext.url,
+            ext.name,
+            ext.productName,
+            ext.active,
+            ext.description,
+            ext.version
+          )
+      )
+      return extensions
+    } else {
+      return WebExtensions
+    }
   }
 
   /**
@@ -123,12 +130,7 @@ export class ExtensionManager {
    */
   async activateExtension(extension: Extension) {
     // Import class
-    const extensionUrl = window.electronAPI
-      ? extension.url
-      : extension.url.replace(
-          'extension://',
-          `${window.core?.api?.baseApiUrl ?? ''}/extensions/`
-        )
+    const extensionUrl = extension.url
     await import(/* webpackIgnore: true */ extensionUrl).then(
       (extensionClass) => {
         // Register class if it has a default export

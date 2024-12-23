@@ -242,6 +242,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async clean(): Promise<any> {
+    // @ts-ignore
+    if (!window.electronAPI) return Promise.resolve()
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
