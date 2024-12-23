@@ -86,23 +86,32 @@ const ChatBody = memo(
     })
 
     useEffect(() => {
+      if (parentRef.current) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
+    }, [count, virtualizer])
+
+    useEffect(() => {
       if (parentRef.current && isGeneratingResponse) {
-        requestAnimationFrame(() => {
-          if (parentRef.current) {
-            parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-          }
-        })
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
       }
     }, [count, virtualizer, isGeneratingResponse])
 
     useEffect(() => {
+      if (parentRef.current && isGeneratingResponse) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
+    }, [count, virtualizer, isGeneratingResponse, currentThread?.id])
+
+    useEffect(() => {
       isUserManuallyScrollingUp.current = false
-      requestAnimationFrame(() => {
-        if (parentRef.current) {
-          parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-          virtualizer.scrollToIndex(count - 1)
-        }
-      })
+      if (parentRef.current) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
     }, [count, currentThread?.id, virtualizer])
 
     const items = virtualizer.getVirtualItems()
