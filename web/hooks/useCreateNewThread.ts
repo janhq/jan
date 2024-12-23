@@ -191,9 +191,11 @@ export const useCreateNewThread = () => {
     async (thread: Thread) => {
       updateThread(thread)
 
-      setActiveAssistant(thread.assistants[0])
       updateThreadCallback(thread)
-      updateAssistantCallback(thread.id, thread.assistants[0])
+      if (thread.assistants && thread.assistants?.length > 0) {
+        setActiveAssistant(thread.assistants[0])
+        updateAssistantCallback(thread.id, thread.assistants[0])
+      }
     },
     [
       updateThread,
