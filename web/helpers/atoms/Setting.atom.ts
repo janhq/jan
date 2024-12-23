@@ -20,12 +20,7 @@ export const CHAT_WIDTH = 'chatWidth'
 export const themesOptionsAtom = atomWithStorage<
   { name: string; value: string }[]
 >(THEME_OPTIONS, [], undefined, { getOnInit: true })
-export const janThemesPathAtom = atomWithStorage<string | undefined>(
-  THEME_PATH,
-  undefined,
-  undefined,
-  { getOnInit: true }
-)
+
 export const selectedThemeIdAtom = atomWithStorage<string>(
   THEME,
   '',
