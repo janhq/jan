@@ -8,6 +8,8 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
+import useSetActiveThread from './useSetActiveThread'
+
 import { extensionManager } from '@/extension/ExtensionManager'
 
 import { deleteChatMessageAtom as deleteChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
@@ -27,6 +29,7 @@ export default function useDeleteThread() {
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
 
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
+  const { setActiveThread } = useSetActiveThread()
 
   const cleanThread = useCallback(
     async (threadId: string) => {
@@ -86,7 +89,7 @@ export default function useDeleteThread() {
       type: 'success',
     })
     if (availableThreads.length > 0) {
-      setActiveThreadId(availableThreads[0].id)
+      setActiveThread(availableThreads[0])
     } else {
       setActiveThreadId(undefined)
     }
