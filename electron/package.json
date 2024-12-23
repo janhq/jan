@@ -133,5 +133,6 @@
   },
   "installConfig": {
     "hoistingLimits": "workspaces"
-  }
+  },
+  "packageManager": "yarn@1.22.22"
 }

@@ -80,5 +80,6 @@
     "decompress",
     "@janhq/core",
     "terminate"
-  ]
+  ],
+  "packageManager": "yarn@1.22.22"
 }

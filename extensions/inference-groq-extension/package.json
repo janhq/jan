@@ -37,5 +37,6 @@
   ],
   "bundleDependencies": [
     "fetch-retry"
-  ]
+  ],
+  "packageManager": "yarn@1.22.22"
 }

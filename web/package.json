@@ -89,5 +89,6 @@
   },
   "resolutions": {
     "highlight.js": "11.10.0"
-  }
+  },
+  "packageManager": "yarn@1.22.22"
 }

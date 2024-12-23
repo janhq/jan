@@ -71,5 +71,6 @@
     "@janhq/core",
     "decompress",
     "cpu-instructions"
-  ]
+  ],
+  "packageManager": "yarn@1.22.22"
 }

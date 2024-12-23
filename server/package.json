@@ -44,5 +44,6 @@
     "eslint-plugin-react": "^7.34.0",
     "run-script-os": "^1.1.6",
     "typescript": "^5.3.3"
-  }
+  },
+  "packageManager": "yarn@1.22.22"
 }

@@ -62,5 +62,6 @@
   "dependencies": {
     "rxjs": "^7.8.1",
     "ulidx": "^2.3.0"
-  }
+  },
+  "packageManager": "yarn@1.22.22"
 }

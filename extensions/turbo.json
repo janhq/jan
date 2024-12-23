@@ -1,13 +1,21 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "pipeline": {
+  "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
     },
     "build:publish": {
-      "dependsOn": ["build"],
-      "outputs": ["**.tgz"]
+      "dependsOn": [
+        "build"
+      ],
+      "outputs": [
+        "**.tgz"
+      ]
     },
     "dev": {
       "cache": false

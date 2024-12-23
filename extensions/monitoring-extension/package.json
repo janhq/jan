@@ -48,5 +48,6 @@
   "bundleDependencies": [
     "node-os-utils",
     "@janhq/core"
-  ]
+  ],
+  "packageManager": "yarn@1.22.22"
 }

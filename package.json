@@ -53,5 +53,6 @@
     "run-script-os": "^1.1.6",
     "wait-on": "^7.0.1"
   },
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "packageManager": "yarn@1.22.22"
 }

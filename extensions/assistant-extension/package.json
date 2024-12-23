@@ -47,5 +47,6 @@
   "bundleDependencies": [
     "@janhq/core",
     "hnswlib-node"
-  ]
+  ],
+  "packageManager": "yarn@1.22.22"
 }

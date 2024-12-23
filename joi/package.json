@@ -65,5 +65,6 @@
     "rollup-plugin-peer-deps-external": "^2.2.4",
     "rollup-plugin-postcss": "^4.0.2",
     "rollup-plugin-typescript2": "^0.36.0"
-  }
+  },
+  "packageManager": "yarn@1.22.22"
 }
