@@ -126,6 +126,26 @@ export const waitingToSendMessage = atom<boolean | undefined>(undefined)
 export const isGeneratingResponseAtom = atom<boolean | undefined>(undefined)
 
 /**
+ * Create a new thread and add it to the thread list
+ */
+export const createNewThreadAtom = atom(null, (get, set, newThread: Thread) => {
+  // create thread state for this new thread
+  const currentState = { ...get(threadStatesAtom) }
+
+  const threadState: ThreadState = {
+    hasMore: false,
+    waitingForResponse: false,
+    lastMessage: undefined,
+  }
+  currentState[newThread.id] = threadState
+  set(threadStatesAtom, currentState)
+
+  // add the new thread on top of the thread list to the state
+  const threads = get(threadsAtom)
+  set(threadsAtom, [newThread, ...threads])
+})
+
+/**
  * Remove a thread state from the atom
  */
 export const deleteThreadStateAtom = atom(
