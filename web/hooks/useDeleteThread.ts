@@ -2,19 +2,15 @@ import { useCallback } from 'react'
 
 import { ExtensionTypeEnum, ConversationalExtension } from '@janhq/core'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { useCreateNewThread } from './useCreateNewThread'
-
 import { extensionManager } from '@/extension/ExtensionManager'
 
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { deleteChatMessageAtom as deleteChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
   setActiveThreadIdAtom,
