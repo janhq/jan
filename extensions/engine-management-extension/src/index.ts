@@ -5,8 +5,9 @@ import {
   Engines,
   EngineVariant,
   EngineReleased,
+  systemInformation,
 } from '@janhq/core'
-import ky from 'ky'
+import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
 
 /**
@@ -21,6 +22,18 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
    */
   async onLoad() {
     this.queue.add(() => this.healthz())
+    try {
+      await this.getDefaultEngineVariant(InferenceEngine.cortex_llamacpp)
+    } catch (error) {
+      if (error instanceof HTTPError && error.response.status === 400) {
+        await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
+          variant: 'mac-arm64',
+          version: '0.1.40',
+        })
+      } else {
+        console.error('An unexpected error occurred:', error)
+      }
+    }
   }
 
   /**
