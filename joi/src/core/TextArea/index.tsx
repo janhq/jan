@@ -34,7 +34,11 @@ const TextArea = forwardRef<HTMLTextAreaElement, TextAreaProps>(
     return (
       <div className="textarea__wrapper">
         <textarea
-          className={twMerge('textarea', className)}
+          className={twMerge(
+            'textarea',
+            className,
+            autoResize && 'resize-none'
+          )}
           ref={autoResize ? textareaRef : ref}
           {...props}
         />

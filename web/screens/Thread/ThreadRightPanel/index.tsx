@@ -257,7 +257,7 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeAssistant?.instructions ?? ''}
-                autoResize
+                // autoResize
                 onChange={onAssistantInstructionChanged}
               />
             </div>
