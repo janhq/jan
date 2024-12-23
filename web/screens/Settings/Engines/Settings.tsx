@@ -40,6 +40,8 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     os()
   )
 
+  console.log(latestReleasedEngine)
+
   const isEngineUpdated =
     latestReleasedEngine &&
     latestReleasedEngine.every((item) =>
@@ -109,7 +111,16 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                   <h6 className="line-clamp-1 font-semibold">Check Updates</h6>
                 </div>
                 <div className="flex items-center gap-x-3">
-                  <Button disabled={isEngineUpdated}>
+                  <Button
+                    disabled={isEngineUpdated}
+                    // onClick={() => {
+                    //   installEngine(engine, {
+                    //     variant: item.name,
+                    //     version: String(defaultEngineVariant?.version),
+                    //   })
+                    //   mutateInstalledEngines()
+                    // }}
+                  >
                     {!isEngineUpdated ? 'Update now' : 'Updated'}
                   </Button>
                 </div>
