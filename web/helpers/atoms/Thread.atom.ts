@@ -200,12 +200,12 @@ export const updateThreadAtom = atom(
     )
 
     // sort new threads based on updated at
-    threads.sort((thread1, thread2) => {
-      const aDate = new Date(thread1.updated ?? 0)
-      const bDate = new Date(thread2.updated ?? 0)
-      return bDate.getTime() - aDate.getTime()
+    threads.sort((a, b) => {
+      return ((a.metadata?.updated_at as number) ?? 0) >
+        ((b.metadata?.updated_at as number) ?? 0)
+        ? -1
+        : 1
     })
-
     set(threadsAtom, threads)
   }
 )
