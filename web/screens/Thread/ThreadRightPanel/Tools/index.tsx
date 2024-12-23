@@ -32,12 +32,9 @@ const Tools = () => {
 
   useEffect(() => {
     if (!activeThread) return
-    let model = downloadedModels.find(
+    const model = downloadedModels.find(
       (model) => model.id === activeAssistant?.model.id
     )
-    if (!model) {
-      model = recommendedModel
-    }
     setSelectedModel(model)
   }, [
     recommendedModel,

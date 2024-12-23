@@ -183,10 +183,7 @@ const ModelDropdown = ({
     if (!activeThread) return
     const modelId = activeAssistant?.model?.id
 
-    let model = downloadedModels.find((model) => model.id === modelId)
-    if (!model) {
-      model = undefined
-    }
+    const model = downloadedModels.find((model) => model.id === modelId)
     setSelectedModel(model)
   }, [
     recommendedModel,
