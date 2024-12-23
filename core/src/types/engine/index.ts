@@ -22,3 +22,7 @@ export type EngineReleased = {
   name: string
   size: number
 }
+
+export enum EngineEvent {
+  OnEngineUpdate = 'OnEngineUpdate',
+}

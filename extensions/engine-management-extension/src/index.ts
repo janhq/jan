@@ -28,7 +28,7 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
       if (error instanceof HTTPError && error.response.status === 400) {
         await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
           variant: 'mac-arm64',
-          version: '0.1.40',
+          version: '0.1.42',
         })
       } else {
         console.error('An unexpected error occurred:', error)

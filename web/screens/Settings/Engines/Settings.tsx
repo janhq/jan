@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 
-import { InferenceEngine } from '@janhq/core'
+import { EngineEvent, events, InferenceEngine } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select } from '@janhq/joi'
 
 import { Trash2Icon } from 'lucide-react'
@@ -33,7 +33,8 @@ const os = () => {
 const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   const { installedEngines, mutate: mutateInstalledEngines } =
     useGetInstalledEngines(engine)
-  const { defaultEngineVariant } = useGetDefaultEngineVariant(engine)
+  const { defaultEngineVariant, mutate: mutateDefaultEngineVariant } =
+    useGetDefaultEngineVariant(engine)
   const { latestReleasedEngine } = useGetLatestReleasedEngine(engine, os())
   const { releasedEnginesByVersion } = useGetReleasedEnginesByVersion(
     engine,
@@ -71,6 +72,18 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       setSelectedVariants(defaultEngineVariant.variant || '')
     }
   }, [defaultEngineVariant])
+
+  const handleEngineUpdate = useCallback(() => {
+    mutateInstalledEngines()
+    mutateDefaultEngineVariant()
+  }, [mutateDefaultEngineVariant, mutateInstalledEngines])
+
+  useEffect(() => {
+    events.on(EngineEvent.OnEngineUpdate, handleEngineUpdate)
+    return () => {
+      events.off(EngineEvent.OnEngineUpdate, handleEngineUpdate)
+    }
+  }, [handleEngineUpdate])
 
   const handleChangeVariant = (e: string) => {
     setSelectedVariants(e)
@@ -114,12 +127,6 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                     disabled={isEngineUpdated}
                     onClick={() => {
                       updateEngine(engine)
-                        .then(() => {
-                          mutateInstalledEngines()
-                        })
-                        .catch((error) => {
-                          console.error('Error updating engine:', error)
-                        })
                     }}
                   >
                     {!isEngineUpdated ? 'Update now' : 'Updated'}
@@ -140,7 +147,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                   <h6 className="line-clamp-1 font-semibold">
                     {engine} Backend
                   </h6>
-                  <div className="mt-2 w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))] md:w-4/5">
+                  <div className="mt-2 w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                     <p>
                       Choose the default variant that best suited for your
                       hardware. See more information here.
@@ -148,7 +155,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                   </div>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-x-3">
-                  <div className="flex w-full">
+                  <div className="flex w-full min-w-[180px]">
                     <Select
                       value={selectedVariants}
                       placeholder="Select variant"
@@ -187,7 +194,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                       >
                         <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
                           <div className="flex w-full gap-x-8">
-                            <div className="flex h-full w-full justify-between gap-2">
+                            <div className="flex h-full w-full items-center justify-between gap-2">
                               <h6
                                 className={twMerge(
                                   'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
@@ -210,6 +217,9 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                                         defaultEngineVariant?.version
                                       ),
                                     })
+                                    if (selectedVariants === item.name) {
+                                      setSelectedVariants('')
+                                    }
                                     mutateInstalledEngines()
                                   }}
                                 >
@@ -227,16 +237,11 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                                       version: String(
                                         defaultEngineVariant?.version
                                       ),
+                                    }).then(() => {
+                                      if (selectedVariants === '') {
+                                        setSelectedVariants(item.name)
+                                      }
                                     })
-                                      .then(() => {
-                                        mutateInstalledEngines()
-                                      })
-                                      .catch((error) => {
-                                        console.error(
-                                          'Error updating engine:',
-                                          error
-                                        )
-                                      })
                                   }}
                                 >
                                   Download
