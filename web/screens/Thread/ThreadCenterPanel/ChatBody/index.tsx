@@ -97,6 +97,13 @@ const ChatBody = memo(
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
       }
+    }, [count, virtualizer, isGeneratingResponse])
+
+    useEffect(() => {
+      if (parentRef.current && isGeneratingResponse) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
     }, [count, virtualizer, isGeneratingResponse, currentThread?.id])
 
     useEffect(() => {
