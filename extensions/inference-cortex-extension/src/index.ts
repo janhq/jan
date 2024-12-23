@@ -9,6 +9,7 @@
 import {
   Model,
   executeOnMain,
+  EngineEvent,
   systemInformation,
   joinPath,
   LocalOAIEngine,
@@ -18,9 +19,7 @@ import {
   fs,
   events,
   ModelEvent,
-  SystemInformation,
   dirName,
-  AppConfigurationEventName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -287,15 +286,19 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                 },
               }
             )
-            // Update models list from Hub
-            if (data.type === DownloadTypes.DownloadSuccess) {
-              // Delay for the state update from cortex.cpp
-              // Just to be sure
-              setTimeout(() => {
-                events.emit(ModelEvent.OnModelsUpdate, {
-                  fetch: true,
-                })
-              }, 500)
+
+            if (data.task.type === 'Engine') {
+              events.emit(EngineEvent.OnEngineUpdate, {})
+            } else {
+              if (data.type === DownloadTypes.DownloadSuccess) {
+                // Delay for the state update from cortex.cpp
+                // Just to be sure
+                setTimeout(() => {
+                  events.emit(ModelEvent.OnModelsUpdate, {
+                    fetch: true,
+                  })
+                }, 500)
+              }
             }
           })
 
