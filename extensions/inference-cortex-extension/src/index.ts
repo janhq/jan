@@ -112,20 +112,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     const systemInfo = await systemInformation()
     this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
     this.queue.add(() => this.healthz())
-    this.queue.add(() => this.setDefaultEngine(systemInfo))
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
       this.clean()
-    })
-
-    const currentMode = systemInfo.gpuSetting?.run_mode
-
-    events.on(AppConfigurationEventName.OnConfigurationUpdate, async () => {
-      const systemInfo = await systemInformation()
-      // Update run mode on settings update
-      if (systemInfo.gpuSetting?.run_mode !== currentMode)
-        this.queue.add(() => this.setDefaultEngine(systemInfo))
     })
   }
 
@@ -246,31 +236,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         },
       })
       .then(() => {})
-  }
-
-  /**
-   * Set default engine variant on launch
-   */
-  private async setDefaultEngine(systemInfo: SystemInformation) {
-    const variant = await executeOnMain(
-      NODE,
-      'engineVariant',
-      systemInfo.gpuSetting
-    )
-    return (
-      ky
-        // Fallback support for legacy API
-        .post(
-          `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
-          {
-            json: {
-              version: CORTEX_ENGINE_VERSION,
-              variant,
-            },
-          }
-        )
-        .then(() => {})
-    )
   }
 
   /**
