@@ -258,12 +258,34 @@ export const setDefaultEngineVariant = async (
 }
 
 /**
+ * @body variant - string
+ * @body version - string
+ * @returns A Promise that resolves to set default engine.
+ */
+export const updateEngine = async (name: InferenceEngine) => {
+  const extension = getExtension()
+
+  if (!extension) {
+    throw new Error('Extension is not available')
+  }
+
+  try {
+    // Call the extension's method
+    const response = await extension.updateEngine(name)
+    return response
+  } catch (error) {
+    console.error('Failed to set default engine variant:', error)
+    throw error
+  }
+}
+
+/**
  * @param name - Inference engine name.
  * @returns A Promise that resolves to intall of engine.
  */
 export const installEngine = async (
   name: InferenceEngine,
-  engineConfig: { variant: string; version: string }
+  engineConfig: { variant: string; version?: string }
 ) => {
   const extension = getExtension()
 

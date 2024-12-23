@@ -56,7 +56,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    */
   abstract installEngine(
     name: InferenceEngine,
-    engineConfig: { variant: string; version: string }
+    engineConfig: { variant: string; version?: string }
   ): Promise<{ messages: string }>
 
   /**
@@ -83,4 +83,9 @@ export abstract class EngineManagementExtension extends BaseExtension {
     name: InferenceEngine,
     engineConfig: { variant: string; version: string }
   ): Promise<{ messages: string }>
+
+  /**
+   * @returns A Promise that resolves to update engine.
+   */
+  abstract updateEngine(name: InferenceEngine): Promise<{ messages: string }>
 }
