@@ -96,7 +96,10 @@ const EventListener = () => {
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
-      if (state.downloadType !== 'extension') {
+      if (
+        state.downloadType !== 'extension' &&
+        state.downloadType !== 'Engine'
+      ) {
         // Update model metadata accordingly
         const model = ModelManager.instance().models.get(state.modelId)
         if (model) {
