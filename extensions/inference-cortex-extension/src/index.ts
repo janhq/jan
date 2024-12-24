@@ -284,6 +284,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                   transferred: transferred,
                   total: total,
                 },
+                downloadType: data.task.type,
               }
             )
 
