@@ -1,4 +1,4 @@
-name: Publish plugin models Package to npmjs
+name: Publish joi Package to npmjs
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+-joi"]
@@ -45,7 +45,7 @@ jobs:
           node-version: "20.x"
           registry-url: "https://registry.npmjs.org"
 
-      - run: cd joi && yarn install && yarn build
+      - run: cd joi && corepack enable && corepack prepare yarn@4.5.3 --activate && yarn --version && yarn install && yarn build
 
       - run: cd joi && yarn publish --access public
         if: github.event_name == 'push'

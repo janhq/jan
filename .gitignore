@@ -8,7 +8,6 @@ error.log
 node_modules
 *.tgz
 !charts/server/charts/*.tgz
-yarn.lock
 dist
 build
 .DS_Store
@@ -48,3 +47,6 @@ coverage
 test_results.html
 *.tsbuildinfo
 electron/shared/**
+
+# docs
+docs/yarn.lock
