@@ -23,3 +23,10 @@ export const showRightPanelAtom = atomWithStorage<boolean>(
 export const showSystemMonitorPanelAtom = atom<boolean>(false)
 export const appDownloadProgressAtom = atom<number>(-1)
 export const updateVersionErrorAtom = atom<string | undefined>(undefined)
+
+const COPY_OVER_INSTRUCTION_ENABLED = 'copy_over_instruction_enabled'
+
+export const copyOverInstructionEnabledAtom = atomWithStorage(
+  COPY_OVER_INSTRUCTION_ENABLED,
+  false
+)

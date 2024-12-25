@@ -23,13 +23,6 @@ export default [
     output: [
       {
         file: packageJson.main,
-        format: 'cjs',
-        sourcemap: false,
-        exports: 'named',
-        name: packageJson.name,
-      },
-      {
-        file: packageJson.module,
         format: 'es',
         exports: 'named',
         sourcemap: false,
@@ -56,7 +49,13 @@ export default [
         tsconfig: './tsconfig.json',
         typescript: typescriptEngine,
         sourceMap: false,
-        exclude: ['docs', 'dist', 'node_modules/**'],
+        exclude: [
+          'docs',
+          'dist',
+          'node_modules/**',
+          '**/*.test.ts',
+          '**/*.test.tsx',
+        ],
       }),
       terser(),
       sass(),
