@@ -32,7 +32,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "@langchain/community": "0.0.13",
     "hnswlib-node": "^1.4.2",
     "langchain": "^0.0.214",

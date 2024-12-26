@@ -24,7 +24,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "ky": "^1.7.2",
     "p-queue": "^8.0.1"
   },

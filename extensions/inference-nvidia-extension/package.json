@@ -25,7 +25,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "fetch-retry": "^5.0.6",
     "path-browserify": "^1.0.1",
     "ulidx": "^2.3.0"
