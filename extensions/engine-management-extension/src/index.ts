@@ -23,6 +23,9 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
    * Called when the extension is loaded.
    */
   async onLoad() {
+    // Symlink Engines Directory
+    await executeOnMain(NODE, 'symlinkEngines')
+    // Run Healthcheck
     this.queue.add(() => this.healthz())
     try {
       const variant = await this.getDefaultEngineVariant(

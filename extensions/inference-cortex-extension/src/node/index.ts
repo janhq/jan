@@ -1,10 +1,5 @@
 import path from 'path'
-import {
-  appResourcePath,
-  getJanDataFolderPath,
-  log,
-  SystemInformation,
-} from '@janhq/core/node'
+import { getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
 
 // The HOST address to use for the Nitro subprocess
@@ -22,13 +17,9 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
     let binaryName = `cortex-server${process.platform === 'win32' ? '.exe' : ''}`
     const binPath = path.join(__dirname, '..', 'bin')
-    const enginePath = path.join(appResourcePath(), 'shared')
     const executablePath = path.join(binPath, binaryName)
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executablePath}`)
-    log(`[CORTEX]:: Cortex engine path: ${enginePath}`)
-
-    addEnvPaths(enginePath)
 
     const dataFolderPath = getJanDataFolderPath()
     if (watchdog) {
@@ -47,10 +38,8 @@ function run(systemInfo?: SystemInformation): Promise<any> {
         dataFolderPath,
       ],
       {
-        cwd: enginePath,
         env: {
           ...process.env,
-          ENGINE_PATH: enginePath,
           CUDA_VISIBLE_DEVICES: gpuVisibleDevices,
           // Vulkan - Support 1 device at a time for now
           ...(gpuVisibleDevices?.length > 0 && {

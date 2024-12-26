@@ -20,10 +20,16 @@ export default defineConfig([
   },
   {
     input: 'src/node/index.ts',
+    external: ['@janhq/core/node'],
     output: {
       format: 'cjs',
       file: 'dist/node/index.cjs.js',
     },
+    plugins: [
+      replace({
+        CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.42'),
+      }),
+    ],
   },
   {
     input: 'src/node/cpuInfo.ts',
