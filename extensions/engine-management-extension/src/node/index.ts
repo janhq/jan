@@ -1,6 +1,13 @@
 import * as path from 'path'
-import { GpuSetting, log } from '@janhq/core/node'
+import {
+  appResourcePath,
+  getJanDataFolderPath,
+  GpuSetting,
+  log,
+} from '@janhq/core/node'
 import { fork } from 'child_process'
+import { mkdir, readdir, symlink } from 'fs/promises'
+
 /**
  * The GPU runMode that will be set - either 'vulkan', 'cuda', or empty for cpu.
  * @param settings
@@ -101,6 +108,44 @@ const engineVariant = async (gpuSetting?: GpuSetting): Promise<string> => {
   return engineVariant
 }
 
+/**
+ * Create symlink to each variant for the default bundled version
+ */
+const symlinkEngines = async () => {
+  const sourceEnginePath = path.join(
+    appResourcePath(),
+    'shared',
+    'engines',
+    'cortex.llamacpp'
+  )
+  const symlinkEnginePath = path.join(
+    getJanDataFolderPath(),
+    'engines',
+    'cortex.llamacpp'
+  )
+  const variantFolders = await readdir(sourceEnginePath)
+  for (const variant of variantFolders) {
+    const targetVariantPath = path.join(
+      sourceEnginePath,
+      variant,
+      CORTEX_ENGINE_VERSION
+    )
+    const symlinkVariantPath = path.join(
+      symlinkEnginePath,
+      variant,
+      CORTEX_ENGINE_VERSION
+    )
+
+    await mkdir(path.join(sourceEnginePath, variant), {
+      recursive: true,
+    }).catch(console.error)
+
+    await symlink(targetVariantPath, symlinkVariantPath).catch(console.error)
+    console.log(`Symlink created: ${targetVariantPath} -> ${symlinkEnginePath}`)
+  }
+}
+
 export default {
   engineVariant,
+  symlinkEngines,
 }

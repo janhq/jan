@@ -32,7 +32,8 @@
     "p-queue": "^8.0.1"
   },
   "bundledDependencies": [
-    "cpu-instructions"
+    "cpu-instructions",
+    "@janhq/core"
   ],
   "engines": {
     "node": ">=18.0.0"
