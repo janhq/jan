@@ -174,6 +174,21 @@ export const updateThreadWaitingForResponseAtom = atom(
 )
 
 /**
+ * Reset the thread waiting for response state
+ */
+export const resetThreadWaitingForResponseAtom = atom(null, (get, set) => {
+  const currentState = { ...get(threadStatesAtom) }
+  Object.keys(currentState).forEach((threadId) => {
+    currentState[threadId] = {
+      ...currentState[threadId],
+      waitingForResponse: false,
+      error: undefined,
+    }
+  })
+  set(threadStatesAtom, currentState)
+})
+
+/**
  * Update the thread last message
  */
 export const updateThreadStateLastMessageAtom = atom(
