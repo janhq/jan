@@ -41,5 +41,9 @@
     "type": "separator"
   },
   "troubleshooting": "Troubleshooting",
-  "error-codes": "Error Codes"
+  "error-codes": {
+    "type": "page",
+    "display": "hidden",
+    "title": "Error Codes"
+  }
 }
