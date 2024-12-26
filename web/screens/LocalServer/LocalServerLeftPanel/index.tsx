@@ -176,7 +176,7 @@ const LocalServerLeftPanel = () => {
             />
           </div>
 
-          <div className="relative z-50 mt-2 block">
+          <div className="relative mt-2 block">
             <Input
               className={twMerge(
                 errorRangePort && 'border-[hsla(var(--destructive-bg))]'

@@ -40,7 +40,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
   async listThreads(): Promise<Thread[]> {
     return this.queue.add(() =>
       ky
-        .get(`${API_URL}/v1/threads`)
+        .get(`${API_URL}/v1/threads?limit=-1`)
         .json<ThreadList>()
         .then((e) => e.data)
     ) as Promise<Thread[]>
@@ -133,7 +133,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
   async listMessages(threadId: string): Promise<ThreadMessage[]> {
     return this.queue.add(() =>
       ky
-        .get(`${API_URL}/v1/threads/${threadId}/messages?order=asc`)
+        .get(`${API_URL}/v1/threads/${threadId}/messages?order=asc&limit=-1`)
         .json<MessageList>()
         .then((e) => e.data)
     ) as Promise<ThreadMessage[]>
@@ -147,7 +147,9 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async getThreadAssistant(threadId: string): Promise<ThreadAssistantInfo> {
     return this.queue.add(() =>
-      ky.get(`${API_URL}/v1/assistants/${threadId}`).json<ThreadAssistantInfo>()
+      ky
+        .get(`${API_URL}/v1/assistants/${threadId}?limit=-1`)
+        .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
   }
   /**
@@ -188,7 +190,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * Do health check on cortex.cpp
    * @returns
    */
-  healthz(): Promise<void> {
+  async healthz(): Promise<void> {
     return ky
       .get(`${API_URL}/healthz`, {
         retry: { limit: 20, delay: () => 500, methods: ['get'] },

@@ -10,7 +10,6 @@ import cssVars from '@/utils/jsonToCssVariables'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
-  janThemesPathAtom,
   selectedThemeIdAtom,
   themeDataAtom,
   themesOptionsAtom,
@@ -21,7 +20,6 @@ type NativeThemeProps = 'light' | 'dark'
 export const useLoadTheme = () => {
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const [themeOptions, setThemeOptions] = useAtom(themesOptionsAtom)
-  const [themePath, setThemePath] = useAtom(janThemesPathAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
   const { setTheme } = useTheme()
@@ -41,6 +39,14 @@ export const useLoadTheme = () => {
     [setTheme]
   )
 
+  const applyTheme = (theme: Theme) => {
+    const variables = cssVars(theme.variables)
+    const headTag = document.getElementsByTagName('head')[0]
+    const styleTag = document.createElement('style')
+    styleTag.innerHTML = `:root {${variables}}`
+    headTag.appendChild(styleTag)
+  }
+
   const getThemes = useCallback(async () => {
     if (!janDataFolderPath.length) return
     const folderPath = await joinPath([janDataFolderPath, 'themes'])
@@ -59,7 +65,6 @@ export const useLoadTheme = () => {
 
     if (janDataFolderPath.length > 0) {
       if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
-      setThemePath(folderPath)
       const filePath = await joinPath([
         `${folderPath}/${selectedIdTheme}`,
         `theme.json`,
@@ -68,11 +73,7 @@ export const useLoadTheme = () => {
 
       setThemeData(theme)
       setNativeTheme(theme.nativeTheme)
-      const variables = cssVars(theme.variables)
-      const headTag = document.getElementsByTagName('head')[0]
-      const styleTag = document.createElement('style')
-      styleTag.innerHTML = `:root {${variables}}`
-      headTag.appendChild(styleTag)
+      applyTheme(theme)
     }
   }, [
     janDataFolderPath,
@@ -81,26 +82,21 @@ export const useLoadTheme = () => {
     setSelectedIdTheme,
     setThemeData,
     setThemeOptions,
-    setThemePath,
   ])
 
-  const applyTheme = useCallback(async () => {
-    if (!themeData || !themeOptions || !themePath) {
+  const configureTheme = useCallback(async () => {
+    if (!themeData || !themeOptions) {
       await getThemes()
     } else {
-      const variables = cssVars(themeData.variables)
-      const headTag = document.getElementsByTagName('head')[0]
-      const styleTag = document.createElement('style')
-      styleTag.innerHTML = `:root {${variables}}`
-      headTag.appendChild(styleTag)
+      applyTheme(themeData)
     }
     setNativeTheme(themeData?.nativeTheme as NativeThemeProps)
-  }, [themeData, themeOptions, themePath, getThemes])
+  }, [themeData, themeOptions, getThemes, setNativeTheme])
 
   useEffect(() => {
-    applyTheme()
+    configureTheme()
   }, [
-    applyTheme,
+    configureTheme,
     selectedIdTheme,
     setNativeTheme,
     setSelectedIdTheme,

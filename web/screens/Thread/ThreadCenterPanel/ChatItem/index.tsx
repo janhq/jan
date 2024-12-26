@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useState } from 'react'
+import React, { forwardRef, useEffect, useRef, useState } from 'react'
 
 import {
   events,
@@ -8,9 +8,13 @@ import {
   ThreadMessage,
 } from '@janhq/core'
 
+import { useAtom } from 'jotai'
+
 import ErrorMessage from '@/containers/ErrorMessage'
 
 import MessageContainer from '../TextMessage'
+
+import { subscribedGeneratingMessageAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 type Ref = HTMLDivElement
 
@@ -22,9 +26,13 @@ type Props = {
 const ChatItem = forwardRef<Ref, Props>((message, ref) => {
   const [content, setContent] = useState<ThreadContent[]>(message.content)
   const [status, setStatus] = useState<MessageStatus>(message.status)
+  const [subscribedGeneratingMessage, setSubscribedGeneratingMessage] = useAtom(
+    subscribedGeneratingMessageAtom
+  )
   const [errorMessage, setErrorMessage] = useState<ThreadMessage | undefined>(
     message.isCurrentMessage && !!message?.metadata?.error ? message : undefined
   )
+  const subscribedGeneratingMessageRef = useRef(subscribedGeneratingMessage)
 
   function onMessageUpdate(data: ThreadMessage) {
     if (data.id === message.id) {
@@ -32,8 +40,20 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
       if (data.status !== status) setStatus(data.status)
       if (data.status === MessageStatus.Error && message.isCurrentMessage)
         setErrorMessage(data)
+
+      // Update subscriber if the message is generating
+      if (
+        subscribedGeneratingMessageRef.current?.thread_id !== message.thread_id
+      )
+        setSubscribedGeneratingMessage({
+          thread_id: message.thread_id,
+        })
     }
   }
+
+  useEffect(() => {
+    subscribedGeneratingMessageRef.current = subscribedGeneratingMessage
+  }, [subscribedGeneratingMessage])
 
   useEffect(() => {
     if (!message.isCurrentMessage && errorMessage) setErrorMessage(undefined)

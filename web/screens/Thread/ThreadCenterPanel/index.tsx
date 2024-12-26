@@ -30,6 +30,7 @@ import RequestDownloadModel from './RequestDownloadModel'
 import { showSystemMonitorPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
+import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 import {
@@ -59,6 +60,7 @@ const ThreadCenterPanel = () => {
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const activeThread = useAtomValue(activeThreadAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
+  const chatWidth = useAtomValue(chatWidthAtom)
   const upload = uploader()
   const acceptedFormat: Accept = activeAssistant?.model.settings?.vision_model
     ? {
@@ -235,7 +237,14 @@ const ThreadCenterPanel = () => {
           {reloadModel && <ModelReload />}
 
           {activeModel && isGeneratingResponse && <GenerateResponse />}
-          <ChatInput />
+          <div
+            className={twMerge(
+              'mx-auto w-full',
+              chatWidth === 'compact' && 'max-w-[700px]'
+            )}
+          >
+            <ChatInput />
+          </div>
         </div>
       </div>
     </CenterPanelContainer>

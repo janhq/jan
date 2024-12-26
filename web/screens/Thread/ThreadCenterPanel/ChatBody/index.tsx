@@ -14,7 +14,11 @@ import LoadModelError from '../LoadModelError'
 import EmptyThread from './EmptyThread'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import {
+  activeThreadAtom,
+  isGeneratingResponseAtom,
+  threadStatesAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 const ChatConfigurator = memo(() => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
@@ -61,6 +65,12 @@ const ChatBody = memo(
     const prevScrollTop = useRef(0)
     const isUserManuallyScrollingUp = useRef(false)
     const currentThread = useAtomValue(activeThreadAtom)
+    const threadStates = useAtomValue(threadStatesAtom)
+    const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
+
+    const isStreamingResponse = Object.values(threadStates).some(
+      (threadState) => threadState.waitingForResponse
+    )
 
     const count = useMemo(
       () => (messages?.length ?? 0) + (loadModelError ? 1 : 0),
@@ -76,14 +86,31 @@ const ChatBody = memo(
     })
 
     useEffect(() => {
-      // Delay the scroll until the DOM is updated
       if (parentRef.current) {
-        requestAnimationFrame(() => {
-          if (parentRef.current) {
-            parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-            virtualizer.scrollToIndex(count - 1)
-          }
-        })
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
+    }, [count, virtualizer])
+
+    useEffect(() => {
+      if (parentRef.current && isGeneratingResponse) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
+    }, [count, virtualizer, isGeneratingResponse])
+
+    useEffect(() => {
+      if (parentRef.current && isGeneratingResponse) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
+      }
+    }, [count, virtualizer, isGeneratingResponse, currentThread?.id])
+
+    useEffect(() => {
+      isUserManuallyScrollingUp.current = false
+      if (parentRef.current) {
+        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
+        virtualizer.scrollToIndex(count - 1)
       }
     }, [count, currentThread?.id, virtualizer])
 
@@ -94,34 +121,38 @@ const ChatBody = memo(
       _,
       instance
     ) => {
-      if (isUserManuallyScrollingUp.current === true) return false
+      if (isUserManuallyScrollingUp.current === true && isStreamingResponse)
+        return false
       return (
         // item.start < (instance.scrollOffset ?? 0) &&
         instance.scrollDirection !== 'backward'
       )
     }
 
-    const handleScroll = useCallback((event: React.UIEvent<HTMLElement>) => {
-      const currentScrollTop = event.currentTarget.scrollTop
-
-      if (prevScrollTop.current > currentScrollTop) {
-        isUserManuallyScrollingUp.current = true
-      } else {
+    const handleScroll = useCallback(
+      (event: React.UIEvent<HTMLElement>) => {
         const currentScrollTop = event.currentTarget.scrollTop
-        const scrollHeight = event.currentTarget.scrollHeight
-        const clientHeight = event.currentTarget.clientHeight
 
-        if (currentScrollTop + clientHeight >= scrollHeight) {
-          isUserManuallyScrollingUp.current = false
+        if (prevScrollTop.current > currentScrollTop && isStreamingResponse) {
+          isUserManuallyScrollingUp.current = true
+        } else {
+          const currentScrollTop = event.currentTarget.scrollTop
+          const scrollHeight = event.currentTarget.scrollHeight
+          const clientHeight = event.currentTarget.clientHeight
+
+          if (currentScrollTop + clientHeight >= scrollHeight) {
+            isUserManuallyScrollingUp.current = false
+          }
         }
-      }
 
-      if (isUserManuallyScrollingUp.current === true) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-      prevScrollTop.current = currentScrollTop
-    }, [])
+        if (isUserManuallyScrollingUp.current === true) {
+          event.preventDefault()
+          event.stopPropagation()
+        }
+        prevScrollTop.current = currentScrollTop
+      },
+      [isStreamingResponse]
+    )
 
     return (
       <div className="flex h-full w-full flex-col overflow-x-hidden">

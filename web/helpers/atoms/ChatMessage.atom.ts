@@ -36,6 +36,13 @@ export const chatMessages = atom(
 )
 
 /**
+ * Store subscribed generating message thread
+ */
+export const subscribedGeneratingMessageAtom = atom<{
+  thread_id?: string
+}>({})
+
+/**
  * Stores the status of the messages load for each thread
  */
 export const readyThreadsMessagesAtom = atomWithStorage<
@@ -175,6 +182,17 @@ export const updateMessageAtom = atom(
       // Update thread last message
       if (text.length)
         set(updateThreadStateLastMessageAtom, conversationId, text)
+    } else {
+      set(addNewMessageAtom, {
+        id,
+        thread_id: conversationId,
+        content: text,
+        status,
+        role: ChatCompletionRole.Assistant,
+        created_at: Date.now() / 1000,
+        completed_at: Date.now() / 1000,
+        object: 'thread.message',
+      })
     }
   }
 )

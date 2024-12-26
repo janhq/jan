@@ -2,69 +2,68 @@ import { useCallback } from 'react'
 
 import { ExtensionTypeEnum, ConversationalExtension } from '@janhq/core'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { useCreateNewThread } from './useCreateNewThread'
+import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 import { deleteChatMessageAtom as deleteChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   threadsAtom,
   setActiveThreadIdAtom,
   deleteThreadStateAtom,
+  updateThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 export default function useDeleteThread() {
   const [threads, setThreads] = useAtom(threadsAtom)
-  const { requestCreateNewThread } = useCreateNewThread()
-  const assistants = useAtomValue(assistantsAtom)
-  const models = useAtomValue(downloadedModelsAtom)
+  const updateThread = useSetAtom(updateThreadAtom)
 
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const setActiveThreadId = useSetAtom(setActiveThreadIdAtom)
   const deleteMessages = useSetAtom(deleteChatMessagesAtom)
 
   const deleteThreadState = useSetAtom(deleteThreadStateAtom)
+  const { setActiveThread } = useSetActiveThread()
 
   const cleanThread = useCallback(
     async (threadId: string) => {
-      const thread = threads.find((c) => c.id === threadId)
-      if (!thread) return
-      const assistantInfo = await extensionManager
+      const messages = await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.getThreadAssistant(thread.id)
-
-      if (!assistantInfo) return
-      const model = models.find((c) => c.id === assistantInfo?.model?.id)
-
-      requestCreateNewThread(
-        {
-          ...assistantInfo,
-          id: assistants[0].id,
-          name: assistants[0].name,
-        },
-        model
-          ? {
-              ...model,
-              parameters: assistantInfo?.model?.parameters ?? {},
-              settings: assistantInfo?.model?.settings ?? {},
-            }
-          : undefined
-      )
-      // Delete this thread
-      await extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.deleteThread(threadId)
+        ?.listMessages(threadId)
         .catch(console.error)
+      if (messages) {
+        messages.forEach((message) => {
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.deleteMessage(threadId, message.id)
+            .catch(console.error)
+        })
+        const thread = threads.find((e) => e.id === threadId)
+        if (thread) {
+          const updatedThread = {
+            ...thread,
+            metadata: {
+              ...thread.metadata,
+              title: 'New Thread',
+              lastMessage: '',
+            },
+          }
+          extensionManager
+            .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+            ?.modifyThread(updatedThread)
+            .catch(console.error)
+          updateThread(updatedThread)
+        }
+      }
+      deleteMessages(threadId)
     },
-    [assistants, models, requestCreateNewThread, threads]
+    [deleteMessages, threads, updateThread]
   )
 
   const deleteThread = async (threadId: string) => {
@@ -90,7 +89,7 @@ export default function useDeleteThread() {
       type: 'success',
     })
     if (availableThreads.length > 0) {
-      setActiveThreadId(availableThreads[0].id)
+      setActiveThread(availableThreads[0])
     } else {
       setActiveThreadId(undefined)
     }

@@ -183,10 +183,7 @@ const ModelDropdown = ({
     if (!activeThread) return
     const modelId = activeAssistant?.model?.id
 
-    let model = downloadedModels.find((model) => model.id === modelId)
-    if (!model) {
-      model = undefined
-    }
+    const model = downloadedModels.find((model) => model.id === modelId)
     setSelectedModel(model)
   }, [
     recommendedModel,
@@ -378,14 +375,14 @@ const ModelDropdown = ({
                 !selectedModel && 'text-[hsla(var(--text-tertiary))]'
               )}
             >
-              {selectedModel?.name || 'Select Model'}
+              {selectedModel?.name || 'Select a model'}
             </span>
           </Badge>
         ) : (
           <Input
             value={selectedModel?.name || ''}
             className="cursor-pointer"
-            placeholder="Select Model"
+            placeholder="Select a model"
             disabled={disabled}
             readOnly
             suffixIcon={

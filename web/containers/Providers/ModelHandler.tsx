@@ -18,7 +18,7 @@ import {
   extractInferenceParams,
   ModelExtension,
 } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
@@ -32,6 +32,7 @@ import {
   updateMessageAtom,
   tokenSpeedAtom,
   deleteMessageAtom,
+  subscribedGeneratingMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
@@ -40,6 +41,7 @@ import {
   isGeneratingResponseAtom,
   updateThreadAtom,
   getActiveThreadModelParamsAtom,
+  activeThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const maxWordForThreadTitle = 10
@@ -54,6 +56,10 @@ export default function ModelHandler() {
   const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
+  const [subscribedGeneratingMessage, setSubscribedGeneratingMessage] = useAtom(
+    subscribedGeneratingMessageAtom
+  )
+  const activeThread = useAtomValue(activeThreadAtom)
 
   const updateThreadWaiting = useSetAtom(updateThreadWaitingForResponseAtom)
   const threads = useAtomValue(threadsAtom)
@@ -62,10 +68,16 @@ export default function ModelHandler() {
   const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
   const updateThread = useSetAtom(updateThreadAtom)
   const messagesRef = useRef(messages)
+  const messageGenerationSubscriber = useRef(subscribedGeneratingMessage)
   const activeModelRef = useRef(activeModel)
+  const activeThreadRef = useRef(activeThread)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
   const setTokenSpeed = useSetAtom(tokenSpeedAtom)
+
+  useEffect(() => {
+    activeThreadRef.current = activeThread
+  }, [activeThread])
 
   useEffect(() => {
     threadsRef.current = threads
@@ -86,6 +98,10 @@ export default function ModelHandler() {
   useEffect(() => {
     activeModelParamsRef.current = activeModelParams
   }, [activeModelParams])
+
+  useEffect(() => {
+    messageGenerationSubscriber.current = subscribedGeneratingMessage
+  }, [subscribedGeneratingMessage])
 
   const onNewMessageResponse = useCallback(
     async (message: ThreadMessage) => {
@@ -179,12 +195,19 @@ export default function ModelHandler() {
 
   const updateThreadMessage = useCallback(
     (message: ThreadMessage) => {
-      updateMessage(
-        message.id,
-        message.thread_id,
-        message.content,
-        message.status
-      )
+      if (
+        messageGenerationSubscriber.current &&
+        message.thread_id === activeThreadRef.current?.id &&
+        !messageGenerationSubscriber.current!.thread_id
+      ) {
+        updateMessage(
+          message.id,
+          message.thread_id,
+          message.content,
+          message.status
+        )
+      }
+
       if (message.status === MessageStatus.Pending) {
         if (message.content.length) {
           setIsGeneratingResponse(false)
@@ -244,6 +267,7 @@ export default function ModelHandler() {
       const metadata = {
         ...thread.metadata,
         ...(messageContent && { lastMessage: messageContent }),
+        updated_at: Date.now(),
       }
 
       updateThread({
@@ -302,15 +326,10 @@ export default function ModelHandler() {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (
-      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
-    ) {
+    if ((thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle)
       return
-    }
 
-    if (!activeModelRef.current) {
-      return
-    }
+    if (!activeModelRef.current) return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (!isLocalEngine(activeModelRef.current?.engine as InferenceEngine)) {
@@ -332,6 +351,7 @@ export default function ModelHandler() {
             ...updatedThread,
           })
         })
+        .catch(console.error)
     }
 
     // This is the first time message comes in on a new thread
