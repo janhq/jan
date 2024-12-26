@@ -5,9 +5,12 @@ import {
   Engines,
   EngineVariant,
   EngineReleased,
+  executeOnMain,
+  systemInformation,
 } from '@janhq/core'
 import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
+import { EngineError } from './error'
 
 /**
  * JSONEngineManagementExtension is a EngineManagementExtension implementation that provides
@@ -22,11 +25,29 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
   async onLoad() {
     this.queue.add(() => this.healthz())
     try {
-      await this.getDefaultEngineVariant(InferenceEngine.cortex_llamacpp)
+      const variant = await this.getDefaultEngineVariant(
+        InferenceEngine.cortex_llamacpp
+      )
+      // Check whether should use bundled version or installed version
+      // Only use larger version
+      if (this.compareVersions(CORTEX_ENGINE_VERSION, variant.version) > 0) {
+        throw new EngineError(
+          'Default engine version is smaller than bundled version'
+        )
+      }
     } catch (error) {
-      if (error instanceof HTTPError && error.response.status === 400) {
+      if (
+        (error instanceof HTTPError && error.response.status === 400) ||
+        error instanceof EngineError
+      ) {
+        const systemInfo = await systemInformation()
+        const variant = await executeOnMain(
+          NODE,
+          'engineVariant',
+          systemInfo.gpuSetting
+        )
         await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
-          variant: 'mac-arm64',
+          variant: variant,
           version: `${CORTEX_ENGINE_VERSION}`,
         })
       } else {
@@ -174,11 +195,22 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
    * Do health check on cortex.cpp
    * @returns
    */
-  healthz(): Promise<void> {
+  async healthz(): Promise<void> {
     return ky
       .get(`${API_URL}/healthz`, {
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
       })
       .then(() => {})
+  }
+
+  private compareVersions(version1: string, version2: string): number {
+    const parseVersion = (version: string) => version.split('.').map(Number)
+
+    const [major1, minor1, patch1] = parseVersion(version1.replace(/^v/, ''))
+    const [major2, minor2, patch2] = parseVersion(version2.replace(/^v/, ''))
+
+    if (major1 !== major2) return major1 - major2
+    if (minor1 !== minor2) return minor1 - minor2
+    return patch1 - patch2
   }
 }

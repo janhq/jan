@@ -47,7 +47,6 @@
   },
   "dependencies": {
     "@janhq/core": "file:../../core",
-    "cpu-instructions": "^0.0.13",
     "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
     "ky": "^1.7.2",
@@ -69,7 +68,6 @@
     "tcp-port-used",
     "fetch-retry",
     "@janhq/core",
-    "decompress",
-    "cpu-instructions"
+    "decompress"
   ]
 }
