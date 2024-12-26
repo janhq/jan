@@ -1,5 +1,4 @@
 const webpack = require('webpack')
-const packageJson = require('./package.json')
 
 module.exports = {
   experiments: { outputModule: true },
@@ -22,6 +21,7 @@ module.exports = {
     new webpack.DefinePlugin({
       API_URL: JSON.stringify('http://127.0.0.1:39291'),
       SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.42'),
     }),
   ],
   resolve: {

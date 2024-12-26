@@ -5,7 +5,6 @@ import {
   Engines,
   EngineVariant,
   EngineReleased,
-  systemInformation,
 } from '@janhq/core'
 import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
@@ -28,7 +27,7 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
       if (error instanceof HTTPError && error.response.status === 400) {
         await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
           variant: 'mac-arm64',
-          version: '0.1.42',
+          version: `${CORTEX_ENGINE_VERSION}`,
         })
       } else {
         console.error('An unexpected error occurred:', error)
