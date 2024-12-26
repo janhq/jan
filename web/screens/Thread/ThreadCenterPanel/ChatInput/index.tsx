@@ -302,9 +302,7 @@ const ChatInput = () => {
               </div>
             )}
 
-            {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
-            !isGeneratingResponse &&
-            !isStreamingResponse ? (
+            {!isGeneratingResponse && !isStreamingResponse ? (
               <>
                 {currentPrompt.length !== 0 && (
                   <Button

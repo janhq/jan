@@ -10,6 +10,10 @@ import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 import { vulkanEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  isGeneratingResponseAtom,
+  resetThreadWaitingForResponseAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
 export const loadModelErrorAtom = atom<string | undefined>(undefined)
@@ -34,6 +38,10 @@ export function useActiveModel() {
   const pendingModelLoad = useRef(false)
   const isVulkanEnabled = useAtomValue(vulkanEnabledAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
+  const setGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
+  const resetThreadWaitingForResponseState = useSetAtom(
+    resetThreadWaitingForResponseAtom
+  )
 
   const downloadedModelsRef = useRef<Model[]>([])
 
@@ -139,6 +147,8 @@ export function useActiveModel() {
         return
 
       const engine = EngineManager.instance().get(stoppingModel.engine)
+      setGeneratingResponse(false)
+      resetThreadWaitingForResponseState()
       return engine
         ?.unloadModel(stoppingModel)
         .catch((e) => console.error(e))
@@ -148,7 +158,14 @@ export function useActiveModel() {
           pendingModelLoad.current = false
         })
     },
-    [activeModel, setStateModel, setActiveModel, stateModel]
+    [
+      activeModel,
+      setStateModel,
+      setActiveModel,
+      stateModel,
+      setGeneratingResponse,
+      resetThreadWaitingForResponseState,
+    ]
   )
 
   const stopInference = useCallback(async () => {

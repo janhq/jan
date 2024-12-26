@@ -48,6 +48,7 @@ export default function useDeleteThread() {
         if (thread) {
           const updatedThread = {
             ...thread,
+            title: 'New Thread',
             metadata: {
               ...thread.metadata,
               title: 'New Thread',
