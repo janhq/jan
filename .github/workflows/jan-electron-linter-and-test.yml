@@ -66,7 +66,7 @@ jobs:
 
   test-on-macos:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, macOS, macos-desktop]
+    runs-on: macos-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -106,7 +106,7 @@ jobs:
 
   test-on-macos-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: [self-hosted, macOS, macos-desktop]
+    runs-on: macos-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -222,7 +222,7 @@ jobs:
 
   test-on-windows-pr-target:
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: windows-desktop-default-windows-security
+    runs-on: windows-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -253,7 +253,7 @@ jobs:
           make test
 
   test-on-ubuntu:
-    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    runs-on: ubuntu-latest
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Getting the repo
@@ -301,7 +301,7 @@ jobs:
           retention-days: 2
 
   coverage-check:
-    runs-on: ubuntu-22-04
+    runs-on: ubuntu-latest
     needs: base_branch_cov
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
@@ -348,7 +348,7 @@ jobs:
           show-annotations: 'warning'
 
   test-on-ubuntu-pr-target:
-    runs-on: [self-hosted, Linux, ubuntu-desktop]
+    runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
     steps:
       - name: Getting the repo
