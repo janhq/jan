@@ -48,5 +48,8 @@
   "installConfig": {
     "hoistingLimits": "workspaces"
   },
+  "resolutions": {
+    "yallist": "4.0.0"
+  },
   "packageManager": "yarn@4.5.3"
 }
