@@ -11,5 +11,5 @@
     "rootDir": "./src"
   },
   "include": ["./src"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "rolldown.config.mjs"]
 }
