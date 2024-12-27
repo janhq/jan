@@ -31,50 +31,37 @@ Jan has been developed as a Mac Universal application, allowing it to run native
 ## Compatibility
 
 Ensure that your system meets the following requirements to use Jan effectively:
-<Tabs items={['Mac Intel CPU', 'Mac Apple Silicon']}>
+<Tabs items={['Mac Apple Silicon','Mac Intel CPU']}>
 <Tabs.Tab>
-<Tabs items={['Operating System', 'Memory', 'Disk']}>
-<Tabs.Tab>
-- MacOSX 13.6 or higher.
-</Tabs.Tab>
-<Tabs.Tab>
-- 8GB for running up to 3B models.
-- 16GB for running up to 7B models.
-- 32GB for running up to 13B models.
-</Tabs.Tab>
-<Tabs.Tab>
-- At least 10GB for app and model download.
-</Tabs.Tab>
-</Tabs>
-</Tabs.Tab>
-<Tabs.Tab>
-<Tabs items={['Operating System', 'Memory', 'Disk']}>
-<Tabs.Tab>
-- MacOSX 13.6 or higher.
-</Tabs.Tab>
-<Tabs.Tab>
-- 8GB for running up to 3B models.
-- 16GB for running up to 7B models.
-- 32GB for running up to 13B models.
+- **Operating System:** MacOSX 13.6 or higher
+- **Memory:**
+  - 8GB for running up to 3B models
+  - 16GB for running up to 7B models
+  - 32GB for running up to 13B models
 <Callout type="info">
 Apple Silicon Macs leverage Metal for GPU acceleration, providing faster performance than Intel Macs, which rely solely on CPU processing.
-
 </Callout>
+- **Disk:** At least 10GB for app and model download
 </Tabs.Tab>
 <Tabs.Tab>
-- At least 10GB for app and model download.
+- **Operating System:** MacOSX 13.6 or higher
+- **Memory:**
+  - 8GB for running up to 3B models
+  - 16GB for running up to 7B models
+  - 32GB for running up to 13B models
+- **Disk:** At least 10GB for app and model download
 </Tabs.Tab>
 </Tabs>
-</Tabs.Tab>
-</Tabs>
+
 ## Installing Jan
 
 To install Jan, follow the steps below:
 
-### Step 1: Download the Jan Application
+### Step 1: Download Jan Application
 
-Jan provides two types of releases:
-<Tabs items={['Stable Releases', 'Nightly Releases']}>
+
+Jan provides 3 types of releases:
+<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
 <Tabs.Tab>
 #### Stable Releases
 
@@ -88,9 +75,8 @@ Make sure to verify the URL to ensure that it's the official Jan website and Git
 </Callout>
 </Tabs.Tab>
 <Tabs.Tab>
-#### Nightly Releases
 
-Nightly Releases let you test out new features, which may be buggy:
+Beta releases let you test out new features, which may be buggy:
 
 - **Jan GitHub repository**: [Github](https://github.com/janhq/jan/actions/workflows/jan-electron-build-nightly.yml)
 
@@ -99,6 +85,8 @@ Keep in mind that this build might crash frequently and may contain bugs!
 </Callout>
 </Tabs.Tab>
 </Tabs>
+
+
 ### Step 2: Install the Jan Application
 
 1. Once you have downloaded the Jan app `.dmg` file, open the file.
@@ -106,20 +94,8 @@ Keep in mind that this build might crash frequently and may contain bugs!
 3. Wait for the installation process.
 4. Once installed, you can access Jan on your machine.
 
-#### Install Jan with Homebrew
 
-You can also install Jan using the following Homebrew command:
-
-```bash
-brew install --cask jan
-```
-
-<Callout type="warning">
-- Ensure that you have installed Homebrew and its dependencies.
-- Homebrew package installation is currently limited to **Apple Silicon Macs**, with upcoming support for Windows and Linux.
-</Callout>
-
-## Data Folder
+## Jan Data Folder
 
 By default, Jan is installed in the following directory:
 
