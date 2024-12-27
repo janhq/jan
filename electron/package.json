@@ -78,7 +78,7 @@
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
-    "test:e2e": "xvfb-maybe -- playwright test --headed --workers=1",
+    "test:e2e": "xvfb-maybe -- playwright test --workers=1",
     "copy:assets": "rimraf --glob \"./pre-install/*.tgz\" && cpx \"../pre-install/*.tgz\" \"./pre-install\"",
     "dev": "yarn copy:assets && tsc -p . && electron .",
     "compile": "tsc -p .",
