@@ -28,17 +28,39 @@ import { Callout, Steps } from 'nextra/components'
 <Steps>
 
 ### Step 1: Install Jan
-You can run Jan either on your desktop using the Jan desktop app or on a server by installing the Jan server. To get started, check out the [Desktop](/docs/desktop) installation pages.
+1. [Download Jan](/download)
+2. Install the application on your system ([Mac](/docs/desktop/mac), [Windows](/docs/desktop/windows), [Linux](/docs/desktop/linux))
+3. Launch Jan
 
-Once you have installed Jan, you should see the Jan application as shown below without any local model installed:
+Once installed, you'll see the Jan application interface with no local models pre-installed yet. You'll be able to:
+- Download and run local AI models 
+- Connect to cloud AI providers if desired
 <br/>
 
 ![Default State](./_assets/default.gif)
 
 <br/>
 
-### Step 2: Turn on the GPU Acceleration (Optional)
-If you have a graphics card, boost model performance by enabling GPU acceleration:
+### Step 2: Download a Model
+Jan offers various local AI models, from smaller efficient models to larger more capable ones:
+1. Go to the **Hub**
+2. Browse available models and click on any model to see details about it
+3. Choose a model that fits your needs & hardware specifications
+4. Click **Download** to begin installation
+<Callout type="info">
+Unlike cloud-based AI, local models run directly on your computer, which means they use your computer's memory (RAM) and processing power. Please choose models carefully based on your hardware specifications.
+</Callout>
+
+For more model installation methods, please visit [Model Management](/docs/models/manage-models).
+
+<br/>
+
+![Download a Model](./_assets/download-model2.gif)
+
+<br/>
+
+### Step 3: Turn on the GPU Acceleration (Optional)
+While waiting for model downloading, let's customize your hardware setup. If you have a graphics card, boost model performance by enabling GPU acceleration:
 1. Open Jan application.
 2. Go to **Settings** -> **Advanced Settings** -> **GPU Acceleration**.
 3. Click the Slider and choose your preferred GPU.
@@ -49,35 +71,6 @@ Ensure you have installed your GPU driver. Please see [Desktop](/docs/desktop) f
 <br/>
 
 ![Turn on GPU acceleration](./_assets/gpu2.gif)
-
-### Step 3: Download a Model
-
-Jan offers various local AI models tailored to different needs, all ready for download directly to your device:
-
-1. Go to the **Hub**.
-2. Select the models that you would like to install. To see model details, click the model name.
-3. You can also paste the Hugging Face model's **ID** or **URL** in the search bar.
-<Callout type="info">
-Ensure you select the appropriate model size by balancing performance, cost, and resource considerations in line with your task's specific requirements and hardware specifications.
-</Callout>
-4. Click the **Download** button.
-<br/>
-
-![Download a Model](./_assets/download-model2.gif)
-
-<br/>
-
-5. Go to the **Thread** tab.
-6. Click the **Model** tab button.
-7. Choose either **On-device** or **Cloud** section.
-8. Adjust the configurations as needed.
-   <Callout type="info">
-    Please see [Model Parameters](/docs/models#model-parameters) for detailed model configuration.
-   </Callout>
-
-<br/>
-
-![Parameters](./_assets/inf.gif)
 
 
 ### Step 4: Customize the Assistant Instruction
@@ -99,6 +92,7 @@ Once you have downloaded a model and customized your assistant instruction, you 
 ![Chat with a Model](./_assets/chat.gif)
 
 <br/>
+
 
 ### Step 6: Connect to a Remote API
 Jan also offers access to remote models hosted on external servers. You can link up with any Remote AI APIs compatible with OpenAI. Jan comes with numerous extensions that facilitate connections to various remote AI APIs. To explore and connect to Remote APIs, follow these steps:
