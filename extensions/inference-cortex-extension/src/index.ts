@@ -289,7 +289,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             )
 
             if (data.task.type === 'Engine') {
-              events.emit(EngineEvent.OnEngineUpdate, {})
+              events.emit(EngineEvent.OnEngineUpdate, {
+                type: data.type,
+                percent: percent,
+              })
             } else {
               if (data.type === DownloadTypes.DownloadSuccess) {
                 // Delay for the state update from cortex.cpp

@@ -54,11 +54,6 @@ export const setDownloadStateAtom = atom(
             (e) => e.id === state.modelId
           )
           if (model) set(downloadedModelsAtom, (prev) => [...prev, model])
-          toaster({
-            title: 'Download Completed',
-            description: `Download ${state.modelId} completed`,
-            type: 'success',
-          })
         }
       } else if (state.downloadState === 'error') {
         // download error
