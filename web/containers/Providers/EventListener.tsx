@@ -96,10 +96,7 @@ const EventListener = () => {
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
-      if (
-        state.downloadType !== 'extension' &&
-        state.downloadType !== 'Engine'
-      ) {
+      if (state.downloadType !== 'extension') {
         // Update model metadata accordingly
         const model = ModelManager.instance().models.get(state.modelId)
         if (model) {
@@ -111,6 +108,12 @@ const EventListener = () => {
               ...model.parameters,
             } as Partial<Model>)
             .catch((e) => console.debug(e))
+
+          toaster({
+            title: 'Download Completed',
+            description: `Download ${state.modelId} completed`,
+            type: 'success',
+          })
         }
         state.downloadState = 'end'
         setDownloadState(state)

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { EngineEvent, events, InferenceEngine } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select } from '@janhq/joi'
@@ -65,6 +65,14 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
 
   const [selectedVariants, setSelectedVariants] = useState(
     defaultEngineVariant?.variant
+  )
+
+  const selectedVariant = useMemo(
+    () =>
+      options?.map((e) => e.value).includes(selectedVariants)
+        ? selectedVariants
+        : undefined,
+    [selectedVariants, options]
   )
 
   useEffect(() => {
@@ -157,7 +165,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                 <div className="flex flex-shrink-0 items-center gap-x-3">
                   <div className="flex w-full min-w-[180px]">
                     <Select
-                      value={selectedVariants}
+                      value={selectedVariant}
                       placeholder="Select variant"
                       onValueChange={(e) => handleChangeVariant(e)}
                       options={options}
