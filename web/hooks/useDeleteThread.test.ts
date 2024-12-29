@@ -1,3 +1,7 @@
+/**
+ * @jest-environment jsdom
+ */
+
 import { renderHook, act } from '@testing-library/react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import useDeleteThread from './useDeleteThread'

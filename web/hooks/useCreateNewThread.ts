@@ -14,7 +14,6 @@ import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -27,6 +26,7 @@ import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
+import { copyOverInstructionEnabledAtom } from '@/helpers/atoms/App.atom'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'

@@ -9,7 +9,7 @@
   "scripts": {
     "test": "jest",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts --configPlugin @rollup/plugin-typescript --bundleConfigAsCjs",
-    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "@rollup/plugin-commonjs": "^25.0.7",
@@ -35,9 +35,13 @@
     "README.md"
   ],
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "ky": "^1.7.2",
     "p-queue": "^8.0.1"
   },
-  "bundleDependencies": []
+  "bundleDependencies": [],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

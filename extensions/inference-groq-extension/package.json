@@ -9,7 +9,7 @@
   "license": "AGPL-3.0",
   "scripts": {
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && npm run build && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -18,12 +18,13 @@
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.7.2",
     "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0"
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "fetch-retry": "^5.0.6",
     "ulidx": "^2.3.0"
   },
@@ -37,5 +38,9 @@
   ],
   "bundleDependencies": [
     "fetch-retry"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

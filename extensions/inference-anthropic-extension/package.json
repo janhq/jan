@@ -11,7 +11,7 @@
   "scripts": {
     "test": "jest test",
     "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "sync:core": "cd ../.. && yarn build:core && cd extensions && rm yarn.lock &&  cd inference-anthropic-extension && yarn && yarn build:publish"
   },
   "exports": {
@@ -21,12 +21,13 @@
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.7.2",
     "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0"
+    "webpack-cli": "^5.1.4"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "fetch-retry": "^5.0.6",
     "ulidx": "^2.3.0"
   },
@@ -40,5 +41,9 @@
   ],
   "bundleDependencies": [
     "fetch-retry"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

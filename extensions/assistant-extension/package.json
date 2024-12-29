@@ -11,9 +11,9 @@
     "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
     "build-universal-hnswlib": "cd node_modules/hnswlib-node && arch -x86_64 npx node-gyp rebuild --arch=x64 && mv build/Release/addon.node ./addon-amd64.node && node-gyp rebuild --arch=arm64 && mv build/Release/addon.node ./addon-arm64.node && lipo -create -output build/Release/addon.node ./addon-arm64.node ./addon-amd64.node && rm ./addon-arm64.node && rm ./addon-amd64.node",
     "build": "yarn clean:modules && tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:linux": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && yarn build-universal-hnswlib && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:linux": "rimraf *.tgz --glob  || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob  || true && yarn build-universal-hnswlib && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "devDependencies": {
@@ -28,14 +28,15 @@
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
-    "typescript": "^5.3.3",
-    "run-script-os": "^1.1.6"
+    "run-script-os": "^1.1.6",
+    "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "@langchain/community": "0.0.13",
     "hnswlib-node": "^1.4.2",
     "langchain": "^0.0.214",
+    "node-gyp": "^11.0.0",
     "pdf-parse": "^1.1.1",
     "ts-loader": "^9.5.0"
   },
@@ -47,5 +48,9 @@
   "bundleDependencies": [
     "@janhq/core",
     "hnswlib-node"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

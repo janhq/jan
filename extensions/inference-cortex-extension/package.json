@@ -13,8 +13,8 @@
     "downloadcortex:linux:darwin": "./download.sh",
     "downloadcortex:win32": "download.bat",
     "downloadcortex": "run-script-os",
-    "build:publish:darwin": "rimraf *.tgz --glob && yarn build && npm run downloadcortex && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:win32:linux": "rimraf *.tgz --glob && yarn build && npm run downloadcortex && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob || true && yarn build && yarn downloadcortex && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32:linux": "rimraf *.tgz --glob || true && yarn build && yarn downloadcortex && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
     "build:publish": "run-script-os"
   },
   "exports": {
@@ -46,7 +46,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "cpu-instructions": "^0.0.13",
     "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
@@ -71,5 +71,9 @@
     "@janhq/core",
     "decompress",
     "cpu-instructions"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

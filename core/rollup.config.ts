@@ -23,9 +23,12 @@ export default [
       // Allow json resolution
       json(),
       // Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
+      typescript({
+        useTsconfigDeclarationDir: true,
+        exclude: ['**/*.test.ts', 'src/node/**'],
+      }),
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
-      commonjs(),
+      // commonjs(),
       // Allow node_modules resolution, so you can use 'external' to control
       // which external modules to include in the bundle
       // https://github.com/rollup/rollup-plugin-node-resolve#usage
@@ -44,7 +47,9 @@ export default [
   },
   {
     input: `src/node/index.ts`,
-    output: [{ file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true }],
+    output: [
+      { file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true },
+    ],
     // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
     external: [
       'fs/promises',
@@ -70,7 +75,10 @@ export default [
       // Allow json resolution
       json(),
       // Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
+      typescript({
+        useTsconfigDeclarationDir: true,
+        exclude: ['**/*.test.ts', 'src/browser/**'],
+      }),
       // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
       commonjs(),
       // Allow node_modules resolution, so you can use 'external' to control

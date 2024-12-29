@@ -10,20 +10,23 @@ REPORT_PORTAL_DESCRIPTION ?= "Jan App report"
 all:
 	@echo "Specify a target to run"
 
+# Config yarn version
+
+config-yarn:
+	corepack enable
+	corepack prepare yarn@4.5.3 --activate
+	yarn --version
+	yarn config set -H enableImmutableInstalls false
+
 # Builds the UI kit
-build-joi:
-ifeq ($(OS),Windows_NT)
-	cd joi && yarn config set network-timeout 300000 && yarn install && yarn build
-else
+build-joi: config-yarn
 	cd joi && yarn install && yarn build
-endif
 
 # Installs yarn dependencies and builds core and extensions
 install-and-build: build-joi
 ifeq ($(OS),Windows_NT)
-	yarn config set network-timeout 300000
+	echo "skip"
 endif
-	yarn global add turbo@1.13.2
 	yarn build:core
 	yarn build:server
 	yarn install
@@ -117,9 +120,8 @@ build: check-file-counts
 
 clean:
 ifeq ($(OS),Windows_NT)
-	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo -Recurse -Directory | Remove-Item -Recurse -Force"
-	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json -Recurse -File | Remove-Item -Recurse -Force"
-	-powershell -Command "Get-ChildItem -Path . -Include yarn.lock -Recurse -File | Remove-Item -Recurse -Force"
+	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
+	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"
 	-powershell -Command "Remove-Item -Recurse -Force ./pre-install/*.tgz"
 	-powershell -Command "Remove-Item -Recurse -Force ./extensions/*/*.tgz"
 	-powershell -Command "Remove-Item -Recurse -Force ./electron/pre-install/*.tgz"
@@ -131,8 +133,8 @@ else ifeq ($(shell uname -s),Linux)
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
 	find . -name ".turbo" -type d -exec rm -rf '{}' +
+	find . -name ".yarn" -type d -exec rm -rf '{}' +
 	find . -name "packake-lock.json" -type f -exec rm -rf '{}' +
-	find . -name "yarn.lock" -type f -exec rm -rf '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
 	rm -rf ./pre-install/*.tgz
 	rm -rf ./extensions/*/*.tgz
@@ -146,8 +148,8 @@ else
 	find . -name "build" -type d -exec rm -rf '{}' +
 	find . -name "out" -type d -exec rm -rf '{}' +
 	find . -name ".turbo" -type d -exec rm -rf '{}' +
+	find . -name ".yarn" -type d -exec rm -rf '{}' +
 	find . -name "package-lock.json" -type f -exec rm -rf '{}' +
-	find . -name "yarn.lock" -type f -exec rm -rf '{}' +
 	rm -rf ./pre-install/*.tgz
 	rm -rf ./extensions/*/*.tgz
 	rm -rf ./electron/pre-install/*.tgz

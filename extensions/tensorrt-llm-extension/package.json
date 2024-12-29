@@ -24,10 +24,7 @@
   "scripts": {
     "test": "jest",
     "build": "tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:win32": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:linux": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish": "run-script-os"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -39,26 +36,26 @@
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-replace": "^5.0.5",
     "@types/decompress": "4.2.7",
+    "@types/jest": "^29.5.12",
     "@types/node": "^20.11.4",
     "@types/os-utils": "^0.0.4",
     "@types/tcp-port-used": "^1.0.4",
     "cpx": "^1.5.0",
     "download-cli": "^1.1.1",
+    "jest": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "jest-runner": "^29.7.0",
     "rimraf": "^3.0.2",
     "rollup": "^2.38.5",
     "rollup-plugin-define": "^1.0.1",
     "rollup-plugin-sourcemaps": "^0.6.3",
     "rollup-plugin-typescript2": "^0.36.0",
     "run-script-os": "^1.1.6",
-    "typescript": "^5.2.2",
-    "@types/jest": "^29.5.12",
-    "jest": "^29.7.0",
-    "jest-junit": "^16.0.0",
-    "jest-runner": "^29.7.0",
-    "ts-jest": "^29.2.5"
+    "ts-jest": "^29.2.5",
+    "typescript": "^5.2.2"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
     "rxjs": "^7.8.1",
@@ -80,5 +77,9 @@
     "decompress",
     "@janhq/core",
     "terminate"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

@@ -13,9 +13,8 @@
     "declarationDir": "dist/types",
     "outDir": "dist/lib",
     "importHelpers": true,
-    "types": ["@types/jest"],
-    "resolveJsonModule": true
+    "types": ["jest", "node"]
   },
   "include": ["src"],
-  "exclude": ["**/*.test.ts"]
+  "exclude": ["*.test.ts"]
 }

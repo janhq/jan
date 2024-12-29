@@ -2,14 +2,8 @@ import { ChangeEvent, useCallback } from 'react'
 
 import { Switch } from '@janhq/joi'
 import { useAtom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
 
-const COPY_OVER_INSTRUCTION_ENABLED = 'copy_over_instruction_enabled'
-
-export const copyOverInstructionEnabledAtom = atomWithStorage(
-  COPY_OVER_INSTRUCTION_ENABLED,
-  false
-)
+import { copyOverInstructionEnabledAtom } from '@/helpers/atoms/App.atom'
 
 const CopyOverInstruction: React.FC = () => {
   const [copyOverInstructionEnabled, setCopyOverInstructionEnabled] = useAtom(
