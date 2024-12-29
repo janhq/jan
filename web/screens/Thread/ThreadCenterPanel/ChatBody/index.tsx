@@ -81,35 +81,11 @@ const ChatBody = memo(
 
     useEffect(() => {
       isUserManuallyScrollingUp.current = false
-      if (parentRef.current) {
-        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-        virtualizer.scrollToIndex(count - 1)
-      }
-    }, [count, virtualizer])
-
-    useEffect(() => {
-      isUserManuallyScrollingUp.current = false
-      if (parentRef.current && isBlockingSend) {
-        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-        virtualizer.scrollToIndex(count - 1)
-      }
-    }, [count, virtualizer, isBlockingSend])
-
-    useEffect(() => {
-      isUserManuallyScrollingUp.current = false
       if (parentRef.current && isBlockingSend) {
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
       }
     }, [count, virtualizer, isBlockingSend, currentThread?.id])
-
-    useEffect(() => {
-      isUserManuallyScrollingUp.current = false
-      if (parentRef.current) {
-        parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
-        virtualizer.scrollToIndex(count - 1)
-      }
-    }, [count, currentThread?.id, virtualizer])
 
     const items = virtualizer.getVirtualItems()
 
