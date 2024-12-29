@@ -6,7 +6,6 @@ import { Button, ScrollArea, Badge, Select } from '@janhq/joi'
 
 import { Trash2Icon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
-import DeleteEngineVariant from './DeleteEngineVariant'
 
 import {
   useGetDefaultEngineVariant,
@@ -18,6 +17,8 @@ import {
   uninstallEngine,
   useGetReleasedEnginesByVersion,
 } from '@/hooks/useEngineManagement'
+
+import DeleteEngineVariant from './DeleteEngineVariant'
 
 const os = () => {
   switch (PLATFORM) {

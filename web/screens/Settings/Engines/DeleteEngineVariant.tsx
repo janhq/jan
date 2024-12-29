@@ -1,14 +1,15 @@
 import { memo, useState } from 'react'
 
+import { EngineReleased, InferenceEngine } from '@janhq/core'
 import { Button, Modal, ModalClose } from '@janhq/joi'
 
 import { Trash2Icon } from 'lucide-react'
+
 import {
   uninstallEngine,
   useGetDefaultEngineVariant,
   useGetInstalledEngines,
 } from '@/hooks/useEngineManagement'
-import { EngineReleased, InferenceEngine } from '@janhq/core'
 
 const DeleteEngineVariant = ({
   variant,
