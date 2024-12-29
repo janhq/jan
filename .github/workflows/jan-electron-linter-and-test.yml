@@ -49,6 +49,9 @@ jobs:
         with:
           node-version: v20.9.0
 
+      - name: Install yarn
+        run: npm install -g yarn
+
       - name: Install dependencies
         run: |
           yarn
@@ -187,7 +190,7 @@ jobs:
           fetch-depth: 0
 
       - name: Installing node
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v3
         with:
           node-version: 20
 
