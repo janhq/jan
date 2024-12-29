@@ -16,8 +16,7 @@ import EmptyThread from './EmptyThread'
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
-  isGeneratingResponseAtom,
-  threadStatesAtom,
+  isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 const ChatConfigurator = memo(() => {
@@ -65,12 +64,7 @@ const ChatBody = memo(
     const prevScrollTop = useRef(0)
     const isUserManuallyScrollingUp = useRef(false)
     const currentThread = useAtomValue(activeThreadAtom)
-    const threadStates = useAtomValue(threadStatesAtom)
-    const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-
-    const isStreamingResponse = Object.values(threadStates).some(
-      (threadState) => threadState.waitingForResponse
-    )
+    const isBlockingSend = useAtomValue(isBlockingSendAtom)
 
     const count = useMemo(
       () => (messages?.length ?? 0) + (loadModelError ? 1 : 0),
@@ -95,19 +89,19 @@ const ChatBody = memo(
 
     useEffect(() => {
       isUserManuallyScrollingUp.current = false
-      if (parentRef.current && isGeneratingResponse) {
+      if (parentRef.current && isBlockingSend) {
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
       }
-    }, [count, virtualizer, isGeneratingResponse])
+    }, [count, virtualizer, isBlockingSend])
 
     useEffect(() => {
       isUserManuallyScrollingUp.current = false
-      if (parentRef.current && isGeneratingResponse) {
+      if (parentRef.current && isBlockingSend) {
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
       }
-    }, [count, virtualizer, isGeneratingResponse, currentThread?.id])
+    }, [count, virtualizer, isBlockingSend, currentThread?.id])
 
     useEffect(() => {
       isUserManuallyScrollingUp.current = false
@@ -124,7 +118,7 @@ const ChatBody = memo(
       _,
       instance
     ) => {
-      if (isUserManuallyScrollingUp.current === true && isStreamingResponse)
+      if (isUserManuallyScrollingUp.current === true && isBlockingSend)
         return false
       return (
         // item.start < (instance.scrollOffset ?? 0) &&
@@ -136,7 +130,7 @@ const ChatBody = memo(
       (event: React.UIEvent<HTMLElement>) => {
         const currentScrollTop = event.currentTarget.scrollTop
 
-        if (prevScrollTop.current > currentScrollTop && isStreamingResponse) {
+        if (prevScrollTop.current > currentScrollTop && isBlockingSend) {
           isUserManuallyScrollingUp.current = true
         } else {
           const currentScrollTop = event.currentTarget.scrollTop
@@ -154,7 +148,7 @@ const ChatBody = memo(
         }
         prevScrollTop.current = currentScrollTop
       },
-      [isStreamingResponse]
+      [isBlockingSend]
     )
 
     return (
