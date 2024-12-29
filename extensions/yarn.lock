@@ -518,6 +518,34 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@emnapi/core@npm:^1.3.1":
+  version: 1.3.1
+  resolution: "@emnapi/core@npm:1.3.1"
+  dependencies:
+    "@emnapi/wasi-threads": "npm:1.0.1"
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/d3be1044ad704e2c486641bc18908523490f28c7d38bd12d9c1d4ce37d39dae6c4aecd2f2eaf44c6e3bd90eaf04e0591acc440b1b038cdf43cce078a355a0ea0
+  languageName: node
+  linkType: hard
+
+"@emnapi/runtime@npm:^1.3.1":
+  version: 1.3.1
+  resolution: "@emnapi/runtime@npm:1.3.1"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/060ffede50f1b619c15083312b80a9e62a5b0c87aa8c1b54854c49766c9d69f8d1d3d87bd963a647071263a320db41b25eaa50b74d6a80dcc763c23dbeaafd6c
+  languageName: node
+  linkType: hard
+
+"@emnapi/wasi-threads@npm:1.0.1":
+  version: 1.0.1
+  resolution: "@emnapi/wasi-threads@npm:1.0.1"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/1e0c8036b8d53e9b07cc9acf021705ef6c86ab6b13e1acda7fffaf541a2d3565072afb92597419173ced9ea14f6bf32fce149106e669b5902b825e8b499e5c6c
+  languageName: node
+  linkType: hard
+
 "@isaacs/cliui@npm:^8.0.2":
   version: 8.0.2
   resolution: "@isaacs/cliui@npm:8.0.2"
@@ -606,153 +634,181 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
+  languageName: node
+  linkType: hard
+
+"@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension":
+  version: 0.1.10
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
+  dependencies:
+    rxjs: "npm:^7.8.1"
+    ulidx: "npm:^2.3.0"
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-anthropic-extension%40workspace%3Ainference-anthropic-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-anthropic-extension%40workspace%3Ainference-anthropic-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-anthropic-extension%40workspace%3Ainference-anthropic-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-cohere-extension%40workspace%3Ainference-cohere-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-cohere-extension%40workspace%3Ainference-cohere-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-cohere-extension%40workspace%3Ainference-cohere-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-groq-extension%40workspace%3Ainference-groq-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-groq-extension%40workspace%3Ainference-groq-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-groq-extension%40workspace%3Ainference-groq-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-martian-extension%40workspace%3Ainference-martian-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-martian-extension%40workspace%3Ainference-martian-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-martian-extension%40workspace%3Ainference-martian-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-mistral-extension%40workspace%3Ainference-mistral-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-mistral-extension%40workspace%3Ainference-mistral-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-mistral-extension%40workspace%3Ainference-mistral-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-nvidia-extension%40workspace%3Ainference-nvidia-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-nvidia-extension%40workspace%3Ainference-nvidia-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-nvidia-extension%40workspace%3Ainference-nvidia-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-openai-extension%40workspace%3Ainference-openai-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-openai-extension%40workspace%3Ainference-openai-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-openai-extension%40workspace%3Ainference-openai-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-openrouter-extension%40workspace%3Ainference-openrouter-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-openrouter-extension%40workspace%3Ainference-openrouter-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-openrouter-extension%40workspace%3Ainference-openrouter-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-triton-trt-llm-extension%40workspace%3Ainference-triton-trtllm-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Finference-triton-trt-llm-extension%40workspace%3Ainference-triton-trtllm-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Finference-triton-trt-llm-extension%40workspace%3Ainference-triton-trtllm-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmonitoring-extension%40workspace%3Amonitoring-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Fmonitoring-extension%40workspace%3Amonitoring-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Fmonitoring-extension%40workspace%3Amonitoring-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Ftensorrt-llm-extension%40workspace%3Atensorrt-llm-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=14cf2e&locator=%40janhq%2Ftensorrt-llm-extension%40workspace%3Atensorrt-llm-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=02e76a&locator=%40janhq%2Ftensorrt-llm-extension%40workspace%3Atensorrt-llm-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/d928ad13f353990eefcfbaa13539e49416d396c1bc3a5826f052942b04c266eb2d1335e072302b11e3d17cc1098b8026aee650105a4c9412f271383fc389a3a1
+  checksum: 10c0/6402872ec92c48269a29766dcdf498289032b62ab8637a1f35d3c4cd78bfa814b94746f9d0f409ac4b653b6f7828109ce910f44c506d16efb40fef872e9b57bb
   languageName: node
   linkType: hard
+
+"@janhq/engine-management-extension@workspace:engine-management-extension":
+  version: 0.0.0-use.local
+  resolution: "@janhq/engine-management-extension@workspace:engine-management-extension"
+  dependencies:
+    "@janhq/core": ../../core/package.tgz
+    "@rollup/plugin-replace": "npm:^6.0.2"
+    cpu-instructions: "npm:^0.0.13"
+    cpx: "npm:^1.5.0"
+    ky: "npm:^1.7.2"
+    p-queue: "npm:^8.0.1"
+    rimraf: "npm:^3.0.2"
+    rolldown: "npm:^1.0.0-beta.1"
+    ts-loader: "npm:^9.5.0"
+    webpack: "npm:^5.88.2"
+    webpack-cli: "npm:^5.1.4"
+  languageName: unknown
+  linkType: soft
 
 "@janhq/inference-anthropic-extension@workspace:inference-anthropic-extension":
   version: 0.0.0-use.local
@@ -802,7 +858,6 @@ __metadata:
     "@types/node": "npm:^20.11.4"
     "@types/os-utils": "npm:^0.0.4"
     "@types/tcp-port-used": "npm:^1.0.4"
-    cpu-instructions: "npm:^0.0.13"
     cpx: "npm:^1.5.0"
     decompress: "npm:^4.2.1"
     download-cli: "npm:^1.1.1"
@@ -1907,6 +1962,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@napi-rs/wasm-runtime@npm:^0.2.4":
+  version: 0.2.6
+  resolution: "@napi-rs/wasm-runtime@npm:0.2.6"
+  dependencies:
+    "@emnapi/core": "npm:^1.3.1"
+    "@emnapi/runtime": "npm:^1.3.1"
+    "@tybys/wasm-util": "npm:^0.9.0"
+  checksum: 10c0/f921676c1d5c75494bd704c6c0837fd05fe95f5d1cb7373e32987ef5e00c3a1e90b5052352bd4b60ee20c3fe592af2dbba3b0de0c637218c25590828dbc4067e
+  languageName: node
+  linkType: hard
+
 "@npmcli/agent@npm:^3.0.0":
   version: 3.0.0
   resolution: "@npmcli/agent@npm:3.0.0"
@@ -1933,6 +1999,92 @@ __metadata:
   version: 0.11.0
   resolution: "@pkgjs/parseargs@npm:0.11.0"
   checksum: 10c0/5bd7576bb1b38a47a7fc7b51ac9f38748e772beebc56200450c4a817d712232b8f1d3ef70532c80840243c657d491cf6a6be1e3a214cff907645819fdc34aadd
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-darwin-arm64@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-darwin-arm64@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-darwin-x64@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-darwin-x64@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-freebsd-x64@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-freebsd-x64@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=freebsd & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-linux-arm-gnueabihf@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-linux-arm-gnueabihf@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=linux & cpu=arm
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-linux-arm64-gnu@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-linux-arm64-gnu@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-linux-arm64-musl@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-linux-arm64-musl@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-linux-x64-gnu@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-linux-x64-gnu@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-linux-x64-musl@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-linux-x64-musl@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-wasm32-wasi@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-wasm32-wasi@npm:1.0.0-beta.1-commit.f90856a"
+  dependencies:
+    "@napi-rs/wasm-runtime": "npm:^0.2.4"
+  conditions: cpu=wasm32
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-win32-arm64-msvc@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-win32-arm64-msvc@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-win32-ia32-msvc@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-win32-ia32-msvc@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=win32 & cpu=ia32
+  languageName: node
+  linkType: hard
+
+"@rolldown/binding-win32-x64-msvc@npm:1.0.0-beta.1-commit.f90856a":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "@rolldown/binding-win32-x64-msvc@npm:1.0.0-beta.1-commit.f90856a"
+  conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
@@ -1999,6 +2151,21 @@ __metadata:
     rollup:
       optional: true
   checksum: 10c0/1732af42febdb42d96fd7916b65ca94a550a028d1ea5efa40d5d7a99ab3c336e41efac14a77eefef18b956b4b7335969c6252f2a22bf0223dc8b4a7a53f89ed3
+  languageName: node
+  linkType: hard
+
+"@rollup/plugin-replace@npm:^6.0.2":
+  version: 6.0.2
+  resolution: "@rollup/plugin-replace@npm:6.0.2"
+  dependencies:
+    "@rollup/pluginutils": "npm:^5.0.1"
+    magic-string: "npm:^0.30.3"
+  peerDependencies:
+    rollup: ^1.20.0||^2.0.0||^3.0.0||^4.0.0
+  peerDependenciesMeta:
+    rollup:
+      optional: true
+  checksum: 10c0/71c0dea46f560c8dff59853446d43fa0e8258139a74d2af09fce5790d0540ff3d874c8fd9962cb049577d25327262bfc97485ef90b2a0a21bf28a9d3bd8c6d44
   languageName: node
   linkType: hard
 
@@ -2082,6 +2249,15 @@ __metadata:
   dependencies:
     "@sinonjs/commons": "npm:^3.0.0"
   checksum: 10c0/2e2fb6cc57f227912814085b7b01fede050cd4746ea8d49a1e44d5a0e56a804663b0340ae2f11af7559ea9bf4d087a11f2f646197a660ea3cb04e19efc04aa63
+  languageName: node
+  linkType: hard
+
+"@tybys/wasm-util@npm:^0.9.0":
+  version: 0.9.0
+  resolution: "@tybys/wasm-util@npm:0.9.0"
+  dependencies:
+    tslib: "npm:^2.4.0"
+  checksum: 10c0/f9fde5c554455019f33af6c8215f1a1435028803dc2a2825b077d812bed4209a1a64444a4ca0ce2ea7e1175c8d88e2f9173a36a33c199e8a5c671aa31de8242d
   languageName: node
   linkType: hard
 
@@ -7837,6 +8013,59 @@ __metadata:
   languageName: node
   linkType: hard
 
+"rolldown@npm:^1.0.0-beta.1":
+  version: 1.0.0-beta.1-commit.f90856a
+  resolution: "rolldown@npm:1.0.0-beta.1-commit.f90856a"
+  dependencies:
+    "@rolldown/binding-darwin-arm64": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-darwin-x64": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-freebsd-x64": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-linux-arm-gnueabihf": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-linux-arm64-gnu": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-linux-arm64-musl": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-linux-x64-gnu": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-linux-x64-musl": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-wasm32-wasi": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-win32-arm64-msvc": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-win32-ia32-msvc": "npm:1.0.0-beta.1-commit.f90856a"
+    "@rolldown/binding-win32-x64-msvc": "npm:1.0.0-beta.1-commit.f90856a"
+    zod: "npm:^3.23.8"
+  peerDependencies:
+    "@babel/runtime": ">=7"
+  dependenciesMeta:
+    "@rolldown/binding-darwin-arm64":
+      optional: true
+    "@rolldown/binding-darwin-x64":
+      optional: true
+    "@rolldown/binding-freebsd-x64":
+      optional: true
+    "@rolldown/binding-linux-arm-gnueabihf":
+      optional: true
+    "@rolldown/binding-linux-arm64-gnu":
+      optional: true
+    "@rolldown/binding-linux-arm64-musl":
+      optional: true
+    "@rolldown/binding-linux-x64-gnu":
+      optional: true
+    "@rolldown/binding-linux-x64-musl":
+      optional: true
+    "@rolldown/binding-wasm32-wasi":
+      optional: true
+    "@rolldown/binding-win32-arm64-msvc":
+      optional: true
+    "@rolldown/binding-win32-ia32-msvc":
+      optional: true
+    "@rolldown/binding-win32-x64-msvc":
+      optional: true
+  peerDependenciesMeta:
+    "@babel/runtime":
+      optional: true
+  bin:
+    rolldown: bin/cli.js
+  checksum: 10c0/e9018052d305374b85b330357c65ad41ee94c3dd4f92827f03eaddc6998fb9fb6611fa21be248f1a18d233dfca9c6d268e5305403a1d0d61789ae646555bded6
+  languageName: node
+  linkType: hard
+
 "rollup-plugin-define@npm:^1.0.1":
   version: 1.0.1
   resolution: "rollup-plugin-define@npm:1.0.1"
@@ -8799,7 +9028,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tslib@npm:^2.1.0, tslib@npm:^2.6.2":
+"tslib@npm:^2.1.0, tslib@npm:^2.4.0, tslib@npm:^2.6.2":
   version: 2.8.1
   resolution: "tslib@npm:2.8.1"
   checksum: 10c0/9c4759110a19c53f992d9aae23aac5ced636e99887b51b9e61def52611732872ff7668757d4e4c61f19691e36f4da981cd9485e869b4a7408d689f6bf1f14e62
@@ -9376,7 +9605,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zod@npm:^3.22.3, zod@npm:^3.22.4":
+"zod@npm:^3.22.3, zod@npm:^3.22.4, zod@npm:^3.23.8":
   version: 3.24.1
   resolution: "zod@npm:3.24.1"
   checksum: 10c0/0223d21dbaa15d8928fe0da3b54696391d8e3e1e2d0283a1a070b5980a1dbba945ce631c2d1eccc088fdbad0f2dfa40155590bf83732d3ac4fcca2cc9237591b
