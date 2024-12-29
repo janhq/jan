@@ -136,7 +136,7 @@ const symlinkEngines = async () => {
       CORTEX_ENGINE_VERSION
     )
 
-    await mkdir(path.join(sourceEnginePath, variant), {
+    await mkdir(path.join(symlinkEnginePath, variant), {
       recursive: true,
     }).catch(console.error)
 
