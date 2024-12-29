@@ -51,8 +51,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          make build:joi
-          make build:core
+          make build-joi
+          make build-core
           yarn
 
       - name: Run test coverage
