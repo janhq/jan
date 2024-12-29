@@ -29,70 +29,73 @@ import FAQBox from '@/components/FaqBox'
 Jan has been developed as a Mac Universal application, allowing it to run natively on both Apple Silicon and Intel-based Macs.
 
 ## Compatibility
-
+### Minimum Requirements
 Ensure that your system meets the following requirements to use Jan effectively:
-<Tabs items={['Mac Apple Silicon','Mac Intel CPU']}>
-<Tabs.Tab>
 - **Operating System:** MacOSX 13.6 or higher
 - **Memory:**
-  - 8GB for running up to 3B models
-  - 16GB for running up to 7B models
-  - 32GB for running up to 13B models
-<Callout type="info">
-Apple Silicon Macs leverage Metal for GPU acceleration, providing faster performance than Intel Macs, which rely solely on CPU processing.
-</Callout>
-- **Disk:** At least 10GB for app and model download
-</Tabs.Tab>
-<Tabs.Tab>
-- **Operating System:** MacOSX 13.6 or higher
-- **Memory:**
-  - 8GB for running up to 3B models
-  - 16GB for running up to 7B models
-  - 32GB for running up to 13B models
-- **Disk:** At least 10GB for app and model download
-</Tabs.Tab>
-</Tabs>
+  - 8GB → up to 3B parameter models
+  - 16GB → up to 7B parameter models
+  - 32GB → up to 13B parameter models
+- **Storage:** 10GB+ free space
 
-## Installing Jan
+### Mac Performance Guide
+<Callout type="info">
+**Apple Silicon Macs** leverage Metal for GPU acceleration, providing faster performance than **Appple Intel Macs**, which rely solely on CPU processing.
+</Callout>
+**Apple Silicon (M1, M2, M3)**
+- Metal acceleration enabled by default, no configuration required
+- Optimized GPU-accelerated performance
+
+**Intel-based Mac**
+- CPU-only processing
+- Uses regular processor, works slower
+
+_To verify your Mac's processor architecture: Apple menu  → About This Mac._
+
+## Install Jan 
 
 To install Jan, follow the steps below:
 
-### Step 1: Download Jan Application
-
+### Step 1: Download Application
 
 Jan provides 3 types of releases:
 <Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
 <Tabs.Tab>
-#### Stable Releases
-
 Please download Jan from official distributions, or build it from source.
 
-- **Official Website**: [https://jan.ai](https://jan.ai/)
-- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/releases)
+- [Download Jan's Stable Version](https://app.jan.ai/download/latest/mac-universal)
+- Official Website: https://jan.ai/download
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Beta releases let you test new features, which may be buggy:
+
+[Download Jan's Beta Version](https://app.jan.ai/download/beta/mac-universal)
 
 <Callout type="info">
-Make sure to verify the URL to ensure that it's the official Jan website and GitHub repository.
+Keep in mind that this build might crash frequently or contain bugs!
 </Callout>
 </Tabs.Tab>
 <Tabs.Tab>
 
-Beta releases let you test out new features, which may be buggy:
+Nightly releases are for internal team to test new feature build everyday, which is very be buggy:
 
-- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/actions/workflows/jan-electron-build-nightly.yml)
+[Download Jan's Nightly Version](https://app.jan.ai/download/nightly/mac-universal)
 
 <Callout type="info">
-Keep in mind that this build might crash frequently and may contain bugs!
+Keep in mind that this build crashes frequently or contains bugs!
 </Callout>
 </Tabs.Tab>
 </Tabs>
 
 
-### Step 2: Install the Jan Application
+### Step 2: Install Application 
 
-1. Once you have downloaded the Jan app `.dmg` file, open the file.
-2. Drag the application icon to the Applications folder shortcut.
-3. Wait for the installation process.
-4. Once installed, you can access Jan on your machine.
+1. Download and open the Jan installer (`.dmg` file)
+2. Drag the Jan icon to your **Applications** folder
+3. Installation will take a few moments to complete
+4. Launch Jan from your Applications folder
 
 
 ## Jan Data Folder
@@ -103,43 +106,34 @@ By default, Jan is installed in the following directory:
 # Default installation directory
 ~/Library/Application\ Support/Jan/data
 ```
+See [Jan Data Folder](/docs/data-folder) for more details about the data folder structure.
 
-<Callout type="info">
-- Please see the [Jan Data Folder](/docs/data-folder) for more details about the data folder structure.
-</Callout>
 
-## Metal Acceleration
+## Uninstall Jan
+### Remove Application
+1. If Jan is currently open, exit the app
+2. Open **Finder** menu.
+3. Navigate to **Applications**
+4. Locate Jan (or use the search bar)
+5. Remove the application using any method:
+  - Drag to **Trash**
+  - Right-click → **Move to Trash**
+  - Select and press **Command-Delete**
 
-Jan is specially designed to work well on Mac Silicon, using `llama.cpp` as its main engine for processing AI tasks efficiently. It **automatically uses [Metal](https://developer.apple.com/documentation/metal)**, Apple's latest technology that can be used for GPU acceleration, so you don’t need to turn on this feature manually.
+### Clean Up Data (Optional)
 
-<Callout type="info">
-💡 Metal, used for GPU acceleration, is not supported on Intel-based Mac devices.
-
-</Callout>
-
-## Uninstalling Jan
-
-To uninstall Jan, follow the steps below:
-
-1. If the app is currently open, exit the app before continuing.
-2. Open the **Finder** menu.
-3. Click the **Applications** option from the sidebar.
-4. Find the **Jan** app or type in the search bar.
-5. Use any of these ways to move the **Jan** app to the Trash:
-- Drag the app to the Trash.
-- Select the app and choose the Move to Trash option.
-- Select the app and press Command-Delete on your keyboard.
-6. Use the following command to delete Jan's user data and app cache:
+Open **Terminal** and run these commands to remove all Jan-related data:
 ```bash
 # Remove all user data
 rm -rf ~/jan
 
-# Delete the application data
+# Delete application data
 rm -rf ~/Library/Application\ Support/Jan/data
 
-# Delete the application cache
+# Delete application cache
 rm -rf ~/Library/Application\ Support/Jan/cache
 ```
+This will completely remove Jan and all associated data from your system.
 
 {/* ## FAQs
 

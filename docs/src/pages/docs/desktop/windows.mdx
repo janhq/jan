@@ -27,88 +27,77 @@ import FAQBox from '@/components/FaqBox'
 # Windows Installation
 To install Jan desktop on Windows, follow the steps below:
 ## Compatibility
-
 Ensure that your system meets the following requirements to use Jan effectively:
-<Tabs items={['OS', 'CPU', 'RAM', 'GPU', 'Disk']}>
-<Tabs.Tab>
-- Windows 10 or higher.
-</Tabs.Tab>
-<Tabs.Tab>
+- **Operating System**: Windows 10 or higher.
+- **CPU**
 <Tabs items={['Intel', 'AMD']}>
 <Tabs.Tab>
-<Callout type="info">
-- Jan supports a processor that can handle AVX2. For the full list, please see [here](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
-- We support older processors with AVX and AVX-512, though this is not recommended.
-</Callout>
-- Haswell processors (Q2 2013) and newer.
-- Tiger Lake (Q3 2020) and newer for Celeron and Pentium processors.
+- Intel: Haswell (Q2 2013) or newer
+- Intel Celeron/Pentium: Tiger Lake (Q3 2020) or newer
 </Tabs.Tab>
 <Tabs.Tab>
-<Callout type="info">
-- Jan supports a processor that can handle AVX2. For the full list, please see [here](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
-- We support older processors with AVX and AVX-512, though this is not recommended.
-</Callout>
 - Excavator processors (Q2 2015) and newer.
 </Tabs.Tab>
 </Tabs>
-</Tabs.Tab>
-<Tabs.Tab>
-- 8GB for running up to 3B models (int4).
-- 16GB for running up to 7B models (int4).
-- 32GB for running up to 13B models (int4).
-
 <Callout type="info">
-We support DDR2 RAM as the minimum requirement but recommend using newer generations of RAM for improved performance.
-
+- Jan requires a processor with AVX2 for best performance. See [full list of supported processors.](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2)
+- While older processors with AVX/AVX-512 will work, you may experience slower performance.
 </Callout>
-</Tabs.Tab>
-<Tabs.Tab>    
-- 6GB can load the 3B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
-- 8GB can load the 7B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
-- 12GB can load the 13B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
-    
+- **Memory (RAM)**
+  - 8GB → 3B parameter models (int4)
+  - 16GB → 7B parameter models (int4)
+  - 32GB → 13B parameter models (int4)
+<Callout type="info">
+DDR2 RAM is supported but newer RAM generations are recommended for better performance.
+</Callout>
+- **GPU**:
+  - 6GB → 3B models with number of GPU layers (`ngl`) at 120 (full speed)
+  - 8GB → 7B models with number of GPU layers (`ngl`) at 120 (full speed)
+  - 12GB → 13B models with number of GPU layers (`ngl`) at 120 (full speed)
 <Callout type="info">
 Having at least 6GB VRAM when using NVIDIA, AMD, or Intel Arc GPUs is recommended.
-
 </Callout>
-</Tabs.Tab>
-<Tabs.Tab>     
-- At least 10GB for app storage and model download.
-</Tabs.Tab>
-</Tabs>
-## Installing Jan
+- **Storage:** Minimum 10GB free space for application and model downloads
+
+
+## Install Jan
 
 To install Jan, follow the steps below:
 
-### Step 1: Download the Jan Application
+### Step 1: Download Application
 
-Jan provides two types of releases:
-<Tabs items={['Stable Releases', 'Nightly Releases']}>
+Jan provides 3 types of releases:
+<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
 <Tabs.Tab>
-#### Stable Releases
+Please download Jan from official distributions, or build it from source.
 
-The stable release is a stable version of Jan. You can download a stable release Jan app via the following:
+- [Download Jan's Stable Version](https://app.jan.ai/download/latest/win-x64)
+- Official Website: https://jan.ai/download
 
-- **Official Website**: [https://jan.ai](https://jan.ai/)
-- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/releases)
+</Tabs.Tab>
+<Tabs.Tab>
+
+Beta releases let you test new features, which may be buggy:
+
+[Download Jan's Beta Version](https://app.jan.ai/download/beta/win-x64)
 
 <Callout type="info">
-Make sure to verify the URL to ensure that it's the official Jan website and GitHub repository.
+Keep in mind that this build might crash frequently or contain bugs!
 </Callout>
 </Tabs.Tab>
 <Tabs.Tab>
-#### Nightly Releases
 
-The nightly Release allows you to test out new features and get a sneak peek at what might be included in future stable releases. You can download this version via:
+Nightly releases are for internal team to test new feature build everyday, which is very be buggy:
 
-- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/actions/workflows/jan-electron-build-nightly.yml)
+[Download Jan's Nightly Version](https://app.jan.ai/download/nightly/win-x64)
 
 <Callout type="info">
-Keep in mind that this build might crash frequently and may contain bugs!
+Keep in mind that this build crashes frequently or contains bugs!
 </Callout>
 </Tabs.Tab>
 </Tabs>
-### Step 2: Install the Jan Application
+
+### Step 2: Install Application
 
 1. Once you have downloaded the Jan app `.exe` file, open the file.
 2. Wait for Jan to be completely installed on your machine.
@@ -172,7 +161,7 @@ To enable the use of your Intel Arc GPU in the Jan app, you need to activate the
 5. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated.
 
 
-## Uninstalling Jan
+## Uninstall Jan
 
 To uninstall Jan, follow the steps below:
 
@@ -181,7 +170,7 @@ To uninstall Jan, follow the steps below:
 1. Open the **Control Panels**.
 2. Click **Uninstall Program** under the **Programs** section.
 
-### Step 2: Uninstall Jan App
+### Step 2: Uninstall Application 
 
 1. Search for **Jan**.
 2. Click the **three dots icon** -> **Uninstall**.
