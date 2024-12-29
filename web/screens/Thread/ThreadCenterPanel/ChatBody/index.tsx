@@ -86,6 +86,7 @@ const ChatBody = memo(
     })
 
     useEffect(() => {
+      isUserManuallyScrollingUp.current = false
       if (parentRef.current) {
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
@@ -93,6 +94,7 @@ const ChatBody = memo(
     }, [count, virtualizer])
 
     useEffect(() => {
+      isUserManuallyScrollingUp.current = false
       if (parentRef.current && isGeneratingResponse) {
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
@@ -100,6 +102,7 @@ const ChatBody = memo(
     }, [count, virtualizer, isGeneratingResponse])
 
     useEffect(() => {
+      isUserManuallyScrollingUp.current = false
       if (parentRef.current && isGeneratingResponse) {
         parentRef.current.scrollTo({ top: parentRef.current.scrollHeight })
         virtualizer.scrollToIndex(count - 1)
