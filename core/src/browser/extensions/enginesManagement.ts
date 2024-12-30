@@ -3,6 +3,7 @@ import {
   Engines,
   EngineVariant,
   EngineReleased,
+  EngineConfig,
   DefaultEngineVariant,
 } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
@@ -54,10 +55,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @param name - Inference engine name.
    * @returns A Promise that resolves to intall of engine.
    */
-  abstract installEngine(
-    name: InferenceEngine,
-    engineConfig: { variant: string; version?: string }
-  ): Promise<{ messages: string }>
+  abstract installEngine(name: string, engineConfig: EngineConfig): Promise<{ messages: string }>
 
   /**
    * @param name - Inference engine name.
@@ -65,7 +63,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    */
   abstract uninstallEngine(
     name: InferenceEngine,
-    engineConfig: { variant: string; version: string }
+    engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
   /**
@@ -81,11 +79,19 @@ export abstract class EngineManagementExtension extends BaseExtension {
    */
   abstract setDefaultEngineVariant(
     name: InferenceEngine,
-    engineConfig: { variant: string; version: string }
+    engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
   /**
    * @returns A Promise that resolves to update engine.
    */
-  abstract updateEngine(name: InferenceEngine): Promise<{ messages: string }>
+  abstract updateEngine(
+    name: InferenceEngine,
+    engineConfig?: EngineConfig
+  ): Promise<{ messages: string }>
+
+  /**
+   * @returns A Promise that resolves to an object of remote models list .
+   */
+  abstract getRemoteModels(name: InferenceEngine | string): Promise<any>
 }
