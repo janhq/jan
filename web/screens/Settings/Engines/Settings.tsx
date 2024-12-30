@@ -1,9 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { EngineEvent, events, InferenceEngine } from '@janhq/core'
-import { Button, ScrollArea, Badge, Select } from '@janhq/joi'
-
+import {
+  DownloadEvent,
+  EngineEvent,
+  events,
+  InferenceEngine,
+} from '@janhq/core'
+import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
 import { Trash2Icon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
@@ -18,8 +22,7 @@ import {
   useGetReleasedEnginesByVersion,
 } from '@/hooks/useEngineManagement'
 
-import DeleteEngineVariant from './DeleteEngineVariant'
-
+import { formatDownloadPercentage } from '@/utils/converter'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -43,6 +46,9 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     defaultEngineVariant?.version as string,
     os()
   )
+  const [installingEngines, setInstallingEngines] = useState<
+    Map<string, number>
+  >(new Map())
 
   const isEngineUpdated =
     latestReleasedEngine &&
@@ -52,6 +58,16 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       )
     )
 
+  const availableVariants = useMemo(
+    () =>
+      latestReleasedEngine?.map((e) =>
+        e.name.replace(
+          `${defaultEngineVariant?.version.replace(/^v/, '') as string}-`,
+          ''
+        )
+      ),
+    [latestReleasedEngine, defaultEngineVariant]
+  )
   const options =
     installedEngines &&
     installedEngines
@@ -83,10 +99,37 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     }
   }, [defaultEngineVariant])
 
-  const handleEngineUpdate = useCallback(() => {
-    mutateInstalledEngines()
-    mutateDefaultEngineVariant()
-  }, [mutateDefaultEngineVariant, mutateInstalledEngines])
+  const handleEngineUpdate = useCallback(
+    (event: { id: string; type: DownloadEvent; percent: number }) => {
+      mutateInstalledEngines()
+      mutateDefaultEngineVariant()
+      // Backward compatible support - cortex.cpp returns full variant file name
+      const variant: string | undefined = event.id.includes('.tar.gz')
+        ? availableVariants?.find((e) => event.id.includes(`${e}.tar.gz`))
+        : availableVariants?.find((e) => event.id.includes(e))
+      if (!variant) return
+      setInstallingEngines((prev) => {
+        prev.set(variant, event.percent)
+        return prev
+      })
+      if (
+        event.type === DownloadEvent.onFileDownloadError ||
+        event.type === DownloadEvent.onFileDownloadStopped ||
+        event.type === DownloadEvent.onFileDownloadSuccess
+      ) {
+        setInstallingEngines((prev) => {
+          prev.delete(variant)
+          return prev
+        })
+      }
+    },
+    [
+      mutateDefaultEngineVariant,
+      mutateInstalledEngines,
+      setInstallingEngines,
+      availableVariants,
+    ]
+  )
 
   useEffect(() => {
     events.on(EngineEvent.OnEngineUpdate, handleEngineUpdate)
@@ -102,7 +145,6 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       version: String(defaultEngineVariant?.version),
     })
   }
-
   return (
     <ScrollArea className="h-full w-full">
       <div className="block w-full px-4">
@@ -217,28 +259,77 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                               {installedEngineByVersion?.some(
                                 (x) => x.name === item.name
                               ) ? (
-                                <DeleteEngineVariant
-                                  variant={item}
-                                  engine={engine}
-                                />
-                              ) : (
                                 <Button
-                                  variant="soft"
+                                  theme="icon"
+                                  variant="outline"
                                   onClick={() => {
-                                    installEngine(engine, {
+                                    uninstallEngine(engine, {
                                       variant: item.name,
                                       version: String(
                                         defaultEngineVariant?.version
                                       ),
-                                    }).then(() => {
-                                      if (selectedVariants === '') {
-                                        setSelectedVariants(item.name)
-                                      }
                                     })
+                                    if (selectedVariants === item.name) {
+                                      setSelectedVariants('')
+                                    }
+                                    mutateInstalledEngines()
                                   }}
                                 >
-                                  Download
+                                  <Trash2Icon
+                                    size={14}
+                                    className="text-[hsla(var(--text-secondary))]"
+                                  />
                                 </Button>
+                              ) : (
+                                <>
+                                  {installingEngines.has(item.name) ? (
+                                    <Button variant="soft">
+                                      <div className="flex items-center space-x-2">
+                                        <Progress
+                                          className="inline-block h-2 w-[80px]"
+                                          value={
+                                            formatDownloadPercentage(
+                                              installingEngines.get(
+                                                item.name
+                                              ) ?? 0,
+                                              {
+                                                hidePercentage: true,
+                                              }
+                                            ) as number
+                                          }
+                                        />
+                                        <span className="tabular-nums">
+                                          {formatDownloadPercentage(
+                                            installingEngines.get(item.name) ??
+                                              0
+                                          )}
+                                        </span>
+                                      </div>
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      variant="soft"
+                                      onClick={() => {
+                                        setInstallingEngines((prev) => {
+                                          prev.set(item.name, 0)
+                                          return prev
+                                        })
+                                        installEngine(engine, {
+                                          variant: item.name,
+                                          version: String(
+                                            defaultEngineVariant?.version
+                                          ),
+                                        }).then(() => {
+                                          if (selectedVariants === '') {
+                                            setSelectedVariants(item.name)
+                                          }
+                                        })
+                                      }}
+                                    >
+                                      Download
+                                    </Button>
+                                  )}
+                                </>
                               )}
                             </div>
                           </div>

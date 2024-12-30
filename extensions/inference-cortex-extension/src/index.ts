@@ -225,7 +225,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Do health check on cortex.cpp
    * @returns
    */
-  private healthz(): Promise<void> {
+  private async healthz(): Promise<void> {
     return ky
       .get(`${CORTEX_API_URL}/healthz`, {
         retry: {
@@ -241,7 +241,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Clean cortex processes
    * @returns
    */
-  private clean(): Promise<any> {
+  private async clean(): Promise<any> {
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
@@ -265,6 +265,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
           this.socket.addEventListener('message', (event) => {
             const data = JSON.parse(event.data)
+
             const transferred = data.task.items.reduce(
               (acc: number, cur: any) => acc + cur.downloadedBytes,
               0
@@ -290,8 +291,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
             if (data.task.type === 'Engine') {
               events.emit(EngineEvent.OnEngineUpdate, {
-                type: data.type,
+                type: DownloadTypes[data.type as keyof typeof DownloadTypes],
                 percent: percent,
+                id: data.task.id,
               })
             } else {
               if (data.type === DownloadTypes.DownloadSuccess) {
