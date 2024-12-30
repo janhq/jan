@@ -1,3 +1,6 @@
+/* eslint-disable  @typescript-eslint/no-explicit-any */
+/* eslint-disable  react/no-unescaped-entities */
+
 import React, { useCallback, useRef } from 'react'
 
 import {
@@ -11,13 +14,14 @@ interface EngineConfig extends OriginalEngineConfig {
 
 import { ScrollArea, Input, TextArea } from '@janhq/joi'
 
+import { ChevronRight } from 'lucide-react'
+import { twMerge } from 'tailwind-merge'
+
 import {
   updateEngine,
   useGetEngines,
   useGetRemoteModels,
 } from '@/hooks/useEngineManagement'
-import { twMerge } from 'tailwind-merge'
-import { ChevronRight } from 'lucide-react'
 
 const RemoteEngineSettings = ({
   engine: name,

@@ -6,14 +6,15 @@ import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import Engines from '@/screens/Settings/Engines'
 import LocalEngineSettings from '@/screens/Settings/Engines/LocalEngineSettings'
+import RemoteEngineSettings from '@/screens/Settings/Engines/RemoteEngineSettings'
 import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hotkeys from '@/screens/Settings/Hotkeys'
 import MyModels from '@/screens/Settings/MyModels'
 import Privacy from '@/screens/Settings/Privacy'
 
-import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 import { isLocalEngine } from '@/utils/modelEngine'
-import RemoteEngineSettings from '@/screens/Settings/Engines/RemoteEngineSettings'
+
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)
