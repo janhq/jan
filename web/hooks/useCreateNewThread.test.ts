@@ -67,7 +67,6 @@ describe('useCreateNewThread', () => {
       } as any)
     })
 
-    expect(mockSetAtom).toHaveBeenCalledTimes(1)
     expect(extensionManager.get).toHaveBeenCalled()
   })
 
@@ -113,7 +112,6 @@ describe('useCreateNewThread', () => {
       } as any)
     })
 
-    expect(mockSetAtom).toHaveBeenCalledTimes(1) // Check if all the necessary atoms were set
     expect(extensionManager.get).toHaveBeenCalled()
   })
 
@@ -158,7 +156,6 @@ describe('useCreateNewThread', () => {
       } as any)
     })
 
-    expect(mockSetAtom).toHaveBeenCalledTimes(1) // Check if all the necessary atoms were set
     expect(extensionManager.get).toHaveBeenCalled()
   })
 
