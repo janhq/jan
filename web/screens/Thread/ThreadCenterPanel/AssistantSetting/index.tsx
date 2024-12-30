@@ -12,6 +12,7 @@ import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   activeThreadAtom,
   engineParamsUpdateAtom,
+  resetGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
 
 type Props = {
@@ -24,6 +25,7 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
   const { updateThreadMetadata } = useCreateNewThread()
   const { stopModel } = useActiveModel()
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
+  const resetGenerating = useSetAtom(resetGeneratingResponseAtom)
 
   const onValueChanged = useCallback(
     (key: string, value: string | number | boolean | string[]) => {
@@ -32,6 +34,7 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
         componentData.find((x) => x.key === key)?.requireModelReload ?? false
       if (shouldReloadModel) {
         setEngineParamsUpdate(true)
+        resetGenerating()
         stopModel()
       }
 

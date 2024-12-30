@@ -1,7 +1,7 @@
 import { Thread, ThreadContent, ThreadState } from '@janhq/core'
 
 import { atom } from 'jotai'
-import { atomWithStorage } from 'jotai/utils'
+import { atomWithStorage, selectAtom } from 'jotai/utils'
 
 import { ModelParams } from '@/types/model'
 
@@ -32,6 +32,22 @@ enum ThreadStorageAtomKeys {
 export const threadStatesAtom = atomWithStorage<Record<string, ThreadState>>(
   ThreadStorageAtomKeys.ThreadStates,
   {}
+)
+
+/**
+ * Returns whether there is a thread waiting for response or not
+ */
+const isWaitingForResponseAtom = selectAtom(threadStatesAtom, (threads) =>
+  Object.values(threads).some((t) => t.waitingForResponse)
+)
+
+/**
+ * Combine 2 states to reduce rerender
+ * 1. isWaitingForResponse
+ * 2. isGenerating
+ */
+export const isBlockingSendAtom = atom(
+  (get) => get(isWaitingForResponseAtom) || get(isGeneratingResponseAtom)
 )
 
 /**
@@ -172,6 +188,29 @@ export const updateThreadWaitingForResponseAtom = atom(
     set(threadStatesAtom, currentState)
   }
 )
+
+/**
+ * Reset the thread waiting for response state
+ */
+export const resetThreadWaitingForResponseAtom = atom(null, (get, set) => {
+  const currentState = { ...get(threadStatesAtom) }
+  Object.keys(currentState).forEach((threadId) => {
+    currentState[threadId] = {
+      ...currentState[threadId],
+      waitingForResponse: false,
+      error: undefined,
+    }
+  })
+  set(threadStatesAtom, currentState)
+})
+
+/**
+ * Reset all generating states
+ **/
+export const resetGeneratingResponseAtom = atom(null, (get, set) => {
+  set(resetThreadWaitingForResponseAtom)
+  set(isGeneratingResponseAtom, false)
+})
 
 /**
  * Update the thread last message
