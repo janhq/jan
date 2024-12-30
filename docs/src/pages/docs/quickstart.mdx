@@ -37,7 +37,7 @@ Once installed, you'll see the Jan application interface with no local models pr
 - Connect to cloud AI providers if desired
 <br/>
 
-![Default State](./_assets/default.gif)
+![Default State](./_assets/Step1.gif)
 
 <br/>
 
@@ -55,54 +55,63 @@ For more model installation methods, please visit [Model Management](/docs/model
 
 <br/>
 
-![Download a Model](./_assets/download-model2.gif)
+![Download a Model](./_assets/Step2.gif)
 
 <br/>
 
 ### Step 3: Turn on the GPU Acceleration (Optional)
-While the model downloads, let's optimize your hardware setup. If you have a compatible graphics card, you can significantly boost model performance by enabling GPU acceleration:1. Open Jan application.
+While the model downloads, let's optimize your hardware setup. If you have a compatible graphics card, you can significantly boost model performance by enabling GPU acceleration.
 1. Navigate to **Settings** → **Advanced Settings** → Turn on **GPU Acceleration**
 2. Choose your preferred GPU
 3. App reload is required after the selection
 <Callout type="info">
-Ensure you have installed your GPU driver. Please see [Desktop](/docs/desktop) for more information on activating the GPU acceleration.
+Ensure you have installed all required dependencies and drivers before enabling GPU acceleration. See **GPU Setup Guide** on [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration) for detailed instructions.
 </Callout>
 <br/>
 
 ![Turn on GPU acceleration](./_assets/gpu2.gif)
 
 
-### Step 4: Customize the Assistant Instruction
-Customize Jan's assistant behavior by specifying queries, commands, or requests in the Assistant Instructions field to get the most responses from your assistant. To customize, follow the steps below:
-1. On the **Thread** section, navigate to the right panel.
-2. Select the **Assistant** tab menu.
-3. Provide a specific guideline under the **Instructions** field.
+### Step 4: Customize Assistant Instructions
+Once your model has downloaded and you're ready to start your first conversation with Jan, you can customize how it responds by setting specific instructions:
+1. In any **Thread**, click the **Assistant** tab in the **right panel**
+2. Enter your instructions in the **Instructions** field to define how Jan should respond
+
+You can modify these instructions at any time during your conversation to adjust Jan's behavior for that specific thread.
 <br/>
 
-![Assistant Instruction](./_assets/asst.gif)
+![Assistant Instruction](./_assets/Step4.gif)
 
 <br/>
-### Step 5: Start Thread
+### Step 5: Start Chatting and Fine-tune Settings
+Now that your model is downloaded and instructions are set, you can begin chatting with Jan. Type your message in the **input field** at the bottom of the thread to start the conversation.
 
-Once you have downloaded a model and customized your assistant instruction, you can start chatting with the model.
-
-<br/>
-
-![Chat with a Model](./_assets/chat.gif)
-
-<br/>
+You can further customize your experience by:
+- Adjusting [model parameters](/docs/models/model-parameters) in the **Model** tab in the **right panel**
+- Trying different models for different tasks by clicking the **model selector** in **Model** tab or **input field**
+- Creating new threads with different instructions and model configurations
 
 
-### Step 6: Connect to a Remote API
-Jan also offers access to remote models hosted on external servers. You can link up with any Remote AI APIs compatible with OpenAI. Jan comes with numerous extensions that facilitate connections to various remote AI APIs. To explore and connect to Remote APIs, follow these steps:
-1. On the **Thread** section, navigate to the right panel.
-2. Select the **Model** tab menu.
-3. Next to the **OpenAI** models -> click the **Gear Icon (⚙️)**.
-4. Enter your OpenAI API **Keys**.
 
 <br/>
 
-![Connect Remote API](./_assets/server-openai2.gif)
+![Chat with a Model](./_assets/Step5.gif)
+
+<br/>
+
+
+### Step 6: Connect to cloud models (Optional)
+Jan supports both local and remote AI models. You can connect to remote AI services that are OpenAI API-compatible, including: OpenAI (GPT-4, o1,...), Anthropic (Claude), Groq, Mistral, and more.
+1. Open any **Thread**
+2. Click the **Model** tab in the **right panel** or the **model selector** in input field
+3. Choose the **Cloud** tab
+4. Choose your preferred provider (Anthropic, OpenAI, etc.)
+5. Click the **Settings** icon ⚙️ next to the provider to add your API key
+
+
+<br/>
+
+![Connect Remote API](./_assets/Step6.gif)
 
 <br/>
 </Steps>
