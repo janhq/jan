@@ -38,10 +38,6 @@ export function useActiveModel() {
   const pendingModelLoad = useRef(false)
   const isVulkanEnabled = useAtomValue(vulkanEnabledAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
-  const setGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
-  const resetThreadWaitingForResponseState = useSetAtom(
-    resetThreadWaitingForResponseAtom
-  )
 
   const downloadedModelsRef = useRef<Model[]>([])
 
@@ -147,8 +143,6 @@ export function useActiveModel() {
         return
 
       const engine = EngineManager.instance().get(stoppingModel.engine)
-      setGeneratingResponse(false)
-      resetThreadWaitingForResponseState()
       return engine
         ?.unloadModel(stoppingModel)
         .catch((e) => console.error(e))
@@ -158,14 +152,7 @@ export function useActiveModel() {
           pendingModelLoad.current = false
         })
     },
-    [
-      activeModel,
-      setStateModel,
-      setActiveModel,
-      stateModel,
-      setGeneratingResponse,
-      resetThreadWaitingForResponseState,
-    ]
+    [activeModel, setStateModel, setActiveModel, stateModel]
   )
 
   const stopInference = useCallback(async () => {

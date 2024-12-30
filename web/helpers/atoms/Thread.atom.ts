@@ -205,6 +205,14 @@ export const resetThreadWaitingForResponseAtom = atom(null, (get, set) => {
 })
 
 /**
+ * Reset all generating states
+ **/
+export const resetGeneratingResponseAtom = atom(null, (get, set) => {
+  set(resetThreadWaitingForResponseAtom)
+  set(isGeneratingResponseAtom, false)
+})
+
+/**
  * Update the thread last message
  */
 export const updateThreadStateLastMessageAtom = atom(
