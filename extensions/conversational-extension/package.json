@@ -8,7 +8,7 @@
   "license": "MIT",
   "scripts": {
     "test": "jest",
-    "build": "tsc -b . && webpack --config webpack.config.js",
+    "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
@@ -18,10 +18,9 @@
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
+    "rolldown": "1.0.0-beta.1",
     "ts-loader": "^9.5.0",
-    "typescript": "^5.7.2",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4"
+    "typescript": "^5.7.2"
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",

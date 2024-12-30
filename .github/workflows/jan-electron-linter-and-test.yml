@@ -78,6 +78,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Set IS_TEST environment variable
+        run: |
+          echo "IS_TEST=true" >> $GITHUB_ENV
+
       - name: 'Cleanup cache'
         continue-on-error: true
         run: |

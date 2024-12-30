@@ -8,23 +8,13 @@
   "license": "AGPL-3.0",
   "scripts": {
     "test": "jest",
-    "build": "tsc --module commonjs && rollup -c rollup.config.ts --configPlugin @rollup/plugin-typescript --bundleConfigAsCjs",
+    "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-replace": "^5.0.5",
-    "@rollup/plugin-typescript": "^11.1.6",
-    "@types/pdf-parse": "^1.1.4",
     "cpx": "^1.5.0",
-    "download-cli": "^1.1.1",
     "rimraf": "^3.0.2",
-    "rollup": "^2.38.5",
-    "rollup-plugin-define": "^1.0.1",
-    "rollup-plugin-sourcemaps": "^0.6.3",
-    "rollup-plugin-typescript2": "^0.36.0",
+    "rolldown": "1.0.0-beta.1",
     "run-script-os": "^1.1.6",
     "ts-loader": "^9.5.0",
     "typescript": "5.3.3"

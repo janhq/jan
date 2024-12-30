@@ -23,7 +23,7 @@
   "provider": "nitro-tensorrt-llm",
   "scripts": {
     "test": "jest",
-    "build": "tsc --module commonjs && rollup -c rollup.config.ts",
+    "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
@@ -31,10 +31,6 @@
     "./main": "./dist/node/index.cjs.js"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-replace": "^5.0.5",
     "@types/decompress": "4.2.7",
     "@types/jest": "^29.5.12",
     "@types/node": "^20.11.4",
@@ -46,10 +42,7 @@
     "jest-junit": "^16.0.0",
     "jest-runner": "^29.7.0",
     "rimraf": "^3.0.2",
-    "rollup": "^2.38.5",
-    "rollup-plugin-define": "^1.0.1",
-    "rollup-plugin-sourcemaps": "^0.6.3",
-    "rollup-plugin-typescript2": "^0.36.0",
+    "rolldown": "1.0.0-beta.1",
     "run-script-os": "^1.1.6",
     "ts-jest": "^29.2.5",
     "typescript": "^5.2.2"
