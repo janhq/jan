@@ -5,6 +5,7 @@ import {
   EngineManagementExtension,
   InferenceEngine,
   EngineReleased,
+  EngineConfig,
 } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
@@ -59,6 +60,34 @@ export function useGetEngines() {
   )
 
   return { engines, error, mutate }
+}
+
+/**
+ * @returns A Promise that resolves to an object of remote models.
+ */
+export function useGetRemoteModels(name: string) {
+  const extension = useMemo(
+    () =>
+      extensionManager.get<EngineManagementExtension>(
+        ExtensionTypeEnum.Engine
+      ) ?? null,
+    []
+  )
+
+  const {
+    data: remoteModels,
+    error,
+    mutate,
+  } = useSWR(
+    extension ? 'remoteModels' : null,
+    () => fetchExtensionData(extension, (ext) => ext.getRemoteModels(name)),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  )
+
+  return { remoteModels, error, mutate }
 }
 
 /**
@@ -262,7 +291,10 @@ export const setDefaultEngineVariant = async (
  * @body version - string
  * @returns A Promise that resolves to set default engine.
  */
-export const updateEngine = async (name: InferenceEngine) => {
+export const updateEngine = async (
+  name: InferenceEngine,
+  engineConfig?: EngineConfig
+) => {
   const extension = getExtension()
 
   if (!extension) {
@@ -271,7 +303,7 @@ export const updateEngine = async (name: InferenceEngine) => {
 
   try {
     // Call the extension's method
-    const response = await extension.updateEngine(name)
+    const response = await extension.updateEngine(name, engineConfig)
     return response
   } catch (error) {
     console.error('Failed to set default engine variant:', error)
@@ -284,8 +316,8 @@ export const updateEngine = async (name: InferenceEngine) => {
  * @returns A Promise that resolves to intall of engine.
  */
 export const installEngine = async (
-  name: InferenceEngine,
-  engineConfig: { variant: string; version?: string }
+  name: string,
+  engineConfig: EngineConfig
 ) => {
   const extension = getExtension()
 
@@ -309,7 +341,7 @@ export const installEngine = async (
  */
 export const uninstallEngine = async (
   name: InferenceEngine,
-  engineConfig: { variant: string; version: string }
+  engineConfig: EngineConfig
 ) => {
   const extension = getExtension()
 

@@ -831,6 +831,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@hookform/resolvers@npm:^3.9.1":
+  version: 3.9.1
+  resolution: "@hookform/resolvers@npm:3.9.1"
+  peerDependencies:
+    react-hook-form: ^7.0.0
+  checksum: 10c0/8a4056db3860b12ee30921ba352996104d6ae75ac45996d4c8b6df429e07ee73f5b87c82a22a15403789213f6f52f5fead1c2637b26ef624068b68d213362cd1
+  languageName: node
+  linkType: hard
+
 "@humanwhocodes/config-array@npm:^0.11.13, @humanwhocodes/config-array@npm:^0.11.14":
   version: 0.11.14
   resolution: "@humanwhocodes/config-array@npm:0.11.14"
@@ -1045,6 +1054,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@janhq/web@workspace:web"
   dependencies:
+    "@hookform/resolvers": "npm:^3.9.1"
     "@janhq/core": "link:../core"
     "@janhq/joi": "link:../joi"
     "@next/eslint-plugin-next": "npm:^14.0.1"
@@ -1098,6 +1108,7 @@ __metadata:
     react-circular-progressbar: "npm:^2.1.0"
     react-dom: "npm:18.2.0"
     react-dropzone: "npm:14.2.3"
+    react-hook-form: "npm:^7.54.2"
     react-hot-toast: "npm:^2.4.1"
     react-icons: "npm:^4.12.0"
     react-markdown: "npm:^9.0.1"
@@ -1120,6 +1131,7 @@ __metadata:
     ulidx: "npm:^2.3.0"
     use-debounce: "npm:^10.0.0"
     uuid: "npm:^9.0.1"
+    zod: "npm:^3.24.1"
   languageName: unknown
   linkType: soft
 
@@ -15372,6 +15384,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"react-hook-form@npm:^7.54.2":
+  version: 7.54.2
+  resolution: "react-hook-form@npm:7.54.2"
+  peerDependencies:
+    react: ^16.8.0 || ^17 || ^18 || ^19
+  checksum: 10c0/6eebead2900e3d369a989e7a20429f390dc75b3897142aa3107f1f6dabb9ae64fed201ea98cdcd8676e40466c97748aeb0c0d83264f5bd3a84dbc0b8e4863415
+  languageName: node
+  linkType: hard
+
 "react-hot-toast@npm:^2.4.1":
   version: 2.4.1
   resolution: "react-hot-toast@npm:2.4.1"
@@ -19107,7 +19128,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zod@npm:^3.23.8":
+"zod@npm:^3.23.8, zod@npm:^3.24.1":
   version: 3.24.1
   resolution: "zod@npm:3.24.1"
   checksum: 10c0/0223d21dbaa15d8928fe0da3b54696391d8e3e1e2d0283a1a070b5980a1dbba945ce631c2d1eccc088fdbad0f2dfa40155590bf83732d3ac4fcca2cc9237591b

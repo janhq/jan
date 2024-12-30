@@ -5,13 +5,15 @@ import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import Engines from '@/screens/Settings/Engines'
-import EngineSettings from '@/screens/Settings/Engines/Settings'
+import LocalEngineSettings from '@/screens/Settings/Engines/LocalEngineSettings'
 import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hotkeys from '@/screens/Settings/Hotkeys'
 import MyModels from '@/screens/Settings/MyModels'
 import Privacy from '@/screens/Settings/Privacy'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import { isLocalEngine } from '@/utils/modelEngine'
+import RemoteEngineSettings from '@/screens/Settings/Engines/RemoteEngineSettings'
 
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)
@@ -38,10 +40,22 @@ const SettingDetail = () => {
     case 'My Models':
       return <MyModels />
 
-    case InferenceEngine.cortex_llamacpp:
-      return <EngineSettings engine={selectedSetting} />
-
     default:
+      if (
+        !selectedSetting.includes('@janhq') &&
+        isLocalEngine(selectedSetting as InferenceEngine)
+      ) {
+        return (
+          <LocalEngineSettings engine={selectedSetting as InferenceEngine} />
+        )
+      } else if (
+        !selectedSetting.includes('@janhq') &&
+        !isLocalEngine(selectedSetting as InferenceEngine)
+      ) {
+        return (
+          <RemoteEngineSettings engine={selectedSetting as InferenceEngine} />
+        )
+      }
       return <ExtensionSetting />
   }
 }
