@@ -1798,6 +1798,7 @@ __metadata:
     slate-dom: "npm:0.111.0"
     slate-history: "npm:0.110.3"
     slate-react: "npm:0.110.3"
+    swr: "npm:^2.2.5"
     tailwind-merge: "npm:^2.0.0"
     tailwindcss: "npm:3.3.5"
     ts-jest: "npm:^29.2.5"
@@ -18995,6 +18996,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"swr@npm:^2.2.5":
+  version: 2.3.0
+  resolution: "swr@npm:2.3.0"
+  dependencies:
+    dequal: "npm:^2.0.3"
+    use-sync-external-store: "npm:^1.4.0"
+  peerDependencies:
+    react: ^16.11.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
+  checksum: 10c0/192497881013654bc82d2787b60ad0701113e8ae41c511dfa8d55bcf58582657a92a4cb2854d4ea2ceaa1055e67e58daf9bd98ada2786a3035ba12898da578f1
+  languageName: node
+  linkType: hard
+
 "symbol-tree@npm:^3.2.4":
   version: 3.2.4
   resolution: "symbol-tree@npm:3.2.4"
@@ -19972,7 +19985,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"use-sync-external-store@npm:^1.2.0":
+"use-sync-external-store@npm:^1.2.0, use-sync-external-store@npm:^1.4.0":
   version: 1.4.0
   resolution: "use-sync-external-store@npm:1.4.0"
   peerDependencies:

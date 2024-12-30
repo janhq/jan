@@ -13,3 +13,13 @@ interface ModelOperationResponse {
   error?: any
   modelFile?: string
 }
+
+/**
+ * Cortex Executable Options Interface
+ */
+interface CortexExecutableOptions {
+  enginePath: string
+  executablePath: string
+  cudaVisibleDevices: string
+  vkVisibleDevices: string
+}

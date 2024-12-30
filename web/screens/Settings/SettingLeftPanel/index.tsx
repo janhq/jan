@@ -1,18 +1,28 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { memo, useEffect, useState } from 'react'
 
 import { useAtomValue } from 'jotai'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import SettingItem from './SettingItem'
 
 import { extensionManager } from '@/extension'
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
+import {
+  inActiveEngineProviderAtom,
+  showSettingActiveLocalEngineAtom,
+} from '@/helpers/atoms/Extension.atom'
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingLeftPanel = () => {
+  const { engines } = useGetEngines()
   const settingScreens = useAtomValue(janSettingScreenAtom)
   const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
+  const showSettingActiveLocalEngine = useAtomValue(
+    showSettingActiveLocalEngineAtom
+  )
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<
     { name?: string; setting: string }[]
@@ -84,12 +94,36 @@ const SettingLeftPanel = () => {
           />
         ))}
 
+        {engines &&
+          Object.entries(engines)
+            .filter(([key]) => !showSettingActiveLocalEngine.includes(key))
+            .filter(([_, value]) => !(value as { type?: string }).type).length >
+            0 && (
+            <>
+              <div className="mb-1 mt-4 px-2">
+                <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
+                  Local Engine
+                </label>
+              </div>
+
+              {engines &&
+                Object.entries(engines)
+                  .filter(([_, value]) => !(value as { type?: string }).type)
+                  .filter(
+                    ([key]) => !showSettingActiveLocalEngine.includes(key)
+                  )
+                  .map(([key]) => {
+                    return <SettingItem key={key} name={key} setting={key} />
+                  })}
+            </>
+          )}
+
         {engineHasSettings.filter(
           (x) => !inActiveEngineProvider.includes(x.provider)
         ).length > 0 && (
           <div className="mb-1 mt-4 px-2">
             <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Model Providers
+              Remote Engine
             </label>
           </div>
         )}

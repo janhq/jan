@@ -1,13 +1,13 @@
 import * as path from 'path'
-import { GpuSetting, appResourcePath, log } from '@janhq/core/node'
+import {
+  appResourcePath,
+  getJanDataFolderPath,
+  GpuSetting,
+  log,
+} from '@janhq/core/node'
 import { fork } from 'child_process'
+import { mkdir, readdir, symlink } from 'fs/promises'
 
-export interface CortexExecutableOptions {
-  enginePath: string
-  executablePath: string
-  cudaVisibleDevices: string
-  vkVisibleDevices: string
-}
 /**
  * The GPU runMode that will be set - either 'vulkan', 'cuda', or empty for cpu.
  * @param settings
@@ -35,14 +35,6 @@ const os = (): string => {
         ? 'mac-arm64'
         : 'mac-amd64'
       : 'linux-amd64'
-}
-
-/**
- * The cortex.cpp extension based on the current platform.
- * @returns .exe if on Windows, otherwise an empty string.
- */
-const extension = (): '.exe' | '' => {
-  return process.platform === 'win32' ? '.exe' : ''
 }
 
 /**
@@ -90,29 +82,9 @@ const cpuInstructions = async (): Promise<string> => {
 }
 
 /**
- * The executable options for the cortex.cpp extension.
- */
-export const executableCortexFile = (
-  gpuSetting?: GpuSetting
-): CortexExecutableOptions => {
-  let cudaVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
-  let vkVisibleDevices = gpuSetting?.gpus_in_use.join(',') ?? ''
-  let binaryName = `cortex-server${extension()}`
-  const binPath = path.join(__dirname, '..', 'bin')
-  return {
-    enginePath: path.join(appResourcePath(), 'shared'),
-    executablePath: path.join(binPath, binaryName),
-    cudaVisibleDevices,
-    vkVisibleDevices,
-  }
-}
-
-/**
  * Find which variant to run based on the current platform.
  */
-export const engineVariant = async (
-  gpuSetting?: GpuSetting
-): Promise<string> => {
+const engineVariant = async (gpuSetting?: GpuSetting): Promise<string> => {
   const cpuInstruction = await cpuInstructions()
   log(`[CORTEX]: CPU instruction: ${cpuInstruction}`)
   let engineVariant = [
@@ -134,4 +106,46 @@ export const engineVariant = async (
 
   log(`[CORTEX]: Engine variant: ${engineVariant}`)
   return engineVariant
+}
+
+/**
+ * Create symlink to each variant for the default bundled version
+ */
+const symlinkEngines = async () => {
+  const sourceEnginePath = path.join(
+    appResourcePath(),
+    'shared',
+    'engines',
+    'cortex.llamacpp'
+  )
+  const symlinkEnginePath = path.join(
+    getJanDataFolderPath(),
+    'engines',
+    'cortex.llamacpp'
+  )
+  const variantFolders = await readdir(sourceEnginePath)
+  for (const variant of variantFolders) {
+    const targetVariantPath = path.join(
+      sourceEnginePath,
+      variant,
+      CORTEX_ENGINE_VERSION
+    )
+    const symlinkVariantPath = path.join(
+      symlinkEnginePath,
+      variant,
+      CORTEX_ENGINE_VERSION
+    )
+
+    await mkdir(path.join(symlinkEnginePath, variant), {
+      recursive: true,
+    }).catch(console.error)
+
+    await symlink(targetVariantPath, symlinkVariantPath).catch(console.error)
+    console.log(`Symlink created: ${targetVariantPath} -> ${symlinkEnginePath}`)
+  }
+}
+
+export default {
+  engineVariant,
+  symlinkEngines,
 }
