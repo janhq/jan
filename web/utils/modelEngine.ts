@@ -53,13 +53,13 @@ export const getTitleByEngine = (engine: InferenceEngine) => {
   switch (engine) {
     case InferenceEngine.nitro:
     case InferenceEngine.cortex_llamacpp:
-      return 'Llama.cpp (Cortex)'
+      return 'Llama.cpp'
     case InferenceEngine.nitro_tensorrt_llm:
       return 'TensorRT-LLM (Nitro)'
     case InferenceEngine.cortex_onnx:
-      return 'Onnx (Cortex)'
+      return 'Onnx'
     case InferenceEngine.cortex_tensorrtllm:
-      return 'TensorRT-LLM (Cortex)'
+      return 'TensorRT-LLM'
     case InferenceEngine.openai:
       return 'OpenAI'
     case InferenceEngine.openrouter:
