@@ -23,6 +23,8 @@ import {
 } from '@/hooks/useEngineManagement'
 
 import { formatDownloadPercentage } from '@/utils/converter'
+
+import DeleteEngineVariant from './DeleteEngineVariant'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -259,27 +261,10 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                               {installedEngineByVersion?.some(
                                 (x) => x.name === item.name
                               ) ? (
-                                <Button
-                                  theme="icon"
-                                  variant="outline"
-                                  onClick={() => {
-                                    uninstallEngine(engine, {
-                                      variant: item.name,
-                                      version: String(
-                                        defaultEngineVariant?.version
-                                      ),
-                                    })
-                                    if (selectedVariants === item.name) {
-                                      setSelectedVariants('')
-                                    }
-                                    mutateInstalledEngines()
-                                  }}
-                                >
-                                  <Trash2Icon
-                                    size={14}
-                                    className="text-[hsla(var(--text-secondary))]"
-                                  />
-                                </Button>
+                                <DeleteEngineVariant
+                                  variant={item}
+                                  engine={engine}
+                                />
                               ) : (
                                 <>
                                   {installingEngines.has(item.name) ? (
