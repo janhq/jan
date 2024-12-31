@@ -51,6 +51,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          make config-yarn
           yarn
           yarn build:joi
           yarn build:core
