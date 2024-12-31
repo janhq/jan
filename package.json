@@ -20,7 +20,7 @@
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace @janhq/web dev",
     "dev:server": "yarn workspace @janhq/server dev",
-    "dev": "concurrently \"yarn dev:web\" \"yarn dev:electron\"",
+    "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web\" \"yarn dev:electron\"",
     "build:server": "cd server && yarn install && yarn run build",
     "build:core": "cd core && yarn install && yarn run build && yarn pack",
     "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
