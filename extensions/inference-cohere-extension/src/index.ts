@@ -10,9 +10,6 @@ import { RemoteOAIEngine } from '@janhq/core'
 import { PayloadType } from '@janhq/core'
 import { ChatCompletionRole } from '@janhq/core'
 
-declare const SETTINGS: Array<any>
-declare const MODELS: Array<any>
-
 enum Settings {
   apiKey = 'cohere-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',

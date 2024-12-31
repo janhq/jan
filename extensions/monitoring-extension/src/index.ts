@@ -7,8 +7,6 @@ import {
   executeOnMain,
 } from '@janhq/core'
 
-declare const SETTINGS: Array<any>
-
 enum Settings {
   logEnabled = 'log-enabled',
   logCleaningInterval = 'log-cleaning-interval',

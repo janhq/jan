@@ -9,9 +9,6 @@
 import { RemoteOAIEngine } from '@janhq/core'
 import { PayloadType } from '@janhq/core'
 
-declare const SETTINGS: Array<any>
-declare const MODELS: Array<any>
-
 enum Settings {
   apiKey = 'openrouter-api-key',
   model = 'openrouter-model',

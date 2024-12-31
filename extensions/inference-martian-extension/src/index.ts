@@ -6,10 +6,7 @@
  * @module inference-martian-extension/src/index
  */
 
-import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
-
-declare const SETTINGS: Array<any>
-declare const MODELS: Array<any>
+import { RemoteOAIEngine } from '@janhq/core'
 
 enum Settings {
   apiKey = 'martian-api-key',

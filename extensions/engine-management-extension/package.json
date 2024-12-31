@@ -17,14 +17,11 @@
     "./main": "./dist/module.js"
   },
   "devDependencies": {
-    "@rollup/plugin-replace": "^6.0.2",
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
     "rolldown": "^1.0.0-beta.1",
     "ts-loader": "^9.5.0",
-    "typescript": "^5.3.3",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4"
+    "typescript": "^5.3.3"
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",

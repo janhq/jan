@@ -1,4 +1,4 @@
-import { getJanDataFolderPath, normalizeFilePath } from '@janhq/core/node'
+import { getJanDataFolderPath } from '@janhq/core/node'
 import { retrieval } from './retrieval'
 import path from 'path'
 
