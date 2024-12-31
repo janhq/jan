@@ -36,5 +36,8 @@
     "run-script-os": "^1.1.6",
     "typescript": "^5.3.3"
   },
+  "bundleDependencies": [
+    "@fastify/swagger-ui"
+  ],
   "packageManager": "yarn@4.5.3"
 }

@@ -12,6 +12,7 @@ export default defineConfig([
     resolve: {
       extensions: ['.js', '.ts'],
     },
+    external: ['@fastify/swagger-ui'],
     platform: 'node',
   },
 ])
