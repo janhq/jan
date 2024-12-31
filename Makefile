@@ -18,18 +18,15 @@ config-yarn:
 	yarn --version
 	yarn config set -H enableImmutableInstalls false
 
-# Builds the UI kit
-build-joi: config-yarn
-	cd joi && yarn install && yarn build
-
 # Installs yarn dependencies and builds core and extensions
-install-and-build: build-joi
+install-and-build: config-yarn
 ifeq ($(OS),Windows_NT)
 	echo "skip"
 endif
+	yarn install
+	yarn build:joi
 	yarn build:core
 	yarn build:server
-	yarn install
 	yarn build:extensions
 
 check-file-counts: install-and-build
