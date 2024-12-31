@@ -27,7 +27,10 @@ export enum NativeRoute {
 
   quickAskSizeUpdated = 'quickAskSizeUpdated',
   ackDeepLink = 'ackDeepLink',
-  factoryReset = 'factoryReset'
+  factoryReset = 'factoryReset',
+
+  startServer = 'startServer',
+  stopServer = 'stopServer',
 }
 
 /**
@@ -41,8 +44,6 @@ export enum AppRoute {
   dirName = 'dirName',
   isSubdirectory = 'isSubdirectory',
   baseName = 'baseName',
-  startServer = 'startServer',
-  stopServer = 'stopServer',
   log = 'log',
   systemInformation = 'systemInformation',
   showToast = 'showToast',

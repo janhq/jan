@@ -50,3 +50,4 @@ electron/shared/**
 
 # docs
 docs/yarn.lock
+electron/.version.bak
