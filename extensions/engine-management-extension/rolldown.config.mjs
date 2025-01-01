@@ -12,7 +12,7 @@ export default defineConfig([
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       API_URL: JSON.stringify('http://127.0.0.1:39291'),
       SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.42'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.43'),
     },
   },
   {
@@ -23,7 +23,7 @@ export default defineConfig([
       file: 'dist/node/index.cjs.js',
     },
     define: {
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.42'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.43'),
     },
   },
   {
