@@ -184,7 +184,7 @@ jobs:
 
   test-on-windows-pr:
     if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'workflow_dispatch'
-    runs-on: windows-desktop-default-windows-security
+    runs-on: windows-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
