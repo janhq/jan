@@ -1,0 +1,44 @@
+{
+  "name": "@janhq/engine-management-extension",
+  "productName": "Engine Management",
+  "version": "1.0.0",
+  "description": "Extension for managing engines and their configurations",
+  "main": "dist/index.js",
+  "node": "dist/node/index.cjs.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "MIT",
+  "scripts": {
+    "test": "jest",
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "rolldown": "^1.0.0-beta.1",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@janhq/core": "../../core/package.tgz",
+    "cpu-instructions": "^0.0.13",
+    "ky": "^1.7.2",
+    "p-queue": "^8.0.1"
+  },
+  "bundledDependencies": [
+    "cpu-instructions",
+    "@janhq/core"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}

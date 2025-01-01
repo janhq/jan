@@ -6,9 +6,8 @@
  * @module inference-nvidia-triton-trt-llm-extension/src/index
  */
 
-import { RemoteOAIEngine, SettingComponentProps } from '@janhq/core'
+import { RemoteOAIEngine } from '@janhq/core'
 
-declare const SETTINGS: Array<any>
 enum Settings {
   apiKey = 'tritonllm-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',

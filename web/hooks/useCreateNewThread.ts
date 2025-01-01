@@ -14,19 +14,17 @@ import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
-import { useActiveModel } from './useActiveModel'
-
 import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
+import { copyOverInstructionEnabledAtom } from '@/helpers/atoms/App.atom'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
@@ -52,10 +50,8 @@ export const useCreateNewThread = () => {
   const [activeAssistant, setActiveAssistant] = useAtom(activeAssistantAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
-  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const threads = useAtomValue(threadsAtom)
-  const { stopInference } = useActiveModel()
 
   const { recommendedModel } = useRecommendedModel()
 
@@ -63,10 +59,6 @@ export const useCreateNewThread = () => {
     assistant: (ThreadAssistantInfo & { id: string; name: string }) | Assistant,
     model?: Model | undefined
   ) => {
-    // Stop generating if any
-    setIsGeneratingResponse(false)
-    stopInference()
-
     const defaultModel = model || recommendedModel
 
     if (!model) {

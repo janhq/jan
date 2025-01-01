@@ -277,4 +277,39 @@ export function handleAppIPCs() {
     ModuleManager.instance.clearImportedModules()
     return createUserSpace().then(migrate).then(setupExtensions)
   })
+
+  /**
+   * Handles the "startServer" IPC message to start the Jan API server.
+   * Initializes and starts server with provided configuration options.
+   * @param _event - The IPC event object.
+   * @param args - Configuration object containing host, port, CORS settings etc.
+   * @returns Promise that resolves when server starts successfully
+   */
+  ipcMain.handle(
+    NativeRoute.startServer,
+    async (_event, args): Promise<void> => {
+      const { startServer } = require('@janhq/server')
+      return startServer({
+        host: args?.host,
+        port: args?.port,
+        isCorsEnabled: args?.isCorsEnabled,
+        isVerboseEnabled: args?.isVerboseEnabled,
+        prefix: args?.prefix,
+      })
+    }
+  )
+
+  /**
+   * Handles the "stopServer" IPC message to stop the Jan API server.
+   * Gracefully shuts down the server instance.
+   * @param _event - The IPC event object
+   * @returns Promise that resolves when server stops successfully
+   */
+  ipcMain.handle(NativeRoute.stopServer, async (_event): Promise<void> => {
+    /**
+     * Stop Jan API Server.
+     */
+    const { stopServer } = require('@janhq/server')
+    return stopServer()
+  })
 }

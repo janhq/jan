@@ -30,8 +30,6 @@ if [ "$OS_TYPE" == "Linux" ]; then
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-vulkan.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-vulkan/v${ENGINE_VERSION}" 1
     download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
     download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
-    mkdir -p "${SHARED_PATH}/engines/cortex.llamacpp/deps"
-    touch "${SHARED_PATH}/engines/cortex.llamacpp/deps/keep"
 
 elif [ "$OS_TYPE" == "Darwin" ]; then
     # macOS downloads

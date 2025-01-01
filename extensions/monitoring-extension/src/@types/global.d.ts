@@ -1,4 +1,5 @@
 declare const NODE: string
+declare const SETTINGS: SettingComponentProps[]
 
 type CpuGpuInfo = {
   cpu: {

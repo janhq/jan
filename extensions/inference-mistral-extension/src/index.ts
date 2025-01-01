@@ -8,9 +8,6 @@
 
 import { RemoteOAIEngine } from '@janhq/core'
 
-declare const SETTINGS: Array<any>
-declare const MODELS: Array<any>
-
 enum Settings {
   apiKey = 'mistral-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',

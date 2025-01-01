@@ -35,22 +35,19 @@ import RichTextEditor from './RichTextEditor'
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeSettingInputBoxAtom,
   activeThreadAtom,
   getActiveThreadIdAtom,
-  isGeneratingResponseAtom,
-  threadStatesAtom,
+  isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { stateModel } = useActiveModel()
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
   const spellCheck = useAtomValue(spellCheckAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
@@ -67,18 +64,13 @@ const ChatInput = () => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
-  const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
+  const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
 
   const upload = uploader()
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
-  )
-
-  const isStreamingResponse = Object.values(threadStates).some(
-    (threadState) => threadState.waitingForResponse
   )
 
   const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
@@ -302,9 +294,7 @@ const ChatInput = () => {
               </div>
             )}
 
-            {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
-            !isGeneratingResponse &&
-            !isStreamingResponse ? (
+            {!isBlockingSend ? (
               <>
                 {currentPrompt.length !== 0 && (
                   <Button

@@ -56,7 +56,7 @@ export default function ModelHandler() {
   const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
-  const [subscribedGeneratingMessage, setSubscribedGeneratingMessage] = useAtom(
+  const subscribedGeneratingMessage = useAtomValue(
     subscribedGeneratingMessageAtom
   )
   const activeThread = useAtomValue(activeThreadAtom)

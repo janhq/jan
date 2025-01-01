@@ -5,11 +5,7 @@
     "module": "esnext",
     "strict": true,
     "sourceMap": true,
-    "declaration": true,
-    "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "declarationDir": "dist/types",
+    "esModuleInterop": true,
     "outDir": "dist",
     "importHelpers": true,
     "typeRoots": ["node_modules/@types"]
