@@ -23,13 +23,15 @@ if [ "$OS_TYPE" == "Linux" ]; then
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx/v${ENGINE_VERSION}" 1
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2/v${ENGINE_VERSION}" 1
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx512.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx512/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2-cuda-12-0/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2-cuda-11-7/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-12-0/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-11-7/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-vulkan.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-vulkan/v${ENGINE_VERSION}" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
+    if [ "$IS_TEST" != "true" ]; then
+        download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2-cuda-12-0/v${ENGINE_VERSION}" 1
+        download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2-cuda-11-7/v${ENGINE_VERSION}" 1
+        download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-12-0/v${ENGINE_VERSION}" 1
+        download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-11-7/v${ENGINE_VERSION}" 1
+        download "${ENGINE_DOWNLOAD_URL}-linux-amd64-vulkan.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-vulkan/v${ENGINE_VERSION}" 1
+        download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
+        download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
+    fi
 
 elif [ "$OS_TYPE" == "Darwin" ]; then
     # macOS downloads

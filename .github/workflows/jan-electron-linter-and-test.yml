@@ -183,7 +183,7 @@ jobs:
           make test
 
   test-on-windows-pr:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'workflow_dispatch'
     runs-on: windows-desktop-default-windows-security
     steps:
       - name: Getting the repo
