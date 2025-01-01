@@ -43,6 +43,10 @@ The Recommended List is a great starting point if you're looking for popular and
 Jan will indicate if a model might be **Slow on your device** or requires **Not enough RAM** based on your system specifications.
 </Callout>
 
+<br/>
+![Download Model](../_assets/model-management-01.png)
+<br/>
+
 #### 2. Import from [Hugging Face](https://huggingface.co/) 
 You can import GGUF models directly from [Hugging Face](https://huggingface.co/):
 
@@ -52,6 +56,10 @@ You can import GGUF models directly from [Hugging Face](https://huggingface.co/)
 3. Copy the **model ID** (e.g., TheBloke/Mistral-7B-v0.1-GGUF) or its **URL**
 4. In Jan, paste the model ID/URL to **Search** bar in **Hub** or in **Settings** > **My Models**
 5. Select your preferred quantized version to download
+
+<br/>
+![Download Model](../_assets/model-management-02.png)
+<br/>
 
 ##### Option B: Use Deep Link
 You can use Jan's deep link feature to quickly import models:
@@ -69,10 +77,15 @@ jan://models/huggingface/TheBloke/Mistral-7B-v0.1-GGUF
 6. A prompt will appear: `This site is trying to open Jan`, click **Open** to open Jan app.
 7. Select your preferred quantized version to download
 
-
 <Callout type="warning">
 Deep linking won't work for models requiring API tokens or usage agreements. You'll need to download these models manually through the Hugging Face website.
 </Callout>
+
+<br/>
+![Downlosd Model](../_assets/model-management-03.png)
+<br/>
+
+
 
 #### 3. Import Local Files
 If you already have GGUF model files on your computer:
@@ -84,9 +97,13 @@ If you already have GGUF model files on your computer:
   - **Duplicate:** Makes a copy of model files in Jan's directory
 5. Click **Import** to complete
 
-<Callout type="info">
+<Callout type="warning">
 You need to own your **model configurations**, use at your own risk. Misconfigurations may result in lower quality or unexpected outputs. 
 </Callout>
+
+<br/>
+![Download Model](../_assets/model-management-04.png)
+<br/>
 
 #### 4. Manual Setup
 For advanced users who add a specific model that is not available within Jan **Hub**:
@@ -129,11 +146,29 @@ Key fields to configure:
 ### Delete Models
 1. Go to **Settings** > **My Models**
 2. Find the model you want to remove
-3. Select the three dots next to it and select **Delete model**.
+3. Select the three dots next to it and select **Delete Model**.
+
+<br/>
+![Delete Model](../_assets/model-management-05.png)
+<br/>
+
 
 ## Cloud model
+<Callout type="info">
+When using cloud models, be aware of any associated costs and rate limits from the providers.
+</Callout>
+
 Jan supports connecting to various AI cloud providers that are OpenAI API-compatible, including: OpenAI (GPT-4, o1,...), Anthropic (Claude), Groq, Mistral, and more.
 1. Open **Settings**
 2. Under **Model Provider** section in left sidebar (OpenAI, Anthropic, etc.), choose a provider
 3. Enter your API key
-4. The activated cloud models will available in your model selection dropdown
+4. The activated cloud models will be available in your model selector in **Threads**
+
+<br/>
+![Download Model](../_assets/model-management-06.png)
+<br/>
+
+Cloud models cannot be deleted, but you can hide them by disabling their respective provider extensions in **Settings** > **Engines**.
+<br/>
+![Download Model](../_assets/model-management-07.png)
+<br/>
