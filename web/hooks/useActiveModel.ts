@@ -10,10 +10,6 @@ import { LAST_USED_MODEL_ID } from './useRecommendedModel'
 import { vulkanEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-import {
-  isGeneratingResponseAtom,
-  resetThreadWaitingForResponseAtom,
-} from '@/helpers/atoms/Thread.atom'
 
 export const activeModelAtom = atom<Model | undefined>(undefined)
 export const loadModelErrorAtom = atom<string | undefined>(undefined)
