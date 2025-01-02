@@ -43,16 +43,16 @@ Ensure that your system meets the following requirements to use Jan effectively:
 Jan requires a processor with AVX2 for best performance. See [full list of supported processors.](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) While older processors with AVX/AVX-512 will work, you may experience slower performance.
 </Callout>
 - **Memory (RAM)**
-  - 8GB → 3B parameter models (int4)
-  - 16GB → 7B parameter models (int4)
-  - 32GB → 13B parameter models (int4)
+  - 8GB > 3B parameter models (int4)
+  - 16GB > 7B parameter models (int4)
+  - 32GB > 13B parameter models (int4)
 <Callout type="info">
 DDR2 RAM is supported but newer RAM generations are recommended for better performance.
 </Callout>
 - **GPU**:
-  - 6GB → 3B models with **ngl** at 120 (full speed)
-  - 8GB → 7B models with **ngl** at 120 (full speed)
-  - 12GB → 13B models with **ngl** at 120 (full speed)
+  - 6GB > 3B models with **ngl** at 120 (full speed)
+  - 8GB > 7B models with **ngl** at 120 (full speed)
+  - 12GB > 13B models with **ngl** at 120 (full speed)
 <Callout type="info">
 Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 </Callout>
@@ -62,6 +62,8 @@ Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 ## Install Jan
 
 To install Jan, follow the steps below:
+
+<Steps>
 
 ### Step 1: Download Application
 
@@ -102,6 +104,8 @@ Keep in mind that this build crashes frequently or contains bugs!
 2. Wait for Jan to be completely installed on your machine.
 3. Once installed, you can access Jan on your machine.
 
+</Steps>
+
 ## Data Folder
 
 By default, Jan is installed in the following directory:
@@ -121,24 +125,50 @@ Jan can leverage your GPU to significantly improve model performance and inferen
 <Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
 
 <Tabs.Tab>
-Before enabling NVIDIA GPU support, ensure you have:
-- **CUDA Toolkit** 11.7 or higher installed
-- **NVIDIA driver** version 470.63.01 or higher
 
-Follow the steps below to enable the use of your NVIDIA GPU:
-1. Launch Jan
-2. Navigate to **Settings** → **Advanced Settings** → Turn on **GPU Acceleration**
-3. Select and enable your NVIDIA GPU
+<Steps>
+
+### Step 1: Verify Hardware & Install Dependencies
+**1.1. Check GPU Detection**
+
+To verify that your system recognizes the NVIDIA GPU:
+- Right-click desktop > NVIDIA Control Panel
+- Or check Device Manager > Display Adapters
+
+**1.2. Install Required components**
+**NVIDIA Driver:**
+1. Install [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/) for your GPU (NVIDIA driver **470.63.01 or higher**).
+2. Verify installation:
+
+```
+nvidia-smi
+```
+Expected output should show your GPU model and driver version.
+
+**CUDA Toolkit:**
+1. Download and install [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) (**CUDA 11.7 or higher**)
+2. Verify installation:
+
+```
+nvcc --version
+```
+### Step 2: Enable GPU Acceleration
+1. In Jan, navigate to **Settings** > **Hardware** 
+3. Select and enable your prefered NVIDIA GPU(s)
 4. App reload is required after the selection
+
 <Callout type="info">
 While Jan supports both CUDA and Vulkan for NVIDIA GPUs, we strongly recommend using CUDA for optimal performance.
 </Callout>
+
+</Steps>
+
 </Tabs.Tab>
 
 <Tabs.Tab>
 AMD GPUs require **Vulkan** support, which must be activated through **Experimental Mode**.
 1. Launch Jan
-2. Navigate to **Settings** → **Advanced Settings**
+2. Navigate to **Settings** > **Advanced Settings**
 3. Enable **Experimental Mode**
 4. Under **GPU Acceleration**, enable **Vulkan Support**
 5. Enable **GPU Acceleration** and select your AMD GPU
@@ -148,7 +178,7 @@ AMD GPUs require **Vulkan** support, which must be activated through **Experimen
 <Tabs.Tab>
 Intel Arc GPUs require **Vulkan** support, which must be activated through **Experimental Mode**.
 1. Launch Jan
-2. Navigate to **Settings** → **Advanced Settings**
+2. Navigate to **Settings** > **Advanced Settings**
 3. Enable **Experimental Mode**
 4. Under **GPU Acceleration**, enable **Vulkan Support**
 5. Enable **GPU Acceleration** and select your Intel Arc GPU
@@ -161,13 +191,15 @@ Intel Arc GPUs require **Vulkan** support, which must be activated through **Exp
 
 ## Uninstall Jan
 
+<Steps>
+
 ### Step 1: Remove Application through Control Panel
 
 1. Open **Control Panels**
 2. Go to **Programs** section
 3. Click **Uninstall Program**
 4. Search for **Jan**
-5. Click the **three dots icon → Uninstall**
+5. Click the **Three Dots Icon** > **Uninstall**
 6. Click **Uninstall** again to confirm
 7. Click **OK**
 
@@ -183,9 +215,12 @@ To ensure a complete uninstallation, remove the app cache:
 1. Navigate to `C:\Users\[username]\AppData\Roaming`
 2. Delete Jan folder
 
+</Steps>
+
 <Callout type="warning">
 Deleted data folders cannot be restored. Make sure to backup any important data before proceeding with deletion.
 </Callout>
+
 
 {/* ## FAQs
 

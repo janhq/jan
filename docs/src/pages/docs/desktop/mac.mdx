@@ -21,8 +21,9 @@ keywords:
 ---
 
 import { Tabs } from 'nextra/components'
-import { Callout } from 'nextra/components'
 import FAQBox from '@/components/FaqBox'
+import { Callout, Steps } from 'nextra/components'
+
 
 
 # Mac Installation
@@ -55,6 +56,8 @@ _To verify your Mac's processor architecture: Apple menu  → About This Mac.
 ## Install Jan 
 
 To install Jan, follow the steps below:
+
+<Steps>
 
 ### Step 1: Download Application
 
@@ -97,6 +100,8 @@ Keep in mind that this build crashes frequently or contains bugs!
 3. Installation will take a few moments to complete
 4. Launch Jan from your Applications folder
 
+</Steps>
+
 
 ## Jan Data Folder
 
@@ -110,7 +115,10 @@ See [Jan Data Folder](/docs/data-folder) for more details about the data folder 
 
 
 ## Uninstall Jan
-### Remove Application
+
+<Steps>
+
+### Step 1: Remove Application
 1. If Jan is currently open, exit the app
 2. Open **Finder** menu.
 3. Navigate to **Applications**
@@ -120,7 +128,8 @@ See [Jan Data Folder](/docs/data-folder) for more details about the data folder 
   - Right-click → **Move to Trash**
   - Select and press **Command-Delete**
 
-### Clean Up Data (Optional)
+### Step 2: Clean Up Data (Optional)
+
 
 Open **Terminal** and run these commands to remove all Jan-related data:
 ```bash
@@ -133,6 +142,8 @@ rm -rf ~/Library/Application\ Support/Jan/data
 # Delete application cache
 rm -rf ~/Library/Application\ Support/Jan/cache
 ```
+</Steps>
+
 <Callout type="warning">
 Deleted data folders cannot be restored. Make sure to backup any important data before proceeding with deletion.
 </Callout>

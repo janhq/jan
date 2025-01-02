@@ -20,9 +20,10 @@ keywords:
   ]
 ---
 
-import { Tabs } from 'nextra/components'
-import { Callout } from 'nextra/components'
+
 import FAQBox from '@/components/FaqBox'
+import { Tabs, Callout, Steps } from 'nextra/components'
+
 
 
 # Linux Installation
@@ -101,6 +102,8 @@ At least 10GB for app installation and model downloads.
 
 To install Jan, follow the steps below:
 
+<Steps>
+
 ### Step 1: Download Application
 
 Jan provides 3 types of releases:
@@ -169,6 +172,9 @@ chmod +x jan-linux-x86_64-{version}.AppImage
 </Tabs.Tab>
 </Tabs>
 
+</Steps>
+
+
 ## Data Folder
 
 By default, Jan is installed in the following directory:
@@ -192,20 +198,57 @@ Once Jan is installed and you have a GPU, you can use your GPU to accelerate the
 <Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
 
 <Tabs.Tab>
-Before enabling NVIDIA GPU support, ensure you have:
-- **CUDA Toolkit** 11.7 or higher installed
-- **NVIDIA driver** version 470.63.01 or higher
+<Steps>
 
+### Step 1: Verify Hardware & Install Dependencies
+**1.1. Check GPU Detection**
 
-To enable the use of your NVIDIA GPU in the Jan app, follow the steps below:
-1. Open Jan application
-2. Go to **Settings** → **Advanced Settings** → **GPU Acceleration**
-3. Enable and choose the NVIDIA GPU you want
-4. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated
+To verify that your system recognizes the NVIDIA GPU:
+```
+lspci | grep -i nvidia
+```
+
+**1.2. Install Required components**
+**NVIDIA Driver:**
+1. Install [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/) for your GPU (NVIDIA driver **470.63.01 or higher**).
+2. Verify installation:
+
+```
+nvidia-smi
+```
+Expected output should show your GPU model and driver version.
+
+**CUDA Toolkit:**
+1. Download and install [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) (**CUDA 11.7 or higher**)
+2. Verify installation:
+
+```
+nvcc --version
+```
+**Linux Additional Requirements:**
+1. Required packages are installed:
+```
+sudo apt update
+sudo apt install gcc-11 g++-11 cpp-11
+```
+2. Set up CUDA environment:
+```
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+```
+See [detailed instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions).
+
+### Step 2: Enable GPU Acceleration
+1. In Jan, navigate to **Settings** > **Hardware** 
+3. Select and enable your prefered NVIDIA GPU(s)
+4. App reload is required after the selection
+
 
 <Callout type="info">
 While **Vulkan** can enable Nvidia GPU acceleration in the Jan app, **CUDA** is recommended for faster performance.
 </Callout>
+
+</Steps>
+
 </Tabs.Tab>
 
 <Tabs.Tab>
