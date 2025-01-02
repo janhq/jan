@@ -19,6 +19,16 @@
     }
   },
   {
+    "key": "cpu_threads",
+    "title": "CPU Threads",
+    "description": "The number of threads to use for inferencing (CPU MODE ONLY)",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "4"
+    }
+  },
+  {
     "key": "flash_attn",
     "title": "Flash Attention enabled",
     "description": "To enable Flash Attention, default is true",
