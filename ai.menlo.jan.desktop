@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Jan
+Comment=Local AI Assistant that runs 100% offline
+Exec=run.sh
+Icon=ai.menlo.jan
+Type=Application
+Categories=Development;
+Keywords=AI;Assistant;LLM;ChatGPT;Local;Offline;
+StartupNotify=true
