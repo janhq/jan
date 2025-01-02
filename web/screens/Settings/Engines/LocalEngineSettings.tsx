@@ -8,7 +8,6 @@ import {
   InferenceEngine,
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
-import { Trash2Icon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import {
@@ -19,7 +18,6 @@ import {
   installEngine,
   updateEngine,
   useGetReleasedEnginesByVersion,
-  uninstallEngine,
 } from '@/hooks/useEngineManagement'
 
 import { formatDownloadPercentage } from '@/utils/converter'
