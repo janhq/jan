@@ -25,7 +25,7 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "",
-      "placeholder": "4"
+      "placeholder": "Number of CPU threads"
     }
   },
   {
