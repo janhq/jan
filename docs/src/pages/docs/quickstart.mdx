@@ -37,7 +37,7 @@ Once installed, you'll see the Jan application interface with no local models pr
 - Connect to cloud AI providers if desired
 <br/>
 
-![Default State](./_assets/Step1.gif)
+![Default State](./_assets/quick-start-01.png)
 
 <br/>
 
@@ -48,29 +48,27 @@ Jan offers various local AI models, from smaller efficient models to larger more
 3. Choose a model that fits your needs & hardware specifications
 4. Click **Download** to begin installation
 <Callout type="info">
-Unlike cloud-based AI, local models run directly on your computer, which means they use your computer's memory (RAM) and processing power. Please choose models carefully based on your hardware specifications.
+Local models run directly on your computer, which means they use your computer's memory (RAM) and processing power. Please choose models carefully based on your hardware specifications ([Mac](/docs/desktop/mac#minimum-requirements), [Windows](docs/desktop/windows#compatibility), [Linux](docs/desktop/linux#compatibility)).
 </Callout>
 
 For more model installation methods, please visit [Model Management](/docs/models/manage-models).
 
 <br/>
-
-![Download a Model](./_assets/Step2.gif)
-
+![Download a Model](./_assets/model-management-01.png)
 <br/>
 
-### Step 3: Turn on the GPU Acceleration (Optional)
+### Step 3: Turn on GPU Acceleration (Optional)
 While the model downloads, let's optimize your hardware setup. If you have a compatible graphics card, you can significantly boost model performance by enabling GPU acceleration.
-1. Navigate to **Settings** → **Advanced Settings** → Turn on **GPU Acceleration**
-2. Choose your preferred GPU
+1. Navigate to **Settings** → **Hardware** 
+2. Enable your preferred GPU(s)
 3. App reload is required after the selection
+
 <Callout type="info">
-Ensure you have installed all required dependencies and drivers before enabling GPU acceleration. See **GPU Setup Guide** on [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration) for detailed instructions.
+Ensure you have installed all [required dependencies](docs/troubleshooting#step-1-verify-hardware-and-system-requirements) and drivers before enabling GPU acceleration. See **GPU Setup Guide** on [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration) for detailed instructions.
 </Callout>
 <br/>
 
-![Turn on GPU acceleration](./_assets/gpu2.gif)
-
+![Turn on GPU acceleration](./_assets/trouble-shooting-01.png)
 
 ### Step 4: Customize Assistant Instructions
 Once your model has downloaded and you're ready to start your first conversation with Jan, you can customize how it responds by setting specific instructions:
@@ -80,7 +78,7 @@ Once your model has downloaded and you're ready to start your first conversation
 You can modify these instructions at any time during your conversation to adjust Jan's behavior for that specific thread.
 <br/>
 
-![Assistant Instruction](./_assets/Step4.gif)
+![Assistant Instruction](./_assets/quick-start-02.png)
 
 <br/>
 ### Step 5: Start Chatting and Fine-tune Settings
@@ -95,7 +93,7 @@ You can further customize your experience by:
 
 <br/>
 
-![Chat with a Model](./_assets/Step5.gif)
+![Chat with a Model](./_assets/model-parameters.png)
 
 <br/>
 
@@ -106,12 +104,15 @@ Jan supports both local and remote AI models. You can connect to remote AI servi
 2. Click the **Model** tab in the **right panel** or the **model selector** in input field
 3. Choose the **Cloud** tab
 4. Choose your preferred provider (Anthropic, OpenAI, etc.)
-5. Click the **Settings** icon ⚙️ next to the provider to add your API key
+5. Click the **Add (➕)** icon next to the provider
+6. Obtain a valid API key from your chosen provider, ensure the key has sufficient credits & appropriate permissions
+7. Copy & insert your **API Key** in Jan
 
+See [Remote APIs](/docs/remote-models/openai) for detailed configuration.
 
 <br/>
 
-![Connect Remote API](./_assets/Step6.gif)
+![Connect Remote API](./_assets/quick-start-03.png)
 
 <br/>
 </Steps>
