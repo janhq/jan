@@ -19,7 +19,6 @@ import {
   installEngine,
   updateEngine,
   useGetReleasedEnginesByVersion,
-  uninstallEngine,
 } from '@/hooks/useEngineManagement'
 
 import { formatDownloadPercentage } from '@/utils/converter'
