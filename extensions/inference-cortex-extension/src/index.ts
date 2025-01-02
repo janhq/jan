@@ -43,6 +43,7 @@ export enum Settings {
   flash_attn = 'flash_attn',
   cache_type = 'cache_type',
   use_mmap = 'use_mmap',
+  cpu_threads = 'cpu_threads',
 }
 
 /**
@@ -66,6 +67,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   flash_attn: boolean = true
   use_mmap: boolean = true
   cache_type: string = 'f16'
+  cpu_threads?: number
 
   /**
    * The URL for making inference requests.
@@ -105,6 +107,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
     this.cache_type = await this.getSetting<string>(Settings.cache_type, 'f16')
+    const threads_number = Number(
+      await this.getSetting<string>(Settings.cpu_threads, '')
+    )
+    if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
     this.queue.add(() => this.clean())
 
@@ -150,6 +156,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       this.cache_type = value as string
     } else if (key === Settings.use_mmap && typeof value === 'boolean') {
       this.use_mmap = value as boolean
+    } else if (key === Settings.cpu_threads && typeof value === 'string') {
+      const threads_number = Number(value)
+      if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
     }
   }
 
@@ -207,6 +216,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             flash_attn: this.flash_attn,
             cache_type: this.cache_type,
             use_mmap: this.use_mmap,
+            ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
           },
           timeout: false,
           signal,
