@@ -21,7 +21,7 @@
   {
     "key": "cpu_threads",
     "title": "CPU Threads",
-    "description": "The number of threads to use for inferencing (CPU MODE ONLY)",
+    "description": "The number of CPU threads to use (when in CPU mode)",
     "controllerType": "input",
     "controllerProps": {
       "value": "",
