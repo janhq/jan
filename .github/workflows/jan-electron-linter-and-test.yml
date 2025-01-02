@@ -99,9 +99,9 @@ jobs:
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}})" >> $GITHUB_ENV
 
-      - name: 'Config report portal'
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App macos" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
+      # - name: 'Config report portal'
+      #   run: |
+      #     make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App macos" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
       - name: Linter and test
         run: |
@@ -172,10 +172,10 @@ jobs:
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
 
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows ${{ matrix.antivirus-tools }}" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
+      # - name: 'Config report portal'
+      #   shell: bash
+      #   run: |
+      #     make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows ${{ matrix.antivirus-tools }}" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
       - name: Linter and test
         shell: powershell
@@ -183,8 +183,8 @@ jobs:
           make test
 
   test-on-windows-pr:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: windows-desktop-default-windows-security
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -215,10 +215,10 @@ jobs:
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.event.after}}" >> $GITHUB_ENV
 
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
+      # - name: 'Config report portal'
+      #   shell: bash
+      #   run: |
+      #     make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
       - name: Linter and test
         shell: powershell
@@ -287,10 +287,10 @@ jobs:
         run: |
           echo "REPORT_PORTAL_DESCRIPTION=${{github.sha}}" >> $GITHUB_ENV
 
-      - name: 'Config report portal'
-        shell: bash
-        run: |
-          make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Linux" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
+      # - name: 'Config report portal'
+      #   shell: bash
+      #   run: |
+      #     make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Linux" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
       - name: Linter and test
         run: |
