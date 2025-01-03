@@ -59,7 +59,7 @@ const ChatInput = () => {
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  const [showAttachmentMenus, setShowAttachmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -73,7 +73,9 @@ const ChatInput = () => {
     activeTabThreadRightPanelAtom
   )
 
-  const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
+  const refAttachmentMenus = useClickOutside(() =>
+    setShowAttachmentMenus(false)
+  )
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
 
   useEffect(() => {
@@ -169,7 +171,7 @@ const ChatInput = () => {
                   ) {
                     e.stopPropagation()
                   } else {
-                    setShowAttacmentMenus(!showAttacmentMenus)
+                    setShowAttachmentMenus(!showAttachmentMenus)
                   }
                 }}
               >
@@ -214,7 +216,7 @@ const ChatInput = () => {
           />
         )}
 
-        {showAttacmentMenus && (
+        {showAttachmentMenus && (
           <div
             ref={refAttachmentMenus}
             className={twMerge(
@@ -234,7 +236,7 @@ const ChatInput = () => {
                 onClick={() => {
                   if (activeAssistant?.model.settings?.vision_model) {
                     imageInputRef.current?.click()
-                    setShowAttacmentMenus(false)
+                    setShowAttachmentMenus(false)
                   }
                 }}
               >
@@ -254,7 +256,7 @@ const ChatInput = () => {
                     onClick={() => {
                       if (isModelSupportRagAndTools) {
                         fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
+                        setShowAttachmentMenus(false)
                       }
                     }}
                   >

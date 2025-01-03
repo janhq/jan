@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, ClipboardEvent } from 'react'
 import { MessageStatus } from '@janhq/core'
 import { useAtom, useAtomValue } from 'jotai'
 
-import { BaseEditor, createEditor, Editor, Transforms } from 'slate'
+import { BaseEditor, createEditor, Editor, Range, Transforms } from 'slate'
 import { withHistory } from 'slate-history' // Import withHistory
 import {
   Editable,
@@ -186,10 +186,6 @@ const RichTextEditor = ({
         : '40px'
       textareaRef.current.style.height =
         textareaRef.current.scrollHeight + 2 + 'px'
-      textareaRef.current?.scrollTo({
-        top: textareaRef.current.scrollHeight,
-        behavior: 'instant',
-      })
       textareaRef.current.style.overflow =
         textareaRef.current.clientHeight >= 390 ? 'auto' : 'hidden'
     }
@@ -302,6 +298,7 @@ const RichTextEditor = ({
           return decorate(entry)
         }}
         renderLeaf={renderLeaf} // Pass the renderLeaf function
+        scrollSelectionIntoView={scrollSelectionIntoView}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste} // Add the custom paste handler
         className={twMerge(
@@ -317,6 +314,77 @@ const RichTextEditor = ({
       />
     </Slate>
   )
+
+  function scrollSelectionIntoView(editor: any, domRange: any) {
+    // This was affecting the selection of multiple blocks and dragging behavior,
+    // so enabled only if the selection has been collapsed.
+    if (editor.selection && Range.isExpanded(editor.selection)) return
+
+    const minTop = 80 // sticky header height
+
+    const leafEl = domRange.startContainer.parentElement
+    const scrollParent = getScrollParent(leafEl)
+
+    const { top: elementTop, height: elementHeight } =
+      domRange.getBoundingClientRect()
+    const { height: parentHeight } = scrollParent.getBoundingClientRect()
+
+    const isChildAboveViewport = elementTop < minTop
+    const isChildBelowViewport = elementTop + elementHeight > parentHeight
+
+    if (isChildAboveViewport && isChildBelowViewport) {
+      // Child spans through all visible area which means it's already in view.
+      return
+    }
+
+    if (isChildAboveViewport) {
+      const y = scrollParent.scrollTop + elementTop - minTop
+      scrollParent.scroll({ left: scrollParent.scrollLeft, top: y })
+      return
+    }
+
+    if (isChildBelowViewport) {
+      const y = Math.min(
+        scrollParent.scrollTop + elementTop - minTop,
+        scrollParent.scrollTop + elementTop + elementHeight - parentHeight
+      )
+      scrollParent.scroll({ left: scrollParent.scrollLeft, top: y })
+    }
+  }
+
+  function getScrollParent(element: any) {
+    const elementStyle = window.getComputedStyle(element)
+    const excludeStaticParent = elementStyle.position === 'absolute'
+
+    if (elementStyle.position === 'fixed') {
+      return document.body
+    }
+
+    let parent = element
+
+    while (parent) {
+      const parentStyle = window.getComputedStyle(parent)
+
+      if (parentStyle.position !== 'static' || !excludeStaticParent) {
+        const overflowAttributes = [
+          parentStyle.overflow,
+          parentStyle.overflowY,
+          parentStyle.overflowX,
+        ]
+
+        if (
+          overflowAttributes.includes('auto') ||
+          overflowAttributes.includes('hidden')
+        ) {
+          return parent
+        }
+      }
+
+      parent = parent.parentElement
+    }
+
+    return document.documentElement
+  }
 }
 
 export default RichTextEditor
