@@ -31,11 +31,16 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
       const variant = await this.getDefaultEngineVariant(
         InferenceEngine.cortex_llamacpp
       )
-      // Check whether should use bundled version or installed version
-      // Only use larger version
-      if (this.compareVersions(CORTEX_ENGINE_VERSION, variant.version) > 0) {
+      const installedEngines = await this.getInstalledEngines(
+        InferenceEngine.cortex_llamacpp
+      )
+      if (
+        !installedEngines.some(
+          (e) => e.name === variant.variant && e.version === variant.version
+        )
+      ) {
         throw new EngineError(
-          'Default engine version is smaller than bundled version'
+          'Default engine is not available, use bundled version.'
         )
       }
     } catch (error) {
@@ -204,16 +209,5 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
       })
       .then(() => {})
-  }
-
-  private compareVersions(version1: string, version2: string): number {
-    const parseVersion = (version: string) => version.split('.').map(Number)
-
-    const [major1, minor1, patch1] = parseVersion(version1.replace(/^v/, ''))
-    const [major2, minor2, patch2] = parseVersion(version2.replace(/^v/, ''))
-
-    if (major1 !== major2) return major1 - major2
-    if (minor1 !== minor2) return minor1 - minor2
-    return patch1 - patch2
   }
 }
