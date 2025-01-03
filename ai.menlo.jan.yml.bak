@@ -1,0 +1,86 @@
+app-id: ai.menlo.jan
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '23.08'
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node20
+command: run.sh
+
+# Node.js SDK extension for building
+
+
+build-options:
+  append-path: /usr/lib/sdk/node20/bin
+  env:
+    NPM_CONFIG_LOGLEVEL: info
+    XDG_CACHE_HOME: /run/build/jan/flatpak-node/cache
+    npm_config_cache: /run/build/jan/flatpak-node/npm-cache
+    npm_config_nodedir: /usr/lib/sdk/node20
+    npm_config_offline: 'true'
+
+finish-args:
+  - --share=ipc
+  - --device=dri
+  - --socket=x11
+  - --socket=pulseaudio
+  - --share=network
+  - --env=ELECTRON_TRASH=gio
+  - --filesystem=home
+  - --filesystem=xdg-documents
+  
+modules:
+  # Add make >= 3.81 requirement
+  - name: make
+    buildsystem: simple
+    sources:
+      - type: archive
+        url: https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz
+        sha256: dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3
+    build-commands:
+      - ./configure --prefix=/app
+      - make
+      - make install
+
+  # Add yarn >= 1.22.0 requirement
+  - name: yarn
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/bin
+      - npm install -g yarn@1.22.19
+      - ln -s /usr/lib/sdk/node20/bin/yarn /app/bin/yarn
+    
+  # Main application
+  - name: jan
+    buildsystem: simple
+    build-options:
+      env:
+        XDG_CACHE_HOME: /run/build/jan/flatpak-node/cache
+        npm_config_cache: /run/build/jan/flatpak-node/npm-cache
+        npm_config_nodedir: /usr/lib/sdk/node20
+        npm_config_offline: 'true'
+    sources:
+      - type: dir
+        path: .
+      # We'll need to generate this file using flatpak-node-generator
+      - generated-sources.json
+      # Launch script
+      - type: script
+        dest-filename: run.sh
+        commands:
+          - zypak-wrapper.sh /app/main/jan "$@"
+    build-commands:
+      # Install dependencies
+      - yarn install --offline
+      # Build the application using the project's Makefile
+      - make build
+      # Bundle app and dependencies
+      - cp -ar dist/linux*unpacked /app/main
+      # Install launch script
+      - install -Dm755 -t /app/bin/ run.sh
+      # Install desktop and icon files
+      - mkdir -p /app/share/applications
+      - mkdir -p /app/share/icons/hicolor/512x512/apps
+      - cp JanBanner.png /app/share/icons/hicolor/512x512/apps/ai.menlo.jan.png
+        

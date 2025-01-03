@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Jan
+Comment=Local AI Assistant by Menlo
+Exec=run.sh
+Terminal=false
+Type=Application
+Categories=Development;Utility;Artificial Intelligence;
+Icon=ai.menlo.jan
