@@ -1,13 +1,13 @@
 import React from 'react'
-import { render, screen } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import ThreadScreen from './index'
 import { useStarterScreen } from '../../hooks/useStarterScreen'
 import '@testing-library/jest-dom'
 
 global.ResizeObserver = class {
-  observe() { }
-  unobserve() { }
-  disconnect() { }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
 }
 // Mock the useStarterScreen hook
 jest.mock('@/hooks/useStarterScreen')
@@ -17,7 +17,7 @@ global.API_BASE_URL = 'http://localhost:3000'
 
 describe('ThreadScreen', () => {
   it('renders OnDeviceStarterScreen when isShowStarterScreen is true', () => {
-    ; (useStarterScreen as jest.Mock).mockReturnValue({
+    ;(useStarterScreen as jest.Mock).mockReturnValue({
       isShowStarterScreen: true,
       extensionHasSettings: false,
     })
@@ -27,7 +27,7 @@ describe('ThreadScreen', () => {
   })
 
   it('renders Thread panels when isShowStarterScreen is false', () => {
-    ; (useStarterScreen as jest.Mock).mockReturnValue({
+    ;(useStarterScreen as jest.Mock).mockReturnValue({
       isShowStarterScreen: false,
       extensionHasSettings: false,
     })
