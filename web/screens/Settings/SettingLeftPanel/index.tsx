@@ -1,35 +1,37 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { memo, useEffect, useState } from 'react'
 
+import { InferenceEngine } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
+import { getTitleByEngine, isLocalEngine } from '@/utils/modelEngine'
+
 import SettingItem from './SettingItem'
 
 import { extensionManager } from '@/extension'
 import {
-  inActiveEngineProviderAtom,
   showSettingActiveLocalEngineAtom,
+  showSettingActiveRemoteEngineAtom,
 } from '@/helpers/atoms/Extension.atom'
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingLeftPanel = () => {
   const { engines } = useGetEngines()
   const settingScreens = useAtomValue(janSettingScreenAtom)
-  const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
+
   const showSettingActiveLocalEngine = useAtomValue(
     showSettingActiveLocalEngineAtom
+  )
+  const showSettingActiveRemoteEngine = useAtomValue(
+    showSettingActiveRemoteEngineAtom
   )
 
   const [extensionHasSettings, setExtensionHasSettings] = useState<
     { name?: string; setting: string }[]
-  >([])
-
-  const [engineHasSettings, setEngineHasSettings] = useState<
-    { name?: string; setting: string; provider: string }[]
   >([])
 
   useEffect(() => {
@@ -72,7 +74,6 @@ const SettingLeftPanel = () => {
       }
 
       setExtensionHasSettings(extensionsMenu)
-      setEngineHasSettings(engineMenu)
     }
     getAllSettings()
   }, [])
@@ -95,10 +96,11 @@ const SettingLeftPanel = () => {
         ))}
 
         {engines &&
-          Object.entries(engines)
-            .filter(([key]) => !showSettingActiveLocalEngine.includes(key))
-            .filter(([_, value]) => !(value as { type?: string }).type).length >
-            0 && (
+          Object.entries(engines).filter(
+            ([key]) =>
+              isLocalEngine(key as InferenceEngine) &&
+              !showSettingActiveLocalEngine.includes(key)
+          ).length > 0 && (
             <>
               <div className="mb-1 mt-4 px-2">
                 <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
@@ -108,36 +110,52 @@ const SettingLeftPanel = () => {
 
               {engines &&
                 Object.entries(engines)
-                  .filter(([_, value]) => !(value as { type?: string }).type)
                   .filter(
                     ([key]) => !showSettingActiveLocalEngine.includes(key)
                   )
                   .map(([key]) => {
-                    return <SettingItem key={key} name={key} setting={key} />
+                    if (!isLocalEngine(key as InferenceEngine)) return
+                    return (
+                      <SettingItem
+                        key={key}
+                        name={getTitleByEngine(key as InferenceEngine)}
+                        setting={key}
+                      />
+                    )
                   })}
             </>
           )}
 
-        {engineHasSettings.filter(
-          (x) => !inActiveEngineProvider.includes(x.provider)
-        ).length > 0 && (
-          <div className="mb-1 mt-4 px-2">
-            <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-              Remote Engine
-            </label>
-          </div>
-        )}
+        {engines &&
+          Object.entries(engines).filter(
+            ([key]) =>
+              !isLocalEngine(key as InferenceEngine) &&
+              !showSettingActiveRemoteEngine.includes(key)
+          ).length > 0 && (
+            <>
+              <div className="mb-1 mt-4 px-2">
+                <label className="text-xs font-medium text-[hsla(var(--text-secondary))]">
+                  Remote Engine
+                </label>
+              </div>
 
-        {engineHasSettings
-          .sort((a, b) => a.provider.localeCompare(b.provider))
-          .filter((x) => !inActiveEngineProvider.includes(x.provider))
-          .map((item) => (
-            <SettingItem
-              key={item.name}
-              name={item.name?.replace('Inference Engine', '') ?? item.setting}
-              setting={item.setting}
-            />
-          ))}
+              {engines &&
+                Object.entries(engines)
+                  .filter(
+                    ([key]) => !showSettingActiveRemoteEngine.includes(key)
+                  )
+                  .map(([key]) => {
+                    if (isLocalEngine(key as InferenceEngine)) return
+                    return (
+                      <SettingItem
+                        key={key}
+                        name={getTitleByEngine(key as InferenceEngine)}
+                        setting={key}
+                      />
+                    )
+                  })}
+            </>
+          )}
 
         {extensionHasSettings.length > 0 && (
           <div className="mb-1 mt-4 px-2">

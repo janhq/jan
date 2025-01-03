@@ -5,12 +5,11 @@ import {
   ExtensionTypeEnum,
   Thread,
   ThreadAssistantInfo,
-  ThreadState,
   AssistantTool,
   Model,
   Assistant,
 } from '@janhq/core'
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 

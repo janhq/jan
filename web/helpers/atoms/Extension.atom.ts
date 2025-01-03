@@ -55,3 +55,11 @@ export const showSettingActiveLocalEngineAtom = atomWithStorage<string[]>(
   undefined,
   { getOnInit: true }
 )
+
+const SHOW_SETTING_ACTIVE_REMOTE_ENGINE = 'showSettingActiveRemoteEngine'
+export const showSettingActiveRemoteEngineAtom = atomWithStorage<string[]>(
+  SHOW_SETTING_ACTIVE_REMOTE_ENGINE,
+  [],
+  undefined,
+  { getOnInit: true }
+)

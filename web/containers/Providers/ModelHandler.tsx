@@ -18,7 +18,7 @@ import {
   extractInferenceParams,
   ModelExtension,
 } from '@janhq/core'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'

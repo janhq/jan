@@ -8,7 +8,6 @@ import {
   InferenceEngine,
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
-import { Trash2Icon } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import {
@@ -18,7 +17,6 @@ import {
   setDefaultEngineVariant,
   installEngine,
   updateEngine,
-  uninstallEngine,
   useGetReleasedEnginesByVersion,
 } from '@/hooks/useEngineManagement'
 
@@ -37,7 +35,7 @@ const os = () => {
   }
 }
 
-const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
+const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   const { installedEngines, mutate: mutateInstalledEngines } =
     useGetInstalledEngines(engine)
   const { defaultEngineVariant, mutate: mutateDefaultEngineVariant } =
@@ -331,4 +329,4 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   )
 }
 
-export default EngineSettings
+export default LocalEngineSettings
