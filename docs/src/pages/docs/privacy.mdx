@@ -18,46 +18,51 @@ keywords:
     jan vision,
   ]
 ---
+import { Callout } from 'nextra/components'
 
 # Privacy
 
-Jan is an app that allows you to own your AI. We prioritize your control over your data and explain what data we collect and why. 
+Jan is an app that allows you to own your AI. We prioritize local AI models and your control over your data. This page explains what data we collect and why. No tricks.
 
-- Jan can't see your chats with AI
-- You're free to opt out
+<Callout type="info">
+We don't collect any data until you explicitly allow tracking. 
+</Callout>
+
+You'll be asked about your tracking preferences when you first launch the app, and you can change them at any time in Settings.
+
+Regardless of your analytics permissions, Jan will **never** access your chat history, chat settings, or the language models you have used.
 
 ## Why and what we track
 
-To build a reliable, user-friendly AI that you own, we need to understand how Jan is used. We collect two types of data: performance data and usage data.
+To build a reliable, user-friendly AI that you own, we need to understand how Jan is used. If users allowed us to track, we collect product analytics data.
 
-### Performance data
-We track app crashes and collect technical details about what went wrong, along with basic information about the hardware you’re using.
-
-When Jan crashes, we collect technical details about what went wrong.
-
-- Specific AI model in use during the crash
-- Hardware: `CPU`, `GPU`, `RAM`
-- Logs: `Date/Time`, `OS & version`, `app version`, `error codes & messages`.
-
-### Usage data
+### Product Analytics
 
 We track data like how often the app is opened to check:
 
 - **Active Users**: How many people use Jan daily to measure engagement
 - **Retention Rates**: To understand if users are finding value in Jan over time
 
-Usage data is tied to a randomly generated telemetry ID. None of our usage data can be linked to your personal identity.
+Product analytics data is tied to a randomly generated user ID. None of our usage data can be linked to your personal identity. Your chat history and personal data are never tracked.
 
-## What we **don’t** track:
-- Your conversations with Jan. Those stay on your device.
-- Your files. We don’t scan, upload, or even look at them.
-- Anything tied to your identity.
+## What we **don't** track:
+
+<Callout type="info">
+Even if you grant analytics permissions, Jan doesn't track many of your private activities. 
+</Callout>
+
+- We don't track your conversations with Jan.
+- We don't scan, upload, or look at your files.
+- We don't collect anything tied to your identity.
+- We don't track your prompts and prompt templates.
+- We don't monitor context length or conversation length.
+- We don't track the models you have used or their types.
+
+You store the files and logs that are a priority for your privacy yourself. 
 
 ## Using Cloud Models
 
 Jan allows you to connect cloud model APIs. If you choose to use cloud-based models (e.g. GPT, Claude models), the API provider handling the model will have access to your messages as part of processing the request. Again, Jan doesn't see or store these messages - they go directly to the provider. Remember: With local models, everything stays on your device, so no one - not even us- can see your messages.
 
 ## Where we store & process data
-We use [PostHog](https://posthog.com/eu) EU for analytics, ensuring all data is processed within the European Union. This setup complies with GDPR and other strict privacy regulations. PostHog lets us self-host and securely manage the data we collect. Read more [on PostHog's GDPR doc](https://posthog.com/docs/privacy/gdpr-compliance).
-
-For a detailed breakdown of the analytics data we collect, you can check out our analytics repo. If you have any questions or concerns, feel free to reach out to us at hi@jan.ai.
+We use [PostHog](https://posthog.com/eu) EU for analytics, ensuring all data is processed within the European Union. This setup complies with GDPR and other strict privacy regulations. PostHog lets us securely manage the data we collect. Read more [on PostHog's GDPR doc](https://posthog.com/docs/privacy/gdpr-compliance).
