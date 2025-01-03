@@ -47,7 +47,7 @@ export const spellCheckAtom = atomWithStorage<boolean>(
 )
 export const productAnalyticAtom = atomWithStorage<boolean>(
   PRODUCT_ANALYTIC,
-  true,
+  false,
   undefined,
   { getOnInit: true }
 )

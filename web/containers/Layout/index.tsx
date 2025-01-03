@@ -123,7 +123,6 @@ const BaseLayout = () => {
     if (isAllowed) {
       posthog.opt_in_capturing()
     } else {
-      posthog.capture('user_opt_out', { timestamp: new Date() })
       posthog.opt_out_capturing()
     }
   }
