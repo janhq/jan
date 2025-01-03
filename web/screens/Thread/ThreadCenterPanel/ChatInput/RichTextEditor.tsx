@@ -315,7 +315,10 @@ const RichTextEditor = ({
     </Slate>
   )
 
-  function scrollSelectionIntoView(editor: any, domRange: any) {
+  function scrollSelectionIntoView(
+    editor: ReactEditor,
+    domRange: globalThis.Range
+  ) {
     // This was affecting the selection of multiple blocks and dragging behavior,
     // so enabled only if the selection has been collapsed.
     if (editor.selection && Range.isExpanded(editor.selection)) return
@@ -324,6 +327,9 @@ const RichTextEditor = ({
 
     const leafEl = domRange.startContainer.parentElement
     const scrollParent = getScrollParent(leafEl)
+
+    // Check if browser supports getBoundingClientRect
+    if (typeof domRange.getBoundingClientRect !== 'function') return
 
     const { top: elementTop, height: elementHeight } =
       domRange.getBoundingClientRect()
