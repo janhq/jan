@@ -32,7 +32,7 @@ import { Callout, Steps } from 'nextra/components'
 
 Error logs are essential for troubleshooting issues and getting help from Jan team. To get error logs from Jan, follow the steps below:
 
-#### Through the Jan Interface
+#### Through Jan Interface
 
 1. Open **System Monitor** in the footer
 2. Choose **App Log**
@@ -67,11 +67,7 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       2. **Delete** Application Data, Cache, and User Data:
 
       ```zsh
-      # Step 1: Delete application data
-      rm -rf ~/Library/Application\ Support/jan/data
-
-      # Step 2: Clear application cache
-      rm -rf ~/Library/Application\ Support/Jan/cache
+      rm -rf ~/Library/Application\ Support/Jan
       ```
 
       3. If you are using a version before `0.4.2`, you need to run the following commands:
@@ -114,14 +110,18 @@ To resolve the issue where Jan is stuck in a broken build after installation:
       
       **For Debian/Ubuntu:**
       ```
-      sudo apt-get remove jan
+      sudo apt-get remove Jan
       ```
       **For Others:** Delete the Jan `.AppImage` file from your system
 
       2. Delete Application Data, Cache, and User Data:
 
       ```bash
-      rm -rf ~/.local/share/jan/data
+      # Default dir
+      ~/.config/Jan
+      
+      # Custom installation directory
+      $XDG_CONFIG_HOME = /home/username/custom_config/Jan 
       ```
 
       3. If you are using a version before `0.4.2`, you need to run the following commands:
