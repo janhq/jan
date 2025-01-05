@@ -23,7 +23,6 @@
   "assistants": "Assistants",
   "threads": "Threads",
   "settings": "Settings",
-  "shortcuts": "Keyboard Shortcuts",
   "inference-engines": {
     "title": "MODEL PROVIDER",
     "type": "separator"
