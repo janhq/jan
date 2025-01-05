@@ -21,211 +21,220 @@ keywords:
 ---
 
 import { Tabs, Steps, Callout } from 'nextra/components'
+import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
+
 
 # Settings
 
-This guide will show you how to customize your Jan application settings and advanced settings.
+This guide explains how to customize your Jan application settings.
+To access **Settings**, click <Settings width={16} height={16} style={{display:"inline"}}/> icon in the bottom left corner of Jan.
 
-## Settings File
-Settings for the Jan application are stored in a `cortex.db` file located at `~jan/`, ensuring they persist across sessions. This file contains all user preferences and configurations.
-## Customize the UI
-My Settings is where you can customize the color of Jan's desktop app UI. Here's how to personalize the color scheme of Jan's desktop app UI:
-1. Navigate to the main dashboard.
-2. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-<br/>
-![Settings](./_assets/settings.png)
-<br/>
-3. Select the **Appearance** section.
-<br/>
-![Settings](./_assets/appearance.png)
-<br/>
-4. Pick the **Appearance Scheme** for your Jan desktop app. Options include:
-  - Joi Light
-  - Joi Dark
-  - Dark Dimmed
-  - Night Blue
-<br/>
-![Settings](./_assets/scheme.png)
-<br/>
-5. Choose the **Interface theme** for your Jan desktop app. Options include:
-  - Solid
-  - Transparent
-<br/>
-![Settings](./_assets/theme.png)
-
-## Access the Spell Check
-1. Navigate to the main dashboard.
-2. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-<br/>
-![Settings](./_assets/settings.png)
-<br/>
-3. Select the **Appearance** section.
-4. Click the **Spell Check** slider to enable it.
-<br/>
-![Spell](./_assets/spell.png)
-<br/>
-
-## Access Advanced Settings
-Advanced Settings is the GUI version of the `settings.json`. To access Jan's advanced settings, follow the steps below:
 <Callout type="info">
-Whenever you make changes in the Jan application's Settings screen, they are automatically saved to the `settings.json` file. This ensures your customizations are kept and applied every time the application starts.
+Settings are stored in a `cortex.db` file in [Jan Data Folder](/docs/data-folder), ensuring they persist across sessions.
 </Callout>
 
-1. Navigate to the main dashboard.
-2. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
+## My models
+
+Here's where you can manage all your installed AI models.
+
+### Manage Downloaded Models
+
+#### Import Models
+
+You can import model here as how you can do in **Hub**:
+
+**Option 1:** Import from [Hugging Face](/docs/models/manage-models#option-a-import-in-jan)
+
 <br/>
-![Settings](./_assets/settings.png)
+![Import from HF](./_assets/settings-01.png)
 <br/>
-3. Click the **Advanced Settings**.
+
+
+**Option 2:** [Import local files](/docs/models/manage-models#option-a-import-in-jan)
+
 <br/>
-![Settings](./_assets/advance-settings2.png)
+![Import from HF](./_assets/model-management-04.png)
 <br/>
-4. You can configure the following settings:
-
-| Feature                                  | Description                                                                                                                                                                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Experimental Mode**                    | Enables experimental features that may be unstable.                                                                                                                                                                      |
-| **GPU Acceleration**                     | Enables boosting your model performance by using your GPU devices for acceleration.                                                                                                                               |
-| **HTTPS Proxy** | Use a proxy server for internet connections. Please check out the guide on setting up your HTTPS proxy server [here](settings#https-proxy). |
-| **Ignore SSL Certificates**                   | Enables the self-signed or unverified certificates.                                                       |
-| **Migrate Data From Old Version Of Jan App**                           |   Facilitates the transfer of your data from a previous version of the Jan App to the latest version. This feature helps you retain your settings, preferences, and stored information during the upgrade process.                                                                                                                                                                              |
 
 
-## Enable the Experimental Mode
+#### Remove Models
+Use the same instructions in [Delete Local Models](/docs/models/manage-models#delete-models)
 
-To try out new features that are still in the testing phase, follow the steps below:
-
-1. Navigate to the **Advanced Settings**.
-2. On the **Experimental Mode**, click the slider to enable.
 <br/>
-![Experimental](./_assets/exp-mode.png)
+![Remove Model](./_assets/model-management-05.png)
+<br/>
 
-## Enable the GPU Acceleration
 
-To enhance your model performance, follow the steps below:
+#### Start Models
+
+You can start downloaded model from **My Models**:
+1. Choose the model you want to start
+2. Click **three dots** <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to the model
+3. Select **Start Model**
+
+<br/>
+![Start Model](./_assets/settings-02.png)
+<br/>
+
+
+### Manage Cloud Models
+
+You can add and configure **Cloud Providers** here:
+1. Click the **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to the provider name (e.g., Anthropic, Cohere, Groq), add API Key to use. See detailed instructions for each provider [here](/docs/remote-models/openai).
+2. Once a provider is installed, you can manage its settings by clicking on the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) icon next to it.
+
+<br/>
+![Manage Cloud Provider](./_assets/settings-03.png)
+<br/>
+
+## Preferences
+
+### Appearance & Theme
+Control the visual theme of Jan's interface.
+- **Joi Light:** Clean, bright theme for daytime use
+- **Joi Dark:** Dark theme with high contrast
+- **Dark Dimmed:** Softer dark theme to reduce eye strain
+- **Night Blue:** Dark theme with blue accents
+
+To change:
+1. Choose your preferred **Appearance** from the dropdown
+2. With **Joi Dark** & **Joi Light**, you can choose additional options:
+  - **Solid:** Traditional opaque background
+  - **Translucent:** Semi-transparent interface 
+3. Changes apply immediately
+
+<br/>
+![Appearance](./_assets/settings-04.png)
+<br/>
+
+### Chat width
+Adjust how chat content is displayed.
+1. In **Chat Width** section, select either 
+- **Full Width:** Maximizes the chat area to use the full width of the window. This is ideal for viewing longer messages or when working with code snippets that benefit from more horizontal space.
+- **Compact Width:** Creates a more focused chat experience with a narrower conversation view. This setting is useful for reading conversations more comfortably, especially on larger screens.
+2. Changes apply immediately to your conversation view
+
+<br/>
+![Chat Width](./_assets/settings-05.png)
+<br/>
+
+
+### Spell Check
+Jan includes a built-in spell check feature to help catch typing errors in your messages.
+1. Switch the toggle on to enable spell checking, or off to disable it
+2. Changes apply immediately for all new messages you type
+
+<br/>
+![Spell Check](./_assets/settings-06.png)
+<br/>
+
+## Keyboard Shortcuts
+
+**1. Thread Management**
+- `⌘ N` - Create a new thread
+- `⌘ Shift Backspace` - Delete current active thread
+- `⌘ Shift C` - Clean current active thread
+
+**2. Navigation**
+- `⌘ B` - Toggle left panel
+- `⌘ Shift B` - Toggle right panel
+- `⌘ ,` - Navigate to settings
+
+**3. Message Input**
+- `Enter` - Send a message (in input field)
+- `Shift Enter` - Insert a new line (in input field)
+
+> Note: On **Windows** and **Linux**, use `Ctrl` (Control) instead of `⌘` (Command)
+
+## Hardware
+
+## Privacy 
+
+### Analytics
+Jan is built with privacy at its core. By default, no data is collected. Everything stays local on your device.
+You can help improve Jan by sharing anonymous usage data:
+1. Toggle on **Analytics** to share anonymous data
+2. You can change this setting at any time
+
+<Callout type="info">
+Read more about that we collect with opt-in users at [Privacy](/docs/privacy). 
+</Callout>
+
+<br/>
+![Analytics](./_assets/settings-07.png)
+<br/>
+
+### Log Management
+
+#### View Logs
+- Logs are stored at:
+  - App log: `~/Library/Application\ Support/jan/data/logs/app.log`
+  - Cortex log: `~/Library/Application\ Support/jan/data/logs/cortex.log`
+- At **Logs**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open App Logs & Cortex Logs:
+
+<br/>
+![View Logs](./_assets/settings-08.png)
+<br/>
+
+#### Clear Logs
+
+Click the **Clear** button to remove all logs from the Jan app:
 
 <Callout type="warning">
-  Ensure you have read the [troubleshooting
-  guide](/docs/troubleshooting#troubleshooting-nvidia-gpu) here for further
-  assistance.
+This action cannot be undone. 
 </Callout>
 
-1. Navigate to the **Advanced Settings**.
-2. On the **GPU Acceleration**, click the slider to enable.
 <br/>
-![Enable GPU](./_assets/gpu-accel.png)
+![Clear Logs](./_assets/settings-09.png)
+<br/>
 
-## Enable the Vulkan Support
+
+## Advanced Settings
+
+### Experimental Mode
 <Callout type="warning">
-  This feature is still in experimental phase.
+Experimental features are unstable and are recommended only for testing purposes. Please turn on with caution!
 </Callout>
 
-To enable the Vulkan support for AMD or Intel ARC GPU, follow the steps below:
-
-1. Enable the **Experimental Mode**.
-2. Navigate to the **Advanced Settings**.
-3. On the **Vulkan Support**, click the slider to enable.
+To try out new features that are still in testing phase, turn on **Experimental Mode** setting:
 <br/>
-![Vulkan](./_assets/vulkan.png)
+![Experimental Mode](./_assets/settings-10.png)
 <br/>
-4. Restart the Jan app.
 
-## Enable the Preserve Model Settings
-<Callout type="warning">
-  This feature is still in experimental phase.
-</Callout>
-To enable the preserve model settings to be applied to the new thread, follow the steps below:
+### Jan Data Folder
+Jan stores your data locally in your own filesystem in a universal file format. See detailed [Jan Folder Structure](docs/data-folder#folder-structure).
 
-1. Enable the **Experimental Mode**.
-2. Navigate to the **Advanced Settings**.
-3. On the **Preserve Model Settings**, click the slider to enable.
+#### Open Jan Data Folder
+At **Jan Data Folder**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open Jan application's folder: 
 <br/>
-![Preserve](./_assets/preserve.png)
-
-
-## Access the Jan Data Folder
-
-To access the folder where messages, model configurations, and user data are stored, follow the steps below:
-
-1. Navigate to the **Advanced Settings**.
+![Open Jan Data Folder](./_assets/settings-11.png)
 <br/>
-![Settings](./_assets/advance-set.png)
+
+#### Edit Jan Data Folder
+1. At **Jan Data Folder**, click <Pencil width={16} height={16} style={{display:"inline"}}/> icon to edit Jan application's folder
+2. Choose a new directory & click **Select**, make sure the new folder is empty
+3. Confirmation pop-up shows up: 
+
+> Are you sure you want to relocate Jan Data Folder to `new directory`?
+Jan Data Folder will be duplicated into the new location while the original folder remains intact.
+An app restart will be required afterward.
+
+4. Click **Yes, Proceed**
+
 <br/>
-2. On the **Jan Data Folder** click the **folder icon (📂)** to access the data or the **pencil icon (✏️)** to change the folder where you keep your data.
+![Edit Jan Data Folder](./_assets/settings-12.png)
 <br/>
-![Jan Data Folder](./_assets/data-folder.png)
-<br/>
-3. You can also access the Jan Data Folder by clicking **System Monitor** > **App Log**.
 
-<Callout type="warning">
-- Uninstalling Jan in Windows and Linux will delete the default Jan Data Folder.
-</Callout>
+### HTTPs Proxy 
 
-## HTTPS Proxy
+### Factory Reset
 
-HTTPS Proxy encrypts data between your browser and the internet, making it hard for outsiders to intercept or read. It also helps you maintain your privacy and security while bypassing regional restrictions on the internet.
+## Engines
 
-<Callout type="info" emoji="">
-  - When configuring Jan using an HTTPS proxy, the speed of the downloading model may be affected by the encryption and decryption process. It also depends on the cloud service provider's networking. 
-  - HTTPS Proxy does not affect the remote model usage.
-</Callout>
-
-Once you set up your HTTPS proxy server, follow the steps below:
-
-1. Navigate to **Settings** > **Advanced Settings**.
-2. On the **HTTPS Proxy**, click the slider to enable.
-3. Input your domain in the blank field.
-<br/>
-![HTTPS Proxy](./_assets/http.png)
+## Extensions
 
 
-## Ignore SSL Certificate
-
-To Allow self-signed or unverified certificates, follow the steps below:
-
-1. Navigate to the **Advanced Settings**.
-2. On the **Ignore SSL Certificates**, click the slider to enable.
-<br/>
-![Ignore SSL](./_assets/ssl.png)
-
-## Enable the Jan Quick Ask
-<Callout type="warning">
-  This feature is still in experimental phase.
-</Callout>
-To enable the Jan quick ask mode, follow the steps below:
-
-1. Enable the **Experimental Mode**.
-2. Navigate to the **Advanced Settings**.
-3. On the **Quick Ask**, click the slider to enable.
-<br/>
-![Quick Ask](./_assets/quick-ask.png)
-<br/>
-4. Restart the Jan app.
-
-## Clear Logs
-
-To clear all logs on your Jan app, follow the steps below:
-
-<Callout type="warning">
-  This feature clears all the data in your **Jan Data Folder**.
-</Callout>
-
-1. Navigate to the **Advanced Settings**.
-2. On the **Clear Logs** click the the **Clear** button.
-<br/>
-![Clear Logs](./_assets/clear-logs.png)
-
-## Reset To Factory Default
-
-To reset the Jan app to its original state, follow the steps below:
-
-<Callout type="error">
-  This irreversible action is only recommended if the application is corrupted.
-</Callout>
 
 
-1. Navigate to the **Advanced Settings**.
-2. On the **Reset To Factory Default** click the the **Reset** button.
-<br/>
-![Reset](./_assets/reset-jan.png)
+
 
