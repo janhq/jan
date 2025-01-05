@@ -336,6 +336,27 @@ export const installEngine = async (
 }
 
 /**
+ * Add a new remote engine
+ * @returns A Promise that resolves to intall of engine.
+ */
+export const addRemoteEngine = async (engineConfig: EngineConfig) => {
+  const extension = getExtension()
+
+  if (!extension) {
+    throw new Error('Extension is not available')
+  }
+
+  try {
+    // Call the extension's method
+    const response = await extension.addRemoteEngine(engineConfig)
+    return response
+  } catch (error) {
+    console.error('Failed to install engine variant:', error)
+    throw error
+  }
+}
+
+/**
  * @param name - Inference engine name.
  * @returns A Promise that resolves to unintall of engine.
  */

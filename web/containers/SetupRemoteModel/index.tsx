@@ -8,17 +8,16 @@ import { SettingsIcon, PlusIcon } from 'lucide-react'
 
 import { MainViewState } from '@/constants/screens'
 
-import { isLocalEngine } from '@/utils/modelEngine'
-
 import { extensionManager } from '@/extension'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   engine: InferenceEngine
+  isConfigured: boolean
 }
 
-const SetupRemoteModel = ({ engine }: Props) => {
+const SetupRemoteModel = ({ engine, isConfigured }: Props) => {
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
@@ -66,18 +65,13 @@ const SetupRemoteModel = ({ engine }: Props) => {
   }, [])
 
   const onSetupItemClick = (setting: InferenceEngine) => {
-    setMainViewState(MainViewState.Settings)
     setSelectedSetting(
       extensionHasSettings.filter((x) =>
         x.provider.toLowerCase().includes(setting)
       )[0]?.setting
     )
+    setMainViewState(MainViewState.Settings)
   }
-
-  const apiKey = !isLocalEngine(engine)
-    ? extensionHasSettings.filter((x) => x.provider === engine)[0]?.apiKey
-        .length > 1
-    : true
 
   return (
     <Button
@@ -87,7 +81,7 @@ const SetupRemoteModel = ({ engine }: Props) => {
         onSetupItemClick(engine)
       }}
     >
-      {apiKey ? (
+      {isConfigured ? (
         <SettingsIcon
           size={14}
           className="text-[hsla(var(--text-secondary))]"

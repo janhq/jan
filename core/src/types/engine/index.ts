@@ -1,7 +1,7 @@
 import { InferenceEngine } from '../../types'
 
 export type Engines = {
-  [key in InferenceEngine]: EngineVariant[]
+  [key in InferenceEngine]: (EngineVariant & EngineConfig)[]
 }
 
 export type EngineMetadata = {
@@ -40,6 +40,7 @@ export type EngineReleased = {
 }
 
 export type EngineConfig = {
+  engine?: string
   version?: string
   variant?: string
   type?: string
