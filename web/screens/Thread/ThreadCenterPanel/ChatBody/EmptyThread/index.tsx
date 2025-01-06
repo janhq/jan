@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 
 import { Button } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -15,8 +15,10 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 const EmptyThread = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const showOnboardingStep =
-    downloadedModels.filter((e) => isLocalEngine(e.engine)).length === 0
+  const showOnboardingStep = useMemo(
+    () => !downloadedModels.some((e) => isLocalEngine(e.engine) || e.engine),
+    [downloadedModels]
+  )
 
   return (
     <div className="mx-auto flex h-full flex-col items-center justify-center text-center">

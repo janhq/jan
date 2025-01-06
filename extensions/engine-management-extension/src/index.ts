@@ -8,10 +8,14 @@ import {
   EngineReleased,
   executeOnMain,
   systemInformation,
+  Model,
+  fs,
+  joinPath,
 } from '@janhq/core'
 import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
 import { EngineError } from './error'
+import { getJanDataFolderPath } from '@janhq/core'
 
 /**
  * JSONEngineManagementExtension is a EngineManagementExtension implementation that provides
@@ -28,41 +32,11 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
     await executeOnMain(NODE, 'symlinkEngines')
     // Run Healthcheck
     this.queue.add(() => this.healthz())
-    try {
-      const variant = await this.getDefaultEngineVariant(
-        InferenceEngine.cortex_llamacpp
-      )
-      const installedEngines = await this.getInstalledEngines(
-        InferenceEngine.cortex_llamacpp
-      )
-      if (
-        !installedEngines.some(
-          (e) => e.name === variant.variant && e.version === variant.version
-        )
-      ) {
-        throw new EngineError(
-          'Default engine is not available, use bundled version.'
-        )
-      }
-    } catch (error) {
-      if (
-        (error instanceof HTTPError && error.response.status === 400) ||
-        error instanceof EngineError
-      ) {
-        const systemInfo = await systemInformation()
-        const variant = await executeOnMain(
-          NODE,
-          'engineVariant',
-          systemInfo.gpuSetting
-        )
-        await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
-          variant: variant,
-          version: `${CORTEX_ENGINE_VERSION}`,
-        })
-      } else {
-        console.error('An unexpected error occurred:', error)
-      }
-    }
+    // Update default local engine
+    this.updateDefaultEngine()
+
+    // Populate default remote engines
+    this.populateDefaultRemoteEngines()
   }
 
   /**
@@ -89,9 +63,10 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
     return this.queue.add(() =>
       ky
         .get(`${API_URL}/v1/models/remote/${name}`)
-        .json<any>()
+        .json<Model[]>()
         .then((e) => e)
-    ) as Promise<any>
+        .catch(() => [])
+    ) as Promise<Model[]>
   }
 
   /**
@@ -157,6 +132,16 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
   }
 
   /**
+   * Add a new remote engine
+   * @returns A Promise that resolves to intall of engine.
+   */
+  async addRemoteEngine(engineConfig: EngineConfig) {
+    return this.queue.add(() =>
+      ky.post(`${API_URL}/v1/engines`, { json: engineConfig }).then((e) => e)
+    ) as Promise<{ messages: string }>
+  }
+
+  /**
    * @param name - Inference engine name.
    * @returns A Promise that resolves to unintall of engine.
    */
@@ -166,6 +151,16 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
         .delete(`${API_URL}/v1/engines/${name}/install`, { json: engineConfig })
         .then((e) => e)
     ) as Promise<{ messages: string }>
+  }
+
+  /**
+   * Add a new remote model
+   * @param model - Remote model object.
+   */
+  async addRemoteModel(model: Model) {
+    return this.queue.add(() =>
+      ky.post(`${API_URL}/v1/models/add`, { json: model }).then((e) => e)
+    )
   }
 
   /**
@@ -218,5 +213,85 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
       })
       .then(() => {})
+  }
+
+  /**
+   * Update default local engine
+   * This is to use built-in engine variant in case there is no default engine set
+   */
+  async updateDefaultEngine() {
+    try {
+      const variant = await this.getDefaultEngineVariant(
+        InferenceEngine.cortex_llamacpp
+      )
+      const installedEngines = await this.getInstalledEngines(
+        InferenceEngine.cortex_llamacpp
+      )
+      if (
+        !installedEngines.some(
+          (e) => e.name === variant.variant && e.version === variant.version
+        )
+      ) {
+        throw new EngineError(
+          'Default engine is not available, use bundled version.'
+        )
+      }
+    } catch (error) {
+      if (
+        (error instanceof HTTPError && error.response.status === 400) ||
+        error instanceof EngineError
+      ) {
+        const systemInfo = await systemInformation()
+        const variant = await executeOnMain(
+          NODE,
+          'engineVariant',
+          systemInfo.gpuSetting
+        )
+        await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
+          variant: variant,
+          version: `${CORTEX_ENGINE_VERSION}`,
+        })
+      } else {
+        console.error('An unexpected error occurred:', error)
+      }
+    }
+  }
+
+  /**
+   * This is to populate default remote engines in case there is no customized remote engine setting
+   */
+  async populateDefaultRemoteEngines() {
+    const engines = await this.getEngines()
+    if (
+      !Object.values(engines)
+        .flat()
+        .some((e) => e.type === 'remote')
+    ) {
+      DEFAULT_REMOTE_ENGINES.forEach(async (engine) => {
+        const { id, ...data } = engine
+
+        /// BEGIN - Migrate legacy api key settings
+        let api_key = undefined
+        if (id) {
+          const apiKeyPath = await joinPath([
+            await getJanDataFolderPath(),
+            'settings',
+            id,
+            'settings.json',
+          ])
+          const settings = await fs.readFileSync(apiKeyPath, 'utf-8')
+          api_key = JSON.parse(settings).find(
+            (e) => e.key === `${data.engine}-api-key`
+          )?.controllerProps?.value
+        }
+        data.api_key = api_key
+        /// END - Migrate legacy api key settings
+
+        await this.addRemoteEngine(data).catch(console.error)
+      })
+      DEFAULT_REMOTE_MODELS.forEach(async (data: Model) => {
+        await this.addRemoteModel(data).catch(() => {})
+      })
+    }
   }
 }

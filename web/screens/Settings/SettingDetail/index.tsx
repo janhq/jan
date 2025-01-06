@@ -42,17 +42,11 @@ const SettingDetail = () => {
       return <MyModels />
 
     default:
-      if (
-        !selectedSetting.includes('@janhq') &&
-        isLocalEngine(selectedSetting as InferenceEngine)
-      ) {
+      if (isLocalEngine(selectedSetting as InferenceEngine)) {
         return (
           <LocalEngineSettings engine={selectedSetting as InferenceEngine} />
         )
-      } else if (
-        !selectedSetting.includes('@janhq') &&
-        !isLocalEngine(selectedSetting as InferenceEngine)
-      ) {
+      } else if (!isLocalEngine(selectedSetting as InferenceEngine)) {
         return (
           <RemoteEngineSettings engine={selectedSetting as InferenceEngine} />
         )

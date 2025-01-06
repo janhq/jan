@@ -17,8 +17,6 @@ import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
 
-import { isLocalEngine } from '@/utils/modelEngine'
-
 import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
@@ -32,7 +30,6 @@ import {
   threadsAtom,
   updateThreadAtom,
   setThreadModelParamsAtom,
-  isGeneratingResponseAtom,
   createNewThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -89,16 +86,19 @@ export const useCreateNewThread = () => {
     )
 
     const overriddenSettings = {
-      ctx_len: !isLocalEngine(defaultModel?.engine)
-        ? undefined
-        : defaultContextLength,
+      ctx_len: defaultModel?.settings.ctx_len
+        ? Math.min(8192, defaultModel.settings.ctx_len)
+        : undefined,
     }
 
     // Use ctx length by default
     const overriddenParameters = {
-      max_tokens: !isLocalEngine(defaultModel?.engine)
-        ? (defaultModel?.parameters.token_limit ?? 8192)
-        : defaultContextLength,
+      max_tokens: defaultContextLength
+        ? Math.min(
+            defaultModel?.parameters.token_limit ?? 8192,
+            defaultContextLength
+          )
+        : defaultModel?.parameters.token_limit,
     }
 
     const createdAt = Date.now()
@@ -132,7 +132,6 @@ export const useCreateNewThread = () => {
     }
 
     // add the new thread on top of the thread list to the state
-    //TODO: Why do we have thread list then thread states? Should combine them
     try {
       const createdThread = await persistNewThread(thread, assistantInfo)
       if (!createdThread) throw 'Thread created failed.'
