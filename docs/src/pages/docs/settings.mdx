@@ -39,33 +39,23 @@ Here's at **Settings** (<Settings width={16} height={16} style={{display:"inline
 
 ### Manage Downloaded Models
 
-#### Import Models
-
-You can import model here as how you can do in **Hub**:
-
-**Option 1:** Import from [Hugging Face](/docs/models/manage-models#option-a-import-in-jan)
-
-<br/>
-![Import from HF](./_assets/settings-01.png)
-<br/>
-
-
-**Option 2:** [Import local files](/docs/models/manage-models#option-a-import-in-jan)
+**1. Import Models:** You can import model here as how you can do in **Hub**
+  - Option 1: Import from [Hugging Face](/docs/models/manage-models#option-a-import-in-jan) by entering model Hugging Face URL in **Search** bar
+  - Option 2: [Import local files](/docs/models/manage-models#option-a-import-in-jan)
 
 <br/>
 ![Import from HF](./_assets/model-management-04.png)
 <br/>
 
 
-#### Remove Models
-Use the same instructions in [Delete Local Models](/docs/models/manage-models#delete-models)
+**2. Remove Models**: Use the same instructions in [Delete Local Models](/docs/models/manage-models#delete-models)
 
 <br/>
 ![Remove Model](./_assets/model-management-05.png)
 <br/>
 
 
-#### Start Models
+**3. Start Models**
 1. Choose the model you want to start
 2. Click **three dots** <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to the model
 3. Select **Start Model**
@@ -77,7 +67,7 @@ Use the same instructions in [Delete Local Models](/docs/models/manage-models#de
 
 ### Manage Cloud Models
 
-1. To install cloud models, click the **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next your preferred providers (e.g., Anthropic, Cohere, Groq), and add **API Key** to use. See [detailed instructions](/docs/remote-models/openai) for each provider.
+1. To install cloud models, click the **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next your preferred providers (e.g., Anthropic, OpenAI, Groq), and add **API Key** to use. See [detailed instructions](/docs/remote-models/openai) for each provider.
 2. Once a provider is installed, you can use its models & manage its settings by clicking on the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) icon next to it.
 
 <br/>
@@ -205,7 +195,7 @@ Read more about that we collect with opt-in users at [Privacy](/docs/privacy).
 
 ### Log Management
 
-#### View Logs
+**1. View Logs**
 - Logs are stored at:
   - App log: `~/Library/Application\ Support/jan/data/logs/app.log`
   - Cortex log: `~/Library/Application\ Support/jan/data/logs/cortex.log`
@@ -215,7 +205,8 @@ Read more about that we collect with opt-in users at [Privacy](/docs/privacy).
 ![View Logs](./_assets/settings-08.png)
 <br/>
 
-#### Clear Logs
+**2. Clear Logs**
+
 Jan retains your logs for only **24 hours**. To remove all logs from Jan, at **Clear Logs**, click the **Clear** button:
 
 <Callout type="warning">
@@ -251,13 +242,15 @@ To try out these beta features, turn on **Experimental Mode** setting:
 ### Jan Data Folder
 Jan stores your data locally in your own filesystem in a universal file format. See detailed [Jan Folder Structure](docs/data-folder#folder-structure).
 
-#### Open Jan Data Folder
+**1. Open Jan Data Folder**
+
 At **Settigns** > **Jan Data Folder**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open Jan application's folder: 
 <br/>
 ![Open Jan Data Folder](./_assets/settings-11.png)
 <br/>
 
-#### Edit Jan Data Folder
+**2. Edit Jan Data Folder**
+
 1. At **Jan Data Folder**, click <Pencil width={16} height={16} style={{display:"inline"}}/> icon to edit Jan application's folder
 2. Choose a new directory & click **Select**, make sure the new folder is empty
 3. Confirmation pop-up shows up: 
@@ -353,6 +346,7 @@ To begin the process:
 3. App restart is required upon confirmation
 <br/>
 ![Jan Quick Ask](./_assets/settings-18.png)
+<br/>
 
 
 
