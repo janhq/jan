@@ -35,7 +35,7 @@ Settings are stored in a `cortex.db` file in [Jan Data Folder](/docs/data-folder
 
 ## My models
 
-Here's where you can manage all your installed AI models.
+Here's at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models** you can manage all your installed AI models:
 
 ### Manage Downloaded Models
 
@@ -66,8 +66,6 @@ Use the same instructions in [Delete Local Models](/docs/models/manage-models#de
 
 
 #### Start Models
-
-You can start downloaded model from **My Models**:
 1. Choose the model you want to start
 2. Click **three dots** <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to the model
 3. Select **Start Model**
@@ -79,15 +77,16 @@ You can start downloaded model from **My Models**:
 
 ### Manage Cloud Models
 
-You can add and configure **Cloud Providers** here:
-1. Click the **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to the provider name (e.g., Anthropic, Cohere, Groq), add API Key to use. See detailed instructions for each provider [here](/docs/remote-models/openai).
-2. Once a provider is installed, you can manage its settings by clicking on the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) icon next to it.
+1. To install cloud models, click the **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next your preferred providers (e.g., Anthropic, Cohere, Groq), and add **API Key** to use. See [detailed instructions](/docs/remote-models/openai) for each provider.
+2. Once a provider is installed, you can use its models & manage its settings by clicking on the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) icon next to it.
 
 <br/>
 ![Manage Cloud Provider](./_assets/settings-03.png)
 <br/>
 
 ## Preferences
+
+At **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Preferences**, you can customize how Jan looks.
 
 ### Appearance & Theme
 Control the visual theme of Jan's interface.
@@ -107,7 +106,7 @@ To change:
 ![Appearance](./_assets/settings-04.png)
 <br/>
 
-### Chat width
+### Chat Width
 Adjust how chat content is displayed.
 1. In **Chat Width** section, select either 
 - **Full Width:** Maximizes the chat area to use the full width of the window. This is ideal for viewing longer messages or when working with code snippets that benefit from more horizontal space.
@@ -129,6 +128,7 @@ Jan includes a built-in spell check feature to help catch typing errors in your 
 <br/>
 
 ## Keyboard Shortcuts
+At **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Keyboard shortcuts**, you can see Jan's shortcuts list:
 
 **1. Thread Management**
 - `⌘ N` - Create a new thread
@@ -147,8 +147,47 @@ Jan includes a built-in spell check feature to help catch typing errors in your 
 > Note: On **Windows** and **Linux**, use `Ctrl` (Control) instead of `⌘` (Command)
 
 ## Hardware
+At **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware**, you can monitor and manage your system resources when running local models.
+
+### CPU & RAM
+
+<Callout type="info">
+See detailed minimum system requirements to run local models on [Mac](/docs/desktop/mac#compatibility), [Windows](/docs/desktop/windows#compatibility) & [Linux](/docs/desktop/linux#compatibility).
+</Callout>
+
+- **CPU:** important for model processing speed. With CPU only, 20-90% usage during model running is normal.
+
+- **RAM:**
+  - Different models require different amounts of RAM.
+  - When running local models, please keep at least **4GB free**.
+  - If usage is near max, try closing other applications or use smaller models.
+
+
+### GPU Acceleration
+
+<Callout type="info">
+Ensure you have installed all required dependencies and drivers before enabling GPU acceleration. See **GPU Setup Guide** on [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration) for detailed instructions.
+</Callout>
+
+Turn on GPU acceleration to improve performance:
+1. Select and **enable** your prefered GPU(s)
+2. App reload is required after the selection
+
+<br/>
+![Hardware](./_assets/trouble-shooting-01.png)
+<br/>
+
+**GPU Performance Optimization**
+- Monitor VRAM usage - should not exceed 90%. Higher **VRAM** capacity typically enables better performance for larger language models.
+- Adjust `ngl` ([number of GPU Layers](/docs/models/model-parameters#engine-parameters)) in **Model** settings:
+  - Higher NGL = more VRAM used with faster performance
+  - Lower NGL = Less VRAM used with slower performance
+  - Start with 35 layers for 8GB VRAM. Increase if you have more VRAM available & decrease if you see **out-of-memory** errors.
+
+
 
 ## Privacy 
+At **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Privacy**, you can control analytics & logs in Jan:
 
 ### Analytics
 Jan is built with privacy at its core. By default, no data is collected. Everything stays local on your device.
@@ -170,15 +209,14 @@ Read more about that we collect with opt-in users at [Privacy](/docs/privacy).
 - Logs are stored at:
   - App log: `~/Library/Application\ Support/jan/data/logs/app.log`
   - Cortex log: `~/Library/Application\ Support/jan/data/logs/cortex.log`
-- At **Logs**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open App Logs & Cortex Logs:
+- To open logs from Jan's interface: at **Logs**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open App Logs & Cortex Logs:
 
 <br/>
 ![View Logs](./_assets/settings-08.png)
 <br/>
 
 #### Clear Logs
-
-Click the **Clear** button to remove all logs from the Jan app:
+Jan retains your logs for only **24 hours**. To remove all logs from Jan, at **Clear Logs**, click the **Clear** button:
 
 <Callout type="warning">
 This action cannot be undone. 
@@ -190,13 +228,22 @@ This action cannot be undone.
 
 
 ## Advanced Settings
-
+At **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings**, Jan stores settings for advanced use cases.
 ### Experimental Mode
 <Callout type="warning">
 Experimental features are unstable and are recommended only for testing purposes. Please turn on with caution!
 </Callout>
 
-To try out new features that are still in testing phase, turn on **Experimental Mode** setting:
+Current experimental features:
+
+| Feature | Description | 
+|---------|-------------|
+| [Tools](/docs/tools/retrieval) | Advanced tooling capabilities including web search, file operations, and code interpretation | 
+| Vulkan Settings | GPU acceleration using Vulkan API for improved model performance | 
+| [Jan Quick Ask](/docs/settings#jan-quick-ask) | Streamlined interface for rapid AI queries and responses | 
+
+
+To try out these beta features, turn on **Experimental Mode** setting:
 <br/>
 ![Experimental Mode](./_assets/settings-10.png)
 <br/>
@@ -205,7 +252,7 @@ To try out new features that are still in testing phase, turn on **Experimental 
 Jan stores your data locally in your own filesystem in a universal file format. See detailed [Jan Folder Structure](docs/data-folder#folder-structure).
 
 #### Open Jan Data Folder
-At **Jan Data Folder**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open Jan application's folder: 
+At **Settigns** > **Jan Data Folder**, click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open Jan application's folder: 
 <br/>
 ![Open Jan Data Folder](./_assets/settings-11.png)
 <br/>
@@ -226,12 +273,86 @@ An app restart will be required afterward.
 <br/>
 
 ### HTTPs Proxy 
+HTTPS Proxy encrypts data between your browser and the internet, making it hard for outsiders to intercept or read. It also helps you maintain your privacy and security while bypassing regional restrictions on the internet.
+
+<Callout type="info">
+- Model download speeds may be affected due to the encryption/decryption process and your cloud service provider's networking
+- HTTPS Proxy does not affect the remote model usage.
+</Callout>
+
+1. **Enable** the proxy toggle
+2. Enter your proxy server details in the following format:
+```
+http://<user>:<password>@<domain or IP>:<port>
+```
+Where:
+- `<user>`: Your proxy username (if authentication is required)
+- `<password>`: Your proxy password (if authentication is required)
+- `<domain or IP>`: Your proxy server's domain name or IP address
+- `<port>`: The port number for the proxy server
+
+<br/>
+![HTTPs Proxy](./_assets/settings-13.png)
+<br/>
+
+**Ignore SSL Certificates**
+
+This setting allows Jan to accept self-signed or unverified SSL certificates. This may be necessary when:
+- Working with corporate proxies using internal certificates
+- Testing in development environments
+- Connecting through specialized network security setups
+
+<Callout type="info">
+Only enable this option if you trust your network environment.
+</Callout>
+
+<br/>
+![Ignore SSL Certificates](./_assets/settings-14.png)
+<br/>
+
+### Jan Quick Ask
+Jan Quick Ask provides a faster way to interact with Jan without opening the full application window. It's designed for quick queries and responses when you need immediate assistance.
+<Callout type="warning">
+ This feature is currently experimental and must be enabled through [Experimental Mode](/docs/settings#experimental-mode) in **Advanced Settings**.
+</Callout>
+
+1. Once you've turned on [Experimental Mode](/docs/settings#experimental-mode), toggle on **Jan Quick Ask**
+2. App restart is required upon selection
+
+<br/>
+![Jan Quick Ask](./_assets/settings-15.png)
+<br/>
+
+3. Once enabled, you can open **Quick Ask** overlay with default shortcut: `CMD/Ctr` + `J`
+
+<br/>
+![Jan Quick Ask](./_assets/settings-16.png)
+<br/>
 
 ### Factory Reset
+Reset to Factory Settings restores Jan to its initial state by erasing all user data, including downloaded models and chat history. This action is irreversible and should only be used as a last resort when experiencing serious application issues.
 
-## Engines
+<Callout type="warning">
+This action cannot be undone. All data will be permanently deleted.
+</Callout>
 
-## Extensions
+Only use factory reset if:
+- The application is corrupted
+- You're experiencing persistent technical issues that other solutions haven't fixed
+- You want to completely start fresh with a clean installation
+
+To begin the process:
+1. At  **Reset to Factory Settings**, click **Reset** button 
+<br/>
+![Jan Quick Ask](./_assets/settings-17.png)
+<br/>
+2. In the confirmation dialog:
+- Type the word **RESET** to confirm
+- Optionally check **Keep the current app data location** to maintain the same data folder
+- Click **Reset Now**
+3. App restart is required upon confirmation
+<br/>
+![Jan Quick Ask](./_assets/settings-18.png)
 
 
 
