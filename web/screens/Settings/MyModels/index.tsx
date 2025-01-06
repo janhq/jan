@@ -24,18 +24,20 @@ import ModelSearch from '@/containers/ModelSearch'
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
 import useDropModelBinaries from '@/hooks/useDropModelBinaries'
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import {
   getLogoEngine,
   getTitleByEngine,
-  isLocalEngine,
   priorityEngine,
 } from '@/utils/modelEngine'
 
 import MyModelList from './MyModelList'
 
 import { extensionManager } from '@/extension'
+
 import {
   downloadedModelsAtom,
   showEngineListModelAtom,
@@ -52,6 +54,23 @@ const MyModels = () => {
   const [extensionHasSettings, setExtensionHasSettings] = useState<
     { name?: string; setting: string; apiKey: string; provider: string }[]
   >([])
+  const { engines } = useGetEngines()
+
+  const isLocalEngine = useCallback(
+    (engine: string) =>
+      Object.values(engines ?? {})
+        .flat()
+        .find((e) => e.name === engine)?.type === 'local' || false,
+    [engines]
+  )
+
+  const isConfigured = useCallback(
+    (engine: string) =>
+      (Object.values(engines ?? {})
+        .flat()
+        .find((e) => e.name === engine)?.api_key?.length ?? 0) > 0,
+    [engines]
+  )
 
   const filteredDownloadedModels = useMemo(
     () =>
@@ -228,7 +247,10 @@ const MyModels = () => {
                       </div>
                       <div className="flex gap-1">
                         {!isLocalEngine(engine) && (
-                          <SetupRemoteModel engine={engine} />
+                          <SetupRemoteModel
+                            engine={engine}
+                            isConfigured={isConfigured(engine)}
+                          />
                         )}
                         {!showModel ? (
                           <Button theme="icon" onClick={onClickChevron}>
