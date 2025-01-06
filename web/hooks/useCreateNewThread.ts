@@ -95,10 +95,10 @@ export const useCreateNewThread = () => {
     const overriddenParameters = {
       max_tokens: defaultContextLength
         ? Math.min(
-            defaultModel?.parameters.token_limit ?? 8192,
+            defaultModel?.parameters.max_tokens ?? 8192,
             defaultContextLength
           )
-        : defaultModel?.parameters.token_limit,
+        : defaultModel?.parameters.max_tokens,
     }
 
     const createdAt = Date.now()
