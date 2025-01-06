@@ -12,6 +12,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   ChevronDownIcon,
   ChevronUpIcon,
+  SettingsIcon,
   UploadCloudIcon,
   UploadIcon,
 } from 'lucide-react'
@@ -42,6 +43,7 @@ import {
   downloadedModelsAtom,
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const MyModels = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
@@ -51,6 +53,7 @@ const MyModels = () => {
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
   )
+  const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const [extensionHasSettings, setExtensionHasSettings] = useState<
     { name?: string; setting: string; apiKey: string; provider: string }[]
   >([])
@@ -246,12 +249,16 @@ const MyModels = () => {
                         </h6>
                       </div>
                       <div className="flex gap-1">
-                        {!isLocalEngine(engine) && (
-                          <SetupRemoteModel
-                            engine={engine}
-                            isConfigured={isConfigured(engine)}
+                        <Button
+                          theme="icon"
+                          variant="outline"
+                          onClick={() => setSelectedSetting(engine)}
+                        >
+                          <SettingsIcon
+                            size={14}
+                            className="text-[hsla(var(--text-secondary))]"
                           />
-                        )}
+                        </Button>
                         {!showModel ? (
                           <Button theme="icon" onClick={onClickChevron}>
                             <ChevronDownIcon

@@ -47,9 +47,6 @@ const RemoteEngineItems = ({
               <h6 className="line-clamp-1 font-semibold capitalize">
                 {getTitleByEngine(engine as InferenceEngine)}
               </h6>
-              <Badge variant="outline" theme="secondary">
-                {values[0].version}
-              </Badge>
             </div>
             <div className="mt-2 w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               <p>
