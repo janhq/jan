@@ -1,7 +1,7 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 /* eslint-disable  react/no-unescaped-entities */
 
-import React, { useCallback, useRef } from 'react'
+import React, { useCallback, useMemo, useRef } from 'react'
 
 import {
   EngineConfig as OriginalEngineConfig,
@@ -14,14 +14,18 @@ interface EngineConfig extends OriginalEngineConfig {
 
 import { ScrollArea, Input, TextArea } from '@janhq/joi'
 
+import { useAtomValue } from 'jotai'
+
 import { ChevronRight } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import {
   updateEngine,
   useGetEngines,
-  useGetRemoteModels,
+  // useGetRemoteModels,
 } from '@/hooks/useEngineManagement'
+
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -29,14 +33,9 @@ const RemoteEngineSettings = ({
   engine: InferenceEngine
 }) => {
   const { engines, mutate } = useGetEngines()
-  // TODO: Check this endpoint
-  const { remoteModels } = useGetRemoteModels(name)
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
 
-  const fakeData = [
-    { name: 'Claude 3 Opus Latest' },
-    { name: 'Claude 3 Opus Latest' },
-    { name: 'Claude 3 Opus Latest' },
-  ]
+  const remoteModels = downloadedModels.filter((e) => e.engine === name)
 
   const engine =
     engines &&
@@ -110,14 +109,14 @@ const RemoteEngineSettings = ({
               </div>
 
               <div>
-                {fakeData &&
-                  fakeData?.map((item, i) => {
+                {remoteModels &&
+                  remoteModels?.map((item, i) => {
                     return (
                       <div
                         key={i}
                         className={twMerge(
                           'border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b',
-                          fakeData?.length === 1 && 'rounded-lg'
+                          remoteModels?.length === 1 && 'rounded-lg'
                         )}
                       >
                         <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">

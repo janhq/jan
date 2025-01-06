@@ -7,7 +7,7 @@ import { Button, Input, Modal, TextArea } from '@janhq/joi'
 import { PlusIcon } from 'lucide-react'
 import { z } from 'zod'
 
-import { installEngine, useGetEngines } from '@/hooks/useEngineManagement'
+import { addRemoteEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 const engineSchema = z.object({
   engineName: z.string().min(1, 'Engine name is required'),
@@ -40,9 +40,10 @@ const ModalAddRemoteEngine = () => {
   })
 
   const onSubmit = async (data: z.infer<typeof engineSchema>) => {
-    await installEngine(data.engineName, {
+    await addRemoteEngine({
       type: 'remote',
       url: data.apiUrl,
+      engine: data.engineName,
       api_key: data.apiKey,
       metadata: {
         api_key_template: data.apiKeyTemplate,
