@@ -279,10 +279,12 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
             id,
             'settings.json',
           ])
-          const settings = await fs.readFileSync(apiKeyPath, 'utf-8')
-          api_key = JSON.parse(settings).find(
-            (e) => e.key === `${data.engine}-api-key`
-          )?.controllerProps?.value
+          if (await fs.existsSync(apiKeyPath)) {
+            const settings = await fs.readFileSync(apiKeyPath, 'utf-8')
+            api_key = JSON.parse(settings).find(
+              (e) => e.key === `${data.engine}-api-key`
+            )?.controllerProps?.value
+          }
         }
         data.api_key = api_key
         /// END - Migrate legacy api key settings
