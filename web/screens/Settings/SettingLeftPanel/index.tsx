@@ -37,35 +37,12 @@ const SettingLeftPanel = () => {
   useEffect(() => {
     const getAllSettings = async () => {
       const extensionsMenu: { name?: string; setting: string }[] = []
-      const engineMenu: {
-        name?: string
-        setting: string
-        provider: string
-      }[] = []
+
       const extensions = extensionManager.getAll()
 
       for (const extension of extensions) {
         const settings = await extension.getSettings()
-        if (
-          typeof extension.getSettings === 'function' &&
-          'provider' in extension &&
-          typeof extension.provider === 'string'
-        ) {
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            engineMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
-            })
-          }
-        } else if (settings && settings.length > 0) {
+        if (settings && settings.length > 0) {
           extensionsMenu.push({
             name: extension.productName,
             setting: extension.name,
