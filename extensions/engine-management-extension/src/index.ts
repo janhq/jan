@@ -267,30 +267,32 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
         .flat()
         .some((e) => e.type === 'remote')
     ) {
-      DEFAULT_REMOTE_ENGINES.forEach(async (engine) => {
-        const { id, ...data } = engine
+      await Promise.all(
+        DEFAULT_REMOTE_ENGINES.map(async (engine) => {
+          const { id, ...data } = engine
 
-        /// BEGIN - Migrate legacy api key settings
-        let api_key = undefined
-        if (id) {
-          const apiKeyPath = await joinPath([
-            await getJanDataFolderPath(),
-            'settings',
-            id,
-            'settings.json',
-          ])
-          if (await fs.existsSync(apiKeyPath)) {
-            const settings = await fs.readFileSync(apiKeyPath, 'utf-8')
-            api_key = JSON.parse(settings).find(
-              (e) => e.key === `${data.engine}-api-key`
-            )?.controllerProps?.value
+          /// BEGIN - Migrate legacy api key settings
+          let api_key = undefined
+          if (id) {
+            const apiKeyPath = await joinPath([
+              await getJanDataFolderPath(),
+              'settings',
+              id,
+              'settings.json',
+            ])
+            if (await fs.existsSync(apiKeyPath)) {
+              const settings = await fs.readFileSync(apiKeyPath, 'utf-8')
+              api_key = JSON.parse(settings).find(
+                (e) => e.key === `${data.engine}-api-key`
+              )?.controllerProps?.value
+            }
           }
-        }
-        data.api_key = api_key
-        /// END - Migrate legacy api key settings
+          data.api_key = api_key
+          /// END - Migrate legacy api key settings
 
-        await this.addRemoteEngine(data).catch(console.error)
-      })
+          await this.addRemoteEngine(data).catch(console.error)
+        })
+      )
       DEFAULT_REMOTE_MODELS.forEach(async (data: Model) => {
         await this.addRemoteModel(data).catch(() => {})
       })
