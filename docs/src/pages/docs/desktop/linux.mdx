@@ -23,6 +23,7 @@ keywords:
 
 import FAQBox from '@/components/FaqBox'
 import { Tabs, Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
 
 
 
@@ -68,14 +69,14 @@ Please check whether your Linux distribution supports desktop, server, or both e
 - Excavator processors (Q2 2015) and newer
 
 <Callout type="info">
-Jan requires a processor with AVX2 for best performance. See [full list of supported processors.](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) While older processors with AVX/AVX-512 will work, you may experience slower performance.
+Jan requires a processor with **AVX2 or newer** for optimal performance. See [full list of supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2). While Jan may run on processors with only AVX support, performance will be significantly reduced.
 </Callout>
 </Tabs.Tab>
 
 <Tabs.Tab>
-- 8GB → 3B models (int4)
-- 16GB → 7B models (int4)
-- 32GB → 13B models (int4)
+- 8GB → up to 3B parameter models (int4)
+- 16GB → up to 7B parameter models (int4)
+- 32GB → up to 13B parameter models (int4)
 
 <Callout type="info">
 DDR2 RAM minimum supported, newer generations recommended for better performance.
@@ -83,9 +84,9 @@ DDR2 RAM minimum supported, newer generations recommended for better performance
 </Tabs.Tab>
 
 <Tabs.Tab>
-- 6GB → 3B model (int4) with `ngl` at 120
-- 8GB → 7B model (int4) with `ngl` at 120
-- 12GB → 13B model (int4) with `ngl` at 120
+- 6GB → up to 3B parameter models (int4) 
+- 8GB → up to 7B parameter models (int4)
+- 12GB → up to 13B parameter models (int4)
 
 <Callout type="info">
 Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
@@ -93,7 +94,7 @@ Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 </Tabs.Tab>
 
 <Tabs.Tab>
-At least 10GB for app installation and model downloads.
+At least **10GB** for app installation and model downloads.
 </Tabs.Tab>
 
 </Tabs>
@@ -179,7 +180,7 @@ chmod +x jan-linux-x86_64-{version}.AppImage
 
 By default, Jan is installed in the following directory:
 
-```
+```bash
 # Custom installation directory
 $XDG_CONFIG_HOME = /home/username/custom_config
 
@@ -238,9 +239,9 @@ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
 See [detailed instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions).
 
 ### Step 2: Enable GPU Acceleration
-1. In Jan, navigate to **Settings** > **Hardware** 
-3. Select and enable your prefered NVIDIA GPU(s)
-4. App reload is required after the selection
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
+2. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
+3. App reload is required after the selection
 
 
 <Callout type="info">
@@ -252,23 +253,32 @@ While **Vulkan** can enable Nvidia GPU acceleration in the Jan app, **CUDA** is 
 </Tabs.Tab>
 
 <Tabs.Tab>
-To enable the use of your AMD GPU in the Jan app, you need to activate the Vulkan support first by following the steps below:
+AMD GPUs require **Vulkan** support.
 
-1. Open Jan application
-2. Go to **Settings** → **Advanced Settings** → enable the **Experimental Mode**
-3. Enable the **Vulkan Support** under the **GPU Acceleration**
-4. Enable the **GPU Acceleration** and choose the AMD GPU you want to use
-5. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated
+<Callout type="warning">
+ This feature is currently experimental and must be enabled through [Experimental Mode](/docs/settings#experimental-mode) in **Advanced Settings**.
+</Callout>
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
+2. Enable **Experimental Mode**
+3. Under **GPU Acceleration**, enable **Vulkan Support**
+4. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
+5. App reload is required after the selection
+
 </Tabs.Tab>
 
 <Tabs.Tab>
-To enable the use of your Intel Arc GPU in the Jan app, you need to activate the Vulkan support first by following the steps below:
+Intel Arc GPUs require **Vulkan** support. 
 
-1. Open Jan application
-2. Go to **Settings** → **Advanced Settings** → enable the **Experimental Mode**
-3. Enable the **Vulkan Support** under the **GPU Acceleration**
-4. Enable the **GPU Acceleration** and choose the Intel Arc GPU you want to use
-5. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated
+<Callout type="warning">
+ This feature is currently experimental and must be enabled through [Experimental Mode](/docs/settings#experimental-mode) in **Advanced Settings**.
+</Callout>
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
+2. Enable **Experimental Mode**
+3. Under **GPU Acceleration**, enable **Vulkan Support**
+4. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
+5. App reload is required after the selection
 </Tabs.Tab>
 
 </Tabs>
