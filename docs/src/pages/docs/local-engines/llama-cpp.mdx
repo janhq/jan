@@ -1,0 +1,82 @@
+---
+title: llama.cpp
+description: A step-by-step guide on how to customize the llama.cpp engine.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Llama CPP integration,
+    llama.cpp Engine,
+    Intel CPU,
+    AMD CPU,
+    NVIDIA GPU,
+    AMD GPU Radeon,
+    Apple Silicon,
+    Intel Arc GPU,
+  ]
+---
+
+import { Tabs } from 'nextra/components'
+import { Callout, Steps } from 'nextra/components'
+import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
+
+# llama.cpp (Cortex)
+
+## Overview
+Jan uses **llama.cpp** for running local AI models. You can find its settings in **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **llama.cpp**:
+
+<br/>
+![llama.cpp](../_assets/llama.cpp-01.png)
+<br/>
+
+These settings are for advanced users, you would want to check these settings when:
+- Your AI models are running slowly or not working
+- You've installed new hardware (like a graphics card)
+- You want to tinker & test performance with different [backends](/docs/local-engines/llama-cpp#available-backends)
+
+## Engine Version and Updates
+- **Engine Version**: View current version of llama.cpp engine
+- **Check Updates**: Verify if a newer version is available & install available updates when it's available
+
+
+## Available Backends
+
+Jan offers different backend variants for **llama.cpp** based on your operating system, you can:
+- Download different backends as needed
+- Switch between backends for different hardware configurations
+- View currently installed backends in the list
+
+<Callout type="warning">
+Choose the backend that matches your hardware. Using the wrong variant may cause performance issues or prevent models from loading.
+</Callout>
+
+### macOS
+- `mac-arm64`: For Apple Silicon Macs (M1/M2/M3)
+- `mac-amd64`: For Intel-based Macs
+
+### Windows
+- `win-cuda`: For NVIDIA GPUs using CUDA
+- `win-cpu`: For CPU-only operation
+- `win-directml`: For DirectML acceleration (AMD/Intel GPUs)
+- `win-opengl`: For OpenGL acceleration
+
+### Linux
+- `linux-cuda`: For NVIDIA GPUs using CUDA
+- `linux-cpu`: For CPU-only operation
+- `linux-rocm`: For AMD GPUs using ROCm
+- `linux-openvino`: For Intel GPUs/NPUs using OpenVINO
+- `linux-vulkan`: For Vulkan acceleration
+
+<Callout type="info">
+For detailed hardware compatibility, please visit our guide for [Mac](/docs/desktop/mac#compatibility), [Windows](/docs/desktop/windows#compatibility), and [Linux](docs/desktop/linux).
+</Callout>
+
+
+

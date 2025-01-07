@@ -19,24 +19,50 @@ keywords:
   ]
 ---
 
+import { Tabs } from 'nextra/components'
 import { Callout, Steps } from 'nextra/components'
+import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
 
 # TensorRT-LLM
-
 ## Overview
+Jan uses **TensorRT-LLM** as an optional engine for faster inference on NVIDIA GPUs. This engine uses [Cortex-TensorRT-LLM](https://github.com/janhq/cortex.tensorrt-llm), which includes an efficient C++ server that executes the [TRT-LLM C++ runtime](https://nvidia.github.io/TensorRT-LLM/gpt_runtime.html) natively. It also includes features and performance improvements like OpenAI compatibility, tokenizer improvements, and queues.
 
-This guide walks you through installing Jan's official [TensorRT-LLM Engine](https://github.com/janhq/nitro-tensorrt-llm). This engine uses [Cortex-TensorRT-LLM](https://github.com/janhq/cortex.tensorrt-llm) as the AI engine instead of the default [Cortex-Llama-CPP](https://github.com/janhq/cortex).  It includes an efficient C++ server that executes the [TRT-LLM C++ runtime](https://nvidia.github.io/TensorRT-LLM/gpt_runtime.html) natively. It also includes features and performance improvements like OpenAI compatibility, tokenizer improvements, and queues.
-
-<Callout type='warning' emoji="">
- This feature is only available for Windows users. Linux is coming soon.
+<Callout type="info">
+Currently only available for **Windows** users, **Linux** support is coming soon!
 </Callout>
 
-### Pre-requisites
+You can find its settings in **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **TensorRT-LLM**:
 
-- A **Windows** PC.
-- **Nvidia GPU(s)**: Ada or Ampere series (i.e. RTX 4000s & 3000s). More will be supported soon.
-- Sufficient disk space for the TensorRT-LLM models and data files (space requirements vary depending on the model size).
 
+
+## Requirements
+- NVIDIA GPU with Compute Capability 7.0 or higher (RTX 20xx series and above)
+- Minimum 8GB VRAM (16GB+ recommended for larger models)
+- Updated NVIDIA drivers
+- CUDA Toolkit 11.8 or newer
+
+<Callout type="info">
+For detailed setup guide, please visit [Windows](/docs/desktop/windows#compatibility).
+</Callout>
+
+## Engine Version and Updates
+- **Engine Version**: View current version of TensorRT-LLM engine
+- **Check Updates**: Verify if a newer version is available & install available updates when it's available
+
+## Available Backends
+
+TensorRT-LLM is specifically designed for NVIDIA GPUs. Available backends include:
+
+**Windows**
+- `win-cuda`: For NVIDIA GPUs with CUDA support
+
+<Callout type="warning">
+TensorRT-LLM requires an NVIDIA GPU with CUDA support. It is not compatible with other GPU types or CPU-only systems.
+</Callout>
+
+
+
+## Enable TensorRT-LLM 
 
 <Steps>
 ### Step 1: Install TensorRT-Extension
@@ -73,16 +99,5 @@ We offer a handful of precompiled models for Ampere and Ada cards that you can i
 ![image](https://hackmd.io/_uploads/rJewrEgRp.png)
 
 3. Click **Download** to download the model.
-
-### Step 3: Configure Settings
-
-1. Navigate to the Thread section.
-2. Select the model that you have downloaded.
-3. Customize the default parameters of the model for how Jan runs TensorRT-LLM.
-<Callout type='info'>
-  Please see [here](/docs/models/model-parameters) for more detailed model parameters.
-</Callout>
-<br/>
-![Specific Conversation](../_assets/model-parameters.png)
 
 </Steps>

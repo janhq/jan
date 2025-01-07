@@ -27,16 +27,17 @@
     "title": "ENGINES",
     "type": "separator"
   },
-  "built-in": "Local Engines",
+  "local-engines": "Local Engines",
   "remote-models": "Remote Engines",
+  "install-engines": "Install Engines",
   "extensions-separator": {
     "title": "EXTENSIONS",
     "type": "separator"
   },
   "extensions": "Overview",
-  "extensions-settings": "Extensions Settings",
+  "extensions-settings": "Extension Settings",
   "configure-extensions": "Configure Extensions",
-  "installing-extension": "Install Extensions",
+  "install-extensions": "Install Extensions",
   "troubleshooting-separator": {
     "title": "TROUBLESHOOTING",
     "type": "separator"

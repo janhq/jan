@@ -108,10 +108,13 @@ You need to own your **model configurations**, use at your own risk. Misconfigur
 
 #### 4. Manual Setup
 For advanced users who add a specific model that is not available within Jan **Hub**:
-1. Navigate to `~/jan/data/models/`
-2. Create a new **Folder** for your model
-3. Add a `model.json` file with your configuration:
-```
+<Steps>
+##### Step 1: Create Model File
+1. Navigate to [Jan Data Folder]()
+2. Open `models` folder
+3. Create a new **Folder** for your model
+4. Add a `model.json` file with your configuration:
+```bash
   "id": "<unique_identifier_of_the_model>",
   "object": "<type_of_object, e.g., model, tool>",
   "name": "<name_of_the_model>",
@@ -130,9 +133,50 @@ For advanced users who add a specific model that is not available within Jan **H
   "engine": "<engine_or_platform_the_model_runs_on>",
   "source": "<url_or_source_of_the_model_information>"
 ```
-Key fields to configure:
+Here's model "TinyLlama Chat 1.1B Q4" as an example:
+```json
+{
+  "sources": [
+    {
+      "filename": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+      "url": "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    }
+  ],
+  "id": "tinyllama-1.1b",
+  "object": "model",
+  "name": "TinyLlama Chat 1.1B Q4",
+  "version": "1.0",
+  "description": "TinyLlama is a tiny model with only 1.1B. It's a good model for less powerful computers.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 4096,
+    "prompt_template": "<|system|>\n{system_message}<|user|>\n{prompt}<|assistant|>",
+    "llama_model_path": "tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+  },
+  "parameters": {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 2048,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "TinyLlama",
+    "tags": [
+      "Tiny",
+      "Foundation Model"
+    ],
+    "size": 669000000
+  },
+  "engine": "nitro"
+}
+```
+##### Step 2: Modify Model Parameters
+Modify model parameters under the settings array. Key fields to configure:
 1. **Settings** is where you can set your engine configurations.
-2. [**Parameters**](/docs/models#model-parameters) are the adjustable settings that affect how your model operates or processes the data. The fields in parameters are typically general and can be the same across models. Here is an example of model parameters:
+2. [**Parameters**](/docs/models/model-parameters) are the adjustable settings that affect how your model operates or processes the data. The fields in parameters are typically general and can be the same across models. Here is an example of model parameters:
 ```
 "parameters":{
   "temperature": 0.7,
@@ -142,7 +186,7 @@ Key fields to configure:
   "frequency_penalty": 0,
   "presence_penalty": 0
 ```
-
+</Steps>
 
 ### Delete Models
 1. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
