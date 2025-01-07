@@ -22,6 +22,7 @@ keywords:
 
 import { Tabs, Callout, Steps } from 'nextra/components'
 import FAQBox from '@/components/FaqBox'
+import { Settings } from 'lucide-react'
 
 
 # Windows Installation
@@ -39,23 +40,29 @@ Ensure that your system meets the following requirements to use Jan effectively:
 - Excavator processors (Q2 2015) and newer.
 </Tabs.Tab>
 </Tabs>
+
 <Callout type="info">
-Jan requires a processor with AVX2 for best performance. See [full list of supported processors.](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) While older processors with AVX/AVX-512 will work, you may experience slower performance.
+Jan requires a processor with **AVX2 or newer** for optimal performance. See [full list of supported processors](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2). While Jan may run on processors with only AVX support, performance will be significantly reduced.
 </Callout>
+
 - **Memory (RAM)**
-  - 8GB > 3B parameter models (int4)
-  - 16GB > 7B parameter models (int4)
-  - 32GB > 13B parameter models (int4)
+  - 8GB → up to 3B parameter models (int4)
+  - 16GB → up to 7B parameter models (int4)
+  - 32GB → up to 13B parameter models (int4)
+
 <Callout type="info">
 DDR2 RAM is supported but newer RAM generations are recommended for better performance.
 </Callout>
+
 - **GPU**:
-  - 6GB > 3B models with **ngl** at 120 (full speed)
-  - 8GB > 7B models with **ngl** at 120 (full speed)
-  - 12GB > 13B models with **ngl** at 120 (full speed)
+  - 6GB → up to 3B parameter models 
+  - 8GB → up to 7B parameter models 
+  - 12GB → up to 13B parameter models 
+
 <Callout type="info">
 Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 </Callout>
+
 - **Storage:** Minimum 10GB free space for application and model downloads
 
 
@@ -153,9 +160,9 @@ Expected output should show your GPU model and driver version.
 nvcc --version
 ```
 ### Step 2: Enable GPU Acceleration
-1. In Jan, navigate to **Settings** > **Hardware** 
-3. Select and enable your prefered NVIDIA GPU(s)
-4. App reload is required after the selection
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
+2. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
+3. App reload is required after the selection
 
 <Callout type="info">
 While Jan supports both CUDA and Vulkan for NVIDIA GPUs, we strongly recommend using CUDA for optimal performance.
@@ -166,23 +173,32 @@ While Jan supports both CUDA and Vulkan for NVIDIA GPUs, we strongly recommend u
 </Tabs.Tab>
 
 <Tabs.Tab>
-AMD GPUs require **Vulkan** support, which must be activated through **Experimental Mode**.
-1. Launch Jan
-2. Navigate to **Settings** > **Advanced Settings**
-3. Enable **Experimental Mode**
-4. Under **GPU Acceleration**, enable **Vulkan Support**
-5. Enable **GPU Acceleration** and select your AMD GPU
-6. App reload is required after the selection
+AMD GPUs require **Vulkan** support.
+
+<Callout type="warning">
+ This feature is currently experimental and must be enabled through [Experimental Mode](/docs/settings#experimental-mode) in **Advanced Settings**.
+</Callout>
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
+2. Enable **Experimental Mode**
+3. Under **GPU Acceleration**, enable **Vulkan Support**
+4. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
+5. App reload is required after the selection
+
 </Tabs.Tab>
 
 <Tabs.Tab>
-Intel Arc GPUs require **Vulkan** support, which must be activated through **Experimental Mode**.
-1. Launch Jan
-2. Navigate to **Settings** > **Advanced Settings**
-3. Enable **Experimental Mode**
-4. Under **GPU Acceleration**, enable **Vulkan Support**
-5. Enable **GPU Acceleration** and select your Intel Arc GPU
-6. App reload is required after the selection
+Intel Arc GPUs require **Vulkan** support. 
+
+<Callout type="warning">
+ This feature is currently experimental and must be enabled through [Experimental Mode](/docs/settings#experimental-mode) in **Advanced Settings**.
+</Callout>
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
+2. Enable **Experimental Mode**
+3. Under **GPU Acceleration**, enable **Vulkan Support**
+4. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
+5. App reload is required after the selection
 </Tabs.Tab>
 
 </Tabs>
@@ -215,6 +231,11 @@ To ensure a complete uninstallation, remove the app cache:
 1. Navigate to `C:\Users\[username]\AppData\Roaming`
 2. Delete Jan folder
 
+or through **Terminal**:
+```
+cd C:\Users\%USERNAME%\AppData\Roaming
+rmdir /S jan
+```
 </Steps>
 
 <Callout type="warning">
