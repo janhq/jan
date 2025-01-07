@@ -20,15 +20,35 @@ import { Callout } from 'nextra/components'
 import { Settings, EllipsisVertical } from 'lucide-react'
 
 
-## System Monitor
-The System Monitor extension now offers enhanced customization for app logging. Users can toggle the application logging feature on or off and set a custom interval for clearing the app logs. To configure the app log feature, follow these steps:
-1. Navigate to the main dashboard.
-2. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-3. Under the **Core Extensions** section, select the **System Monitoring** extension.
-4. Use the **slider** to turn the app logging feature on or off.
-5. Specify the log cleaning interval in milliseconds.
+# System Monitoring
+Provides system health and OS level data:
+- Hardware utilization tracking
+- Performance monitoring
+- Error logging
+
+You can configure your logs in Jan in **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Core Extensions** > **System Monitoring**:
+
+
+## Enable App Logs
+Jan can save logs locally on your computer for:
+- Debugging model issues
+- Crash reports
+- Download troubleshooting
+
+To enable, toggle on **Enable App Logs**:
+
+<br/>
+![Model Management](../_assets/extensions-03.png)
+<br/>
+
+
+## Log Cleaning Interval
+Set automatic log deletion interval in milliseconds:
+- Default: 120000 (2 minutes); however, there's no minimum or maximum intervals 
+- Controls disk space usage
+- Prevents log accumulation
 
 <Callout type='info'>
-  - You can clear the app logs manually by clicking the **Clear logs** button in the advanced settings.
-  - There are no minimum or maximum intervals for setting the time. However, invalid inputs will default to `120000ms (2 minutes)`.
+You can clear Jan logs manually with [Clear logs](/docs/settings#log-management) in **Privacy**.
 </Callout>
+

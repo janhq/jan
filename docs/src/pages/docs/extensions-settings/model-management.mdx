@@ -22,34 +22,22 @@ import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-rea
 
 # Model Management 
 
-Configure how Jan handles model downloads and management. Access these settings through **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Extensions** > **Model Management**:
+This extension configures how Jan handles model downloads and management:
+- Model discovery and browsing
+- Version control & configuration handling
+- Download management
 
 ## Hugging Face Access Token
 
-Access tokens authenticate your identity to Hugging Face Hub for model downloads.
-
-
-
-Enter your token in the format: `hf_************************`
-
-<Callout type="info">
-  Get your Hugging Face token from [Hugging Face Settings](https://huggingface.co/settings/tokens)
-</Callout>
-
-## Log Management
-
-### Enable App Logs
-Toggle to save logs locally on your computer for:
-- Debugging model issues
-- Crash reports
-- Download troubleshooting
-
-### Log Cleaning Interval
-Set automatic log deletion interval in milliseconds:
-- Default: 120000 (2 minutes)
-- Controls disk space usage
-- Prevents log accumulation
+Access tokens authenticate your identity to Hugging Face Hub for model downloads. 
+1. Get your token from [Hugging Face Tokens](https://huggingface.co/docs/hub/en/security-tokens)
+2. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Core Extensions** > **Model Management**
+2. Enter your token in Jan: `hf_************************`
 
 <Callout type="warning">
-Keep your access tokens secure and never share them. Enable logs temporarily when needed for troubleshooting.
+Keep your access tokens secure and never share them. 
 </Callout>
+
+<br/>
+![Model Management](../_assets/extensions-02.png)
+<br/>

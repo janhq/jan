@@ -16,26 +16,30 @@ description: Learn about Jan's default extensions and explore how to configure t
   ]
 ---
 
-# Configure an Extension Settings
+# Configure Extensions 
+Extensions in Jan are configured through a JSON file that defines their behavior and metadata. While most users won't need to modify this file directly, advanced users can customize extension settings for specific needs.
 
-To configure an extension settings:
+## Access extensions.json
 
-1. Navigate to the `~/jan/data/extensions`.
-2. Open the `extensions.json` file
-3. Edit the file with options including:
+1. Navigate to [Jan Data Folder](/docs/data-folder):
+2. Open the `extensions.json` file in any text editor
 
-| Option           | Description                         |
-| ---------------- | ----------------------------------- |
-| `_active`        | Enable/disable the extension.       |
-| `listeners`      | Default listener setting.           |
-| `origin`         | Extension file path.                |
-| `installOptions` | Version and metadata configuration. |
-| `name`           | Extension name.                     |
-| `productName`    | Extension display name.                     |
-| `version`        | Extension version.                  |
-| `main`           | Main file path.                     |
-| `description`    | Extension description.              |
-| `url`            | Extension URL.                      |
+## Configuration Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `_active` | Enable/disable the extension | `true` or `false` |
+| `listeners` | Event listeners configuration | `{}` for default |
+| `origin` | Installation path of the extension | `"C:\\Users\\...\\jan\\resources\\app.asar.unpacked\\..."` |
+| `installOptions` | Installation configuration | `{"version": false, "fullMetadata": true}` |
+| `name` | Internal extension identifier | `"@janhq/conversational-extension"` |
+| `productName` | Display name shown in UI | `"Conversational"` |
+| `version` | Extension version number | `"1.0.0"` |
+| `main` | Entry point file path | `"dist/index.js"` |
+| `description` | Extension description | `"This extension enables conversations..."` |
+| `url` | Extension repository URL | `"extension://@janhq/conversational-extension/dist/index.js"` |
+
+## Full Example Configuration
 
 ```json title="~/jan/data/extensions/extensions.json"
 {
@@ -266,3 +270,32 @@ To configure an extension settings:
     }
 }
 ```
+
+## Common Use Cases
+
+1. **Disable an Extension**
+   ```json
+   {
+     "@janhq/example-extension": {
+       "_active": false
+       // other settings...
+     }
+   }
+   ```
+
+2. **Update Entry Point**
+   ```json
+   {
+     "@janhq/example-extension": {
+       "main": "new/path/index.js"
+       // other settings...
+     }
+   }
+   ```
+
+## Important Notes
+
+- Always backup the `extensions.json` file before making changes
+- Invalid JSON syntax can prevent Jan from starting properly
+- Most users should manage extensions through Jan's Settings UI
+- Changes require restarting Jan to take effect
