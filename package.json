@@ -8,13 +8,6 @@
       "electron",
       "web",
       "server"
-    ],
-    "nohoist": [
-      "joi",
-      "core",
-      "electron",
-      "web",
-      "server"
     ]
   },
   "scripts": {
@@ -23,35 +16,40 @@
     "test:coverage": "jest --coverage",
     "test": "yarn workspace jan test:e2e",
     "test-local": "yarn lint && yarn build:test && yarn test",
-    "pre-install:darwin": "find extensions -type f -path \"**/*.tgz\" -exec cp {} pre-install \\;",
-    "pre-install:linux": "find extensions -type f -path \"**/*.tgz\" -exec cp {} pre-install \\;",
-    "pre-install:win32": "powershell -Command \"Get-ChildItem -Path \"extensions\" -Recurse -File -Filter \"*.tgz\" | ForEach-Object { Copy-Item -Path $_.FullName -Destination \"pre-install\" }\"",
-    "pre-install": "run-script-os",
     "copy:assets": "cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"themes/**\" \"electron/themes\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace @janhq/web dev",
     "dev:server": "yarn workspace @janhq/server dev",
-    "dev": "turbo run dev --parallel --filter=!@janhq/server",
-    "build:server": "cd server && yarn install && yarn run build",
-    "build:core": "cd core && yarn install && yarn run build",
+    "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web\" \"yarn dev:electron\"",
+    "build:server": "cd server && yarn build",
+    "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
     "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
-    "build:extensions": "rimraf ./pre-install/*.tgz && turbo run @janhq/core#build && cd extensions && yarn install && turbo run build:publish && cd .. && yarn pre-install",
-    "build:test": "yarn copy:assets && turbo run @janhq/web#build && cpx \"web/out/**\" \"electron/renderer/\" && turbo run build:test",
+    "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish",
+    "build:test": "yarn copy:assets && yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\" && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
     "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
     "dev:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi dev",
-    "build:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi build",
+    "build:joi": "yarn workspace @janhq/joi build",
     "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^8.2.1",
+    "concurrently": "^9.1.0",
     "cpx": "^1.5.0",
     "husky": "^9.1.5",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "rimraf": "^3.0.2",
     "run-script-os": "^1.1.6",
     "wait-on": "^7.0.1"
   },
-  "version": "0.0.0"
+  "version": "0.0.0",
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "resolutions": {
+    "yallist": "4.0.0"
+  },
+  "packageManager": "yarn@4.5.3"
 }

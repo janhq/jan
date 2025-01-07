@@ -9,6 +9,6 @@ const config: PlaywrightTestConfig = {
     video: 'retain-on-failure',
     trace: 'retain-on-failure',
   },
-  reporter: [['html', { outputFolder: './playwright-report' }]],
+  // reporter: [['html', { outputFolder: './playwright-report' }]],
 }
 export default config

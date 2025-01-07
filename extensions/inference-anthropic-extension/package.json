@@ -4,29 +4,23 @@
   "version": "1.0.3",
   "description": "This extension enables Anthropic chat completion API calls",
   "main": "dist/index.js",
-  "module": "dist/module.js",
   "engine": "anthropic",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
     "test": "jest test",
-    "build": "tsc -b . && webpack --config webpack.config.js",
-    "build:publish": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "sync:core": "cd ../.. && yarn build:core && cd extensions && rm yarn.lock &&  cd inference-anthropic-extension && yarn && yarn build:publish"
-  },
-  "exports": {
-    ".": "./dist/index.js",
-    "./main": "./dist/module.js"
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
-    "webpack": "^5.88.2",
-    "webpack-cli": "^5.1.4",
-    "ts-loader": "^9.5.0"
+    "rolldown": "1.0.0-beta.1",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "fetch-retry": "^5.0.6",
     "ulidx": "^2.3.0"
   },
@@ -40,5 +34,9 @@
   ],
   "bundleDependencies": [
     "fetch-retry"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

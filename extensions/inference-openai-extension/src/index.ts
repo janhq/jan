@@ -8,9 +8,6 @@
 
 import { ModelRuntimeParams, PayloadType, RemoteOAIEngine } from '@janhq/core'
 
-declare const SETTINGS: Array<any>
-declare const MODELS: Array<any>
-
 export enum Settings {
   apiKey = 'openai-api-key',
   chatCompletionsEndPoint = 'chat-completions-endpoint',

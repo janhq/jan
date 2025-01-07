@@ -30,6 +30,7 @@ import {
 } from '@/helpers/atoms/ChatMessage.atom'
 import {
   activeThreadAtom,
+  isBlockingSendAtom,
   updateThreadAtom,
   updateThreadStateLastMessageAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -43,6 +44,7 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const clipboard = useClipboard({ timeout: 1000 })
   const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
   const updateThread = useSetAtom(updateThreadAtom)
+  const isBlockingSend = useAtomValue(isBlockingSendAtom)
 
   const onDeleteClick = useCallback(async () => {
     deleteMessage(message.id ?? '')
@@ -91,7 +93,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
     <div className="flex flex-row items-center">
       <div className="flex gap-1 bg-[hsla(var(--app-bg))]">
         {message.role === ChatCompletionRole.User &&
-          message.content[0]?.type === ContentType.Text && (
+          message.content[0]?.type === ContentType.Text &&
+          !isBlockingSend && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={onEditClick}
@@ -110,7 +113,8 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
 
         {message.id === messages[messages.length - 1]?.id &&
           !messages[messages.length - 1]?.metadata?.error &&
-          !messages[messages.length - 1].attachments?.length && (
+          !messages[messages.length - 1].attachments?.length &&
+          !isBlockingSend && (
             <div
               className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
               onClick={resendChatMessage}

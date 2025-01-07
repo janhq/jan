@@ -29,7 +29,7 @@ const SettingItem = ({ name, setting }: Props) => {
     >
       <span
         className={twMerge(
-          'p-1.5 font-medium capitalize text-[hsla(var(--left-panel-menu))]',
+          'p-1.5 font-medium  text-[hsla(var(--left-panel-menu))]',
           isActive && 'relative z-10 text-[hsla(var(--left-panel-menu-active))]'
         )}
       >

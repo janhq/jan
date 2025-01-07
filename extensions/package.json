@@ -3,9 +3,10 @@
   "workspaces": {
     "packages": [
       "**"
-    ],
-    "nohoist": [
-      "**"
     ]
-  }
+  },
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

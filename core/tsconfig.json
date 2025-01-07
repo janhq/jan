@@ -11,11 +11,10 @@
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "declarationDir": "dist/types",
-    "outDir": "dist/lib",
+    "outDir": "dist",
     "importHelpers": true,
-    "types": ["@types/jest"],
-    "resolveJsonModule": true
+    "types": ["jest", "node"]
   },
   "include": ["src"],
-  "exclude": ["**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts"]
 }

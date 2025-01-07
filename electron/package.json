@@ -78,9 +78,11 @@
   },
   "scripts": {
     "lint": "eslint . --ext \".js,.jsx,.ts,.tsx\"",
-    "test:e2e": "playwright test --workers=1",
+    "test:e2e": "DEBUG=pw:browser xvfb-maybe -- playwright test --workers=1",
     "copy:assets": "rimraf --glob \"./pre-install/*.tgz\" && cpx \"../pre-install/*.tgz\" \"./pre-install\"",
-    "dev": "yarn copy:assets && tsc -p . && electron .",
+    "version-patch": "jq '.version' package.json | tr -d '\"' > .version.bak && jq --arg ver \"0.1.$(date +%s)\" '.version = $ver' package.json > package.tmp && mv package.tmp package.json",
+    "version-restore": "jq --arg ver $(cat .version.bak) '.version = $ver' package.json > package.tmp && mv package.tmp package.json && rm .version.bak",
+    "dev": "yarn copy:assets && tsc -p . && yarn version-patch && electron . && yarn version-restore",
     "compile": "tsc -p .",
     "start": "electron .",
     "build": "yarn copy:assets && run-script-os",
@@ -98,22 +100,23 @@
   },
   "dependencies": {
     "@alumna/reflect": "^1.1.3",
-    "@janhq/core": "link:./core",
-    "@janhq/server": "link:./server",
+    "@janhq/core": "link:../core",
+    "@janhq/server": "link:../server",
+    "@kirillvakalov/nut-tree__nut-js": "4.2.1-2",
     "@npmcli/arborist": "^7.1.0",
     "electron-store": "^8.1.0",
     "electron-updater": "^6.1.7",
     "fs-extra": "^11.2.0",
     "node-fetch": "2",
-    "pacote": "^17.0.4",
+    "pacote": "^21.0.0",
     "request": "^2.88.2",
     "request-progress": "^3.0.0",
-    "ulidx": "^2.3.0",
-    "@kirillvakalov/nut-tree__nut-js": "4.2.1-2"
+    "ulidx": "^2.3.0"
   },
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
     "@playwright/test": "^1.38.1",
+    "@reportportal/agent-js-playwright": "^5.1.7",
     "@types/npmcli__arborist": "^5.6.4",
     "@types/pacote": "^11.1.7",
     "@types/request": "^2.48.12",
@@ -129,9 +132,10 @@
     "rimraf": "^5.0.5",
     "run-script-os": "^1.1.6",
     "typescript": "^5.3.3",
-    "@reportportal/agent-js-playwright": "^5.1.7"
+    "xvfb-maybe": "^0.2.1"
   },
   "installConfig": {
     "hoistingLimits": "workspaces"
-  }
+  },
+  "packageManager": "yarn@4.5.3"
 }

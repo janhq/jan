@@ -11,6 +11,7 @@ import tailwindcss from 'tailwindcss'
 import typescriptEngine from 'typescript'
 import resolve from '@rollup/plugin-node-resolve'
 import copy from 'rollup-plugin-copy'
+import sass from 'rollup-plugin-sass'
 
 const packageJson = JSON.parse(readFileSync('./package.json'))
 
@@ -22,18 +23,12 @@ export default [
     output: [
       {
         file: packageJson.main,
-        format: 'cjs',
-        sourcemap: false,
-        exports: 'named',
-        name: packageJson.name,
-      },
-      {
-        file: packageJson.module,
         format: 'es',
         exports: 'named',
         sourcemap: false,
       },
     ],
+    external: ['react', 'typescript', 'class-variance-authority'],
     plugins: [
       postcss({
         plugins: [autoprefixer(), tailwindcss(tailwindConfig)],
@@ -46,16 +41,24 @@ export default [
         minimize: true,
         extract: 'main.css',
       }),
+
       peerDepsExternal({ includeDependencies: true }),
-      resolve(),
       commonjs(),
+      resolve(),
       typescript({
         tsconfig: './tsconfig.json',
         typescript: typescriptEngine,
         sourceMap: false,
-        exclude: ['docs', 'dist', 'node_modules/**'],
+        exclude: [
+          'docs',
+          'dist',
+          'node_modules/**',
+          '**/*.test.ts',
+          '**/*.test.tsx',
+        ],
       }),
       terser(),
+      sass(),
     ],
     watch: {
       clearScreen: false,
