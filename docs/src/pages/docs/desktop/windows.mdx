@@ -27,92 +27,84 @@ import FAQBox from '@/components/FaqBox'
 # Windows Installation
 To install Jan desktop on Windows, follow the steps below:
 ## Compatibility
-
 Ensure that your system meets the following requirements to use Jan effectively:
-<Tabs items={['OS', 'CPU', 'RAM', 'GPU', 'Disk']}>
-<Tabs.Tab>
-- Windows 10 or higher.
-</Tabs.Tab>
-<Tabs.Tab>
+- **Operating System**: Windows 10 or higher.
+- **CPU**
 <Tabs items={['Intel', 'AMD']}>
 <Tabs.Tab>
-<Callout type="info">
-- Jan supports a processor that can handle AVX2. For the full list, please see [here](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
-- We support older processors with AVX and AVX-512, though this is not recommended.
-</Callout>
-- Haswell processors (Q2 2013) and newer.
-- Tiger Lake (Q3 2020) and newer for Celeron and Pentium processors.
+- Intel: Haswell (Q2 2013) or newer
+- Intel Celeron/Pentium: Tiger Lake (Q3 2020) or newer
 </Tabs.Tab>
 <Tabs.Tab>
-<Callout type="info">
-- Jan supports a processor that can handle AVX2. For the full list, please see [here](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2).
-- We support older processors with AVX and AVX-512, though this is not recommended.
-</Callout>
 - Excavator processors (Q2 2015) and newer.
 </Tabs.Tab>
 </Tabs>
-</Tabs.Tab>
-<Tabs.Tab>
-- 8GB for running up to 3B models (int4).
-- 16GB for running up to 7B models (int4).
-- 32GB for running up to 13B models (int4).
-
 <Callout type="info">
-We support DDR2 RAM as the minimum requirement but recommend using newer generations of RAM for improved performance.
-
+Jan requires a processor with AVX2 for best performance. See [full list of supported processors.](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#CPUs_with_AVX2) While older processors with AVX/AVX-512 will work, you may experience slower performance.
 </Callout>
-</Tabs.Tab>
-<Tabs.Tab>    
-- 6GB can load the 3B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
-- 8GB can load the 7B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
-- 12GB can load the 13B model (int4) with `ngl` at 120 ~ full speed on CPU/ GPU.
-    
+- **Memory (RAM)**
+  - 8GB > 3B parameter models (int4)
+  - 16GB > 7B parameter models (int4)
+  - 32GB > 13B parameter models (int4)
 <Callout type="info">
-Having at least 6GB VRAM when using NVIDIA, AMD, or Intel Arc GPUs is recommended.
-
+DDR2 RAM is supported but newer RAM generations are recommended for better performance.
 </Callout>
-</Tabs.Tab>
-<Tabs.Tab>     
-- At least 10GB for app storage and model download.
-</Tabs.Tab>
-</Tabs>
-## Installing Jan
+- **GPU**:
+  - 6GB > 3B models with **ngl** at 120 (full speed)
+  - 8GB > 7B models with **ngl** at 120 (full speed)
+  - 12GB > 13B models with **ngl** at 120 (full speed)
+<Callout type="info">
+Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
+</Callout>
+- **Storage:** Minimum 10GB free space for application and model downloads
+
+
+## Install Jan
 
 To install Jan, follow the steps below:
 
-### Step 1: Download the Jan Application
+<Steps>
 
-Jan provides two types of releases:
-<Tabs items={['Stable Releases', 'Nightly Releases']}>
+### Step 1: Download Application
+
+Jan provides 3 types of releases:
+<Tabs items={['Stable Release', 'Beta Release', 'Nightly Release']}>
 <Tabs.Tab>
-#### Stable Releases
+Please download Jan from official distributions, or build it from source.
 
-The stable release is a stable version of Jan. You can download a stable release Jan app via the following:
+- [Download Jan's Stable Version](https://app.jan.ai/download/latest/win-x64)
+- Official Website: https://jan.ai/download
 
-- **Official Website**: [https://jan.ai](https://jan.ai/)
-- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/releases)
+</Tabs.Tab>
+<Tabs.Tab>
+
+Beta releases let you test new features, which may be buggy:
+
+[Download Jan's Beta Version](https://app.jan.ai/download/beta/win-x64)
 
 <Callout type="info">
-Make sure to verify the URL to ensure that it's the official Jan website and GitHub repository.
+Keep in mind that this build might crash frequently or contain bugs!
 </Callout>
 </Tabs.Tab>
 <Tabs.Tab>
-#### Nightly Releases
 
-The nightly Release allows you to test out new features and get a sneak peek at what might be included in future stable releases. You can download this version via:
+Nightly releases are for internal team to test new feature builds everyday, which is very buggy:
 
-- **Jan GitHub repository**: [Github](https://github.com/janhq/jan/actions/workflows/jan-electron-build-nightly.yml)
+[Download Jan's Nightly Version](https://app.jan.ai/download/nightly/win-x64)
 
 <Callout type="info">
-Keep in mind that this build might crash frequently and may contain bugs!
+Keep in mind that this build crashes frequently or contains bugs!
 </Callout>
 </Tabs.Tab>
 </Tabs>
-### Step 2: Install the Jan Application
+
+### Step 2: Install Application
 
 1. Once you have downloaded the Jan app `.exe` file, open the file.
 2. Wait for Jan to be completely installed on your machine.
 3. Once installed, you can access Jan on your machine.
+
+</Steps>
 
 ## Data Folder
 
@@ -124,77 +116,111 @@ By default, Jan is installed in the following directory:
 
 ```
 
-<Callout type="info">
-- Please see the [Jan Data Folder](/docs/data-folder) for more details about the data folder structure.
-</Callout>
+See [Jan Data Folder](/docs/data-folder) for more details about the data folder structure.
+
 
 ## GPU Acceleration
+Jan can leverage your GPU to significantly improve model performance and inference speed. Here's how to enable GPU acceleration for different hardware:
 
-Once Jan is installed and you have a GPU, you can use your GPU to accelerate the model's performance.
+<Tabs items={['NVIDIA GPU', 'AMD GPU', 'Intel Arc GPU']}>
 
-### NVIDIA GPU
+<Tabs.Tab>
 
-To enable the use of your NVIDIA GPU in the Jan app, follow the steps below:
+<Steps>
+
+### Step 1: Verify Hardware & Install Dependencies
+**1.1. Check GPU Detection**
+
+To verify that your system recognizes the NVIDIA GPU:
+- Right-click desktop > NVIDIA Control Panel
+- Or check Device Manager > Display Adapters
+
+**1.2. Install Required components**
+**NVIDIA Driver:**
+1. Install [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/) for your GPU (NVIDIA driver **470.63.01 or higher**).
+2. Verify installation:
+
+```
+nvidia-smi
+```
+Expected output should show your GPU model and driver version.
+
+**CUDA Toolkit:**
+1. Download and install [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) (**CUDA 11.7 or higher**)
+2. Verify installation:
+
+```
+nvcc --version
+```
+### Step 2: Enable GPU Acceleration
+1. In Jan, navigate to **Settings** > **Hardware** 
+3. Select and enable your prefered NVIDIA GPU(s)
+4. App reload is required after the selection
 
 <Callout type="info">
-Ensure that you have installed the following to use NVIDIA GPU:
-- NVIDIA GPU with CUDA Toolkit 11.7 or higher.
-- NVIDIA driver 470.63.01 or higher.
+While Jan supports both CUDA and Vulkan for NVIDIA GPUs, we strongly recommend using CUDA for optimal performance.
 </Callout>
 
-1. Open Jan application.
-2. Go to **Settings** -> **Advanced Settings** -> **GPU Acceleration**.
-3. Enable and choose the NVIDIA GPU you want.
-4. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated.
+</Steps>
 
-<Callout type="info">
-While **Vulkan** can enable Nvidia GPU acceleration in the Jan app, **CUDA** is recommended for faster performance.
-</Callout>
+</Tabs.Tab>
 
-### AMD GPU
+<Tabs.Tab>
+AMD GPUs require **Vulkan** support, which must be activated through **Experimental Mode**.
+1. Launch Jan
+2. Navigate to **Settings** > **Advanced Settings**
+3. Enable **Experimental Mode**
+4. Under **GPU Acceleration**, enable **Vulkan Support**
+5. Enable **GPU Acceleration** and select your AMD GPU
+6. App reload is required after the selection
+</Tabs.Tab>
 
-To enable the use of your AMD GPU in the Jan app, you need to activate the Vulkan support first by following the steps below:
+<Tabs.Tab>
+Intel Arc GPUs require **Vulkan** support, which must be activated through **Experimental Mode**.
+1. Launch Jan
+2. Navigate to **Settings** > **Advanced Settings**
+3. Enable **Experimental Mode**
+4. Under **GPU Acceleration**, enable **Vulkan Support**
+5. Enable **GPU Acceleration** and select your Intel Arc GPU
+6. App reload is required after the selection
+</Tabs.Tab>
 
-1. Open Jan application.
-2. Go to **Settings** -> **Advanced Settings** -> enable the **Experimental Mode**.
-3. Enable the **Vulkan Support** under the **GPU Acceleration**.
-4. Enable the **GPU Acceleration** and choose the AMD GPU you want to use.
-5. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated.
-
-### Intel Arc GPU
-
-To enable the use of your Intel Arc GPU in the Jan app, you need to activate the Vulkan support first by following the steps below:
-
-1. Open Jan application.
-2. Go to **Settings** -> **Advanced Settings** -> enable the **Experimental Mode**.
-3. Enable the **Vulkan Support** under the **GPU Acceleration**.
-4. Enable the **GPU Acceleration** and choose the Intel Arc GPU you want to use.
-5. A success notification saying **Successfully turned on GPU acceleration** will appear when GPU acceleration is activated.
+</Tabs>
 
 
-## Uninstalling Jan
 
-To uninstall Jan, follow the steps below:
+## Uninstall Jan
 
-### Step 1: Open the Control Panels
+<Steps>
 
-1. Open the **Control Panels**.
-2. Click **Uninstall Program** under the **Programs** section.
+### Step 1: Remove Application through Control Panel
 
-### Step 2: Uninstall Jan App
+1. Open **Control Panels**
+2. Go to **Programs** section
+3. Click **Uninstall Program**
+4. Search for **Jan**
+5. Click the **Three Dots Icon** > **Uninstall**
+6. Click **Uninstall** again to confirm
+7. Click **OK**
 
-1. Search for **Jan**.
-2. Click the **three dots icon** -> **Uninstall**.
-3. Click **Uninstall** once again to confirm the action.
-4. Click **OK**.
-5. A message will appear: **"Do you also want to delete the DEFAULT Jan data folder at C:\Users\{username}\Jan?"**.
-6. Click **OK** to delete the entire Jan data folder, or click **Cancel** to save your Jan Data folder so you can use this on the new installation folder.
-7. Navigate to `users/{username}/AppData/Roaming`.
-8. Delete the `Jan` folder that contains the app cache.
+### Step 2: Handle Jan Data
+When prompted with: `Do you also want to delete the DEFAULT Jan data folder at C:\Users{username}\Jan?`
+- Click **OK** to remove all Jan data
+- Click **Cancel** to keep your Jan data for future installations
+
+### Step 3: Clean Up Remaining Files
+
+To ensure a complete uninstallation, remove the app cache:
+
+1. Navigate to `C:\Users\[username]\AppData\Roaming`
+2. Delete Jan folder
+
+</Steps>
 
 <Callout type="warning">
-The deleted Data Folder cannot be restored.
+Deleted data folders cannot be restored. Make sure to backup any important data before proceeding with deletion.
 </Callout>
+
 
 {/* ## FAQs
 

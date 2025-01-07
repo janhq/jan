@@ -26,13 +26,11 @@ keywords:
 import { Tabs } from 'nextra/components'
 import { Callout, Steps } from 'nextra/components'
 
-# llama.cpp (Default)
+# llama.cpp (Cortex)
 
 ## Overview
 
-Jan has a default [C++ inference server](https://github.com/janhq/cortex) built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp). This server provides an OpenAI-compatible API, queues, scaling, and additional features on top of the wide capabilities of `llama.cpp`.
-
-## llama.cpp Engine
+Jan has [**Cortex**](https://github.com/janhq/cortex) - a default C++ inference server built on top of [llama.cpp](https://github.com/ggerganov/llama.cpp). This server provides an OpenAI-compatible API, queues, scaling, and additional features on top of the wide capabilities of `llama.cpp`.
 
 This guide shows you how to initialize the `llama.cpp` to download and install the required dependencies to start chatting with a model using the `llama.cpp` engine.
 
@@ -56,16 +54,14 @@ Enable the GPU acceleration option within the Jan application by following the [
 ## Step-by-step Guide
 <Steps>
 ### Step 1: Open the `model.json`
-1. Navigate to the **Advanced Settings**.
+1. Open [Jan Data Folder](/docs/data-folder#open-jan-data-folder)
+
 <br/>
-![Settings](../_assets/advance-set.png)
+![Jan Data Folder](../_assets/settings-11.png)
 <br/>
-2. On the **Jan Data Folder** click the **folder icon (📂)** to access the data.
-<br/>
-![Jan Data Folder](../_assets/data-folder.png)
-<br/>
-3. Select **models** folder > Click the **name** of the model folder that you want to modify > click the `model.json`.
-4. This will open up a `model.json`. For example, the `model.json` of `TinyLlama Chat 1.1B Q4` is shown below:
+
+2. Select **models** folder > Click **model folder** that you want to modify > click `model.json`
+3. Once open, `model.json` file looks like below, use model "TinyLlama Chat 1.1B Q4" as an example:
 ```json
 {
   "sources": [
