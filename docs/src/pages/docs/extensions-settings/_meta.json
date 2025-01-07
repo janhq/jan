@@ -1,0 +1,15 @@
+{
+    "cortex": {
+        "title": "Cortex",
+        "href": "/docs/extensions-settings/cortex"
+    },
+    "model-management": {
+      "title": "Model Management",
+      "href": "/docs/extensions-settings/model-management"
+    },
+    "system-monitoring": {
+      "title": "System Monitoring",
+      "href": "/docs/extensions-settings/system-monitoring"
+    }
+}
+  

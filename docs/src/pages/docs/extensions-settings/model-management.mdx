@@ -1,0 +1,55 @@
+---
+title: Model Management
+description: Learn about Jan's default extensions and explore how to configure them.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Jan Extensions,
+    Extensions,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
+
+# Model Management 
+
+Configure how Jan handles model downloads and management. Access these settings through **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Extensions** > **Model Management**:
+
+## Hugging Face Access Token
+
+Access tokens authenticate your identity to Hugging Face Hub for model downloads.
+
+
+
+Enter your token in the format: `hf_************************`
+
+<Callout type="info">
+  Get your Hugging Face token from [Hugging Face Settings](https://huggingface.co/settings/tokens)
+</Callout>
+
+## Log Management
+
+### Enable App Logs
+Toggle to save logs locally on your computer for:
+- Debugging model issues
+- Crash reports
+- Download troubleshooting
+
+### Log Cleaning Interval
+Set automatic log deletion interval in milliseconds:
+- Default: 120000 (2 minutes)
+- Controls disk space usage
+- Prevents log accumulation
+
+<Callout type="warning">
+Keep your access tokens secure and never share them. Enable logs temporarily when needed for troubleshooting.
+</Callout>

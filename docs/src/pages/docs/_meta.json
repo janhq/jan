@@ -24,17 +24,19 @@
   "threads": "Threads",
   "settings": "Settings",
   "inference-engines": {
-    "title": "MODEL PROVIDER",
+    "title": "ENGINES",
     "type": "separator"
   },
-  "built-in": "Built-in Models",
-  "remote-models": "Remote APIs",
+  "built-in": "Local Engines",
+  "remote-models": "Remote Engines",
   "extensions-separator": {
     "title": "EXTENSIONS",
     "type": "separator"
   },
   "extensions": "Overview",
-  "installing-extension": "Installing an Extension",
+  "extensions-settings": "Extensions Settings",
+  "installing-extension": "Install Extension",
+  "configure-extensions": "Configure Extensions",
   "troubleshooting-separator": {
     "title": "TROUBLESHOOTING",
     "type": "separator"
