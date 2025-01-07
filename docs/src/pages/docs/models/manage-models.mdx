@@ -18,6 +18,8 @@ keywords:
   ]
 ---
 import { Callout, Steps } from 'nextra/components' 
+import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
+
 
 # Model Management
 This guide provides comprehensive instructions on adding, customizing, and deleting models within Jan. 
@@ -33,13 +35,13 @@ Local models run directly on your computer, which means they use your computer's
 
 #### 1. Download from Jan Hub (Recommended)
 The easiest way to get started is using Jan's built-in model hub:
-1. Go to the **Hub**
+1. Go to **Hub**
 2. Browse available models and click on any model to see details about it
 3. Choose a model that fits your needs & hardware specifications
 4. Click **Download** on your chosen model
 
 <Callout type="info">
-Jan will indicate if a model might be **Slow on your device** or requires **Not enough RAM** based on your system specifications.
+Jan will indicate if a model might be **Slow on your device** or **Not enough RAM** based on your system specifications.
 </Callout>
 
 <br/>
@@ -53,25 +55,25 @@ You can import GGUF models directly from [Hugging Face](https://huggingface.co/)
 1. Visit [Hugging Face Models](https://huggingface.co/models).
 2. Find a GGUF model you want to use
 3. Copy the **model ID** (e.g., TheBloke/Mistral-7B-v0.1-GGUF) or its **URL**
-4. In Jan, paste the model ID/URL to **Search** bar in **Hub** or in **Settings** > **My Models**
+4. In Jan, paste the model ID/URL to **Search** bar in **Hub** or in  **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
 5. Select your preferred quantized version to download
 
 <br/>
-![Download Model](../_assets/model-management-02.png)
+![Import Model](../_assets/model-management-02.png)
 <br/>
 
 ##### Option B: Use Deep Link
 You can use Jan's deep link feature to quickly import models:
 1. Visit [Hugging Face Models](https://huggingface.co/models).
 2. Find the GGUF model you want to use
-3. Copy the **model ID**, for example: `TheBloke/Mistral-7B-v0.1-GGUF`
+3. Copy the **model ID**, for example: `bartowski/Llama-3.2-3B-Instruct-GGUF`
 4. Create a **deep link URL** in this format:
 ```
 jan://models/huggingface/<model_id>
 ```
 5. Enter the URL in your browser & **Enter**, for example:
 ```
-jan://models/huggingface/TheBloke/Mistral-7B-v0.1-GGUF
+jan://models/huggingface/bartowski/Llama-3.2-3B-Instruct-GGUF
 ```
 6. A prompt will appear: `This site is trying to open Jan`, click **Open** to open Jan app.
 7. Select your preferred quantized version to download
@@ -81,16 +83,16 @@ Deep linking won't work for models requiring API tokens or usage agreements. You
 </Callout>
 
 <br/>
-![Downlosd Model](../_assets/model-management-03.png)
+![Deep Link](../_assets/model-management-03.png)
 <br/>
 
 
 
 #### 3. Import Local Files
 If you already have GGUF model files on your computer:
-1. In Jan, go to **Hub** or **Settings** > **My Models**
+1. In Jan, go to **Hub** or **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
 2. Click **Import Model**
-3. Select your **GGUF** file
+3. Select your **GGUF** file(s)
 4. Choose how you want to import:
   - **Link Files:** Creates symbolic links to your model files (saves space)
   - **Duplicate:** Makes a copy of model files in Jan's directory
@@ -143,9 +145,9 @@ Key fields to configure:
 
 
 ### Delete Models
-1. Go to **Settings** > **My Models**
+1. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
 2. Find the model you want to remove
-3. Select the three dots next to it and select **Delete Model**
+3. Select the three dots <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to it and select **Delete Model**
 
 <br/>
 ![Delete Model](../_assets/model-management-05.png)
