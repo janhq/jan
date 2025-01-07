@@ -1,5 +1,6 @@
 import { SettingComponentProps } from '@janhq/core'
 
+import SettingDetailDropdownItem from './SettingDetailDropdownItem'
 import SettingDetailTextInputItem from './SettingDetailTextInputItem'
 import SettingDetailToggleItem from './SettingDetailToggleItem'
 
@@ -32,6 +33,16 @@ const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {
             onValueChanged={(value) =>
               onValueUpdated(data.key, value.target.checked)
             }
+          />
+        )
+      }
+
+      case 'dropdown': {
+        return (
+          <SettingDetailDropdownItem
+            key={data.key}
+            settingProps={data}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
           />
         )
       }
