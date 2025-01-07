@@ -1,8 +1,7 @@
 {
   "name": "@janhq/joi",
   "version": "0.0.0",
-  "main": "dist/cjs/index.js",
-  "module": "dist/esm/index.js",
+  "main": "dist/esm/index.js",
   "types": "dist/index.d.ts",
   "description": "A collection of UI component",
   "files": [
@@ -20,7 +19,7 @@
   "bugs": "https://github.com/codecentrum/piksel/issues",
   "scripts": {
     "dev": "rollup -c -w",
-    "build": "rimraf ./dist && rollup -c",
+    "build": "rimraf ./dist || true && rollup -c",
     "test": "jest"
   },
   "peerDependencies": {
@@ -41,29 +40,38 @@
     "@types/jest": "^29.5.12",
     "autoprefixer": "10.4.16",
     "jest": "^29.7.0",
+    "rollup-plugin-sass": "^1.14.0",
     "tailwind-merge": "^2.2.0",
     "tailwindcss": "^3.4.1",
     "ts-jest": "^29.2.5"
   },
   "devDependencies": {
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "@testing-library/dom": "^10.4.0",
+    "@rollup/plugin-node-resolve": "15.2.3",
+    "@rollup/plugin-terser": "0.4.4",
+    "@testing-library/dom": "10.4.0",
     "@testing-library/jest-dom": "^6.5.0",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.5.2",
     "@types/jest": "^29.5.12",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^19",
+    "class-variance-authority": "^0.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "jest-transform-css": "^6.0.1",
     "prettier": "^3.0.3",
     "prettier-plugin-tailwindcss": "^0.5.6",
-    "rollup": "^4.12.0",
-    "rollup-plugin-bundle-size": "^1.0.3",
-    "rollup-plugin-commonjs": "^10.1.0",
-    "rollup-plugin-copy": "^3.5.0",
-    "rollup-plugin-dts": "^6.1.0",
-    "rollup-plugin-peer-deps-external": "^2.2.4",
-    "rollup-plugin-postcss": "^4.0.2",
-    "rollup-plugin-typescript2": "^0.36.0"
-  }
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "rimraf": "^6.0.1",
+    "rollup": "4.12.0",
+    "rollup-plugin-bundle-size": "1.0.3",
+    "rollup-plugin-commonjs": "10.1.0",
+    "rollup-plugin-copy": "3.5.0",
+    "rollup-plugin-dts": "6.1.0",
+    "rollup-plugin-peer-deps-external": "2.2.4",
+    "rollup-plugin-postcss": "4.0.2",
+    "rollup-plugin-typescript2": "0.36.0",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "yarn@4.5.3"
 }

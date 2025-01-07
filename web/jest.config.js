@@ -18,6 +18,9 @@ const config = {
     'rehype-katex': '<rootDir>/mock/empty-mock.tsx',
     'rehype-raw': '<rootDir>/mock/empty-mock.tsx',
     'remark-math': '<rootDir>/mock/empty-mock.tsx',
+    '^react$': '<rootDir>/node_modules/react',
+    '^react/jsx-runtime$': '<rootDir>/node_modules/react/jsx-runtime',
+    '^react-dom$': '<rootDir>/node_modules/react-dom',
   },
   // Add more setup options before each test is run
   // setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],

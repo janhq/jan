@@ -17,6 +17,7 @@ export const SettingScreenList = [
   'Keyboard Shortcuts',
   'Privacy',
   'Advanced Settings',
+  'Engines',
   'Extensions',
 ] as const
 

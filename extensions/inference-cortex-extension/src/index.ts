@@ -9,6 +9,7 @@
 import {
   Model,
   executeOnMain,
+  EngineEvent,
   systemInformation,
   joinPath,
   LocalOAIEngine,
@@ -18,9 +19,7 @@ import {
   fs,
   events,
   ModelEvent,
-  SystemInformation,
   dirName,
-  AppConfigurationEventName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -43,6 +42,7 @@ export enum Settings {
   flash_attn = 'flash_attn',
   cache_type = 'cache_type',
   use_mmap = 'use_mmap',
+  cpu_threads = 'cpu_threads',
 }
 
 /**
@@ -66,6 +66,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   flash_attn: boolean = true
   use_mmap: boolean = true
   cache_type: string = 'f16'
+  cpu_threads?: number
 
   /**
    * The URL for making inference requests.
@@ -105,6 +106,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
     this.cache_type = await this.getSetting<string>(Settings.cache_type, 'f16')
+    const threads_number = Number(
+      await this.getSetting<string>(Settings.cpu_threads, '')
+    )
+    if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
     this.queue.add(() => this.clean())
 
@@ -112,20 +117,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     const systemInfo = await systemInformation()
     this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
     this.queue.add(() => this.healthz())
-    this.queue.add(() => this.setDefaultEngine(systemInfo))
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
       this.clean()
-    })
-
-    const currentMode = systemInfo.gpuSetting?.run_mode
-
-    events.on(AppConfigurationEventName.OnConfigurationUpdate, async () => {
-      const systemInfo = await systemInformation()
-      // Update run mode on settings update
-      if (systemInfo.gpuSetting?.run_mode !== currentMode)
-        this.queue.add(() => this.setDefaultEngine(systemInfo))
     })
   }
 
@@ -150,6 +145,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       this.cache_type = value as string
     } else if (key === Settings.use_mmap && typeof value === 'boolean') {
       this.use_mmap = value as boolean
+    } else if (key === Settings.cpu_threads && typeof value === 'string') {
+      const threads_number = Number(value)
+      if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
     }
   }
 
@@ -207,6 +205,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             flash_attn: this.flash_attn,
             cache_type: this.cache_type,
             use_mmap: this.use_mmap,
+            ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
           },
           timeout: false,
           signal,
@@ -236,7 +235,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Do health check on cortex.cpp
    * @returns
    */
-  private healthz(): Promise<void> {
+  private async healthz(): Promise<void> {
     return ky
       .get(`${CORTEX_API_URL}/healthz`, {
         retry: {
@@ -249,35 +248,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   /**
-   * Set default engine variant on launch
-   */
-  private async setDefaultEngine(systemInfo: SystemInformation) {
-    const variant = await executeOnMain(
-      NODE,
-      'engineVariant',
-      systemInfo.gpuSetting
-    )
-    return (
-      ky
-        // Fallback support for legacy API
-        .post(
-          `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
-          {
-            json: {
-              version: CORTEX_ENGINE_VERSION,
-              variant,
-            },
-          }
-        )
-        .then(() => {})
-    )
-  }
-
-  /**
    * Clean cortex processes
    * @returns
    */
-  private clean(): Promise<any> {
+  private async clean(): Promise<any> {
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
@@ -301,6 +275,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
           this.socket.addEventListener('message', (event) => {
             const data = JSON.parse(event.data)
+
             const transferred = data.task.items.reduce(
               (acc: number, cur: any) => acc + cur.downloadedBytes,
               0
@@ -320,17 +295,26 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                   transferred: transferred,
                   total: total,
                 },
+                downloadType: data.task.type,
               }
             )
-            // Update models list from Hub
-            if (data.type === DownloadTypes.DownloadSuccess) {
-              // Delay for the state update from cortex.cpp
-              // Just to be sure
-              setTimeout(() => {
-                events.emit(ModelEvent.OnModelsUpdate, {
-                  fetch: true,
-                })
-              }, 500)
+
+            if (data.task.type === 'Engine') {
+              events.emit(EngineEvent.OnEngineUpdate, {
+                type: DownloadTypes[data.type as keyof typeof DownloadTypes],
+                percent: percent,
+                id: data.task.id,
+              })
+            } else {
+              if (data.type === DownloadTypes.DownloadSuccess) {
+                // Delay for the state update from cortex.cpp
+                // Just to be sure
+                setTimeout(() => {
+                  events.emit(ModelEvent.OnModelsUpdate, {
+                    fetch: true,
+                  })
+                }, 500)
+              }
             }
           })
 

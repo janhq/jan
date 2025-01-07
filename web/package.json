@@ -14,8 +14,9 @@
     "test": "jest"
   },
   "dependencies": {
-    "@janhq/core": "link:./core",
-    "@janhq/joi": "link:./joi",
+    "@janhq/core": "link:../core",
+    "@janhq/joi": "link:../joi",
+    "@radix-ui/react-icons": "^1.3.2",
     "@tanstack/react-virtual": "^3.10.9",
     "@uppy/core": "^4.3.0",
     "@uppy/react": "^4.0.4",
@@ -51,6 +52,7 @@
     "slate-dom": "0.111.0",
     "slate-history": "0.110.3",
     "slate-react": "0.110.3",
+    "swr": "^2.2.5",
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "3.3.5",
     "ulidx": "^2.3.0",
@@ -59,7 +61,10 @@
   },
   "devDependencies": {
     "@next/eslint-plugin-next": "^14.0.1",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
     "@types/jest": "^29.5.12",
     "@types/lodash": "^4.14.200",
     "@types/node": "20.8.10",
@@ -89,5 +94,6 @@
   },
   "resolutions": {
     "highlight.js": "11.10.0"
-  }
+  },
+  "packageManager": "yarn@4.5.3"
 }
