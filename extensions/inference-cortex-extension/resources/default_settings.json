@@ -15,7 +15,9 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "4",
-      "placeholder": "4"
+      "placeholder": "4",
+      "type": "number",
+      "textAlign": "right"
     }
   },
   {
@@ -25,7 +27,9 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "",
-      "placeholder": "Number of CPU threads"
+      "placeholder": "Number of CPU threads",
+      "type": "number",
+      "textAlign": "right"
     }
   },
   {
