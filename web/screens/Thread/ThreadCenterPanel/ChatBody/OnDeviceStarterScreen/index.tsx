@@ -24,8 +24,6 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
-import { useStarterScreen } from '@/hooks/useStarterScreen'
-
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
@@ -46,7 +44,6 @@ type Props = {
 }
 
 const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
-  const { extensionHasSettings } = useStarterScreen()
   const [searchValue, setSearchValue] = useState('')
   const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
