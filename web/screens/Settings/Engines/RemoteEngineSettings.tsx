@@ -213,19 +213,19 @@ const RemoteEngineSettings = ({
                   <div className="flex items-start justify-between gap-x-2">
                     <div className="w-full sm:w-3/4">
                       <h6 className="line-clamp-1 font-semibold">
-                        API Key Template
+                        Request Headers Template
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template for authorization header format.
+                        Template for request headers format.
                       </p>
                     </div>
                     <div className="w-full">
-                      <Input
-                        placeholder="Enter API key template"
-                        value={engine?.metadata?.api_key_template}
+                      <TextArea
+                        placeholder="Enter headers template"
+                        value={engine?.metadata?.header_template}
                         onChange={(e) =>
                           handleChange(
-                            'metadata.api_key_template',
+                            'metadata.header_template',
                             e.target.value
                           )
                         }

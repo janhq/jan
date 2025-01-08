@@ -6,7 +6,7 @@ export type Engines = {
 
 export type EngineMetadata = {
   get_models_url?: string
-  api_key_template?: string
+  header_template?: string
   transform_req?: {
     chat_completions?: {
       url?: string

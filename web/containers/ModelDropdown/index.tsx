@@ -142,7 +142,7 @@ const ModelDropdown = ({
         .filter((e) => {
           if (searchFilter === 'local') {
             return (
-              engineList.find((t) => t.engine.engine === e.engine)?.type ===
+              engineList.find((t) => t.engine?.engine === e.engine)?.type ===
               'local'
             )
           }
