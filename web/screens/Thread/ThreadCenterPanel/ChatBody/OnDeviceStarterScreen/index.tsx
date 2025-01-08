@@ -308,11 +308,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               key={remoteEngine}
                               onClick={() => {
                                 setMainViewState(MainViewState.Settings)
-                                setSelectedSetting(
-                                  extensionHasSettings.find((x) =>
-                                    x.name?.toLowerCase().includes(remoteEngine)
-                                  )?.setting as string
-                                )
+                                setSelectedSetting(remoteEngine as InferenceEngine)
                               }}
                             >
                               {engineLogo && (
