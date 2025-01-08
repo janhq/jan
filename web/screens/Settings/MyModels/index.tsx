@@ -12,7 +12,6 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   ChevronDownIcon,
   ChevronUpIcon,
-  SettingsIcon,
   UploadCloudIcon,
   UploadIcon,
 } from 'lucide-react'

@@ -6,6 +6,8 @@ import {
   InferenceEngine,
   EngineReleased,
   EngineConfig,
+  events,
+  EngineEvent,
 } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
@@ -304,6 +306,7 @@ export const updateEngine = async (
   try {
     // Call the extension's method
     const response = await extension.updateEngine(name, engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to set default engine variant:', error)
@@ -328,6 +331,7 @@ export const installEngine = async (
   try {
     // Call the extension's method
     const response = await extension.installEngine(name, engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)
@@ -349,6 +353,7 @@ export const addRemoteEngine = async (engineConfig: EngineConfig) => {
   try {
     // Call the extension's method
     const response = await extension.addRemoteEngine(engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)
@@ -373,6 +378,7 @@ export const uninstallEngine = async (
   try {
     // Call the extension's method
     const response = await extension.uninstallEngine(name, engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)
