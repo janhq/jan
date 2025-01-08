@@ -6,7 +6,7 @@
   "api_key": "",
   "metadata": {
     "get_models_url": "https://api.groq.com/openai/v1/models",
-    "api_key_template": "Authorization: Bearer {{api_key}}",
+    "header_template": "Authorization: Bearer {{api_key}}",
     "transform_req": {
       "chat_completions": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
