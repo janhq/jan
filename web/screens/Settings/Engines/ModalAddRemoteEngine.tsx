@@ -13,7 +13,7 @@ const engineSchema = z.object({
   engineName: z.string().min(1, 'Engine name is required'),
   apiUrl: z.string().url('Enter a valid API URL'),
   modelListUrl: z.string().url('Enter a valid Model List URL'),
-  apiKeyTemplate: z.string().optional(),
+  headerTemplate: z.string().optional(),
   apiKey: z.string().optional(),
   requestFormat: z.string().optional(),
   responseFormat: z.string().optional(),
@@ -32,7 +32,7 @@ const ModalAddRemoteEngine = () => {
       engineName: '',
       apiUrl: '',
       modelListUrl: '',
-      apiKeyTemplate: '',
+      headerTemplate: '',
       apiKey: '',
       requestFormat: '',
       responseFormat: '',
@@ -46,7 +46,7 @@ const ModalAddRemoteEngine = () => {
       engine: data.engineName,
       api_key: data.apiKey,
       metadata: {
-        api_key_template: data.apiKeyTemplate,
+        header_template: data.headerTemplate,
         get_models_url: data.modelListUrl,
         transform_req: {
           chat_completions: {
@@ -148,25 +148,6 @@ const ModalAddRemoteEngine = () => {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="apiKeyTemplate" className="font-semibold">
-                {renderLabel(
-                  'API Key Template',
-                  false,
-                  `Template for authorization header format.`
-                )}
-              </label>
-              <Input
-                placeholder="Enter API key template"
-                {...register('apiKeyTemplate')}
-              />
-              {errors.apiKeyTemplate && (
-                <p className="text-sm text-red-500">
-                  {errors.apiKeyTemplate.message}
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
               <label htmlFor="apiKey" className="font-semibold">
                 {renderLabel(
                   'API Key',
@@ -179,6 +160,25 @@ const ModalAddRemoteEngine = () => {
                 type="password"
                 {...register('apiKey')}
               />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="headerTemplate" className="font-semibold">
+                {renderLabel(
+                  'Request Headers Template',
+                  false,
+                  `Template for request headers format.`
+                )}
+              </label>
+              <TextArea
+                placeholder="Enter conversion function"
+                {...register('headerTemplate')}
+              />
+              {errors.headerTemplate && (
+                <p className="text-sm text-red-500">
+                  {errors.headerTemplate.message}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
