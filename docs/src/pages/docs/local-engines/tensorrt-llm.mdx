@@ -28,11 +28,8 @@ import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-rea
 Jan uses **TensorRT-LLM** as an optional engine for faster inference on NVIDIA GPUs. This engine uses [Cortex-TensorRT-LLM](https://github.com/janhq/cortex.tensorrt-llm), which includes an efficient C++ server that executes the [TRT-LLM C++ runtime](https://nvidia.github.io/TensorRT-LLM/gpt_runtime.html) natively. It also includes features and performance improvements like OpenAI compatibility, tokenizer improvements, and queues.
 
 <Callout type="info">
-Currently only available for **Windows** users, **Linux** support is coming soon!
+TensorRT-LLM engine is only available for **Windows** users, **Linux** support is coming soon!
 </Callout>
-
-You can find its settings in **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **TensorRT-LLM**:
-
 
 
 ## Requirements
@@ -45,59 +42,46 @@ You can find its settings in **Settings** (<Settings width={16} height={16} styl
 For detailed setup guide, please visit [Windows](/docs/desktop/windows#compatibility).
 </Callout>
 
-## Engine Version and Updates
-- **Engine Version**: View current version of TensorRT-LLM engine
-- **Check Updates**: Verify if a newer version is available & install available updates when it's available
-
-## Available Backends
-
-TensorRT-LLM is specifically designed for NVIDIA GPUs. Available backends include:
-
-**Windows**
-- `win-cuda`: For NVIDIA GPUs with CUDA support
-
-<Callout type="warning">
-TensorRT-LLM requires an NVIDIA GPU with CUDA support. It is not compatible with other GPU types or CPU-only systems.
-</Callout>
-
-
-
 ## Enable TensorRT-LLM 
 
 <Steps>
-### Step 1: Install TensorRT-Extension
+### Step 1: Install Additional Dependencies
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **TensorRT-LLM**:
+2. At **Additional Dependencies**, click **Install**
 
-1. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-2. Select the **TensorRT-LLM** under the **Model Provider** section.
 <br/>
-![Click Tensor](../_assets/tensor.png)
+![Click Tensor](../_assets/tensorrt-llm-01.png)
 <br/>
-3. Click **Install** to install the required dependencies to use TensorRT-LLM.
-<br/>
-![Install Extension](../_assets/install-tensor.png)
-<br/>
-3. Check that files are correctly downloaded.
 
+3. Verify that files are correctly downloaded:
 ```bash
 ls ~/jan/data/extensions/@janhq/tensorrt-llm-extension/dist/bin
-# Your Extension Folder should now include `nitro.exe`, among other artifacts needed to run TRT-LLM
+
+# Your Extension Folder should now include `cortex.exe`, among other artifacts needed to run TRT-LLM
 ```
+4. Restart Jan 
 
-### Step 2: Download a Compatible Model
+### Step 2: Download Compatible Models
 
-TensorRT-LLM can only run models in `TensorRT` format. These models, aka "TensorRT Engines", are prebuilt for each target OS+GPU architecture.
+TensorRT-LLM can only run models in `TensorRT` format. These models, also known as "TensorRT Engines", are prebuilt specifically for each operating system and GPU architecture.
 
-We offer a handful of precompiled models for Ampere and Ada cards that you can immediately download and play with:
+We currently offer a selection of precompiled models optimized for NVIDIA Ampere and Ada GPUs that you can use right away:
 
-1. Restart the application and go to the Hub.
-2. Look for models with the `TensorRT-LLM` label in the recommended models list > Click **Download**.
+1. Go to **Hub**
+2. Look for models with the `TensorRT-LLM` label & make sure they're within your hardware compatibility
+3. Click **Download** 
 
-<Callout type='info'>
-  This step might take some time. 🙏
+<Callout type="info">
+This download might take some time as TensorRT models are typically large files.
 </Callout>
 
-![image](https://hackmd.io/_uploads/rJewrEgRp.png)
+<br/>
+![Download TensorRT-LLM Model](../_assets/tensorrt-llm-02.png)
+<br/>
 
-3. Click **Download** to download the model.
-
+### Step 3: Start Threads
+Once the model(s) is downloaded, start using it in [Threads](/docs/threads)
 </Steps>
+
+
+

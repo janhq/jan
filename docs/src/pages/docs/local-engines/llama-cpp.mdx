@@ -57,26 +57,83 @@ Jan offers different backend variants for **llama.cpp** based on your operating 
 Choose the backend that matches your hardware. Using the wrong variant may cause performance issues or prevent models from loading.
 </Callout>
 
-### macOS
-- `mac-arm64`: For Apple Silicon Macs (M1/M2/M3)
-- `mac-amd64`: For Intel-based Macs
+<Tabs items={['Windows', 'Linux', 'macOS']}>
 
-### Windows
-- `win-cuda`: For NVIDIA GPUs using CUDA
-- `win-cpu`: For CPU-only operation
-- `win-directml`: For DirectML acceleration (AMD/Intel GPUs)
-- `win-opengl`: For OpenGL acceleration
+<Tabs.Tab>
+### CUDA Support (NVIDIA GPUs)
+- `llama.cpp-avx-cuda-11-7`
+- `llama.cpp-avx-cuda-12-0`
+- `llama.cpp-avx2-cuda-11-7`
+- `llama.cpp-avx2-cuda-12-0`
+- `llama.cpp-avx512-cuda-11-7`
+- `llama.cpp-avx512-cuda-12-0`
+- `llama.cpp-noavx-cuda-11-7`
+- `llama.cpp-noavx-cuda-12-0`
 
-### Linux
-- `linux-cuda`: For NVIDIA GPUs using CUDA
-- `linux-cpu`: For CPU-only operation
-- `linux-rocm`: For AMD GPUs using ROCm
-- `linux-openvino`: For Intel GPUs/NPUs using OpenVINO
-- `linux-vulkan`: For Vulkan acceleration
+### CPU Only
+- `llama.cpp-avx`
+- `llama.cpp-avx2`
+- `llama.cpp-avx512`
+- `llama.cpp-noavx`
+
+### Other Accelerators
+- `llama.cpp-vulkan`
 
 <Callout type="info">
-For detailed hardware compatibility, please visit our guide for [Mac](/docs/desktop/mac#compatibility), [Windows](/docs/desktop/windows#compatibility), and [Linux](docs/desktop/linux).
+- For detailed hardware compatibility, please visit our guide for [Windows](/docs/desktop/windows#compatibility).
+- AVX, AVX2, and AVX-512 are CPU instruction sets. For best performance, use the most advanced instruction set your CPU supports.
+- CUDA versions should match your installed NVIDIA drivers.
 </Callout>
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+### CUDA Support (NVIDIA GPUs)
+- `llama.cpp-avx-cuda-11-7`
+- `llama.cpp-avx-cuda-12-0`
+- `llama.cpp-avx2-cuda-11-7`
+- `llama.cpp-avx2-cuda-12-0`
+- `llama.cpp-avx512-cuda-11-7`
+- `llama.cpp-avx512-cuda-12-0`
+- `llama.cpp-noavx-cuda-11-7`
+- `llama.cpp-noavx-cuda-12-0`
+
+### CPU Only
+- `llama.cpp-avx`
+- `llama.cpp-avx2`
+- `llama.cpp-avx512`
+- `llama.cpp-noavx`
+
+### Other Accelerators
+- `llama.cpp-vulkan`
+- `llama.cpp-arm64`
+
+<Callout type="info">
+- For detailed hardware compatibility, please visit our guide for [Linux](docs/desktop/linux).
+- AVX, AVX2, and AVX-512 are CPU instruction sets. For best performance, use the most advanced instruction set your CPU supports.
+- CUDA versions should match your installed NVIDIA drivers.
+</Callout>
+
+</Tabs.Tab>
+
+<Tabs.Tab>
+### Apple Silicon
+- `llama.cpp-mac-arm64`: For M1/M2/M3 Macs
+
+### Intel
+- `llama.cpp-mac-amd64`: For Intel-based Macs
+
+<Callout type="info">
+For detailed hardware compatibility, please visit our guide for [Mac](/docs/desktop/mac#compatibility).
+</Callout>
+
+
+</Tabs.Tab>
+
+</Tabs>
+
+
+
 
 
 

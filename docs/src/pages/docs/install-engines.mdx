@@ -32,7 +32,16 @@ To add a new remote engine:
 
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Engines**
 1. At **Remote Engine** category, click **+ Install Engine** 
+
+<br/>
+![Install Remote Engines](./_assets/install-engines-01.png)
+<br/>
+
 2. Fill in the following required information:
+
+<br/>
+![Install Remote Engines](./_assets/install-engines-02.png)
+<br/>
 
 | Field | Description | Required |
 |-------|-------------|----------|
@@ -48,7 +57,14 @@ To add a new remote engine:
 > - The conversion functions are only needed for providers that don't follow the OpenAI API format. For OpenAI-compatible APIs, you can leave these empty.
 > - For OpenAI-compatible APIs like OpenAI, Anthropic, or Groq, you only need to fill in the required fields. Leave optional fields empty.
 
-4. Click **Install** to complete
+4. Click **Install** 
+5. Once completed, you should see your engine in **Engines** page:
+    - You can rename or uninstall your engine
+    - You can navigate to its own settings page
+
+<br/>
+![Install Remote Engines](./_assets/install-engines-03.png)
+<br/>
 
 ### Examples
 #### OpenAI-Compatible Setup
@@ -89,6 +105,9 @@ API Key: your_api_key_here
 ```
 
 **Conversion Functions:**
+> - Request: Convert from Jan's OpenAI-style format to your API's format
+> - Response: Convert from your API's format back to OpenAI-style format
+
 1. Request Format Conversion:
 ```javascript
 function convertRequest(janRequest) {
@@ -117,11 +136,6 @@ function convertResponse(apiResponse) {
 }
 ```
 
-<Callout type="info">
-The conversion functions should:
-- Request: Convert from Jan's OpenAI-style format to your API's format
-- Response: Convert from your API's format back to OpenAI-style format
-</Callout>
 
 **Expected Formats:**
 
