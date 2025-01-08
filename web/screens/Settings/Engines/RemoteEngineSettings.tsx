@@ -1,7 +1,7 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 /* eslint-disable  react/no-unescaped-entities */
 
-import React, { useCallback, useRef, useState } from 'react'
+import React, { useCallback, useRef, useState, useEffect } from 'react'
 
 import {
   EngineConfig as OriginalEngineConfig,
@@ -22,6 +22,9 @@ import { twMerge } from 'tailwind-merge'
 import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+
+import { set } from 'lodash'
+import { url } from 'inspector'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -46,28 +49,73 @@ const RemoteEngineSettings = ({
     (field: string, value: any) => {
       if (!engine) return
 
+      setData((prevData) => {
+        const updatedData = { ...prevData }
+        set(updatedData, field, value)
+        return updatedData
+      })
+
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
       }
 
       debounceRef.current = setTimeout(async () => {
         const updatedEngine = { ...engine }
-        const fieldPath = field.split('.')
-        let current = updatedEngine
-
-        for (let i = 0; i < fieldPath.length - 1; i++) {
-          if (fieldPath[i] in current) {
-            current = current[fieldPath[i]] as any
-          }
-        }
-
-        current[fieldPath[fieldPath.length - 1]] = value
+        set(updatedEngine, field, value)
         await updateEngine(name, updatedEngine)
         mutate()
       }, 300)
     },
     [engine, name, mutate]
   )
+
+  const [data, setData] = useState({
+    api_key: '',
+    url: '',
+    metadata: {
+      header_template: '',
+      get_models_url: '',
+      transform_req: {
+        chat_completions: {
+          template: '',
+          url: '',
+        },
+      },
+      transform_resp: {
+        chat_completions: {
+          template: '',
+        },
+      },
+    },
+  })
+
+  useEffect(() => {
+    if (engine) {
+      setData({
+        api_key: engine.api_key || '',
+        url: engine.url || '',
+        metadata: {
+          header_template: engine.metadata?.header_template || '',
+          get_models_url: engine.metadata?.get_models_url || '',
+          transform_req: {
+            chat_completions: {
+              template:
+                engine.metadata?.transform_req?.chat_completions?.template ||
+                '',
+              url: engine.metadata?.transform_req?.chat_completions?.url || '',
+            },
+          },
+          transform_resp: {
+            chat_completions: {
+              template:
+                engine.metadata?.transform_resp?.chat_completions?.template ||
+                '',
+            },
+          },
+        },
+      })
+    }
+  }, [engine])
 
   return (
     <ScrollArea className="h-full w-full">
@@ -85,8 +133,39 @@ const RemoteEngineSettings = ({
                 <div className="w-full">
                   <Input
                     placeholder="Enter API Key"
-                    value={engine?.api_key}
+                    value={data?.api_key}
                     onChange={(e) => handleChange('api_key', e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="block w-full px-4">
+        <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
+          <div className="flex w-full flex-col items-start justify-between sm:flex-row">
+            <div className="w-full flex-shrink-0 space-y-1.5">
+              <div className="flex items-start justify-between gap-x-2">
+                <div className="w-full sm:w-3/4">
+                  <h6 className="line-clamp-1 font-semibold">
+                    Chat Completion URL
+                  </h6>
+                  <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                    Enter your chat completion URL.
+                  </p>
+                </div>
+                <div className="w-full">
+                  <Input
+                    placeholder="Enter Chat Completion URL"
+                    value={data?.metadata.transform_req.chat_completions.url}
+                    onChange={(e) =>
+                      handleChange(
+                        'metadata.transform_req.chat_completions.url',
+                        e.target.value
+                      )
+                    }
                   />
                 </div>
               </div>
@@ -167,7 +246,7 @@ const RemoteEngineSettings = ({
                     <div className="w-full">
                       <Input
                         placeholder="Enter API URL"
-                        value={engine?.url}
+                        value={data?.url}
                         onChange={(e) => handleChange('url', e.target.value)}
                       />
                     </div>
@@ -192,7 +271,7 @@ const RemoteEngineSettings = ({
                     <div className="w-full">
                       <Input
                         placeholder="Enter model list URL"
-                        value={engine?.metadata?.get_models_url}
+                        value={data?.metadata?.get_models_url}
                         onChange={(e) =>
                           handleChange(
                             'metadata.get_models_url',
@@ -222,7 +301,7 @@ const RemoteEngineSettings = ({
                     <div className="w-full">
                       <TextArea
                         placeholder="Enter headers template"
-                        value={engine?.metadata?.header_template}
+                        value={data?.metadata?.header_template}
                         onChange={(e) =>
                           handleChange(
                             'metadata.header_template',
@@ -254,7 +333,7 @@ const RemoteEngineSettings = ({
                       <TextArea
                         placeholder="Enter conversion function"
                         value={
-                          engine?.metadata?.transform_req?.chat_completions
+                          data?.metadata?.transform_req?.chat_completions
                             ?.template
                         }
                         onChange={(e) =>
@@ -288,7 +367,7 @@ const RemoteEngineSettings = ({
                       <TextArea
                         placeholder="Enter conversion function"
                         value={
-                          engine?.metadata?.transform_resp?.chat_completions
+                          data?.metadata?.transform_resp?.chat_completions
                             ?.template
                         }
                         onChange={(e) =>
