@@ -1,7 +1,7 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 /* eslint-disable  react/no-unescaped-entities */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useRef, useState } from 'react'
 
 import {
   EngineConfig as OriginalEngineConfig,
@@ -66,7 +66,7 @@ const RemoteEngineSettings = ({
         mutate()
       }, 300)
     },
-    [engine, name]
+    [engine, name, mutate]
   )
 
   return (

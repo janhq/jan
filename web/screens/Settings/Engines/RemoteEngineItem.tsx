@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react'
 
 import { EngineConfig, InferenceEngine } from '@janhq/core'
-import { Button, Switch, Badge } from '@janhq/joi'
+import { Button, Switch } from '@janhq/joi'
 
 import { useAtom, useSetAtom } from 'jotai'
 import { SettingsIcon } from 'lucide-react'
@@ -13,7 +13,6 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const RemoteEngineItems = ({
   engine,
-  values,
 }: {
   engine: InferenceEngine
   values: EngineConfig[]
