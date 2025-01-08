@@ -1,19 +1,19 @@
 import { useMemo } from 'react'
 
+import { InferenceEngine, EngineConfig } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
-import { InferenceEngine, EngineConfig } from '@janhq/core/.'
-import { useGetEngines } from './useEngineManagement'
 
 export function useStarterScreen() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const threads = useAtomValue(threadsAtom)
 
-  const { engines } = useGetEngines()
+  const engines = useAtomValue(installedEnginesAtom)
 
   const remoteEngines =
     engines &&

@@ -13,6 +13,7 @@ import {
   joinPath,
   events,
   ModelEvent,
+  EngineEvent,
 } from '@janhq/core'
 import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
@@ -295,6 +296,7 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
           await this.addRemoteEngine(data).catch(console.error)
         })
       )
+      events.emit(EngineEvent.OnEngineUpdate, {})
       DEFAULT_REMOTE_MODELS.forEach(async (data: Model) => {
         await this.addRemoteModel(data).catch(() => {})
       })

@@ -43,6 +43,7 @@ import { manualRecommendationModel } from '@/utils/model'
 import { getLogoEngine } from '@/utils/modelEngine'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
@@ -85,7 +86,8 @@ const ModelDropdown = ({
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
-  const { engines } = useGetEngines()
+
+  const engines = useAtomValue(installedEnginesAtom)
 
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
