@@ -133,7 +133,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Model List URL',
                   false,
-                  `The base URL of the provider's API. `
+                  `URL for fetching available models`
                 )}
               </label>
               <Input
@@ -152,7 +152,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'API Key',
                   false,
-                  `Enter your authentication key to activate this engine.`
+                  `Your authentication key from the provider`
                 )}
               </label>
               <Input
@@ -186,7 +186,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Request Format Conversion',
                   false,
-                  `Function to convert Jan’s request format to this engine API’s format.`
+                  `Function to convert Jan’s request format to this engine API’s format`
                 )}
               </label>
               <TextArea
@@ -200,7 +200,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Response Format Conversion',
                   false,
-                  `Function to convert Jan’s request format to this engine API’s format.`
+                  `Function to convert this engine API’s response format to Jan’s format`
                 )}
               </label>
               <TextArea
