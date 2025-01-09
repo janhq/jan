@@ -1,0 +1,92 @@
+[
+  {
+    "sources": [
+      {
+        "url": "https://cloud.google.com/vertex-ai"
+      }
+    ],
+    "id": "google/gemini-1.5-flash-002",
+    "object": "model",
+    "name": "Gemini 1.5 Flash",
+    "version": "1.5",
+    "description": "Gemini 1.5 Flash is a high-performance general-purpose model designed for fast and efficient use cases.",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Google",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "vertexai"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://cloud.google.com/vertex-ai"
+      }
+    ],
+    "id": "google/gemini-2.0-flash-exp",
+    "object": "model",
+    "name": "Gemini 2.0 Flash",
+    "version": "2.0",
+    "description": "Gemini 2.0 Flash is an enhanced version of the Flash series, offering robust performance for general tasks",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Google",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "vertexai"
+  },
+  {
+    "sources": [
+      {
+        "url": "https://cloud.google.com/vertex-ai"
+      }
+    ],
+    "id": "google/gemini-1.5-pro-002",
+    "object": "model",
+    "name": "Gemini 1.5 Pro",
+    "version": "1.5",
+    "description": "Gemini 1.5 Pro is a professional-grade model optimized for versatile and high-quality applications",
+    "format": "api",
+    "settings": {},
+    "parameters": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "metadata": {
+      "author": "Google",
+      "tags": [
+        "General"
+      ]
+    },
+    "engine": "vertexai"
+  }
+]

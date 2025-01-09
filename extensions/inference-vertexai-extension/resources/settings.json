@@ -1,0 +1,52 @@
+[
+  {
+    "key": "projectId",
+    "title": "Project ID",
+    "description": "The specific GCP project ID you want to use.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Project Id",
+      "value": ""
+    }
+  },
+  {
+    "key": "location",
+    "title": "location",
+    "description": "The location of your GCP instance",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "us-central1",
+      "value": "us-central1"
+    }
+  },
+  {
+    "key": "privateKey",
+    "title": "Private Key",
+    "description": "The private key of your service account Learn more: https://cloud.google.com/iam/docs/keys-create-delete",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Insert Private Key",
+      "value": ""
+    }
+  },
+  {
+    "key": "serviceEmail",
+    "title": "service Email",
+    "description": "Service Account Email",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Enter service email here",
+      "value": ""
+    }
+  },
+  {
+    "key": "vertexai-api-key",
+    "title": "Private Key ID",
+    "description": "The Private Key ID for your service account",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Enter private key id here",
+      "value": ""
+    }
+  }
+]
