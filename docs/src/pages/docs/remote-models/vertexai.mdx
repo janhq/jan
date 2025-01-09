@@ -1,0 +1,72 @@
+---
+title: VertexAI API
+description: A step-by-step guide on integrating Jan with VertexAI.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    integration,
+    VertexAI,
+    Google,
+    GCP
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+
+
+# VertexAI API
+
+<Callout type='info'>
+The VertexAI Extension can be used select models that [support the openai endpoints](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-vertex-using-openai-library) on vertexAI's.
+</Callout>
+
+## How to Integrate VertexAI API with Jan
+This guide provides step-by-step instructions for integrating the VertexAI API with Jan, allowing users to utilize VertexAI's capabilities within Jan's conversational interface.
+
+## Integration Steps
+<Steps>
+### Step 1: Configure GCP Service Account
+1. Open the [Credentials page](https://console.cloud.google.com/apis/credentials) in GCP
+2. Select your project
+3. Create Credentials -> Service Account
+4. Give your service account a name
+5. Give at least the "Vertex AI Online Prediction Service Agent" role
+6. Click on the account, then the "Keys" tab
+7. Create new key -> select json.
+8. Copy the exact project id, private key id, private key, and client email into your JAN configuration.
+9. Set the region to what is appropriate for your instance
+
+### Step 2: Start Chatting with the Model
+
+1. Select the VertexAI model you want to use.
+2. Specify the model's parameters.
+3. Start the conversation with the VertexAI model.
+</Steps>
+
+### VertexAI Models
+
+You can also use specific VertexAI models you cannot find in the **Hub** section by customizing the `model.yaml` file, which you can see in the `~/jan/data/models/`. Follow the steps in the [Manage Models](/docs/models/manage-models) to manually add a model.
+
+<Callout type='info'>
+- You can find the list of available models in the [VertexAI documentation](https://cloud.google.com/vertex-ai/generative-ai/docs/multimodal/call-vertex-using-openai-library).
+- The `id` property must match the model name in the list.
+  - For example, if you want to use the Gemini 1.0 Pro model you must set the `id` property to `google/gemini-1.0-pro-002`.
+</Callout>
+
+## Troubleshooting
+
+If you encounter any issues during the integration process or while using VertexAI with Jan, consider the following troubleshooting steps:
+
+- Double-check your service account is active.
+- Confirm the model you selected is available in your selected region.
+- Ensure the model is enabled in VertexAI model garden.
+- Check for error messages or logs that may provide insight into the issue.
