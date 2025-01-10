@@ -11,7 +11,9 @@
     "version": "1.5",
     "description": "Gemini 1.5 Flash is a high-performance general-purpose model designed for fast and efficient use cases.",
     "format": "api",
-    "settings": {},
+    "settings": {
+      "vision_model": true
+    },
     "parameters": {
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -41,7 +43,9 @@
     "version": "2.0",
     "description": "Gemini 2.0 Flash is an enhanced version of the Flash series, offering robust performance for general tasks",
     "format": "api",
-    "settings": {},
+    "settings": {
+      "vision_model": true
+    },
     "parameters": {
       "max_tokens": 8192,
       "temperature": 0.7,
@@ -71,7 +75,9 @@
     "version": "1.5",
     "description": "Gemini 1.5 Pro is a professional-grade model optimized for versatile and high-quality applications",
     "format": "api",
-    "settings": {},
+    "settings": {
+      "vision_model": true
+    },
     "parameters": {
       "max_tokens": 8192,
       "temperature": 0.7,
