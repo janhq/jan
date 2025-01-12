@@ -10,7 +10,10 @@
   "scripts": {
     "test": "jest",
     "build": "rolldown -c rolldown.config.mjs",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install"
+    "codesign:darwin": "../../.github/scripts/auto-sign.sh",
+    "codesign:win32:linux": "echo 'No codesigning required'",
+    "codesign": "run-script-os",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && yarn codesign && npm pack && cpx *.tgz ../../pre-install"
   },
   "exports": {
     ".": "./dist/index.js",
@@ -20,6 +23,7 @@
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
     "rolldown": "^1.0.0-beta.1",
+    "run-script-os": "^1.1.6",
     "ts-loader": "^9.5.0",
     "typescript": "^5.3.3"
   },
