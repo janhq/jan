@@ -1,6 +1,7 @@
 import path from 'path'
-import { getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
+import { appResourcePath, getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
+import { readdir, symlink } from 'fs/promises'
 
 // The HOST address to use for the Nitro subprocess
 const LOCAL_PORT = '39291'
@@ -17,7 +18,13 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
     let binaryName = `cortex-server${process.platform === 'win32' ? '.exe' : ''}`
     const binPath = path.join(__dirname, '..', 'bin')
+    await createEngineSymlinks(binPath)
+    
     const executablePath = path.join(binPath, binaryName)
+    const sharedPath = path.join(
+      appResourcePath(),
+      'shared'
+    )
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executablePath}`)
 
@@ -46,11 +53,29 @@ function run(systemInfo?: SystemInformation): Promise<any> {
             GGML_VK_VISIBLE_DEVICES: gpuVisibleDevices,
           }),
         },
+        cwd: sharedPath,
       }
     )
     watchdog.start()
     resolve()
   })
+}
+
+/**
+ * Create symlinks for the engine shared libraries
+ * @param binPath 
+ */
+async function createEngineSymlinks(binPath: string) {
+  const sharedPath = path.join(appResourcePath(), 'shared')
+  const sharedLibFiles = await readdir(sharedPath)
+  for (const sharedLibFile of sharedLibFiles) {
+    if (sharedLibFile.endsWith('.dll') || sharedLibFile.endsWith('.so')) {
+      const targetDllPath = path.join(sharedPath, sharedLibFile)
+      const symlinkDllPath = path.join(binPath, sharedLibFile)
+      await symlink(targetDllPath, symlinkDllPath).catch(console.error)
+      console.log(`Symlink created: ${targetDllPath} -> ${symlinkDllPath}`)
+    }
+  }
 }
 
 /**
