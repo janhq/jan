@@ -22,7 +22,9 @@ export function requestInference(
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
-        'Accept': model.parameters?.stream ? 'text/event-stream' : 'application/json',
+        'Accept': model.parameters?.stream
+          ? 'text/event-stream'
+          : 'application/json',
         ...headers,
       },
       body: JSON.stringify(requestBody),
@@ -47,12 +49,24 @@ export function requestInference(
         }
         // There could be overriden stream parameter in the model
         // that is set in request body (transformed payload)
-        if (requestBody?.stream === false || model.parameters?.stream === false) {
+        if (
+          requestBody?.stream === false ||
+          model.parameters?.stream === false
+        ) {
           const data = await response.json()
+          if (data.error) {
+            subscriber.error(data.error)
+            subscriber.complete()
+            return
+          }
           if (transformResponse) {
             subscriber.next(transformResponse(data))
           } else {
-            subscriber.next(data.choices[0]?.message?.content ?? '')
+            subscriber.next(
+              data.choices
+                ? data.choices[0]?.message?.content
+                : (data.content[0]?.text ?? '')
+            )
           }
         } else {
           const stream = response.body
