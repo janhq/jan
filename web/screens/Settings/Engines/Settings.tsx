@@ -8,7 +8,7 @@ import {
   InferenceEngine,
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
-import { Trash2Icon } from 'lucide-react'
+
 import { twMerge } from 'tailwind-merge'
 
 import {
@@ -18,7 +18,6 @@ import {
   setDefaultEngineVariant,
   installEngine,
   updateEngine,
-  uninstallEngine,
   useGetReleasedEnginesByVersion,
 } from '@/hooks/useEngineManagement'
 
@@ -109,21 +108,32 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       const variant: string | undefined = event.id.includes('.tar.gz')
         ? availableVariants?.find((e) => event.id.includes(`${e}.tar.gz`))
         : availableVariants?.find((e) => event.id.includes(e))
-      if (!variant) return
-      setInstallingEngines((prev) => {
-        prev.set(variant, event.percent)
-        return prev
-      })
-      if (
-        event.type === DownloadEvent.onFileDownloadError ||
-        event.type === DownloadEvent.onFileDownloadStopped ||
-        event.type === DownloadEvent.onFileDownloadSuccess
-      ) {
-        setInstallingEngines((prev) => {
-          prev.delete(variant)
-          return prev
-        })
+
+      if (!variant) {
+        console.error(
+          'Variant not found for event.id:',
+          event.id,
+          availableVariants
+        )
+        return
       }
+
+      // Clone the existing Map to ensure immutability
+      setInstallingEngines((prev) => {
+        const updated = new Map(prev)
+        if (
+          event.type === DownloadEvent.onFileDownloadError ||
+          event.type === DownloadEvent.onFileDownloadStopped ||
+          event.type === DownloadEvent.onFileDownloadSuccess
+        ) {
+          // Remove the variant from the Map if download stops/errors/succeeds
+          updated.delete(variant)
+        } else {
+          // Update the variant with the new percentage
+          updated.set(variant, event.percent)
+        }
+        return updated
+      })
     },
     [
       mutateDefaultEngineVariant,
@@ -147,6 +157,7 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       version: String(defaultEngineVariant?.version),
     })
   }
+
   return (
     <ScrollArea className="h-full w-full">
       <div className="block w-full px-4">
@@ -296,8 +307,9 @@ const EngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                                       variant="soft"
                                       onClick={() => {
                                         setInstallingEngines((prev) => {
-                                          prev.set(item.name, 0)
-                                          return prev
+                                          const updated = new Map(prev)
+                                          updated.set(item.name, 0)
+                                          return updated
                                         })
                                         installEngine(engine, {
                                           variant: item.name,
