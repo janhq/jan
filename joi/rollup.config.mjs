@@ -11,7 +11,6 @@ import tailwindcss from 'tailwindcss'
 import typescriptEngine from 'typescript'
 import resolve from '@rollup/plugin-node-resolve'
 import copy from 'rollup-plugin-copy'
-import sass from 'rollup-plugin-sass'
 
 const packageJson = JSON.parse(readFileSync('./package.json'))
 
@@ -36,6 +35,7 @@ export default [
         use: {
           sass: {
             silenceDeprecations: ['legacy-js-api'],
+            api: 'modern',
           },
         },
         minimize: true,
@@ -58,7 +58,6 @@ export default [
         ],
       }),
       terser(),
-      sass(),
     ],
     watch: {
       clearScreen: false,

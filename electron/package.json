@@ -135,7 +135,6 @@
     "electron-playwright-helpers": "^1.6.0",
     "eslint": "8.57.0",
     "eslint-plugin-react": "^7.34.0",
-    "jq": "^1.7.2",
     "rimraf": "^5.0.5",
     "run-script-os": "^1.1.6",
     "typescript": "^5.3.3",
