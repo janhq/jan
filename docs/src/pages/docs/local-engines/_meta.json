@@ -3,8 +3,5 @@
     "title": "llama.cpp",
     "href": "/docs/local-engines/llama-cpp"
   },
-  "tensorrt-llm": {
-    "title": "TensorRT-LLM",
-    "href": "/docs/local-engines/tensorrt-llm"
-  }
+
 }

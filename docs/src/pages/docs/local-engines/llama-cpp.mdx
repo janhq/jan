@@ -132,6 +132,38 @@ For detailed hardware compatibility, please visit our guide for [Mac](/docs/desk
 
 </Tabs>
 
+## Performance Settings
+
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Continuous Batching** | - Enables processing multiple requests simultaneously<br></br>- Improves throughput for concurrent operations | Enabled |
+| **Parallel Operations** | - Number of prompts to run in parallel<br></br>- Affects model inference speed | 4 |
+| **CPU Threads** | - Number of CPU cores to use when running without GPU<br></br>- Higher thread counts may improve performance but increase CPU usage | Auto-detected based on your system's capabilities |
+
+
+
+## Memory Settings
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| **Flash Attention** | - Optimizes attention computation<br></br>- Reduces memory usage<br></br>- Recommended for most cases | Enabled |
+| **Caching** | - Enable to store recent prompts and responses<br></br>- Improves response time for repeated prompts | Enabled |
+| **KV Cache Type** | - KV cache implementation type; controls memory usage and precision trade-off<br></br>- Options:<br></br>• f16 (most stable)<br></br>• q8_0 (balanced)<br></br>• q4_0 (lowest memory) | f16 |
+| **MMAP** | - Enables memory-mapped model loading<br></br>- Reduces memory usage<br></br>- Recommended for large models | Enabled |
+
+
+## Best Practices
+- Start with default settings
+- Adjust based on your hardware capabilities
+- Monitor system performance
+- Test changes with your specific use case
+
+<Callout type="info">
+Performance impact varies by hardware, model size, and usage patterns.
+</Callout>
+
+
 
 
 
