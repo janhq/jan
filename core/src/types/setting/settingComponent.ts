@@ -3,7 +3,11 @@ export type SettingComponentProps = {
   title: string
   description: string
   controllerType: ControllerType
-  controllerProps: SliderComponentProps | CheckboxComponentProps | InputComponentProps
+  controllerProps:
+    | SliderComponentProps
+    | CheckboxComponentProps
+    | InputComponentProps
+    | DropdownComponentProps
 
   extensionName?: string
   requireModelReload?: boolean
@@ -12,13 +16,26 @@ export type SettingComponentProps = {
 
 export type ConfigType = 'runtime' | 'setting'
 
-export type ControllerType = 'slider' | 'checkbox' | 'input' | 'tag'
+export type ControllerType =
+  | 'slider'
+  | 'checkbox'
+  | 'input'
+  | 'tag'
+  | 'dropdown'
 
-export type InputType = 'password' | 'text' | 'email' | 'number' | 'tel' | 'url'
+export type InputType =
+  | 'password'
+  | 'text'
+  | 'email'
+  | 'number'
+  | 'tel'
+  | 'url'
+  | 'dropdown'
 
 const InputActions = ['unobscure', 'copy'] as const
 export type InputActionsTuple = typeof InputActions
 export type InputAction = InputActionsTuple[number]
+export type DropdownOption = { name: string; value: string }
 
 export type InputComponentProps = {
   placeholder: string
@@ -37,4 +54,10 @@ export type SliderComponentProps = {
 
 export type CheckboxComponentProps = {
   value: boolean
+}
+
+export type DropdownComponentProps = {
+  value: string
+  type?: InputType
+  options?: DropdownOption[]
 }
