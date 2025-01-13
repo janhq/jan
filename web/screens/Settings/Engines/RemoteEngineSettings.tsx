@@ -16,15 +16,13 @@ import { ScrollArea, Input, TextArea } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
+import { set } from 'lodash'
 import { ChevronRight } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-
-import { set } from 'lodash'
-import { url } from 'inspector'
 
 const RemoteEngineSettings = ({
   engine: name,

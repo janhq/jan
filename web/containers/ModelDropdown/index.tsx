@@ -185,7 +185,7 @@ const ModelDropdown = ({
     setShowEngineListModel((prev) => [
       ...prev,
       ...engineList
-        .filter((x) => (x.engine.api_key?.length ?? 0) > 0)
+        .filter((x) => (x.engine?.api_key?.length ?? 0) > 0)
         .map((e) => e.name),
     ])
   }, [setShowEngineListModel, engineList])
