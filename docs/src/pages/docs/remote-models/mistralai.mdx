@@ -17,49 +17,71 @@ keywords:
 ---
 
 import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
 
-# Mistral AI API
+# Mistral AI
 
-## How to Integrate Mistral AI with Jan
-This guide provides step-by-step instructions for integrating the Mistral API with Jan, enabling users to utilize Mistral's capabilities within Jan's conversational interface.
+Jan supports [Mistral AI](https://mistral.ai/) API integration, allowing you to use Mistral's powerful models (Mistral Large, Mistral Medium, Mistral Small and more) through Jan's interface.
 
-Before proceeding, ensure you have the following:
-- Access to the Jan Application
-- Mistral API credentials
+## Integrate Mistral AI with Jan
 
-## Integration Steps
 <Steps>
-
-### Step 1: Configure Mistral API Key
-
-1. Obtain the Mistral API Key from your [Mistral](https://console.mistral.ai/user/api-keys/) dashboard.
-2. Copy your **Mistral API Key**.
-3. There are three ways to configure your API Key in Jan app:
-  - Navigate to the **Jan app** > **Gear Icon (⚙️)** > **My Models** tab > **Add Icon (➕)** next to **Mistral**.
-  - Navigate to the **Jan app** > **Thread** > **Model** tab > **Add Icon (➕)** next to **Mistral**.
-  - Navigate to the **Jan app** > **Gear Icon (⚙️)** > **Mistral** section under Model Providers.
-4. Insert your **Mistral API Key**.
+### Step 1: Get Your API Key
+1. Visit [Mistral AI Platform](https://console.mistral.ai/api-keys/) and sign in
+2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
-  - Mistral AI offers various endpoints. Refer to their [endpoint documentation](https://docs.mistral.ai/platform/endpoints/) to select the one that fits your requirements.
+Ensure your API key has sufficient credits
 </Callout>
 
-### Step 2: Start Chatting with the Model
+### Step 2: Configure Jan
+There are two ways to add your Mistral AI keys in Jan:
 
-1. Select the Mistral model you want to use.
+**Through Threads:**
+1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
+2. Once the selector is poped up, choose the **Cloud** tab
+3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Mistral AI**
+4. Once you are directed to Mistral AI settings, insert your **API Key**
 
-<Callout type='info'>
-  The MistralAI is the default extension for the Jan application. All the Mistral models are automatically installed when you install the Jan application.
-</Callout>
-2. Specify the model's parameters.
-3. Start the conversation with the Mistral model.
+**Through Settings:**
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Remote Engines**, select **Mistral AI**
+3. Insert your **API Key**
 
+<br/>
+![Mistral](../_assets/mistralai.png)
+<br/>
+
+### Step 3: Start Using Mistral's Models
+
+1. In any existing **Threads** or create a new one
+2. Select a Mistral model from **model selector**
+3. Start chatting
 </Steps>
+
+## Available Mistral Models
+
+Jan automatically includes Mistral's available models. In case you want to use a specific Mistral model that you cannot find in **Jan**, follow instructions in [Manual Setup](/docs/models/manage-models#4-manual-setup) to add custom models:
+  - See list of available models in [Mistral AI Documentation](https://docs.mistral.ai/platform/endpoints).
+  - The `id` property must match the model name in the list. For example, if you want to use Mistral Large, you must set the `id` property to `mistral-large-latest`
 
 ## Troubleshooting
 
-If you encounter any issues during the integration process or while using Mistral with Jan, consider the following troubleshooting steps:
+Common issues and solutions:
 
-- Double-check your API credentials to ensure they are correct.
-- Check for error messages or logs that may provide insight into the issue.
-- Reach out to Mistral API support for assistance if needed.
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Check if you have billing set up on your Mistral AI account
+- Ensure you have access to the model you're trying to use
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify Mistral AI's system status
+- Look for error messages in [Jan's logs](/docs/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm your API key has access to the model
+- Check if you're using the correct model ID
+- Verify your Mistral AI account has the necessary permissions
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [Mistral AI documentation](https://docs.mistral.ai/).

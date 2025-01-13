@@ -2,6 +2,5 @@
   "llama-cpp": {
     "title": "llama.cpp",
     "href": "/docs/local-engines/llama-cpp"
-  },
-
+  }
 }

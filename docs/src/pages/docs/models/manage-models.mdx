@@ -17,7 +17,7 @@ keywords:
     thread history,
   ]
 ---
-import { Callout, Steps } from 'nextra/components' 
+import { Callout, Steps } from 'nextra/components'
 import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
 
 
@@ -184,7 +184,8 @@ Modify model parameters under the settings array. Key fields to configure:
   "stream": true,
   "max_tokens": 4096,
   "frequency_penalty": 0,
-  "presence_penalty": 0
+  "presence_penalty": 0,
+}
 ```
 </Steps>
 
@@ -204,8 +205,8 @@ When using cloud models, be aware of any associated costs and rate limits from t
 </Callout>
 
 Jan supports connecting to various AI cloud providers that are OpenAI API-compatible, including: OpenAI (GPT-4, o1,...), Anthropic (Claude), Groq, Mistral, and more.
-1. Open **Settings**
-2. Under **Model Provider** section in left sidebar (OpenAI, Anthropic, etc.), choose a provider
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Remote Engines** section in the left sidebar, choose your preferred engines (OpenAI, Anthropic, etc.)
 3. Enter your API key
 4. The activated cloud models will be available in your model selector in **Threads**
 
