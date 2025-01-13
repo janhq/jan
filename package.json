@@ -41,7 +41,6 @@
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "rimraf": "^3.0.2",
-    "run-script-os": "^1.1.6",
     "wait-on": "^7.0.1"
   },
   "version": "0.0.0",
