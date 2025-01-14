@@ -21,8 +21,7 @@ const DeleteEngineVariant = ({
   const [open, setOpen] = useState(false)
 
   const { mutate: mutateInstalledEngines } = useGetInstalledEngines(engine)
-  const { defaultEngineVariant, mutate: mutateDefaultEngineVariant } =
-    useGetDefaultEngineVariant(engine)
+  const { defaultEngineVariant } = useGetDefaultEngineVariant(engine)
 
   return (
     <Modal

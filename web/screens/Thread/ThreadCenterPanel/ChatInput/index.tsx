@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { InferenceEngine, MessageStatus } from '@janhq/core'
+import { InferenceEngine } from '@janhq/core'
 
 import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
@@ -35,6 +35,7 @@ import RichTextEditor from './RichTextEditor'
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
@@ -63,6 +64,7 @@ const ChatInput = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const engines = useAtomValue(installedEnginesAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
@@ -95,6 +97,7 @@ const ChatInput = () => {
   }
 
   const isModelSupportRagAndTools = isLocalEngine(
+    engines,
     selectedModel?.engine as InferenceEngine
   )
 

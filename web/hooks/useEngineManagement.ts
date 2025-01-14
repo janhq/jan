@@ -5,6 +5,9 @@ import {
   EngineManagementExtension,
   InferenceEngine,
   EngineReleased,
+  EngineConfig,
+  events,
+  EngineEvent,
 } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
@@ -59,6 +62,34 @@ export function useGetEngines() {
   )
 
   return { engines, error, mutate }
+}
+
+/**
+ * @returns A Promise that resolves to an object of remote models.
+ */
+export function useGetRemoteModels(name: string) {
+  const extension = useMemo(
+    () =>
+      extensionManager.get<EngineManagementExtension>(
+        ExtensionTypeEnum.Engine
+      ) ?? null,
+    []
+  )
+
+  const {
+    data: remoteModels,
+    error,
+    mutate,
+  } = useSWR(
+    extension ? 'remoteModels' : null,
+    () => fetchExtensionData(extension, (ext) => ext.getRemoteModels(name)),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  )
+
+  return { remoteModels, error, mutate }
 }
 
 /**
@@ -262,7 +293,10 @@ export const setDefaultEngineVariant = async (
  * @body version - string
  * @returns A Promise that resolves to set default engine.
  */
-export const updateEngine = async (name: InferenceEngine) => {
+export const updateEngine = async (
+  name: InferenceEngine,
+  engineConfig?: EngineConfig
+) => {
   const extension = getExtension()
 
   if (!extension) {
@@ -271,7 +305,8 @@ export const updateEngine = async (name: InferenceEngine) => {
 
   try {
     // Call the extension's method
-    const response = await extension.updateEngine(name)
+    const response = await extension.updateEngine(name, engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to set default engine variant:', error)
@@ -284,8 +319,8 @@ export const updateEngine = async (name: InferenceEngine) => {
  * @returns A Promise that resolves to intall of engine.
  */
 export const installEngine = async (
-  name: InferenceEngine,
-  engineConfig: { variant: string; version?: string }
+  name: string,
+  engineConfig: EngineConfig
 ) => {
   const extension = getExtension()
 
@@ -296,6 +331,29 @@ export const installEngine = async (
   try {
     // Call the extension's method
     const response = await extension.installEngine(name, engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
+    return response
+  } catch (error) {
+    console.error('Failed to install engine variant:', error)
+    throw error
+  }
+}
+
+/**
+ * Add a new remote engine
+ * @returns A Promise that resolves to intall of engine.
+ */
+export const addRemoteEngine = async (engineConfig: EngineConfig) => {
+  const extension = getExtension()
+
+  if (!extension) {
+    throw new Error('Extension is not available')
+  }
+
+  try {
+    // Call the extension's method
+    const response = await extension.addRemoteEngine(engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)
@@ -309,7 +367,7 @@ export const installEngine = async (
  */
 export const uninstallEngine = async (
   name: InferenceEngine,
-  engineConfig: { variant: string; version: string }
+  engineConfig: EngineConfig
 ) => {
   const extension = getExtension()
 
@@ -320,6 +378,7 @@ export const uninstallEngine = async (
   try {
     // Call the extension's method
     const response = await extension.uninstallEngine(name, engineConfig)
+    events.emit(EngineEvent.OnEngineUpdate, {})
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)

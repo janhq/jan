@@ -3,6 +3,7 @@ import {
   Engines,
   EngineVariant,
   EngineReleased,
+  EngineConfig,
   DefaultEngineVariant,
 } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
@@ -55,8 +56,16 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to intall of engine.
    */
   abstract installEngine(
-    name: InferenceEngine,
-    engineConfig: { variant: string; version?: string }
+    name: string,
+    engineConfig: EngineConfig
+  ): Promise<{ messages: string }>
+
+  /**
+   * Add a new remote engine
+   * @returns A Promise that resolves to intall of engine.
+   */
+  abstract addRemoteEngine(
+    engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
   /**
@@ -65,14 +74,16 @@ export abstract class EngineManagementExtension extends BaseExtension {
    */
   abstract uninstallEngine(
     name: InferenceEngine,
-    engineConfig: { variant: string; version: string }
+    engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
   /**
    * @param name - Inference engine name.
    * @returns A Promise that resolves to an object of default engine.
    */
-  abstract getDefaultEngineVariant(name: InferenceEngine): Promise<DefaultEngineVariant>
+  abstract getDefaultEngineVariant(
+    name: InferenceEngine
+  ): Promise<DefaultEngineVariant>
 
   /**
    * @body variant - string
@@ -81,11 +92,19 @@ export abstract class EngineManagementExtension extends BaseExtension {
    */
   abstract setDefaultEngineVariant(
     name: InferenceEngine,
-    engineConfig: { variant: string; version: string }
+    engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
   /**
    * @returns A Promise that resolves to update engine.
    */
-  abstract updateEngine(name: InferenceEngine): Promise<{ messages: string }>
+  abstract updateEngine(
+    name: InferenceEngine,
+    engineConfig?: EngineConfig
+  ): Promise<{ messages: string }>
+
+  /**
+   * @returns A Promise that resolves to an object of remote models list .
+   */
+  abstract getRemoteModels(name: InferenceEngine | string): Promise<any>
 }
