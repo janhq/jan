@@ -2,12 +2,18 @@ import { useCallback, memo } from 'react'
 import { Modal, ModalClose, Button } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import useDeleteThread from '@/hooks/useDeleteThread'
-import { modalActionThreadAtom, ThreadModalAction, threadsAtom } from '@/helpers/atoms/Thread.atom'
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import {
+  modalActionThreadAtom,
+  ThreadModalAction,
+  threadsAtom,
+} from '@/helpers/atoms/Thread.atom'
 
 const ModalDeleteAllThreads = () => {
   const { deleteAllThreads } = useDeleteThread()
-  const [modalActionThread, setModalActionThread] = useAtom(modalActionThreadAtom)
+  const [modalActionThread, setModalActionThread] = useAtom(
+    modalActionThreadAtom
+  )
   const [threads] = useAtom(threadsAtom)
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
 
@@ -16,7 +22,7 @@ const ModalDeleteAllThreads = () => {
       e.stopPropagation()
       deleteAllThreads(threads)
     },
-    [deleteAllThreads, threads, setModalActionThread]
+    [deleteAllThreads, threads]
   )
 
   const onCloseModal = useCallback(() => {
@@ -34,8 +40,10 @@ const ModalDeleteAllThreads = () => {
       content={
         <div>
           <p className="text-[hsla(var(--text-secondary))]">
-            Are you sure you want to delete all chat history? This will remove all {threads.length} conversation 
-            threads in <span className="font-mono">{janDataFolderPath}\threads</span> and cannot be undone.
+            Are you sure you want to delete all chat history? This will remove{' '}
+            all {threads.length} conversation threads in{' '}
+            <span className="font-mono">{janDataFolderPath}\threads</span> and
+            cannot be undone.
           </p>
           <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose asChild onClick={(e) => e.stopPropagation()}>
