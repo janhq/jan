@@ -31,8 +31,6 @@ export function useStarterScreen() {
     [remoteEngines]
   )
 
-  console.log(isAnyRemoteModelConfigured)
-
   const isShowStarterScreen = useMemo(
     () =>
       !isAnyRemoteModelConfigured && !isDownloadALocalModel && !threads.length,

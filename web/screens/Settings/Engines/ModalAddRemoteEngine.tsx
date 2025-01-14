@@ -11,7 +11,6 @@ import { addRemoteEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 const engineSchema = z.object({
   engineName: z.string().min(1, 'Engine name is required'),
-  apiUrl: z.string().url('Enter a valid API URL'),
   modelListUrl: z.string().url('Enter a valid Model List URL'),
   headerTemplate: z.string().optional(),
   apiKey: z.string().optional(),
@@ -42,7 +41,6 @@ const ModalAddRemoteEngine = () => {
   const onSubmit = async (data: z.infer<typeof engineSchema>) => {
     await addRemoteEngine({
       type: 'remote',
-      url: data.apiUrl,
       engine: data.engineName,
       api_key: data.apiKey,
       metadata: {
@@ -111,20 +109,6 @@ const ModalAddRemoteEngine = () => {
                 <p className="text-sm text-red-500">
                   {errors.engineName.message}
                 </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="apiUrl" className="font-semibold">
-                {renderLabel(
-                  'API URL',
-                  true,
-                  `The base URL of the provider's API`
-                )}
-              </label>
-              <Input placeholder="Enter API URL" {...register('apiUrl')} />
-              {errors.apiUrl && (
-                <p className="text-sm text-red-500">{errors.apiUrl.message}</p>
               )}
             </div>
 
