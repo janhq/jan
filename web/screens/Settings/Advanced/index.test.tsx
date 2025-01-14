@@ -140,4 +140,13 @@ describe('Advanced', () => {
       expect(screen.getByTestId(/reset-button/i)).toBeInTheDocument()
     })
   })
+
+  it('renders DeleteAllThreads component', async () => {
+    render(<Advanced />)
+    await waitFor(() => {
+      const elements = screen.getAllByText('Delete All Threads')
+      expect(elements.length).toBeGreaterThan(0)
+      expect(screen.getByTestId('delete-all-threads-button')).toBeInTheDocument()
+    })
+  })
 })

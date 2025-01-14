@@ -544,7 +544,7 @@ const Advanced = () => {
             </p>
           </div>
           <Button
-            data-testid="reset-button"
+            data-testid="delete-all-threads-button"
             theme="destructive"
             onClick={() => {
               setModalActionThread({
