@@ -1,0 +1,43 @@
+---
+title: Model Management
+description: Learn about Jan's default extensions and explore how to configure them.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Jan Extensions,
+    Extensions,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
+
+# Model Management 
+
+This extension configures how Jan handles model downloads and management:
+- Model discovery and browsing
+- Version control & configuration handling
+- Download management
+
+## Hugging Face Access Token
+
+Access tokens authenticate your identity to Hugging Face Hub for model downloads. 
+1. Get your token from [Hugging Face Tokens](https://huggingface.co/docs/hub/en/security-tokens)
+2. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Core Extensions** > **Model Management**
+2. Enter your token in Jan: `hf_************************`
+
+<Callout type="warning">
+Keep your access tokens secure and never share them. 
+</Callout>
+
+<br/>
+![Model Management](../_assets/extensions-02.png)
+<br/>
