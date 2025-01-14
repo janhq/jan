@@ -11,9 +11,10 @@ import {
   Tooltip,
   Checkbox,
   useClickOutside,
+  Button,
 } from '@janhq/joi'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
@@ -38,6 +39,10 @@ import {
   vulkanEnabledAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
+
+import { ThreadModalAction } from '@/helpers/atoms/Thread.atom'
+import { modalActionThreadAtom } from '@/helpers/atoms/Thread.atom'
+import ModalDeleteAllThreads from '@/screens/Thread/ThreadLeftPanel/ModalDeleteAllThreads'
 
 type GPU = {
   id: string
@@ -74,6 +79,7 @@ const Advanced = () => {
   const { readSettings, saveSettings } = useSettings()
   const { stopModel } = useActiveModel()
   const [open, setOpen] = useState(false)
+  const setModalActionThread = useSetAtom(modalActionThreadAtom)
 
   const selectedGpu = gpuList
     .filter((x) => gpusInUse.includes(x.id))
@@ -525,6 +531,33 @@ const Advanced = () => {
 
         {/* Factory Reset */}
         <FactoryReset />
+
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="space-y-1">
+            <div className="flex gap-x-2">
+              <h6 className="font-semibold capitalize">
+                Delete All Threads
+              </h6>
+            </div>
+            <p className="whitespace-pre-wrap font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+              Delete all threads and associated chat history.
+            </p>
+          </div>
+          <Button
+            data-testid="reset-button"
+            theme="destructive"
+            onClick={() => {
+              setModalActionThread({
+                showModal: ThreadModalAction.DeleteAll,
+                thread: undefined,
+              })
+            }}
+          >
+            Delete All Threads
+          </Button>
+        </div>
+        <ModalDeleteAllThreads />
+
       </div>
     </ScrollArea>
   )
