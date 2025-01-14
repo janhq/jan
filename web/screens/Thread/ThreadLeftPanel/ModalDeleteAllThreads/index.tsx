@@ -1,8 +1,13 @@
 import { useCallback, memo } from 'react'
+
 import { Modal, ModalClose, Button } from '@janhq/joi'
+
 import { useAtom, useAtomValue } from 'jotai'
+
 import useDeleteThread from '@/hooks/useDeleteThread'
+
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+
 import {
   modalActionThreadAtom,
   ThreadModalAction,
@@ -65,4 +70,4 @@ const ModalDeleteAllThreads = () => {
   )
 }
 
-export default memo(ModalDeleteAllThreads) 
+export default memo(ModalDeleteAllThreads)

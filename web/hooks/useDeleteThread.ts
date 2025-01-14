@@ -102,7 +102,6 @@ export default function useDeleteThread() {
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
         ?.deleteThread(thread.id as string)
         .catch(console.error)
-        
       deleteThreadState(thread.id as string)
       deleteMessages(thread.id as string)
     }

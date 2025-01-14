@@ -28,6 +28,8 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 import { useConfigurations } from '@/hooks/useConfigurations'
 import { useSettings } from '@/hooks/useSettings'
 
+import ModalDeleteAllThreads from '@/screens/Thread/ThreadLeftPanel/ModalDeleteAllThreads'
+
 import DataFolder from './DataFolder'
 import FactoryReset from './FactoryReset'
 
@@ -41,8 +43,8 @@ import {
 } from '@/helpers/atoms/AppConfig.atom'
 
 import { ThreadModalAction } from '@/helpers/atoms/Thread.atom'
+
 import { modalActionThreadAtom } from '@/helpers/atoms/Thread.atom'
-import ModalDeleteAllThreads from '@/screens/Thread/ThreadLeftPanel/ModalDeleteAllThreads'
 
 type GPU = {
   id: string
