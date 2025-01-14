@@ -10,16 +10,20 @@ import { MainViewState } from '@/constants/screens'
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const EmptyThread = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
+  const engines = useAtomValue(installedEnginesAtom)
   const showOnboardingStep = useMemo(
-    () => !downloadedModels.some((e) => isLocalEngine(e.engine) || e.engine),
-    [downloadedModels]
+    () =>
+      !downloadedModels.some(
+        (e) => isLocalEngine(engines, e.engine) || e.engine
+      ),
+    [downloadedModels, engines]
   )
-
   return (
     <div className="mx-auto flex h-full flex-col items-center justify-center text-center">
       <LogoMark className="mx-auto mb-2 animate-wave" width={32} height={32} />

@@ -33,6 +33,7 @@ import {
 } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
@@ -50,6 +51,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
+  const engines = useAtomValue(installedEnginesAtom)
 
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -71,11 +73,13 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
     }
   })
 
-  const remoteModel = configuredModels.filter((x) => !isLocalEngine(x.engine))
+  const remoteModel = configuredModels.filter(
+    (x) => !isLocalEngine(engines, x.engine)
+  )
 
   const filteredModels = configuredModels.filter((model) => {
     return (
-      isLocalEngine(model.engine) &&
+      isLocalEngine(engines, model.engine) &&
       model.name.toLowerCase().includes(searchValue.toLowerCase())
     )
   })

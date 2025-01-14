@@ -335,7 +335,9 @@ export default function ModelHandler() {
     if (!activeModelRef.current) return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
-    if (!isLocalEngine(activeModelRef.current?.engine as InferenceEngine)) {
+    if (
+      !isLocalEngine(engines, activeModelRef.current?.engine as InferenceEngine)
+    ) {
       const updatedThread: Thread = {
         ...thread,
         title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,

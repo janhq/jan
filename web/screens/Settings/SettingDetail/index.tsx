@@ -14,10 +14,12 @@ import Privacy from '@/screens/Settings/Privacy'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)
+  const engines = useAtomValue(installedEnginesAtom)
 
   switch (selectedSetting) {
     case 'Engines':
@@ -44,14 +46,14 @@ const SettingDetail = () => {
     default:
       if (
         !selectedSetting.includes('@janhq') &&
-        isLocalEngine(selectedSetting as InferenceEngine)
+        isLocalEngine(engines, selectedSetting as InferenceEngine)
       ) {
         return (
           <LocalEngineSettings engine={selectedSetting as InferenceEngine} />
         )
       } else if (
         !selectedSetting.includes('@janhq') &&
-        !isLocalEngine(selectedSetting as InferenceEngine)
+        !isLocalEngine(engines, selectedSetting as InferenceEngine)
       ) {
         return (
           <RemoteEngineSettings engine={selectedSetting as InferenceEngine} />
