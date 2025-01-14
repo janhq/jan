@@ -67,7 +67,7 @@ export default function useDeleteThread() {
     [deleteMessages, threads, updateThread]
   )
 
-  const deleteThread = async (threadId: string, allThreads: boolean = false) => {
+  const deleteThread = async (threadId: string) => {
     if (!threadId) {
       alert('No active thread')
       return
@@ -110,6 +110,11 @@ export default function useDeleteThread() {
     setThreads([])
     setCurrentPrompt('')
     setActiveThreadId(undefined)
+    toaster({
+      title: 'All threads successfully deleted.',
+      description: `All thread data has been successfully deleted.`,
+      type: 'success',
+    })
   }
 
   return {
