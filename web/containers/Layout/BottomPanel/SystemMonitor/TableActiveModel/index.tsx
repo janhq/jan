@@ -1,6 +1,6 @@
 import { Tooltip, Button, Badge } from '@janhq/joi'
 
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
@@ -8,10 +8,12 @@ import { toGibibytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const TableActiveModel = () => {
   const { activeModel, stateModel, stopModel } = useActiveModel()
+  const engines = useAtomValue(installedEnginesAtom)
 
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
@@ -19,7 +21,9 @@ const TableActiveModel = () => {
     <div className="w-1/2">
       <div className="overflow-hidden border-b border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          {activeModel && isLocalEngine(activeModel.engine) ? (
+          {activeModel &&
+          engines &&
+          isLocalEngine(engines, activeModel.engine) ? (
             <tbody>
               <tr>
                 <td

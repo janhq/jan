@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 
 import { Model } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import {
   MoreVerticalIcon,
   PlayIcon,
@@ -18,6 +18,7 @@ import { toGibibytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type Props = {
@@ -31,6 +32,7 @@ const MyModelList = ({ model }: Props) => {
   const { deleteModel } = useDeleteModel()
   const [more, setMore] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
+  const engines = useAtomValue(installedEnginesAtom)
 
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
@@ -54,14 +56,14 @@ const MyModelList = ({ model }: Props) => {
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                !isLocalEngine(model.engine) &&
+                !isLocalEngine(engines, model.engine) &&
                   'max-w-none text-[hsla(var(--text-secondary))]'
               )}
               title={model.name}
             >
               {model.name}
             </h6>
-            {isLocalEngine(model.engine) && (
+            {isLocalEngine(engines, model.engine) && (
               <div className="flex gap-x-8">
                 <p
                   className="line-clamp-1 text-[hsla(var(--text-secondary))] lg:min-w-[160px] lg:max-w-[160px] xl:max-w-none"
@@ -74,7 +76,7 @@ const MyModelList = ({ model }: Props) => {
           </div>
         </div>
 
-        {isLocalEngine(model.engine) && (
+        {isLocalEngine(engines, model.engine) && (
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">
