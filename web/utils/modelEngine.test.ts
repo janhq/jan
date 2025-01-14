@@ -25,38 +25,27 @@ describe('isLocalEngine', () => {
 
   it('should return false if engine is not found', () => {
     mockGet.mockReturnValue(null)
-    const result = isLocalEngine('nonexistentEngine')
+    const result = isLocalEngine(
+      {
+        'llama-cpp': [],
+      } as any,
+      'nonexistentEngine'
+    )
     expect(result).toBe(false)
   })
-
-  it('should return true if engine is an instance of LocalOAIEngine', () => {
-    const mockEngineObj = {
-      __proto__: {
-        constructor: {
-          __proto__: {
-            name: LocalOAIEngine.name,
+  it('should return true if this is a local engine', () => {
+    mockGet.mockReturnValue(null)
+    const result = isLocalEngine(
+      {
+        'llama-cpp': [
+          {
+            type: 'local',
           },
-        },
-      },
-    }
-    mockGet.mockReturnValue(mockEngineObj)
-    const result = isLocalEngine('localEngine')
+        ],
+      } as any,
+      'llama-cpp'
+    )
     expect(result).toBe(true)
-  })
-
-  it('should return false if engine is not an instance of LocalOAIEngine', () => {
-    const mockEngineObj = {
-      __proto__: {
-        constructor: {
-          __proto__: {
-            name: 'SomeOtherEngine',
-          },
-        },
-      },
-    }
-    mockGet.mockReturnValue(mockEngineObj)
-    const result = isLocalEngine('someOtherEngine')
-    expect(result).toBe(false)
   })
 
   jest.mock('@janhq/core', () => ({
