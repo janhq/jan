@@ -2,7 +2,6 @@
 /** @type {import('next').NextConfig} */
 
 const webpack = require('webpack')
-
 const packageJson = require('./package.json')
 
 const nextConfig = {
@@ -22,6 +21,10 @@ const nextConfig = {
       },
     ],
   },
+  env: {
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+  },
   webpack: (config) => {
     // do some stuff here
     config.optimization.minimize = false
@@ -29,6 +32,7 @@ const nextConfig = {
     config.plugins = [
       ...config.plugins,
       new webpack.DefinePlugin({
+        'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
         VERSION: JSON.stringify(packageJson.version),
         ANALYTICS_ID: JSON.stringify(process.env.ANALYTICS_ID),
         POSTHOG_KEY: JSON.stringify(process.env.POSTHOG_KEY),

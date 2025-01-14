@@ -1,12 +1,18 @@
 import { atom } from 'jotai'
-
 import { atomWithStorage } from 'jotai/utils'
-
 import { SettingScreen } from '@/screens/Settings'
 
-export const selectedSettingAtom = atom<SettingScreen | string>('My Models')
+export const selectedSettingAtom = atom<SettingScreen | string>('Account')
 
-export const janSettingScreenAtom = atom<SettingScreen[]>([])
+export const janSettingScreenAtom = atom<SettingScreen[]>([
+  'Account',
+  'My Models',
+  'Preferences',
+  'Keyboard Shortcuts',
+  'Privacy',
+  'Advanced Settings',
+  'Extensions',
+])
 
 export const THEME = 'themeAppearance'
 export const REDUCE_TRANSPARENT = 'reduceTransparent'

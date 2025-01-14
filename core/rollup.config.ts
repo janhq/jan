@@ -1,85 +1,70 @@
-import resolve from 'rollup-plugin-node-resolve'
-import commonjs from 'rollup-plugin-commonjs'
-import sourceMaps from 'rollup-plugin-sourcemaps'
-import typescript from 'rollup-plugin-typescript2'
-import json from 'rollup-plugin-json'
+import typescript from '@rollup/plugin-typescript'
+import commonjs from '@rollup/plugin-commonjs'
+import { nodeResolve } from '@rollup/plugin-node-resolve'
 import replace from '@rollup/plugin-replace'
+import json from '@rollup/plugin-json'
+import terser from '@rollup/plugin-terser'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
-const pkg = require('./package.json')
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(await import('./package.json', { assert: { type: 'json' } }))
 
-export default [
+const libraryName = 'core'
+
+/** @type {import('rollup').RollupOptions[]} */
+const config = [
+  // Browser-friendly UMD build
   {
-    input: `src/index.ts`,
-    output: [
-      // { file: pkg.main, name: libraryName, format: 'umd', sourcemap: true },
-      { file: pkg.main, format: 'es', sourcemap: true },
-    ],
-    // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: ['path'],
-    watch: {
-      include: 'src/**',
+    input: 'src/index.ts',
+    output: {
+      name: libraryName,
+      file: pkg.main,
+      format: 'umd',
+      sourcemap: true,
     },
     plugins: [
-      // Allow json resolution
-      json(),
-      // Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
-      // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
-      commonjs(),
-      // Allow node_modules resolution, so you can use 'external' to control
-      // which external modules to include in the bundle
-      // https://github.com/rollup/rollup-plugin-node-resolve#usage
       replace({
-        'preventAssignment': true,
-        'node:crypto': 'crypto',
-        'delimiters': ['"', '"'],
+        preventAssignment: true,
+        values: {
+          'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+        },
       }),
-      resolve({
-        browser: true,
+      nodeResolve(),
+      commonjs(),
+      typescript({
+        tsconfig: path.resolve(__dirname, 'tsconfig.json'),
+        declaration: true,
+        declarationDir: 'dist/types',
       }),
-
-      // Resolve source maps to the original source
-      sourceMaps(),
+      json(),
+      terser(),
     ],
   },
+  // CommonJS (for Node) and ES module (for bundlers) build
   {
-    input: `src/node/index.ts`,
-    output: [{ file: 'dist/node/index.cjs.js', format: 'cjs', sourcemap: true }],
-    // Indicate here external modules you don't wanna include in your bundle (i.e.: 'lodash')
-    external: [
-      'fs/promises',
-      'path',
-      'pacote',
-      '@types/pacote',
-      '@npmcli/arborist',
-      'ulidx',
-      'node-fetch',
-      'fs',
-      'request',
-      'crypto',
-      'url',
-      'http',
-      'os',
-      'util',
-      'child_process',
+    input: 'src/index.ts',
+    output: [
+      { file: pkg.module, format: 'cjs', sourcemap: true },
+      { file: pkg.module.replace('.cjs.', '.esm.'), format: 'es', sourcemap: true },
     ],
-    watch: {
-      include: 'src/node/**',
-    },
     plugins: [
-      // Allow json resolution
-      json(),
-      // Compile TypeScript files
-      typescript({ useTsconfigDeclarationDir: true }),
-      // Allow bundling cjs modules (unlike webpack, rollup doesn't understand cjs)
+      replace({
+        preventAssignment: true,
+        values: {
+          'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+        },
+      }),
+      nodeResolve(),
       commonjs(),
-      // Allow node_modules resolution, so you can use 'external' to control
-      // which external modules to include in the bundle
-      // https://github.com/rollup/rollup-plugin-node-resolve#usage
-      resolve(),
-
-      // Resolve source maps to the original source
-      sourceMaps(),
+      typescript({
+        tsconfig: path.resolve(__dirname, 'tsconfig.json'),
+        declaration: true,
+        declarationDir: 'dist/types',
+      }),
+      json(),
     ],
   },
 ]
+
+export default config

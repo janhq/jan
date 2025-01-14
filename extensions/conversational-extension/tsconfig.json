@@ -1,14 +1,17 @@
 {
   "compilerOptions": {
     "target": "es2016",
-    "module": "ES6",
+    "module": "ESNext",
     "moduleResolution": "node",
     "outDir": "./dist",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": false,
+    "strict": true,
     "skipLibCheck": true,
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationDir": "./dist",
+    "sourceMap": true
   },
   "include": ["./src"],
   "exclude": ["src/**/*.test.ts"]

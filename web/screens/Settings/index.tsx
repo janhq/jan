@@ -1,17 +1,14 @@
 import { useEffect } from 'react'
-
 import { useSetAtom } from 'jotai'
-
 import CenterPanelContainer from '@/containers/CenterPanelContainer'
-
 import SettingDetail from '@/screens/Settings/SettingDetail'
 import SettingLeftPanel from '@/screens/Settings/SettingLeftPanel'
-
 import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
-
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 export const SettingScreenList = [
+  'Account',
+  'Account Section',
   'My Models',
   'Preferences',
   'Keyboard Shortcuts',
