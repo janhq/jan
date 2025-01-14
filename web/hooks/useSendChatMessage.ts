@@ -226,15 +226,22 @@ export default function useSendChatMessage() {
     setIsGeneratingResponse(true)
 
     // Process message request with Assistants tools
-    const request = await ToolManager.instance().process(
-      requestBuilder.build(),
-      activeAssistantRef?.current.tools ?? []
-    )
+    if (window.electronAPI) {
+      const request = await ToolManager.instance().process(
+        requestBuilder.build(),
+        activeAssistantRef?.current.tools ?? []
+      )
 
-    // Request for inference
-    EngineManager.instance()
-      .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
-      ?.inference(request)
+      // Request for inference
+      EngineManager.instance()
+        .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
+        ?.inference(request)
+    } else {
+      // Request for inference
+      EngineManager.instance()
+        .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
+        ?.inference(requestBuilder.build())
+    }
 
     // Reset states
     setReloadModel(false)

@@ -19,6 +19,7 @@
     "copy:assets": "cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"themes/**\" \"electron/themes\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web": "yarn workspace @janhq/web dev",
+    "dev:web:standalone": "concurrently \"yarn workspace @janhq/web dev\" \"wait-on http://localhost:3000 && rsync -av --prune-empty-dirs --include '*/' --include 'dist/***' --include 'package.json' --include 'tsconfig.json' --exclude '*' ./extensions/ web/.next/static/extensions/\"",
     "dev:server": "yarn workspace @janhq/server dev",
     "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web\" \"yarn dev:electron\"",
     "build:server": "cd server && yarn build",
