@@ -1,0 +1,89 @@
+---
+title: Install Extensions
+description: A step-by-step guide on installing an extension.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Jan Extensions,
+    Extensions,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+
+
+# Install Extensions
+
+Jan comes with several [pre-installed extensions](/docs/extensions#core-extensions) that provide core functionalities. You can manually add custom third-party extensions at your own risk.
+
+## Create Extensions
+
+<Callout type="info">
+Jan currently only accepts `.tgz` file format for extensions.
+</Callout>
+
+> **Heads Up:**
+> - Please use the following structure and setup as a **reference** only.
+> - You're free to develop extensions using any approach or structure that works for your needs. As long as your extension can be packaged as a `.tgz` file, it can be installed in Jan. Feel free to experiment and innovate!
+> - If you already have your own `.tgz` extension file, please move forward to [install extension](/docs/install-extensions#install-extensions) step. 
+
+#### Extension Structure
+Your extension should follow this basic structure:
+
+```
+my-extension/
+├── package.json           # Extension metadata and dependencies
+├── dist/                 # Compiled JavaScript files
+│   └── index.js         # Main extension entry point
+├── src/                 # Source code
+│   └── index.ts        # TypeScript source
+└── README.md           # Extension documentation
+```
+
+#### Required package.json Fields
+```json
+{
+  "name": "@your-org/extension-name",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "jan": {
+    "type": "extension",
+    "displayName": "Your Extension Name",
+    "description": "Description of what your extension does"
+  },
+  "scripts": {
+    "build": "tsc",
+    "package": "npm pack"
+  },
+  "dependencies": {
+    // List your dependencies
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+#### Example Extension Template
+
+You can find a template for creating Jan extensions in our [example repository](https://github.com/janhq/extension-template).
+## Install Extensions 
+
+To install a custom extension in Jan:
+
+1. Navigate to [Jan Data Folder](/docs/data-folder):
+2. Copy `.tgz` extension file into the extensions directory
+3. Extract the `.tgz` file into its own folder under the extensions directory
+4. Restart Jan
+
+After restart, the `~/jan/data/extensions/extensions.json` file will be updated automatically to include your new extension.
+

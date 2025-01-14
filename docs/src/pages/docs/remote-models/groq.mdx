@@ -16,47 +16,72 @@ keywords:
 ---
 
 import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
 
-# Groq API
+# Groq
 
-## How to Integrate Groq API with Jan
+Jan supports [Groq](https://groq.com/) API integration, allowing you to use Groq's high-performance LLM models (LLaMA 2, Mixtral and more) through Jan's interface.
 
-This guide provides step-by-step instructions on integrating the Groq API with Jan, enabling users to leverage Groq's capabilities within Jan's conversational interface.
-
-Before proceeding, ensure you have the following:
-- Access to the Jan application
-- Groq API credentials
-
-## Integration Steps
+## Integrate Groq API with Jan
 
 <Steps>
-
-### Step 1: Configure Groq API Key
-1. Obtain Groq API Keys from your [Groq Console](https://console.groq.com/keys) dashboard.
-2. Copy your **Groq API Key**.
-3. There are three ways to configure your API Key in Jan app:
-  - Navigate to the **Jan app** > **Gear Icon (⚙️)** > **My Models** tab > **Add Icon (➕)** next to **Groq**.
-  - Navigate to the **Jan app** > **Thread** > **Model** tab > **Add Icon (➕)** next to **Groq**.
-  - Navigate to the **Jan app** > **Gear Icon (⚙️)** > **Groq** section under Model Providers.
-4. Insert your **Groq API Key**.
-
-### Step 2: Start Chatting with the Model
-
-1. Select the Groq model you want to use.
+### Step 1: Get Your API Key
+1. Visit [Groq Console](https://console.groq.com/keys) and sign in
+2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
-  The Groq Inference Engine is the default extension for the Jan application. All the Groq models are automatically installed when you install the Jan application.
+Ensure your API key has sufficient credits
 </Callout>
-2. Specify the model's parameters.
-3. Start the conversation with the Groq model.
+
+### Step 2: Configure Jan
+There are two ways to add your Groq API keys in Jan:
+
+**Through Threads:**
+1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
+2. Once the selector is poped up, choose the **Cloud** tab
+3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Groq**
+4. Once you are directed to Groq settings, insert your **API Key**
+
+**Through Settings:**
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Remote Engines**, select **Groq**
+3. Insert your **API Key**
+
+<br/>
+![Groq](../_assets/groq.png)
+<br/>
 
 
+### Step 3: Start Using Groq's Models
+
+1. In any existing **Threads** or create a new one
+2. Select a Groq model from **model selector**
+3. Start chatting
 </Steps>
+
+## Available Models Through Groq
+
+Jan automatically includes Groq's available models. In case you want to use a specific Groq model that you cannot find in **Jan**, follow instructions in [Manual Setup](/docs/models/manage-models#4-manual-setup) to add custom models:
+  - See list of available models in [Groq Documentation](https://console.groq.com/docs/models).
+  - The `id` property must match the model name in the list. For example, if you want to use Llama3.3 70B, you must set the `id` property to `llama-3.3-70b-versatile`.
 
 ## Troubleshooting
 
-If you encounter any issues during the integration process or while using Groq with Jan, consider the following troubleshooting steps:
+Common issues and solutions:
 
-- Double-check your API credentials to ensure they are correct.
-- Check for error messages or logs that may provide insight into the issue.
-- Reach out to Groq API support for assistance if needed.
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Check if you have billing set up on your Groq account
+- Ensure you have access to the model you're trying to use
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify Groq's system status
+- Look for error messages in [Jan's logs](/docs/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm your API key has access to the model
+- Check if you're using the correct model ID
+- Verify your Groq account has the necessary permissions
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [Groq documentation](https://console.groq.com/docs).

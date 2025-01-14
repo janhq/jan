@@ -17,28 +17,17 @@ description: Learn about Jan's default extensions and explore how to configure t
 ---
 
 import { Callout } from 'nextra/components'
+import { Settings, EllipsisVertical } from 'lucide-react'
 
 
-# Extensions Overview
+# Extensions 
 
-The current Jan Desktop Client has some default extensions built on this framework to enhance the user experience. There are two types of extensions:
-- Model Providers: These are extensions that enable Jan to support cloud-based models and provide the engine to support additional local models.
-- Core Extensions: These are built-in tools for managing and monitoring the Jan's system.
+## Overview
+Extensions are modular components that add functionality to Jan. Each extension is designed to handle specific features. 
 
-## List of Model Provider Extensions
-| Extension Name | Version | Description |
-|----------------|---------|-------------|
-| Anthropic      | v1.0.2  | This extension enables Anthropic chat completion API calls |
-| Cohere         | v1.0.0  | This extension enables Cohere chat completion API calls |
-| Groq           | v1.0.1  | This extension enables fast Groq chat completion API calls |
-| Martian        | v1.0.1  | This extension enables Martian chat completion API calls |
-| MistralAI      | v1.0.1  | This extension enables Mistral chat completion API calls |
-| TensorRT-LLM   | v0.0.3  | This extension enables Nvidia's TensorRT-LLM for the fastest GPU acceleration. See the setup guide for next steps |
-| NVIDIA NIM     | v1.0.1  | This extension enables NVIDIA chat completion API calls |
-| OpenAI         | v1.0.2  | This extension enables OpenAI chat completion API calls |
-| OpenRouter     | v1.0.0  | This extension enables Open Router chat completion API calls |
-| Triton-TRT-LLM | v1.0.0  | This extension enables Nvidia's Triton-TRT-LLM as an inference engine option |
+Extensions can be managed through **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Extensions**:
 
+<<<<<<< HEAD
 ## List of Core Extensions
 | Extension Name      | Version  | Description                                                                 |
 |---------------------|----------|-----------------------------------------------------------------------------|
@@ -303,60 +292,51 @@ To configure an extension settings:
 Jan offers an Extensions settings menu for configuring extensions that have registered their settings within the application. Here, you can directly integrate Remote Inference Engines with Jan without inserting the URL and API Key directly in the `JSON` file. Additionally, you can turn the Logging extensions available on or off in Jan. To access the Extension settings, follow the steps below:
 1. Navigate to the main dashboard.
 2. Click the **gear icon (⚙️)** on the bottom left of your screen.
+=======
+>>>>>>> e5b6901b57c5b7edcd5895316f84d742a2772202
 <br/>
-![Settings](./_assets/settings.png)
+![Remove Model](./_assets/extensions-01.png)
 <br/>
-3. Click **Extensions**.
-<br/>
-![Extensions](./_assets/extensions-page2.png)
 
-## Turn Off an Extension
+## Core Extensions 
 
-To turn off the extension, follow the steps below:
+### Cortex
+The primary extension that manages both **local** and **remote engines** capabilities:
 
-1. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-<br/>
-![Settings](./_assets/settings.png)
-<br/>
-2. Click the **Extensions** button.
-<br/>
-![Extensions](./_assets/extensions-page2.png)
-<br/>
-3. Click the slider button to turn off the extension.
+#### Local Engines
+[llama.cpp](/docs/local-engines/llama-cpp): Fast, efficient local inference engine that runs GGUF models directly on your device. Powers Jan's default local AI capabilities with support for multiple hardware configurations.
 
-4. Restart the app to see that the extension has been disabled.
+#### Remote Engines
+- [Anthropic](/docs/remote-models/anthropic): Access Claude models
+- [Cohere](/docs/remote-models/cohere): Access Cohere's models
+- [Groq](/docs/remote-models/groq): High-performance inference
+- [Martian](/docs/remote-models/martian): Specialized model access
+- [MistralAI](/docs/remote-models/mistralai): Access Mistral models
+- [NVIDIA NIM](/docs/remote-models/nvidia-nim) (NVIDIA Inference Microservices): Platform for deploying and serving GPU-accelerated AI models, providing enterprise-grade reliability and scalability.
+- [OpenAI](/docs/remote-models/openai): Access GPT models
+- [OpenRouter](/docs/remote-models/openrouter): Multi-provider model access
+- [Triton-TRT-LLM](/docs/remote-models/triton): High-performance inference backend using NVIDIA Triton Inference Server with TensorRT-LLM optimization, designed for large-scale model deployment.
 
-## Model Management
-The Model Management extension allows Jan's app to download specific models from Hugging Face repositories, which require an access token for access.
-1. Navigate to the main dashboard.
-2. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-<br/>
-![Settings](./_assets/settings.png)
-<br/>
-3. Under the **Core Extensions** section, select the **Model Management** extension.
 
-4. Enter the HuggingFace access token.
 
-## System Monitor
-The System Monitor extension now offers enhanced customization for app logging. Users can toggle the application logging feature on or off and set a custom interval for clearing the app logs. To configure the app log feature, follow these steps:
-1. Navigate to the main dashboard.
-2. Click the **Gear Icon (⚙️)** on the bottom left of your screen.
-<br/>
-![Settings](./_assets/settings.png)
-<br/>
-3. Under the **Core Extensions** section, select the **System Monitoring** extension.
-<br/>
-![System Monitoring extension](./_assets/system-monitor2.png)
-<br/>
-4. Use the **slider** to turn the app logging feature on or off.
-<br/>
-![System Monitoring Enable](./_assets/system-slider2.png)
-<br/>
-5. Specify the log cleaning interval in milliseconds.
-<br/>
-![System Monitoring Interval](./_assets/system-mili2.png)
-<br/>
-<Callout type='info'>
-  - You can clear the app logs manually by clicking the **Clear logs** button in the advanced settings.
-  - There are no minimum or maximum intervals for setting the time. However, invalid inputs will default to `120000ms (2 minutes)`.
-</Callout>
+### Jan Assistant
+Enables assistants functionality, including Jan - the default assistant that can utilize all downloaded models. This extension manages:
+- Default assistant configurations
+- Model selection
+- Conversation management
+
+### Conversational 
+Manages all chat-related functionality and data persistence:
+
+
+### [Model Management](/docs/extensions-settings/model-management)
+Provides model exploration and seamless downloads:
+- Model discovery and browsing
+- Version control & configuration handling
+- Download management
+
+### [System Monitoring](/docs/extensions-settings/system-monitoring)
+Provides system health and OS level data:
+- Hardware utilization tracking
+- Performance monitoring
+- Error logging
