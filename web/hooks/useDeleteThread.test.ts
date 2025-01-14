@@ -130,20 +130,14 @@ describe('useDeleteThread', () => {
     const mockSetThreads = jest.fn()
     ;(useAtom as jest.Mock).mockReturnValue([mockThreads, mockSetThreads])
     
-    // Tạo các mock functions riêng biệt
+    // create mock functions
     const mockSetCurrentPrompt = jest.fn()
-    const mockSetActiveThreadId = jest.fn()
-    const mockDeleteMessages = jest.fn()
-    const mockDeleteThreadState = jest.fn()
 
-    // Mock useSetAtom cho từng atom riêng biệt
+    // mock useSetAtom for each atom
     let currentAtom: any
     ;(useSetAtom as jest.Mock).mockImplementation((atom) => {
       currentAtom = atom
       if (currentAtom === currentPromptAtom) return mockSetCurrentPrompt
-      if (currentAtom === setActiveThreadIdAtom) return mockSetActiveThreadId
-      if (currentAtom === deleteChatMessagesAtom) return mockDeleteMessages
-      if (currentAtom === deleteThreadStateAtom) return mockDeleteThreadState
       return jest.fn()
     })
 
