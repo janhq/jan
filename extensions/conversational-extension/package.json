@@ -2,7 +2,7 @@
   "name": "@janhq/conversational-extension",
   "productName": "Conversational",
   "version": "1.0.0",
-  "description": "This extension enables conversations and state persistence via your filesystem",
+  "description": "Enables conversations and state persistence via your filesystem.",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",

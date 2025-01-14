@@ -180,7 +180,7 @@ const Tools = () => {
                     id="use-time-weighted-retriever"
                     className="inline-block font-medium"
                   >
-                    Time-Weighted Retrieval?
+                    Time-Weighted Retrieval
                   </label>
                   <Tooltip
                     trigger={
@@ -189,7 +189,7 @@ const Tools = () => {
                         className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
                       />
                     }
-                    content="Prioritizes newer documents while searching but still considers older ones. Newer content gets higher importance when finding relevant information."
+                    content="Prioritizes newer documents while searching but still considers older ones."
                   />
                   <div className="ml-auto flex items-center justify-between">
                     <Switch

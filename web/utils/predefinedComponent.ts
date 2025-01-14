@@ -56,7 +56,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   ngl: {
     key: 'ngl',
     title: 'Number of GPU layers (ngl)',
-    description: 'Controls how many layers of the model run on GPU. More layers means faster processing, but requires more GPU memory.',
+    description:
+      'Controls how many layers of the model run on GPU. More layers means faster processing, but requires more GPU memory.',
     controllerType: 'slider',
     controllerProps: {
       min: 1,
@@ -164,7 +165,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   chunk_size: {
     key: 'chunk_size',
     title: 'Chunk Size',
-    description: 'Sets the maximum number of tokens per data chunk. Increase size for processing large blocks of text efficiently, or decrease it to optimize memory usage.',
+    description:
+      'Sets the maximum number of tokens per data chunk. Increase size for processing large blocks of text efficiently, or decrease it to optimize memory usage.',
     controllerType: 'slider',
     controllerProps: {
       min: 128,
@@ -178,7 +180,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   chunk_overlap: {
     key: 'chunk_overlap',
     title: 'Chunk Overlap',
-    description: 'How many words overlap between text segments. More overlap helps maintain meaning across splits.',
+    description:
+      'How many words overlap between text segments. More overlap helps maintain meaning across splits.',
     controllerType: 'slider',
     controllerProps: {
       min: 32,
@@ -192,7 +195,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   top_k: {
     key: 'top_k',
     title: 'Top K',
-    description: 'Number of most relevant documents to retrieve. Higher values return more results.',
+    description:
+      'Number of most relevant documents to retrieve. Higher values return more results.',
     controllerType: 'slider',
     controllerProps: {
       min: 1,
@@ -206,8 +210,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   retrieval_template: {
     key: 'retrieval_template',
     title: 'Retrieval Template',
-    description:
-      'Format for how the AI uses context to answer questions.',
+    description: 'Format for how the AI uses context to answer questions.',
     controllerType: 'input',
     controllerProps: {
       placeholder: 'Retrieval Template',
