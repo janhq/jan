@@ -7,13 +7,12 @@ import {
   ModelExtension,
   events,
   ModelManager,
+  InferenceEngine,
 } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
-
-import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 
@@ -43,7 +42,7 @@ const useModels = () => {
       const remoteModels = ModelManager.instance()
         .models.values()
         .toArray()
-        .filter((e) => !isLocalEngine(e.engine))
+        .filter((e) => e.engine !== InferenceEngine.cortex_llamacpp)
       const toUpdate = [
         ...localModels,
         ...remoteModels.filter(
@@ -84,7 +83,7 @@ const useModels = () => {
       ...downloadedModels,
       ...cachedModels.filter(
         (e) =>
-          !isLocalEngine(e.engine) &&
+          e.engine !== InferenceEngine.cortex_llamacpp &&
           !downloadedModels.some((g: Model) => g.id === e.id)
       ),
     ])

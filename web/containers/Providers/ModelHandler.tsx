@@ -18,7 +18,7 @@ import {
   extractInferenceParams,
   ModelExtension,
 } from '@janhq/core'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
@@ -34,6 +34,7 @@ import {
   deleteMessageAtom,
   subscribedGeneratingMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   updateThreadWaitingForResponseAtom,
@@ -74,6 +75,7 @@ export default function ModelHandler() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
   const setTokenSpeed = useSetAtom(tokenSpeedAtom)
+  const engines = useAtomValue(installedEnginesAtom)
 
   useEffect(() => {
     activeThreadRef.current = activeThread
@@ -241,7 +243,8 @@ export default function ModelHandler() {
       } else if (
         message.status === MessageStatus.Error &&
         activeModelRef.current?.engine &&
-        isLocalEngine(activeModelRef.current.engine)
+        engines &&
+        isLocalEngine(engines, activeModelRef.current.engine)
       ) {
         ;(async () => {
           if (
@@ -332,7 +335,9 @@ export default function ModelHandler() {
     if (!activeModelRef.current) return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
-    if (!isLocalEngine(activeModelRef.current?.engine as InferenceEngine)) {
+    if (
+      !isLocalEngine(engines, activeModelRef.current?.engine as InferenceEngine)
+    ) {
       const updatedThread: Thread = {
         ...thread,
         title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,

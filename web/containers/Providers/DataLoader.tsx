@@ -6,6 +6,7 @@ import { AppConfiguration, getUserHomePath } from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
 import useAssistants from '@/hooks/useAssistants'
+import useEngines from '@/hooks/useEngines'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
@@ -25,6 +26,7 @@ const DataLoader: React.FC = () => {
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
   const { getData: loadModels } = useModels()
+  const { getData: loadEngines } = useEngines()
 
   useThreads()
   useAssistants()
@@ -33,6 +35,7 @@ const DataLoader: React.FC = () => {
   useEffect(() => {
     // Load data once
     loadModels()
+    loadEngines()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

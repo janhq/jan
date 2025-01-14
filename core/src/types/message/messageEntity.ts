@@ -32,9 +32,8 @@ export type ThreadMessage = {
   completed_at: number
   /** The additional metadata of this message. **/
   metadata?: Record<string, unknown>
-
+  /** Type of the message */
   type?: string
-
   /** The error code which explain what error type. Used in conjunction with MessageStatus.Error */
   error_code?: ErrorCode
 }
@@ -72,6 +71,10 @@ export type MessageRequest = {
   // TODO: deprecate threadId field
   thread?: Thread
 
+  /** Engine name to process */
+  engine?: string
+
+  /** Message type */
   type?: string
 }
 
@@ -147,7 +150,9 @@ export interface Attachment {
   /**
    * The tools to add this file to.
    */
-  tools?: Array<CodeInterpreterTool | Attachment.AssistantToolsFileSearchTypeOnly>
+  tools?: Array<
+    CodeInterpreterTool | Attachment.AssistantToolsFileSearchTypeOnly
+  >
 }
 
 export namespace Attachment {
@@ -166,5 +171,10 @@ export interface IncompleteDetails {
   /**
    * The reason the message is incomplete.
    */
-  reason: 'content_filter' | 'max_tokens' | 'run_cancelled' | 'run_expired' | 'run_failed'
+  reason:
+    | 'content_filter'
+    | 'max_tokens'
+    | 'run_cancelled'
+    | 'run_expired'
+    | 'run_failed'
 }

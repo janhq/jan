@@ -183,6 +183,7 @@ export class CortexAPI implements ICortexAPI {
     model.parameters = {
       ...extractInferenceParams(model),
       ...model.parameters,
+      ...model.inference_params,
     }
     model.settings = {
       ...extractModelLoadParams(model),

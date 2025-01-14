@@ -24,8 +24,6 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
-import { useStarterScreen } from '@/hooks/useStarterScreen'
-
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
@@ -35,6 +33,7 @@ import {
 } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
@@ -46,13 +45,13 @@ type Props = {
 }
 
 const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
-  const { extensionHasSettings } = useStarterScreen()
   const [searchValue, setSearchValue] = useState('')
   const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const { downloadModel } = useDownloadModel()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
+  const engines = useAtomValue(installedEnginesAtom)
 
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -74,11 +73,13 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
     }
   })
 
-  const remoteModel = configuredModels.filter((x) => !isLocalEngine(x.engine))
+  const remoteModel = configuredModels.filter(
+    (x) => !isLocalEngine(engines, x.engine)
+  )
 
   const filteredModels = configuredModels.filter((model) => {
     return (
-      isLocalEngine(model.engine) &&
+      isLocalEngine(engines, model.engine) &&
       model.name.toLowerCase().includes(searchValue.toLowerCase())
     )
   })
@@ -309,9 +310,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               onClick={() => {
                                 setMainViewState(MainViewState.Settings)
                                 setSelectedSetting(
-                                  extensionHasSettings.find((x) =>
-                                    x.name?.toLowerCase().includes(remoteEngine)
-                                  )?.setting as string
+                                  remoteEngine as InferenceEngine
                                 )
                               }}
                             >

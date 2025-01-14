@@ -1,4 +1,5 @@
 import { defineConfig } from 'rolldown'
+import { engines, models } from './engines.mjs'
 import pkgJson from './package.json' with { type: 'json' }
 
 export default defineConfig([
@@ -13,6 +14,8 @@ export default defineConfig([
       API_URL: JSON.stringify('http://127.0.0.1:39291'),
       SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
       CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.43'),
+      DEFAULT_REMOTE_ENGINES: JSON.stringify(engines),
+      DEFAULT_REMOTE_MODELS: JSON.stringify(models),
     },
   },
   {
