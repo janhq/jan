@@ -97,50 +97,63 @@ Let's say you have a custom API with this format:
 }
 ```
 
-Here's how to set it up in Jan:
+**Here's how to set it up in Jan:**
 ```
 Engine Name: Custom LLM
-API URL: https://api.customllm.com
 API Key: your_api_key_here
+Header template: your header template here
+Transform request template: your transform request template here
+Transform response template: your transform response template here
 ```
 
-**Conversion Functions:**
-> - Request: Convert from Jan's OpenAI-style format to your API's format
-> - Response: Convert from your API's format back to OpenAI-style format
-
-1. Request Format Conversion:
-```javascript
-function convertRequest(janRequest) {
-  return {
-    prompt: janRequest.messages[janRequest.messages.length - 1].content,
-    max_length: janRequest.max_tokens || 100,
-    temperature: janRequest.temperature || 0.7
-  }
+1. Header template
+```
+"Authorization: Bearer {{api_key}}"
+```
+2. Transform request template:
+Convert from Jan's OpenAI-style format to your API's format
+```
+"chat_completions": {
+  "url": "https://api.custom_endpoint.com/v1/messages",
+  "template": "{
+{% for key, value in input_request %}
+  {% if key == "messages" %} 
+    "prompt": "{{ last(input_request.messages).content }}"
+  {% else if key == "max_tokens" or key == "temperature" %}
+    "{{ key }}": {{ tojson(value) }}  
+  {% endif %}
+{% endfor %}
+}"
 }
 ```
 
-2. Response Format Conversion:
-```javascript
-function convertResponse(apiResponse) {
-  return {
-    choices: [{
-      message: {
-        role: "assistant",
-        content: apiResponse.generated_text
+
+3. Transform response template
+Convert from your API's format back to OpenAI-style format
+```
+"chat_completions": {
+"template": "{
+{
+  "choices": [{
+      "message": {
+        "role": "assistant",
+        "content": "{{ input_request.generated_text }}"
       }
     }],
-    usage: {
-      total_tokens: apiResponse.tokens_used
+    "usage": {
+      "total_tokens": {{ input_request.tokens_used }}
     }
-  }
+}
+}"
 }
 ```
+
 
 
 **Expected Formats:**
 
 1. Jan's Request Format
-```javascript
+```
 {
   "messages": [
     {"role": "user", "content": "What is AI?"}
@@ -151,7 +164,7 @@ function convertResponse(apiResponse) {
 ```
 
 2. Jan's Expected Response Format
-```javascript
+```
 {
   "choices": [{
     "message": {
