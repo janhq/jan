@@ -57,7 +57,10 @@ export default class Extension {
    * @type {string}
    */
   get specifier() {
-    return this.origin + (this.installOptions.version ? '@' + this.installOptions.version : '')
+    return (
+      this.origin +
+      (this.installOptions.version ? '@' + this.installOptions.version : '')
+    )
   }
 
   /**
@@ -75,8 +78,10 @@ export default class Extension {
   async getManifest() {
     // Get the package's manifest (package.json object)
     try {
-      await import('pacote').then((pacote) => {
-        return pacote.manifest(this.specifier, this.installOptions).then((mnf) => {
+      const pacote = require('pacote')
+      return pacote
+        .manifest(this.specifier, this.installOptions)
+        .then((mnf: any) => {
           // set the Package properties based on the it's manifest
           this.name = mnf.name
           this.productName = mnf.productName as string | undefined
@@ -84,9 +89,10 @@ export default class Extension {
           this.main = mnf.main
           this.description = mnf.description
         })
-      })
     } catch (error) {
-      throw new Error(`Package ${this.origin} does not contain a valid manifest: ${error}`)
+      throw new Error(
+        `Package ${this.origin} does not contain a valid manifest: ${error}`
+      )
     }
 
     return true
@@ -103,10 +109,13 @@ export default class Extension {
       await this.getManifest()
 
       // Install the package in a child folder of the given folder
-      const pacote = await import('pacote')
+      const pacote = require('pacote')
       await pacote.extract(
         this.specifier,
-        join(ExtensionManager.instance.getExtensionsPath() ?? '', this.name ?? ''),
+        join(
+          ExtensionManager.instance.getExtensionsPath() ?? '',
+          this.name ?? ''
+        ),
         this.installOptions
       )
 
@@ -169,13 +178,12 @@ export default class Extension {
    * @returns the latest available version if a new version is available or false if not.
    */
   async isUpdateAvailable() {
-    return import('pacote').then((pacote) => {
-      if (this.origin) {
-        return pacote.manifest(this.origin).then((mnf) => {
-          return mnf.version !== this.version ? mnf.version : false
-        })
-      }
-    })
+    const pacote = require('pacote')
+    if (this.origin) {
+      return pacote.manifest(this.origin).then((mnf: any) => {
+        return mnf.version !== this.version ? mnf.version : false
+      })
+    }
   }
 
   /**

@@ -1,7 +1,7 @@
 import {
   EngineManager,
   ErrorCode,
-  MessageStatus,
+  InferenceEngine,
   ThreadMessage,
 } from '@janhq/core'
 
@@ -13,8 +13,6 @@ import ModalTroubleShooting, {
 } from '@/containers/ModalTroubleShoot'
 
 import { MainViewState } from '@/constants/screens'
-
-import { isLocalEngine } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 
@@ -82,7 +80,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
           >
             {message.content[0]?.text?.value === 'Failed to fetch' &&
             engine &&
-            !isLocalEngine(String(engine?.name)) ? (
+            engine?.name !== InferenceEngine.cortex_llamacpp ? (
               <span>
                 No internet connection. <br /> Switch to an on-device model or
                 check connection.

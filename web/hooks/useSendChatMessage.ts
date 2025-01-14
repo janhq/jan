@@ -11,6 +11,7 @@ import {
   EngineManager,
   ToolManager,
   ThreadAssistantInfo,
+  InferenceEngine,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -232,9 +233,7 @@ export default function useSendChatMessage() {
     )
 
     // Request for inference
-    EngineManager.instance()
-      .get(requestBuilder.model?.engine ?? modelRequest.engine ?? '')
-      ?.inference(request)
+    EngineManager.instance().get(InferenceEngine.cortex)?.inference(request)
 
     // Reset states
     setReloadModel(false)

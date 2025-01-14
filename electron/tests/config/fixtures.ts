@@ -36,7 +36,7 @@ export async function setupElectron() {
   expect(appInfo).toBeTruthy()
 
   electronApp = await electron.launch({
-    args: [appInfo.main], // main file from package.json
+    args: [appInfo.main, '--no-sandbox'], // main file from package.json
     executablePath: appInfo.executable, // path to the Electron executable
     // recordVideo: { dir: Constants.VIDEO_DIR }, // Specify the directory for video recordings
   })

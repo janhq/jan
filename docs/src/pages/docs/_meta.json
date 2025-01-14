@@ -11,7 +11,7 @@
   "quickstart": {
     "title": "Quickstart"
   },
-  "desktop": "Desktop",
+  "desktop": "Installation",
   "data-folder": "Jan Data Folder",
   "privacy": "Privacy",
   "user-guides": {
@@ -23,23 +23,29 @@
   "assistants": "Assistants",
   "threads": "Threads",
   "settings": "Settings",
-  "shortcuts": "Keyboard Shortcuts",
   "inference-engines": {
-    "title": "MODEL PROVIDER",
+    "title": "ENGINES",
     "type": "separator"
   },
-  "built-in": "Built-in Models",
-  "remote-models": "Remote APIs",
+  "local-engines": "Local Engines",
+  "remote-models": "Remote Engines",
+  "install-engines": "Install Engines",
   "extensions-separator": {
     "title": "EXTENSIONS",
     "type": "separator"
   },
   "extensions": "Overview",
-  "installing-extension": "Installing an Extension",
+  "extensions-settings": "Extension Settings",
+  "configure-extensions": "Configure Extensions",
+  "install-extensions": "Install Extensions",
   "troubleshooting-separator": {
     "title": "TROUBLESHOOTING",
     "type": "separator"
   },
   "troubleshooting": "Troubleshooting",
-  "error-codes": "Error Codes"
+  "error-codes": {
+    "type": "page",
+    "display": "hidden",
+    "title": "Error Codes"
+  }
 }

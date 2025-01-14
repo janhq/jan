@@ -18,8 +18,6 @@ import { downloadModel } from './legacy/download'
 import { systemInformation } from '@janhq/core'
 import { deleteModelFiles } from './legacy/delete'
 
-declare const SETTINGS: Array<any>
-
 export enum Settings {
   huggingfaceToken = 'hugging-face-access-token',
 }

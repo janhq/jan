@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { EngineManager, Model } from '@janhq/core'
+import { EngineManager, InferenceEngine, Model } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
@@ -95,7 +95,7 @@ export function useActiveModel() {
     }
 
     localStorage.setItem(LAST_USED_MODEL_ID, model.id)
-    const engine = EngineManager.instance().get(model.engine)
+    const engine = EngineManager.instance().get(InferenceEngine.cortex)
     return engine
       ?.loadModel(model)
       .then(() => {
@@ -138,7 +138,7 @@ export function useActiveModel() {
       if (!stoppingModel || (stateModel.state === 'stop' && stateModel.loading))
         return
 
-      const engine = EngineManager.instance().get(stoppingModel.engine)
+      const engine = EngineManager.instance().get(InferenceEngine.cortex)
       return engine
         ?.unloadModel(stoppingModel)
         .catch((e) => console.error(e))

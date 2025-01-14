@@ -417,7 +417,7 @@ const Advanced = () => {
         )}
 
         {/* Vulkan for AMD GPU/ APU and Intel Arc GPU */}
-        {!isMac && gpuList.length > 0 && experimentalEnabled && (
+        {!isMac && experimentalEnabled && (
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="space-y-1">
               <div className="flex gap-x-2">

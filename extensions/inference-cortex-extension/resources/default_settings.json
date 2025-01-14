@@ -1,8 +1,8 @@
 [
   {
     "key": "cont_batching",
-    "title": "Continuous batching",
-    "description": "The number of parallel operations",
+    "title": "Continuous Batching",
+    "description": "Allows processing prompts in parallel with text generation, which usually improves performance.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": true
@@ -10,18 +10,32 @@
   },
   {
     "key": "n_parallel",
-    "title": "Parallel operations",
-    "description": "The number of parallel operations",
+    "title": "Parallel Operations",
+    "description": "Number of prompts that can be processed simultaneously by the model.",
     "controllerType": "input",
     "controllerProps": {
       "value": "4",
-      "placeholder": "4"
+      "placeholder": "4",
+      "type": "number",
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "cpu_threads",
+    "title": "CPU Threads",
+    "description": "Number of CPU cores used for model processing when running without GPU.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "Number of CPU threads",
+      "type": "number",
+      "textAlign": "right"
     }
   },
   {
     "key": "flash_attn",
-    "title": "Flash Attention enabled",
-    "description": "To enable Flash Attention, default is true",
+    "title": "Flash Attention",
+    "description": "Optimizes memory usage and speeds up model inference using an efficient attention implementation.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": true
@@ -30,8 +44,8 @@
 
   {
     "key": "caching_enabled",
-    "title": "Caching enabled",
-    "description": "To enable prompt caching or not",
+    "title": "Caching",
+    "description": "Stores recent prompts and responses to improve speed when similar questions are asked.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": true
@@ -40,17 +54,30 @@
   {
     "key": "cache_type",
     "title": "KV Cache Type",
-    "description": "KV cache type: f16, q8_0, q4_0, default is f16 (change this could break the model).",
-    "controllerType": "input",
+    "description": "Controls memory usage and precision trade-off.",
+    "controllerType": "dropdown",
     "controllerProps": {
-      "placeholder": "f16",
-      "value": "f16"
+      "value": "f16",
+      "options": [
+        {
+          "value": "q4_0",
+          "name": "q4_0"
+        },
+        {
+          "value": "q8_0",
+          "name": "q8_0"
+        },
+        {
+          "value": "f16",
+          "name": "f16"
+        }
+      ]
     }
   },
   {
     "key": "use_mmap",
-    "title": "To enable mmap",
-    "description": "To enable mmap, default is true",
+    "title": "MMAP",
+    "description": "Loads model files more efficiently by mapping them to memory, reducing RAM usage.",
     "controllerType": "checkbox",
     "controllerProps": {
       "value": true

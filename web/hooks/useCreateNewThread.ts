@@ -5,28 +5,23 @@ import {
   ExtensionTypeEnum,
   Thread,
   ThreadAssistantInfo,
-  ThreadState,
   AssistantTool,
   Model,
   Assistant,
 } from '@janhq/core'
-import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import { copyOverInstructionEnabledAtom } from '@/containers/CopyInstruction'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { toaster } from '@/containers/Toast'
-
-import { isLocalEngine } from '@/utils/modelEngine'
-
-import { useActiveModel } from './useActiveModel'
 
 import useRecommendedModel from './useRecommendedModel'
 import useSetActiveThread from './useSetActiveThread'
 
 import { extensionManager } from '@/extension'
+import { copyOverInstructionEnabledAtom } from '@/helpers/atoms/App.atom'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
@@ -35,7 +30,6 @@ import {
   threadsAtom,
   updateThreadAtom,
   setThreadModelParamsAtom,
-  isGeneratingResponseAtom,
   createNewThreadAtom,
 } from '@/helpers/atoms/Thread.atom'
 
@@ -52,10 +46,8 @@ export const useCreateNewThread = () => {
   const [activeAssistant, setActiveAssistant] = useAtom(activeAssistantAtom)
 
   const experimentalEnabled = useAtomValue(experimentalFeatureEnabledAtom)
-  const setIsGeneratingResponse = useSetAtom(isGeneratingResponseAtom)
 
   const threads = useAtomValue(threadsAtom)
-  const { stopInference } = useActiveModel()
 
   const { recommendedModel } = useRecommendedModel()
 
@@ -63,10 +55,6 @@ export const useCreateNewThread = () => {
     assistant: (ThreadAssistantInfo & { id: string; name: string }) | Assistant,
     model?: Model | undefined
   ) => {
-    // Stop generating if any
-    setIsGeneratingResponse(false)
-    stopInference()
-
     const defaultModel = model || recommendedModel
 
     if (!model) {
@@ -98,16 +86,19 @@ export const useCreateNewThread = () => {
     )
 
     const overriddenSettings = {
-      ctx_len: !isLocalEngine(defaultModel?.engine)
-        ? undefined
-        : defaultContextLength,
+      ctx_len: defaultModel?.settings.ctx_len
+        ? Math.min(8192, defaultModel.settings.ctx_len)
+        : undefined,
     }
 
     // Use ctx length by default
     const overriddenParameters = {
-      max_tokens: !isLocalEngine(defaultModel?.engine)
-        ? (defaultModel?.parameters.token_limit ?? 8192)
-        : defaultContextLength,
+      max_tokens: defaultContextLength
+        ? Math.min(
+            defaultModel?.parameters.max_tokens ?? 8192,
+            defaultContextLength
+          )
+        : defaultModel?.parameters.max_tokens,
     }
 
     const createdAt = Date.now()
@@ -141,7 +132,6 @@ export const useCreateNewThread = () => {
     }
 
     // add the new thread on top of the thread list to the state
-    //TODO: Why do we have thread list then thread states? Should combine them
     try {
       const createdThread = await persistNewThread(thread, assistantInfo)
       if (!createdThread) throw 'Thread created failed.'

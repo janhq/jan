@@ -1,4 +1,4 @@
-import { EngineManager, InferenceEngine, LocalOAIEngine } from '@janhq/core'
+import { Engines, InferenceEngine } from '@janhq/core'
 
 export const getLogoEngine = (engine: InferenceEngine) => {
   switch (engine) {
@@ -38,28 +38,23 @@ export const getLogoEngine = (engine: InferenceEngine) => {
  * @param engine
  * @returns
  */
-export const isLocalEngine = (engine?: string) => {
-  if (!engine) return false
+export const isLocalEngine = (engines?: Engines, engine?: string) => {
+  if (!engines || !engine) return false
 
-  const engineObj = EngineManager.instance().get(engine)
-  if (!engineObj) return false
-  return (
-    Object.getPrototypeOf(engineObj).constructor.__proto__.name ===
-    LocalOAIEngine.name
-  )
+  return engines[engine as InferenceEngine]?.[0]?.type === 'local'
 }
 
 export const getTitleByEngine = (engine: InferenceEngine) => {
   switch (engine) {
     case InferenceEngine.nitro:
     case InferenceEngine.cortex_llamacpp:
-      return 'Llama.cpp (Cortex)'
+      return 'Llama.cpp'
     case InferenceEngine.nitro_tensorrt_llm:
       return 'TensorRT-LLM (Nitro)'
     case InferenceEngine.cortex_onnx:
-      return 'Onnx (Cortex)'
+      return 'Onnx'
     case InferenceEngine.cortex_tensorrtllm:
-      return 'TensorRT-LLM (Cortex)'
+      return 'TensorRT-LLM'
     case InferenceEngine.openai:
       return 'OpenAI'
     case InferenceEngine.openrouter:

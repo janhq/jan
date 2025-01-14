@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { InferenceEngine, MessageStatus } from '@janhq/core'
+import { InferenceEngine } from '@janhq/core'
 
 import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
@@ -35,22 +35,20 @@ import RichTextEditor from './RichTextEditor'
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeSettingInputBoxAtom,
   activeThreadAtom,
   getActiveThreadIdAtom,
-  isGeneratingResponseAtom,
-  threadStatesAtom,
+  isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
   const { stateModel } = useActiveModel()
-  const messages = useAtomValue(getCurrentChatMessagesAtom)
   const spellCheck = useAtomValue(spellCheckAtom)
 
   const [currentPrompt, setCurrentPrompt] = useAtom(currentPromptAtom)
@@ -62,13 +60,13 @@ const ChatInput = () => {
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  const [showAttachmentMenus, setShowAttachmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const engines = useAtomValue(installedEnginesAtom)
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
-  const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
-  const threadStates = useAtomValue(threadStatesAtom)
+  const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
 
@@ -77,11 +75,9 @@ const ChatInput = () => {
     activeTabThreadRightPanelAtom
   )
 
-  const isStreamingResponse = Object.values(threadStates).some(
-    (threadState) => threadState.waitingForResponse
+  const refAttachmentMenus = useClickOutside(() =>
+    setShowAttachmentMenus(false)
   )
-
-  const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
 
   useEffect(() => {
@@ -101,6 +97,7 @@ const ChatInput = () => {
   }
 
   const isModelSupportRagAndTools = isLocalEngine(
+    engines,
     selectedModel?.engine as InferenceEngine
   )
 
@@ -177,7 +174,7 @@ const ChatInput = () => {
                   ) {
                     e.stopPropagation()
                   } else {
-                    setShowAttacmentMenus(!showAttacmentMenus)
+                    setShowAttachmentMenus(!showAttachmentMenus)
                   }
                 }}
               >
@@ -222,7 +219,7 @@ const ChatInput = () => {
           />
         )}
 
-        {showAttacmentMenus && (
+        {showAttachmentMenus && (
           <div
             ref={refAttachmentMenus}
             className={twMerge(
@@ -242,7 +239,7 @@ const ChatInput = () => {
                 onClick={() => {
                   if (activeAssistant?.model.settings?.vision_model) {
                     imageInputRef.current?.click()
-                    setShowAttacmentMenus(false)
+                    setShowAttachmentMenus(false)
                   }
                 }}
               >
@@ -262,7 +259,7 @@ const ChatInput = () => {
                     onClick={() => {
                       if (isModelSupportRagAndTools) {
                         fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
+                        setShowAttachmentMenus(false)
                       }
                     }}
                   >
@@ -302,9 +299,7 @@ const ChatInput = () => {
               </div>
             )}
 
-            {messages[messages.length - 1]?.status !== MessageStatus.Pending &&
-            !isGeneratingResponse &&
-            !isStreamingResponse ? (
+            {!isBlockingSend ? (
               <>
                 {currentPrompt.length !== 0 && (
                   <Button
