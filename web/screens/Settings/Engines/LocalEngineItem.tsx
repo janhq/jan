@@ -19,7 +19,7 @@ const LocalEngineItems = ({ engine }: { engine: InferenceEngine }) => {
   const manualDescription = (engine: string) => {
     switch (engine) {
       case InferenceEngine.cortex_llamacpp:
-        return 'Fast, efficient local inference engine that runs GGUFmodels directly on your device'
+        return 'Fast, efficient local inference engine that runs GGUF models directly on your device'
 
       default:
         break
