@@ -54,8 +54,8 @@ export function requestInference(
           model.parameters?.stream === false
         ) {
           const data = await response.json()
-          if (data.error) {
-            subscriber.error(data.error)
+          if (data.error || data.message) {
+            subscriber.error(data.error ?? data)
             subscriber.complete()
             return
           }
