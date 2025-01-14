@@ -31,7 +31,6 @@ import SetupRemoteModel from '@/containers/SetupRemoteModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
-import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
@@ -95,7 +94,7 @@ const ModelDropdown = ({
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
 
-  const featuredModel = configuredModels.filter(
+  const featuredModels = configuredModels.filter(
     (x) =>
       manualRecommendationModel.includes(x.id) &&
       x.metadata?.tags?.includes('Featured') &&
@@ -379,6 +378,12 @@ const ModelDropdown = ({
           <ScrollArea className="h-[calc(100%-90px)] w-full">
             {engineList
               .filter((e) => e.type === searchFilter)
+              .filter(
+                (e) =>
+                  e.type === 'remote' ||
+                  e.name === InferenceEngine.cortex_llamacpp ||
+                  filteredDownloadedModels.some((e) => e.engine === e.name)
+              )
               .map((engine, i) => {
                 const isConfigured =
                   engine.type === 'local' ||
@@ -450,7 +455,7 @@ const ModelDropdown = ({
                         showModel &&
                         !searchText.length && (
                           <ul className="pb-2">
-                            {featuredModel.map((model) => {
+                            {featuredModels.map((model) => {
                               const isDownloading = downloadingModels.some(
                                 (md) => md === model.id
                               )

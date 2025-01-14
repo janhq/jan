@@ -2,11 +2,7 @@ import { useCallback, useEffect } from 'react'
 
 import {
   ExtensionTypeEnum,
-  Model,
-  ModelEvent,
-  ModelExtension,
   events,
-  ModelManager,
   EngineEvent,
   EngineManagementExtension,
   Engines,

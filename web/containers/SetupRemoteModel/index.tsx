@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react'
-
 import { InferenceEngine } from '@janhq/core'
 
 import { Button } from '@janhq/joi'

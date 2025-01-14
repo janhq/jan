@@ -1,4 +1,4 @@
-import { EngineConfig, Engines } from '@janhq/core'
+import { Engines } from '@janhq/core'
 import { atom } from 'jotai'
 
 /**
