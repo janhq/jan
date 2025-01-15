@@ -248,10 +248,10 @@ const ModelDropdown = ({
           ctx_len: model?.settings.ctx_len ? defaultContextLength : undefined,
           max_tokens: defaultContextLength
             ? Math.min(
-                model?.parameters.token_limit ?? 8192,
+                model?.parameters.max_tokens ?? 8192,
                 defaultContextLength
               )
-            : model?.parameters.token_limit,
+            : model?.parameters.max_tokens,
         }
 
         const modelParams = {
