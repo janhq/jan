@@ -23,10 +23,15 @@ import { Settings, EllipsisVertical } from 'lucide-react'
 
 Jan includes a built-in API server that is compatible with OpenAI's API specification, allowing you to interact with AI models through a local HTTP interface. This means you can use Jan as a drop-in replacement for OpenAI's API, but running entirely on your computer.
 
-
 <Callout>
 Full API documentation is available at [Cortex's API Reference](https://cortex.so/api-reference#tag/chat).
 </Callout>
+
+<br/>
+![Local API Server](./_assets/api-server.png)
+<br/>
+
+
 
 ## Start Server
 
@@ -90,22 +95,29 @@ Enable to show:
 
 ## Troubleshooting Guide
 
-1. Server Won't Start
-   - Check if the port is already in use
-   - Verify you have admin/sudo rights if needed
-   - Look for error messages in the logs
+<Callout>
+Enable **Verbose Server Logs** for detailed error messages.
+</Callout>
 
-2. Connection Refused
+**1. Common Issues**
    - Confirm the server is running
-   - Check if the host/port combination is correct
-   - Verify firewall settings
+   - Check if model is successfully loaded in Jan
 
-3. CORS Errors
-   - Enable CORS if making browser requests
+   - Check if the port is already in use by another application
+   - Verify you have admin/sudo rights if needed
+   - Make sure your API endpoint matches your server settings. Example: Using `http://localhost:1337` when you set a different port.
+   - Make sure the model name in your API request matches exactly what's shown in Jan. Example: If you selected "Llama 3.2 1B Instruct Q8" in Jan, use `llama3.2-1b-instruct` in your API request.
+   - Verify your JSON request format is correct
+   - Verify firewall settings
+   - Look for detailed error messages in the logs
+
+**2. CORS Errors in Web Apps**
+   - Enable CORS in server settings if using from a webpage
    - Verify the origin of the request
+   - Verify your web app's request URL matches the server address exactly
    - Check browser console for specific error messages
 
-4. Performance Issues
+**3. Performance Issues**
    - Monitor system resources (CPU, RAM, and GPU usage)
    - Try to reduce the context length or `ngl` (number of GPU layers)
    - Check for other resource-intensive applications
