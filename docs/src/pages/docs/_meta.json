@@ -23,6 +23,7 @@
   "assistants": "Assistants",
   "threads": "Threads",
   "settings": "Settings",
+  "api-server": "Local API Server",
   "inference-engines": {
     "title": "ENGINES",
     "type": "separator"
