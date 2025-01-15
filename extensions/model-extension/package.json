@@ -2,7 +2,7 @@
   "name": "@janhq/model-extension",
   "productName": "Model Management",
   "version": "1.0.35",
-  "description": "This extension manages model lists, model details, and model configurations",
+  "description": "Handles model lists, their details, and settings.",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",

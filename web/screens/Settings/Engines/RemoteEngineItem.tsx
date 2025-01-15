@@ -50,7 +50,7 @@ const RemoteEngineItems = ({
             <div className="mt-2 w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
               <p>
                 Access models from {getTitleByEngine(engine as InferenceEngine)}{' '}
-                via their API
+                via their API.
               </p>
             </div>
           </div>

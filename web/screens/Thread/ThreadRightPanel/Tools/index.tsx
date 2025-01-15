@@ -115,10 +115,7 @@ const Tools = () => {
                       className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
                     />
                   }
-                  content="Retrieval helps the assistant use information from
-                      files you send to it. Once you share a file, the
-                      assistant automatically fetches the relevant content
-                      based on your request."
+                  content="Allows assistant to pull information from your uploaded files to provide context-aware responses."
                 />
               </label>
               <div className="flex items-center justify-between">
@@ -147,13 +144,7 @@ const Tools = () => {
                         className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
                       />
                     }
-                    content="Embedding model is crucial for understanding and
-                        processing the input text effectively by
-                        converting text to numerical representations.
-                        Align the model choice with your task, evaluate
-                        its performance, and consider factors like
-                        resource availability. Experiment to find the best
-                        fit for your specific use case."
+                    content="Converts text into numbers for AI processing."
                   />
                 </div>
                 <div className="w-full">
@@ -174,11 +165,7 @@ const Tools = () => {
                           className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
                         />
                       }
-                      content="Vector Database is crucial for efficient storage
-                          and retrieval of embeddings. Consider your
-                          specific task, available resources, and language
-                          requirements. Experiment to find the best fit for
-                          your specific use case."
+                      content="Stores and searches text data efficiently. Pick settings that balance speed and accuracy for your data size."
                     />
                   </label>
                 </div>
@@ -193,7 +180,7 @@ const Tools = () => {
                     id="use-time-weighted-retriever"
                     className="inline-block font-medium"
                   >
-                    Time-Weighted Retrieval?
+                    Time-Weighted Retrieval
                   </label>
                   <Tooltip
                     trigger={
@@ -202,11 +189,7 @@ const Tools = () => {
                         className="ml-2 flex-shrink-0 text-[hsl(var(--text-secondary))]"
                       />
                     }
-                    content="Time-Weighted Retriever looks at how similar
-                                they are and how new they are. It compares
-                                documents based on their meaning like usual, but
-                                also considers when they were added to give
-                                newer ones more importance."
+                    content="Prioritizes newer documents while searching but still considers older ones."
                   />
                   <div className="ml-auto flex items-center justify-between">
                     <Switch

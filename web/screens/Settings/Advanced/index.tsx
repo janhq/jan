@@ -240,7 +240,8 @@ const Advanced = () => {
               <h6 className="font-semibold capitalize">Experimental Mode</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Enable new features that may be unstable.
+              New features that are still unstable and could affect app
+              performance. Enable with caution.
             </p>
           </div>
           <Switch
@@ -454,8 +455,8 @@ const Advanced = () => {
               <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Specify the HTTPS proxy or leave blank (proxy auto-configuration
-              and SOCKS not supported).
+              Optional proxy server for internet connections. Only HTTPS proxies
+              supported.
             </p>
           </div>
 
@@ -509,7 +510,7 @@ const Advanced = () => {
                 <h6 className="font-semibold capitalize">Jan Quick Ask</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Enable Quick Ask to be triggered via the default hotkey{' '}
+                Enable Quick Ask to be triggered via the default hotkey .
                 <span className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
                   <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
                 </span>{' '}

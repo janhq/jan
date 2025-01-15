@@ -2,7 +2,7 @@
   "name": "@janhq/monitoring-extension",
   "productName": "System Monitoring",
   "version": "1.0.10",
-  "description": "This extension provides system health and OS level data",
+  "description": "Provides system health and OS level data.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",

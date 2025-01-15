@@ -2,7 +2,7 @@
   "name": "@janhq/engine-management-extension",
   "productName": "Engine Management",
   "version": "1.0.0",
-  "description": "Extension for managing engines and their configurations",
+  "description": "Manages AI engines and their configurations.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",

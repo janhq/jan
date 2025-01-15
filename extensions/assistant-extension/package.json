@@ -2,7 +2,7 @@
   "name": "@janhq/assistant-extension",
   "productName": "Jan Assistant",
   "version": "1.0.2",
-  "description": "This extension enables assistants, including Jan, a default assistant that can call all downloaded models",
+  "description": "Powers the default AI assistant that works with all your installed models.",
   "main": "dist/index.js",
   "node": "dist/node/index.js",
   "author": "Jan <service@jan.ai>",
