@@ -2,8 +2,7 @@ import React from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 import { ScrollArea } from '@janhq/joi'
-
-import { useGetEngines } from '@/hooks/useEngineManagement'
+import { useAtomValue } from 'jotai'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
@@ -11,8 +10,10 @@ import LocalEngineItems from './LocalEngineItem'
 import ModalAddRemoteEngine from './ModalAddRemoteEngine'
 import RemoteEngineItems from './RemoteEngineItem'
 
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
+
 const Engines = () => {
-  const { engines } = useGetEngines()
+  const engines = useAtomValue(installedEnginesAtom)
 
   return (
     <ScrollArea className="h-full w-full">
