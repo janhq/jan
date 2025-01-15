@@ -7,6 +7,10 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import useDeleteThread from './useDeleteThread'
 import { extensionManager } from '@/extension/ExtensionManager'
 import { useCreateNewThread } from './useCreateNewThread'
+import { Thread } from '@janhq/core/dist/types/types'
+import { currentPromptAtom } from '@/containers/Providers/Jotai'
+import { setActiveThreadIdAtom, deleteThreadStateAtom } from '@/helpers/atoms/Thread.atom'
+import { deleteChatMessageAtom as deleteChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 // Mock the necessary dependencies
 // Mock dependencies
 jest.mock('jotai', () => ({
@@ -116,5 +120,45 @@ describe('useDeleteThread', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.any(Error))
 
     consoleErrorSpy.mockRestore()
+  })
+
+  it('should delete all threads successfully', async () => {
+    const mockThreads = [
+      { id: 'thread1', title: 'Thread 1' },
+      { id: 'thread2', title: 'Thread 2' },
+    ]
+    const mockSetThreads = jest.fn()
+    ;(useAtom as jest.Mock).mockReturnValue([mockThreads, mockSetThreads])
+    
+    // create mock functions
+    const mockSetCurrentPrompt = jest.fn()
+
+    // mock useSetAtom for each atom
+    let currentAtom: any
+    ;(useSetAtom as jest.Mock).mockImplementation((atom) => {
+      currentAtom = atom
+      if (currentAtom === currentPromptAtom) return mockSetCurrentPrompt
+      return jest.fn()
+    })
+
+    const mockDeleteThread = jest.fn().mockImplementation(() => ({
+      catch: () => jest.fn,
+    }))
+
+    extensionManager.get = jest.fn().mockReturnValue({
+      deleteThread: mockDeleteThread,
+    })
+
+    const { result } = renderHook(() => useDeleteThread())
+
+    await act(async () => {
+      await result.current.deleteAllThreads(mockThreads as Thread[])
+    })
+
+    expect(mockDeleteThread).toHaveBeenCalledTimes(2)
+    expect(mockDeleteThread).toHaveBeenCalledWith('thread1')
+    expect(mockDeleteThread).toHaveBeenCalledWith('thread2')
+    expect(mockSetThreads).toHaveBeenCalledWith([])
+    expect(mockSetCurrentPrompt).toHaveBeenCalledWith('')
   })
 })
