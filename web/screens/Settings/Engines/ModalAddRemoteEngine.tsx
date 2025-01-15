@@ -49,7 +49,7 @@ const ModalAddRemoteEngine = () => {
     await addRemoteEngine({
       type: 'remote',
       engine: data.engineName,
-      url: 'Dummy URL',
+      url: ' ',
       api_key: data.apiKey,
       metadata: {
         header_template: data.headerTemplate,
