@@ -33,6 +33,11 @@ export const getConfigurationsData = (
                 componentSetting.controllerProps.max ||
                 2048
               break
+            case 'ngl':
+              componentSetting.controllerProps.max =
+                selectedModel?.settings.ngl ||
+                componentSetting.controllerProps.max ||
+                100
           }
         }
       }
