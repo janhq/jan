@@ -22,8 +22,9 @@ import { twMerge } from 'tailwind-merge'
 
 import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { getAPIKeyInstructionURL, getTitleByEngine } from '@/utils/modelEngine'
+
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const RemoteEngineSettings = ({
   engine: name,
