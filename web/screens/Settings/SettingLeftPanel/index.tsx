@@ -144,6 +144,7 @@ const SettingLeftPanel = () => {
 
         {extensionHasSettings
           .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+          .filter((e) => !e.name?.includes('Cortex'))
           .map((item) => (
             <SettingItem
               key={item.name}

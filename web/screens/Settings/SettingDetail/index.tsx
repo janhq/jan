@@ -59,7 +59,11 @@ const SettingDetail = () => {
           <RemoteEngineSettings engine={selectedSetting as InferenceEngine} />
         )
       }
-      return <ExtensionSetting />
+      return (
+        <div className="mx-4">
+          <ExtensionSetting />
+        </div>
+      )
   }
 }
 

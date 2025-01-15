@@ -56,7 +56,7 @@ const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {
     <div className="flex h-full w-full flex-col overflow-y-auto">
       {components.map((component, index) => (
         <div
-          className={`mx-4 ${index === components.length - 1 ? '' : 'border-b border-[hsla(var(--app-border))]'}`}
+          className={`${index === components.length - 1 ? '' : 'border-b border-[hsla(var(--app-border))]'}`}
           key={index}
         >
           {component}

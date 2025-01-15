@@ -87,7 +87,7 @@ const SettingDetailTextInputItem = ({
       <div
         className={twMerge(
           'w-full flex-shrink-0 pr-1 sm:w-1/2',
-          type === 'number' && 'sm:w-22 w-24'
+          type === 'number' && 'sm:w-22 w-50'
         )}
       >
         <Input

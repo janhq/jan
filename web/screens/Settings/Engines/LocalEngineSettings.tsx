@@ -23,6 +23,8 @@ import {
 
 import { formatDownloadPercentage } from '@/utils/converter'
 
+import ExtensionSetting from '../ExtensionSetting'
+
 import DeleteEngineVariant from './DeleteEngineVariant'
 const os = () => {
   switch (PLATFORM) {
@@ -338,6 +340,11 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
               </div>
             </div>
           </div>
+        </div>
+        <div className="border-b border-[hsla(var(--app-border))]" />
+        <div className="flex w-full border-b border-[hsla(var(--app-border))]">
+          {/* TODO: Pull settings from engine when it's supported */}
+          <ExtensionSetting extensionName="@janhq/inference-cortex-extension" />
         </div>
       </div>
     </ScrollArea>
