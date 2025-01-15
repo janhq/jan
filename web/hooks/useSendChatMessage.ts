@@ -110,7 +110,7 @@ export default function useSendChatMessage() {
     }
 
     if (toSendMessage?.content[0]?.text?.value)
-      sendChatMessage(toSendMessage.content[0].text.value, true)
+      sendChatMessage(toSendMessage.content[0].text.value, true, newConvoData)
   }
 
   const sendChatMessage = async (
@@ -176,27 +176,27 @@ export default function useSendChatMessage() {
       messages ?? currentMessages
     ).addSystemMessage(activeAssistantRef.current?.instructions)
 
+    requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
+
+    // Build Thread Message to persist
+    const threadMessageBuilder = new ThreadMessageBuilder(
+      requestBuilder
+    ).pushMessage(prompt, base64Blob, fileUpload)
+
+    const newMessage = threadMessageBuilder.build()
+
+    // Update thread state
+    const updatedThread: Thread = {
+      ...activeThreadRef.current,
+      updated: newMessage.created_at,
+      metadata: {
+        ...activeThreadRef.current.metadata,
+        lastMessage: prompt,
+      },
+    }
+    updateThread(updatedThread)
+
     if (!isResend) {
-      requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
-
-      // Build Thread Message to persist
-      const threadMessageBuilder = new ThreadMessageBuilder(
-        requestBuilder
-      ).pushMessage(prompt, base64Blob, fileUpload)
-
-      const newMessage = threadMessageBuilder.build()
-
-      // Update thread state
-      const updatedThread: Thread = {
-        ...activeThreadRef.current,
-        updated: newMessage.created_at,
-        metadata: {
-          ...activeThreadRef.current.metadata,
-          lastMessage: prompt,
-        },
-      }
-      updateThread(updatedThread)
-
       // Add message
       const createdMessage = await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
