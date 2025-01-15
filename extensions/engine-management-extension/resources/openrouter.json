@@ -2,7 +2,7 @@
   "id": "@janhq/inference-openrouter-extension",
   "type": "remote",
   "engine": "openrouter",
-  "url": "https://openrouter.ai",
+  "url": "https://openrouter.ai/keys",
   "api_key": "",
   "metadata": {
     "get_models_url": "https://openrouter.ai/api/v1/models",
