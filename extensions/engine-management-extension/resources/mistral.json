@@ -2,7 +2,7 @@
   "id": "@janhq/inference-mistral-extension",
   "type": "remote",
   "engine": "mistral",
-  "url": "https://api.mistral.ai",
+  "url": "https://console.mistral.ai/api-keys/",
   "api_key": "",
   "metadata": {
     "get_models_url": "https://api.mistral.ai/v1/models",

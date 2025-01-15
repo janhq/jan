@@ -2,7 +2,7 @@
   "id": "@janhq/inference-cohere-extension",
   "type": "remote",
   "engine": "cohere",
-  "url": "https://api.cohere.ai",
+  "url": "https://dashboard.cohere.com/api-keys",
   "api_key": "",
   "metadata": {
     "get_models_url": "https://api.cohere.ai/v1/models",

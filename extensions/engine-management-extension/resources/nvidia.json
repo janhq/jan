@@ -2,7 +2,7 @@
   "id": "@janhq/inference-nvidia-extension",
   "type": "remote",
   "engine": "nvidia",
-  "url": "https://integrate.api.nvidia.com",
+  "url": "https://org.ngc.nvidia.com/setup/personal-keys",
   "api_key": "",
   "metadata": {
     "get_models_url": "https://integrate.api.nvidia.com/v1/models",

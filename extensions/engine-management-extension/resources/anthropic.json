@@ -2,7 +2,7 @@
   "id": "@janhq/inference-anthropic-extension",
   "type": "remote",
   "engine": "anthropic",
-  "url": "https://api.anthropic.com",
+  "url": "https://console.anthropic.com/settings/keys",
   "api_key": "",
   "metadata": {
     "get_models_url": "https://api.anthropic.com/v1/models",

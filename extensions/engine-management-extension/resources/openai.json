@@ -2,7 +2,7 @@
   "id": "@janhq/inference-openai-extension",
   "type": "remote",
   "engine": "openai",
-  "url": "https://api.openai.com",
+  "url": "https://platform.openai.com/account/api-keys",
   "api_key": "",
   "metadata": {
     "get_models_url": "https://api.openai.com/v1/models",
