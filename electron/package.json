@@ -1,6 +1,6 @@
 {
   "name": "jan",
-  "version": "0.1.1736928005",
+  "version": "0.1.4",
   "main": "./build/main.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
