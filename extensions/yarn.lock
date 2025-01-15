@@ -509,71 +509,61 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=7dd866&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
+  checksum: 10c0/da0eed6e552ce2ff6f52a087e6e221101c3d0c03d92820840ee80c3ca1a17317a66525cb5bf59b6c1e8bd2e36e54763008f97e13000ae339dac49f5682fcfa65
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=7dd866&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
+  checksum: 10c0/da0eed6e552ce2ff6f52a087e6e221101c3d0c03d92820840ee80c3ca1a17317a66525cb5bf59b6c1e8bd2e36e54763008f97e13000ae339dac49f5682fcfa65
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=7dd866&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
+  checksum: 10c0/da0eed6e552ce2ff6f52a087e6e221101c3d0c03d92820840ee80c3ca1a17317a66525cb5bf59b6c1e8bd2e36e54763008f97e13000ae339dac49f5682fcfa65
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=7dd866&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
+  checksum: 10c0/da0eed6e552ce2ff6f52a087e6e221101c3d0c03d92820840ee80c3ca1a17317a66525cb5bf59b6c1e8bd2e36e54763008f97e13000ae339dac49f5682fcfa65
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=7dd866&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
+  checksum: 10c0/da0eed6e552ce2ff6f52a087e6e221101c3d0c03d92820840ee80c3ca1a17317a66525cb5bf59b6c1e8bd2e36e54763008f97e13000ae339dac49f5682fcfa65
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmonitoring-extension%40workspace%3Amonitoring-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Fmonitoring-extension%40workspace%3Amonitoring-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=7dd866&locator=%40janhq%2Fmonitoring-extension%40workspace%3Amonitoring-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
-  languageName: node
-  linkType: hard
-
-"@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Ftensorrt-llm-extension%40workspace%3Atensorrt-llm-extension":
-  version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=fc09ae&locator=%40janhq%2Ftensorrt-llm-extension%40workspace%3Atensorrt-llm-extension"
-  dependencies:
-    rxjs: "npm:^7.8.1"
-    ulidx: "npm:^2.3.0"
-  checksum: 10c0/8e1830ac4f0f26634d3bb243528f7a18fd6e9fa684c18e0a3b85e30d6386d9ef5b0348ddcaaecf27b2e8e8625983b4dc8591564ac6d42e899205bab57385573c
+  checksum: 10c0/da0eed6e552ce2ff6f52a087e6e221101c3d0c03d92820840ee80c3ca1a17317a66525cb5bf59b6c1e8bd2e36e54763008f97e13000ae339dac49f5682fcfa65
   languageName: node
   linkType: hard
 
@@ -654,35 +644,6 @@ __metadata:
     rolldown: "npm:1.0.0-beta.1"
     run-script-os: "npm:^1.1.6"
     typescript: "npm:^5.3.3"
-  languageName: unknown
-  linkType: soft
-
-"@janhq/tensorrt-llm-extension@workspace:tensorrt-llm-extension":
-  version: 0.0.0-use.local
-  resolution: "@janhq/tensorrt-llm-extension@workspace:tensorrt-llm-extension"
-  dependencies:
-    "@janhq/core": ../../core/package.tgz
-    "@types/decompress": "npm:4.2.7"
-    "@types/jest": "npm:^29.5.12"
-    "@types/node": "npm:^20.11.4"
-    "@types/os-utils": "npm:^0.0.4"
-    "@types/tcp-port-used": "npm:^1.0.4"
-    cpx: "npm:^1.5.0"
-    decompress: "npm:^4.2.1"
-    download-cli: "npm:^1.1.1"
-    fetch-retry: "npm:^5.0.6"
-    jest: "npm:^29.7.0"
-    jest-junit: "npm:^16.0.0"
-    jest-runner: "npm:^29.7.0"
-    rimraf: "npm:^3.0.2"
-    rolldown: "npm:1.0.0-beta.1"
-    run-script-os: "npm:^1.1.6"
-    rxjs: "npm:^7.8.1"
-    tcp-port-used: "npm:^1.0.2"
-    terminate: "npm:^2.6.1"
-    ts-jest: "npm:^29.2.5"
-    typescript: "npm:^5.2.2"
-    ulidx: "npm:^2.3.0"
   languageName: unknown
   linkType: soft
 
@@ -1844,7 +1805,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/decompress@npm:4.2.7, @types/decompress@npm:^4.2.7":
+"@types/decompress@npm:^4.2.7":
   version: 4.2.7
   resolution: "@types/decompress@npm:4.2.7"
   dependencies:
@@ -4785,18 +4746,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jest-junit@npm:^16.0.0":
-  version: 16.0.0
-  resolution: "jest-junit@npm:16.0.0"
-  dependencies:
-    mkdirp: "npm:^1.0.4"
-    strip-ansi: "npm:^6.0.1"
-    uuid: "npm:^8.3.2"
-    xml: "npm:^1.0.1"
-  checksum: 10c0/d813d4d142341c2b51b634db7ad6ceb9849514cb58f96ec5e7e4cf4031a557133490452710c2d9dec9b1dd546334d9ca663e042d3070c3e8f102ce6217bd8e2e
-  languageName: node
-  linkType: hard
-
 "jest-leak-detector@npm:^29.7.0":
   version: 29.7.0
   resolution: "jest-leak-detector@npm:29.7.0"
@@ -5827,15 +5776,6 @@ __metadata:
   bin:
     mkdirp: bin/cmd.js
   checksum: 10c0/e2e2be789218807b58abced04e7b49851d9e46e88a2f9539242cc8a92c9b5c3a0b9bab360bd3014e02a140fc4fbc58e31176c408b493f8a2a6f4986bd7527b01
-  languageName: node
-  linkType: hard
-
-"mkdirp@npm:^1.0.4":
-  version: 1.0.4
-  resolution: "mkdirp@npm:1.0.4"
-  bin:
-    mkdirp: bin/cmd.js
-  checksum: 10c0/46ea0f3ffa8bc6a5bc0c7081ffc3907777f0ed6516888d40a518c5111f8366d97d2678911ad1a6882bf592fa9de6c784fea32e1687bb94e1f4944170af48a5cf
   languageName: node
   linkType: hard
 
@@ -7655,15 +7595,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"terminate@npm:^2.6.1":
-  version: 2.8.0
-  resolution: "terminate@npm:2.8.0"
-  dependencies:
-    ps-tree: "npm:^1.2.0"
-  checksum: 10c0/ae5956b48e34d3c0da3d74eebfcfc20ed49e735ce008c3b7260368bc96b69249c97089982e88da3c649f6827c8f91ddb2dd8f8597cef1da564035827af6b74e4
-  languageName: node
-  linkType: hard
-
 "test-exclude@npm:^6.0.0":
   version: 6.0.0
   resolution: "test-exclude@npm:6.0.0"
@@ -7766,7 +7697,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ts-jest@npm:^29.1.2, ts-jest@npm:^29.2.5":
+"ts-jest@npm:^29.1.2":
   version: 29.2.5
   resolution: "ts-jest@npm:29.2.5"
   dependencies:
@@ -7859,7 +7790,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@npm:^5.2.2, typescript@npm:^5.3.3, typescript@npm:^5.7.2":
+"typescript@npm:^5.3.3, typescript@npm:^5.7.2":
   version: 5.7.2
   resolution: "typescript@npm:5.7.2"
   bin:
@@ -7879,7 +7810,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"typescript@patch:typescript@npm%3A^5.2.2#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.3.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.7.2#optional!builtin<compat/typescript>":
+"typescript@patch:typescript@npm%3A^5.3.3#optional!builtin<compat/typescript>, typescript@patch:typescript@npm%3A^5.7.2#optional!builtin<compat/typescript>":
   version: 5.7.2
   resolution: "typescript@patch:typescript@npm%3A5.7.2#optional!builtin<compat/typescript>::version=5.7.2&hash=5786d5"
   bin:
@@ -8029,15 +7960,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"uuid@npm:^8.3.2":
-  version: 8.3.2
-  resolution: "uuid@npm:8.3.2"
-  bin:
-    uuid: dist/bin/uuid
-  checksum: 10c0/bcbb807a917d374a49f475fae2e87fdca7da5e5530820ef53f65ba1d12131bd81a92ecf259cc7ce317cbe0f289e7d79fdfebcef9bfa3087c8c8a2fa304c9be54
-  languageName: node
-  linkType: hard
-
 "uuid@npm:^9.0.0":
   version: 9.0.1
   resolution: "uuid@npm:9.0.1"
@@ -8166,13 +8088,6 @@ __metadata:
     imurmurhash: "npm:^0.1.4"
     signal-exit: "npm:^3.0.7"
   checksum: 10c0/a2c282c95ef5d8e1c27b335ae897b5eca00e85590d92a3fd69a437919b7b93ff36a69ea04145da55829d2164e724bc62202cdb5f4b208b425aba0807889375c7
-  languageName: node
-  linkType: hard
-
-"xml@npm:^1.0.1":
-  version: 1.0.1
-  resolution: "xml@npm:1.0.1"
-  checksum: 10c0/04bcc9b8b5e7b49392072fbd9c6b0f0958bd8e8f8606fee460318e43991349a68cbc5384038d179ff15aef7d222285f69ca0f067f53d071084eb14c7fdb30411
   languageName: node
   linkType: hard
 
