@@ -17,12 +17,13 @@ import { ScrollArea, Input, TextArea } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { set } from 'lodash'
-import { ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import { getAPIKeyInstructionURL, getTitleByEngine } from '@/utils/modelEngine'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -124,6 +125,19 @@ const RemoteEngineSettings = ({
                   <h6 className="line-clamp-1 font-semibold">API Key</h6>
                   <p className="mt-1 text-[hsla(var(--text-secondary))]">
                     Enter your authentication key to activate this engine.
+                    {engine.engine &&
+                      getAPIKeyInstructionURL(engine.engine) && (
+                        <span>
+                          Get your API key from{' '}
+                          <a
+                            target="_blank"
+                            href={getAPIKeyInstructionURL(engine.engine)}
+                            className="text-[hsla(var(--app-link))]"
+                          >
+                            {getTitleByEngine(engine.engine)} API Dashboard.
+                          </a>
+                        </span>
+                      )}
                   </p>
                 </div>
                 <div className="w-full">
@@ -221,7 +235,11 @@ const RemoteEngineSettings = ({
         >
           <span>Advance Settings</span>
           <span>
-            <ChevronRight size={14} className="ml-1" />
+            {isActiveAdvanceSetting ? (
+              <ChevronDown size={14} className="ml-1" />
+            ) : (
+              <ChevronRight size={14} className="ml-1" />
+            )}
           </span>
         </p>
       </div>

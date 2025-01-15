@@ -11,8 +11,15 @@ import { addRemoteEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 const engineSchema = z.object({
   engineName: z.string().min(1, 'Engine name is required'),
-  modelListUrl: z.string().url('Enter a valid Model List URL'),
+  modelListUrl: z
+    .string()
+    .url('Enter a valid Model List URL')
+    .or(z.literal('')),
   headerTemplate: z.string().optional(),
+  chatCmpletionsUrl: z
+    .string()
+    .url('Enter a valid Model List URL')
+    .or(z.literal('')),
   apiKey: z.string().optional(),
   requestFormat: z.string().optional(),
   responseFormat: z.string().optional(),
@@ -29,7 +36,7 @@ const ModalAddRemoteEngine = () => {
     resolver: zodResolver(engineSchema),
     defaultValues: {
       engineName: '',
-      apiUrl: '',
+      chatCmpletionsUrl: '',
       modelListUrl: '',
       headerTemplate: '',
       apiKey: '',
@@ -49,6 +56,7 @@ const ModalAddRemoteEngine = () => {
         transform_req: {
           chat_completions: {
             template: data.requestFormat,
+            url: data.chatCmpletionsUrl,
           },
         },
         transform_resp: {
@@ -108,6 +116,21 @@ const ModalAddRemoteEngine = () => {
               {errors.engineName && (
                 <p className="text-sm text-red-500">
                   {errors.engineName.message}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="chatCmpletionsUrl" className="font-semibold">
+                {renderLabel('Chat Completion URL', false)}
+              </label>
+              <Input
+                placeholder="Enter your chat completion URL."
+                {...register('chatCmpletionsUrl')}
+              />
+              {errors.chatCmpletionsUrl && (
+                <p className="text-sm text-red-500">
+                  {errors.chatCmpletionsUrl.message}
                 </p>
               )}
             </div>

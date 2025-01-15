@@ -33,6 +33,29 @@ export const getLogoEngine = (engine: InferenceEngine) => {
   }
 }
 
+export const getAPIKeyInstructionURL = (engine: InferenceEngine) => {
+  switch (engine) {
+    case InferenceEngine.anthropic:
+      return 'https://console.anthropic.com/settings/keys'
+    case InferenceEngine.cohere:
+      return 'https://dashboard.cohere.com/api-keys'
+    case InferenceEngine.groq:
+      return 'https://console.groq.com/keys'
+    case InferenceEngine.martian:
+      return 'https://withmartian.com/dashboard'
+    case InferenceEngine.mistral:
+      return 'https://console.mistral.ai/api-keys'
+    case InferenceEngine.nvidia:
+      return 'https://org.ngc.nvidia.com/setup/personal-keys'
+    case InferenceEngine.openai:
+      return 'https://platform.openai.com/account/api-keys'
+    case InferenceEngine.openrouter:
+      return 'https://openrouter.ai/keys'
+    default:
+      return undefined
+  }
+}
+
 /**
  * Check whether the engine is conform to LocalOAIEngine
  * @param engine
