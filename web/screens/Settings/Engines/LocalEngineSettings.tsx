@@ -11,6 +11,7 @@ import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
 
 import { twMerge } from 'tailwind-merge'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
 import {
   useGetDefaultEngineVariant,
   useGetInstalledEngines,
@@ -26,7 +27,6 @@ import { formatDownloadPercentage } from '@/utils/converter'
 import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
-import { useActiveModel } from '@/hooks/useActiveModel'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
