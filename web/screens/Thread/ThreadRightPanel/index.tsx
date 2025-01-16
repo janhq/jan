@@ -39,6 +39,7 @@ import Tools from './Tools'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
@@ -60,12 +61,13 @@ const ThreadRightPanel = () => {
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
+  const engines = useAtomValue(installedEnginesAtom)
   const { updateThreadMetadata } = useCreateNewThread()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const isModelSupportRagAndTools =
     selectedModel?.engine === InferenceEngine.openai ||
-    isLocalEngine(selectedModel?.engine as InferenceEngine)
+    isLocalEngine(engines, selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()
@@ -257,7 +259,7 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeAssistant?.instructions ?? ''}
-                // autoResize
+                autoResize
                 onChange={onAssistantInstructionChanged}
               />
             </div>

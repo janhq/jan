@@ -54,17 +54,6 @@ jest.mock('child_process', () => ({
   },
 }))
 
-jest.mock('./execute', () => ({
-  executableCortexFile: () => {
-    return {
-      enginePath: 'enginePath',
-      executablePath: 'executablePath',
-      cudaVisibleDevices: 'cudaVisibleDevices',
-      vkVisibleDevices: 'vkVisibleDevices',
-    }
-  },
-}))
-
 import index from './index'
 
 describe('dispose', () => {

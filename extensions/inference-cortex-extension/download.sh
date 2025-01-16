@@ -2,10 +2,11 @@
 
 # Read CORTEX_VERSION
 CORTEX_VERSION=$(cat ./bin/version.txt)
-ENGINE_VERSION=0.1.42
+ENGINE_VERSION=0.1.46
 CORTEX_RELEASE_URL="https://github.com/janhq/cortex.cpp/releases/download"
 ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v${ENGINE_VERSION}/cortex.llamacpp-${ENGINE_VERSION}"
 CUDA_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v${ENGINE_VERSION}"
+BIN_PATH=./bin
 SHARED_PATH="../../electron/shared"
 # Detect platform
 OS_TYPE=$(uname)
@@ -28,10 +29,8 @@ if [ "$OS_TYPE" == "Linux" ]; then
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-12-0/v${ENGINE_VERSION}" 1
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-11-7/v${ENGINE_VERSION}" 1
     download "${ENGINE_DOWNLOAD_URL}-linux-amd64-vulkan.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-vulkan/v${ENGINE_VERSION}" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}" 1
-    mkdir -p "${SHARED_PATH}/engines/cortex.llamacpp/deps"
-    touch "${SHARED_PATH}/engines/cortex.llamacpp/deps/keep"
+    download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "${BIN_PATH}" 1
+    download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "${BIN_PATH}" 1
 
 elif [ "$OS_TYPE" == "Darwin" ]; then
     # macOS downloads

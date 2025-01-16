@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 
-import { ExtensionTypeEnum, ConversationalExtension } from '@janhq/core'
+import { ExtensionTypeEnum, ConversationalExtension, Thread } from '@janhq/core'
 
 import { useAtom, useSetAtom } from 'jotai'
 
@@ -96,8 +96,29 @@ export default function useDeleteThread() {
     }
   }
 
+  const deleteAllThreads = async (threads: Thread[]) => {
+    for (const thread of threads) {
+      await extensionManager
+        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+        ?.deleteThread(thread.id as string)
+        .catch(console.error)
+      deleteThreadState(thread.id as string)
+      deleteMessages(thread.id as string)
+    }
+
+    setThreads([])
+    setCurrentPrompt('')
+    setActiveThreadId(undefined)
+    toaster({
+      title: 'All threads successfully deleted.',
+      description: `All thread data has been successfully deleted.`,
+      type: 'success',
+    })
+  }
+
   return {
     cleanThread,
     deleteThread,
+    deleteAllThreads,
   }
 }

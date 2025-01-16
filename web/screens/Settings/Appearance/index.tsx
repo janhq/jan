@@ -119,7 +119,7 @@ export default function AppearanceOptions() {
           </div>
           <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
             Choose the width of the chat area to customize your conversation
-            view
+            view.
           </p>
         </div>
         <div className="flex-shrink-0">
@@ -184,7 +184,7 @@ export default function AppearanceOptions() {
             <h6 className="font-semibold capitalize">Spell Check</h6>
           </div>
           <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-            Turn on to enable spell check
+            Turn on to enable spell check.
           </p>
         </div>
         <div className="flex-shrink-0">

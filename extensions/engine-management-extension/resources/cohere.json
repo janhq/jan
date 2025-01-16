@@ -1,0 +1,22 @@
+{
+  "id": "@janhq/inference-cohere-extension",
+  "type": "remote",
+  "engine": "cohere",
+  "url": "https://dashboard.cohere.com/api-keys",
+  "api_key": "",
+  "metadata": {
+    "get_models_url": "https://api.cohere.ai/v1/models",
+    "header_template": "Authorization: Bearer {{api_key}}",
+    "transform_req": {
+      "chat_completions": {
+        "url": "https://api.cohere.ai/v1/chat",
+        "template": "{ {% for key, value in input_request %} {% if key == \"messages\" %} {% if input_request.messages.0.role == \"system\" %} \"preamble\": \"{{ input_request.messages.0.content }}\", {% if length(input_request.messages) > 2 %} \"chatHistory\": [{% for message in input_request.messages %} {% if not loop.is_first and not loop.is_last %} {\"role\": {% if message.role == \"user\" %} \"USER\" {% else %} \"CHATBOT\" {% endif %}, \"content\": \"{{ message.content }}\" } {% if loop.index < length(input_request.messages) - 2 %},{% endif %} {% endif %} {% endfor %}], {% endif %} \"message\": \"{{ last(input_request.messages).content }}\" {% else %} {% if length(input_request.messages) > 2 %} \"chatHistory\": [{% for message in input_request.messages %} {% if not loop.is_last %} { \"role\": {% if message.role == \"user\" %} \"USER\" {% else %} \"CHATBOT\" {% endif %}, \"content\": \"{{ message.content }}\" } {% if loop.index < length(input_request.messages) - 2 %},{% endif %} {% endif %} {% endfor %}],{% endif %}\"message\": \"{{ last(input_request.messages).content }}\" {% endif %}{% if not loop.is_last %},{% endif %} {% else if key == \"system\" or key == \"model\" or key == \"temperature\" or key == \"store\" or key == \"max_tokens\" or key == \"stream\" or key == \"presence_penalty\" or key == \"metadata\" or key == \"frequency_penalty\" or key == \"tools\" or key == \"tool_choice\" or key == \"logprobs\" or key == \"top_logprobs\" or key == \"logit_bias\" or key == \"n\" or key == \"modalities\" or key == \"prediction\" or key == \"response_format\" or key == \"service_tier\" or key == \"seed\" or key == \"stop\" or key == \"stream_options\" or key == \"top_p\" or key == \"parallel_tool_calls\" or key == \"user\" %} \"{{ key }}\": {{ tojson(value) }} {% if not loop.is_last %},{% endif %} {% endif %} {% endfor %} }"
+      }
+    },
+    "transform_resp": {
+      "chat_completions": {
+        "template": "{% if input_request.stream %} {\"object\": \"chat.completion.chunk\", \"model\": \"{{ input_request.model }}\", \"choices\": [{\"index\": 0, \"delta\": { {% if input_request.event_type == \"text-generation\" %} \"role\": \"assistant\", \"content\": \"{{ input_request.text }}\" {% else %} \"role\": \"assistant\", \"content\": null {% endif %} }, {% if input_request.event_type == \"stream-end\" %} \"finish_reason\": \"{{ input_request.finish_reason }}\" {% else %} \"finish_reason\": null {% endif %} }]} {% else %} {\"id\": \"{{ input_request.generation_id }}\", \"created\": null, \"object\": \"chat.completion\", \"model\": {% if input_request.model %} \"{{ input_request.model }}\" {% else %} \"command-r-plus-08-2024\" {% endif %}, \"choices\": [{ \"index\": 0, \"message\": { \"role\": \"assistant\", \"content\": {% if not input_request.text %} null {% else %}  \"{{ input_request.text }}\" {% endif %}, \"refusal\": null }, \"logprobs\": null, \"finish_reason\": \"{{ input_request.finish_reason }}\" } ], \"usage\": { \"prompt_tokens\": {{ input_request.meta.tokens.input_tokens }}, \"completion_tokens\": {{ input_request.meta.tokens.output_tokens }},\"total_tokens\": {{ input_request.meta.tokens.input_tokens + input_request.meta.tokens.output_tokens }}, \"prompt_tokens_details\": { \"cached_tokens\": 0 },\"completion_tokens_details\": { \"reasoning_tokens\": 0, \"accepted_prediction_tokens\": 0, \"rejected_prediction_tokens\": 0 } }, \"system_fingerprint\": \"fp_6b68a8204b\"} {% endif %}"
+      }
+    }
+  }
+}

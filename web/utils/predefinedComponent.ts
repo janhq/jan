@@ -4,7 +4,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   prompt_template: {
     key: 'prompt_template',
     title: 'Prompt template',
-    description: `A predefined text or framework that guides the AI model's response generation. It includes placeholders or instructions for the model to fill in or expand upon.`,
+    description: `A structured format that guides how the model should respond.`,
     controllerType: 'input',
     controllerProps: {
       placeholder: 'Prompt template',
@@ -16,7 +16,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   stop: {
     key: 'stop',
     title: 'Stop',
-    description: `Defines specific tokens or phrases that signal the model to stop producing further output, allowing you to control the length and coherence of the output.`,
+    description: `Defines tokens or phrases that will end the model's response.`,
     controllerType: 'tag',
     controllerProps: {
       placeholder: 'Enter stop words',
@@ -28,7 +28,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   ctx_len: {
     key: 'ctx_len',
     title: 'Context Length',
-    description: `Sets the maximum input the model can use to generate a response, it varies with the model used. Higher length is better for tasks needing extensive context, like summarizing long documents. Lower length can improve response time and reduce computing needs for simple queries.`,
+    description: `Controls how much text the model can consider at once. Longer context allows the model to handle more input but uses more memory and runs slower.`,
     controllerType: 'slider',
     controllerProps: {
       min: 128,
@@ -42,7 +42,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   max_tokens: {
     key: 'max_tokens',
     title: 'Max Tokens',
-    description: `Sets the upper limit on the number of tokens the model can generate in a single output. A higher limit benefits detailed and complex responses, while a lower limit helps maintain conciseness.`,
+    description: `Controls response length. Higher values allow longer, more detailed responses.`,
     controllerType: 'slider',
     controllerProps: {
       min: 100,
@@ -56,7 +56,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   ngl: {
     key: 'ngl',
     title: 'Number of GPU layers (ngl)',
-    description: 'The number of layers to load onto the GPU for acceleration.',
+    description:
+      'Controls how many layers of the model run on GPU. More layers means faster processing, but requires more GPU memory.',
     controllerType: 'slider',
     controllerProps: {
       min: 1,
@@ -81,7 +82,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   stream: {
     key: 'stream',
     title: 'Stream',
-    description: `Enables real-time data processing, which is useful for applications needing immediate responses, like live interactions. It accelerates predictions by processing data as it becomes available.`,
+    description: `Enables real-time response streaming.`,
     controllerType: 'checkbox',
     controllerProps: {
       value: false,
@@ -92,7 +93,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   temperature: {
     key: 'temperature',
     title: 'Temperature',
-    description: `Influences the randomness of the model's output. A higher value leads to more random and diverse responses, while a lower value produces more predictable outputs.`,
+    description: `Controls response randomness. Higher values produce more creative, varied responses. `,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -106,7 +107,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   frequency_penalty: {
     key: 'frequency_penalty',
     title: 'Frequency Penalty',
-    description: `Modifies the likelihood of the model repeating the same words or phrases within a single output. Increasing it can help avoid repetition, which is useful for scenarios where you want more varied language, like creative writing or content generation.`,
+    description: `Reduces word repetition. Higher values encourage more varied language. Useful for creative writing and content generation.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -120,7 +121,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   presence_penalty: {
     key: 'presence_penalty',
     title: 'Presence Penalty',
-    description: `Reduces the likelihood of repeating tokens, promoting novelty in the output. Use a higher value for tasks requiring diverse ideas.`,
+    description: `Encourages the model to explore new topics. Higher values help prevent the model from fixating on already-discussed subjects.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -134,7 +135,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   top_p: {
     key: 'top_p',
     title: 'Top P',
-    description: `Set probability threshold for more relevant outputs. A lower value (e.g., 0.9) may be more suitable for focused, task-oriented applications, while a higher value (e.g., 0.95 or 0.97) may be better for more open-ended, creative tasks.`,
+    description: `Set probability threshold for more relevant outputs. Higher values allow more diverse word choices.`,
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -149,7 +150,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
     key: 'cpu_threads',
     title: 'CPU Threads',
     description:
-      'Determines CPU inference threads, limited by hardware and OS. (Maximum determined by system)',
+      'Controls how many CPU cores are used for processing. Higher values can speed up model loading but use more system resources.',
     controllerType: 'slider',
     controllerProps: {
       min: 0,
@@ -164,7 +165,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   chunk_size: {
     key: 'chunk_size',
     title: 'Chunk Size',
-    description: 'Maximum number of tokens in a chunk',
+    description:
+      'Sets the maximum number of tokens per data chunk. Increase size for processing large blocks of text efficiently, or decrease it to optimize memory usage.',
     controllerType: 'slider',
     controllerProps: {
       min: 128,
@@ -178,7 +180,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   chunk_overlap: {
     key: 'chunk_overlap',
     title: 'Chunk Overlap',
-    description: 'Number of tokens overlapping between two adjacent chunks',
+    description:
+      'How many words overlap between text segments. More overlap helps maintain meaning across splits.',
     controllerType: 'slider',
     controllerProps: {
       min: 32,
@@ -192,7 +195,8 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   top_k: {
     key: 'top_k',
     title: 'Top K',
-    description: 'Number of top-ranked documents to retrieve',
+    description:
+      'Number of most relevant documents to retrieve. Higher values return more results.',
     controllerType: 'slider',
     controllerProps: {
       min: 1,
@@ -206,8 +210,7 @@ export const presetConfiguration: Record<string, SettingComponentProps> = {
   retrieval_template: {
     key: 'retrieval_template',
     title: 'Retrieval Template',
-    description:
-      'The template to use for retrieval. The following variables are available: {CONTEXT}, {QUESTION}',
+    description: 'Format for how the AI uses context to answer questions.',
     controllerType: 'input',
     controllerProps: {
       placeholder: 'Retrieval Template',

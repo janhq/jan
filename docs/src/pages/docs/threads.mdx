@@ -19,55 +19,75 @@ keywords:
 ---
 
 import { Callout } from 'nextra/components'
+import { SquarePen, Pencil, Ellipsis, Paintbrush, Trash2 } from 'lucide-react'
+
 
 # Using Threads
 
-Jan provides a straightforward and private solution for managing your threads with AI on your device. As you interact with AI using Jan, you'll accumulate a history of threads.
-Jan offers easy tools to organize, delete, or review your past threads with AI. This guide will show you how to keep your threads private and well-organized.
+Jan organizes your AI conversations into threads, making it easy to track and revisit your interactions. This guide will help you effectively manage your chat history.
 
-## View Thread History
+## Creating New Thread
+1. Click **New Thread** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon at the left of Jan top navigation
+2. Select your preferred model in **Model Selector** in input field & start chatting
 
-To view your thread history, follow the steps below:
-
-1. Navigate to the main dashboard.
-2. Locate the list of threads screen on the left side.
-3. To view a specific thread, choose the one you're interested in and then scroll up or down to explore the entire conversation.
 <br/>
-![History](./_assets/history.png)
+![Create New Thread](./_assets/threads-02.png)
 
-## Change the Thread's Title
-To change a thread's title, follow the steps below:
+## View Threads History
 
-1. Navigate to the Thread that you want to edit.
-2. Hover to a thread and click on the **three dots (⋮)** in the Thread section.
-3. Select the **Edit Title** button.
+1. Once you open Jan, the default screen is **Threads**
+2. On the **left sidebar**, you can:
+- View **Thread List**, scroll through your threads history
+- Click any thread to open the full conversation
+
 <br/>
-![Clean Thread](./_assets/title.png)
+![View Threads](./_assets/threads-01.png)
 
-## Clean Threads History
 
-To clean all the messages from a thread, follow the steps below:
 
-1. Navigate to the Thread that you want to clean.
-2. Hover to a thread and click on the **three dots (⋮)** in the Thread section.
-3. Select the **Clean Thread** button.
+## Edit Thread Title
+1. Navigate to the **Thread** that you want to edit title in left sidebar
+2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+3. Select <Pencil width={16} height={16} style={{display:"inline"}}/> **Edit Title** 
+4. Add new title & save
+
 <br/>
-![Clean Thread](./_assets/clean.png)
+![Edit Thread](./_assets/threads-03.png)
+
+## Clean Thread
+
+To remove all messages while keeping the thread & its settings:
+
+1. Navigate to the **Thread** that you want to clean in left sidebar
+2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+3. Select <Paintbrush width={16} height={16} style={{display:"inline"}}/> **Clean Thread** 
 
 <Callout type="info">
-  This will delete all messages in the thread while keeping the thread settings.
+This will delete all messages in the thread while preserving thread settings
 </Callout>
 
-### Delete Threads History
-
-To delete a thread, follow the steps below:
-
-1. Navigate to the Thread that you want to delete.
-2. Hover to a thread and click on the **three dots (⋮)** in the Thread section.
-3. Select the **Delete Thread** button.
 <br/>
-![Delete Thread](./_assets/delete-threads.png)
+![Clean Thread](./_assets/threads-04.png)
 
-<Callout type="info">
-  This will delete all messages and the thread settings.
+
+## Delete Thread
+<Callout type="warning">
+There's no undo for thread deletion, so make sure you want to remove the thread permanently.
 </Callout>
+### Delete a specific thread
+When you want to completely remove a thread:
+
+1. Navigate to the **Thread** that you want to delete in left sidebar
+2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+3. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete Thread** 
+
+
+<br/>
+![Delete Thread](./_assets/threads-05.png)
+
+### Delete all threads at once
+
+In case you need to remove all threads at once, you'll need to manually delete the `threads` folder:
+1. Open [Jan Data Folder](docs/settings#access-the-jan-data-folder)
+2. Delete the `threads` folder
+3. Restart Jan

@@ -1,0 +1,193 @@
+---
+title: Install Engines
+description: Learn about Jan's default extensions and explore how to configure them.
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    Jan Extensions,
+    Extensions,
+  ]
+---
+
+import { Callout } from 'nextra/components'
+import { Settings, EllipsisVertical } from 'lucide-react'
+
+# Install Engines
+
+## Install Local Engines
+Jan currently doesn't support installing a local engine yet.
+
+## Install Remote Engines
+
+### Step-by-step Guide
+You can add any OpenAI API-compatible providers like OpenAI, Anthropic, or others.
+To add a new remote engine:
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Engines**
+1. At **Remote Engine** category, click **+ Install Engine** 
+
+<br/>
+![Install Remote Engines](./_assets/install-engines-01.png)
+<br/>
+
+2. Fill in the following required information:
+
+<br/>
+![Install Remote Engines](./_assets/install-engines-02.png)
+<br/>
+
+| Field | Description | Required |
+|-------|-------------|----------|
+| Engine Name | Name for your engine (e.g., "OpenAI", "Claude") | ✓ |
+| API URL | The base URL of the provider's API | ✓ |
+| API Key | Your authentication key from the provider | ✓ |
+| Model List URL | URL for fetching available models | |
+| API Key Template | Custom authorization header format | |
+| Request Format Conversion | Function to convert Jan's request format to provider's format | |
+| Response Format Conversion | Function to convert provider's response format to Jan's format | |
+
+
+> - The conversion functions are only needed for providers that don't follow the OpenAI API format. For OpenAI-compatible APIs, you can leave these empty.
+> - For OpenAI-compatible APIs like OpenAI, Anthropic, or Groq, you only need to fill in the required fields. Leave optional fields empty.
+
+4. Click **Install** 
+5. Once completed, you should see your engine in **Engines** page:
+    - You can rename or uninstall your engine
+    - You can navigate to its own settings page
+
+<br/>
+![Install Remote Engines](./_assets/install-engines-03.png)
+<br/>
+
+### Examples
+#### OpenAI-Compatible Setup
+Here's how to set up OpenAI as a remote engine:
+
+1. Engine Name: `OpenAI`
+2. API URL: `https://api.openai.com`
+3. Model List URL: `https://api.openai.com/v1/models`
+4. API Key: Your OpenAI API key
+5. Leave other fields as default
+
+
+#### Custom APIs Setup
+If you're integrating an API that doesn't follow OpenAI's format, you'll need to use the conversion functions. 
+Let's say you have a custom API with this format:
+
+```javascript
+// Custom API Request Format
+{
+  "prompt": "What is AI?",
+  "max_length": 100,
+  "temperature": 0.7
+}
+
+// Custom API Response Format
+{
+  "generated_text": "AI is...",
+  "tokens_used": 50,
+  "status": "success"
+}
+```
+
+**Here's how to set it up in Jan:**
+```
+Engine Name: Custom LLM
+API Key: your_api_key_here
+Header template: your header template here
+Transform request template: your transform request template here
+Transform response template: your transform response template here
+```
+
+1. Header template
+```
+"Authorization: Bearer {{api_key}}"
+```
+2. Transform request template:
+Convert from Jan's OpenAI-style format to your API's format
+```
+"chat_completions": {
+  "url": "https://api.custom_endpoint.com/v1/messages",
+  "template": "{
+{% for key, value in input_request %}
+  {% if key == "messages" %} 
+    "prompt": "{{ last(input_request.messages).content }}"
+  {% else if key == "max_tokens" or key == "temperature" %}
+    "{{ key }}": {{ tojson(value) }}  
+  {% endif %}
+{% endfor %}
+}"
+}
+```
+
+
+3. Transform response template
+Convert from your API's format back to OpenAI-style format
+```
+"chat_completions": {
+"template": "{
+{
+  "choices": [{
+      "message": {
+        "role": "assistant",
+        "content": "{{ input_request.generated_text }}"
+      }
+    }],
+    "usage": {
+      "total_tokens": {{ input_request.tokens_used }}
+    }
+}
+}"
+}
+```
+
+
+
+**Expected Formats:**
+
+1. Jan's Request Format
+```
+{
+  "messages": [
+    {"role": "user", "content": "What is AI?"}
+  ],
+  "max_tokens": 100,
+  "temperature": 0.7
+}
+```
+
+2. Jan's Expected Response Format
+```
+{
+  "choices": [{
+    "message": {
+      "role": "assistant",
+      "content": "AI is..."
+    }
+  }],
+  "usage": {
+    "total_tokens": 50
+  }
+}
+```
+
+<Callout type="warning">
+Make sure to test your conversion functions thoroughly. Incorrect conversions may cause errors or unexpected behavior.
+</Callout>
+
+
+
+
+
+
+
+
+
+

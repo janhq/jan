@@ -1,41 +1,36 @@
 {
   "name": "@janhq/assistant-extension",
   "productName": "Jan Assistant",
-  "version": "1.0.1",
-  "description": "This extension enables assistants, including Jan, a default assistant that can call all downloaded models",
+  "version": "1.0.2",
+  "description": "Powers the default AI assistant that works with all your installed models.",
   "main": "dist/index.js",
   "node": "dist/node/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
     "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
-    "build-universal-hnswlib": "cd node_modules/hnswlib-node && arch -x86_64 npx node-gyp rebuild --arch=x64 && mv build/Release/addon.node ./addon-amd64.node && node-gyp rebuild --arch=arm64 && mv build/Release/addon.node ./addon-arm64.node && lipo -create -output build/Release/addon.node ./addon-arm64.node ./addon-amd64.node && rm ./addon-arm64.node && rm ./addon-amd64.node",
-    "build": "yarn clean:modules && tsc --module commonjs && rollup -c rollup.config.ts",
-    "build:publish:linux": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob && yarn build-universal-hnswlib && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish": "run-script-os"
+    "build-universal-hnswlib": "[ \"$IS_TEST\" = \"true\" ] && echo \"Skip universal build\" || (cd node_modules/hnswlib-node && arch -x86_64 npx node-gyp rebuild --arch=x64 && mv build/Release/addon.node ./addon-amd64.node && node-gyp rebuild --arch=arm64 && mv build/Release/addon.node ./addon-arm64.node && lipo -create -output build/Release/addon.node ./addon-arm64.node ./addon-amd64.node && rm ./addon-arm64.node && rm ./addon-amd64.node)",
+    "build": "yarn clean:modules && rolldown -c rolldown.config.mjs",
+    "build:publish:linux": "rimraf *.tgz --glob  || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:darwin": "rimraf *.tgz --glob  || true && yarn build-universal-hnswlib && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:win32": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish": "run-script-os",
+    "build:dev": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.7",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-replace": "^5.0.5",
     "@types/pdf-parse": "^1.1.4",
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
-    "rollup": "^2.38.5",
-    "rollup-plugin-define": "^1.0.1",
-    "rollup-plugin-sourcemaps": "^0.6.3",
-    "rollup-plugin-typescript2": "^0.36.0",
-    "typescript": "^5.3.3",
-    "run-script-os": "^1.1.6"
+    "rolldown": "1.0.0-beta.1",
+    "run-script-os": "^1.1.6",
+    "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@janhq/core": "file:../../core",
+    "@janhq/core": "../../core/package.tgz",
     "@langchain/community": "0.0.13",
     "hnswlib-node": "^1.4.2",
     "langchain": "^0.0.214",
+    "node-gyp": "^11.0.0",
     "pdf-parse": "^1.1.1",
     "ts-loader": "^9.5.0"
   },
@@ -47,5 +42,9 @@
   "bundleDependencies": [
     "@janhq/core",
     "hnswlib-node"
-  ]
+  ],
+  "installConfig": {
+    "hoistingLimits": "workspaces"
+  },
+  "packageManager": "yarn@4.5.3"
 }

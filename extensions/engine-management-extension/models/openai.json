@@ -1,0 +1,125 @@
+[
+  {
+    "model": "gpt-4-turbo",
+    "object": "model",
+    "name": "OpenAI GPT 4 Turbo",
+    "version": "1.2",
+    "description": "OpenAI GPT 4 Turbo model is extremely good",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  },
+  {
+    "model": "gpt-3.5-turbo",
+    "object": "model",
+    "name": "OpenAI GPT 3.5 Turbo",
+    "version": "1.1",
+    "description": "OpenAI GPT 3.5 Turbo model is extremely fast",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  },
+  {
+    "model": "gpt-4o",
+    "object": "model",
+    "name": "OpenAI GPT 4o",
+    "version": "1.1",
+    "description": "OpenAI GPT 4o is a new flagship model with fast speed and high quality",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  },
+  {
+    "model": "gpt-4o-mini",
+    "object": "model",
+    "name": "OpenAI GPT 4o-mini",
+    "version": "1.1",
+    "description": "GPT-4o mini (“o” for “omni”) is a fast, affordable small model for focused tasks.",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 16384,
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "stream": true,
+      "stop": [],
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  },
+  {
+    "model": "o1",
+    "object": "model",
+    "name": "OpenAI o1",
+    "version": "1.0",
+    "description": "OpenAI o1 is a new model with complex reasoning",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 100000,
+      "temperature": 1,
+      "top_p": 1,
+      "stream": true,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  },
+  {
+    "model": "o1-preview",
+    "object": "model",
+    "name": "OpenAI o1-preview",
+    "version": "1.0",
+    "description": "OpenAI o1-preview is a new model with complex reasoning",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 32768,
+      "temperature": 1,
+      "top_p": 1,
+      "stream": true,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  },
+  {
+    "model": "o1-mini",
+    "object": "model",
+    "name": "OpenAI o1-mini",
+    "version": "1.0",
+    "description": "OpenAI o1-mini is a lightweight reasoning model",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 65536,
+      "temperature": 1,
+      "top_p": 1,
+      "stream": true,
+      "frequency_penalty": 0,
+      "presence_penalty": 0
+    },
+    "engine": "openai"
+  }
+]

@@ -21,29 +21,34 @@ keywords:
 
 import { Tabs } from 'nextra/components'
 import { Callout, Steps } from 'nextra/components'
+import { Settings, FolderOpen } from 'lucide-react'
+
 
 # Jan Data Folder
 Jan stores your data locally in your own filesystem in a universal file format (JSON). We build for privacy by default and do not collect or sell your data.
 
 This guide helps you understand where and how this data is stored.
 
-## Open the Data Folder
+## Open Jan Data Folder
 
-To open the Jan data folder from the app:
-1. Click the System monitor button on your Jan app.
-2. Click the App Log button.
-3. This redirects you to the Jan data folder.
+To open from Jan's interface:
+1. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings**
+2. Click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open Jan Data Folder
+<br/>
+![Open Jan Data Folder](./_assets/settings-11.png)
+<br/>
+To open through Terminal:
 
 ```bash
 # Windows
-~/AppData/Roaming/Jan/data
+%APPDATA%/Jan/data
 
 # Mac
-~/Library/Application\ Support/Jan/data
+~/Library/Application Support/Jan/data
 
 # Linux
 ## Custom installation directory
-$XDG_CONFIG_HOME = /home/username/custom_config
+$XDG_CONFIG_HOME/Jan/data
 
 or
 
@@ -233,18 +238,8 @@ Threads history is kept in this directory. Each session or thread is stored in a
 | `model`        | The selected model and its settings/parameters for the thread. Changes made by users to thread settings are written here, rather than in model.json. Also contains the ID and engine of the selected model for quick querying by extensions. |
 | `metadata`     | Additional thread data, such as `lastMessage`, which provides GUI information but does not use OpenAI-compatible fields.                     |
 
-## Open the Data Folder
-
-To open the Jan data folder, follow the steps in the [Settings](/docs/settings#access-the-jan-data-folder) guide.
 
 ## Delete Jan Data Folder
 
-If you have uninstalled the Jan app, you may also want to delete the Jan data folder. You can automatically remove this folder during uninstallation by selecting **OK** when prompted.
-
-![Delete Data Folder](./_assets/delete-data.png)
-
-If you missed this step and need to delete the folder manually, please follow these instructions:
-
-1. Go to the root data folder in your Users directory.
-2. Locate the Jan data folder.
-3. Delete the folder manually.
+If you have uninstalled Jan, you may also want to delete the Jan data folder. 
+See detail instructions on [Mac](/docs/desktop/mac#step-2-clean-up-data-optional), [Window](/docs/desktop/windows#step-2-handle-jan-data), [Linux](docs/desktop/linux#uninstall-jan).

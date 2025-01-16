@@ -2,7 +2,7 @@
 set BIN_PATH=./bin
 set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
-set ENGINE_VERSION=0.1.42
+set ENGINE_VERSION=0.1.46
 
 @REM Download cortex.llamacpp binaries
 set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/v%ENGINE_VERSION%/cortex.llamacpp-%ENGINE_VERSION%-windows-amd64
@@ -19,8 +19,8 @@ call .\node_modules\.bin\download %DOWNLOAD_URL%-avx.tar.gz -e --strip 1 -o %SHA
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2/v%ENGINE_VERSION%
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx512.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx512/v%ENGINE_VERSION%
 call .\node_modules\.bin\download %DOWNLOAD_URL%-vulkan.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-vulkan/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-12-0-windows-amd64.tar.gz -e --strip 1 -o %SHARED_PATH%
-call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-11-7-windows-amd64.tar.gz -e --strip 1 -o %SHARED_PATH%
+call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-12-0-windows-amd64.tar.gz -e --strip 1 -o %BIN_PATH%
+call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-11-7-windows-amd64.tar.gz -e --strip 1 -o %BIN_PATH%
 
 move %BIN_PATH%\cortex-server-beta.exe %BIN_PATH%\cortex-server.exe
 del %BIN_PATH%\cortex-beta.exe

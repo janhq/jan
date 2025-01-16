@@ -9,6 +9,7 @@
 import {
   Model,
   executeOnMain,
+  EngineEvent,
   systemInformation,
   joinPath,
   LocalOAIEngine,
@@ -18,9 +19,7 @@ import {
   fs,
   events,
   ModelEvent,
-  SystemInformation,
   dirName,
-  AppConfigurationEventName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'
@@ -112,26 +111,14 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
-    this.queue.add(() => this.clean())
-
     // Run the process watchdog
     const systemInfo = await systemInformation()
     this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
     this.queue.add(() => this.healthz())
-    this.queue.add(() => this.setDefaultEngine(systemInfo))
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
       this.clean()
-    })
-
-    const currentMode = systemInfo.gpuSetting?.run_mode
-
-    events.on(AppConfigurationEventName.OnConfigurationUpdate, async () => {
-      const systemInfo = await systemInformation()
-      // Update run mode on settings update
-      if (systemInfo.gpuSetting?.run_mode !== currentMode)
-        this.queue.add(() => this.setDefaultEngine(systemInfo))
     })
   }
 
@@ -246,7 +233,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Do health check on cortex.cpp
    * @returns
    */
-  private healthz(): Promise<void> {
+  private async healthz(): Promise<void> {
     return ky
       .get(`${CORTEX_API_URL}/healthz`, {
         retry: {
@@ -259,35 +246,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   /**
-   * Set default engine variant on launch
-   */
-  private async setDefaultEngine(systemInfo: SystemInformation) {
-    const variant = await executeOnMain(
-      NODE,
-      'engineVariant',
-      systemInfo.gpuSetting
-    )
-    return (
-      ky
-        // Fallback support for legacy API
-        .post(
-          `${CORTEX_API_URL}/v1/engines/${InferenceEngine.cortex_llamacpp}/default?version=${CORTEX_ENGINE_VERSION}&variant=${variant}`,
-          {
-            json: {
-              version: CORTEX_ENGINE_VERSION,
-              variant,
-            },
-          }
-        )
-        .then(() => {})
-    )
-  }
-
-  /**
    * Clean cortex processes
    * @returns
    */
-  private clean(): Promise<any> {
+  private async clean(): Promise<any> {
     return ky
       .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
         timeout: 2000, // maximum 2 seconds
@@ -311,6 +273,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
           this.socket.addEventListener('message', (event) => {
             const data = JSON.parse(event.data)
+
             const transferred = data.task.items.reduce(
               (acc: number, cur: any) => acc + cur.downloadedBytes,
               0
@@ -330,17 +293,26 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                   transferred: transferred,
                   total: total,
                 },
+                downloadType: data.task.type,
               }
             )
-            // Update models list from Hub
-            if (data.type === DownloadTypes.DownloadSuccess) {
-              // Delay for the state update from cortex.cpp
-              // Just to be sure
-              setTimeout(() => {
-                events.emit(ModelEvent.OnModelsUpdate, {
-                  fetch: true,
-                })
-              }, 500)
+
+            if (data.task.type === 'Engine') {
+              events.emit(EngineEvent.OnEngineUpdate, {
+                type: DownloadTypes[data.type as keyof typeof DownloadTypes],
+                percent: percent,
+                id: data.task.id,
+              })
+            } else {
+              if (data.type === DownloadTypes.DownloadSuccess) {
+                // Delay for the state update from cortex.cpp
+                // Just to be sure
+                setTimeout(() => {
+                  events.emit(ModelEvent.OnModelsUpdate, {
+                    fetch: true,
+                  })
+                }, 500)
+              }
             }
           })
 

@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import Image from 'next/image'
 
-import { InferenceEngine, Model } from '@janhq/core'
+import { EngineConfig, InferenceEngine } from '@janhq/core'
 import {
   Badge,
   Button,
@@ -31,6 +31,7 @@ import SetupRemoteModel from '@/containers/SetupRemoteModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
+
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
@@ -38,23 +39,17 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
 import { manualRecommendationModel } from '@/utils/model'
-import {
-  getLogoEngine,
-  getTitleByEngine,
-  isLocalEngine,
-  priorityEngine,
-} from '@/utils/modelEngine'
-
-import { extensionManager } from '@/extension'
+import { getLogoEngine } from '@/utils/modelEngine'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { inActiveEngineProviderAtom } from '@/helpers/atoms/Extension.atom'
+import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
   selectedModelAtom,
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
+
 import {
   activeThreadAtom,
   setThreadModelParamsAtom,
@@ -91,19 +86,31 @@ const ModelDropdown = ({
     null
   )
 
+  const engines = useAtomValue(installedEnginesAtom)
+
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { updateModelParameter } = useUpdateModelParameters()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
 
-  const featuredModel = configuredModels.filter(
+  const featuredModels = configuredModels.filter(
     (x) =>
       manualRecommendationModel.includes(x.id) &&
       x.metadata?.tags?.includes('Featured') &&
       x.metadata?.size < 5000000000
   )
   const { updateThreadMetadata } = useCreateNewThread()
+
+  const engineList = useMemo(
+    () =>
+      Object.entries(engines ?? {}).flatMap((e) => ({
+        name: e[0],
+        type: e[1][0]?.type === 'remote' ? 'remote' : 'local',
+        engine: e[1][0],
+      })),
+    [engines]
+  )
 
   useClickOutside(() => handleChangeStateOpen(false), null, [
     dropdownOptions,
@@ -122,13 +129,6 @@ const ModelDropdown = ({
     [setModelDropdownState]
   )
 
-  const isModelSupportRagAndTools = useCallback((model: Model) => {
-    return (
-      model?.engine === InferenceEngine.openai ||
-      isLocalEngine(model?.engine as InferenceEngine)
-    )
-  }, [])
-
   const filteredDownloadedModels = useMemo(
     () =>
       configuredModels
@@ -142,11 +142,12 @@ const ModelDropdown = ({
         )
         .filter((e) => {
           if (searchFilter === 'local') {
-            return isLocalEngine(e.engine)
+            return (
+              engineList.find((t) => t.engine?.engine === e.engine)?.type ===
+              'local'
+            )
           }
-          if (searchFilter === 'remote') {
-            return !isLocalEngine(e.engine)
-          }
+          return true
         })
         .sort((a, b) => a.name.localeCompare(b.name))
         .sort((a, b) => {
@@ -164,7 +165,7 @@ const ModelDropdown = ({
             return 0
           }
         }),
-    [configuredModels, searchText, searchFilter, downloadedModels]
+    [configuredModels, searchText, searchFilter, downloadedModels, engineList]
   )
 
   useEffect(() => {
@@ -180,6 +181,15 @@ const ModelDropdown = ({
   }, [open])
 
   useEffect(() => {
+    setShowEngineListModel((prev) => [
+      ...prev,
+      ...engineList
+        .filter((x) => (x.engine?.api_key?.length ?? 0) > 0)
+        .map((e) => e.name),
+    ])
+  }, [setShowEngineListModel, engineList])
+
+  useEffect(() => {
     if (!activeThread) return
     const modelId = activeAssistant?.model?.id
 
@@ -192,6 +202,14 @@ const ModelDropdown = ({
     setSelectedModel,
     activeAssistant?.model?.id,
   ])
+
+  const isLocalEngine = useCallback(
+    (engine?: string) => {
+      if (!engine) return false
+      return engineList.some((t) => t.name === engine && t.type === 'local')
+    },
+    [engineList]
+  )
 
   const onClickModelItem = useCallback(
     async (modelId: string) => {
@@ -210,7 +228,7 @@ const ModelDropdown = ({
               tools: [
                 {
                   type: 'retrieval',
-                  enabled: isModelSupportRagAndTools(model as Model),
+                  enabled: model?.engine === InferenceEngine.cortex,
                   settings: {
                     ...(activeAssistant.tools &&
                       activeAssistant.tools[0]?.settings),
@@ -225,13 +243,15 @@ const ModelDropdown = ({
           8192,
           model?.settings.ctx_len ?? 8192
         )
+
         const overriddenParameters = {
-          ctx_len: !isLocalEngine(model?.engine)
-            ? undefined
-            : defaultContextLength,
-          max_tokens: !isLocalEngine(model?.engine)
-            ? (model?.parameters.max_tokens ?? 8192)
-            : defaultContextLength,
+          ctx_len: model?.settings.ctx_len ? defaultContextLength : undefined,
+          max_tokens: defaultContextLength
+            ? Math.min(
+                model?.parameters.max_tokens ?? 8192,
+                defaultContextLength
+              )
+            : model?.parameters.max_tokens,
         }
 
         const modelParams = {
@@ -258,95 +278,17 @@ const ModelDropdown = ({
       setSelectedModel,
       activeThread,
       updateThreadMetadata,
-      isModelSupportRagAndTools,
       setThreadModelParams,
       updateModelParameter,
     ]
   )
 
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string; apiKey: string; provider: string }[]
-  >([])
-
-  const inActiveEngineProvider = useAtomValue(inActiveEngineProviderAtom)
-
-  useEffect(() => {
-    const getAllSettings = async () => {
-      const extensionsMenu: {
-        name?: string
-        setting: string
-        apiKey: string
-        provider: string
-      }[] = []
-      const extensions = extensionManager.getAll()
-
-      for (const extension of extensions) {
-        if (typeof extension.getSettings === 'function') {
-          const settings = await extension.getSettings()
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            extensionsMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-              apiKey:
-                'apiKey' in extension && typeof extension.apiKey === 'string'
-                  ? extension.apiKey
-                  : '',
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
-            })
-          }
-        }
-      }
-      setExtensionHasSettings(extensionsMenu)
-    }
-    getAllSettings()
-  }, [])
-
-  const findByEngine = filteredDownloadedModels
-    .map((x) => {
-      // Legacy engine support - they will be grouped under Cortex LlamaCPP
-      if (x.engine === InferenceEngine.nitro)
-        return InferenceEngine.cortex_llamacpp
-      return x.engine
-    })
-    .filter((x) => !inActiveEngineProvider.includes(x))
-
-  const groupByEngine = findByEngine
-    .filter(function (item, index) {
-      if (findByEngine.indexOf(item) === index) return item
-    })
-    .sort((a, b) => {
-      if (priorityEngine.includes(a) && priorityEngine.includes(b)) {
-        return priorityEngine.indexOf(a) - priorityEngine.indexOf(b)
-      } else if (priorityEngine.includes(a)) {
-        return -1
-      } else if (priorityEngine.includes(b)) {
-        return 1
-      } else {
-        return 0 // Leave the rest in their original order
-      }
-    })
-
-  const getEngineStatusReady: InferenceEngine[] = extensionHasSettings
-    ?.filter((e) => e.apiKey.length > 0)
-    .map((x) => x.provider as InferenceEngine)
-
-  useEffect(() => {
-    setShowEngineListModel((prev) => [
-      ...prev,
-      ...(getEngineStatusReady as InferenceEngine[]),
-    ])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setShowEngineListModel, extensionHasSettings])
-
-  const isDownloadALocalModel = downloadedModels.some((x) =>
-    isLocalEngine(x.engine)
+  const isDownloadALocalModel = useMemo(
+    () =>
+      downloadedModels.some((x) =>
+        engineList.some((t) => t.name === x.engine && t.type === 'local')
+      ),
+    [downloadedModels, engineList]
   )
 
   if (strictedThread && !activeThread) {
@@ -434,85 +376,193 @@ const ModelDropdown = ({
             />
           </div>
           <ScrollArea className="h-[calc(100%-90px)] w-full">
-            {groupByEngine.map((engine, i) => {
-              const apiKey = !isLocalEngine(engine)
-                ? extensionHasSettings.filter((x) => x.provider === engine)[0]
-                    ?.apiKey.length > 1
-                : true
-              const engineLogo = getLogoEngine(engine as InferenceEngine)
-              const showModel = showEngineListModel.includes(engine)
-              const onClickChevron = () => {
-                if (showModel) {
-                  setShowEngineListModel((prev) =>
-                    prev.filter((item) => item !== engine)
-                  )
-                } else {
-                  setShowEngineListModel((prev) => [...prev, engine])
+            {engineList
+              .filter((e) => e.type === searchFilter)
+              .filter(
+                (e) =>
+                  e.type === 'remote' ||
+                  e.name === InferenceEngine.cortex_llamacpp ||
+                  filteredDownloadedModels.some((e) => e.engine === e.name)
+              )
+              .map((engine, i) => {
+                const isConfigured =
+                  engine.type === 'local' ||
+                  ((engine.engine as EngineConfig).api_key?.length ?? 0) > 1
+                const engineLogo = getLogoEngine(engine.name as InferenceEngine)
+                const showModel = showEngineListModel.includes(engine.name)
+                const onClickChevron = () => {
+                  if (showModel) {
+                    setShowEngineListModel((prev) =>
+                      prev.filter((item) => item !== engine.name)
+                    )
+                  } else {
+                    setShowEngineListModel((prev) => [...prev, engine.name])
+                  }
                 }
-              }
-              return (
-                <div
-                  className="relative w-full border-t border-[hsla(var(--app-border))] first:border-t-0"
-                  key={i}
-                >
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between px-4">
-                      <div
-                        className="flex w-full cursor-pointer items-center gap-2 py-1"
-                        onClick={onClickChevron}
-                      >
-                        {engineLogo && (
-                          <Image
-                            className="h-6 w-6 flex-shrink-0"
-                            width={48}
-                            height={48}
-                            src={engineLogo}
-                            alt="logo"
-                          />
-                        )}
-                        <h6 className="font-medium text-[hsla(var(--text-secondary))]">
-                          {getTitleByEngine(engine)}
-                        </h6>
-                      </div>
-                      <div className="-mr-2 flex gap-1">
-                        {!isLocalEngine(engine) && (
-                          <SetupRemoteModel engine={engine} />
-                        )}
-                        {!showModel ? (
-                          <Button theme="icon" onClick={onClickChevron}>
-                            <ChevronDownIcon
-                              size={14}
-                              className="text-[hsla(var(--text-secondary))]"
+                return (
+                  <div
+                    className="relative w-full border-t border-[hsla(var(--app-border))] first:border-t-0"
+                    key={i}
+                  >
+                    <div className="mt-2">
+                      <div className="flex items-center justify-between px-4">
+                        <div
+                          className="flex w-full cursor-pointer items-center gap-2 py-1"
+                          onClick={onClickChevron}
+                        >
+                          {engineLogo && (
+                            <Image
+                              className="h-6 w-6 flex-shrink-0"
+                              width={48}
+                              height={48}
+                              src={engineLogo}
+                              alt="logo"
                             />
-                          </Button>
-                        ) : (
-                          <Button theme="icon" onClick={onClickChevron}>
-                            <ChevronUpIcon
-                              size={14}
-                              className="text-[hsla(var(--text-secondary))]"
+                          )}
+                          <h6 className="font-medium capitalize text-[hsla(var(--text-secondary))]">
+                            {engine.name}
+                          </h6>
+                        </div>
+                        <div className="-mr-2 flex gap-1">
+                          {engine.type === 'remote' && (
+                            <SetupRemoteModel
+                              engine={engine.name as InferenceEngine}
+                              isConfigured={
+                                (engine.engine.api_key?.length ?? 0) > 0
+                              }
                             />
-                          </Button>
-                        )}
+                          )}
+                          {!showModel ? (
+                            <Button theme="icon" onClick={onClickChevron}>
+                              <ChevronDownIcon
+                                size={14}
+                                className="text-[hsla(var(--text-secondary))]"
+                              />
+                            </Button>
+                          ) : (
+                            <Button theme="icon" onClick={onClickChevron}>
+                              <ChevronUpIcon
+                                size={14}
+                                className="text-[hsla(var(--text-secondary))]"
+                              />
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {isLocalEngine(engine) &&
-                      !isDownloadALocalModel &&
-                      showModel &&
-                      !searchText.length && (
-                        <ul className="pb-2">
-                          {featuredModel.map((model) => {
+                      {engine.type === 'local' &&
+                        !isDownloadALocalModel &&
+                        showModel &&
+                        !searchText.length && (
+                          <ul className="pb-2">
+                            {featuredModels.map((model) => {
+                              const isDownloading = downloadingModels.some(
+                                (md) => md === model.id
+                              )
+                              return (
+                                <li
+                                  key={model.id}
+                                  className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <p
+                                      className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                      title={model.name}
+                                    >
+                                      {model.name}
+                                    </p>
+                                    <ModelLabel
+                                      metadata={model.metadata}
+                                      compact
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                    <span className="font-medium">
+                                      {toGibibytes(model.metadata?.size)}
+                                    </span>
+                                    {!isDownloading ? (
+                                      <DownloadCloudIcon
+                                        size={18}
+                                        className="cursor-pointer text-[hsla(var(--app-link))]"
+                                        onClick={() =>
+                                          downloadModel(
+                                            model.sources[0].url,
+                                            model.id
+                                          )
+                                        }
+                                      />
+                                    ) : (
+                                      Object.values(downloadStates)
+                                        .filter((x) => x.modelId === model.id)
+                                        .map((item) => (
+                                          <ProgressCircle
+                                            key={item.modelId}
+                                            percentage={
+                                              formatDownloadPercentage(
+                                                item?.percent,
+                                                {
+                                                  hidePercentage: true,
+                                                }
+                                              ) as number
+                                            }
+                                            size={100}
+                                          />
+                                        ))
+                                    )}
+                                  </div>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+
+                      <ul className="pb-2">
+                        {filteredDownloadedModels
+                          .filter(
+                            (x) =>
+                              x.engine === engine.name ||
+                              (x.engine === InferenceEngine.nitro &&
+                                engine.name === InferenceEngine.cortex_llamacpp)
+                          )
+                          .filter((y) => {
+                            if (isLocalEngine(y.engine) && !searchText.length) {
+                              return downloadedModels.find((c) => c.id === y.id)
+                            } else {
+                              return y
+                            }
+                          })
+                          .map((model) => {
+                            if (!showModel) return null
                             const isDownloading = downloadingModels.some(
                               (md) => md === model.id
+                            )
+                            const isDownloaded = downloadedModels.some(
+                              (c) => c.id === model.id
                             )
                             return (
                               <li
                                 key={model.id}
-                                className="flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                                className={twMerge(
+                                  'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
+                                  !isConfigured
+                                    ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
+                                    : 'text-[hsla(var(--text-primary))]'
+                                )}
+                                onClick={() => {
+                                  if (!isConfigured && engine.type === 'remote')
+                                    return null
+                                  if (isDownloaded) {
+                                    onClickModelItem(model.id)
+                                  }
+                                }}
                               >
-                                <div className="flex items-center gap-2">
+                                <div className="flex gap-x-2">
                                   <p
-                                    className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                    className={twMerge(
+                                      'line-clamp-1',
+                                      !isDownloaded &&
+                                        'text-[hsla(var(--text-secondary))]'
+                                    )}
                                     title={model.name}
                                   >
                                     {model.name}
@@ -523,10 +573,12 @@ const ModelDropdown = ({
                                   />
                                 </div>
                                 <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                  <span className="font-medium">
-                                    {toGibibytes(model.metadata?.size)}
-                                  </span>
-                                  {!isDownloading ? (
+                                  {!isDownloaded && (
+                                    <span className="font-medium">
+                                      {toGibibytes(model.metadata?.size)}
+                                    </span>
+                                  )}
+                                  {!isDownloading && !isDownloaded ? (
                                     <DownloadCloudIcon
                                       size={18}
                                       className="cursor-pointer text-[hsla(var(--app-link))]"
@@ -559,106 +611,11 @@ const ModelDropdown = ({
                               </li>
                             )
                           })}
-                        </ul>
-                      )}
-
-                    <ul className="pb-2">
-                      {filteredDownloadedModels
-                        .filter(
-                          (x) =>
-                            x.engine === engine ||
-                            (x.engine === InferenceEngine.nitro &&
-                              engine === InferenceEngine.cortex_llamacpp)
-                        )
-                        .filter((y) => {
-                          if (isLocalEngine(y.engine) && !searchText.length) {
-                            return downloadedModels.find((c) => c.id === y.id)
-                          } else {
-                            return y
-                          }
-                        })
-                        .map((model) => {
-                          if (!showModel) return null
-                          const isDownloading = downloadingModels.some(
-                            (md) => md === model.id
-                          )
-                          const isDownloaded = downloadedModels.some(
-                            (c) => c.id === model.id
-                          )
-                          return (
-                            <li
-                              key={model.id}
-                              className={twMerge(
-                                'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                                !apiKey
-                                  ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
-                                  : 'text-[hsla(var(--text-primary))]'
-                              )}
-                              onClick={() => {
-                                if (!apiKey && !isLocalEngine(model.engine))
-                                  return null
-                                if (isDownloaded) {
-                                  onClickModelItem(model.id)
-                                }
-                              }}
-                            >
-                              <div className="flex gap-x-2">
-                                <p
-                                  className={twMerge(
-                                    'line-clamp-1',
-                                    !isDownloaded &&
-                                      'text-[hsla(var(--text-secondary))]'
-                                  )}
-                                  title={model.name}
-                                >
-                                  {model.name}
-                                </p>
-                                <ModelLabel metadata={model.metadata} compact />
-                              </div>
-                              <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                {!isDownloaded && (
-                                  <span className="font-medium">
-                                    {toGibibytes(model.metadata?.size)}
-                                  </span>
-                                )}
-                                {!isDownloading && !isDownloaded ? (
-                                  <DownloadCloudIcon
-                                    size={18}
-                                    className="cursor-pointer text-[hsla(var(--app-link))]"
-                                    onClick={() =>
-                                      downloadModel(
-                                        model.sources[0].url,
-                                        model.id
-                                      )
-                                    }
-                                  />
-                                ) : (
-                                  Object.values(downloadStates)
-                                    .filter((x) => x.modelId === model.id)
-                                    .map((item) => (
-                                      <ProgressCircle
-                                        key={item.modelId}
-                                        percentage={
-                                          formatDownloadPercentage(
-                                            item?.percent,
-                                            {
-                                              hidePercentage: true,
-                                            }
-                                          ) as number
-                                        }
-                                        size={100}
-                                      />
-                                    ))
-                                )}
-                              </div>
-                            </li>
-                          )
-                        })}
-                    </ul>
+                      </ul>
+                    </div>
                   </div>
-                </div>
-              )
-            })}
+                )
+              })}
           </ScrollArea>
         </div>
       </div>

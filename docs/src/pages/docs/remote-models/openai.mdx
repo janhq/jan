@@ -16,57 +16,73 @@ keywords:
     Azure OpenAI Service,
   ]
 ---
-
 import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
 
+# OpenAI 
 
+Jan supports [OpenAI](https://openai.com/) and OpenAI-compatible APIs, allowing you to use all models from OpenAI (GPT-4, GPT o1 and more) through Jan's interface.
 
-# OpenAI API
+## Integrate OpenAI API with Jan
 
-<Callout type='info'>
-The OpenAI Extension can be used for any OpenAI-compatible API endpoints.
-</Callout>
-
-## How to Integrate OpenAI API with Jan
-This guide provides step-by-step instructions for integrating the OpenAI API with Jan, allowing users to utilize OpenAI's capabilities within Jan's conversational interface.
-
-## Integration Steps
 <Steps>
-### Step 1: Configure OpenAI API Key
-1. Obtain OpenAI API Key from your [OpenAI Platform](https://platform.openai.com/api-keys) dashboard.
-2. Copy your **OpenAI API Key**.
-3. There are three ways to configure your API Key in Jan app:
-  - Navigate to the **Jan app** > **Gear Icon (⚙️)** > **My Models** tab > **Add Icon (➕)** next to **OpenAI**.
-  - Navigate to the **Jan app** > **Thread** > **Model** tab > **Add Icon (➕)** next to **OpenAI**.
-  - Navigate to the **Jan app** > **Gear Icon (⚙️)** > **OpenAI** section under Model Providers.
-4. Insert your **OpenAI API Key**.
-
-### Step 2: Start Chatting with the Model
-
-1. Select the OpenAI model you want to use.
+### Step 1: Get Your API Key 
+1. Visit [OpenAI Platform](https://platform.openai.com/api-keys) and sign in 
+2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
-The OpenAI is the default extension for the Jan application. All the OpenAI models are automatically installed when you install the Jan application.
+Ensure your API key has sufficient credits
 </Callout>
 
-2. Specify the model's parameters.
-3. Start the conversation with the OpenAI model.
+### Step 2: Configure Jan
+There are two ways to add your OpenAI API keys in Jan:
+
+Through Threads:
+1. In Threads, click Model tab in the right sidebar or model selector in input field
+2. Once the selector is poped up, choose the Cloud tab
+3. Click Add (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to OpenAI
+4. Once you are directed to OpenAI settings, insert your API Key  
+
+Through Settings:
+1. Navigate to Settings (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under Remote Engines, select OpenAI
+3. Insert your API Key  
+
+<br/>
+![OpenAI](../_assets/openai.png)
+<br/>
+
+### Step 3: Start Using OpenAI's Models
+
+In any existing Threads or create a new one
+Select an OpenAI model from model selector
+Start chatting 
+
 </Steps>
 
-### OpenAI Models
+## Available OpenAI Models
 
-You can also use specific OpenAI models you cannot find in the **Hub** section by customizing the `model.yaml` file, which you can see in the `~/jan/data/models/`. Follow the steps in the [Manage Models](/docs/models/manage-models) to manually add a model.
-
-<Callout type='info'>
-- You can find the list of available models in the [OpenAI Platform](https://platform.openai.com/docs/models/overview).
-- The `id` property must match the model name in the list.
-  - For example, if you want to use the [GPT-4 Turbo](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), you must set the `id` property to `gpt-4-1106-preview`.
-</Callout>
+Jan automatically includes popular OpenAI models. In case you want to use a specific OpenAI model that you cannot find in Jan, follow instructions in [Manual Setup](/docs/models/manage-models#4-manual-setup) to add custom models:
+  - See list of available models in [OpenAI Platform](https://platform.openai.com/docs/models/overview).
+  - The id property must match the model name in the list. For example, if you want to use the [GPT-4 Turbo](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), you must set the id property to gpt-4-1106-preview.
 
 ## Troubleshooting
 
-If you encounter any issues during the integration process or while using OpenAI with Jan, consider the following troubleshooting steps:
+Common issues and solutions:
 
-- Double-check your API credentials to ensure they are correct.
-- Check for error messages or logs that may provide insight into the issue.
-- Reach out to OpenAI API support for assistance if needed.
+1. API Key Issues
+- Verify your API key is correct and not expired
+- Check if you have billing set up on your OpenAI account
+- Ensure you have access to the model you're trying to use
+
+2. Connection Problems
+- Check your internet connection
+- Verify OpenAI's [system status](https://status.openai.com)
+- Look for error messages in [Jan's logs](/docs/troubleshooting#how-to-get-error-logs)
+
+3. Model Unavailable
+- Confirm your API key has access to the model
+- Check if you're using the correct model ID
+- Verify your OpenAI account has the necessary permissions
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [OpenAI documentation](https://platform.openai.com/docs).
