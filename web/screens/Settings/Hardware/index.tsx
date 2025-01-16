@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from 'react'
+import { atomWithStorage } from 'jotai/utils'
+import { useAtom } from 'jotai'
 
 import { useState } from 'react'
 
@@ -8,48 +10,26 @@ import { Progress, ScrollArea, Switch } from '@janhq/joi'
 import { ChevronDownIcon, GripVerticalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
-import { useGetHardwareInfo } from '@/hooks/useHardwareManagement'
+import {
+  useGetHardwareInfo,
+  setActiveGpus,
+} from '@/hooks/useHardwareManagement'
+import { Gpu } from '@janhq/core'
 
-const dummy = [
-  {
-    active: true,
-    name: 'Nvidia GeForce RTX 4070 Laptop GPU',
-    memory: '12GB / 16GB',
-    usage: 22,
-  },
-  {
-    active: true,
-    name: 'Nvidia GeForce GTX 1660 Ti',
-    memory: '12GB / 16GB',
-    usage: 15,
-  },
-  {
-    active: true,
-    name: 'Nvidia Quadro P5000',
-    memory: '12GB / 16GB',
-    usage: 70,
-  },
-  {
-    active: false,
-    name: 'AMD Radeon RX 6900 XT',
-    memory: '8GB',
-    usage: 0,
-  },
-  {
-    active: false,
-    name: 'AMD Radeon RX 6800 XT',
-    memory: '8GB',
-    usage: 0,
-  },
-]
+const gpusAtom = atomWithStorage<Gpu[]>('gpus', [])
+
+export const showRightPanelAtom = atomWithStorage<Gpu[]>(
+  'gpus',
+  [],
+  undefined,
+  { getOnInit: true }
+)
 
 const Hardware = () => {
+  const { hardware } = useGetHardwareInfo()
   const [openPanels, setOpenPanels] = useState<Record<number, boolean>>({})
-  const [data, setData] = useState(dummy)
 
-  const { hardware, error, mutate } = useGetHardwareInfo()
-
-  console.log(hardware)
+  const [gpus, setGpus] = useAtom<Gpu[]>(gpusAtom)
 
   const togglePanel = (index: number) => {
     setOpenPanels((prev) => ({
@@ -58,26 +38,44 @@ const Hardware = () => {
     }))
   }
 
-  const handleSwitchChange = (index: number, isActive: boolean) => {
-    setData((prevData) =>
-      prevData.map((item, i) =>
-        i === index
-          ? {
-              ...item,
-              active: isActive, // Update the active state of the specific item
-            }
-          : item
-      )
+  // Handle switch toggle for GPU activation
+  const handleSwitchChange = async (index: number, isActive: boolean) => {
+    const updatedGpus = gpus.map((gpu, i) =>
+      i === index ? { ...gpu, activated: isActive } : gpu
     )
+    setGpus(updatedGpus)
+    // Call the API to update the active GPUs
+    try {
+      const activeGpuIds = updatedGpus
+        .filter((gpu) => gpu.activated)
+        .map((gpu) => Number(gpu.id))
+      await setActiveGpus(activeGpuIds)
+    } catch (error) {
+      console.error('Failed to update active GPUs:', error)
+    }
   }
 
   const handleDragEnd = (result: any) => {
     if (!result.destination) return
-    const items = Array.from(data)
-    const [reorderedItem] = items.splice(result.source.index, 1)
-    items.splice(result.destination.index, 0, reorderedItem)
-    setData(items)
+    const reorderedGpus = Array.from(gpus)
+    const [movedGpu] = reorderedGpus.splice(result.source.index, 1)
+    reorderedGpus.splice(result.destination.index, 0, movedGpu)
+    setGpus(reorderedGpus) // Update the atom, which persists to localStorage
   }
+
+  React.useEffect(() => {
+    if (hardware?.gpus) {
+      // Find GPUs that are not already in the state by UUID
+      const newGpus = hardware.gpus.filter(
+        (gpu) => !gpus.some((existingGpu) => existingGpu.uuid === gpu.uuid)
+      )
+
+      // Append new GPUs to the bottom of the current list
+      if (newGpus.length > 0) {
+        setGpus((prevGpus) => [...prevGpus, ...newGpus])
+      }
+    }
+  }, [hardware?.gpus, gpus, setGpus])
 
   return (
     <ScrollArea className="h-full w-full px-4">
@@ -166,7 +164,7 @@ const Hardware = () => {
           </div>
         </div>
         {/* GPUs */}
-        {!isMac && (
+        {!isMac && gpus.length > 1 && (
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="w-full flex-shrink-0">
               <div className="flex gap-x-2">
@@ -184,7 +182,7 @@ const Hardware = () => {
                       ref={provided.innerRef}
                       className="mt-4"
                     >
-                      {data.map((item, i) => (
+                      {gpus.map((item, i) => (
                         <Draggable key={i} draggableId={String(i)} index={i}>
                           {(provided, snapshot) => (
                             <div
@@ -192,7 +190,8 @@ const Hardware = () => {
                               {...provided.draggableProps}
                               {...provided.dragHandleProps}
                               className={twMerge(
-                                'cursor-pointer border border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:rounded-t-none ',
+                                'cursor-pointer border border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg',
+                                gpus.length > 1 && 'last:rounded-t-none',
                                 snapshot.isDragging
                                   ? 'border-b'
                                   : 'border-b-0 last:border-b'
@@ -209,7 +208,7 @@ const Hardware = () => {
                                     <div
                                       className={twMerge(
                                         'h-2 w-2 rounded-full',
-                                        item.active
+                                        item.activated
                                           ? 'bg-green-400'
                                           : 'bg-neutral-300'
                                       )}
@@ -217,25 +216,47 @@ const Hardware = () => {
                                     <h6 title={item.name}>{item.name}</h6>
                                   </div>
                                   <div className="flex flex-shrink-0 items-end gap-4">
-                                    {item.active && (
+                                    {item.activated && (
                                       <div className="flex w-40 items-center gap-3">
                                         <Progress
-                                          value={item.usage}
+                                          value={Math.round(
+                                            (Number(item.free_vram) /
+                                              Number(item.total_vram)) *
+                                              100
+                                          )}
                                           size="small"
                                           className="w-full"
                                         />
                                         <span className="font-medium">
-                                          {item.usage}%
+                                          {Math.round(
+                                            (Number(item.free_vram) /
+                                              Number(item.total_vram)) *
+                                              100
+                                          ).toFixed()}
+                                          %
                                         </span>
                                       </div>
                                     )}
 
                                     <div className="flex justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
-                                      <span>{item.memory}</span>
+                                      {item.activated && (
+                                        <span>
+                                          {(
+                                            Number(item.free_vram) / 1024
+                                          ).toFixed(2)}
+                                          GB /{' '}
+                                        </span>
+                                      )}
+                                      <span>
+                                        {(
+                                          Number(item.total_vram) / 1024
+                                        ).toFixed(2)}
+                                        GB
+                                      </span>
                                     </div>
 
                                     <Switch
-                                      checked={item.active}
+                                      checked={item.activated}
                                       onChange={(e) =>
                                         handleSwitchChange(i, e.target.checked)
                                       }
@@ -244,12 +265,11 @@ const Hardware = () => {
                                     <ChevronDownIcon
                                       size={14}
                                       className={twMerge(
-                                        'transform cursor-pointer transition-transform',
+                                        'relative z-10 transform cursor-pointer transition-transform',
                                         openPanels[i]
                                           ? 'rotate-180'
                                           : 'rotate-0'
                                       )}
-                                      onClick={() => togglePanel(i)}
                                     />
                                   </div>
                                 </div>
@@ -261,13 +281,20 @@ const Hardware = () => {
                                     <div className="w-[200px]">
                                       Driver Version
                                     </div>
-                                    <span>552.12</span>
+                                    <span>
+                                      {
+                                        item.additional_information
+                                          .driver_version
+                                      }
+                                    </span>
                                   </div>
                                   <div className="flex">
                                     <div className="w-[200px]">
                                       Compute Capability
                                     </div>
-                                    <span>552.12</span>
+                                    <span>
+                                      {item.additional_information.compute_cap}
+                                    </span>
                                   </div>
                                 </div>
                               )}

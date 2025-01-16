@@ -17,6 +17,11 @@ async function fetchExtensionData<T>(
   return method(extension)
 }
 
+const getExtension = () =>
+  extensionManager.get<HardwareManagementExtension>(
+    ExtensionTypeEnum.Hardware
+  ) ?? null
+
 /**
  * @returns A Promise that resolves to an object of list engines.
  */
@@ -45,4 +50,24 @@ export function useGetHardwareInfo() {
   )
 
   return { hardware, error, mutate }
+}
+
+/**
+ * set gpus activate
+ * @returns A Promise that resolves set gpus activate.
+ */
+export const setActiveGpus = async (gpus: number[]) => {
+  const extension = getExtension()
+
+  if (!extension) {
+    throw new Error('Extension is not available')
+  }
+
+  try {
+    const response = await extension.setAvtiveGpu(gpus)
+    return response
+  } catch (error) {
+    console.error('Failed to install engine variant:', error)
+    throw error
+  }
 }
