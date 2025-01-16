@@ -298,40 +298,46 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                         key={rowIndex}
                         className="my-2 flex items-center gap-4 md:gap-10"
                       >
-                        {row.map((remoteEngine) => {
-                          const engineLogo = getLogoEngine(
-                            remoteEngine as InferenceEngine
+                        {row
+                          .filter(
+                            (e) =>
+                              engines?.[e as InferenceEngine]?.[0]?.type ===
+                              'remote'
                           )
+                          .map((remoteEngine) => {
+                            const engineLogo = getLogoEngine(
+                              remoteEngine as InferenceEngine
+                            )
 
-                          return (
-                            <div
-                              className="flex cursor-pointer flex-col items-center justify-center gap-4"
-                              key={remoteEngine}
-                              onClick={() => {
-                                setMainViewState(MainViewState.Settings)
-                                setSelectedSetting(
-                                  remoteEngine as InferenceEngine
-                                )
-                              }}
-                            >
-                              {engineLogo && (
-                                <Image
-                                  width={48}
-                                  height={48}
-                                  src={engineLogo}
-                                  alt="Engine logo"
-                                  className="h-10 w-10 flex-shrink-0"
-                                />
-                              )}
-
-                              <p className="font-medium">
-                                {getTitleByEngine(
-                                  remoteEngine as InferenceEngine
+                            return (
+                              <div
+                                className="flex cursor-pointer flex-col items-center justify-center gap-4"
+                                key={remoteEngine}
+                                onClick={() => {
+                                  setMainViewState(MainViewState.Settings)
+                                  setSelectedSetting(
+                                    remoteEngine as InferenceEngine
+                                  )
+                                }}
+                              >
+                                {engineLogo && (
+                                  <Image
+                                    width={48}
+                                    height={48}
+                                    src={engineLogo}
+                                    alt="Engine logo"
+                                    className="h-10 w-10 flex-shrink-0"
+                                  />
                                 )}
-                              </p>
-                            </div>
-                          )
-                        })}
+
+                                <p className="font-medium">
+                                  {getTitleByEngine(
+                                    remoteEngine as InferenceEngine
+                                  )}
+                                </p>
+                              </div>
+                            )
+                          })}
                       </div>
                     )
                   })}
