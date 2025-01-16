@@ -217,8 +217,14 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                   <div className="mt-2 w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                     <p>
                       Choose the default variant that best suited for your
-                      hardware. See [our
-                      guides](https://jan.ai/docs/local-engines/llama-cpp).
+                      hardware. See&nbsp;
+                      <a
+                        href="https://jan.ai/docs/local-engines/llama-cpp"
+                        className="cursor-pointer text-blue-600 dark:text-blue-400"
+                        target="_blank"
+                      >
+                        our guides.
+                      </a>
                     </p>
                   </div>
                 </div>
