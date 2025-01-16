@@ -15,7 +15,7 @@ import {
 } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDownIcon } from 'lucide-react'
+import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -56,7 +56,7 @@ type GPU = {
  * Advanced Settings Screen
  * @returns
  */
-const Advanced = () => {
+const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
     experimentalFeatureEnabledAtom
   )
@@ -448,34 +448,31 @@ const Advanced = () => {
 
         <DataFolder />
 
-        {/* Proxy */}
+        {/* Proxy Settings Link */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="w-full space-y-1">
-            <div className="flex w-full justify-between gap-x-2">
-              <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
+          <div 
+            className="flex w-full cursor-pointer items-center justify-between"
+            onClick={() => setSubdir('proxy')}
+          >
+            <div className="space-y-1">
+              <div className="flex gap-x-2">
+                <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
+              </div>
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+                Optional proxy server for internet connections
+              </p>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Optional proxy server for internet connections. Only HTTPS proxies
-              supported.
-            </p>
-          </div>
-
-          <div className="flex w-full flex-shrink-0 flex-col items-end gap-2 pr-1 sm:w-1/2">
-            <Switch
-              data-testid="proxy-switch"
-              checked={proxyEnabled}
-              onChange={() => {
-                setProxyEnabled(!proxyEnabled)
-                updatePullOptions()
-              }}
-            />
-            <div className="w-full">
-              <Input
-                data-testid="proxy-input"
-                placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
-                value={partialProxy}
-                onChange={onProxyChange}
+            <div className="flex items-center gap-2">
+              <Switch
+                data-testid="proxy-switch"
+                checked={proxyEnabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setProxyEnabled(!proxyEnabled)
+                  updatePullOptions()
+                }}
               />
+              <ChevronRightIcon size={16} />
             </div>
           </div>
         </div>

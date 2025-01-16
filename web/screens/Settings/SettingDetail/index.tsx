@@ -1,5 +1,5 @@
 import { InferenceEngine } from '@janhq/core'
-import { useAtomValue } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
@@ -13,14 +13,17 @@ import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hotkeys from '@/screens/Settings/Hotkeys'
 import MyModels from '@/screens/Settings/MyModels'
 import Privacy from '@/screens/Settings/Privacy'
+import ProxySettings from '@/screens/Settings/Advanced/ProxySettings'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import { useState } from 'react'
 
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)
   const { engines } = useGetEngines()
+  const [subdir, setSubdir] = useState<string | null>(null)
 
   switch (selectedSetting) {
     case 'Engines':
@@ -39,7 +42,12 @@ const SettingDetail = () => {
       return <Privacy />
 
     case 'Advanced Settings':
-      return <Advanced />
+      switch (subdir) {
+        case 'proxy':
+          return <ProxySettings onBack={() => setSubdir(null)} />
+        default:
+          return <Advanced setSubdir={setSubdir} />
+      }
 
     case 'My Models':
       return <MyModels />
