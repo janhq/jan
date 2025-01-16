@@ -125,7 +125,7 @@ const Hardware = () => {
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
           <div className="flex-shrink-0 space-y-1">
             <div className="flex gap-x-2">
-              <h6 className="font-semibold capitalize">RAM</h6>
+              <h6 className="font-semibold capitalize">OS</h6>
             </div>
           </div>
           <div className="w-full md:w-1/2">
