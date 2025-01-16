@@ -1,20 +1,22 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from 'react'
-import { atomWithStorage } from 'jotai/utils'
-import { useAtom } from 'jotai'
 
 import { useState } from 'react'
 
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
+import { Gpu } from '@janhq/core'
 import { Progress, ScrollArea, Switch } from '@janhq/joi'
+import { useAtom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
+
 import { ChevronDownIcon, GripVerticalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
+
 import {
   useGetHardwareInfo,
   setActiveGpus,
 } from '@/hooks/useHardwareManagement'
-import { Gpu } from '@janhq/core'
 
 const gpusAtom = atomWithStorage<Gpu[]>('gpus', [])
 
@@ -87,7 +89,7 @@ const Hardware = () => {
               <h6 className="font-semibold capitalize">CPU</h6>
             </div>
           </div>
-          <div className="w-full md:w-1/2">
+          <div className="w-full md:w-2/3">
             <div className="flex flex-col gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>{hardware?.cpu.model}</span>
@@ -110,12 +112,16 @@ const Hardware = () => {
               <h6 className="font-semibold capitalize">RAM</h6>
             </div>
           </div>
-          <div className="w-full md:w-1/2">
+          <div className="w-full md:w-2/3">
             <div className="flex flex-col gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>
-                  {(Number(hardware?.ram.available) / 1024).toFixed(2)}GB /{' '}
-                  {(Number(hardware?.ram.total) / 1024).toFixed(2)}GB
+                  {(
+                    (Number(hardware?.ram.total) -
+                      Number(hardware?.ram.available)) /
+                    1024
+                  ).toFixed(2)}
+                  GB / {(Number(hardware?.ram.total) / 1024).toFixed(2)}GB
                 </span>
                 {hardware?.ram.type && (
                   <>
@@ -127,8 +133,9 @@ const Hardware = () => {
               <div className="flex items-center gap-3">
                 <Progress
                   value={Math.round(
-                    (Number(hardware?.ram.total) -
-                      Number(hardware?.ram.available)) *
+                    ((Number(hardware?.ram.total) -
+                      Number(hardware?.ram.available)) /
+                      Number(hardware?.ram.total)) *
                       100
                   )}
                   size="small"
@@ -136,8 +143,9 @@ const Hardware = () => {
                 />
                 <span className="font-medium">
                   {Math.round(
-                    (Number(hardware?.ram.total) -
-                      Number(hardware?.ram.available)) *
+                    ((Number(hardware?.ram.total) -
+                      Number(hardware?.ram.available)) /
+                      Number(hardware?.ram.total)) *
                       100
                   ).toFixed()}
                   %
@@ -153,7 +161,7 @@ const Hardware = () => {
               <h6 className="font-semibold capitalize">OS</h6>
             </div>
           </div>
-          <div className="w-full md:w-1/2">
+          <div className="w-full md:w-2/3">
             <div className="flex flex-col gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>{hardware?.os.name}</span>
@@ -220,8 +228,9 @@ const Hardware = () => {
                                       <div className="flex w-40 items-center gap-3">
                                         <Progress
                                           value={Math.round(
-                                            (Number(item.total_vram) -
-                                              Number(item.free_vram)) *
+                                            ((Number(item.total_vram) -
+                                              Number(item.free_vram)) /
+                                              Number(item.total_vram)) *
                                               100
                                           )}
                                           size="small"
@@ -229,8 +238,9 @@ const Hardware = () => {
                                         />
                                         <span className="font-medium">
                                           {Math.round(
-                                            (Number(item.total_vram) -
-                                              Number(item.free_vram)) *
+                                            ((Number(item.total_vram) -
+                                              Number(item.free_vram)) /
+                                              Number(item.total_vram)) *
                                               100
                                           ).toFixed()}
                                           %
@@ -242,7 +252,9 @@ const Hardware = () => {
                                       {item.activated && (
                                         <span>
                                           {(
-                                            Number(item.free_vram) / 1024
+                                            (Number(item.total_vram) -
+                                              Number(item.free_vram)) /
+                                            1024
                                           ).toFixed(2)}
                                           GB /{' '}
                                         </span>
