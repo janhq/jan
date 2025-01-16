@@ -71,18 +71,6 @@ function dispose() {
   watchdog?.terminate()
 }
 
-function addEnvPaths(dest: string) {
-  // Add engine path to the PATH and LD_LIBRARY_PATH
-  if (process.platform === 'win32') {
-    process.env.PATH = (process.env.PATH || '').concat(path.delimiter, dest)
-  } else {
-    process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
-      path.delimiter,
-      dest
-    )
-  }
-}
-
 /**
  * Cortex process info
  */

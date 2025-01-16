@@ -26,6 +26,7 @@ import { formatDownloadPercentage } from '@/utils/converter'
 import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
+import { useActiveModel } from '@/hooks/useActiveModel'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -52,6 +53,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   const [installingEngines, setInstallingEngines] = useState<
     Map<string, number>
   >(new Map())
+  const { stopModel } = useActiveModel()
 
   const isEngineUpdated =
     latestReleasedEngine &&
@@ -104,6 +106,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
 
   const handleEngineUpdate = useCallback(
     (event: { id: string; type: DownloadEvent; percent: number }) => {
+      stopModel()
       mutateInstalledEngines()
       mutateDefaultEngineVariant()
       // Backward compatible support - cortex.cpp returns full variant file name
@@ -138,6 +141,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       })
     },
     [
+      stopModel,
       mutateDefaultEngineVariant,
       mutateInstalledEngines,
       setInstallingEngines,
@@ -153,6 +157,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   }, [handleEngineUpdate])
 
   const handleChangeVariant = (e: string) => {
+    stopModel()
     setSelectedVariants(e)
     setDefaultEngineVariant(engine, {
       variant: e,
