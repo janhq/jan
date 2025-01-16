@@ -138,9 +138,11 @@ const symlinkEngines = async () => {
 
     await mkdir(path.join(symlinkEnginePath, variant), {
       recursive: true,
-    }).catch(console.error)
+    }).catch((error) => log(JSON.stringify(error)))
 
-    await symlink(targetVariantPath, symlinkVariantPath).catch(console.error)
+    await symlink(targetVariantPath, symlinkVariantPath).catch((error) =>
+      log(JSON.stringify(error))
+    )
     console.log(`Symlink created: ${targetVariantPath} -> ${symlinkEnginePath}`)
   }
 }
