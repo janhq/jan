@@ -105,8 +105,8 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   }, [defaultEngineVariant])
 
   const handleEngineUpdate = useCallback(
-    (event: { id: string; type: DownloadEvent; percent: number }) => {
-      stopModel()
+    async (event: { id: string; type: DownloadEvent; percent: number }) => {
+      await stopModel().catch(console.info)
       mutateInstalledEngines()
       mutateDefaultEngineVariant()
       // Backward compatible support - cortex.cpp returns full variant file name
@@ -156,8 +156,8 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     }
   }, [handleEngineUpdate])
 
-  const handleChangeVariant = (e: string) => {
-    stopModel()
+  const handleChangeVariant = async (e: string) => {
+    await stopModel().catch(console.info)
     setSelectedVariants(e)
     setDefaultEngineVariant(engine, {
       variant: e,
