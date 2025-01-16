@@ -115,6 +115,8 @@ const RemoteEngineSettings = ({
     }
   }, [engine])
 
+  if (!engine) return null
+
   return (
     <ScrollArea className="h-full w-full">
       <div className="block w-full px-4">
