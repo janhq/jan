@@ -90,7 +90,7 @@ const Hardware = () => {
             </div>
           </div>
           <div className="w-full md:w-2/3">
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col items-end gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>{hardware?.cpu.model}</span>
                 <span>|</span>
@@ -98,7 +98,7 @@ const Hardware = () => {
                 <span>|</span>
                 <span>Architecture: {hardware?.cpu.arch}</span>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex w-2/3 items-center gap-3">
                 <Progress value={70} size="small" className="w-full" />
                 <span className="font-medium">70%</span>
               </div>
@@ -113,7 +113,7 @@ const Hardware = () => {
             </div>
           </div>
           <div className="w-full md:w-2/3">
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col items-end gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>
                   {(
@@ -130,7 +130,7 @@ const Hardware = () => {
                   </>
                 )}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex w-2/3 items-center gap-3">
                 <Progress
                   value={Math.round(
                     ((Number(hardware?.ram.total) -
@@ -162,7 +162,7 @@ const Hardware = () => {
             </div>
           </div>
           <div className="w-full md:w-2/3">
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col items-end gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>{hardware?.os.name}</span>
                 <span>|</span>
