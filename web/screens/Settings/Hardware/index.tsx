@@ -67,17 +67,37 @@ const Hardware = () => {
 
   React.useEffect(() => {
     if (hardware?.gpus) {
-      // Find GPUs that are not already in the state by UUID
-      const newGpus = hardware.gpus.filter(
-        (gpu) => !gpus.some((existingGpu) => existingGpu.uuid === gpu.uuid)
-      )
+      setGpus((prevGpus) => {
+        // Create a map of existing GPUs by UUID for quick lookup
+        const gpuMap = new Map(prevGpus.map((gpu) => [gpu.uuid, gpu]))
 
-      // Append new GPUs to the bottom of the current list
-      if (newGpus.length > 0) {
-        setGpus((prevGpus) => [...prevGpus, ...newGpus])
-      }
+        // Update existing GPUs or add new ones
+        const updatedGpus = hardware.gpus.map((newGpu) => {
+          const existingGpu = gpuMap.get(newGpu.uuid)
+
+          if (existingGpu) {
+            // Update the GPU properties while keeping the original order
+            return {
+              ...existingGpu,
+              free_vram: newGpu.free_vram,
+              total_vram: newGpu.total_vram,
+            }
+          }
+
+          // Return the new GPU if not already in the state
+          return newGpu
+        })
+
+        // Append GPUs from the previous state that are not in the hardware.gpus
+        // This preserves user-reordered GPUs that aren't present in the new data
+        const remainingGpus = prevGpus.filter(
+          (prevGpu) => !hardware.gpus.some((gpu) => gpu.uuid === prevGpu.uuid)
+        )
+
+        return [...updatedGpus, ...remainingGpus]
+      })
     }
-  }, [hardware?.gpus, gpus, setGpus])
+  }, [hardware?.gpus, setGpus])
 
   return (
     <ScrollArea className="h-full w-full px-4">
