@@ -1,5 +1,10 @@
 import path from 'path'
-import { appResourcePath, getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
+import {
+  appResourcePath,
+  getJanDataFolderPath,
+  log,
+  SystemInformation,
+} from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
 import { readdir, symlink } from 'fs/promises'
 
@@ -18,13 +23,9 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
     let binaryName = `cortex-server${process.platform === 'win32' ? '.exe' : ''}`
     const binPath = path.join(__dirname, '..', 'bin')
-    await createEngineSymlinks(binPath)
-    
+
     const executablePath = path.join(binPath, binaryName)
-    const sharedPath = path.join(
-      appResourcePath(),
-      'shared'
-    )
+    const sharedPath = path.join(appResourcePath(), 'shared')
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executablePath}`)
 
@@ -62,41 +63,12 @@ function run(systemInfo?: SystemInformation): Promise<any> {
 }
 
 /**
- * Create symlinks for the engine shared libraries
- * @param binPath 
- */
-async function createEngineSymlinks(binPath: string) {
-  const sharedPath = path.join(appResourcePath(), 'shared')
-  const sharedLibFiles = await readdir(sharedPath)
-  for (const sharedLibFile of sharedLibFiles) {
-    if (sharedLibFile.endsWith('.dll') || sharedLibFile.endsWith('.so')) {
-      const targetDllPath = path.join(sharedPath, sharedLibFile)
-      const symlinkDllPath = path.join(binPath, sharedLibFile)
-      await symlink(targetDllPath, symlinkDllPath).catch(console.error)
-      console.log(`Symlink created: ${targetDllPath} -> ${symlinkDllPath}`)
-    }
-  }
-}
-
-/**
  * Every module should have a dispose function
  * This will be called when the extension is unloaded and should clean up any resources
  * Also called when app is closed
  */
 function dispose() {
   watchdog?.terminate()
-}
-
-function addEnvPaths(dest: string) {
-  // Add engine path to the PATH and LD_LIBRARY_PATH
-  if (process.platform === 'win32') {
-    process.env.PATH = (process.env.PATH || '').concat(path.delimiter, dest)
-  } else {
-    process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
-      path.delimiter,
-      dest
-    )
-  }
 }
 
 /**
