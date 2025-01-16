@@ -74,9 +74,7 @@ async function createEngineSymlinks(binPath: string) {
     if (sharedLibFile.endsWith('.dll') || sharedLibFile.endsWith('.so')) {
       const targetDllPath = path.join(sharedPath, sharedLibFile)
       const symlinkDllPath = path.join(binPath, sharedLibFile)
-      await symlink(targetDllPath, symlinkDllPath, 'junction').catch(
-        console.error
-      )
+      await symlink(targetDllPath, symlinkDllPath, 'file').catch(console.error)
       console.log(`Symlink created: ${targetDllPath} -> ${symlinkDllPath}`)
     }
   }
