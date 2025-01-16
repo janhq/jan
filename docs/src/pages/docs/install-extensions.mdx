@@ -18,11 +18,32 @@ keywords:
 ---
 
 import { Callout } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
 
 
 # Install Extensions
 
-Jan comes with several [pre-installed extensions](/docs/extensions#core-extensions) that provide core functionalities. You can manually add custom third-party extensions at your own risk.
+Jan uses a modular extension system that allows developers to add new functionality to the application. By default, Jan comes with several [pre-installed extensions](/docs/extensions#core-extensions) that provide core functionalities. You can manually add custom third-party extensions at your own risk.
+
+## Prerequisites
+
+### Required Tools
+- Node.js (version 20.0.0 or higher)
+- Basic understanding of TypeScript
+
+### Jan's Architecture
+Jan is built on:
+- **Electron**: Powers the desktop application
+  - Extensions run in the main process
+  - Access to Node.js APIs and filesystem
+  - Cannot use browser-only libraries
+- **Next.js**: Handles the user interface
+- **Node.js**: Runs extension logic
+
+This architecture means your extensions:
+- Can use Node.js packages and system APIs
+- Need to handle client/server communication properly
+- Should follow Electron's security practices
 
 ## Create Extensions
 
@@ -31,11 +52,11 @@ Jan currently only accepts `.tgz` file format for extensions.
 </Callout>
 
 > **Heads Up:**
-> - Please use the following structure and setup as a **reference** only.
-> - You're free to develop extensions using any approach or structure that works for your needs. As long as your extension can be packaged as a `.tgz` file, it can be installed in Jan. Feel free to experiment and innovate!
+> - Use the following structure and setup as a **reference** only.
+> - You're free to develop extensions using any approach or structure that works for your needs. Feel free to experiment and innovate.
 > - If you already have your own `.tgz` extension file, please move forward to [install extension](/docs/install-extensions#install-extensions) step. 
 
-#### Extension Structure
+### Extension Structure
 Your extension should follow this basic structure:
 
 ```
@@ -48,7 +69,7 @@ my-extension/
 └── README.md           # Extension documentation
 ```
 
-#### Required package.json Fields
+### Required package.json Fields
 ```json
 {
   "name": "@your-org/extension-name",
@@ -73,17 +94,50 @@ my-extension/
 }
 ```
 
-#### Example Extension Template
+### Example Extension Template
 
 You can find a template for creating Jan extensions in our [example repository](https://github.com/janhq/extension-template).
 ## Install Extensions 
 
 To install a custom extension in Jan:
 
-1. Navigate to [Jan Data Folder](/docs/data-folder):
-2. Copy `.tgz` extension file into the extensions directory
-3. Extract the `.tgz` file into its own folder under the extensions directory
+1. Open Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Extensions**
+2. Click **<Plus width={16} height={16} style={{display:"inline"}}/> Install Extension**
+3. Select your extension `.tgz` file & save
 4. Restart Jan
 
 After restart, the `~/jan/data/extensions/extensions.json` file will be updated automatically to include your new extension.
+
+<br/>
+![Install Extensions](./_assets/extensions-04.png)
+<br/>
+
+## Troubleshooting
+**Check Extensions Logs**
+
+```bash
+# View application logs
+~/jan/logs/app.log
+
+# Open Developer Tools
+Mac: Cmd + Option + I
+Windows/Linux: Ctrl + Shift + I
+```
+**Common Error Patterns**
+
+1. Initialization Failures
+   - Extension fails to load/activate
+   - Verify package.json configuration
+   - Check extension dependencies
+
+2. Runtime Errors
+   - Node.js module errors
+   - API connection issues
+   - Authentication failures
+
+3. Build Problems
+```bash
+rm -rf dist/
+npm run build
+```
 
