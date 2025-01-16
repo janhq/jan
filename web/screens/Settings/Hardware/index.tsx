@@ -127,8 +127,8 @@ const Hardware = () => {
               <div className="flex items-center gap-3">
                 <Progress
                   value={Math.round(
-                    (Number(hardware?.ram.available) /
-                      Number(hardware?.ram.total)) *
+                    (Number(hardware?.ram.total) -
+                      Number(hardware?.ram.available)) *
                       100
                   )}
                   size="small"
@@ -136,8 +136,8 @@ const Hardware = () => {
                 />
                 <span className="font-medium">
                   {Math.round(
-                    (Number(hardware?.ram.available) /
-                      Number(hardware?.ram.total)) *
+                    (Number(hardware?.ram.total) -
+                      Number(hardware?.ram.available)) *
                       100
                   ).toFixed()}
                   %
@@ -164,7 +164,7 @@ const Hardware = () => {
           </div>
         </div>
         {/* GPUs */}
-        {!isMac && gpus.length > 1 && (
+        {!isMac && gpus.length > 0 && (
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="w-full flex-shrink-0">
               <div className="flex gap-x-2">
@@ -220,8 +220,8 @@ const Hardware = () => {
                                       <div className="flex w-40 items-center gap-3">
                                         <Progress
                                           value={Math.round(
-                                            (Number(item.free_vram) /
-                                              Number(item.total_vram)) *
+                                            (Number(item.total_vram) -
+                                              Number(item.free_vram)) *
                                               100
                                           )}
                                           size="small"
@@ -229,8 +229,8 @@ const Hardware = () => {
                                         />
                                         <span className="font-medium">
                                           {Math.round(
-                                            (Number(item.free_vram) /
-                                              Number(item.total_vram)) *
+                                            (Number(item.total_vram) -
+                                              Number(item.free_vram)) *
                                               100
                                           ).toFixed()}
                                           %
