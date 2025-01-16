@@ -140,8 +140,8 @@ const symlinkEngines = async () => {
       recursive: true,
     }).catch((error) => log(JSON.stringify(error)))
 
-    await symlink(targetVariantPath, symlinkVariantPath).catch((error) =>
-      log(JSON.stringify(error))
+    await symlink(targetVariantPath, symlinkVariantPath, 'junction').catch(
+      (error) => log(JSON.stringify(error))
     )
     console.log(`Symlink created: ${targetVariantPath} -> ${symlinkEnginePath}`)
   }

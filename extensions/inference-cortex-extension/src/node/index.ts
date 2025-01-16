@@ -1,5 +1,10 @@
 import path from 'path'
-import { appResourcePath, getJanDataFolderPath, log, SystemInformation } from '@janhq/core/node'
+import {
+  appResourcePath,
+  getJanDataFolderPath,
+  log,
+  SystemInformation,
+} from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
 import { readdir, symlink } from 'fs/promises'
 
@@ -19,12 +24,9 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     let binaryName = `cortex-server${process.platform === 'win32' ? '.exe' : ''}`
     const binPath = path.join(__dirname, '..', 'bin')
     await createEngineSymlinks(binPath)
-    
+
     const executablePath = path.join(binPath, binaryName)
-    const sharedPath = path.join(
-      appResourcePath(),
-      'shared'
-    )
+    const sharedPath = path.join(appResourcePath(), 'shared')
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executablePath}`)
 
@@ -63,7 +65,7 @@ function run(systemInfo?: SystemInformation): Promise<any> {
 
 /**
  * Create symlinks for the engine shared libraries
- * @param binPath 
+ * @param binPath
  */
 async function createEngineSymlinks(binPath: string) {
   const sharedPath = path.join(appResourcePath(), 'shared')
@@ -72,7 +74,9 @@ async function createEngineSymlinks(binPath: string) {
     if (sharedLibFile.endsWith('.dll') || sharedLibFile.endsWith('.so')) {
       const targetDllPath = path.join(sharedPath, sharedLibFile)
       const symlinkDllPath = path.join(binPath, sharedLibFile)
-      await symlink(targetDllPath, symlinkDllPath).catch(console.error)
+      await symlink(targetDllPath, symlinkDllPath, 'junction').catch(
+        console.error
+      )
       console.log(`Symlink created: ${targetDllPath} -> ${symlinkDllPath}`)
     }
   }
