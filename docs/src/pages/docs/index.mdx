@@ -25,7 +25,7 @@ import FAQBox from '@/components/FaqBox'
 ![Jan's Cover Image](./_assets/jan-app.png)
 
 
-Jan is a ChatGPT-alternative that runs 100% offline on your desktop & mobile (*comming soon*). Our goal is to make it easy for a layperson[^1] to download and run LLMs and use AI with full control and [privacy](https://www.reuters.com/legal/legalindustry/privacy-paradox-with-ai-2023-10-31/).
+Jan is a ChatGPT-alternative that runs 100% offline on your desktop & mobile (*coming soon*). Our goal is to make it easy for a layperson[^1] to download and run LLMs and use AI with full control and [privacy](https://jan.ai/docs/privacy).
 
 Jan is powered by [Cortex](https://cortex.so/), our embeddable local AI engine. 
 
@@ -37,7 +37,7 @@ You'll be able to use it with [Continue.dev](https://jan.ai/integrations/coding/
 
 ### Features
 
-- Download popular open-source LLMs (Llama3, Gemma or Mistral,...) from [Model Hub](./docs/models/manage-models.mdx) or import any GGUF models
+- Download popular open-source LLMs (Llama3, Qwen, Gemma or Mistral,...) from [Model Hub](./docs/models/manage-models.mdx) or import any GGUF models
 - Connect to [cloud model services](/docs/remote-models/openai) (OpenAI, Anthropic, Mistral, Groq,...)
 - [Chat](./docs/threads.mdx) with AI models & [customize their parameters](./docs/models/model-parameters.mdx) in an intuitive interface
 - Use [local API server](https://jan.ai/api-reference) with OpenAI-equivalent API
@@ -50,7 +50,7 @@ Jan is built to be [user-owned](about#-user-owned):
 - [Local-first](https://www.inkandswitch.com/local-first/), with all data stored locally
 - Runs 100% offline, with privacy by default
 - Free choice of AI models, both local and cloud-based
-- We do not collect or sell user data. See our [Privacy](/privacy).
+- We do not sell user data. See our [Privacy Policy](/privacy-policy).
 
 <Callout>
   You can read more about our [philosophy](/about#philosophy) here. 
@@ -93,13 +93,16 @@ Jan is built on the shoulders of many upstream open-source projects:
 </FAQBox>
 
 <FAQBox title="Does Jan use my data?">
- No data is collected. Everything stays local on your device.
- <Callout type="warning">
-When using cloud AI services (like GPT-4 or Claude) through Jan, their data collection is outside our control. Please check their privacy policies.
-</Callout>
- You can help improve Jan by choosing to opt in anonymous basic usage data. Even so, your chats and personal information are never collected. Read more about what data you can contribute to us at [Privacy](./docs/privacy.mdx).
-</FAQBox>
+  Jan does not collect any data until you explicitly allow tracking. When you first launch the app, you'll be asked about your tracking preferences which you can change anytime in Settings.
 
+  If you opt-in to analytics, we only collect basic usage data like active users and retention rates. Your chat history, personal data, and model usage are never tracked.
+
+  <Callout type="info">
+    When using cloud AI services (like GPT-4 or Claude) through Jan, your messages go directly to their API providers. Jan doesn't access or store these messages.
+  </Callout>
+
+  For more details about our privacy practices, see our [Privacy Policy](/docs/privacy-policy).
+</FAQBox>
 
 <FAQBox title="Do you sell my data?">
   No, and we never will.
