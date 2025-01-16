@@ -51,7 +51,7 @@ const Hardware = () => {
       const activeGpuIds = updatedGpus
         .filter((gpu) => gpu.activated)
         .map((gpu) => Number(gpu.id))
-      await setActiveGpus(activeGpuIds)
+      await setActiveGpus({ gpus: activeGpuIds })
     } catch (error) {
       console.error('Failed to update active GPUs:', error)
     }

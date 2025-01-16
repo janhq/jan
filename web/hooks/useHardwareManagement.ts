@@ -56,7 +56,7 @@ export function useGetHardwareInfo() {
  * set gpus activate
  * @returns A Promise that resolves set gpus activate.
  */
-export const setActiveGpus = async (gpus: number[]) => {
+export const setActiveGpus = async (data: { gpus: number[] }) => {
   const extension = getExtension()
 
   if (!extension) {
@@ -64,7 +64,7 @@ export const setActiveGpus = async (gpus: number[]) => {
   }
 
   try {
-    const response = await extension.setAvtiveGpu(gpus)
+    const response = await extension.setAvtiveGpu(data)
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)

@@ -53,12 +53,12 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
   /**
    * @returns A Promise that resolves to an object of set gpu activate.
    */
-  async setAvtiveGpu(gpus: number[]): Promise<{
+  async setAvtiveGpu(data: { gpus: number[] }): Promise<{
     message: string
     activated_gpus: number[]
   }> {
     return this.queue.add(() =>
-      ky.post(`${API_URL}/v1/hardware/activate`, { json: gpus }).then((e) => e)
+      ky.post(`${API_URL}/v1/hardware/activate`, { json: data }).then((e) => e)
     ) as Promise<{
       message: string
       activated_gpus: number[]
