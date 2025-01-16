@@ -12,6 +12,7 @@ export enum ExtensionTypeEnum {
   SystemMonitoring = 'systemMonitoring',
   HuggingFace = 'huggingFace',
   Engine = 'engine',
+  Hardware = 'hardware',
 }
 
 export interface ExtensionType {
