@@ -1,0 +1,48 @@
+{
+  "name": "@janhq/hardware-management-extension",
+  "productName": "Hardware Management",
+  "version": "1.0.0",
+  "description": "Manages Better Hardware settings.",
+  "main": "dist/index.js",
+  "node": "dist/node/index.cjs.js",
+  "author": "Jan <service@jan.ai>",
+  "license": "MIT",
+  "scripts": {
+    "test": "jest",
+    "build": "rolldown -c rolldown.config.mjs",
+    "codesign:darwin": "../../.github/scripts/auto-sign.sh",
+    "codesign:win32:linux": "echo 'No codesigning required'",
+    "codesign": "run-script-os",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && yarn codesign && npm pack && cpx *.tgz ../../pre-install"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./main": "./dist/module.js"
+  },
+  "devDependencies": {
+    "cpx": "^1.5.0",
+    "rimraf": "^3.0.2",
+    "rolldown": "^1.0.0-beta.1",
+    "run-script-os": "^1.1.6",
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@janhq/core": "../../core/package.tgz",
+    "cpu-instructions": "^0.0.13",
+    "ky": "^1.7.2",
+    "p-queue": "^8.0.1"
+  },
+  "bundledDependencies": [
+    "cpu-instructions",
+    "@janhq/core"
+  ],
+  "hardwares": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/*",
+    "package.json",
+    "README.md"
+  ]
+}

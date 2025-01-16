@@ -33,3 +33,8 @@ export * from './engines'
  *  Engines Management
  */
 export * from './enginesManagement'
+
+/**
+ *  Hardware Management
+ */
+export * from './hardwareManagement'
