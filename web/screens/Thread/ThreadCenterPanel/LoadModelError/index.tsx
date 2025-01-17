@@ -1,4 +1,4 @@
-import { EngineManager } from '@janhq/core'
+import { EngineManager, InferenceEngine } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import ModalTroubleShooting, {
@@ -35,7 +35,7 @@ const LoadModelError = () => {
               setMainState(MainViewState.Settings)
               if (activeAssistant?.model.engine) {
                 const engine = EngineManager.instance().get(
-                  activeAssistant.model.engine
+                  InferenceEngine.cortex
                 )
                 engine?.name && setSelectedSettingScreen(engine.name)
               }

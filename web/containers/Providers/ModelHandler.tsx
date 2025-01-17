@@ -336,7 +336,8 @@ export default function ModelHandler() {
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (
-      !isLocalEngine(engines, activeModelRef.current?.engine as InferenceEngine)
+      activeModelRef.current?.engine !== InferenceEngine.cortex &&
+      activeModelRef.current?.engine !== InferenceEngine.cortex_llamacpp
     ) {
       const updatedThread: Thread = {
         ...thread,
@@ -396,9 +397,7 @@ export default function ModelHandler() {
 
     // 2. Update the title with the result of the inference
     setTimeout(() => {
-      const engine = EngineManager.instance().get(
-        messageRequest.model?.engine ?? activeModelRef.current?.engine ?? ''
-      )
+      const engine = EngineManager.instance().get(InferenceEngine.cortex)
       engine?.inference(messageRequest)
     }, 1000)
   }

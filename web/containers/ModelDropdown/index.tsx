@@ -194,13 +194,22 @@ const ModelDropdown = ({
     const modelId = activeAssistant?.model?.id
 
     const model = downloadedModels.find((model) => model.id === modelId)
-    setSelectedModel(model)
+    if (model) {
+      if (
+        engines?.[model.engine]?.[0].type === 'local' ||
+        (engines?.[model.engine]?.[0].api_key?.length ?? 0) > 0
+      )
+        setSelectedModel(model)
+    } else {
+      setSelectedModel(undefined)
+    }
   }, [
     recommendedModel,
     activeThread,
     downloadedModels,
     setSelectedModel,
     activeAssistant?.model?.id,
+    engines,
   ])
 
   const isLocalEngine = useCallback(
