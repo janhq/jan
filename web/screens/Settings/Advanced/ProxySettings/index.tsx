@@ -185,7 +185,6 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                     placeholder="Username"
                     value={proxyPartialUsername}
                     onChange={handleProxyUsernameInputChange}
-                    disabled={!proxyEnabled}
                     suffixIcon={
                       <div className="flex items-center gap-1">
                         {proxyUsername && (
@@ -207,7 +206,6 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                     placeholder="Password"
                     value={proxyPartialPassword}
                     onChange={handleProxyPasswordInputChange}
-                    disabled={!proxyEnabled}
                     suffixIcon={
                       <div className="flex items-center gap-1">
                         {proxyPassword && (
@@ -259,7 +257,6 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                     placeholder="localhost, 127.0.0.1"
                     value={noProxy}
                     onChange={onNoProxyChange}
-                    disabled={!proxyEnabled}
                     suffixIcon={
                       <div className="flex items-center gap-1">
                         {noProxy && (
