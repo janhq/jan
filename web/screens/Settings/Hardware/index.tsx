@@ -120,7 +120,7 @@ const Hardware = () => {
               </div>
               <div className="flex w-2/3 items-center gap-3">
                 <Progress
-                  value={hardware?.cpu.usage}
+                  value={Number(hardware?.cpu.usage)}
                   size="small"
                   className="w-full"
                 />
