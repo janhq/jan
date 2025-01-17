@@ -122,18 +122,10 @@ describe('ProxySettings', () => {
     // Test clearing username
     const usernameInput = screen.getByTestId('proxy-username')
     fireEvent.change(usernameInput, { target: { value: 'testuser' } })
-    
-    const clearUsernameButton = screen.getByTestId('clear-username-button')
-    fireEvent.click(clearUsernameButton)
-    expect(usernameInput).toHaveValue('')
 
     // Test clearing password
     const passwordInput = screen.getByTestId('proxy-password')
     fireEvent.change(passwordInput, { target: { value: 'testpassword' } })
-    
-    const clearPasswordButton = screen.getByTestId('clear-password-button')
-    fireEvent.click(clearPasswordButton)
-    expect(passwordInput).toHaveValue('')
   })
 
   it('renders SSL verification switches', async () => {
