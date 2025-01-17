@@ -3,6 +3,7 @@ export type Cpu = {
   cores: number
   instructions: string[]
   model: string
+  usage: number
 }
 
 export type GpuAdditionalInformation = {

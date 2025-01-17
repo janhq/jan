@@ -119,8 +119,12 @@ const Hardware = () => {
                 <span>Architecture: {hardware?.cpu.arch}</span>
               </div>
               <div className="flex w-2/3 items-center gap-3">
-                <Progress value={70} size="small" className="w-full" />
-                <span className="font-medium">70%</span>
+                <Progress
+                  value={hardware?.cpu.usage}
+                  size="small"
+                  className="w-full"
+                />
+                <span className="font-medium">{hardware?.cpu.usage}%</span>
               </div>
             </div>
           </div>
