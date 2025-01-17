@@ -1,17 +1,12 @@
 import { useCallback } from 'react'
 
 import { Model } from '@janhq/core'
-import { Button, Badge, Tooltip } from '@janhq/joi'
+import { Button, Tooltip } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-
 import { ChevronDownIcon } from 'lucide-react'
 
-import { twMerge } from 'tailwind-merge'
-
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
-
-import ModelLabel from '@/containers/ModelLabel'
 
 import { toaster } from '@/containers/Toast'
 
@@ -39,18 +34,15 @@ import {
 
 type Props = {
   model: Model
-  onClick: () => void
-  open: string
 }
 
-const ModelItemHeader = ({ model, onClick, open }: Props) => {
+const ModelItemHeader = ({ model }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
   const { settings } = useSettings()
-  // const [imageLoaded, setImageLoaded] = useState(true)
 
   const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -70,14 +62,17 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
   const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
 
   let downloadButton = (
-    <Button
-      onClick={(e) => {
-        e.stopPropagation()
-        onDownloadClick()
-      }}
-    >
-      Download
-    </Button>
+    <div className="group flex h-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--primary-bg))]">
+      <div
+        className="flex h-full items-center rounded-l-md duration-200 hover:backdrop-brightness-75"
+        onClick={onDownloadClick}
+      >
+        <span className="mx-4 font-medium text-white">Download</span>
+      </div>
+      <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
+        <ChevronDownIcon size={14} color="white" />
+      </div>
+    </div>
   )
 
   const isDownloading = downloadingModels.some((md) => md === model.id)
@@ -104,6 +99,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
             disabled={serverEnabled}
             data-testid={`use-model-btn-${model.id}`}
             variant="outline"
+            theme="ghost"
             className="min-w-[98px]"
           >
             Use
@@ -118,50 +114,24 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
   }
 
   return (
-    <div
-      className="cursor-pointer rounded-t-md bg-[hsla(var(--app-bg))]"
-      onClick={onClick}
-    >
-      <div className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="line-clamp-1 text-base font-semibold">
+    <div className="rounded-t-md bg-[hsla(var(--app-bg))]">
+      <div className="flex items-center justify-between py-2">
+        <div className="group flex cursor-pointer items-center gap-2">
+          <span className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline">
             {model.name}
           </span>
-          <EngineBadge engine={model.engine} />
         </div>
         <div className="inline-flex items-center space-x-2">
           <div className="hidden items-center sm:inline-flex">
-            <span className="mr-4 font-semibold">
+            <span className="mr-4 text-sm font-light text-[hsla(var(--text-secondary))]">
               {toGibibytes(model.metadata?.size)}
             </span>
-            <ModelLabel metadata={model.metadata} />
           </div>
           {downloadButton}
-          <ChevronDownIcon
-            className={twMerge(
-              'h-5 w-5 flex-none',
-              open === model.id && 'rotate-180'
-            )}
-          />
         </div>
       </div>
     </div>
   )
-}
-
-type EngineBadgeProps = {
-  engine: string
-}
-
-const EngineBadge = ({ engine }: EngineBadgeProps) => {
-  const title = 'TensorRT-LLM'
-
-  switch (engine) {
-    case 'nitro-tensorrt-llm':
-      return <Badge title={title}>{title}</Badge>
-    default:
-      return null
-  }
 }
 
 export default ModelItemHeader

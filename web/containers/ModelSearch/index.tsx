@@ -81,12 +81,13 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
   return (
     <Input
       prefixIcon={<SearchIcon size={16} />}
-      placeholder="Search or paste Hugging Face URL"
+      placeholder="Search or enter Hugging Face URL"
       onChange={onSearchChanged}
       onKeyDown={onKeyDown}
       value={searchText}
       clearable={searchText.length > 0}
       onClear={onClear}
+      className="border-0 bg-[hsla(var(--app-bg))]"
     />
   )
 }
