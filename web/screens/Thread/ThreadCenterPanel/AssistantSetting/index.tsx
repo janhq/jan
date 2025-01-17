@@ -88,6 +88,7 @@ const AssistantSetting: React.FC<Props> = ({ componentData }) => {
       setEngineParamsUpdate,
       stopModel,
       updateThreadMetadata,
+      resetGenerating,
     ]
   )
 
