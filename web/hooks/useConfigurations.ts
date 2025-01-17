@@ -6,14 +6,28 @@ import { useAtomValue } from 'jotai'
 import { extensionManager } from '@/extension'
 import {
   ignoreSslAtom,
+  noProxyAtom,
   proxyAtom,
   proxyEnabledAtom,
+  proxyPasswordAtom,
+  proxyUsernameAtom,
+  verifyHostSslAtom,
+  verifyPeerSslAtom,
+  verifyProxyHostSslAtom,
+  verifyProxySslAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
 export const useConfigurations = () => {
   const proxyEnabled = useAtomValue(proxyEnabledAtom)
   const proxyUrl = useAtomValue(proxyAtom)
   const proxyIgnoreSSL = useAtomValue(ignoreSslAtom)
+  const verifyProxySSL = useAtomValue(verifyProxySslAtom)
+  const verifyProxyHostSSL = useAtomValue(verifyProxyHostSslAtom)
+  const verifyPeerSSL = useAtomValue(verifyPeerSslAtom)
+  const verifyHostSSL = useAtomValue(verifyHostSslAtom)
+  const noProxy = useAtomValue(noProxyAtom)
+  const proxyUsername = useAtomValue(proxyUsernameAtom)
+  const proxyPassword = useAtomValue(proxyPasswordAtom)
 
   const configurePullOptions = useCallback(() => {
     extensionManager
@@ -21,15 +35,27 @@ export const useConfigurations = () => {
       ?.configurePullOptions(
         proxyEnabled
           ? {
+              proxy_username: proxyUsername,
+              proxy_password: proxyPassword,
               proxy_url: proxyUrl,
-              verify_peer_ssl: !proxyIgnoreSSL,
+              verify_proxy_ssl: verifyProxySSL,
+              verify_proxy_host_ssl: verifyProxyHostSSL,
+              verify_peer_ssl: verifyPeerSSL,
+              verify_host_ssl: verifyHostSSL,
+              no_proxy: noProxy,
             }
           : {
+              proxy_username: '',
+              proxy_password: '',
               proxy_url: '',
+              verify_proxy_ssl: false,
+              verify_proxy_host_ssl: false,
               verify_peer_ssl: false,
+              verify_host_ssl: false,
+              no_proxy: '',
             }
       )
-  }, [proxyEnabled, proxyUrl, proxyIgnoreSSL])
+  }, [proxyEnabled, proxyUrl, proxyIgnoreSSL, noProxy, proxyUsername, proxyPassword])
 
   useEffect(() => {
     configurePullOptions()

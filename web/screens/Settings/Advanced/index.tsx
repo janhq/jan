@@ -15,7 +15,7 @@ import {
 } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+import { ChevronDownIcon, ArrowRightIcon } from 'lucide-react'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -97,22 +97,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   const updatePullOptions = useDebouncedCallback(
     () => configurePullOptions(),
     300
-  )
-  /**
-   * Handle proxy change
-   */
-  const onProxyChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value || ''
-      setPartialProxy(value)
-      if (value.trim().startsWith('http')) {
-        setProxy(value.trim())
-      } else {
-        setProxy('')
-      }
-      updatePullOptions()
-    },
-    [setPartialProxy, setProxy, updatePullOptions]
   )
 
   /**
@@ -452,7 +436,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
           <div 
             className="flex w-full cursor-pointer items-center justify-between"
-            onClick={() => setSubdir('proxy')}
           >
             <div className="space-y-1">
               <div className="flex gap-x-2">
@@ -472,32 +455,12 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
                   updatePullOptions()
                 }}
               />
-              <ChevronRightIcon size={16} />
+              <ArrowRightIcon 
+                size={16} 
+                onClick={() => setSubdir('proxy')}
+              />
             </div>
           </div>
-        </div>
-
-        {/* Ignore SSL certificates */}
-        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="flex-shrink-0 space-y-1">
-            <div className="flex gap-x-2">
-              <h6 className="font-semibold capitalize">
-                Ignore SSL certificates
-              </h6>
-            </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Allow self-signed or unverified certificates - may be required for
-              certain proxies.
-            </p>
-          </div>
-          <Switch
-            data-testid="ignore-ssl-switch"
-            checked={ignoreSSL}
-            onChange={(e) => {
-              setIgnoreSSL(e.target.checked)
-              updatePullOptions()
-            }}
-          />
         </div>
 
         {experimentalEnabled && (
