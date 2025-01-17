@@ -64,7 +64,6 @@ describe('Advanced', () => {
     await waitFor(() => {
       expect(screen.getByText('Experimental Mode')).toBeInTheDocument()
       expect(screen.getByText('HTTPS Proxy')).toBeInTheDocument()
-      expect(screen.getByText('Ignore SSL certificates')).toBeInTheDocument()
       expect(screen.getByText('Jan Data Folder')).toBeInTheDocument()
       expect(screen.getByText('Reset to Factory Settings')).toBeInTheDocument()
     })
@@ -102,15 +101,6 @@ describe('Advanced', () => {
     expect(proxyToggle).toBeChecked()
   })
 
-  it('updates proxy settings', async () => {
-    render(<Advanced />)
-    let proxyInput
-    await waitFor(() => {
-      const proxyToggle = screen.getByTestId(/proxy-switch/i)
-      fireEvent.click(proxyToggle)
-    })
-    expect(proxyToggle).toBeChecked()
-  })
 
   it('renders DataFolder component', async () => {
     render(<Advanced />)

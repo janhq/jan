@@ -151,6 +151,7 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                           {partialProxy && (
                             <button
                               type="button"
+                              data-testid="clear-proxy-button"
                               onClick={() => {
                                 setPartialProxy('')
                                 setProxy('')
@@ -190,6 +191,7 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                         {proxyUsername && (
                           <button
                             type="button"
+                            data-testid="clear-username-button"
                             onClick={() => setProxyUsername('')}
                             className="p-1 hover:text-[hsla(var(--text-primary))]"
                           >
@@ -211,6 +213,7 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                         {proxyPassword && (
                           <button
                             type="button"
+                            data-testid="clear-password-button"
                             onClick={() => {
                               setProxyPassword('')
                             }}
@@ -220,9 +223,11 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                           </button>
                         )}
                         <button
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
+                          data-testid="password-visibility-toggle"
                           className="p-1 hover:text-[hsla(var(--text-primary))]"
+                          type="button"
+                          aria-label="Toggle password visibility"
+                          onClick={() => setShowPassword(!showPassword)}
                         >
                           {showPassword ? (
                             <EyeOffIcon size={14} />
