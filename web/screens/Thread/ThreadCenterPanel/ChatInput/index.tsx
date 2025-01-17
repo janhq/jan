@@ -22,6 +22,7 @@ import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { uploader } from '@/utils/file'
@@ -35,7 +36,6 @@ import RichTextEditor from './RichTextEditor'
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
@@ -64,7 +64,7 @@ const ChatInput = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)

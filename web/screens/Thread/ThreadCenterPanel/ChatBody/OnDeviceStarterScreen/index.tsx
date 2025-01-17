@@ -24,6 +24,8 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
@@ -33,7 +35,6 @@ import {
 } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
@@ -51,7 +52,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
 
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)

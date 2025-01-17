@@ -6,12 +6,13 @@ import { useAtomValue } from 'jotai'
 
 import LeftPanelContainer from '@/containers/LeftPanelContainer'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { getTitleByEngine, isLocalEngine } from '@/utils/modelEngine'
 
 import SettingItem from './SettingItem'
 
 import { extensionManager } from '@/extension'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 
 import {
   showSettingActiveLocalEngineAtom,
@@ -20,7 +21,7 @@ import {
 import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingLeftPanel = () => {
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
   const settingScreens = useAtomValue(janSettingScreenAtom)
 
   const showSettingActiveLocalEngine = useAtomValue(

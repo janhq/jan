@@ -31,6 +31,7 @@ import SetupRemoteModel from '@/containers/SetupRemoteModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
+import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
@@ -42,7 +43,6 @@ import { manualRecommendationModel } from '@/utils/model'
 import { getLogoEngine } from '@/utils/modelEngine'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
@@ -86,7 +86,7 @@ const ModelDropdown = ({
     null
   )
 
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
 
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
