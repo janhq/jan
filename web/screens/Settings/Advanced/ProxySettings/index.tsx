@@ -1,11 +1,16 @@
 import { useCallback, useState } from 'react'
-import { EyeIcon, EyeOffIcon, XIcon, ArrowLeftIcon } from 'lucide-react'
+
 import { Input, ScrollArea, Switch } from '@janhq/joi'
 import { useAtom } from 'jotai'
-import { 
-  ignoreSslAtom, 
-  proxyAtom, 
-  proxyEnabledAtom, 
+import { EyeIcon, EyeOffIcon, XIcon, ArrowLeftIcon } from 'lucide-react'
+import { useDebouncedCallback } from 'use-debounce'
+
+import { useConfigurations } from '@/hooks/useConfigurations'
+
+import {
+  ignoreSslAtom,
+  proxyAtom,
+  proxyEnabledAtom,
   verifyProxySslAtom,
   verifyProxyHostSslAtom,
   verifyPeerSslAtom,
@@ -14,8 +19,6 @@ import {
   proxyUsernameAtom,
   proxyPasswordAtom,
 } from '@/helpers/atoms/AppConfig.atom'
-import { useDebouncedCallback } from 'use-debounce'
-import { useConfigurations } from '@/hooks/useConfigurations'
 
 const ProxySettings = ({ onBack }: { onBack: () => void }) => {
   const [proxyEnabled] = useAtom(proxyEnabledAtom)
@@ -24,66 +27,45 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [proxyUsername, setProxyUsername] = useAtom(proxyUsernameAtom)
   const [proxyPassword, setProxyPassword] = useAtom(proxyPasswordAtom)
-  const [proxyPartialPassword, setProxyPartialPassword] = useState<string>(proxyPassword)
-  const [proxyPartialUsername, setProxyPartialUsername] = useState<string>(proxyUsername)
+  const [proxyPartialPassword, setProxyPartialPassword] =
+    useState<string>(proxyPassword)
+  const [proxyPartialUsername, setProxyPartialUsername] =
+    useState<string>(proxyUsername)
   const { configurePullOptions } = useConfigurations()
   const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
   const [verifyProxySSL, setVerifyProxySSL] = useAtom(verifyProxySslAtom)
-  const [verifyProxyHostSSL, setVerifyProxyHostSSL] = useAtom(verifyProxyHostSslAtom)
+  const [verifyProxyHostSSL, setVerifyProxyHostSSL] = useAtom(
+    verifyProxyHostSslAtom
+  )
   const [verifyPeerSSL, setVerifyPeerSSL] = useAtom(verifyPeerSslAtom)
   const [verifyHostSSL, setVerifyHostSSL] = useAtom(verifyHostSslAtom)
   const [showPassword, setShowPassword] = useState(false)
 
-  /**
-   * There could be a case where the state update is not synced
-   * so that retrieving state value from other hooks would not be accurate
-   * there is also a case where state update persist everytime user type in the input
-  */
   const updatePullOptions = useDebouncedCallback(
     () => configurePullOptions(),
     1000
   )
 
-  /**
-   * Handle proxy change with debounce
-   */
-  const onProxyChange = useDebouncedCallback(
-    (value: string) => {
-      if (value.trim().startsWith('http')) {
-        setProxy(value.trim())
-        updatePullOptions()
-      } else {
-        setProxy('')
-      }
-    },
-    1000
-  )
-
-  /**
-   * Handle proxy username change with debounce
-   */
-  const onProxyUsernameChange = useDebouncedCallback(
-    (value: string) => {
-      setProxyUsername(value)
+  const onProxyChange = useDebouncedCallback((value: string) => {
+    if (value.trim().startsWith('http')) {
+      setProxy(value.trim())
       updatePullOptions()
-    },
-    1000
-  )
-
-  /**
-   * Handle proxy password change with debounce
-   */
-  const onProxyPasswordChange = useDebouncedCallback(
-    (value: string) => {
-      setProxyPassword(value)
+    } else {
+      setProxy('')
       updatePullOptions()
-    },
-    1000
-  )
+    }
+  }, 1000)
 
-  /**
-   * Event handlers for input changes
-   */
+  const onProxyUsernameChange = useDebouncedCallback((value: string) => {
+    setProxyUsername(value)
+    updatePullOptions()
+  }, 1000)
+
+  const onProxyPasswordChange = useDebouncedCallback((value: string) => {
+    setProxyPassword(value)
+    updatePullOptions()
+  }, 1000)
+
   const handleProxyInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value || ''
@@ -111,9 +93,6 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
     [setProxyPartialPassword, onProxyPasswordChange]
   )
 
-  /**
-   * Handle no proxy change
-   */
   const onNoProxyChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const listNoProxy = e.target.value || ''
@@ -123,7 +102,6 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
     },
     [setNoProxy, updatePullOptions]
   )
-
 
   return (
     <ScrollArea className="h-full w-full">
@@ -223,8 +201,8 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                   />
                   <Input
                     data-testid="proxy-password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Password" 
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Password"
                     value={proxyPartialPassword}
                     onChange={handleProxyPasswordInputChange}
                     disabled={!proxyEnabled}
@@ -246,7 +224,11 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
                           onClick={() => setShowPassword(!showPassword)}
                           className="p-1 hover:text-[hsla(var(--text-primary))]"
                         >
-                          {showPassword ? <EyeOffIcon size={14} /> : <EyeIcon size={14} />}
+                          {showPassword ? (
+                            <EyeOffIcon size={14} />
+                          ) : (
+                            <EyeIcon size={14} />
+                          )}
                         </button>
                       </div>
                     }
@@ -298,16 +280,16 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
 
           {/* Ignore SSL certificates */}
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-            <div className="flex-shrink-0 space-y-1 max-w-[66%]">
+            <div className="max-w-[66%] flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
                 <h6 className="font-semibold capitalize">
                   Ignore SSL certificates
                 </h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Allow self-signed or unverified certificates (may be required for
-                certain proxies). Enable this reduces security. Only use this if
-                you trust your proxy server.
+                Allow self-signed or unverified certificates (may be required
+                for certain proxies). Enable this reduces security. Only use
+                this if you trust your proxy server.
               </p>
             </div>
             <Switch
@@ -324,9 +306,7 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
-                <h6 className="font-semibold capitalize">
-                  Verify Proxy SSL
-                </h6>
+                <h6 className="font-semibold capitalize">Verify Proxy SSL</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Validate SSL certificate when connecting to the proxy server.
@@ -368,9 +348,7 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
-                <h6 className="font-semibold capitalize">
-                  Verify Peer SSL
-                </h6>
+                <h6 className="font-semibold capitalize">Verify Peer SSL</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Validate SSL certificate of the peer connections.
@@ -385,14 +363,12 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
               }}
             />
           </div>
-          
+
           {/* Verify Host SSL */}
           <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
             <div className="flex-shrink-0 space-y-1">
               <div className="flex gap-x-2">
-                <h6 className="font-semibold capitalize">
-                  Verify Host SSL
-                </h6>
+                <h6 className="font-semibold capitalize">Verify Host SSL</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
                 Validate SSL certificate of destination hosts.
@@ -407,7 +383,6 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
               }}
             />
           </div>
-
         </div>
       </div>
     </ScrollArea>

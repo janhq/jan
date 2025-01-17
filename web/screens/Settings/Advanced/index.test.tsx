@@ -108,21 +108,8 @@ describe('Advanced', () => {
     await waitFor(() => {
       const proxyToggle = screen.getByTestId(/proxy-switch/i)
       fireEvent.click(proxyToggle)
-      proxyInput = screen.getByTestId(/proxy-input/i)
-      fireEvent.change(proxyInput, { target: { value: 'http://proxy.com' } })
     })
-    expect(proxyInput).toHaveValue('http://proxy.com')
-  })
-
-  it('toggles ignore SSL certificates', async () => {
-    render(<Advanced />)
-    let ignoreSslToggle
-    await waitFor(() => {
-      expect(screen.getByText('Ignore SSL certificates')).toBeInTheDocument()
-      ignoreSslToggle = screen.getByTestId(/ignore-ssl-switch/i)
-      fireEvent.click(ignoreSslToggle)
-    })
-    expect(ignoreSslToggle).toBeChecked()
+    expect(proxyToggle).toBeChecked()
   })
 
   it('renders DataFolder component', async () => {

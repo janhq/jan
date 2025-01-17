@@ -39,7 +39,9 @@ export const useConfigurations = () => {
               proxy_password: proxyPassword,
               proxy_url: proxyUrl,
               verify_proxy_ssl: proxyIgnoreSSL ? false : verifyProxySSL,
-              verify_proxy_host_ssl: proxyIgnoreSSL ? false : verifyProxyHostSSL,
+              verify_proxy_host_ssl: proxyIgnoreSSL
+                ? false
+                : verifyProxyHostSSL,
               verify_peer_ssl: proxyIgnoreSSL ? false : verifyPeerSSL,
               verify_host_ssl: proxyIgnoreSSL ? false : verifyHostSSL,
               no_proxy: noProxy,
@@ -56,22 +58,22 @@ export const useConfigurations = () => {
             }
       )
   }, [
-    proxyEnabled, 
-    proxyUrl, 
-    proxyIgnoreSSL, 
-    noProxy, 
-    proxyUsername, 
+    proxyEnabled,
+    proxyUrl,
+    proxyIgnoreSSL,
+    noProxy,
+    proxyUsername,
     proxyPassword,
     verifyProxySSL,
     verifyProxyHostSSL,
     verifyPeerSSL,
-    verifyHostSSL
+    verifyHostSSL,
   ])
 
   useEffect(() => {
     configurePullOptions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [configurePullOptions])
 
   return {
     configurePullOptions,

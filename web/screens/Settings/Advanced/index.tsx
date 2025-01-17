@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, ChangeEvent } from 'react'
+import { useEffect, useState, ChangeEvent } from 'react'
 
 import { openExternalUrl, AppConfiguration } from '@janhq/core'
 
@@ -35,8 +35,6 @@ import FactoryReset from './FactoryReset'
 
 import {
   experimentalFeatureEnabledAtom,
-  ignoreSslAtom,
-  proxyAtom,
   proxyEnabledAtom,
   vulkanEnabledAtom,
   quickAskEnabledAtom,
@@ -64,10 +62,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
   const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
 
-  const [proxy, setProxy] = useAtom(proxyAtom)
-  const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
-
-  const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
   const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
@@ -434,9 +428,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
 
         {/* Proxy Settings Link */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div 
-            className="flex w-full cursor-pointer items-center justify-between"
-          >
+          <div className="flex w-full cursor-pointer items-center justify-between">
             <div className="space-y-1">
               <div className="flex gap-x-2">
                 <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
@@ -455,10 +447,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
                   updatePullOptions()
                 }}
               />
-              <ArrowRightIcon 
-                size={16} 
-                onClick={() => setSubdir('proxy')}
-              />
+              <ArrowRightIcon size={16} onClick={() => setSubdir('proxy')} />
             </div>
           </div>
         </div>

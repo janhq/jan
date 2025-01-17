@@ -1,9 +1,12 @@
+import React, { useState } from 'react'
+
 import { InferenceEngine } from '@janhq/core'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtomValue } from 'jotai'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import Advanced from '@/screens/Settings/Advanced'
+import ProxySettings from '@/screens/Settings/Advanced/ProxySettings'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import Engines from '@/screens/Settings/Engines'
@@ -13,12 +16,10 @@ import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hotkeys from '@/screens/Settings/Hotkeys'
 import MyModels from '@/screens/Settings/MyModels'
 import Privacy from '@/screens/Settings/Privacy'
-import ProxySettings from '@/screens/Settings/Advanced/ProxySettings'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { useState } from 'react'
 
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)

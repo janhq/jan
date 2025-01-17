@@ -34,38 +34,55 @@ export const proxyAtom = atomWithStorage(HTTPS_PROXY_FEATURE, '', undefined, {
   getOnInit: true,
 })
 
-export const proxyUsernameAtom = atomWithStorage(PROXY_USERNAME, '', undefined, {
-  getOnInit: true,
-})
+export const proxyUsernameAtom = atomWithStorage(
+  PROXY_USERNAME,
+  '',
+  undefined,
+  { getOnInit: true }
+)
 
-export const proxyPasswordAtom = atomWithStorage(PROXY_PASSWORD, '', undefined, {
-  getOnInit: true,
-})
+export const proxyPasswordAtom = atomWithStorage(
+  PROXY_PASSWORD,
+  '',
+  undefined,
+  { getOnInit: true }
+)
 
 export const ignoreSslAtom = atomWithStorage(IGNORE_SSL, false, undefined, {
   getOnInit: true,
 })
 
-
 export const noProxyAtom = atomWithStorage(NO_PROXY, '', undefined, {
   getOnInit: false,
 })
 
-export const verifyProxySslAtom = atomWithStorage(VERIFY_PROXY_SSL, false, undefined, {
-  getOnInit: true,
-})
+export const verifyProxySslAtom = atomWithStorage(
+  VERIFY_PROXY_SSL,
+  false,
+  undefined,
+  { getOnInit: true }
+)
 
-export const verifyProxyHostSslAtom = atomWithStorage(VERIFY_PROXY_HOST_SSL, false, undefined, {
-  getOnInit: true,
-})
+export const verifyProxyHostSslAtom = atomWithStorage(
+  VERIFY_PROXY_HOST_SSL,
+  false,
+  undefined,
+  { getOnInit: true }
+)
 
-export const verifyPeerSslAtom = atomWithStorage(VERIFY_PEER_SSL, false, undefined, {
-  getOnInit: true,
-})
+export const verifyPeerSslAtom = atomWithStorage(
+  VERIFY_PEER_SSL,
+  false,
+  undefined,
+  { getOnInit: true }
+)
 
-export const verifyHostSslAtom = atomWithStorage(VERIFY_HOST_SSL, false, undefined, {
-  getOnInit: true,
-})
+export const verifyHostSslAtom = atomWithStorage(
+  VERIFY_HOST_SSL,
+  false,
+  undefined,
+  { getOnInit: true }
+)
 
 export const vulkanEnabledAtom = atomWithStorage(
   VULKAN_ENABLED,
