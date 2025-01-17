@@ -1,6 +1,8 @@
 import { InferenceEngine } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import Advanced from '@/screens/Settings/Advanced'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
@@ -14,12 +16,11 @@ import Privacy from '@/screens/Settings/Privacy'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
 
   switch (selectedSetting) {
     case 'Engines':

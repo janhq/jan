@@ -4,9 +4,10 @@ import { Model } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import ModelItem from '@/screens/Hub/ModelList/ModelItem'
 
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
@@ -15,7 +16,7 @@ type Props = {
 
 const ModelList = ({ models }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
   const sortedModels: Model[] = useMemo(() => {
     const featuredModels: Model[] = []
     const remoteModels: Model[] = []

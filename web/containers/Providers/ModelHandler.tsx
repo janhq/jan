@@ -23,6 +23,8 @@ import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
@@ -34,7 +36,6 @@ import {
   deleteMessageAtom,
   subscribedGeneratingMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import {
   updateThreadWaitingForResponseAtom,
@@ -75,7 +76,7 @@ export default function ModelHandler() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
   const setTokenSpeed = useSetAtom(tokenSpeedAtom)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
 
   useEffect(() => {
     activeThreadRef.current = activeThread

@@ -7,16 +7,17 @@ import LogoMark from '@/containers/Brand/Logo/Mark'
 
 import { MainViewState } from '@/constants/screens'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { isLocalEngine } from '@/utils/modelEngine'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const EmptyThread = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
   const showOnboardingStep = useMemo(
     () =>
       !downloadedModels.some(

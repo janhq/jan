@@ -29,6 +29,7 @@ import RightPanelContainer from '@/containers/RightPanelContainer'
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -39,7 +40,7 @@ import Tools from './Tools'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
+
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
@@ -61,7 +62,7 @@ const ThreadRightPanel = () => {
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
   const { updateThreadMetadata } = useCreateNewThread()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
