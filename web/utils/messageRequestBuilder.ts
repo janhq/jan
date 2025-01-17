@@ -167,7 +167,6 @@ export class MessageRequestBuilder {
       messages: this.normalizeMessages(this.messages),
       model: this.model,
       thread: this.thread,
-      engine: this.model.engine,
     }
   }
 }
