@@ -38,10 +38,10 @@ export const useConfigurations = () => {
               proxy_username: proxyUsername,
               proxy_password: proxyPassword,
               proxy_url: proxyUrl,
-              verify_proxy_ssl: verifyProxySSL,
-              verify_proxy_host_ssl: verifyProxyHostSSL,
-              verify_peer_ssl: verifyPeerSSL,
-              verify_host_ssl: verifyHostSSL,
+              verify_proxy_ssl: proxyIgnoreSSL ? false : verifyProxySSL,
+              verify_proxy_host_ssl: proxyIgnoreSSL ? false : verifyProxyHostSSL,
+              verify_peer_ssl: proxyIgnoreSSL ? false : verifyPeerSSL,
+              verify_host_ssl: proxyIgnoreSSL ? false : verifyHostSSL,
               no_proxy: noProxy,
             }
           : {
@@ -55,7 +55,18 @@ export const useConfigurations = () => {
               no_proxy: '',
             }
       )
-  }, [proxyEnabled, proxyUrl, proxyIgnoreSSL, noProxy, proxyUsername, proxyPassword])
+  }, [
+    proxyEnabled, 
+    proxyUrl, 
+    proxyIgnoreSSL, 
+    noProxy, 
+    proxyUsername, 
+    proxyPassword,
+    verifyProxySSL,
+    verifyProxyHostSSL,
+    verifyPeerSSL,
+    verifyHostSSL
+  ])
 
   useEffect(() => {
     configurePullOptions()

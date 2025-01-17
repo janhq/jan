@@ -48,7 +48,7 @@ export const ignoreSslAtom = atomWithStorage(IGNORE_SSL, false, undefined, {
 
 
 export const noProxyAtom = atomWithStorage(NO_PROXY, '', undefined, {
-  getOnInit: true,
+  getOnInit: false,
 })
 
 export const verifyProxySslAtom = atomWithStorage(VERIFY_PROXY_SSL, false, undefined, {
