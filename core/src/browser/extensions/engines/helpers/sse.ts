@@ -91,8 +91,12 @@ export function requestInference(
                   const toParse = cachedLines + line
                   if (!line.includes('data: [DONE]')) {
                     const data = JSON.parse(toParse.replace('data: ', ''))
-                    if ('error' in data) {
-                      subscriber.error(data.error)
+                    if (
+                      'error' in data ||
+                      'message' in data ||
+                      'detail' in data
+                    ) {
+                      subscriber.error(data.error ?? data)
                       subscriber.complete()
                       return
                     }
