@@ -196,8 +196,8 @@ const ModelDropdown = ({
     const model = downloadedModels.find((model) => model.id === modelId)
     if (model) {
       if (
-        engines?.[model.engine]?.[0].type === 'local' ||
-        (engines?.[model.engine]?.[0].api_key?.length ?? 0) > 0
+        engines?.[model.engine]?.[0]?.type === 'local' ||
+        (engines?.[model.engine]?.[0]?.api_key?.length ?? 0) > 0
       )
         setSelectedModel(model)
     } else {

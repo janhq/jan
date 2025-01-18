@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 
 import { Model } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 import {
   MoreVerticalIcon,
   PlayIcon,
