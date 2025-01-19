@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "jan-app",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web/out",
     "devUrl": "http://localhost:3000",
@@ -10,6 +10,7 @@
     "beforeBuildCommand": "yarn build:web"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "jan-app",
@@ -35,6 +36,7 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": ["binaries/cortex-server"]
   }
 }
