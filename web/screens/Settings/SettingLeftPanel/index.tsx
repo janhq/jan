@@ -18,11 +18,22 @@ import {
   showSettingActiveLocalEngineAtom,
   showSettingActiveRemoteEngineAtom,
 } from '@/helpers/atoms/Extension.atom'
-import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
+
+export const SettingScreenList = [
+  'My Models',
+  'Preferences',
+  'Keyboard Shortcuts',
+  'Privacy',
+  'Advanced Settings',
+  'Engines',
+  'Extensions',
+] as const
+
+export type SettingScreenTuple = typeof SettingScreenList
+export type SettingScreen = SettingScreenTuple[number]
 
 const SettingLeftPanel = () => {
   const { engines } = useGetEngines()
-  const settingScreens = useAtomValue(janSettingScreenAtom)
 
   const showSettingActiveLocalEngine = useAtomValue(
     showSettingActiveLocalEngineAtom
@@ -65,7 +76,7 @@ const SettingLeftPanel = () => {
           </label>
         </div>
 
-        {settingScreens.map((settingScreen) => (
+        {SettingScreenList.map((settingScreen) => (
           <SettingItem
             key={settingScreen}
             name={settingScreen}

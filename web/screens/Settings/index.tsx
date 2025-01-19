@@ -11,19 +11,6 @@ import { SUCCESS_SET_NEW_DESTINATION } from './Advanced/DataFolder'
 
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-export const SettingScreenList = [
-  'My Models',
-  'Preferences',
-  'Keyboard Shortcuts',
-  'Privacy',
-  'Advanced Settings',
-  'Engines',
-  'Extensions',
-] as const
-
-export type SettingScreenTuple = typeof SettingScreenList
-export type SettingScreen = SettingScreenTuple[number]
-
 const SettingsScreen = () => {
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
 

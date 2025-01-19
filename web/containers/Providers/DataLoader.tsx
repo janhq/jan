@@ -13,14 +13,10 @@ import useGetSystemResources from '@/hooks/useGetSystemResources'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
-import { SettingScreenList } from '@/screens/Settings'
-
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
-import { janSettingScreenAtom } from '@/helpers/atoms/Setting.atom'
 
 const DataLoader: React.FC = () => {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
-  const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
   const { getData: loadModels } = useModels()
   const { mutate } = useGetEngines()
 
@@ -49,13 +45,6 @@ const DataLoader: React.FC = () => {
       setJanDataFolderPath(path)
     })
   }, [setJanDataFolderPath])
-
-  useEffect(() => {
-    const janSettingScreen = SettingScreenList.filter(
-      (screen) => window.electronAPI || screen !== 'Extensions'
-    )
-    setJanSettingScreen(janSettingScreen)
-  }, [setJanSettingScreen])
 
   console.debug('Load Data...')
 

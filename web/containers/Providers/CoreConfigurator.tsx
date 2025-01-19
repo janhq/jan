@@ -46,7 +46,7 @@ export const CoreConfigurator = ({ children }: PropsWithChildren) => {
   useEffect(() => {
     if (setupCore) {
       // Electron
-      if (window && window.core?.api) {
+      if (window) {
         setupExtensions()
       } else {
         // Host

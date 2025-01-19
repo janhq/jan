@@ -6,8 +6,6 @@ import { SettingScreen } from '@/screens/Settings'
 
 export const selectedSettingAtom = atom<SettingScreen | string>('My Models')
 
-export const janSettingScreenAtom = atom<SettingScreen[]>([])
-
 export const THEME = 'themeAppearance'
 export const REDUCE_TRANSPARENT = 'reduceTransparent'
 export const SPELL_CHECKING = 'spellChecking'
