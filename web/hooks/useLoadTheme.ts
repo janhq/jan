@@ -28,6 +28,7 @@ export const useLoadTheme = () => {
 
   const setNativeTheme = useCallback(
     (nativeTheme: NativeThemeProps) => {
+      if (!('setNativeThemeDark' in window.core.api)) return
       if (nativeTheme === 'dark') {
         window?.core?.api?.setNativeThemeDark()
         setTheme('dark')

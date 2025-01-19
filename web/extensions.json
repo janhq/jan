@@ -1,0 +1,74 @@
+[
+  {
+    "origin": "/Applications/Jan-beta.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-conversational-extension-1.0.0.tgz",
+    "installOptions": { "version": false, "fullMetadata": true },
+    "name": "@janhq/conversational-extension",
+    "productName": "Conversational",
+    "url": "../../extensions/conversational-extension/dist/index.js",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "description": "Enables conversations and state persistence via your filesystem.",
+    "_active": true,
+    "listeners": {}
+  },
+  {
+    "origin": "/Applications/Jan-beta.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-model-extension-1.0.35.tgz",
+    "installOptions": { "version": false, "fullMetadata": true },
+    "name": "@janhq/model-extension",
+    "productName": "Model Management",
+    "url": "../../extensions/model-extension/dist/index.js",
+    "version": "1.0.35",
+    "main": "dist/index.js",
+    "description": "Handles model lists, their details, and settings.",
+    "_active": true,
+    "listeners": {}
+  },
+  {
+    "origin": "/Applications/Jan-beta.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-monitoring-extension-1.0.10.tgz",
+    "installOptions": { "version": false, "fullMetadata": true },
+    "name": "@janhq/monitoring-extension",
+    "productName": "System Monitoring",
+    "url": "../../extensions/monitoring-extension/dist/index.js",
+    "version": "1.0.10",
+    "main": "dist/index.js",
+    "description": "Provides system health and OS level data.",
+    "_active": true,
+    "listeners": {}
+  },
+  {
+    "origin": "/Applications/Jan-beta.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-engine-management-extension-1.0.0.tgz",
+    "installOptions": { "version": false, "fullMetadata": true },
+    "name": "@janhq/engine-management-extension",
+    "productName": "Engine Management",
+    "url": "../../extensions/engine-management-extension/dist/index.js",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "description": "Manages AI engines and their configurations.",
+    "_active": true,
+    "listeners": {}
+  },
+  {
+    "origin": "/Applications/Jan-beta.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-assistant-extension-1.0.2.tgz",
+    "installOptions": { "version": false, "fullMetadata": true },
+    "name": "@janhq/assistant-extension",
+    "productName": "Jan Assistant",
+    "url": "../../extensions/assistant-extension/dist/index.js",
+    "version": "1.0.2",
+    "main": "dist/index.js",
+    "description": "Powers the default AI assistant that works with all your installed models.",
+    "_active": true,
+    "listeners": {}
+  },
+  {
+    "origin": "/Applications/Jan-beta.app/Contents/Resources/app.asar.unpacked/pre-install/janhq-inference-cortex-extension-1.0.24.tgz",
+    "installOptions": { "version": false, "fullMetadata": true },
+    "name": "@janhq/inference-cortex-extension",
+    "productName": "Cortex Inference Engine",
+    "url": "../../extensions/inference-cortex-extension/dist/index.js",
+    "version": "1.0.24",
+    "main": "dist/index.js",
+    "description": "This extension embeds cortex.cpp, a lightweight inference engine written in C++. See https://jan.ai.\nAdditional dependencies could be installed to run without Cuda Toolkit installation.",
+    "_active": true,
+    "listeners": {}
+  }
+]

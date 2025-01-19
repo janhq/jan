@@ -39,10 +39,9 @@ const useModels = () => {
           ModelManager.instance().models.get(e.id)?.metadata ?? e.metadata,
       }))
 
-      const remoteModels = ModelManager.instance()
-        .models.values()
-        .toArray()
-        .filter((e) => e.engine !== InferenceEngine.cortex_llamacpp)
+      const remoteModels = Array.from(
+        ModelManager.instance().models.values()
+      ).filter((e) => e.engine !== InferenceEngine.cortex_llamacpp)
       const toUpdate = [
         ...localModels,
         ...remoteModels.filter(
@@ -67,7 +66,7 @@ const useModels = () => {
     }
 
     const getExtensionModels = () => {
-      const models = ModelManager.instance().models.values().toArray()
+      const models = Array.from(ModelManager.instance().models.values())
       setExtensionModels(models)
     }
     // Fetch all data
@@ -78,7 +77,7 @@ const useModels = () => {
   const reloadData = useDebouncedCallback(() => getData(), 300)
 
   const updateStates = useCallback(() => {
-    const cachedModels = ModelManager.instance().models.values().toArray()
+    const cachedModels = Array.from(ModelManager.instance().models.values())
     setDownloadedModels((downloadedModels) => [
       ...downloadedModels,
       ...cachedModels.filter(
