@@ -1,6 +1,6 @@
-import { Fragment } from 'react'
+import { Fragment, useEffect } from 'react'
 
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -9,10 +9,12 @@ import { MainViewState } from '@/constants/screens'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { quickAskEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 
 const QuickAskListener: React.FC = () => {
   const { sendChatMessage } = useSendChatMessage()
   const setMainState = useSetAtom(mainViewStateAtom)
+  const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
 
   const debounced = useDebouncedCallback((value) => {
     setMainState(MainViewState.Thread)
@@ -22,6 +24,12 @@ const QuickAskListener: React.FC = () => {
   window.electronAPI?.onUserSubmitQuickAsk((_event: string, input: string) => {
     debounced(input)
   })
+
+  useEffect(() => {
+    if (quickAskEnabled) {
+      window.core?.api?.createSystemTray()
+    }
+  }, [quickAskEnabled])
 
   return <Fragment></Fragment>
 }

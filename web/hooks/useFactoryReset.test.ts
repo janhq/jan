@@ -87,7 +87,7 @@ describe('useFactoryReset', () => {
     const { result } = renderHook(() => useFactoryReset())
 
     await act(async () => {
-      await result.current.resetAll(true)
+      await result.current.resetAll()
     })
 
     expect(mockUpdateAppConfiguration).not.toHaveBeenCalled()

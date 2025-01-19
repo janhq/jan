@@ -5,7 +5,6 @@ import { join, resolve } from 'path'
  * Managers
  **/
 import { windowManager } from './managers/window'
-import { getAppConfigurations, log } from '@janhq/core/node'
 
 /**
  * IPC Handlers
@@ -28,6 +27,7 @@ import { setupReactDevTool } from './utils/dev'
 import { trayManager } from './managers/tray'
 import { logSystemInfo } from './utils/system'
 import { registerGlobalShortcuts } from './utils/shortcut'
+import { log } from '@janhq/core/node'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -93,7 +93,6 @@ app
       windowManager.mainWindow?.webContents.openDevTools()
     }
   })
-  .then(() => process.env.CI !== 'e2e' && trayManager.createSystemTray())
   .then(logSystemInfo)
   .then(() => {
     app.on('activate', () => {
@@ -119,17 +118,12 @@ app.once('quit', () => {
 
 app.once('window-all-closed', () => {
   // Feature Toggle for Quick Ask
-  if (
-    getAppConfigurations().quick_ask &&
-    !windowManager.isQuickAskWindowDestroyed()
-  )
-    return
+  if (!windowManager.isQuickAskWindowDestroyed()) return
   cleanUpAndQuit()
 })
 
 function createQuickAskWindow() {
   // Feature Toggle for Quick Ask
-  if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
   windowManager.createQuickAskWindow(preloadPath, startUrl)
 }

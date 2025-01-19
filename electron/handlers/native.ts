@@ -9,12 +9,15 @@ import {
   AppEvent,
   NativeRoute,
   SelectFileProp,
+  getConfigurationFilePath,
 } from '@janhq/core/node'
 import { SelectFileOption } from '@janhq/core'
 import { menu } from '../utils/menu'
 import { migrate } from '../utils/migration'
 import { createUserSpace } from '../utils/path'
 import { setupExtensions } from '../utils/extension'
+import { trayManager } from '../managers/tray'
+import { rm } from 'fs/promises'
 
 const isMac = process.platform === 'darwin'
 
@@ -275,6 +278,9 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(NativeRoute.factoryReset, async (_event): Promise<void> => {
     ModuleManager.instance.clearImportedModules()
+    const dataFolderPath = getJanDataFolderPath()
+    await rm(dataFolderPath, { recursive: true })
+    await rm(getConfigurationFilePath())
     return createUserSpace().then(migrate).then(setupExtensions)
   })
 
@@ -312,4 +318,12 @@ export function handleAppIPCs() {
     const { stopServer } = require('@janhq/server')
     return stopServer()
   })
+
+  /**
+   * Create system tray for quick ask access
+   */
+  ipcMain.handle(
+    NativeRoute.createSystemTray,
+    async (): Promise<void> => trayManager.createSystemTray()
+  )
 }

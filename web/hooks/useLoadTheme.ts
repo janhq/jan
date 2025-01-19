@@ -8,6 +8,8 @@ import { useAtom, useAtomValue } from 'jotai'
 
 import cssVars from '@/utils/jsonToCssVariables'
 
+import themeData from '@/../../public/theme.json' with { type: 'json' }
+
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   selectedThemeIdAtom,
@@ -27,11 +29,11 @@ export const useLoadTheme = () => {
   const setNativeTheme = useCallback(
     (nativeTheme: NativeThemeProps) => {
       if (nativeTheme === 'dark') {
-        window?.electronAPI?.setNativeThemeDark()
+        window?.core?.api?.setNativeThemeDark()
         setTheme('dark')
         localStorage.setItem('nativeTheme', 'dark')
       } else {
-        window?.electronAPI?.setNativeThemeLight()
+        window?.core?.api?.setNativeThemeLight()
         setTheme('light')
         localStorage.setItem('nativeTheme', 'light')
       }
@@ -74,6 +76,13 @@ export const useLoadTheme = () => {
       setThemeData(theme)
       setNativeTheme(theme.nativeTheme)
       applyTheme(theme)
+    } else {
+      // Apply default bundled theme
+      const theme: Theme | undefined = themeData
+      if (theme) {
+        setThemeData(theme)
+        applyTheme(theme)
+      }
     }
   }, [
     janDataFolderPath,

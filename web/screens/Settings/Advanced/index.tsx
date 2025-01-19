@@ -62,7 +62,7 @@ const Advanced = () => {
   )
   const [vulkanEnabled, setVulkanEnabled] = useAtom(vulkanEnabledAtom)
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
-  const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
+  const [quickAskEnabled, setQuickAskEnabled] = useAtom(quickAskEnabledAtom)
 
   const [proxy, setProxy] = useAtom(proxyAtom)
   const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
@@ -125,10 +125,7 @@ const Advanced = () => {
     e: boolean,
     relaunch: boolean = true
   ) => {
-    const appConfiguration: AppConfiguration =
-      await window.core?.api?.getAppConfigurations()
-    appConfiguration.quick_ask = e
-    await window.core?.api?.updateAppConfiguration(appConfiguration)
+    setQuickAskEnabled(e)
     if (relaunch) window.core?.api?.relaunch()
   }
 

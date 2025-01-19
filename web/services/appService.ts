@@ -4,8 +4,6 @@ import {
   SystemInformation,
 } from '@janhq/core'
 
-import { toaster } from '@/containers/Toast'
-
 import { extensionManager } from '@/extension'
 
 export const appService = {
@@ -25,12 +23,5 @@ export const appService = {
       gpuSetting,
       osInfo,
     }
-  },
-
-  showToast: (title: string, description: string) => {
-    toaster({
-      title,
-      description: description,
-    })
   },
 }

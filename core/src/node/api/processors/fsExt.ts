@@ -1,7 +1,11 @@
 import { basename, join } from 'path'
 import fs, { readdirSync } from 'fs'
 import { appResourcePath, normalizeFilePath } from '../../helper/path'
-import { defaultAppConfig, getJanDataFolderPath, getJanDataFolderPath as getPath } from '../../helper'
+import {
+  defaultAppConfig,
+  getJanDataFolderPath,
+  getJanDataFolderPath as getPath,
+} from '../../helper'
 import { Processor } from './Processor'
 import { FileStat } from '../../../types'
 
@@ -21,17 +25,6 @@ export class FSExt implements Processor {
   // Handles the 'getJanDataFolderPath' IPC event. This event is triggered to get the user space path.
   getJanDataFolderPath() {
     return Promise.resolve(getPath())
-  }
-
-  // Handles the 'getResourcePath' IPC event. This event is triggered to get the resource path.
-  getResourcePath() {
-    return appResourcePath()
-  }
-
-  // Handles the 'getUserHomePath' IPC event. This event is triggered to get the user app data path.
-  // CAUTION: This would not return OS home path but the app data path.
-  getUserHomePath() {
-    return defaultAppConfig().data_folder
   }
 
   // handle fs is directory here
@@ -55,30 +48,6 @@ export class FSExt implements Processor {
     return fileStat
   }
 
-  writeBlob(path: string, data: any) {
-    try {
-      const normalizedPath = normalizeFilePath(path)
-      
-      const dataBuffer = Buffer.from(data, 'base64')
-      const writePath = join(getJanDataFolderPath(), normalizedPath)
-      fs.writeFileSync(writePath, dataBuffer)
-    } catch (err) {
-      console.error(`writeFile ${path} result: ${err}`)
-    }
-  }
-
-  copyFile(src: string, dest: string): Promise<void> {
-    return new Promise((resolve, reject) => {
-      fs.copyFile(src, dest, (err) => {
-        if (err) {
-          reject(err)
-        } else {
-          resolve()
-        }
-      })
-    })
-  }
-
   async getGgufFiles(paths: string[]) {
     const sanitizedFilePaths: {
       path: string
@@ -87,7 +56,7 @@ export class FSExt implements Processor {
     }[] = []
     for (const filePath of paths) {
       const normalizedPath = normalizeFilePath(filePath)
-     
+
       const isExist = fs.existsSync(normalizedPath)
       if (!isExist) continue
       const fileStats = fs.statSync(normalizedPath)
@@ -102,12 +71,12 @@ export class FSExt implements Processor {
       } else {
         // allowing only one level of directory
         const files = await readdirSync(normalizedPath)
-  
+
         for (const file of files) {
           const fullPath = await join(normalizedPath, file)
           const fileStats = await fs.statSync(fullPath)
           if (!fileStats || fileStats.isDirectory()) continue
-  
+
           sanitizedFilePaths.push({
             path: fullPath,
             name: file,

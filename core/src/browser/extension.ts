@@ -1,6 +1,5 @@
-import { Model, ModelEvent, SettingComponentProps } from '../types'
+import { Model, SettingComponentProps } from '../types'
 import { getJanDataFolderPath, joinPath } from './core'
-import { events } from './events'
 import { fs } from './fs'
 import { ModelManager } from './models'
 
@@ -138,11 +137,16 @@ export abstract class BaseExtension implements ExtensionType {
     try {
       if (!(await fs.existsSync(extensionSettingFolderPath)))
         await fs.mkdir(extensionSettingFolderPath)
-      const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
+      const settingFilePath = await joinPath([
+        extensionSettingFolderPath,
+        this.settingFileName,
+      ])
 
       // Persists new settings
       if (await fs.existsSync(settingFilePath)) {
-        const oldSettings = JSON.parse(await fs.readFileSync(settingFilePath, 'utf-8'))
+        const oldSettings = JSON.parse(
+          await fs.readFileSync(settingFilePath, 'utf-8')
+        )
         settings.forEach((setting) => {
           // Keep setting value
           if (setting.controllerProps && Array.isArray(oldSettings))
@@ -164,7 +168,9 @@ export abstract class BaseExtension implements ExtensionType {
    * @returns
    */
   async getSetting<T>(key: string, defaultValue: T) {
-    const keySetting = (await this.getSettings()).find((setting) => setting.key === key)
+    const keySetting = (await this.getSettings()).find(
+      (setting) => setting.key === key
+    )
 
     const value = keySetting?.controllerProps.value
     return (value as T) ?? defaultValue
@@ -222,7 +228,9 @@ export abstract class BaseExtension implements ExtensionType {
    * @param componentProps
    * @returns
    */
-  async updateSettings(componentProps: Partial<SettingComponentProps>[]): Promise<void> {
+  async updateSettings(
+    componentProps: Partial<SettingComponentProps>[]
+  ): Promise<void> {
     if (!this.name) return
 
     const settings = await this.getSettings()
@@ -244,7 +252,10 @@ export abstract class BaseExtension implements ExtensionType {
       this.settingFileName,
     ])
 
-    await fs.writeFileSync(settingPath, JSON.stringify(updatedSettings, null, 2))
+    await fs.writeFileSync(
+      settingPath,
+      JSON.stringify(updatedSettings, null, 2)
+    )
 
     updatedSettings.forEach((setting) => {
       this.onSettingUpdate<typeof setting.controllerProps.value>(

@@ -1,8 +1,8 @@
 import { BrowserWindow, app, shell } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
-import { getAppConfigurations, AppEvent } from '@janhq/core/node'
 import { getBounds, saveBounds } from '../utils/setup'
+import { AppEvent } from '@janhq/core/node'
 
 /**
  * Manages the current window instance.
@@ -71,8 +71,8 @@ class WindowManager {
     })
 
     windowManager.mainWindow?.on('close', function (evt) {
-      // Feature Toggle for Quick Ask
-      if (!getAppConfigurations().quick_ask) return
+      // Prevent main window being destroy when quick ask is enabled
+      if (windowManager.isQuickAskWindowDestroyed()) return
 
       if (!isAppQuitting) {
         evt.preventDefault()
@@ -93,6 +93,7 @@ class WindowManager {
         preload: preloadPath,
         webSecurity: false,
       },
+      show: false,
     })
 
     this._quickAskWindow.loadURL(startUrl)
@@ -138,7 +139,11 @@ class WindowManager {
   }
 
   isQuickAskWindowDestroyed(): boolean {
-    return this._quickAskWindow?.isDestroyed() ?? true
+    return (
+      this._quickAskWindow?.isDestroyed() ||
+      !this._quickAskWindow?.isVisible() ||
+      true
+    )
   }
 
   expandQuickAskWindow(heightOffset: number): void {

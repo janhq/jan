@@ -38,7 +38,7 @@ export const getAppConfigurations = (): AppConfiguration => {
   }
 }
 
-const getConfigurationFilePath = () =>
+export const getConfigurationFilePath = () =>
   join(
     global.core?.appPath() ||
       process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'],

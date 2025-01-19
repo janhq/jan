@@ -31,6 +31,8 @@ export enum NativeRoute {
 
   startServer = 'startServer',
   stopServer = 'stopServer',
+
+  createSystemTray = 'createSystemTray',
 }
 
 /**
@@ -46,7 +48,6 @@ export enum AppRoute {
   baseName = 'baseName',
   log = 'log',
   systemInformation = 'systemInformation',
-  showToast = 'showToast',
 }
 
 export enum AppEvent {
@@ -94,7 +95,6 @@ export enum ExtensionRoute {
   uninstallExtension = 'uninstallExtension',
 }
 export enum FileSystemRoute {
-  appendFileSync = 'appendFileSync',
   unlinkSync = 'unlinkSync',
   existsSync = 'existsSync',
   readdirSync = 'readdirSync',
@@ -104,12 +104,8 @@ export enum FileSystemRoute {
   writeFileSync = 'writeFileSync',
 }
 export enum FileManagerRoute {
-  copyFile = 'copyFile',
   getJanDataFolderPath = 'getJanDataFolderPath',
-  getResourcePath = 'getResourcePath',
-  getUserHomePath = 'getUserHomePath',
   fileStat = 'fileStat',
-  writeBlob = 'writeBlob',
   getGgufFiles = 'getGgufFiles',
 }
 
