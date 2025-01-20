@@ -26,7 +26,7 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
   getLogoEngine,
@@ -166,7 +166,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                             </div>
                             <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                               <span className="font-medium">
-                                {toGibibytes(model.metadata?.size)}
+                                {toGigabytes(model.metadata?.size)}
                               </span>
                               {!isDownloading ? (
                                 <DownloadCloudIcon
@@ -259,7 +259,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               </div>
                             ))}
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGibibytes(featModel.metadata?.size)}
+                            {toGigabytes(featModel.metadata?.size)}
                           </span>
                         </div>
                       ) : (
@@ -278,7 +278,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                             Download
                           </Button>
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGibibytes(featModel.metadata?.size)}
+                            {toGigabytes(featModel.metadata?.size)}
                           </span>
                         </div>
                       )}

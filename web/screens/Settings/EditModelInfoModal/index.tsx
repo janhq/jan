@@ -17,7 +17,7 @@ import useImportModel, {
   setImportModelStageAtom,
 } from '@/hooks/useImportModel'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { openFileTitle } from '@/utils/titleUtils'
 
@@ -126,7 +126,7 @@ const EditModelInfoModal = () => {
             <div className="flex flex-1 flex-col">
               <p>{editingModel.name}</p>
               <div className="flex flex-row">
-                <span className="mr-2">{toGibibytes(editingModel.size)}</span>
+                <span className="mr-2">{toGigabytes(editingModel.size)}</span>
                 <div className="flex flex-row space-x-1">
                   <span className="font-semibold">Format:</span>
                   <span className="font-normal">

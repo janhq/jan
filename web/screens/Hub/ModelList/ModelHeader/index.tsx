@@ -18,7 +18,7 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { useSettings } from '@/hooks/useSettings'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -32,6 +32,7 @@ import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
+import { extractModelName } from '@/utils/modelSource'
 
 type Props = {
   model: ModelSource
@@ -73,7 +74,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       </div>
       <Dropdown
         className="min-w-[240px]"
-        options={model.models.map((e) => ({
+        options={model.models?.map((e) => ({
           name: (
             <div className="flex space-x-2">
               <span className="line-clamp-1 max-w-[340px] font-normal">
@@ -88,7 +89,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
             </div>
           ),
           value: e.id,
-          suffix: toGibibytes(e.size),
+          suffix: toGigabytes(e.size),
         }))}
       >
         <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
@@ -141,16 +142,16 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       <div className="flex items-center justify-between py-2">
         <div className="group flex cursor-pointer items-center gap-2">
           <span
-            className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline"
+            className="line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline"
             onClick={onSelectedModel}
           >
-            {model.metadata?.id}
+            {extractModelName(model.metadata?.id)}
           </span>
         </div>
         <div className="inline-flex items-center space-x-2">
           <div className="hidden items-center sm:inline-flex">
             <span className="mr-4 text-sm font-light text-[hsla(var(--text-secondary))]">
-              {toGibibytes(model.models?.[0]?.size)}
+              {toGigabytes(model.models?.[0]?.size)}
             </span>
           </div>
           {downloadButton}

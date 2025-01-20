@@ -13,7 +13,7 @@ import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
 import { normalizeModelId } from '@/utils/model'
 
@@ -111,7 +111,7 @@ const ModelDownloadRow: React.FC<Props> = ({
         </div>
         <div className="md:min-w-[90px] md:max-w-[90px]">
           <Badge theme="secondary" className="ml-4 hidden md:flex">
-            {toGibibytes(fileSize)}
+            {toGigabytes(fileSize)}
           </Badge>
         </div>
       </div>

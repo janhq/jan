@@ -4,7 +4,7 @@ import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 import { extractDescription } from '@/utils/modelSource'
 import MarkdownText from '@/containers/Markdown'
 
@@ -21,7 +21,7 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
       <div className="flex">
         <div className="flex w-full flex-col py-4 ">
           <div className="my-2 inline-flex items-center sm:hidden">
-            <span className="mr-4">{toGibibytes(model.models?.[0]?.size)}</span>
+            <span className="mr-4">{toGigabytes(model.models?.[0]?.size)}</span>
             <ModelLabel metadata={model.metadata} />
           </div>
           <div className="flex flex-col">

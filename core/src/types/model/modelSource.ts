@@ -1,3 +1,6 @@
+/**
+ * GGUF Metadata of the model source
+ */
 export interface GGUF {
   architecture: string
   bos_token: string
@@ -7,11 +10,17 @@ export interface GGUF {
   total: number
 }
 
+/**
+ * Card Metadata of the model source
+ */
 export interface CardData {
   license: string
   pipeline_tag: string
 }
 
+/**
+ * Model Metadata of the model source
+ */
 export interface Metadata {
   author: string
   cardData: CardData
@@ -38,11 +47,17 @@ export interface Metadata {
   usedStorage: number
 }
 
+/**
+ * Model source sibling information
+ */
 export interface ModelSibling {
   id: string
   size: number
 }
 
+/**
+ * Model source object
+ */
 export interface ModelSource {
   id: string
   metadata: Metadata

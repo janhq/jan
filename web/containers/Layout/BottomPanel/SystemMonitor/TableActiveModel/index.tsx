@@ -6,7 +6,7 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
@@ -34,7 +34,7 @@ const TableActiveModel = () => {
                 <td className="px-4 py-2">
                   <Badge theme="secondary">
                     {activeModel.metadata?.size
-                      ? toGibibytes(activeModel.metadata?.size)
+                      ? toGigabytes(activeModel.metadata?.size)
                       : '-'}
                   </Badge>
                 </td>

@@ -2,9 +2,10 @@ import { ModelSource } from '@janhq/core'
 import { Badge } from '@janhq/joi'
 import { ArrowLeftIcon } from 'lucide-react'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 import MarkdownText from '@/containers/Markdown'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
+import { extractModelName } from '@/utils/modelSource'
 
 type Props = {
   model: ModelSource
@@ -29,8 +30,8 @@ const ModelPage = ({ model, onGoBack }: Props) => {
         <div className="p-4">
           {/* Header */}
           <div className="flex items-center justify-between py-2">
-            <span className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline">
-              {model.metadata.modelId}
+            <span className="line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline">
+              {extractModelName(model.metadata.modelId)}
             </span>
             <div className="inline-flex items-center space-x-2">
               <ModelDownloadButton id={model.models?.[0].id} />
@@ -84,7 +85,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                         </td>
                         <td className="px-6 py-4">GGUF</td>
                         <td className="px-6 py-4 text-[hsla(var(--text-secondary))]">
-                          {toGibibytes(item.size)}
+                          {toGigabytes(item.size)}
                         </td>
                         <td className="pr-4 text-right text-black">
                           <ModelDownloadButton

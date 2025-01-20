@@ -16,7 +16,7 @@ import useGetSystemResources from '@/hooks/useGetSystemResources'
 
 import { usePath } from '@/hooks/usePath'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { utilizedMemory } from '@/utils/memory'
 
@@ -134,8 +134,8 @@ const SystemMonitor = () => {
                 <div className="flex items-center justify-between gap-2">
                   <h6 className="font-bold">Memory</h6>
                   <span>
-                    {toGibibytes(usedRam, { hideUnit: true })}/
-                    {toGibibytes(totalRam, { hideUnit: true })} GB
+                    {toGigabytes(usedRam, { hideUnit: true })}/
+                    {toGigabytes(totalRam, { hideUnit: true })} GB
                   </span>
                 </div>
                 <div className="flex items-center gap-x-4">
