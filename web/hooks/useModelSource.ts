@@ -26,48 +26,37 @@ export function useGetModelSources() {
   return { sources, error, mutate }
 }
 
-/**
- * Add a new model source
- * @returns A Promise that resolves to intall of engine.
- */
-export const addModelSource = async (source: string) => {
+export const useModelSourcesMutation = () => {
   const extension = useMemo(
     () => extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model),
     []
   )
-
-  if (!extension) {
-    throw new Error('Extension is not available')
+  /**
+   * Add a new model source
+   * @returns A Promise that resolves to intall of engine.
+   */
+  const addModelSource = async (source: string) => {
+    try {
+      // Call the extension's method
+      return await extension?.addSource(source)
+    } catch (error) {
+      console.error('Failed to install engine variant:', error)
+      throw error
+    }
   }
 
-  try {
-    // Call the extension's method
-    return await extension.addSource(source)
-  } catch (error) {
-    console.error('Failed to install engine variant:', error)
-    throw error
+  /**
+   * Delete a new model source
+   * @returns A Promise that resolves to intall of engine.
+   */
+  const deleteModelSource = async (source: string) => {
+    try {
+      // Call the extension's method
+      return await extension?.deleteSource(source)
+    } catch (error) {
+      console.error('Failed to install engine variant:', error)
+      throw error
+    }
   }
-}
-
-/**
- * Delete a new model source
- * @returns A Promise that resolves to intall of engine.
- */
-export const deleteModelSource = async (source: string) => {
-  const extension = useMemo(
-    () => extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model),
-    []
-  )
-
-  if (!extension) {
-    throw new Error('Extension is not available')
-  }
-
-  try {
-    // Call the extension's method
-    return await extension.deleteSource(source)
-  } catch (error) {
-    console.error('Failed to install engine variant:', error)
-    throw error
-  }
+  return { addModelSource, deleteModelSource }
 }

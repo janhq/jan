@@ -29,7 +29,7 @@ const ModalCancelDownload = ({ modelId, isFromList }: Props) => {
   const onAbortDownloadClick = useCallback(() => {
     removeDownloadState(modelId)
     abortModelDownload(downloadState?.modelId ?? modelId)
-  }, [downloadState, abortModelDownload, removeDownloadState])
+  }, [downloadState, abortModelDownload, removeDownloadState, modelId])
 
   return (
     <Modal

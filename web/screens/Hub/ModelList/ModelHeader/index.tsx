@@ -9,8 +9,6 @@ import { ChevronDownIcon } from 'lucide-react'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
-import { toaster } from '@/containers/Toast'
-
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
@@ -19,6 +17,8 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 import { useSettings } from '@/hooks/useSettings'
 
 import { toGigabytes } from '@/utils/converter'
+
+import { extractModelName } from '@/utils/modelSource'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -32,7 +32,6 @@ import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
-import { extractModelName } from '@/utils/modelSource'
 
 type Props = {
   model: ModelSource
@@ -102,17 +101,18 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const isDownloading = downloadingModels.some((md) => md === model.id)
 
   const onUseModelClick = useCallback(async () => {
-    if (assistants.length === 0) {
-      toaster({
-        title: 'No assistant available.',
-        description: `Could not use Model ${model.metadata?.id} as no assistant is available.`,
-        type: 'error',
-      })
-      return
+    const downloadedModel = downloadedModels.find((e) => e.id === model.id)
+    if (downloadedModel) {
+      await requestCreateNewThread(assistants[0], downloadedModel)
+      setMainViewState(MainViewState.Thread)
     }
-    // await requestCreateNewThread(assistants[0], model)
-    setMainViewState(MainViewState.Thread)
-  }, [assistants, model, requestCreateNewThread, setMainViewState])
+  }, [
+    assistants,
+    model,
+    requestCreateNewThread,
+    setMainViewState,
+    downloadedModels,
+  ])
 
   if (isDownloaded) {
     downloadButton = (

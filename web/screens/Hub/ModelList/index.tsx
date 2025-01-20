@@ -1,15 +1,15 @@
 import { Model, ModelSource } from '@janhq/core'
 
-import ModelItem from '@/screens/Hub/ModelList/ModelItem'
-
 import { useGetModelSources } from '@/hooks/useModelSource'
+
+import ModelItem from '@/screens/Hub/ModelList/ModelItem'
 
 type Props = {
   models: Model[]
   onSelectedModel: (model: ModelSource) => void
 }
 
-const ModelList = ({ models, onSelectedModel }: Props) => {
+const ModelList = ({ onSelectedModel }: Props) => {
   const { sources } = useGetModelSources()
 
   return (

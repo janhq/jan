@@ -1,15 +1,22 @@
+import { useCallback, useMemo } from 'react'
+
+import { Button, Tooltip } from '@janhq/joi'
+import { useAtomValue, useSetAtom } from 'jotai'
+
+import { MainViewState } from '@/constants/screens'
+
+import { useCreateNewThread } from '@/hooks/useCreateNewThread'
+import useDownloadModel from '@/hooks/useDownloadModel'
+
+import ModalCancelDownload from '../ModalCancelDownload'
+
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
+
 import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
-import { Button, Tooltip } from '@janhq/joi'
-import { useAtomValue, useSetAtom } from 'jotai'
-import ModalCancelDownload from '../ModalCancelDownload'
-import { useCallback, useMemo } from 'react'
-import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
-import { MainViewState } from '@/constants/screens'
-import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import useDownloadModel from '@/hooks/useDownloadModel'
 
 interface Props {
   id: string
@@ -22,6 +29,7 @@ const ModelDownloadButton = ({ id, theme, variant }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const assistants = useAtomValue(assistantsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
+  const { requestCreateNewThread } = useCreateNewThread()
   const isDownloaded = useMemo(
     () => downloadedModels.some((md) => md.id === id),
     [downloadedModels, id]
@@ -33,12 +41,20 @@ const ModelDownloadButton = ({ id, theme, variant }: Props) => {
 
   const onDownloadClick = useCallback(() => {
     downloadModel(id)
-  }, [id])
+  }, [id, downloadModel])
 
   const onUseModelClick = useCallback(async () => {
-    // await requestCreateNewThread(assistants[0], model)
+    const downloadedModel = downloadedModels.find((e) => e.id === id)
+    if (downloadedModel)
+      await requestCreateNewThread(assistants[0], downloadedModel)
     setMainViewState(MainViewState.Thread)
-  }, [assistants])
+  }, [
+    assistants,
+    downloadedModels,
+    setMainViewState,
+    requestCreateNewThread,
+    id,
+  ])
 
   const defaultButton = (
     <Button

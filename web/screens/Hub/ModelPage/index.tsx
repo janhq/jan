@@ -2,9 +2,10 @@ import { ModelSource } from '@janhq/core'
 import { Badge } from '@janhq/joi'
 import { ArrowLeftIcon } from 'lucide-react'
 
-import { toGigabytes } from '@/utils/converter'
 import MarkdownText from '@/containers/Markdown'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
+
+import { toGigabytes } from '@/utils/converter'
 import { extractModelName } from '@/utils/modelSource'
 
 type Props = {

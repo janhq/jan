@@ -1,12 +1,12 @@
 import { ModelSource } from '@janhq/core'
 
+import MarkdownText from '@/containers/Markdown'
 import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 
 import { toGigabytes } from '@/utils/converter'
 import { extractDescription } from '@/utils/modelSource'
-import MarkdownText from '@/containers/Markdown'
 
 type Props = {
   model: ModelSource
