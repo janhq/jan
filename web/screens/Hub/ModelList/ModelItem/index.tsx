@@ -1,7 +1,4 @@
-import { useState } from 'react'
-
 import { Model } from '@janhq/core'
-import { Badge } from '@janhq/joi'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -13,12 +10,13 @@ import { toGibibytes } from '@/utils/converter'
 
 type Props = {
   model: Model
+  onSelectedModel: () => void
 }
 
-const ModelItem: React.FC<Props> = ({ model }) => {
+const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
   return (
     <div className="mb-6 flex flex-col overflow-hidden border-b border-[hsla(var(--app-border))]">
-      <ModelItemHeader model={model} />
+      <ModelItemHeader model={model} onSelectedModel={onSelectedModel} />
 
       <div className="flex">
         <div className="flex w-full flex-col py-4 ">

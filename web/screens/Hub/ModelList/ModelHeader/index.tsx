@@ -34,9 +34,10 @@ import {
 
 type Props = {
   model: Model
+  onSelectedModel: () => void
 }
 
-const ModelItemHeader = ({ model }: Props) => {
+const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
@@ -117,7 +118,10 @@ const ModelItemHeader = ({ model }: Props) => {
     <div className="rounded-t-md bg-[hsla(var(--app-bg))]">
       <div className="flex items-center justify-between py-2">
         <div className="group flex cursor-pointer items-center gap-2">
-          <span className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline">
+          <span
+            className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline"
+            onClick={onSelectedModel}
+          >
             {model.name}
           </span>
         </div>

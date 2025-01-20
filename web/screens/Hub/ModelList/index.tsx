@@ -12,9 +12,10 @@ import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 type Props = {
   models: Model[]
+  onSelectedModel: (model: Model) => void
 }
 
-const ModelList = ({ models }: Props) => {
+const ModelList = ({ models, onSelectedModel }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const { engines } = useGetEngines()
   const sortedModels: Model[] = useMemo(() => {
@@ -47,7 +48,13 @@ const ModelList = ({ models }: Props) => {
 
   return (
     <div className="relative h-full w-full flex-shrink-0">
-      {sortedModels?.map((model) => <ModelItem key={model.id} model={model} />)}
+      {sortedModels?.map((model) => (
+        <ModelItem
+          key={model.id}
+          model={model}
+          onSelectedModel={() => onSelectedModel(model)}
+        />
+      ))}
     </div>
   )
 }
