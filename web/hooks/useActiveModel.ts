@@ -159,7 +159,7 @@ export function useActiveModel() {
     }
     if (!activeModel) return
 
-    const engine = EngineManager.instance().get(activeModel.engine)
+    const engine = EngineManager.instance().get(InferenceEngine.cortex)
     engine?.stopInference()
   }, [activeModel, stateModel, stopModel])
 

@@ -36,8 +36,6 @@ import {
 
 import MyModelList from './MyModelList'
 
-import { extensionManager } from '@/extension'
-
 import {
   downloadedModelsAtom,
   showEngineListModelAtom,
@@ -52,9 +50,6 @@ const MyModels = () => {
     showEngineListModelAtom
   )
 
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string; apiKey: string; provider: string }[]
-  >([])
   const { engines } = useGetEngines()
 
   const isLocalEngine = useCallback(
@@ -97,45 +92,6 @@ const MyModels = () => {
     setSearchText(input)
   }, [])
 
-  useEffect(() => {
-    const getAllSettings = async () => {
-      const extensionsMenu: {
-        name?: string
-        setting: string
-        apiKey: string
-        provider: string
-      }[] = []
-      const extensions = extensionManager.getAll()
-
-      for (const extension of extensions) {
-        if (typeof extension.getSettings === 'function') {
-          const settings = await extension.getSettings()
-
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            extensionsMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-              apiKey:
-                'apiKey' in extension && typeof extension.apiKey === 'string'
-                  ? extension.apiKey
-                  : '',
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
-            })
-          }
-        }
-      }
-      setExtensionHasSettings(extensionsMenu)
-    }
-    getAllSettings()
-  }, [])
-
   const findByEngine = filteredDownloadedModels.map((x) => {
     // Legacy engine support - they will be grouped under Cortex LlamaCPP
     if (x.engine === InferenceEngine.nitro)
@@ -158,9 +114,11 @@ const MyModels = () => {
       }
     })
 
-  const getEngineStatusReady: InferenceEngine[] = extensionHasSettings
-    ?.filter((e) => e.apiKey.length > 0)
-    .map((x) => x.provider as InferenceEngine)
+  const getEngineStatusReady: InferenceEngine[] = Object.entries(engines ?? {})
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    ?.filter(([_, value]) => (value?.[0]?.api_key?.length ?? 0) > 0)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    .map(([key, _]) => key as InferenceEngine)
 
   useEffect(() => {
     setShowEngineListModel((prev) => [
@@ -168,7 +126,7 @@ const MyModels = () => {
       ...(getEngineStatusReady as InferenceEngine[]),
     ])
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setShowEngineListModel, extensionHasSettings])
+  }, [setShowEngineListModel, engines])
 
   return (
     <div {...getRootProps()} className="h-full w-full">

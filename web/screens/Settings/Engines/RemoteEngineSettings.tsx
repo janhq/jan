@@ -1,11 +1,14 @@
 /* eslint-disable  @typescript-eslint/no-explicit-any */
 /* eslint-disable  react/no-unescaped-entities */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
 import React, { useCallback, useRef, useState, useEffect } from 'react'
 
 import {
   EngineConfig as OriginalEngineConfig,
   InferenceEngine,
+  events,
+  EngineEvent,
 } from '@janhq/core'
 
 interface EngineConfig extends OriginalEngineConfig {
@@ -64,6 +67,7 @@ const RemoteEngineSettings = ({
         set(updatedEngine, field, value)
         await updateEngine(name, updatedEngine)
         mutate()
+        events.emit(EngineEvent.OnEngineUpdate, {})
       }, 300)
     },
     [engine, name, mutate]
@@ -114,6 +118,8 @@ const RemoteEngineSettings = ({
       })
     }
   }, [engine])
+
+  if (!engine) return null
 
   return (
     <ScrollArea className="h-full w-full">

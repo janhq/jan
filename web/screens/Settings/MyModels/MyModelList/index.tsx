@@ -2,7 +2,7 @@ import { memo, useState } from 'react'
 
 import { Model } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 import {
   MoreVerticalIcon,
   PlayIcon,
@@ -14,11 +14,12 @@ import { twMerge } from 'tailwind-merge'
 import { useActiveModel } from '@/hooks/useActiveModel'
 import useDeleteModel from '@/hooks/useDeleteModel'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { toGibibytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 type Props = {
@@ -32,7 +33,7 @@ const MyModelList = ({ model }: Props) => {
   const { deleteModel } = useDeleteModel()
   const [more, setMore] = useState(false)
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
 
   const [menu, setMenu] = useState<HTMLDivElement | null>(null)
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)

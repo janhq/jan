@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useMemo } from 'react'
 
 import { InferenceEngine, EngineConfig } from '@janhq/core'
@@ -5,7 +6,8 @@ import { useAtomValue } from 'jotai'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
-import { installedEnginesAtom } from '@/helpers/atoms/Engines.atom'
+import { useGetEngines } from './useEngineManagement'
+
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -13,7 +15,7 @@ export function useStarterScreen() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const threads = useAtomValue(threadsAtom)
 
-  const engines = useAtomValue(installedEnginesAtom)
+  const { engines } = useGetEngines()
 
   const remoteEngines =
     engines &&
