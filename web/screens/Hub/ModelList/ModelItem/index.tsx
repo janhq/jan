@@ -1,15 +1,15 @@
-import { Model } from '@janhq/core'
-
-import { twMerge } from 'tailwind-merge'
+import { ModelSource } from '@janhq/core'
 
 import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 
 import { toGibibytes } from '@/utils/converter'
+import { extractDescription } from '@/utils/modelSource'
+import MarkdownText from '@/containers/Markdown'
 
 type Props = {
-  model: Model
+  model: ModelSource
   onSelectedModel: () => void
 }
 
@@ -21,13 +21,14 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
       <div className="flex">
         <div className="flex w-full flex-col py-4 ">
           <div className="my-2 inline-flex items-center sm:hidden">
-            <span className="mr-4">{toGibibytes(model.metadata?.size)}</span>
+            <span className="mr-4">{toGibibytes(model.models?.[0]?.size)}</span>
             <ModelLabel metadata={model.metadata} />
           </div>
           <div className="flex flex-col">
-            <p className="text-[hsla(var(--text-secondary))]">
-              {model.description || '-'}
-            </p>
+            <MarkdownText
+              text={extractDescription(model.metadata?.description) || '-'}
+              className="font-light text-[hsla(var(--text-secondary))]"
+            />
           </div>
           <div className="flex flex-col gap-y-4 sm:flex-row sm:gap-x-10 sm:gap-y-0">
             <p
@@ -42,16 +43,7 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
         <div className="hidden w-48 flex-shrink-0 border-l border-t border-[hsla(var(--app-border))] p-4">
           <div>
             <span className="font-semibold ">Format</span>
-            <p
-              className={twMerge(
-                'mt-2 font-medium',
-                !model.format?.includes(' ') &&
-                  !model.format?.includes('-') &&
-                  'uppercase'
-              )}
-            >
-              {model.format}
-            </p>
+            <p className="mt-2 font-medium uppercase">GGUF</p>
           </div>
         </div>
       </div>

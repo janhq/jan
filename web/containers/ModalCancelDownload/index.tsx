@@ -1,7 +1,5 @@
 import { useCallback } from 'react'
 
-import { Model } from '@janhq/core'
-
 import { Modal, Button, Progress, ModalClose } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
@@ -16,22 +14,22 @@ import {
 import { formatDownloadPercentage } from '@/utils/converter'
 
 type Props = {
-  model: Model
+  modelId: string
   isFromList?: boolean
 }
 
-const ModalCancelDownload = ({ model, isFromList }: Props) => {
+const ModalCancelDownload = ({ modelId, isFromList }: Props) => {
   const { abortModelDownload } = useDownloadModel()
   const removeDownloadState = useSetAtom(removeDownloadStateAtom)
   const allDownloadStates = useAtomValue(modelDownloadStateAtom)
-  const downloadState = allDownloadStates[model.id]
+  const downloadState = allDownloadStates[modelId]
 
   const cancelText = `Cancel ${formatDownloadPercentage(downloadState?.percent ?? 0)}`
 
   const onAbortDownloadClick = useCallback(() => {
-    removeDownloadState(model.id)
-    abortModelDownload(downloadState?.modelId ?? model.id)
-  }, [downloadState, abortModelDownload, removeDownloadState, model])
+    removeDownloadState(modelId)
+    abortModelDownload(downloadState?.modelId ?? modelId)
+  }, [downloadState, abortModelDownload, removeDownloadState])
 
   return (
     <Modal

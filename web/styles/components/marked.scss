@@ -59,12 +59,12 @@
 .markdown-content table {
   width: 100%;
   font-size: 14px;
-  border-collapse:separate;
+  border-collapse: separate;
   border-spacing: 0px;
-  border:solid hsla(var(--app-border)) 1px;
-  border-radius:8px;
+  border: solid hsla(var(--app-border)) 1px;
+  border-radius: 8px;
   overflow: hidden;
- }
+}
 
 .markdown-content th,
 .markdown-content td {
@@ -81,5 +81,5 @@
 }
 
 .markdown-content td {
-  border-top:solid hsla(var(--app-border)) 1px;
+  border-top: solid hsla(var(--app-border)) 1px;
 }

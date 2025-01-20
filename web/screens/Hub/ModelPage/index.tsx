@@ -1,34 +1,17 @@
-import { useEffect, useState } from 'react'
-
-import { Model } from '@janhq/core'
-import { Badge, Button } from '@janhq/joi'
+import { ModelSource } from '@janhq/core'
+import { Badge } from '@janhq/joi'
 import { ArrowLeftIcon } from 'lucide-react'
-import { Marked, Renderer } from 'marked'
-import '@/styles/components/marked.scss'
+
+import { toGibibytes } from '@/utils/converter'
+import MarkdownText from '@/containers/Markdown'
+import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
 type Props = {
-  model: Model
+  model: ModelSource
   onGoBack: () => void
 }
 
-const marked: Marked = new Marked({
-  gfm: true,
-  breaks: true,
-  renderer: {
-    link: (href, title, text) => {
-      return Renderer.prototype.link
-        ?.apply(this, [href, title, text])
-        .replace(
-          '<a',
-          "<a class='text-[hsla(var(--app-link))]' target='_blank'"
-        )
-    },
-  },
-})
-
 const ModelPage = ({ model, onGoBack }: Props) => {
-  const [description, setDescription] = useState('')
-
   return (
     <div className="flex h-full w-full justify-center">
       <div className="flex w-full max-w-[800px] flex-col ">
@@ -47,17 +30,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
           {/* Header */}
           <div className="flex items-center justify-between py-2">
             <span className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline">
-              {model.name}
+              {model.metadata.modelId}
             </span>
             <div className="inline-flex items-center space-x-2">
-              <Button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  // onDownloadClick()
-                }}
-              >
-                Download
-              </Button>
+              <ModelDownloadButton id={model.models?.[0].id} />
             </div>
           </div>
           <div className="flex flex-col gap-y-4 sm:flex-row sm:gap-x-10 sm:gap-y-0">
@@ -87,36 +63,35 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {['8b-gguf', '8b-instruct-fp16']?.map((item, i) => {
+                  {model.models?.map((item, i) => {
                     return (
                       <tr
-                        key={item}
+                        key={item.id}
                         className="border-t border-[hsla(var(--app-border))] font-medium text-[hsla(var(--text-secondary))]"
                       >
                         <td className="flex items-center space-x-4 px-6 py-4 text-black">
-                          <span>8b-gguf</span>
+                          <span className="line-clamp-1 max-w-[200px]">
+                            {item.id}
+                          </span>
                           {i === 0 && (
                             <Badge
                               theme="secondary"
-                              className="inline-flex w-[60px] items-center"
+                              className="inline-flex w-[60px] items-center font-medium"
                             >
                               <span>Default</span>
                             </Badge>
                           )}
                         </td>
                         <td className="px-6 py-4">GGUF</td>
-                        <td className="px-6 py-4">4.08GB</td>
-                        <td className="text-black">
-                          <Button
+                        <td className="px-6 py-4 text-[hsla(var(--text-secondary))]">
+                          {toGibibytes(item.size)}
+                        </td>
+                        <td className="pr-4 text-right text-black">
+                          <ModelDownloadButton
+                            id={item.id}
                             theme={i === 0 ? 'primary' : 'ghost'}
                             variant={i === 0 ? 'solid' : 'outline'}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              // onDownloadClick()
-                            }}
-                          >
-                            Download
-                          </Button>
+                          />
                         </td>
                       </tr>
                     )
@@ -127,14 +102,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
           </div>
           {/* README */}
           <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
-            <div
-              className="markdown-content font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
-              dangerouslySetInnerHTML={{
-                __html: marked.parse(description, {
-                  async: false,
-                }),
-              }}
-            />
+            <MarkdownText text={model.metadata?.description ?? ''} />
           </div>
         </div>
       </div>

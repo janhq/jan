@@ -1,7 +1,8 @@
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 
-import { Model } from '@janhq/core'
-import { Button, ScrollArea, Tooltip, Dropdown, Badge } from '@janhq/joi'
+import { ModelSource } from '@janhq/core'
+
+import { Button, Tooltip, Dropdown, Badge } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
@@ -31,11 +32,9 @@ import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
-import { twMerge } from 'tailwind-merge'
-import ModelLabel from '@/containers/ModelLabel'
 
 type Props = {
-  model: Model
+  model: ModelSource
   onSelectedModel: () => void
 }
 
@@ -59,10 +58,10 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const assistants = useAtomValue(assistantsAtom)
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(model.sources[0].url, model.id, model.name)
+    downloadModel(model.models?.[0].id, model.id)
   }, [model, downloadModel])
 
-  const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
+  const isDownloaded = downloadedModels.some((md) => md.id === model.id)
 
   let downloadButton = (
     <div className="group flex h-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--primary-bg))]">
@@ -74,24 +73,23 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       </div>
       <Dropdown
         className="min-w-[240px]"
-        options={[
-          {
-            name: (
-              <div className="flex space-x-2">
-                <span>8b-gguf</span>
-                <Badge
-                  theme="secondary"
-                  className="inline-flex w-[60px] items-center"
-                >
-                  <span>Default</span>
-                </Badge>
-              </div>
-            ),
-            value: 'gg',
-            suffix: '4GB',
-          },
-          { name: '8b-instruct-fp16', value: 'aa', suffix: '4GB' },
-        ]}
+        options={model.models.map((e) => ({
+          name: (
+            <div className="flex space-x-2">
+              <span className="line-clamp-1 max-w-[340px] font-normal">
+                {e.id}
+              </span>
+              <Badge
+                theme="secondary"
+                className="inline-flex w-[60px] items-center font-medium"
+              >
+                <span>Default</span>
+              </Badge>
+            </div>
+          ),
+          value: e.id,
+          suffix: toGibibytes(e.size),
+        }))}
       >
         <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
           <ChevronDownIcon size={14} color="white" />
@@ -106,12 +104,12 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
     if (assistants.length === 0) {
       toaster({
         title: 'No assistant available.',
-        description: `Could not use Model ${model.name} as no assistant is available.`,
+        description: `Could not use Model ${model.metadata?.id} as no assistant is available.`,
         type: 'error',
       })
       return
     }
-    await requestCreateNewThread(assistants[0], model)
+    // await requestCreateNewThread(assistants[0], model)
     setMainViewState(MainViewState.Thread)
   }, [assistants, model, requestCreateNewThread, setMainViewState])
 
@@ -135,7 +133,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       />
     )
   } else if (isDownloading) {
-    downloadButton = <ModalCancelDownload model={model} />
+    downloadButton = <ModalCancelDownload modelId={model.id} />
   }
 
   return (
@@ -146,13 +144,13 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
             className="line-clamp-1 text-base font-medium group-hover:text-blue-500 group-hover:underline"
             onClick={onSelectedModel}
           >
-            {model.name}
+            {model.metadata?.id}
           </span>
         </div>
         <div className="inline-flex items-center space-x-2">
           <div className="hidden items-center sm:inline-flex">
             <span className="mr-4 text-sm font-light text-[hsla(var(--text-secondary))]">
-              {toGibibytes(model.metadata?.size)}
+              {toGibibytes(model.models?.[0]?.size)}
             </span>
           </div>
           {downloadButton}
