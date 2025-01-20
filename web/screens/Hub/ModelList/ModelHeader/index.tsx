@@ -1,7 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 import { Model } from '@janhq/core'
-import { Button, Tooltip } from '@janhq/joi'
+import { Button, ScrollArea, Tooltip, Dropdown, Badge } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
@@ -31,6 +31,8 @@ import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
+import { twMerge } from 'tailwind-merge'
+import ModelLabel from '@/containers/ModelLabel'
 
 type Props = {
   model: Model
@@ -70,9 +72,31 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       >
         <span className="mx-4 font-medium text-white">Download</span>
       </div>
-      <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
-        <ChevronDownIcon size={14} color="white" />
-      </div>
+      <Dropdown
+        className="min-w-[240px]"
+        options={[
+          {
+            name: (
+              <div className="flex space-x-2">
+                <span>8b-gguf</span>
+                <Badge
+                  theme="secondary"
+                  className="inline-flex w-[60px] items-center"
+                >
+                  <span>Default</span>
+                </Badge>
+              </div>
+            ),
+            value: 'gg',
+            suffix: '4GB',
+          },
+          { name: '8b-instruct-fp16', value: 'aa', suffix: '4GB' },
+        ]}
+      >
+        <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
+          <ChevronDownIcon size={14} color="white" />
+        </div>
+      </Dropdown>
     </div>
   )
 
