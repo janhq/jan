@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 import { Gpu } from '@janhq/core'
 import { Progress, ScrollArea, Switch } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
 import { ChevronDownIcon, GripVerticalIcon } from 'lucide-react'
@@ -18,18 +18,27 @@ import {
   setActiveGpus,
 } from '@/hooks/useHardwareManagement'
 
-const gpusAtom = atomWithStorage<Gpu[]>('gpus', [])
+import { toGibibytes } from '@/utils/converter'
 
-export const showRightPanelAtom = atomWithStorage<Gpu[]>(
-  'gpus',
-  [],
-  undefined,
-  { getOnInit: true }
-)
+import {
+  cpuUsageAtom,
+  ramUtilitizedAtom,
+  totalRamAtom,
+  usedRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
+
+const gpusAtom = atomWithStorage<Gpu[]>('gpus', [], undefined, {
+  getOnInit: true,
+})
 
 const Hardware = () => {
   const { hardware } = useGetHardwareInfo()
   const [openPanels, setOpenPanels] = useState<Record<number, boolean>>({})
+
+  const cpuUsage = useAtomValue(cpuUsageAtom)
+  const totalRam = useAtomValue(totalRamAtom)
+  const usedRam = useAtomValue(usedRamAtom)
+  const ramUtilitized = useAtomValue(ramUtilitizedAtom)
 
   const [gpus, setGpus] = useAtom<Gpu[]>(gpusAtom)
 
@@ -119,12 +128,8 @@ const Hardware = () => {
                 <span>Architecture: {hardware?.cpu.arch}</span>
               </div>
               <div className="flex w-2/3 items-center gap-3">
-                <Progress
-                  value={Number(hardware?.cpu.usage)}
-                  size="small"
-                  className="w-full"
-                />
-                <span className="font-medium">{hardware?.cpu.usage}%</span>
+                <Progress value={cpuUsage} size="small" className="w-full" />
+                <span className="font-medium">{cpuUsage}%</span>
               </div>
             </div>
           </div>
@@ -140,12 +145,8 @@ const Hardware = () => {
             <div className="flex flex-col items-end gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>
-                  {(
-                    (Number(hardware?.ram.total) -
-                      Number(hardware?.ram.available)) /
-                    1024
-                  ).toFixed(2)}
-                  GB / {(Number(hardware?.ram.total) / 1024).toFixed(2)}GB
+                  {toGibibytes(usedRam, { hideUnit: true })}GB /{' '}
+                  {toGibibytes(totalRam, { hideUnit: true })}GB
                 </span>
                 {hardware?.ram.type && (
                   <>
@@ -156,24 +157,11 @@ const Hardware = () => {
               </div>
               <div className="flex w-2/3 items-center gap-3">
                 <Progress
-                  value={Math.round(
-                    ((Number(hardware?.ram.total) -
-                      Number(hardware?.ram.available)) /
-                      Number(hardware?.ram.total)) *
-                      100
-                  )}
+                  value={Math.round((usedRam / totalRam) * 100)}
                   size="small"
                   className="w-full"
                 />
-                <span className="font-medium">
-                  {Math.round(
-                    ((Number(hardware?.ram.total) -
-                      Number(hardware?.ram.available)) /
-                      Number(hardware?.ram.total)) *
-                      100
-                  ).toFixed()}
-                  %
-                </span>
+                <span className="font-medium">{ramUtilitized}%</span>
               </div>
             </div>
           </div>

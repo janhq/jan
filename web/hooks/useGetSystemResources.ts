@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { ExtensionTypeEnum, MonitoringExtension } from '@janhq/core'
+import {
+  ExtensionTypeEnum,
+  HardwareManagementExtension,
+  MonitoringExtension,
+} from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -20,18 +24,21 @@ export default function useGetSystemResources() {
     NodeJS.Timeout | number | undefined
   >(undefined)
 
-  const setTotalRam = useSetAtom(totalRamAtom)
   const setGpus = useSetAtom(gpusAtom)
-  const setUsedRam = useSetAtom(usedRamAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
   const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
   const setAvailableVram = useSetAtom(availableVramAtom)
+  const setUsedRam = useSetAtom(usedRamAtom)
+  const setTotalRam = useSetAtom(totalRamAtom)
   const setRamUtilitized = useSetAtom(ramUtilitizedAtom)
 
   const getSystemResources = useCallback(async () => {
     if (
       !extensionManager.get<MonitoringExtension>(
         ExtensionTypeEnum.SystemMonitoring
+      ) &&
+      !extensionManager.get<HardwareManagementExtension>(
+        ExtensionTypeEnum.Hardware
       )
     ) {
       return
@@ -39,20 +46,29 @@ export default function useGetSystemResources() {
     const monitoring = extensionManager.get<MonitoringExtension>(
       ExtensionTypeEnum.SystemMonitoring
     )
-    const resourceInfor = await monitoring?.getResourcesInfo()
+
+    const hardwareExtension = extensionManager.get<HardwareManagementExtension>(
+      ExtensionTypeEnum.Hardware
+    )
+
+    const hardwareInfo = await hardwareExtension?.getHardware()
+
     const currentLoadInfor = await monitoring?.getCurrentLoad()
 
-    if (resourceInfor?.mem?.usedMemory) setUsedRam(resourceInfor.mem.usedMemory)
-    if (resourceInfor?.mem?.totalMemory)
-      setTotalRam(resourceInfor.mem.totalMemory)
+    const usedMemory =
+      Number(hardwareInfo?.ram.total) - Number(hardwareInfo?.ram.available)
+
+    if (hardwareInfo?.ram?.total && hardwareInfo?.ram?.available)
+      setUsedRam(Number(usedMemory))
+
+    if (hardwareInfo?.ram?.total) setTotalRam(hardwareInfo.ram.total)
 
     const ramUtilitized =
-      ((resourceInfor?.mem?.usedMemory ?? 0) /
-        (resourceInfor?.mem?.totalMemory ?? 1)) *
-      100
+      ((Number(usedMemory) ?? 0) / (hardwareInfo?.ram.total ?? 1)) * 100
+
     setRamUtilitized(Math.round(ramUtilitized))
 
-    setCpuUsage(Math.round(currentLoadInfor?.cpu?.usage ?? 0))
+    setCpuUsage(Math.round(hardwareInfo?.cpu.usage ?? 0))
 
     const gpus = currentLoadInfor?.gpu ?? []
     setGpus(gpus)

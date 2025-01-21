@@ -2,9 +2,16 @@ import { useMemo } from 'react'
 
 import { ExtensionTypeEnum, HardwareManagementExtension } from '@janhq/core'
 
+import { useSetAtom } from 'jotai'
 import useSWR from 'swr'
 
 import { extensionManager } from '@/extension/ExtensionManager'
+import {
+  cpuUsageAtom,
+  ramUtilitizedAtom,
+  totalRamAtom,
+  usedRamAtom,
+} from '@/helpers/atoms/SystemBar.atom'
 
 // fetcher function
 async function fetchExtensionData<T>(
@@ -26,6 +33,11 @@ const getExtension = () =>
  * @returns A Promise that resolves to an object of list engines.
  */
 export function useGetHardwareInfo() {
+  const setCpuUsage = useSetAtom(cpuUsageAtom)
+  const setUsedRam = useSetAtom(usedRamAtom)
+  const setTotalRam = useSetAtom(totalRamAtom)
+  const setRamUtilitized = useSetAtom(ramUtilitizedAtom)
+
   const extension = useMemo(
     () =>
       extensionManager.get<HardwareManagementExtension>(
@@ -43,11 +55,25 @@ export function useGetHardwareInfo() {
     () => fetchExtensionData(extension, (ext) => ext.getHardware()),
     {
       revalidateOnFocus: false,
-      revalidateOnReconnect: true,
-      refreshInterval: 5000, // Poll every 5 seconds
-      refreshWhenHidden: false, // Optional: Prevent polling when the tab is not visible
+      revalidateOnReconnect: false,
+      refreshInterval: 2000,
     }
   )
+
+  const usedMemory =
+    Number(hardware?.ram.total) - Number(hardware?.ram.available)
+
+  if (hardware?.ram?.total && hardware?.ram?.available)
+    setUsedRam(Number(usedMemory))
+
+  if (hardware?.ram?.total) setTotalRam(hardware.ram.total)
+
+  const ramUtilitized =
+    ((Number(usedMemory) ?? 0) / (hardware?.ram.total ?? 1)) * 100
+
+  setRamUtilitized(Math.round(ramUtilitized))
+
+  setCpuUsage(Math.round(hardware?.cpu.usage ?? 0))
 
   return { hardware, error, mutate }
 }
