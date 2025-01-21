@@ -16,12 +16,14 @@ let watchdog: ProcessWatchdog | undefined = undefined
  * Spawns a Nitro subprocess.
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
-function run(systemInfo?: SystemInformation): Promise<any> {
+function run(): Promise<any> {
   log(`[CORTEX]:: Spawning cortex subprocess...`)
 
   return new Promise<void>(async (resolve, reject) => {
-    let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
-    let binaryName = `cortex-server${process.platform === 'win32' ? '.exe' : ''}`
+    // let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
+    let binaryName = `cortex-server${
+      process.platform === 'win32' ? '.exe' : ''
+    }`
     const binPath = path.join(__dirname, '..', 'bin')
 
     const executablePath = path.join(binPath, binaryName)
@@ -48,11 +50,11 @@ function run(systemInfo?: SystemInformation): Promise<any> {
       {
         env: {
           ...process.env,
-          CUDA_VISIBLE_DEVICES: gpuVisibleDevices,
-          // Vulkan - Support 1 device at a time for now
-          ...(gpuVisibleDevices?.length > 0 && {
-            GGML_VK_VISIBLE_DEVICES: gpuVisibleDevices,
-          }),
+          // CUDA_VISIBLE_DEVICES: gpuVisibleDevices,
+          // // Vulkan - Support 1 device at a time for now
+          // ...(gpuVisibleDevices?.length > 0 && {
+          //   GGML_VK_VISIBLE_DEVICES: gpuVisibleDevices,
+          // }),
         },
         cwd: sharedPath,
       }
