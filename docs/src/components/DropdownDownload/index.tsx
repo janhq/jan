@@ -65,7 +65,7 @@ const DropdownDownload = ({ lastRelease }: Props) => {
     const userAgent = navigator.userAgent
     if (userAgent.includes('Windows')) {
       // windows user
-      setDefaultSystem(systems[2])
+      setDefaultSystem(systems[1])
     } else if (userAgent.includes('Linux')) {
       // linux user
       setDefaultSystem(systems[3])
