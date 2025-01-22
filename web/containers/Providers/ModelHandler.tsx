@@ -132,7 +132,7 @@ export default function ModelHandler() {
         return
       }
 
-      const messageContent = message.content[0]?.text?.value
+      let messageContent = message.content[0]?.text?.value
       if (!messageContent) {
         console.warn(
           `Failed to update title for thread ${message.thread_id}: Responded content is null!`
@@ -144,26 +144,16 @@ export default function ModelHandler() {
       // And no new line character is present
       // And non-alphanumeric characters should be removed
       if (messageContent.includes('\n')) {
-        console.warn(
-          `Failed to update title for thread ${message.thread_id}: Title can't contain new line character!`
-        )
-        return
+        messageContent = messageContent.replace(/\n/g, ' ')
       }
-
+      const match = messageContent.match(/<\/think>(.*)$/)
+      if (match) {
+        messageContent = match[1]
+      }
       // Remove non-alphanumeric characters
       const cleanedMessageContent = messageContent
         .replace(/[^\p{L}\s]+/gu, '')
         .trim()
-
-      // Split the message into words
-      const words = cleanedMessageContent.split(' ')
-
-      if (words.length >= maxWordForThreadTitle) {
-        console.warn(
-          `Failed to update title for thread ${message.thread_id}: Title can't be greater than ${maxWordForThreadTitle} words!`
-        )
-        return
-      }
 
       // Do not persist empty message
       if (!cleanedMessageContent.trim().length) return
@@ -361,7 +351,7 @@ export default function ModelHandler() {
 
     if (!threadMessages || threadMessages.length === 0) return
 
-    const summarizeFirstPrompt = `Summarize in a ${maxWordForThreadTitle}-word Title. Give the title only. "${threadMessages[0]?.content[0]?.text?.value}"`
+    const summarizeFirstPrompt = `Summarize in a ${maxWordForThreadTitle}-word Title. Give the title only. Here is the message: "${threadMessages[0]?.content[0]?.text?.value}"`
 
     // Prompt: Given this query from user {query}, return to me the summary in 10 words as the title
     const msgId = ulid()
