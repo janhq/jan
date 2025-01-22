@@ -36,13 +36,18 @@ export default function useGetSystemResources() {
     if (
       !extensionManager.get<MonitoringExtension>(
         ExtensionTypeEnum.SystemMonitoring
-      ) &&
+      )
+    ) {
+      return
+    }
+    if (
       !extensionManager.get<HardwareManagementExtension>(
         ExtensionTypeEnum.Hardware
       )
     ) {
       return
     }
+
     const monitoring = extensionManager.get<MonitoringExtension>(
       ExtensionTypeEnum.SystemMonitoring
     )

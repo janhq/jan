@@ -30,8 +30,7 @@ export const appService = {
 
     const gpuSetting = await monitorExtension.getGpuSetting()
     const osInfo = await monitorExtension.getOsInfo()
-
-    const hardwareInfo = await hardwareExtension.getHardware()
+    const hardwareInfo = await hardwareExtension?.getHardware()
 
     const updateOsInfo = {
       ...osInfo,
