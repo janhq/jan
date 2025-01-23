@@ -162,7 +162,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               >
                                 {model.name}
                               </p>
-                              <ModelLabel metadata={model.metadata} compact />
+                              <ModelLabel size={model.metadata?.size} compact />
                             </div>
                             <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                               <span className="font-medium">
