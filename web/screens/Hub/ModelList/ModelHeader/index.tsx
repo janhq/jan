@@ -176,6 +176,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
             <>
               {!model.metadata?.apiKey?.length && (
                 <Button
+                  data-testid="setup-btn"
                   onClick={() => {
                     setSelectedSetting(model.id)
                     setMainViewState(MainViewState.Settings)

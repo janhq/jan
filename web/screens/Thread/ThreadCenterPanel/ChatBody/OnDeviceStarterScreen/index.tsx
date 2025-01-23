@@ -112,7 +112,10 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
 
   return (
     <CenterPanelContainer isShowStarterScreen={isShowStarterScreen}>
-      <ScrollArea className="flex h-full w-full items-center">
+      <ScrollArea
+        className="flex h-full w-full items-center"
+        data-testid="onboard-screen"
+      >
         <div className="relative mt-4 flex h-full w-full flex-col items-center justify-center">
           <div className="mx-auto flex h-full w-3/4 flex-col items-center justify-center py-16 text-center">
             <LogoMark

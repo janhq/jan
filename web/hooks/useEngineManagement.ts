@@ -430,7 +430,7 @@ export const useGetEngineModelSources = () => {
 
   return {
     sources: Object.entries(engines ?? {})
-      ?.filter((e) => e?.[1]?.[0].type === 'remote')
+      ?.filter((e) => e?.[1]?.[0]?.type === 'remote')
       .map(
         ([key, values]) =>
           ({
