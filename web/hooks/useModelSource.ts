@@ -18,10 +18,20 @@ export function useGetModelSources() {
     data: sources,
     error,
     mutate,
-  } = useSWR(extension ? 'getSources' : null, () => extension?.getSources(), {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-  })
+  } = useSWR(
+    extension ? 'getSources' : null,
+    () =>
+      extension?.getSources().then((e) =>
+        e.map((m) => ({
+          ...m,
+          models: m.models.sort((a, b) => a.size - b.size),
+        }))
+      ),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  )
 
   return { sources, error, mutate }
 }

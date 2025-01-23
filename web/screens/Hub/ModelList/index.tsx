@@ -1,19 +1,16 @@
 import { ModelSource } from '@janhq/core'
 
-import { useGetModelSources } from '@/hooks/useModelSource'
-
 import ModelItem from '@/screens/Hub/ModelList/ModelItem'
 
 type Props = {
+  models: ModelSource[]
   onSelectedModel: (model: ModelSource) => void
 }
 
-const ModelList = ({ onSelectedModel }: Props) => {
-  const { sources } = useGetModelSources()
-
+const ModelList = ({ models, onSelectedModel }: Props) => {
   return (
     <div className="relative h-full w-full flex-shrink-0">
-      {sources?.map((model) => (
+      {models.map((model) => (
         <ModelItem
           key={model.id}
           model={model}

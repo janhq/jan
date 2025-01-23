@@ -65,7 +65,7 @@ const HubScreen = () => {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const modelDetail = useAtomValue(modelDetailAtom)
 
-  const filteredModels = useMemo(
+  const searchedModels = useMemo(
     () =>
       searchValue.length
         ? (sources?.filter((e) =>
@@ -77,6 +77,20 @@ const HubScreen = () => {
         : [],
     [sources, searchValue]
   )
+
+  const sortedModels = useMemo(() => {
+    if (!sources) return []
+    return sources.sort((a, b) => {
+      if (sortSelected === 'most-downloaded') {
+        return b.metadata.downloads - a.metadata.downloads
+      } else {
+        return (
+          new Date(b.metadata.createdAt).getTime() -
+          new Date(a.metadata.createdAt).getTime()
+        )
+      }
+    })
+  }, [sortSelected, sources])
 
   useEffect(() => {
     if (modelDetail)
@@ -145,10 +159,10 @@ const HubScreen = () => {
                       <div
                         className={twMerge(
                           'invisible absolute mt-2 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
-                          filteredModels.length > 0 && 'visible'
+                          searchedModels.length > 0 && 'visible'
                         )}
                       >
-                        {filteredModels.map((model) => (
+                        {searchedModels.map((model) => (
                           <div
                             key={model.id}
                             className="z-10 flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
@@ -224,9 +238,12 @@ const HubScreen = () => {
                       />
                     </div>
                   </div>
-                  <ModelList
-                    onSelectedModel={(model) => setSelectedModel(model)}
-                  />
+                  {(filterOption === 'on-device' || filterOption === 'all') && (
+                    <ModelList
+                      models={sortedModels}
+                      onSelectedModel={(model) => setSelectedModel(model)}
+                    />
+                  )}
                 </>
               </div>
             </>
