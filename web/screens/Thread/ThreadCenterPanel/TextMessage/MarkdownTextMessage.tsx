@@ -9,6 +9,7 @@ import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
 
 import rehypeKatex from 'rehype-katex'
+import remarkGfm from 'remark-gfm'
 
 import remarkMath from 'remark-math'
 
@@ -17,9 +18,17 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
+import { PluggableList } from 'react-markdown/lib'
+
+interface Props {
+  text: string
+  isUser?: boolean
+  className?: string
+  renderKatex?: boolean
+}
 
 export const MarkdownTextMessage = memo(
-  ({ text, isUser }: { id: string; text: string; isUser: boolean }) => {
+  ({ text, isUser, className, renderKatex = true }: Props) => {
     const clipboard = useClipboard({ timeout: 1000 })
 
     // Escapes headings
@@ -202,13 +211,16 @@ export const MarkdownTextMessage = memo(
     return (
       <>
         <Markdown
-          remarkPlugins={[remarkMath]}
-          rehypePlugins={[
-            [rehypeKatex, { throwOnError: false }],
-            rehypeHighlight,
-            [rehypeHighlightCodeLines, { showLineNumbers: true }],
-            wrapCodeBlocksWithoutVisit,
-          ]}
+          className={className}
+          remarkPlugins={[remarkMath, remarkGfm]}
+          rehypePlugins={
+            [
+              rehypeHighlight,
+              renderKatex ? [rehypeKatex, { throwOnError: false }] : undefined,
+              [rehypeHighlightCodeLines, { showLineNumbers: true }],
+              wrapCodeBlocksWithoutVisit,
+            ].filter((e) => !!e) as PluggableList
+          }
         >
           {preprocessMarkdown(text)}
         </Markdown>

@@ -481,7 +481,7 @@ const ModelDropdown = ({
                                       {model.name}
                                     </p>
                                     <ModelLabel
-                                      metadata={model.metadata}
+                                      size={model.metadata?.size}
                                       compact
                                     />
                                   </div>

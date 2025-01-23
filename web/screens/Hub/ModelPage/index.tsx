@@ -1,9 +1,11 @@
 import { ModelSource } from '@janhq/core'
 import { Badge, ScrollArea } from '@janhq/joi'
-import { ArrowLeftIcon } from 'lucide-react'
+import { ArrowLeftIcon, DownloadIcon, FileJson } from 'lucide-react'
+import '@/styles/components/marked.scss'
 
-import MarkdownText from '@/containers/Markdown'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
+
+import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
 
 import { toGigabytes } from '@/utils/converter'
 import { extractModelName } from '@/utils/modelSource'
@@ -39,12 +41,20 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                 <ModelDownloadButton id={model.models?.[0].id} />
               </div>
             </div>
-            <div className="flex flex-col gap-y-4 sm:flex-row sm:gap-x-10 sm:gap-y-0">
+            <div className="mb-6 flex flex-row divide-x">
               <p
-                className="font-regular mt-2 line-clamp-1 text-[hsla(var(--text-secondary))]"
+                className="font-regular mt-3 line-clamp-1 pr-4 capitalize text-[hsla(var(--text-secondary))]"
                 title={model.metadata?.author}
               >
                 {model.metadata?.author}
+              </p>
+              <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
+                <FileJson size={16} className="mr-2" />
+                {model.models?.length} versions
+              </p>
+              <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
+                <DownloadIcon size={16} className="mr-2" />
+                {model.metadata?.downloads}
               </p>
             </div>
             {/* Table of versions */}
@@ -56,10 +66,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       <th className="flex-1 px-6 py-3 text-left text-sm font-semibold">
                         Version
                       </th>
-                      <th className="w-32 px-6 py-3 text-left text-sm font-semibold">
+                      <th className="max-w-32 px-6 py-3 text-left text-sm font-semibold">
                         Format
                       </th>
-                      <th className="w-32 px-6 py-3 text-left text-sm font-semibold">
+                      <th className="max-w-32 px-6 py-3 text-left text-sm font-semibold">
                         Size
                       </th>
                       <th className="w-[120px]"></th>
@@ -73,9 +83,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                           className="border-t border-[hsla(var(--app-border))] font-medium text-[hsla(var(--text-secondary))]"
                         >
                           <td className="flex items-center space-x-4 px-6 py-4 text-black">
-                            <span className="line-clamp-1 max-w-[200px]">
-                              {item.id}
-                            </span>
+                            <span className="line-clamp-1">{item.id}</span>
                             {i === 0 && (
                               <Badge
                                 theme="secondary"
@@ -105,7 +113,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             </div>
             {/* README */}
             <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
-              <MarkdownText text={model.metadata?.description ?? ''} />
+              <MarkdownTextMessage
+                text={model.metadata?.description ?? ''}
+                className="markdown-content h-full"
+              />
             </div>
           </div>
         </div>

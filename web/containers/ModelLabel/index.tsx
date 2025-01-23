@@ -1,6 +1,5 @@
 import React from 'react'
 
-import { Metadata } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -18,11 +17,11 @@ import {
 } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
-  metadata: Metadata
+  size?: number
   compact?: boolean
 }
 
-const ModelLabel = ({ metadata, compact }: Props) => {
+const ModelLabel = ({ size, compact }: Props) => {
   const { activeModel } = useActiveModel()
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
@@ -51,7 +50,7 @@ const ModelLabel = ({ metadata, compact }: Props) => {
     return null
   }
 
-  return getLabel(metadata?.siblings?.[0]?.size ?? 0)
+  return getLabel(size ?? 0)
 }
 
 export default React.memo(ModelLabel)
