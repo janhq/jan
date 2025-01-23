@@ -1,5 +1,6 @@
 import { SettingComponentProps } from '@janhq/core'
 
+import SettingDetailDropdownItem from './SettingDetailDropdownItem'
 import SettingDetailTextInputItem from './SettingDetailTextInputItem'
 import SettingDetailToggleItem from './SettingDetailToggleItem'
 
@@ -36,16 +37,26 @@ const SettingDetailItem = ({ componentProps, onValueUpdated }: Props) => {
         )
       }
 
+      case 'dropdown': {
+        return (
+          <SettingDetailDropdownItem
+            key={data.key}
+            settingProps={data}
+            onValueChanged={(value) => onValueUpdated(data.key, value)}
+          />
+        )
+      }
+
       default:
         return null
     }
   })
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="flex h-full w-full flex-col overflow-y-auto">
       {components.map((component, index) => (
         <div
-          className={`mx-4 ${index === components.length - 1 ? '' : 'border-b border-[hsla(var(--app-border))]'}`}
+          className={`${index === components.length - 1 ? '' : 'border-b border-[hsla(var(--app-border))]'}`}
           key={index}
         >
           {component}

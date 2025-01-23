@@ -4,6 +4,8 @@ import { Model } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import ModelItem from '@/screens/Hub/ModelList/ModelItem'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -14,6 +16,7 @@ type Props = {
 
 const ModelList = ({ models }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const { engines } = useGetEngines()
   const sortedModels: Model[] = useMemo(() => {
     const featuredModels: Model[] = []
     const remoteModels: Model[] = []
@@ -22,7 +25,7 @@ const ModelList = ({ models }: Props) => {
     models.forEach((m) => {
       if (m.metadata?.tags?.includes('Featured')) {
         featuredModels.push(m)
-      } else if (m.format === 'api') {
+      } else if (engines?.[m.engine]?.[0]?.type === 'remote') {
         remoteModels.push(m)
       } else if (downloadedModels.map((m) => m.id).includes(m.id)) {
         localModels.push(m)
@@ -40,7 +43,7 @@ const ModelList = ({ models }: Props) => {
       ...remainingModels,
       ...remoteModels,
     ]
-  }, [models, downloadedModels])
+  }, [models, downloadedModels, engines])
 
   return (
     <div className="relative h-full w-full flex-shrink-0">

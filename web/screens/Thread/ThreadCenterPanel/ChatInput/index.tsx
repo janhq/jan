@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import { InferenceEngine, MessageStatus } from '@janhq/core'
+import { InferenceEngine } from '@janhq/core'
 
 import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
@@ -22,6 +22,7 @@ import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { uploader } from '@/utils/file'
@@ -59,10 +60,11 @@ const ChatInput = () => {
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
-  const [showAttacmentMenus, setShowAttacmentMenus] = useState(false)
+  const [showAttachmentMenus, setShowAttachmentMenus] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const { engines } = useGetEngines()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
   const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
@@ -73,7 +75,9 @@ const ChatInput = () => {
     activeTabThreadRightPanelAtom
   )
 
-  const refAttachmentMenus = useClickOutside(() => setShowAttacmentMenus(false))
+  const refAttachmentMenus = useClickOutside(() =>
+    setShowAttachmentMenus(false)
+  )
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
 
   useEffect(() => {
@@ -93,6 +97,7 @@ const ChatInput = () => {
   }
 
   const isModelSupportRagAndTools = isLocalEngine(
+    engines,
     selectedModel?.engine as InferenceEngine
   )
 
@@ -169,7 +174,7 @@ const ChatInput = () => {
                   ) {
                     e.stopPropagation()
                   } else {
-                    setShowAttacmentMenus(!showAttacmentMenus)
+                    setShowAttachmentMenus(!showAttachmentMenus)
                   }
                 }}
               >
@@ -214,7 +219,7 @@ const ChatInput = () => {
           />
         )}
 
-        {showAttacmentMenus && (
+        {showAttachmentMenus && (
           <div
             ref={refAttachmentMenus}
             className={twMerge(
@@ -234,7 +239,7 @@ const ChatInput = () => {
                 onClick={() => {
                   if (activeAssistant?.model.settings?.vision_model) {
                     imageInputRef.current?.click()
-                    setShowAttacmentMenus(false)
+                    setShowAttachmentMenus(false)
                   }
                 }}
               >
@@ -254,7 +259,7 @@ const ChatInput = () => {
                     onClick={() => {
                       if (isModelSupportRagAndTools) {
                         fileInputRef.current?.click()
-                        setShowAttacmentMenus(false)
+                        setShowAttachmentMenus(false)
                       }
                     }}
                   >

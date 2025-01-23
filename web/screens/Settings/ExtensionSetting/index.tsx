@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useState } from 'react'
+import React, { Fragment, useEffect, useMemo, useState } from 'react'
 
 import {
   BaseExtension,
@@ -14,7 +14,7 @@ import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 import { extensionManager } from '@/extension'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-const ExtensionSetting = () => {
+const ExtensionSetting = ({ extensionName }: { extensionName?: string }) => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
   const [installationState, setInstallationState] =
@@ -23,11 +23,16 @@ const ExtensionSetting = () => {
     undefined
   )
 
+  const currentExtensionName = useMemo(
+    () => extensionName ?? selectedExtensionName,
+    [selectedExtensionName, extensionName]
+  )
+
   useEffect(() => {
     const getExtensionSettings = async () => {
-      if (!selectedExtensionName) return
+      if (!currentExtensionName) return
       const allSettings: SettingComponentProps[] = []
-      const baseExtension = extensionManager.getByName(selectedExtensionName)
+      const baseExtension = extensionManager.getByName(currentExtensionName)
       if (!baseExtension) return
 
       setBaseExtension(baseExtension)
@@ -40,7 +45,7 @@ const ExtensionSetting = () => {
       setInstallationState(await baseExtension.installationState())
     }
     getExtensionSettings()
-  }, [selectedExtensionName])
+  }, [currentExtensionName])
 
   const onValueChanged = async (
     key: string,

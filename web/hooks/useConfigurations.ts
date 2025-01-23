@@ -33,6 +33,7 @@ export const useConfigurations = () => {
 
   useEffect(() => {
     configurePullOptions()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return {

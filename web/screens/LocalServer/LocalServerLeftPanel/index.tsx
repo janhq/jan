@@ -1,6 +1,11 @@
 import { Fragment, useCallback, useState } from 'react'
 
-import { EngineManager, Model, ModelSettingParams } from '@janhq/core'
+import {
+  EngineManager,
+  InferenceEngine,
+  Model,
+  ModelSettingParams,
+} from '@janhq/core'
 import { Button, Tooltip, Select, Input, Checkbox } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -94,7 +99,7 @@ const LocalServerLeftPanel = () => {
         localStorage.setItem(FIRST_TIME_VISIT_API_SERVER, 'false')
         setFirstTimeVisitAPIServer(false)
       }
-      const engine = EngineManager.instance().get((model as Model).engine)
+      const engine = EngineManager.instance().get(InferenceEngine.cortex)
       engine?.loadModel(model as Model)
       // startModel(selectedModel.id, false).catch((e) => console.error(e))
       setIsLoading(false)

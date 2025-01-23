@@ -1,0 +1,41 @@
+[
+  {
+    "model": "claude-3-opus-latest",
+    "object": "model",
+    "name": "Claude 3 Opus Latest",
+    "version": "1.0",
+    "description": "Claude 3 Opus is a powerful model suitables for highly complex task.",
+    "inference_params": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "stream": true
+    },
+    "engine": "anthropic"
+  },
+  {
+    "model": "claude-3-5-haiku-latest",
+    "object": "model",
+    "name": "Claude 3.5 Haiku Latest",
+    "version": "1.0",
+    "description": "Claude 3.5 Haiku is the fastest model provides near-instant responsiveness.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "stream": true
+    },
+    "engine": "anthropic"
+  },
+  {
+    "model": "claude-3-5-sonnet-latest",
+    "object": "model",
+    "name": "Claude 3.5 Sonnet Latest",
+    "version": "1.0",
+    "description": "Claude 3.5 Sonnet raises the industry bar for intelligence, outperforming competitor models and Claude 3 Opus on a wide range of evaluations, with the speed and cost of our mid-tier model, Claude 3 Sonnet.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "stream": true
+    },
+    "engine": "anthropic"
+  }
+]

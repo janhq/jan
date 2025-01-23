@@ -18,10 +18,12 @@ import {
   extractInferenceParams,
   ModelExtension,
 } from '@janhq/core'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
+
+import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
@@ -74,6 +76,7 @@ export default function ModelHandler() {
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
   const setTokenSpeed = useSetAtom(tokenSpeedAtom)
+  const { engines } = useGetEngines()
 
   useEffect(() => {
     activeThreadRef.current = activeThread
@@ -231,7 +234,8 @@ export default function ModelHandler() {
       } else if (
         message.status === MessageStatus.Error &&
         activeModelRef.current?.engine &&
-        isLocalEngine(activeModelRef.current.engine)
+        engines &&
+        isLocalEngine(engines, activeModelRef.current.engine)
       ) {
         ;(async () => {
           if (
@@ -322,7 +326,10 @@ export default function ModelHandler() {
     if (!activeModelRef.current) return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
-    if (!isLocalEngine(activeModelRef.current?.engine as InferenceEngine)) {
+    if (
+      activeModelRef.current?.engine !== InferenceEngine.cortex &&
+      activeModelRef.current?.engine !== InferenceEngine.cortex_llamacpp
+    ) {
       const updatedThread: Thread = {
         ...thread,
         title: (thread.metadata?.lastMessage as string) || defaultThreadTitle,
@@ -381,9 +388,7 @@ export default function ModelHandler() {
 
     // 2. Update the title with the result of the inference
     setTimeout(() => {
-      const engine = EngineManager.instance().get(
-        messageRequest.model?.engine ?? activeModelRef.current?.engine ?? ''
-      )
+      const engine = EngineManager.instance().get(InferenceEngine.cortex)
       engine?.inference(messageRequest)
     }, 1000)
   }

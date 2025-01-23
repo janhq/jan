@@ -103,7 +103,7 @@ const Privacy = () => {
               <h6 className="font-semibold capitalize">Logs</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Open App Logs and Cortex Logs
+              Open App Logs and Cortex Logs.
             </p>
           </div>
           <div className="flex items-center gap-x-3">

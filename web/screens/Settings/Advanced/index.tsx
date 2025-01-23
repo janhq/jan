@@ -11,9 +11,10 @@ import {
   Tooltip,
   Checkbox,
   useClickOutside,
+  Button,
 } from '@janhq/joi'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
@@ -27,6 +28,8 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 import { useConfigurations } from '@/hooks/useConfigurations'
 import { useSettings } from '@/hooks/useSettings'
 
+import ModalDeleteAllThreads from '@/screens/Thread/ThreadLeftPanel/ModalDeleteAllThreads'
+
 import DataFolder from './DataFolder'
 import FactoryReset from './FactoryReset'
 
@@ -38,6 +41,10 @@ import {
   vulkanEnabledAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
+
+import { ThreadModalAction } from '@/helpers/atoms/Thread.atom'
+
+import { modalActionThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 type GPU = {
   id: string
@@ -74,6 +81,7 @@ const Advanced = () => {
   const { readSettings, saveSettings } = useSettings()
   const { stopModel } = useActiveModel()
   const [open, setOpen] = useState(false)
+  const setModalActionThread = useSetAtom(modalActionThreadAtom)
 
   const selectedGpu = gpuList
     .filter((x) => gpusInUse.includes(x.id))
@@ -232,7 +240,8 @@ const Advanced = () => {
               <h6 className="font-semibold capitalize">Experimental Mode</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Enable new features that may be unstable.
+              New features that are still unstable and could affect app
+              performance. Enable with caution.
             </p>
           </div>
           <Switch
@@ -446,8 +455,8 @@ const Advanced = () => {
               <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
             </div>
             <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Specify the HTTPS proxy or leave blank (proxy auto-configuration
-              and SOCKS not supported).
+              Optional proxy server for internet connections. Only HTTPS proxies
+              supported.
             </p>
           </div>
 
@@ -501,7 +510,7 @@ const Advanced = () => {
                 <h6 className="font-semibold capitalize">Jan Quick Ask</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Enable Quick Ask to be triggered via the default hotkey{' '}
+                Enable Quick Ask to be triggered via the default hotkey .
                 <span className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
                   <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
                 </span>{' '}
@@ -522,6 +531,31 @@ const Advanced = () => {
             />
           </div>
         )}
+
+        {/* Delete All Threads */}
+        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+          <div className="space-y-1">
+            <div className="flex gap-x-2">
+              <h6 className="font-semibold capitalize">Delete All Threads</h6>
+            </div>
+            <p className="whitespace-pre-wrap font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+              Delete all threads and associated chat history.
+            </p>
+          </div>
+          <Button
+            data-testid="delete-all-threads-button"
+            theme="destructive"
+            onClick={() => {
+              setModalActionThread({
+                showModal: ThreadModalAction.DeleteAll,
+                thread: undefined,
+              })
+            }}
+          >
+            Delete All Threads
+          </Button>
+        </div>
+        <ModalDeleteAllThreads />
 
         {/* Factory Reset */}
         <FactoryReset />

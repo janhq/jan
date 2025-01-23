@@ -1,10 +1,13 @@
-import { useState, useEffect, useMemo } from 'react'
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { useMemo } from 'react'
 
+import { InferenceEngine, EngineConfig } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
-import { extensionManager } from '@/extension'
+import { useGetEngines } from './useEngineManagement'
+
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
@@ -12,58 +15,23 @@ export function useStarterScreen() {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const threads = useAtomValue(threadsAtom)
 
+  const { engines } = useGetEngines()
+
+  const remoteEngines =
+    engines &&
+    Object.entries(engines)
+      .filter(([key]) => !isLocalEngine(engines, key as InferenceEngine))
+      .flatMap(([_, engineArray]) => engineArray as EngineConfig)
+
   const isDownloadALocalModel = useMemo(
-    () => downloadedModels.some((x) => isLocalEngine(x.engine)),
-    [downloadedModels]
+    () =>
+      downloadedModels.some((x) => engines && isLocalEngine(engines, x.engine)),
+    [engines, downloadedModels]
   )
 
-  const [extensionHasSettings, setExtensionHasSettings] = useState<
-    { name?: string; setting: string; apiKey: string; provider: string }[]
-  >([])
-
-  useEffect(() => {
-    const getAllSettings = async () => {
-      const extensionsMenu: {
-        name?: string
-        setting: string
-        apiKey: string
-        provider: string
-      }[] = []
-      const extensions = extensionManager.getAll()
-
-      for (const extension of extensions) {
-        if (typeof extension.getSettings === 'function') {
-          const settings = await extension.getSettings()
-
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
-            extensionsMenu.push({
-              name: extension.productName,
-              setting: extension.name,
-              apiKey:
-                'apiKey' in extension && typeof extension.apiKey === 'string'
-                  ? extension.apiKey
-                  : '',
-              provider:
-                'provider' in extension &&
-                typeof extension.provider === 'string'
-                  ? extension.provider
-                  : '',
-            })
-          }
-        }
-      }
-      setExtensionHasSettings(extensionsMenu)
-    }
-    getAllSettings()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   const isAnyRemoteModelConfigured = useMemo(
-    () => extensionHasSettings.some((x) => x.apiKey.length > 1),
-    [extensionHasSettings]
+    () => (remoteEngines ?? []).some((x) => x.api_key && x.api_key.length > 0),
+    [remoteEngines]
   )
 
   const isShowStarterScreen = useMemo(
@@ -73,7 +41,6 @@ export function useStarterScreen() {
   )
 
   return {
-    extensionHasSettings,
     isShowStarterScreen,
   }
 }

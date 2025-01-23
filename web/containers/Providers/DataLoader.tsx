@@ -2,10 +2,18 @@
 
 import { Fragment, useEffect } from 'react'
 
-import { AppConfiguration, getUserHomePath } from '@janhq/core'
+import {
+  AppConfiguration,
+  EngineEvent,
+  events,
+  getUserHomePath,
+} from '@janhq/core'
 import { useSetAtom } from 'jotai'
 
+import { useDebouncedCallback } from 'use-debounce'
+
 import useAssistants from '@/hooks/useAssistants'
+import { useGetEngines } from '@/hooks/useEngineManagement'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
@@ -25,6 +33,7 @@ const DataLoader: React.FC = () => {
   const setJanDefaultDataFolder = useSetAtom(defaultJanDataFolderAtom)
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
   const { getData: loadModels } = useModels()
+  const { mutate } = useGetEngines()
 
   useThreads()
   useAssistants()
@@ -35,6 +44,17 @@ const DataLoader: React.FC = () => {
     loadModels()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  const reloadData = useDebouncedCallback(() => {
+    mutate()
+  }, 300)
+
+  useEffect(() => {
+    events.on(EngineEvent.OnEngineUpdate, reloadData)
+    return () => {
+      // Remove listener on unmount
+      events.off(EngineEvent.OnEngineUpdate, reloadData)
+    }
+  }, [reloadData])
 
   useEffect(() => {
     window.core?.api

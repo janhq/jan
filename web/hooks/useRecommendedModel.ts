@@ -6,6 +6,8 @@ import { atom, useAtomValue } from 'jotai'
 
 import { activeModelAtom } from './useActiveModel'
 
+import { useGetEngines } from './useEngineManagement'
+
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
@@ -30,6 +32,7 @@ export default function useRecommendedModel() {
   const activeThread = useAtomValue(activeThreadAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
+  const { engines } = useGetEngines()
 
   const getAndSortDownloadedModels = useCallback(async (): Promise<Model[]> => {
     const models = downloadedModels.sort((a, b) =>
@@ -45,7 +48,12 @@ export default function useRecommendedModel() {
   const getRecommendedModel = useCallback(async (): Promise<
     Model | undefined
   > => {
-    const models = await getAndSortDownloadedModels()
+    const models = (await getAndSortDownloadedModels()).filter((e: Model) =>
+      engines?.[e.engine]?.[0].type === 'local' ||
+      (engines?.[e.engine]?.[0].api_key?.length ?? 0) > 0
+        ? true
+        : false
+    )
 
     if (!activeThread || !activeAssistant) return
     const modelId = activeAssistant.model.id
@@ -63,10 +71,8 @@ export default function useRecommendedModel() {
     }
 
     // sort the model, for display purpose
-
     if (models.length === 0) {
       // if we have no downloaded models, then can't recommend anything
-      console.debug("No downloaded models, can't recommend anything")
       setRecommendedModel(undefined)
       return
     }
@@ -94,7 +100,7 @@ export default function useRecommendedModel() {
 
     setRecommendedModel(lastUsedModel)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getAndSortDownloadedModels, activeThread])
+  }, [getAndSortDownloadedModels, activeThread, engines])
 
   useEffect(() => {
     getRecommendedModel()

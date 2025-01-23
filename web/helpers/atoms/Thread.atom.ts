@@ -11,6 +11,7 @@ import { ModelParams } from '@/types/model'
 export enum ThreadModalAction {
   Clean = 'clean',
   Delete = 'delete',
+  DeleteAll = 'deleteAll',
   EditTitle = 'edit-title',
 }
 
@@ -272,7 +273,7 @@ export const activeSettingInputBoxAtom = atomWithStorage<boolean>(
 )
 
 /**
- * Whether thread thread is presenting a Modal or not
+ * Whether thread is presenting a Modal or not
  */
 export const modalActionThreadAtom = atom<{
   showModal: ThreadModalAction | undefined

@@ -6,6 +6,7 @@ import CopyOverInstruction from './index'
 // Mock the `useAtom` hook from jotai
 jest.mock('jotai', () => ({
   useAtom: jest.fn(),
+  atom: jest.fn(),
 }))
 
 describe('CopyOverInstruction', () => {

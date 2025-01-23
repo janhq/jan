@@ -15,6 +15,7 @@ import {
   FolderOpenIcon,
 } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
+import { twMerge } from 'tailwind-merge'
 
 type Props = {
   settingProps: SettingComponentProps
@@ -83,21 +84,28 @@ const SettingDetailTextInputItem = ({
           className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]"
         />
       </div>
-      <div className="w-full flex-shrink-0 pr-1 sm:w-1/2">
+      <div
+        className={twMerge(
+          'w-full flex-shrink-0 pr-1 sm:w-1/2',
+          type === 'number' && 'sm:w-22 w-50'
+        )}
+      >
         <Input
           placeholder={placeholder}
           type={obscure ? 'password' : 'text'}
           textAlign={textAlign}
           value={value}
           onChange={(e) => onValueChanged?.(e.target.value)}
-          className="!pr-20"
+          className={twMerge(obscure && '!pr-20')}
           suffixIcon={
-            <InputExtraActions
-              actions={inputActions ?? []}
-              onAction={onAction}
-              copied={copied}
-              obscure={obscure}
-            />
+            obscure ? (
+              <InputExtraActions
+                actions={inputActions ?? []}
+                onAction={onAction}
+                copied={copied}
+                obscure={obscure}
+              />
+            ) : undefined
           }
         />
       </div>

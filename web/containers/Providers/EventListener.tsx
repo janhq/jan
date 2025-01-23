@@ -108,6 +108,12 @@ const EventListener = () => {
               ...model.parameters,
             } as Partial<Model>)
             .catch((e) => console.debug(e))
+
+          toaster({
+            title: 'Download Completed',
+            description: `Download ${state.modelId} completed`,
+            type: 'success',
+          })
         }
         state.downloadState = 'end'
         setDownloadState(state)

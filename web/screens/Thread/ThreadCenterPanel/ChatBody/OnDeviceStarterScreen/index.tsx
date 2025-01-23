@@ -24,7 +24,7 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
-import { useStarterScreen } from '@/hooks/useStarterScreen'
+import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
@@ -46,13 +46,13 @@ type Props = {
 }
 
 const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
-  const { extensionHasSettings } = useStarterScreen()
   const [searchValue, setSearchValue] = useState('')
   const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const { downloadModel } = useDownloadModel()
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
+  const { engines } = useGetEngines()
 
   const configuredModels = useAtomValue(configuredModelsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -74,11 +74,13 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
     }
   })
 
-  const remoteModel = configuredModels.filter((x) => !isLocalEngine(x.engine))
+  const remoteModel = configuredModels.filter(
+    (x) => !isLocalEngine(engines, x.engine)
+  )
 
   const filteredModels = configuredModels.filter((model) => {
     return (
-      isLocalEngine(model.engine) &&
+      isLocalEngine(engines, model.engine) &&
       model.name.toLowerCase().includes(searchValue.toLowerCase())
     )
   })
@@ -297,42 +299,46 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                         key={rowIndex}
                         className="my-2 flex items-center gap-4 md:gap-10"
                       >
-                        {row.map((remoteEngine) => {
-                          const engineLogo = getLogoEngine(
-                            remoteEngine as InferenceEngine
+                        {row
+                          .filter(
+                            (e) =>
+                              engines?.[e as InferenceEngine]?.[0]?.type ===
+                              'remote'
                           )
+                          .map((remoteEngine) => {
+                            const engineLogo = getLogoEngine(
+                              remoteEngine as InferenceEngine
+                            )
 
-                          return (
-                            <div
-                              className="flex cursor-pointer flex-col items-center justify-center gap-4"
-                              key={remoteEngine}
-                              onClick={() => {
-                                setMainViewState(MainViewState.Settings)
-                                setSelectedSetting(
-                                  extensionHasSettings.find((x) =>
-                                    x.name?.toLowerCase().includes(remoteEngine)
-                                  )?.setting as string
-                                )
-                              }}
-                            >
-                              {engineLogo && (
-                                <Image
-                                  width={48}
-                                  height={48}
-                                  src={engineLogo}
-                                  alt="Engine logo"
-                                  className="h-10 w-10 flex-shrink-0"
-                                />
-                              )}
-
-                              <p className="font-medium">
-                                {getTitleByEngine(
-                                  remoteEngine as InferenceEngine
+                            return (
+                              <div
+                                className="flex cursor-pointer flex-col items-center justify-center gap-4"
+                                key={remoteEngine}
+                                onClick={() => {
+                                  setMainViewState(MainViewState.Settings)
+                                  setSelectedSetting(
+                                    remoteEngine as InferenceEngine
+                                  )
+                                }}
+                              >
+                                {engineLogo && (
+                                  <Image
+                                    width={48}
+                                    height={48}
+                                    src={engineLogo}
+                                    alt="Engine logo"
+                                    className="h-10 w-10 flex-shrink-0"
+                                  />
                                 )}
-                              </p>
-                            </div>
-                          )
-                        })}
+
+                                <p className="font-medium">
+                                  {getTitleByEngine(
+                                    remoteEngine as InferenceEngine
+                                  )}
+                                </p>
+                              </div>
+                            )
+                          })}
                       </div>
                     )
                   })}

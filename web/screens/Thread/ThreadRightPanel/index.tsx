@@ -29,6 +29,7 @@ import RightPanelContainer from '@/containers/RightPanelContainer'
 import { useActiveModel } from '@/hooks/useActiveModel'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { getConfigurationsData } from '@/utils/componentSettings'
@@ -39,6 +40,7 @@ import Tools from './Tools'
 
 import { experimentalFeatureEnabledAtom } from '@/helpers/atoms/AppConfig.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
+
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
@@ -60,12 +62,13 @@ const ThreadRightPanel = () => {
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
+  const { engines } = useGetEngines()
   const { updateThreadMetadata } = useCreateNewThread()
   const experimentalFeature = useAtomValue(experimentalFeatureEnabledAtom)
 
   const isModelSupportRagAndTools =
     selectedModel?.engine === InferenceEngine.openai ||
-    isLocalEngine(selectedModel?.engine as InferenceEngine)
+    isLocalEngine(engines, selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()
@@ -257,7 +260,7 @@ const ThreadRightPanel = () => {
                 id="assistant-instructions"
                 placeholder="Eg. You are a helpful assistant."
                 value={activeAssistant?.instructions ?? ''}
-                // autoResize
+                autoResize
                 onChange={onAssistantInstructionChanged}
               />
             </div>

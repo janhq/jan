@@ -4,6 +4,8 @@ import { useAtom } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
+import { useGetEngines } from '@/hooks/useEngineManagement'
+
 import { toGibibytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
@@ -12,6 +14,7 @@ import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 const TableActiveModel = () => {
   const { activeModel, stateModel, stopModel } = useActiveModel()
+  const { engines } = useGetEngines()
 
   const [serverEnabled, setServerEnabled] = useAtom(serverEnabledAtom)
 
@@ -19,7 +22,7 @@ const TableActiveModel = () => {
     <div className="w-1/2">
       <div className="overflow-hidden border-b border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          {activeModel && isLocalEngine(activeModel.engine) ? (
+          {activeModel && isLocalEngine(engines, activeModel.engine) ? (
             <tbody>
               <tr>
                 <td

@@ -32,12 +32,12 @@ export default function DownloadingState() {
     <Fragment>
       {Object.values(downloadStates)?.length > 0 && (
         <Modal
-          title="Downloading model"
+          title="Downloading"
           trigger={
             <div className="flex cursor-pointer items-center gap-2">
               <Button size="small" theme="ghost">
                 <span className="font-medium">
-                  Downloading model{' '}
+                  Downloading{' '}
                   {Object.values(downloadStates).length > 1 &&
                     `1/${Object.values(downloadStates).length}`}
                 </span>

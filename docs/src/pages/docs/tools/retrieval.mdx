@@ -22,25 +22,35 @@ keywords:
 import { Callout, Steps } from 'nextra/components' 
 
 # Knowledge Retrieval
-This article lists the capabilities of the Jan platform and guides you through using RAG to chat with PDF documents.
+Chat with your documents and images using Jan's RAG (Retrieval-Augmented Generation) capability.
+
 <Callout type="warning">
-To access this feature, please enable Experimental mode in the [Advanced Settings](/guides/advanced/#enable-the-experimental-mode).
+ This feature is currently experimental and must be enabled through [Experimental Mode](/docs/settings#experimental-mode) in **Advanced Settings**.
 </Callout>
 
-## Enable the Knowledge Retrieval
+## Enable File Search & Vision
 
-To chat with PDFs using RAG in Jan, follow these steps:
+To chat with PDFs & images in Jan, follow these steps:
 
-1. Create a **new thread**.
-2. Click the **Tools** tab.
+1. In any **Thread**, click the **Tools** tab in right sidebar
+2. Enable **Retrieval**
+
 <br/>
-![Retrieval](../_assets/tools.png)
+![Retrieval](../_assets/retrieval-01.png)
 <br/>
-3. Enable the **Retrieval**.
+
+3. Once enabled, you should be able to **upload file(s) & image(s)** from threads input field
+<Callout type="info">
+Ensure that you are using a multimodal model.
+- File Search: Jan currently supports PDF format 
+- Vision: only works with local models or [OpenAI](/docs/remote-models/openai) models for now
+</Callout>
+
 <br/>
-![Retrieval](../_assets/retrieval1.png)
+![Retrieval](../_assets/retrieval-02.png)
 <br/>
-4. Adjust the **Retrieval** settings as needed. These settings include the following:
+
+## Knowledge Retrieval Parameters
 
 | Feature               | Description                                                                                                                                                   |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -51,11 +61,4 @@ To chat with PDFs using RAG in Jan, follow these steps:
 | **Chunk Size**        | - Sets the maximum number of tokens per data chunk, which is crucial for managing processing load and maintaining performance.<br></br>- Increase the chunk size for processing large blocks of text efficiently, or decrease it when dealing with smaller, more manageable texts to optimize memory usage.                                           |
 | **Chunk Overlap**     | - Specifies the overlap in tokens between adjacent chunks to ensure continuous context in split text segments.<br></br>- Adjust the overlap to ensure smooth transitions in text analysis, with higher overlap for complex texts where context is critical.                                                  |
 | **Retrieval Template**| - Defines the query structure using variables like `{CONTEXT}` and `{QUESTION}` to tailor searches to specific needs.<br></br>- Customize templates to closely align with your data's structure and the queries' nature, ensuring that retrievals are as relevant as possible.                                               |
-5. Select the model you want to use.
-<Callout type="info">
-To upload an image or GIF, ensure that you are using a multimodal model. If not, you are limited to uploading documents only.
-</Callout>
-6. Click on the 📎 icon in the chat input field.
-7. Select **Document** to upload a document file.
-<br/>
-![Retrieval](../_assets/retrieval2.png)
+

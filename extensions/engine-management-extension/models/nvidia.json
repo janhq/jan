@@ -1,0 +1,20 @@
+[
+  {
+    "model": "mistralai/mistral-7b-instruct-v0.2",
+    "object": "model",
+    "name": "Mistral 7B",
+    "version": "1.1",
+    "description": "Mistral 7B with NVIDIA",
+    "inference_params": {
+      "max_tokens": 1024,
+      "temperature": 0.3,
+      "top_p": 1,
+      "stream": false,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stop": null,
+      "seed": null
+    },
+    "engine": "nvidia"
+  }
+]
