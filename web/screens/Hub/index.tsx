@@ -7,7 +7,7 @@ import { ModelSource } from '@janhq/core'
 import { ScrollArea, Button, Select } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useSetAtom } from 'jotai'
 import { UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -65,7 +65,7 @@ const HubScreen = () => {
   )
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const modelDetail = useAtomValue(modelDetailAtom)
+  const [modelDetail, setModelDetail] = useAtom(modelDetailAtom)
 
   const searchedModels = useMemo(
     () =>
@@ -95,9 +95,11 @@ const HubScreen = () => {
   }, [sortSelected, sources])
 
   useEffect(() => {
-    if (modelDetail)
+    if (modelDetail) {
       setSelectedModel(sources?.find((e) => e.id === modelDetail))
-  }, [modelDetail, sources])
+      setModelDetail(undefined)
+    }
+  }, [modelDetail, sources, setModelDetail])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

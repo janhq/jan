@@ -64,6 +64,8 @@
   border: solid hsla(var(--app-border)) 1px;
   border-radius: 8px;
   overflow: hidden;
+  margin-top: 16px;
+  margin-bottom: 16px;
 }
 
 .markdown-content th,
@@ -82,4 +84,8 @@
 
 .markdown-content td {
   border-top: solid hsla(var(--app-border)) 1px;
+}
+
+.markdown-content hr {
+  margin: 16px 0px;
 }
