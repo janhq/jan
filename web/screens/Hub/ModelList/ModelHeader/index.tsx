@@ -60,10 +60,12 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const assistants = useAtomValue(assistantsAtom)
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(model.models?.[0].id, model.id)
+    downloadModel(model.models?.[0].id)
   }, [model, downloadModel])
 
-  const isDownloaded = downloadedModels.some((md) => md.id === model.id)
+  const isDownloaded = downloadedModels.some((md) =>
+    model.models.some((m) => m.id === md.id)
+  )
 
   let downloadButton = (
     <div className="group flex h-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--primary-bg))]">
@@ -92,6 +94,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
           value: e.id,
           suffix: toGigabytes(e.size),
         }))}
+        onValueChanged={(e) => downloadModel(e)}
       >
         <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
           <ChevronDownIcon size={14} color="white" />
@@ -100,10 +103,14 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
     </div>
   )
 
-  const isDownloading = downloadingModels.some((md) => md === model.id)
+  const isDownloading = downloadingModels.some((md) =>
+    model.models.some((m) => m.id === md)
+  )
 
   const onUseModelClick = useCallback(async () => {
-    const downloadedModel = downloadedModels.find((e) => e.id === model.id)
+    const downloadedModel = downloadedModels.find((e) =>
+      model.models.some((m) => m.id === e.id)
+    )
     if (downloadedModel) {
       await requestCreateNewThread(assistants[0], downloadedModel)
       setMainViewState(MainViewState.Thread)
@@ -136,7 +143,14 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       />
     )
   } else if (isDownloading) {
-    downloadButton = <ModalCancelDownload modelId={model.id} />
+    downloadButton = (
+      <ModalCancelDownload
+        modelId={
+          downloadingModels.find((e) => model.models.some((m) => m.id === e)) ??
+          model.id
+        }
+      />
+    )
   }
 
   return (

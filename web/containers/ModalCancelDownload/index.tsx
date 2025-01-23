@@ -40,7 +40,11 @@ const ModalCancelDownload = ({ modelId, isFromList }: Props) => {
             {cancelText}
           </Button>
         ) : (
-          <Button variant="soft">
+          <Button
+            className="text-[hsla(var(--primary-bg))]"
+            variant="soft"
+            theme="ghost"
+          >
             <div className="flex items-center space-x-2">
               <span className="inline-block">Cancel</span>
               <Progress
