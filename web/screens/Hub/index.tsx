@@ -15,6 +15,7 @@ import { twMerge } from 'tailwind-merge'
 import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import ModelSearch from '@/containers/ModelSearch'
 
+import { useGetEngineModelSources } from '@/hooks/useEngineManagement'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import { useGetModelSources } from '@/hooks/useModelSource'
@@ -55,6 +56,7 @@ const filterOptions = [
 
 const HubScreen = () => {
   const { sources } = useGetModelSources()
+  const { sources: remoteModelSources } = useGetEngineModelSources()
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [filterOption, setFilterOption] = useState('all')
@@ -241,6 +243,12 @@ const HubScreen = () => {
                   {(filterOption === 'on-device' || filterOption === 'all') && (
                     <ModelList
                       models={sortedModels}
+                      onSelectedModel={(model) => setSelectedModel(model)}
+                    />
+                  )}
+                  {(filterOption === 'cloud' || filterOption === 'all') && (
+                    <ModelList
+                      models={remoteModelSources}
                       onSelectedModel={(model) => setSelectedModel(model)}
                     />
                   )}

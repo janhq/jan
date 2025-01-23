@@ -5,6 +5,7 @@ import React, { memo } from 'react'
 
 import Markdown from 'react-markdown'
 
+import { PluggableList } from 'react-markdown/lib'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
 
@@ -18,7 +19,6 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
-import { PluggableList } from 'react-markdown/lib'
 
 interface Props {
   text: string

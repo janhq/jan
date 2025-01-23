@@ -17,6 +17,7 @@ import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { ModelSource } from '@janhq/core'
 
 interface Props {
   id: string

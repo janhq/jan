@@ -1,13 +1,15 @@
+import Markdown from 'react-markdown'
+
 import { ModelSource } from '@janhq/core'
+
+import { DownloadIcon, FileJson } from 'lucide-react'
 
 import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
-import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
 
 import { toGigabytes } from '@/utils/converter'
 import { extractDescription } from '@/utils/modelSource'
-import { DownloadIcon, FileJson } from 'lucide-react'
 import '@/styles/components/model.scss'
 
 type Props = {
@@ -27,27 +29,30 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
             <ModelLabel size={model.models?.[0]?.size} />
           </div>
           <div className="flex flex-col">
-            <MarkdownTextMessage
-              text={extractDescription(model.metadata?.description) || '-'}
-              className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]"
-              renderKatex={false}
-            />
+            <Markdown className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]">
+              {extractDescription(model.metadata?.description) || '-'}
+            </Markdown>
           </div>
           <div className="mb-6 flex flex-row divide-x">
-            <p
-              className="font-regular mt-3 line-clamp-1 pr-4 capitalize text-[hsla(var(--text-secondary))]"
-              title={model.metadata?.author}
-            >
-              {model.metadata?.author}
-            </p>
-            <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
+            {model.metadata?.author && (
+              <p
+                className="font-regular mt-3 line-clamp-1 pr-4 capitalize text-[hsla(var(--text-secondary))]"
+                title={model.metadata?.author}
+              >
+                {model.metadata?.author}
+              </p>
+            )}
+            <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center pl-4 pr-4 text-[hsla(var(--text-secondary))] first:pl-0">
               <FileJson size={16} className="mr-2" />
-              {model.models?.length} versions
+              {model.models?.length}{' '}
+              {model.type === 'cloud' ? 'models' : 'versions'}
             </p>
-            <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
-              <DownloadIcon size={16} className="mr-2" />
-              {model.metadata?.downloads}
-            </p>
+            {model.metadata?.downloads && (
+              <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
+                <DownloadIcon size={16} className="mr-2" />
+                {model.metadata?.downloads}
+              </p>
+            )}
           </div>
         </div>
       </div>

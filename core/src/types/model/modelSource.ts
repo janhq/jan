@@ -45,6 +45,7 @@ export interface Metadata {
   spaces: string[]
   tags: string[]
   usedStorage: number
+  apiKey?: string
 }
 
 /**
@@ -62,4 +63,5 @@ export interface ModelSource {
   id: string
   metadata: Metadata
   models: ModelSibling[]
+  type?: string
 }

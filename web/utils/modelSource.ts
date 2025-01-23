@@ -9,7 +9,7 @@ export const extractDescription = (text?: string) => {
   if (matches && matches[1]) {
     return matches[1].trim()
   }
-  return text.replace(/_{1,}([ a-z0-9]+)_{1,}/gim, '<strong>$1</strong>').trim()
+  return text?.slice(0, 500).trim()
 }
 
 /**

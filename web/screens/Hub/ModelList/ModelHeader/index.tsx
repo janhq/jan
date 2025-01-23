@@ -28,6 +28,7 @@ import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 import {
   nvidiaTotalVramAtom,
   totalRamAtom,
@@ -42,6 +43,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
   const { settings } = useSettings()
@@ -138,7 +140,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   }
 
   return (
-    <div className="rounded-t-md bg-[hsla(var(--app-bg))]">
+    <div className="mb-2 rounded-t-md bg-[hsla(var(--app-bg))]">
       <div className="flex items-center justify-between py-2">
         <div className="group flex cursor-pointer items-center gap-2">
           <span
@@ -154,7 +156,22 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
               {toGigabytes(model.models?.[0]?.size)}
             </span>
           </div>
-          {downloadButton}
+          {model.type !== 'cloud' ? (
+            downloadButton
+          ) : (
+            <>
+              {!model.metadata?.apiKey?.length && (
+                <Button
+                  onClick={() => {
+                    setSelectedSetting(model.id)
+                    setMainViewState(MainViewState.Settings)
+                  }}
+                >
+                  Set Up
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
