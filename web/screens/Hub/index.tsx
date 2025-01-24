@@ -18,7 +18,10 @@ import ModelSearch from '@/containers/ModelSearch'
 import { useGetEngineModelSources } from '@/hooks/useEngineManagement'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
-import { useGetModelSources } from '@/hooks/useModelSource'
+import {
+  useGetModelSources,
+  useModelSourcesMutation,
+} from '@/hooks/useModelSource'
 
 import ModelList from '@/screens/Hub/ModelList'
 
@@ -57,6 +60,7 @@ const filterOptions = [
 const HubScreen = () => {
   const { sources } = useGetModelSources()
   const { sources: remoteModelSources } = useGetEngineModelSources()
+  const { addModelSource } = useModelSourcesMutation()
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [filterOption, setFilterOption] = useState('all')
@@ -99,7 +103,14 @@ const HubScreen = () => {
       setSelectedModel(sources?.find((e) => e.id === modelDetail))
       setModelDetail(undefined)
     }
-  }, [modelDetail, sources, setModelDetail])
+  }, [modelDetail, sources, setModelDetail, addModelSource])
+
+  useEffect(() => {
+    if (selectedModel) {
+      // Try add the model source again to update it's data
+      addModelSource(selectedModel.id).catch(console.debug)
+    }
+  }, [sources, selectedModel, addModelSource, setSelectedModel])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

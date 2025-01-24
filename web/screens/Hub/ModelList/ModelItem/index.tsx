@@ -55,12 +55,14 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
                 {model.metadata?.author}
               </p>
             )}
-            <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center pl-4 pr-4 text-[hsla(var(--text-secondary))] first:pl-0">
-              <FileJson size={16} className="mr-2" />
-              {model.models?.length}{' '}
-              {model.type === 'cloud' ? 'models' : 'versions'}
-            </p>
-            {model.metadata?.downloads && (
+            {model.models?.length > 0 && (
+              <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center pl-4 pr-4 text-[hsla(var(--text-secondary))] first:pl-0">
+                <FileJson size={16} className="mr-2" />
+                {model.models?.length}{' '}
+                {model.type === 'cloud' ? 'models' : 'versions'}
+              </p>
+            )}
+            {model.metadata?.downloads > 0 && (
               <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
                 <DownloadIcon size={16} className="mr-2" />
                 {model.metadata?.downloads}
