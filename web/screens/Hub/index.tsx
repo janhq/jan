@@ -4,11 +4,11 @@ import Image from 'next/image'
 
 import { ModelSource } from '@janhq/core'
 
-import { ScrollArea, Button, Select, useClickOutside } from '@janhq/joi'
+import { ScrollArea, Button, Select, Tabs, useClickOutside } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 
 import { useAtom, useSetAtom } from 'jotai'
-import { UploadIcon } from 'lucide-react'
+import { ImagePlusIcon, UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -30,7 +30,9 @@ import { fuzzySearch } from '@/utils/search'
 
 import ModelPage from './ModelPage'
 
+import { appBannerHubAtom } from '@/helpers/atoms/App.atom'
 import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
+import { useDropzone } from 'react-dropzone'
 
 const sortMenus = [
   {
@@ -64,12 +66,17 @@ const HubScreen = () => {
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [filterOption, setFilterOption] = useState('all')
+  const [hubBannerOption, setHubBannerOption] = useState('gallery')
+  const [showHubBannerSetting, setShowHubBannerSetting] = useState(false)
+  const [appBannerHub, setAppBannerHub] = useAtom(appBannerHubAtom)
   const [selectedModel, setSelectedModel] = useState<ModelSource | undefined>(
     undefined
   )
+  const [modelDetail, setModelDetail] = useAtom(modelDetailAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const [modelDetail, setModelDetail] = useAtom(modelDetailAtom)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const hubBannerSettingRef = useRef<HTMLDivElement>(null)
 
   const searchedModels = useMemo(
     () =>
@@ -120,6 +127,14 @@ const HubScreen = () => {
     [dropdownRef.current]
   )
 
+  useClickOutside(
+    () => {
+      setShowHubBannerSetting(false)
+    },
+    null,
+    [hubBannerSettingRef.current]
+  )
+
   const onImportModelClick = useCallback(() => {
     setImportModelStage('SELECTING_MODEL')
   }, [setImportModelStage])
@@ -127,6 +142,52 @@ const HubScreen = () => {
   const onSearchUpdate = useCallback((input: string) => {
     setSearchValue(input)
   }, [])
+
+  const setBannerHubImage = (image: string) => {
+    setShowHubBannerSetting(false)
+    setAppBannerHub(image)
+  }
+
+  /**
+   * Handles the change event of the extension file input element by setting the file name state.
+   * Its to be used to display the extension file name of the selected file.
+   * @param event - The change event object.
+   */
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const fileType = file.type
+    if (!fileType.startsWith('image/')) {
+      alert('Please upload an image file.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      // FileReader result is already in a valid Base64 format
+      setBannerHubImage(reader.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const { isDragActive, getRootProps } = useDropzone({
+    noClick: true,
+    multiple: true,
+    accept: {
+      'image/jpeg': ['.jpeg'],
+      'image/png': ['.png'],
+      'image/jpg': ['.jpg'],
+    },
+    onDrop: (files) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        // FileReader result is already in a valid Base64 format
+        setBannerHubImage(reader.result as string)
+      }
+      reader.readAsDataURL(files[0])
+    },
+  })
 
   return (
     <CenterPanelContainer>
@@ -149,13 +210,129 @@ const HubScreen = () => {
           >
             <>
               <div className="relative h-40 p-4 sm:h-auto">
-                <Image
-                  src="./images/banner.jpg"
-                  alt="Hub Banner"
-                  width={800}
-                  height={800}
-                  className="h-full w-full rounded-lg object-cover"
-                />
+                <div className="group">
+                  <Image
+                    src={appBannerHub}
+                    alt="Hub Banner"
+                    width={800}
+                    height={800}
+                    className="h-60 w-full rounded-lg object-cover"
+                  />
+                  <div
+                    className={twMerge(
+                      'invisible absolute bottom-8 right-8 cursor-pointer opacity-0 transition-opacity',
+                      'duration-300 group-hover:visible group-hover:opacity-100',
+                      showHubBannerSetting && '!visible !opacity-100'
+                    )}
+                  >
+                    <div
+                      className="h-full w-full rounded-lg border-2 border-[hsla(var(--app-border))] bg-white p-2"
+                      onClick={() =>
+                        setShowHubBannerSetting(!showHubBannerSetting)
+                      }
+                    >
+                      <ImagePlusIcon size={16} />
+                    </div>
+                    <div
+                      className={twMerge(
+                        'absolute right-0 z-20 mt-2 w-[350px] overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
+                        showHubBannerSetting ? 'flex' : 'hidden'
+                      )}
+                      ref={hubBannerSettingRef}
+                    >
+                      <div className="h-full w-full">
+                        <div className="mb-2 p-2 pb-0">
+                          <Tabs
+                            options={[
+                              { name: 'Gallery', value: 'gallery' },
+                              { name: 'Upload', value: 'upload' },
+                            ]}
+                            tabStyle="segmented"
+                            value={hubBannerOption as string}
+                            onValueChange={(value) => setHubBannerOption(value)}
+                          />
+                        </div>
+                        {hubBannerOption === 'gallery' && (
+                          <ScrollArea className="h-[350px] w-full">
+                            {Array.from({ length: 30 }, (_, i) => i + 1).map(
+                              (e) => {
+                                return (
+                                  <div
+                                    key={e}
+                                    className="mb-2 h-20 w-full "
+                                    onClick={() =>
+                                      setBannerHubImage(
+                                        `./images/HubBanner/banner-${e}.jpg`
+                                      )
+                                    }
+                                  >
+                                    <Image
+                                      className="ml-2 mr-2 h-20 w-[334px] overflow-hidden rounded-lg border-b border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] object-cover"
+                                      width={920}
+                                      height={200}
+                                      alt="banner-img"
+                                      src={`./images/HubBanner/banner-${e}.jpg`}
+                                    />
+                                  </div>
+                                )
+                              }
+                            )}
+                          </ScrollArea>
+                        )}
+                        {hubBannerOption === 'upload' && (
+                          <div
+                            className={`m-2 flex h-[172px] w-full cursor-pointer items-center justify-center rounded-md border`}
+                            onClick={() => {
+                              imageInputRef.current?.click()
+                            }}
+                            {...getRootProps()}
+                          >
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="mx-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-200">
+                                <UploadCloudIcon
+                                  size={24}
+                                  className={
+                                    isDragActive
+                                      ? 'text-[hsla(var(--primary-bg))]'
+                                      : 'text-[hsla(var(--text-secondary))]'
+                                  }
+                                />
+                              </div>
+                              <div className="mt-4 text-center">
+                                {!isDragActive && (
+                                  <>
+                                    <span className="text-primary font-bold text-[hsla(var(--primary-bg))]">
+                                      Click to upload &nbsp;
+                                    </span>
+                                    <span className="text-[hsla(var(--text-secondary))]">
+                                      or drag and drop
+                                    </span>
+                                    <p className="text-[hsla(var(--text-secondary))]">
+                                      Image size: 920x200
+                                    </p>
+                                  </>
+                                )}
+                                {isDragActive && (
+                                  <span className="text-primary font-bold text-[hsla(var(--primary-bg))]">
+                                    Drop here
+                                  </span>
+                                )}
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  ref={imageInputRef}
+                                  value=""
+                                  onChange={handleFileChange}
+                                  accept="image/png, image/jpeg, image/jpg"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div className="absolute left-1/2 top-1/2 z-10 mx-auto w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-xl sm:w-2/6">
                   <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
                     <div className="w-full" ref={dropdownRef}>
