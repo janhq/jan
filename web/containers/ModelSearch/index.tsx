@@ -1,10 +1,4 @@
-import React, {
-  ChangeEvent,
-  useCallback,
-  useEffect,
-  useState,
-  useRef,
-} from 'react'
+import React, { ChangeEvent, useCallback, useState, useRef } from 'react'
 
 import { Input } from '@janhq/joi'
 import { SearchIcon } from 'lucide-react'
@@ -48,22 +42,6 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
       .finally(() => setSearching(false))
   }, 300)
 
-  useEffect(() => {
-    function handleClickInside(event: MouseEvent) {
-      if (inputRef.current && inputRef.current.contains(event.target as Node)) {
-        onSearchLocal?.(inputRef.current?.value)
-      }
-    }
-
-    // Attach the event listener
-    document.addEventListener('mousedown', handleClickInside)
-
-    return () => {
-      // Clean up the event listener
-      document.removeEventListener('mousedown', handleClickInside)
-    }
-  }, [])
-
   const onSearchChanged = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       e.preventDefault()
@@ -106,6 +84,9 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
       clearable={searchText.length > 0}
       onClear={onClear}
       className="border-0 bg-[hsla(var(--app-bg))]"
+      onClick={() => {
+        onSearchLocal?.(inputRef.current?.value ?? '')
+      }}
     />
   )
 }

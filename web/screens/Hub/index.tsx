@@ -4,7 +4,7 @@ import Image from 'next/image'
 
 import { ModelSource } from '@janhq/core'
 
-import { ScrollArea, Button, Select } from '@janhq/joi'
+import { ScrollArea, Button, Select, useClickOutside } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 
 import { useAtom, useSetAtom } from 'jotai'
@@ -112,24 +112,13 @@ const HubScreen = () => {
     }
   }, [sources, selectedModel, addModelSource, setSelectedModel])
 
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setSearchValue('')
-      }
-    }
-
-    // Attach the event listener
-    document.addEventListener('mousedown', handleClickOutside)
-
-    return () => {
-      // Clean up the event listener
-      document.removeEventListener('mousedown', handleClickOutside)
-    }
-  }, [])
+  useClickOutside(
+    () => {
+      setSearchValue('')
+    },
+    null,
+    [dropdownRef.current]
+  )
 
   const onImportModelClick = useCallback(() => {
     setImportModelStage('SELECTING_MODEL')
