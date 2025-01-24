@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, ChangeEvent } from 'react'
+import { useEffect, useState, ChangeEvent } from 'react'
 
 import { openExternalUrl, AppConfiguration } from '@janhq/core'
 
@@ -15,7 +15,7 @@ import {
 } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDownIcon } from 'lucide-react'
+import { ChevronDownIcon, ArrowRightIcon } from 'lucide-react'
 import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -35,8 +35,6 @@ import FactoryReset from './FactoryReset'
 
 import {
   experimentalFeatureEnabledAtom,
-  ignoreSslAtom,
-  proxyAtom,
   proxyEnabledAtom,
   vulkanEnabledAtom,
   quickAskEnabledAtom,
@@ -56,7 +54,7 @@ type GPU = {
  * Advanced Settings Screen
  * @returns
  */
-const Advanced = () => {
+const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
     experimentalFeatureEnabledAtom
   )
@@ -64,10 +62,6 @@ const Advanced = () => {
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
   const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
 
-  const [proxy, setProxy] = useAtom(proxyAtom)
-  const [ignoreSSL, setIgnoreSSL] = useAtom(ignoreSslAtom)
-
-  const [partialProxy, setPartialProxy] = useState<string>(proxy)
   const [gpuEnabled, setGpuEnabled] = useState<boolean>(false)
   const [gpuList, setGpuList] = useState<GPU[]>([])
   const [gpusInUse, setGpusInUse] = useState<string[]>([])
@@ -97,22 +91,6 @@ const Advanced = () => {
   const updatePullOptions = useDebouncedCallback(
     () => configurePullOptions(),
     300
-  )
-  /**
-   * Handle proxy change
-   */
-  const onProxyChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const value = event.target.value || ''
-      setPartialProxy(value)
-      if (value.trim().startsWith('http')) {
-        setProxy(value.trim())
-      } else {
-        setProxy('')
-      }
-      updatePullOptions()
-    },
-    [setPartialProxy, setProxy, updatePullOptions]
   )
 
   /**
@@ -448,59 +426,30 @@ const Advanced = () => {
 
         <DataFolder />
 
-        {/* Proxy */}
+        {/* Proxy Settings Link */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="w-full space-y-1">
-            <div className="flex w-full justify-between gap-x-2">
-              <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
+          <div className="flex w-full cursor-pointer items-center justify-between">
+            <div className="space-y-1">
+              <div className="flex gap-x-2">
+                <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
+              </div>
+              <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+                Optional proxy server for internet connections
+              </p>
             </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Optional proxy server for internet connections. Only HTTPS proxies
-              supported.
-            </p>
-          </div>
-
-          <div className="flex w-full flex-shrink-0 flex-col items-end gap-2 pr-1 sm:w-1/2">
-            <Switch
-              data-testid="proxy-switch"
-              checked={proxyEnabled}
-              onChange={() => {
-                setProxyEnabled(!proxyEnabled)
-                updatePullOptions()
-              }}
-            />
-            <div className="w-full">
-              <Input
-                data-testid="proxy-input"
-                placeholder={'http://<user>:<password>@<domain or IP>:<port>'}
-                value={partialProxy}
-                onChange={onProxyChange}
+            <div className="flex items-center gap-2">
+              <Switch
+                data-testid="proxy-switch"
+                checked={proxyEnabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setProxyEnabled(!proxyEnabled)
+                  updatePullOptions()
+                }}
               />
+              <ArrowRightIcon size={16} onClick={() => setSubdir('proxy')} />
             </div>
           </div>
-        </div>
-
-        {/* Ignore SSL certificates */}
-        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="flex-shrink-0 space-y-1">
-            <div className="flex gap-x-2">
-              <h6 className="font-semibold capitalize">
-                Ignore SSL certificates
-              </h6>
-            </div>
-            <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              Allow self-signed or unverified certificates - may be required for
-              certain proxies.
-            </p>
-          </div>
-          <Switch
-            data-testid="ignore-ssl-switch"
-            checked={ignoreSSL}
-            onChange={(e) => {
-              setIgnoreSSL(e.target.checked)
-              updatePullOptions()
-            }}
-          />
         </div>
 
         {experimentalEnabled && (
