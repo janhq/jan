@@ -1,4 +1,7 @@
+/*  eslint-disable @typescript-eslint/naming-convention */
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
+
+import { useDropzone } from 'react-dropzone'
 
 import Image from 'next/image'
 
@@ -32,7 +35,6 @@ import ModelPage from './ModelPage'
 
 import { appBannerHubAtom } from '@/helpers/atoms/App.atom'
 import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
-import { useDropzone } from 'react-dropzone'
 
 const sortMenus = [
   {

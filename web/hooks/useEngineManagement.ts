@@ -421,6 +421,7 @@ export const addRemoteEngineModel = async (name: string, engine: string) => {
   }
 }
 
+/**
  * Remote model sources
  * @returns A Promise that resolves to an object of model sources.
  */
