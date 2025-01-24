@@ -250,7 +250,10 @@ export default class JanModelExtension extends ModelExtension {
    * @param model
    */
   async getSources(): Promise<ModelSource[]> {
-    return this.cortexAPI.getSources()
+    const sources = await this.cortexAPI.getSources()
+    return sources.concat(
+      DEFAULT_MODEL_SOURCES.filter((e) => !sources.some((x) => x.id === e.id))
+    )
   }
 
   /**

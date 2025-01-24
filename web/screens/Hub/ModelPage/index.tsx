@@ -1,7 +1,14 @@
+import Image from 'next/image'
+
 import { ModelSource } from '@janhq/core'
 import { Badge, Button, ScrollArea } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
-import { ArrowLeftIcon, DownloadIcon, FileJson } from 'lucide-react'
+import {
+  ArrowLeftIcon,
+  DownloadIcon,
+  FileJson,
+  SettingsIcon,
+} from 'lucide-react'
 import '@/styles/components/marked.scss'
 
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
@@ -50,7 +57,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                   <ModelDownloadButton id={model.models?.[0].id} />
                 ) : (
                   <>
-                    {!model.metadata?.apiKey?.length && (
+                    {!model.metadata?.apiKey?.length ? (
                       <Button
                         onClick={() => {
                           setSelectedSetting(model.id)
@@ -58,6 +65,21 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                         }}
                       >
                         Set Up
+                      </Button>
+                    ) : (
+                      <Button
+                        theme="ghost"
+                        variant="outline"
+                        className="w-8 p-0"
+                        onClick={() => {
+                          setSelectedSetting(model.id)
+                          setMainViewState(MainViewState.Settings)
+                        }}
+                      >
+                        <SettingsIcon
+                          size={18}
+                          className="text-[hsla(var(--text-secondary))]"
+                        />
                       </Button>
                     )}
                   </>
@@ -67,9 +89,20 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             <div className="mb-6 flex flex-row divide-x">
               {model.metadata?.author && (
                 <p
-                  className="font-regular mt-3 line-clamp-1 pr-4 capitalize text-[hsla(var(--text-secondary))]"
+                  className="font-regular mt-3 line-clamp-1 flex flex-row pr-4 capitalize text-[hsla(var(--text-secondary))]"
                   title={model.metadata?.author}
                 >
+                  {model.id?.includes('huggingface.co') && (
+                    <>
+                      <Image
+                        src={'icons/huggingFace.svg'}
+                        width={16}
+                        height={16}
+                        className="mr-2"
+                        alt=""
+                      />{' '}
+                    </>
+                  )}
                   {model.metadata?.author}
                 </p>
               )}

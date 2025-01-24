@@ -1,4 +1,4 @@
-import React, { PropsWithChildren, ReactNode } from 'react'
+import React, { Fragment, PropsWithChildren, ReactNode } from 'react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import './styles.scss'
 import { twMerge } from 'tailwind-merge'
@@ -21,7 +21,7 @@ const Dropdown = (props: PropsWithChildren & Props) => {
           align="end"
         >
           {props.options?.map((e, i) => (
-            <>
+            <Fragment key={e.value}>
               {i !== 0 && (
                 <DropdownMenu.Separator className="DropdownMenuSeparator" />
               )}
@@ -33,7 +33,7 @@ const Dropdown = (props: PropsWithChildren & Props) => {
                 <div />
                 {e.suffix}
               </DropdownMenu.Item>
-            </>
+            </Fragment>
           ))}
           <DropdownMenu.Arrow className="DropdownMenuArrow" />
         </DropdownMenu.Content>
