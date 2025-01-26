@@ -1,9 +1,11 @@
 import '@testing-library/jest-dom'
+import { waitFor } from '@testing-library/react'
 
 import React from 'react'
 import { render, fireEvent } from '@testing-library/react'
-import RightPanelContainer from './index'
-import { useAtom } from 'jotai'
+import RightPanelContainer, { rightPanelWidthAtom } from './index'
+import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
+import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
 
 // Mocking ResizeObserver
 class ResizeObserver {
@@ -34,24 +36,24 @@ jest.mock('jotai', () => {
   const originalModule = jest.requireActual('jotai')
   return {
     ...originalModule,
-    useAtom: jest.fn(),
-    useAtomValue: jest.fn(),
+    useAtomValue: jest.fn((atom) => {
+      if (atom === reduceTransparentAtom) return false
+      if (atom === showRightPanelAtom) return true
+    }),
+    useAtom: jest.fn((atom) => {
+      if (atom === rightPanelWidthAtom) return [280, jest.fn()]
+      if (atom === showRightPanelAtom) return [true, mockSetShowRightPanel]
+      return [null, jest.fn()]
+    }),
   }
 })
 
 const mockSetShowRightPanel = jest.fn()
-const mockShowRightPanel = true // Change this to test the panel visibility
 
 beforeEach(() => {
   // Setting up the localStorage mock
   localStorage.clear()
   localStorage.setItem('rightPanelWidth', '280') // Setting a default width
-
-  // Mocking the atom behavior
-  ;(useAtom as jest.Mock).mockImplementation(() => [
-    mockShowRightPanel,
-    mockSetShowRightPanel,
-  ])
 })
 
 describe('RightPanelContainer', () => {
@@ -66,12 +68,15 @@ describe('RightPanelContainer', () => {
     expect(getByText('Child Content')).toBeInTheDocument()
   })
 
-  it('initializes width from localStorage', () => {
+  it('initializes width from localStorage', async () => {
     const { container } = render(<RightPanelContainer />)
 
-    // Check the width from localStorage is applied
     const rightPanel = container.firstChild as HTMLDivElement
-    expect(rightPanel.style.width).toBe('280px') // Width from localStorage
+
+    // Wait for the width to be applied
+    await waitFor(() => {
+      expect(rightPanel.style.width).toBe('280px') // Correct width from localStorage
+    })
   })
 
   it('changes width on resizing', () => {
