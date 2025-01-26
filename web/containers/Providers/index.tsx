@@ -9,8 +9,6 @@ import JotaiWrapper from '@/containers/Providers/Jotai'
 
 import ThemeWrapper from '@/containers/Providers/Theme'
 
-import Umami from '@/utils/umami'
-
 import { CoreConfigurator } from './CoreConfigurator'
 import DataLoader from './DataLoader'
 
@@ -26,7 +24,6 @@ const Providers = ({ children }: PropsWithChildren) => {
     <SWRConfigProvider>
       <ThemeWrapper>
         <JotaiWrapper>
-          <Umami />
           <CoreConfigurator>
             <>
               <Responsive />
