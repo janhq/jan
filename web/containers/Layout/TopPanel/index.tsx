@@ -1,11 +1,9 @@
 import { Fragment } from 'react'
 
-import { Button } from '@janhq/joi'
+import { Button, Tooltip } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  PanelRightOpenIcon,
   PanelRightCloseIcon,
   MinusIcon,
   MenuIcon,
@@ -13,6 +11,8 @@ import {
   PaletteIcon,
   XIcon,
   PenSquareIcon,
+  Settings2,
+  History,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
@@ -91,7 +91,10 @@ const TopPanel = () => {
                 </Button>
               ) : (
                 <Button theme="icon" onClick={() => setShowLeftPanel(true)}>
-                  <PanelLeftOpenIcon size={16} />
+                  <Tooltip
+                    trigger={<History size={16} />}
+                    content="Threads History"
+                  />
                 </Button>
               )}
             </Fragment>
@@ -135,7 +138,10 @@ const TopPanel = () => {
                       }
                     }}
                   >
-                    <PanelRightOpenIcon size={16} />
+                    <Tooltip
+                      trigger={<Settings2 size={16} />}
+                      content="Thread Settings"
+                    />
                   </Button>
                 )}
               </Fragment>
