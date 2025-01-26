@@ -51,11 +51,13 @@ export const useCreateNewThread = () => {
 
   const { recommendedModel } = useRecommendedModel()
 
+  const selectedModel = useAtomValue(selectedModelAtom)
+
   const requestCreateNewThread = async (
     assistant: (ThreadAssistantInfo & { id: string; name: string }) | Assistant,
     model?: Model | undefined
   ) => {
-    const defaultModel = model || recommendedModel
+    const defaultModel = model || selectedModel || recommendedModel
 
     if (!model) {
       // if we have model, which means user wants to create new thread from Model hub. Allow them.
