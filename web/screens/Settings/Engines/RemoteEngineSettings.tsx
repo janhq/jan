@@ -234,7 +234,7 @@ const RemoteEngineSettings = ({
         </div>
       </div>
 
-      <div className="px-4">
+      <div className="px-4 pb-4">
         <p
           className="flex cursor-pointer items-center text-sm font-medium text-[hsla(var(--text-secondary))]"
           onClick={() => setisActiveAdvanceSetting(!isActiveAdvanceSetting)}
