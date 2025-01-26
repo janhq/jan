@@ -10,7 +10,6 @@ import { useConfigurations } from '@/hooks/useConfigurations'
 import {
   ignoreSslAtom,
   proxyAtom,
-  proxyEnabledAtom,
   verifyProxySslAtom,
   verifyProxyHostSslAtom,
   verifyPeerSslAtom,
@@ -21,7 +20,6 @@ import {
 } from '@/helpers/atoms/AppConfig.atom'
 
 const ProxySettings = ({ onBack }: { onBack: () => void }) => {
-  const [proxyEnabled] = useAtom(proxyEnabledAtom)
   const [proxy, setProxy] = useAtom(proxyAtom)
   const [noProxy, setNoProxy] = useAtom(noProxyAtom)
   const [partialProxy, setPartialProxy] = useState<string>(proxy)
