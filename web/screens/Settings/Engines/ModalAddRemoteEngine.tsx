@@ -123,10 +123,10 @@ const ModalAddRemoteEngine = () => {
 
             <div className="space-y-2">
               <label htmlFor="chatCmpletionsUrl" className="font-semibold">
-                {renderLabel('Chat Completion URL', false)}
+                {renderLabel('API Endpoint URL', false)}
               </label>
               <Input
-                placeholder="Enter your chat completion URL."
+                placeholder="The URL where Jan sends requests to access the AI provider's API."
                 {...register('chatCmpletionsUrl')}
               />
               {errors.chatCmpletionsUrl && (
@@ -175,7 +175,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Request Headers Template',
                   false,
-                  `Template for request headers format.`
+                  `HTTP headers template required for API authentication and version specification.`
                 )}
               </label>
               <TextArea
@@ -194,7 +194,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Request Format Conversion',
                   false,
-                  `Function to convert Jan’s request format to this engine API’s format`
+                  `Template to transform OpenAI-compatible requests into provider-specific format.format to this engine API’s format`
                 )}
               </label>
               <TextArea

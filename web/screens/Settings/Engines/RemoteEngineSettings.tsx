@@ -249,7 +249,7 @@ const RemoteEngineSettings = ({
           className="flex cursor-pointer items-center text-sm font-medium text-[hsla(var(--text-secondary))]"
           onClick={() => setisActiveAdvanceSetting(!isActiveAdvanceSetting)}
         >
-          <span>Advance Settings</span>
+          <span>Advanced Settings</span>
           <span>
             {isActiveAdvanceSetting ? (
               <ChevronDown size={14} className="ml-1" />
@@ -305,7 +305,7 @@ const RemoteEngineSettings = ({
                         Model List URL
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        The base URL of the provider's API.
+                        The endpoint URL to fetch available models.
                       </p>
                     </div>
                     <div className="w-full">
@@ -335,7 +335,7 @@ const RemoteEngineSettings = ({
                         Request Headers Template
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template for request headers format.
+                        HTTP headers template required for API authentication and version specification.
                       </p>
                     </div>
                     <div className="w-full">
@@ -365,7 +365,7 @@ const RemoteEngineSettings = ({
                         Request Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Function to convert Jan’s request format to this engine
+                        Template to transform OpenAI-compatible requests into provider-specific format.format to this engine
                         API’s format.
                       </p>
                     </div>
@@ -399,7 +399,7 @@ const RemoteEngineSettings = ({
                         Response Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Function to convert Jan’s request format to this engine
+                        Template to transform provider responses into OpenAI-compatible format.format to this engine
                         API’s format.
                       </p>
                     </div>
