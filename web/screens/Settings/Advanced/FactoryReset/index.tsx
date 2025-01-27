@@ -17,7 +17,9 @@ const FactoryReset = () => {
           </h6>
         </div>
         <p className="whitespace-pre-wrap font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-        Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted.
+          Restore application to its initial state, erasing all models and chat
+          history. This action is irreversible and recommended only if the
+          application is corrupted.
         </p>
       </div>
       <Button
