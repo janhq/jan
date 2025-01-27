@@ -322,8 +322,7 @@ const RemoteEngineSettings = ({
                         Request Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template to transform OpenAI-compatible requests into provider-specific format.format to this engine
-                        API’s format.
+                        Template to transform OpenAI-compatible requests into provider-specific format.
                       </p>
                     </div>
                     <div className="w-full">
@@ -356,8 +355,7 @@ const RemoteEngineSettings = ({
                         Response Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template to transform provider responses into OpenAI-compatible format.format to this engine
-                        API’s format.
+                        Template to transform provider responses into OpenAI-compatible format.
                       </p>
                     </div>
                     <div className="w-full">

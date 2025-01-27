@@ -194,7 +194,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Request Format Conversion',
                   false,
-                  `Template to transform OpenAI-compatible requests into provider-specific format.format to this engine API’s format`
+                  `Template to transform OpenAI-compatible requests into provider-specific format.`
                 )}
               </label>
               <TextArea
