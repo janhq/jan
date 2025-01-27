@@ -13,6 +13,7 @@ import {
   PenSquareIcon,
   Settings2,
   History,
+  PanelLeftOpenIcon,
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
@@ -91,10 +92,14 @@ const TopPanel = () => {
                 </Button>
               ) : (
                 <Button theme="icon" onClick={() => setShowLeftPanel(true)}>
-                  <Tooltip
-                    trigger={<History size={16} />}
-                    content="Threads History"
-                  />
+                  {mainViewState === MainViewState.Thread ? (
+                    <Tooltip
+                      trigger={<History size={16} />}
+                      content="Threads History"
+                    />
+                  ) : (
+                    <PanelLeftOpenIcon size={16} />
+                  )}
                 </Button>
               )}
             </Fragment>
