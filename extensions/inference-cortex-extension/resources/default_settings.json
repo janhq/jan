@@ -76,7 +76,7 @@
   },
   {
     "key": "use_mmap",
-    "title": "MMAP",
+    "title": "mmap",
     "description": "Loads model files more efficiently by mapping them to memory, reducing RAM usage.",
     "controllerType": "checkbox",
     "controllerProps": {
