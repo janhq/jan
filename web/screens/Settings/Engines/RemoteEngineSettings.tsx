@@ -20,7 +20,7 @@ import { ScrollArea, Input, TextArea } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { set } from 'lodash'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
 import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
@@ -38,7 +38,7 @@ const RemoteEngineSettings = ({
 }) => {
   const { engines, mutate } = useGetEngines()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-
+  const [showApiKey, setShowApiKey] = useState(false)
   const remoteModels = downloadedModels.filter((e) => e.engine === name)
   const [isActiveAdvanceSetting, setisActiveAdvanceSetting] = useState(false)
 
@@ -149,42 +149,35 @@ const RemoteEngineSettings = ({
                   </p>
                 </div>
                 <div className="w-full">
-                  <Input
-                    placeholder="Enter API Key"
-                    value={data?.api_key}
-                    onChange={(e) => handleChange('api_key', e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="block w-full px-4">
-        <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
-          <div className="flex w-full flex-col items-start justify-between sm:flex-row">
-            <div className="w-full flex-shrink-0 space-y-1.5">
-              <div className="flex items-start justify-between gap-x-2">
-                <div className="w-full sm:w-3/4">
-                  <h6 className="line-clamp-1 font-semibold">
-                    Chat Completion URL
-                  </h6>
-                  <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                    Enter your chat completion URL.
-                  </p>
-                </div>
-                <div className="w-full">
-                  <Input
-                    placeholder="Enter Chat Completion URL"
-                    value={data?.metadata.transform_req.chat_completions.url}
-                    onChange={(e) =>
-                      handleChange(
-                        'metadata.transform_req.chat_completions.url',
-                        e.target.value
-                      )
-                    }
-                  />
+                  <div className="relative">
+                    {data?.api_key.length > 0 && (
+                      <div className="absolute right-4 top-1/2 z-10 -translate-y-1/2">
+                        <div
+                          className="cursor-pointer"
+                          onClick={() => setShowApiKey(!showApiKey)}
+                        >
+                          {showApiKey ? (
+                            <EyeOff
+                              size={14}
+                              className="text-[hsla(var(--text-seconday))]"
+                            />
+                          ) : (
+                            <Eye
+                              size={14}
+                              className="text-[hsla(var(--text-seconday))]"
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <Input
+                      placeholder="Enter API Key"
+                      type={showApiKey ? 'text' : 'password'}
+                      value={data?.api_key}
+                      className="pr-10"
+                      onChange={(e) => handleChange('api_key', e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -255,6 +248,39 @@ const RemoteEngineSettings = ({
 
       {isActiveAdvanceSetting && (
         <div>
+          <div className="block w-full px-4">
+            <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
+              <div className="flex w-full flex-col items-start justify-between sm:flex-row">
+                <div className="w-full flex-shrink-0 space-y-1.5">
+                  <div className="flex items-start justify-between gap-x-2">
+                    <div className="w-full sm:w-3/4">
+                      <h6 className="line-clamp-1 font-semibold">
+                        Chat Completion URL
+                      </h6>
+                      <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                        Enter your chat completion URL.
+                      </p>
+                    </div>
+                    <div className="w-full">
+                      <Input
+                        placeholder="Enter Chat Completion URL"
+                        value={
+                          data?.metadata.transform_req.chat_completions.url
+                        }
+                        onChange={(e) =>
+                          handleChange(
+                            'metadata.transform_req.chat_completions.url',
+                            e.target.value
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="block w-full px-4">
             <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
               <div className="flex w-full flex-col items-start justify-between sm:flex-row">
