@@ -212,8 +212,8 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
     <ScrollArea className="h-full w-full px-4">
       <div className="block w-full py-4">
         {/* Experimental */}
-        <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="flex-shrink-0 space-y-1">
+        <div className="flex w-full flex-row items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">
+          <div className="space-y-1">
             <div className="flex gap-x-2">
               <h6 className="font-semibold capitalize">Experimental Mode</h6>
             </div>
@@ -222,11 +222,13 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
               performance. Enable with caution.
             </p>
           </div>
-          <Switch
-            data-testid="experimental-switch"
-            checked={experimentalEnabled}
-            onChange={updateExperimentalEnabled}
-          />
+          <div className="flex-shrink-0">
+            <Switch
+              data-testid="experimental-switch"
+              checked={experimentalEnabled}
+              onChange={updateExperimentalEnabled}
+            />
+          </div>
         </div>
 
         {/* CPU / GPU switching */}
@@ -428,7 +430,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
 
         {/* Proxy Settings Link */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
-          <div className="flex w-full cursor-pointer items-center justify-between">
+          <div className="flex w-full cursor-pointer items-start justify-between">
             <div className="space-y-1">
               <div className="flex gap-x-2">
                 <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
