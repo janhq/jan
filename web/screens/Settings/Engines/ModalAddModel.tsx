@@ -9,6 +9,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { InferenceEngine, Model } from '@janhq/core'
 
 import { Button, Input, Modal } from '@janhq/joi'
+import { useAtomValue } from 'jotai'
 import { PlusIcon } from 'lucide-react'
 
 import { z } from 'zod'
@@ -20,7 +21,7 @@ import {
 } from '@/hooks/useEngineManagement'
 
 import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
-import { useAtomValue } from 'jotai'
+
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const modelSchema = z.object({
