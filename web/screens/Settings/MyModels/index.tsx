@@ -187,7 +187,7 @@ const MyModels = () => {
 
                 return (
                   <div className="my-6" key={i}>
-                    <div className="flex flex-col items-start justify-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-row items-center justify-between gap-2">
                       <div
                         className="mb-1 mt-3 flex cursor-pointer items-center gap-2"
                         onClick={onClickChevron}
