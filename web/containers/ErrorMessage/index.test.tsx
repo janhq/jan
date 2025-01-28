@@ -69,7 +69,7 @@ describe('ErrorMessage Component', () => {
 
     render(<ErrorMessage message={message} />)
 
-    expect(screen.getByText('troubleshooting assistance')).toBeInTheDocument()
+    expect(screen.getByText('Troubleshooting')).toBeInTheDocument()
   })
 
   it('opens troubleshooting modal when link is clicked', () => {
@@ -84,7 +84,7 @@ describe('ErrorMessage Component', () => {
 
     render(<ErrorMessage message={message} />)
 
-    fireEvent.click(screen.getByText('troubleshooting assistance'))
+    fireEvent.click(screen.getByText('Troubleshooting'))
     expect(mockSetModalTroubleShooting).toHaveBeenCalledWith(true)
   })
 })

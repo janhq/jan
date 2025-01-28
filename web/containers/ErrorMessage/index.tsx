@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react'
+
 import {
   EngineManager,
   ErrorCode,
@@ -6,6 +8,8 @@ import {
 } from '@janhq/core'
 
 import { useAtomValue, useSetAtom } from 'jotai'
+
+import { CheckIcon, ClipboardIcon, SearchCodeIcon } from 'lucide-react'
 
 import AutoLink from '@/containers/AutoLink'
 import ModalTroubleShooting, {
@@ -24,28 +28,23 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
-
-  const defaultDesc = () => {
-    return (
-      <>
-        <p>
-          {`Something's wrong.`} Access&nbsp;
-          <span
-            className="cursor-pointer text-[hsla(var(--app-link))] underline"
-            onClick={() => setModalTroubleShooting(true)}
-          >
-            troubleshooting assistance
-          </span>
-          &nbsp;now.
-        </p>
-        <ModalTroubleShooting />
-      </>
-    )
-  }
+  const errorDivRef = useRef<HTMLDivElement>(null)
+  const [copied, setCopied] = useState(false)
 
   const getEngine = () => {
     const engineName = activeAssistant?.model?.engine
     return engineName ? EngineManager.instance().get(engineName) : null
+  }
+
+  const handleCopy = () => {
+    if (errorDivRef.current) {
+      const errorText = errorDivRef.current.innerText
+      if (errorText) {
+        navigator.clipboard.writeText(errorText)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    }
   }
 
   const getErrorTitle = () => {
@@ -69,9 +68,9 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               </button>{' '}
               and try again.
             </span>
-            {defaultDesc()}
           </>
         )
+
       default:
         return (
           <p
@@ -90,7 +89,6 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 {message?.content[0]?.text?.value && (
                   <AutoLink text={message?.content[0]?.text?.value} />
                 )}
-                {defaultDesc()}
               </>
             )}
           </p>
@@ -99,15 +97,54 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   }
 
   return (
-    <div className="mx-auto my-6 max-w-[700px]">
-      {!!message.metadata?.error && (
-        <div
-          key={message.id}
-          className="mx-6 flex flex-col items-center space-y-2 text-center font-medium text-[hsla(var(--text-secondary))]"
-        >
-          {getErrorTitle()}
+    <div className="mx-auto my-6 max-w-[700px] px-4">
+      <div
+        className="mx-auto  max-w-[400px] rounded-lg border border-[hsla(var(--app-border))]"
+        key={message.id}
+      >
+        <div className="flex justify-between border-b border-inherit px-4 py-2">
+          <h6 className="text-[hsla(var(--destructive-bg))]">Error</h6>
+          <div className="flex gap-x-4 text-xs">
+            <div>
+              <span
+                className="flex cursor-pointer items-center gap-x-1 text-[hsla(var(--app-link))]"
+                onClick={() => setModalTroubleShooting(true)}
+              >
+                <SearchCodeIcon size={14} className="text-inherit" />
+                Troubleshooting
+              </span>
+              <ModalTroubleShooting />
+            </div>
+            <div
+              className="flex cursor-pointer items-center gap-x-1 text-[hsla(var(--text-secondary))]"
+              onClick={handleCopy}
+            >
+              {copied ? (
+                <>
+                  <CheckIcon
+                    size={14}
+                    className="text-[hsla(var(--success-bg))]"
+                  />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <ClipboardIcon size={14} className="text-inherit" />
+                  Copy
+                </>
+              )}
+            </div>
+          </div>
         </div>
-      )}
+        <div className="max-h-[80px] w-full overflow-x-auto p-4 py-2">
+          <div
+            className="text-xs leading-relaxed text-[hsla(var(--text-secondary))]"
+            ref={errorDivRef}
+          >
+            {getErrorTitle()}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
