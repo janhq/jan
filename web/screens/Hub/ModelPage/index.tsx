@@ -131,10 +131,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       </th>
                       {model.type !== 'cloud' && (
                         <>
-                          <th className="max-w-32 px-6 py-3 text-left text-sm font-semibold">
+                          <th className="max-w-32 hidden px-6 py-3 text-left text-sm font-semibold sm:table-cell">
                             Format
                           </th>
-                          <th className="max-w-32 px-6 py-3 text-left text-sm font-semibold">
+                          <th className="max-w-32 hidden px-6 py-3 text-left text-sm font-semibold sm:table-cell">
                             Size
                           </th>
                         </>
@@ -150,7 +150,9 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                           className="border-t border-[hsla(var(--app-border))] font-medium text-[hsla(var(--text-secondary))]"
                         >
                           <td className="flex items-center space-x-4 px-6 py-4 text-black">
-                            <span className="line-clamp-1">{item.id}</span>
+                            <span className="line-clamp-1">
+                              {item.id?.split(':')?.pop()}
+                            </span>
                             {i === 0 && model.type !== 'cloud' && (
                               <Badge
                                 theme="secondary"
@@ -162,8 +164,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                           </td>
                           {model.type !== 'cloud' && (
                             <>
-                              <td className="px-6 py-4">GGUF</td>
-                              <td className="px-6 py-4 text-[hsla(var(--text-secondary))]">
+                              <td className="hidden px-6 py-4 sm:table-cell">
+                                GGUF
+                              </td>
+                              <td className="hidden px-6 py-4 text-[hsla(var(--text-secondary))] sm:table-cell">
                                 {toGigabytes(item.size)}
                               </td>
                             </>
