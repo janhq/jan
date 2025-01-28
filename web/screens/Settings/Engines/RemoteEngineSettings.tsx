@@ -27,6 +27,8 @@ import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
+import ModalAddModel from './ModalAddModel'
+
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 const RemoteEngineSettings = ({
@@ -194,10 +196,11 @@ const RemoteEngineSettings = ({
         <div className="mb-3 mt-4 pb-4">
           <div className="flex w-full flex-col items-start justify-between sm:flex-row">
             <div className="w-full flex-shrink-0 ">
-              <div className="flex items-center justify-between gap-x-2">
+              <div className="mb-4 flex items-center justify-between gap-x-2">
                 <div>
                   <h6 className="mb-2 line-clamp-1 font-semibold">Model</h6>
                 </div>
+                <ModalAddModel engine={name} />
               </div>
 
               <div>
