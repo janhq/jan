@@ -21,7 +21,7 @@ jest.mock('jotai', () => ({
 
 describe('useGetSystemResources', () => {
   const mockMonitoringExtension = {
-    getResourcesInfo: jest.fn(),
+    getHardware: jest.fn(),
     getCurrentLoad: jest.fn(),
   }
 
@@ -38,17 +38,17 @@ describe('useGetSystemResources', () => {
   })
 
   it('should fetch system resources on initial render', async () => {
-    mockMonitoringExtension.getResourcesInfo.mockResolvedValue({
-      mem: { usedMemory: 4000, totalMemory: 8000 },
+    mockMonitoringExtension.getHardware.mockResolvedValue({
+      cpu: { usage: 50 },
+      ram: { available: 4000, total: 8000 },
     })
     mockMonitoringExtension.getCurrentLoad.mockResolvedValue({
-      cpu: { usage: 50 },
       gpu: [],
     })
 
     const { result } = renderHook(() => useGetSystemResources())
 
-    expect(mockMonitoringExtension.getResourcesInfo).toHaveBeenCalledTimes(1)
+    expect(mockMonitoringExtension.getHardware).toHaveBeenCalledTimes(1)
   })
 
   it('should start watching system resources when watch is called', () => {
@@ -58,14 +58,14 @@ describe('useGetSystemResources', () => {
       result.current.watch()
     })
 
-    expect(mockMonitoringExtension.getResourcesInfo).toHaveBeenCalled()
+    expect(mockMonitoringExtension.getHardware).toHaveBeenCalled()
 
     // Fast-forward time by 2 seconds
     act(() => {
       jest.advanceTimersByTime(2000)
     })
 
-    expect(mockMonitoringExtension.getResourcesInfo).toHaveBeenCalled()
+    expect(mockMonitoringExtension.getHardware).toHaveBeenCalled()
   })
 
   it('should stop watching when stopWatching is called', () => {
@@ -85,7 +85,7 @@ describe('useGetSystemResources', () => {
     })
 
     // Expect no additional calls after stopping
-    expect(mockMonitoringExtension.getResourcesInfo).toHaveBeenCalled()
+    expect(mockMonitoringExtension.getHardware).toHaveBeenCalled()
   })
 
   it('should not fetch resources if monitoring extension is not available', async () => {
@@ -97,7 +97,7 @@ describe('useGetSystemResources', () => {
       result.current.getSystemResources()
     })
 
-    expect(mockMonitoringExtension.getResourcesInfo).not.toHaveBeenCalled()
+    expect(mockMonitoringExtension.getHardware).not.toHaveBeenCalled()
     expect(mockMonitoringExtension.getCurrentLoad).not.toHaveBeenCalled()
   })
 })

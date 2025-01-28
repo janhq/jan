@@ -14,6 +14,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "17.0.0",
     "@hookform/resolvers": "^3.9.1",
     "@janhq/core": "link:../core",
     "@janhq/joi": "link:../joi",
