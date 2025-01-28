@@ -48,6 +48,7 @@
     "rehype-highlight": "^7.0.1",
     "rehype-highlight-code-lines": "^1.0.4",
     "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "sass": "^1.69.4",
     "slate": "latest",

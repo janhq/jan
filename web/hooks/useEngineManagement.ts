@@ -10,12 +10,17 @@ import {
   EngineEvent,
   Model,
   ModelEvent,
+  ModelSource,
+  ModelSibling,
 } from '@janhq/core'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import useSWR from 'swr'
 
+import { getDescriptionByEngine, getTitleByEngine } from '@/utils/modelEngine'
+
 import { extensionManager } from '@/extension/ExtensionManager'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export const releasedEnginesCacheAtom = atomWithStorage<{
   data: EngineReleased[]
@@ -413,5 +418,41 @@ export const addRemoteEngineModel = async (name: string, engine: string) => {
   } catch (error) {
     console.error('Failed to install engine variant:', error)
     throw error
+  }
+}
+
+/**
+ * Remote model sources
+ * @returns A Promise that resolves to an object of model sources.
+ */
+export const useGetEngineModelSources = () => {
+  const { engines } = useGetEngines()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
+  return {
+    sources: Object.entries(engines ?? {})
+      ?.filter((e) => e?.[1]?.[0]?.type === 'remote')
+      .map(
+        ([key, values]) =>
+          ({
+            id: key,
+            models: (
+              downloadedModels.filter((e) => e.engine === values[0]?.engine) ??
+              []
+            ).map(
+              (e) =>
+                ({
+                  id: e.id,
+                  size: e.metadata?.size,
+                }) as unknown as ModelSibling
+            ),
+            metadata: {
+              id: getTitleByEngine(key as InferenceEngine),
+              description: getDescriptionByEngine(key as InferenceEngine),
+              apiKey: values[0]?.api_key,
+            },
+            type: 'cloud',
+          }) as unknown as ModelSource
+      ),
   }
 }

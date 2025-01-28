@@ -16,7 +16,7 @@ import useDeleteModel from '@/hooks/useDeleteModel'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
@@ -80,7 +80,7 @@ const MyModelList = ({ model }: Props) => {
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">
-                {model.metadata?.size ? toGibibytes(model.metadata?.size) : '-'}
+                {model.metadata?.size ? toGigabytes(model.metadata?.size) : '-'}
               </Badge>
             </div>
 

@@ -1,6 +1,6 @@
 import PQueue from 'p-queue'
 import ky from 'ky'
-import { extractModelLoadParams, Model } from '@janhq/core'
+import { extractModelLoadParams, Model, ModelSource } from '@janhq/core'
 import { extractInferenceParams } from '@janhq/core'
 /**
  * cortex.cpp Model APIs interface
@@ -19,9 +19,12 @@ interface ICortexAPI {
   updateModel(model: object): Promise<void>
   cancelModelPull(model: string): Promise<void>
   configs(body: { [key: string]: any }): Promise<void>
+  getSources(): Promise<ModelSource[]>
+  addSource(source: string): Promise<void>
+  deleteSource(source: string): Promise<void>
 }
 
-type ModelList = {
+type Data = {
   data: any[]
 }
 
@@ -53,7 +56,7 @@ export class CortexAPI implements ICortexAPI {
    */
   getModels(): Promise<Model[]> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/v1/models?limit=-1`).json<ModelList>())
+      .add(() => ky.get(`${API_URL}/v1/models?limit=-1`).json<Data>())
       .then((e) =>
         typeof e === 'object' ? e.data.map((e) => this.transformModel(e)) : []
       )
@@ -147,6 +150,47 @@ export class CortexAPI implements ICortexAPI {
       .then((e) => true)
       .catch(() => false)
   }
+
+  // BEGIN - Model Sources
+  /**
+   * Get model sources
+   * @param model
+   */
+  async getSources(): Promise<ModelSource[]> {
+    return this.queue
+      .add(() => ky.get(`${API_URL}/v1/models/sources`).json<Data>())
+      .then((e) => (typeof e === 'object' ? (e.data as ModelSource[]) : []))
+      .catch(() => [])
+  }
+
+  /**
+   * Add a model source
+   * @param model
+   */
+  async addSource(source: string): Promise<any> {
+    return this.queue.add(() =>
+      ky.post(`${API_URL}/v1/models/sources`, {
+        json: {
+          source,
+        },
+      })
+    )
+  }
+
+  /**
+   * Delete a model source
+   * @param model
+   */
+  async deleteSource(source: string): Promise<any> {
+    return this.queue.add(() =>
+      ky.delete(`${API_URL}/v1/models/sources`, {
+        json: {
+          source,
+        },
+      })
+    )
+  }
+  // END - Model Sources
 
   /**
    * Do health check on cortex.cpp

@@ -60,6 +60,11 @@ export const showEngineListModelAtom = atom<string[]>([
   InferenceEngine.cortex_tensorrtllm,
 ])
 
+/**
+ * Atom to store the current model detail page of a certain model id
+ */
+export const modelDetailAtom = atom<string | undefined>(undefined)
+
 /// End Models Atom
 /// Model Download Atom
 

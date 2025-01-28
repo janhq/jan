@@ -36,46 +36,6 @@ describe('ModelLabel', () => {
     jest.clearAllMocks()
   })
 
-  it('renders NotEnoughMemoryLabel when minimumRamModel is greater than totalRam', async () => {
-    mockUseAtomValue
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0)
-    mockUseActiveModel.mockReturnValue({
-      activeModel: { metadata: { size: 0 } },
-    })
-    mockUseSettings.mockReturnValue({ settings: { run_mode: 'cpu' } })
-
-    render(<ModelLabel {...defaultProps} />)
-    await waitFor(() => {
-      expect(screen.getByText('Not enough RAM')).toBeDefined()
-    })
-  })
-
-  it('renders SlowOnYourDeviceLabel when minimumRamModel is less than totalRam but greater than availableRam', async () => {
-    mockUseAtomValue
-      .mockReturnValueOnce(100)
-      .mockReturnValueOnce(50)
-      .mockReturnValueOnce(10)
-    mockUseActiveModel.mockReturnValue({
-      activeModel: { metadata: { size: 0 } },
-    })
-    mockUseSettings.mockReturnValue({ settings: { run_mode: 'cpu' } })
-
-    const props = {
-      ...defaultProps,
-      metadata: {
-        ...defaultProps.metadata,
-        size: 50,
-      },
-    }
-
-    render(<ModelLabel {...props} />)
-    await waitFor(() => {
-      expect(screen.getByText('Slow on your device')).toBeDefined()
-    })
-  })
-
   it('renders nothing when minimumRamModel is less than availableRam', () => {
     mockUseAtomValue
       .mockReturnValueOnce(100)

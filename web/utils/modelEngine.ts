@@ -64,6 +64,29 @@ export const getTitleByEngine = (engine: InferenceEngine) => {
   }
 }
 
+export const getDescriptionByEngine = (engine: InferenceEngine) => {
+  switch (engine) {
+    case InferenceEngine.anthropic:
+      return 'Creator of Claude AI models renowned for exceptional reasoning, analysis, and coding capabilities. Claude models combine high intelligence with strong safety and ethics, making them ideal for complex tasks from research to technical writing.'
+    case InferenceEngine.cohere:
+      return 'Enterprise-focused language models designed for business needs. Specializing in reliable content generation, summarization, and semantic analysis with consistent quality and scalable performance.'
+    case InferenceEngine.groq:
+      return 'An innovative AI infrastructure provider revolutionizing model speed. Their custom-built hardware platform delivers ultra-fast inference while maintaining high-quality outputs.'
+    case InferenceEngine.martian:
+      return 'Production-first language models balancing performance with practicality. Built for reliable deployment and consistent results across diverse real-world applications.'
+    case InferenceEngine.mistral:
+      return 'A breakthrough in open-source language models. Their instruction-tuned models like Mixtral and Mistral combine competitive performance with efficient resource usage across reasoning, coding, and general tasks.'
+    case InferenceEngine.nvidia:
+      return 'Industry leaders in AI hardware and software solutions. Their models leverage deep GPU expertise to deliver high-performance AI capabilities optimized for enterprise use.'
+    case InferenceEngine.openai:
+      return 'Creator of GPT models that set industry benchmarks. Their models excel across text, code, and image generation, consistently setting new standards for AI capabilities.'
+    case InferenceEngine.openrouter:
+      return 'A unified platform aggregating top AI models from various providers. Simplifies AI deployment by offering seamless access to multiple services through standardized integration.'
+    default:
+      return `Access models from ${engine} via their API.`
+  }
+}
+
 export const priorityEngine = [
   InferenceEngine.cortex_llamacpp,
   InferenceEngine.cortex_onnx,

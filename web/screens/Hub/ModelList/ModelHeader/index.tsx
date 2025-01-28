@@ -1,19 +1,13 @@
 import { useCallback } from 'react'
 
-import { Model } from '@janhq/core'
-import { Button, Badge, Tooltip } from '@janhq/joi'
+import { ModelSource } from '@janhq/core'
+
+import { Button, Tooltip, Dropdown, Badge } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
-
 import { ChevronDownIcon } from 'lucide-react'
 
-import { twMerge } from 'tailwind-merge'
-
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
-
-import ModelLabel from '@/containers/ModelLabel'
-
-import { toaster } from '@/containers/Toast'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -22,7 +16,9 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 
 import { useSettings } from '@/hooks/useSettings'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
+
+import { extractModelName } from '@/utils/modelSource'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -32,25 +28,25 @@ import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
-  model: Model
-  onClick: () => void
-  open: string
+  model: ModelSource
+  onSelectedModel: () => void
 }
 
-const ModelItemHeader = ({ model, onClick, open }: Props) => {
+const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
   const { settings } = useSettings()
-  // const [imageLoaded, setImageLoaded] = useState(true)
 
   const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -64,36 +60,68 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
   const assistants = useAtomValue(assistantsAtom)
 
   const onDownloadClick = useCallback(() => {
-    downloadModel(model.sources[0].url, model.id, model.name)
+    downloadModel(model.models?.[0].id)
   }, [model, downloadModel])
 
-  const isDownloaded = downloadedModels.find((md) => md.id === model.id) != null
-
-  let downloadButton = (
-    <Button
-      onClick={(e) => {
-        e.stopPropagation()
-        onDownloadClick()
-      }}
-    >
-      Download
-    </Button>
+  const isDownloaded = downloadedModels.some((md) =>
+    model.models.some((m) => m.id === md.id)
   )
 
-  const isDownloading = downloadingModels.some((md) => md === model.id)
+  let downloadButton = (
+    <div className="group flex h-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--primary-bg))]">
+      <div
+        className="flex h-full items-center rounded-l-md duration-200 hover:backdrop-brightness-75"
+        onClick={onDownloadClick}
+      >
+        <span className="mx-4 font-medium text-white">Download</span>
+      </div>
+      <Dropdown
+        className="z-50 min-w-[240px]"
+        options={model.models?.map((e) => ({
+          name: (
+            <div className="flex space-x-2">
+              <span className="line-clamp-1 max-w-[340px] font-normal">
+                {e.id}
+              </span>
+              <Badge
+                theme="secondary"
+                className="inline-flex w-[60px] items-center font-medium"
+              >
+                <span>Default</span>
+              </Badge>
+            </div>
+          ),
+          value: e.id,
+          suffix: toGigabytes(e.size),
+        }))}
+        onValueChanged={(e) => downloadModel(e)}
+      >
+        <div className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-r-md border-l border-blue-500 duration-200 hover:backdrop-brightness-75">
+          <ChevronDownIcon size={14} color="white" />
+        </div>
+      </Dropdown>
+    </div>
+  )
+
+  const isDownloading = downloadingModels.some((md) =>
+    model.models.some((m) => m.id === md)
+  )
 
   const onUseModelClick = useCallback(async () => {
-    if (assistants.length === 0) {
-      toaster({
-        title: 'No assistant available.',
-        description: `Could not use Model ${model.name} as no assistant is available.`,
-        type: 'error',
-      })
-      return
+    const downloadedModel = downloadedModels.find((e) =>
+      model.models.some((m) => m.id === e.id)
+    )
+    if (downloadedModel) {
+      await requestCreateNewThread(assistants[0], downloadedModel)
+      setMainViewState(MainViewState.Thread)
     }
-    await requestCreateNewThread(assistants[0], model)
-    setMainViewState(MainViewState.Thread)
-  }, [assistants, model, requestCreateNewThread, setMainViewState])
+  }, [
+    assistants,
+    model,
+    requestCreateNewThread,
+    setMainViewState,
+    downloadedModels,
+  ])
 
   if (isDownloaded) {
     downloadButton = (
@@ -104,6 +132,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
             disabled={serverEnabled}
             data-testid={`use-model-btn-${model.id}`}
             variant="outline"
+            theme="ghost"
             className="min-w-[98px]"
           >
             Use
@@ -114,54 +143,54 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
       />
     )
   } else if (isDownloading) {
-    downloadButton = <ModalCancelDownload model={model} />
+    downloadButton = (
+      <ModalCancelDownload
+        modelId={
+          downloadingModels.find((e) => model.models.some((m) => m.id === e)) ??
+          model.id
+        }
+      />
+    )
   }
 
   return (
-    <div
-      className="cursor-pointer rounded-t-md bg-[hsla(var(--app-bg))]"
-      onClick={onClick}
-    >
-      <div className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="line-clamp-1 text-base font-semibold">
-            {model.name}
+    <div className="mb-2 rounded-t-md bg-[hsla(var(--app-bg))]">
+      <div className="flex items-center justify-between py-2">
+        <div className="group flex cursor-pointer items-center gap-2">
+          <span
+            className="line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline"
+            onClick={onSelectedModel}
+          >
+            {extractModelName(model.metadata?.id)}
           </span>
-          <EngineBadge engine={model.engine} />
         </div>
         <div className="inline-flex items-center space-x-2">
           <div className="hidden items-center sm:inline-flex">
-            <span className="mr-4 font-semibold">
-              {toGibibytes(model.metadata?.size)}
+            <span className="mr-4 text-sm font-light text-[hsla(var(--text-secondary))]">
+              {toGigabytes(model.models?.[0]?.size)}
             </span>
-            <ModelLabel metadata={model.metadata} />
           </div>
-          {downloadButton}
-          <ChevronDownIcon
-            className={twMerge(
-              'h-5 w-5 flex-none',
-              open === model.id && 'rotate-180'
-            )}
-          />
+          {model.type !== 'cloud' ? (
+            downloadButton
+          ) : (
+            <>
+              {!model.metadata?.apiKey?.length && (
+                <Button
+                  data-testid="setup-btn"
+                  onClick={() => {
+                    setSelectedSetting(model.id)
+                    setMainViewState(MainViewState.Settings)
+                  }}
+                >
+                  Set Up
+                </Button>
+              )}
+            </>
+          )}
         </div>
       </div>
     </div>
   )
-}
-
-type EngineBadgeProps = {
-  engine: string
-}
-
-const EngineBadge = ({ engine }: EngineBadgeProps) => {
-  const title = 'TensorRT-LLM'
-
-  switch (engine) {
-    case 'nitro-tensorrt-llm':
-      return <Badge title={title}>{title}</Badge>
-    default:
-      return null
-  }
 }
 
 export default ModelItemHeader

@@ -1,7 +1,5 @@
 import React from 'react'
 
-import { ModelMetadata } from '@janhq/core'
-import { Badge } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -19,18 +17,11 @@ import {
 } from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
-  metadata: ModelMetadata
+  size?: number
   compact?: boolean
 }
-const UnsupportedModel = () => {
-  return (
-    <Badge className="space-x-1 rounded-md" theme="warning">
-      <span>Coming Soon</span>
-    </Badge>
-  )
-}
 
-const ModelLabel = ({ metadata, compact }: Props) => {
+const ModelLabel = ({ size, compact }: Props) => {
   const { activeModel } = useActiveModel()
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
@@ -59,11 +50,7 @@ const ModelLabel = ({ metadata, compact }: Props) => {
     return null
   }
 
-  return metadata?.tags?.includes('Coming Soon') ? (
-    <UnsupportedModel />
-  ) : (
-    getLabel(metadata?.size ?? 0)
-  )
+  return getLabel(size ?? 0)
 }
 
 export default React.memo(ModelLabel)

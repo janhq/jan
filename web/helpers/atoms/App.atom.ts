@@ -30,3 +30,15 @@ export const copyOverInstructionEnabledAtom = atomWithStorage(
   COPY_OVER_INSTRUCTION_ENABLED,
   false
 )
+
+/**
+ * App Hub Banner configured image
+ */
+export const appBannerHubAtom = atomWithStorage<string>(
+  'appBannerHub',
+  './images/HubBanner/banner-8.jpg',
+  undefined,
+  {
+    getOnInit: true,
+  }
+)

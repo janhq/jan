@@ -37,7 +37,7 @@ import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
 import { manualRecommendationModel } from '@/utils/model'
 import { getLogoEngine } from '@/utils/modelEngine'
@@ -481,13 +481,13 @@ const ModelDropdown = ({
                                       {model.name}
                                     </p>
                                     <ModelLabel
-                                      metadata={model.metadata}
+                                      size={model.metadata?.size}
                                       compact
                                     />
                                   </div>
                                   <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                     <span className="font-medium">
-                                      {toGibibytes(model.metadata?.size)}
+                                      {toGigabytes(model.metadata?.size)}
                                     </span>
                                     {!isDownloading ? (
                                       <DownloadCloudIcon
@@ -577,14 +577,14 @@ const ModelDropdown = ({
                                     {model.name}
                                   </p>
                                   <ModelLabel
-                                    metadata={model.metadata}
+                                    size={model.metadata?.size}
                                     compact
                                   />
                                 </div>
                                 <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                   {!isDownloaded && (
                                     <span className="font-medium">
-                                      {toGibibytes(model.metadata?.size)}
+                                      {toGigabytes(model.metadata?.size)}
                                     </span>
                                   )}
                                   {!isDownloading && !isDownloaded ? (
