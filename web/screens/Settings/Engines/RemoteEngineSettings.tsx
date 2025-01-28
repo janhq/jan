@@ -169,7 +169,8 @@ const RemoteEngineSettings = ({
                     API Endpoint URL
                   </h6>
                   <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                    The URL where Jan sends requests to access the AI provider's API.
+                    The URL where Jan sends requests to access the AI provider's
+                    API.
                   </p>
                 </div>
                 <div className="w-full">
@@ -292,7 +293,8 @@ const RemoteEngineSettings = ({
                         Request Headers Template
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        HTTP headers template required for API authentication and version specification.
+                        HTTP headers template required for API authentication
+                        and version specification.
                       </p>
                     </div>
                     <div className="w-full">
@@ -322,7 +324,8 @@ const RemoteEngineSettings = ({
                         Request Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template to transform OpenAI-compatible requests into provider-specific format.
+                        Template to transform OpenAI-compatible requests into
+                        provider-specific format.
                       </p>
                     </div>
                     <div className="w-full">
@@ -355,7 +358,8 @@ const RemoteEngineSettings = ({
                         Response Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template to transform provider responses into OpenAI-compatible format.
+                        Template to transform provider responses into
+                        OpenAI-compatible format.
                       </p>
                     </div>
                     <div className="w-full">
