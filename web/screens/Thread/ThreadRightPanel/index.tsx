@@ -202,16 +202,6 @@ const ThreadRightPanel = () => {
             },
           })
         }
-        if (
-          key === 'ctx_len' &&
-          Number(value) < activeAssistant.model.parameters.max_tokens
-        ) {
-          updateModelParameter(activeThread, {
-            params: {
-              max_tokens: activeAssistant.model.settings.ctx_len,
-            },
-          })
-        }
       }
     },
     [
