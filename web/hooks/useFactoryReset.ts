@@ -58,6 +58,7 @@ export default function useFactoryReset() {
         const configuration: AppConfiguration = {
           data_folder: defaultJanDataFolder,
           quick_ask: appConfiguration?.quick_ask ?? false,
+          distinct_id: appConfiguration?.distinct_id,
         }
         await window.core?.api?.updateAppConfiguration(configuration)
       }
