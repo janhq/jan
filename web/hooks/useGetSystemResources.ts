@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import {
-  ExtensionTypeEnum,
-  HardwareManagementExtension,
-  MonitoringExtension,
-} from '@janhq/core'
+import { ExtensionTypeEnum, HardwareManagementExtension } from '@janhq/core'
 
 import { useSetAtom } from 'jotai'
 
@@ -13,10 +9,10 @@ import {
   cpuUsageAtom,
   totalRamAtom,
   usedRamAtom,
-  nvidiaTotalVramAtom,
-  gpusAtom,
+  // nvidiaTotalVramAtom,
+  // gpusAtom,
   ramUtilitizedAtom,
-  availableVramAtom,
+  // availableVramAtom,
 } from '@/helpers/atoms/SystemBar.atom'
 
 export default function useGetSystemResources() {
@@ -24,85 +20,78 @@ export default function useGetSystemResources() {
     NodeJS.Timeout | number | undefined
   >(undefined)
 
-  const setGpus = useSetAtom(gpusAtom)
+  // const setGpus = useSetAtom(gpusAtom)
   const setCpuUsage = useSetAtom(cpuUsageAtom)
-  const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
-  const setAvailableVram = useSetAtom(availableVramAtom)
+  // const setTotalNvidiaVram = useSetAtom(nvidiaTotalVramAtom)
+  // const setAvailableVram = useSetAtom(availableVramAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
   const setTotalRam = useSetAtom(totalRamAtom)
   const setRamUtilitized = useSetAtom(ramUtilitizedAtom)
 
-  const getSystemResources = useCallback(async () => {
-    if (
-      !extensionManager.get<MonitoringExtension>(
-        ExtensionTypeEnum.SystemMonitoring
-      )
-    ) {
-      return
-    }
-    if (
-      !extensionManager.get<HardwareManagementExtension>(
-        ExtensionTypeEnum.Hardware
-      )
-    ) {
-      return
-    }
+  const getSystemResources = useCallback(
+    async () => {
+      if (
+        !extensionManager.get<HardwareManagementExtension>(
+          ExtensionTypeEnum.Hardware
+        )
+      ) {
+        return
+      }
 
-    const monitoring = extensionManager.get<MonitoringExtension>(
-      ExtensionTypeEnum.SystemMonitoring
-    )
+      const hardwareExtension =
+        extensionManager.get<HardwareManagementExtension>(
+          ExtensionTypeEnum.Hardware
+        )
 
-    const hardwareExtension = extensionManager.get<HardwareManagementExtension>(
-      ExtensionTypeEnum.Hardware
-    )
+      const hardwareInfo = await hardwareExtension?.getHardware()
 
-    const hardwareInfo = await hardwareExtension?.getHardware()
+      // const currentLoadInfor = await monitoring?.getCurrentLoad()
 
-    const currentLoadInfor = await monitoring?.getCurrentLoad()
+      const usedMemory =
+        Number(hardwareInfo?.ram.total) - Number(hardwareInfo?.ram.available)
 
-    const usedMemory =
-      Number(hardwareInfo?.ram.total) - Number(hardwareInfo?.ram.available)
+      if (hardwareInfo?.ram?.total && hardwareInfo?.ram?.available)
+        setUsedRam(Number(usedMemory))
 
-    if (hardwareInfo?.ram?.total && hardwareInfo?.ram?.available)
-      setUsedRam(Number(usedMemory))
+      if (hardwareInfo?.ram?.total) setTotalRam(hardwareInfo.ram.total)
 
-    if (hardwareInfo?.ram?.total) setTotalRam(hardwareInfo.ram.total)
+      const ramUtilitized =
+        ((Number(usedMemory) ?? 0) / (hardwareInfo?.ram.total ?? 1)) * 100
 
-    const ramUtilitized =
-      ((Number(usedMemory) ?? 0) / (hardwareInfo?.ram.total ?? 1)) * 100
+      setRamUtilitized(Math.round(ramUtilitized))
 
-    setRamUtilitized(Math.round(ramUtilitized))
+      setCpuUsage(Math.round(hardwareInfo?.cpu.usage ?? 0))
 
-    setCpuUsage(Math.round(hardwareInfo?.cpu.usage ?? 0))
+      // const gpus = currentLoadInfor?.gpu ?? []
+      // setGpus(gpus)
 
-    const gpus = currentLoadInfor?.gpu ?? []
-    setGpus(gpus)
-
-    let totalNvidiaVram = 0
-    if (gpus.length > 0) {
-      totalNvidiaVram = gpus.reduce(
-        (total: number, gpu: { memoryTotal: string }) =>
-          total + Number(gpu.memoryTotal),
-        0
-      )
-    }
-    setTotalNvidiaVram(totalNvidiaVram)
-    setAvailableVram(
-      gpus.reduce(
-        (total: number, gpu: { memoryFree: string }) =>
-          total + Number(gpu.memoryFree),
-        0
-      )
-    )
-  }, [
-    setUsedRam,
-    setTotalRam,
-    setRamUtilitized,
-    setCpuUsage,
-    setGpus,
-    setTotalNvidiaVram,
-    setAvailableVram,
-  ])
+      // let totalNvidiaVram = 0
+      // if (gpus.length > 0) {
+      //   totalNvidiaVram = gpus.reduce(
+      //     (total: number, gpu: { memoryTotal: string }) =>
+      //       total + Number(gpu.memoryTotal),
+      //     0
+      //   )
+      // }
+      // setTotalNvidiaVram(totalNvidiaVram)
+      // setAvailableVram(
+      //   gpus.reduce(
+      //     (total: number, gpu: { memoryFree: string }) =>
+      //       total + Number(gpu.memoryFree),
+      //     0
+      //   )
+      // )
+    },
+    [
+      // setUsedRam,
+      // setTotalRam,
+      // setRamUtilitized,
+      // setCpuUsage,
+      // setGpus,
+      // setTotalNvidiaVram,
+      // setAvailableVram,
+    ]
+  )
 
   const watch = () => {
     getSystemResources()
