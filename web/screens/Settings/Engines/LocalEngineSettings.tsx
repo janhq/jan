@@ -9,6 +9,7 @@ import {
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
 
+import { useAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -27,8 +28,8 @@ import { formatDownloadPercentage } from '@/utils/converter'
 import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
+
 import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
-import { useAtom } from 'jotai'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -104,7 +105,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     if (defaultEngineVariant?.variant) {
       setSelectedVariants(defaultEngineVariant.variant || '')
     }
-  }, [defaultEngineVariant])
+  }, [defaultEngineVariant, setSelectedVariants])
 
   const handleEngineUpdate = useCallback(
     async (event: { id: string; type: DownloadEvent; percent: number }) => {

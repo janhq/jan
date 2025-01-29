@@ -5,7 +5,6 @@ import {
   SystemInformation,
   GpuSetting,
   GpuSettingInfo,
-  EngineManagementExtension,
 } from '@janhq/core'
 
 import { getDefaultStore } from 'jotai'
@@ -27,17 +26,8 @@ export const appService = {
         ExtensionTypeEnum.Hardware
       )
 
-    const engineExtension = extensionManager?.get<EngineManagementExtension>(
-      ExtensionTypeEnum.Engine
-    )
-
     if (!hardwareExtension) {
       console.warn('Hardware extension not found')
-      return undefined
-    }
-
-    if (!engineExtension) {
-      console.warn('Engine extension not found')
       return undefined
     }
 

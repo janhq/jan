@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useState } from 'react'
 
 import { ExtensionTypeEnum, HardwareManagementExtension } from '@janhq/core'
@@ -83,7 +84,7 @@ export default function useGetSystemResources() {
     setRamUtilitized,
     setCpuUsage,
     setGpus,
-    // setTotalNvidiaVram,
+    setTotalNvidiaVram,
     setAvailableVram,
   ])
 
