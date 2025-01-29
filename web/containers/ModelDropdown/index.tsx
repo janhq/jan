@@ -28,6 +28,8 @@ import ModelLabel from '@/containers/ModelLabel'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
+
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -93,6 +95,7 @@ const ModelDropdown = ({
   const { updateModelParameter } = useUpdateModelParameters()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
+  const { stopModel } = useActiveModel()
 
   const featuredModels = configuredModels.filter(
     (x) =>
@@ -226,6 +229,7 @@ const ModelDropdown = ({
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
       setOpen(false)
+      stopModel()
 
       if (activeThread) {
         // Change assistand tools based on model support RAG
