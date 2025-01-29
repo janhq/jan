@@ -1,10 +1,12 @@
 import {
   ExtensionTypeEnum,
   HardwareManagementExtension,
-  OperatingSystemInfo,
+  // OperatingSystemInfo,
   SupportedPlatform,
   // MonitoringExtension,
   SystemInformation,
+  GpuSetting,
+  GpuSettingInfo,
 } from '@janhq/core'
 
 import { toaster } from '@/containers/Toast'
@@ -16,6 +18,7 @@ export const appService = {
     // const monitorExtension = extensionManager?.get<MonitoringExtension>(
     //   ExtensionTypeEnum.SystemMonitoring
     // )
+
     const hardwareExtension =
       extensionManager?.get<HardwareManagementExtension>(
         ExtensionTypeEnum.Hardware
@@ -35,9 +38,14 @@ export const appService = {
     // const osInfo = await monitorExtension.getOsInfo()
     const hardwareInfo = await hardwareExtension?.getHardware()
 
+    const gpuSettingInfo: GpuSetting | undefined = {
+      gpus: hardwareInfo.gpus as GpuSettingInfo[],
+      vulkan: false,
+    }
+
     const updateOsInfo = {
       // ...osInfo,
-      platform: 'darwin' as SupportedPlatform,
+      platform: PLATFORM as SupportedPlatform,
       arch: hardwareInfo.cpu.arch,
       freeMem: hardwareInfo.ram.available,
       totalMem: hardwareInfo.ram.total,
@@ -47,7 +55,7 @@ export const appService = {
     // console.log(hardwareInfo)
 
     return {
-      // gpuSetting,
+      gpuSetting: gpuSettingInfo,
       osInfo: updateOsInfo,
     }
   },
