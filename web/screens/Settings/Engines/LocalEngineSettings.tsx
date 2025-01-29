@@ -27,6 +27,8 @@ import { formatDownloadPercentage } from '@/utils/converter'
 import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
+import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
+import { useAtom } from 'jotai'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -86,8 +88,8 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     (x: any) => x.version === defaultEngineVariant?.version
   )
 
-  const [selectedVariants, setSelectedVariants] = useState(
-    defaultEngineVariant?.variant
+  const [selectedVariants, setSelectedVariants] = useAtom(
+    LocalEngineDefaultVariantAtom
   )
 
   const selectedVariant = useMemo(

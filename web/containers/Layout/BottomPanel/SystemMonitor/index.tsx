@@ -151,8 +151,8 @@ const SystemMonitor = () => {
                 <div className="mb-4 border-b border-[hsla(var(--app-border))] pb-4 last:border-none">
                   {gpus.map((gpu, index) => {
                     const gpuUtilization = utilizedMemory(
-                      gpu.memoryFree,
-                      gpu.memoryTotal
+                      gpu.free_vram,
+                      gpu.total_vram
                     )
                     return (
                       <div key={index} className="mt-4 flex flex-col gap-x-2">
@@ -163,8 +163,8 @@ const SystemMonitor = () => {
                           <div className="flex gap-x-2">
                             <div className="">
                               <span>
-                                {gpu.memoryTotal - gpu.memoryFree}/
-                                {gpu.memoryTotal}
+                                {gpu.total_vram - gpu.free_vram}/
+                                {gpu.total_vram}
                               </span>
                               <span> MB</span>
                             </div>

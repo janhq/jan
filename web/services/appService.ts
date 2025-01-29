@@ -1,3 +1,4 @@
+import { DefaultEngineVariant } from './../../core/src/types/engine/index'
 import {
   ExtensionTypeEnum,
   HardwareManagementExtension,
@@ -7,11 +8,14 @@ import {
   SystemInformation,
   GpuSetting,
   GpuSettingInfo,
+  EngineManagementExtension,
 } from '@janhq/core'
 
 import { toaster } from '@/containers/Toast'
 
 import { extensionManager } from '@/extension'
+import { useAtomValue } from 'jotai'
+import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
 
 export const appService = {
   systemInformation: async (): Promise<SystemInformation | undefined> => {
@@ -19,10 +23,16 @@ export const appService = {
     //   ExtensionTypeEnum.SystemMonitoring
     // )
 
+    const selectedVariants = useAtomValue(LocalEngineDefaultVariantAtom)
+
     const hardwareExtension =
       extensionManager?.get<HardwareManagementExtension>(
         ExtensionTypeEnum.Hardware
       )
+
+    const engineExtension = extensionManager?.get<EngineManagementExtension>(
+      ExtensionTypeEnum.Engine
+    )
 
     // if (!monitorExtension) {
     //   console.warn('System monitoring extension not found')
@@ -34,13 +44,18 @@ export const appService = {
       return undefined
     }
 
+    if (!engineExtension) {
+      console.warn('Engine extension not found')
+      return undefined
+    }
+
     // const gpuSetting = await monitorExtension.getGpuSetting()
     // const osInfo = await monitorExtension.getOsInfo()
     const hardwareInfo = await hardwareExtension?.getHardware()
 
     const gpuSettingInfo: GpuSetting | undefined = {
       gpus: hardwareInfo.gpus as GpuSettingInfo[],
-      vulkan: false,
+      vulkan: isMac ? false : selectedVariants.includes('vulkan'),
     }
 
     const updateOsInfo = {
