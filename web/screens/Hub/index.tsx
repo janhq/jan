@@ -10,7 +10,7 @@ import { ModelSource } from '@janhq/core'
 import { ScrollArea, Button, Select, Tabs, useClickOutside } from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 
-import { useAtom, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ImagePlusIcon, UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -33,7 +33,10 @@ import { fuzzySearch } from '@/utils/search'
 
 import ModelPage from './ModelPage'
 
-import { appBannerHubAtom } from '@/helpers/atoms/App.atom'
+import {
+  getAppBannerHubAtom,
+  setAppBannerHubAtom,
+} from '@/helpers/atoms/App.atom'
 import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
 
 const sortMenus = [
@@ -70,7 +73,8 @@ const HubScreen = () => {
   const [filterOption, setFilterOption] = useState('all')
   const [hubBannerOption, setHubBannerOption] = useState('gallery')
   const [showHubBannerSetting, setShowHubBannerSetting] = useState(false)
-  const [appBannerHub, setAppBannerHub] = useAtom(appBannerHubAtom)
+  const appBannerHub = useAtomValue(getAppBannerHubAtom)
+  const setAppBannerHub = useSetAtom(setAppBannerHubAtom)
   const [selectedModel, setSelectedModel] = useState<ModelSource | undefined>(
     undefined
   )
