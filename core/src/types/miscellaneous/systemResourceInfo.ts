@@ -42,9 +42,6 @@ export type SupportedPlatform = SupportedPlatformTuple[number]
 export type OperatingSystemInfo = {
   platform: SupportedPlatform | 'unknown'
   arch: string
-  release: string
-  machine: string
-  version: string
   totalMem: number
   freeMem: number
 }

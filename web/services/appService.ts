@@ -1,6 +1,7 @@
 import {
   ExtensionTypeEnum,
   HardwareManagementExtension,
+  OperatingSystemInfo,
   SupportedPlatform,
   // MonitoringExtension,
   SystemInformation,
@@ -36,10 +37,7 @@ export const appService = {
 
     const updateOsInfo = {
       // ...osInfo,
-      machine: hardwareInfo.cpu.model,
       platform: 'darwin' as SupportedPlatform,
-      release: hardwareInfo.os.version.match(/\d+\.\d+\.\d+/)?.[0] || '',
-      version: hardwareInfo.os.version,
       arch: hardwareInfo.cpu.arch,
       freeMem: hardwareInfo.ram.available,
       totalMem: hardwareInfo.ram.total,
