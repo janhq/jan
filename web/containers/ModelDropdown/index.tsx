@@ -28,6 +28,8 @@ import ModelLabel from '@/containers/ModelLabel'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
+
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -54,7 +56,6 @@ import {
   activeThreadAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { useActiveModel } from '@/hooks/useActiveModel'
 
 type Props = {
   chatInputMode?: boolean
