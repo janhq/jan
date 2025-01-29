@@ -54,6 +54,7 @@ import {
   activeThreadAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { useActiveModel } from '@/hooks/useActiveModel'
 
 type Props = {
   chatInputMode?: boolean
@@ -93,6 +94,7 @@ const ModelDropdown = ({
   const { updateModelParameter } = useUpdateModelParameters()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
+  const { stopModel } = useActiveModel()
 
   const featuredModels = configuredModels.filter(
     (x) =>
@@ -226,6 +228,7 @@ const ModelDropdown = ({
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
       setOpen(false)
+      stopModel()
 
       if (activeThread) {
         // Change assistand tools based on model support RAG
