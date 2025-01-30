@@ -36,6 +36,7 @@ export const appService = {
     const gpuSettingInfo: GpuSetting | undefined = {
       gpus: hardwareInfo.gpus as GpuSettingInfo[],
       vulkan: isMac ? false : selectedVariants.includes('vulkan'),
+      cpu: hardwareInfo.cpu,
     }
 
     const updateOsInfo = {
@@ -44,8 +45,6 @@ export const appService = {
       freeMem: hardwareInfo.ram.available,
       totalMem: hardwareInfo.ram.total,
     }
-
-    console.log(gpuSettingInfo.vulkan)
 
     return {
       gpuSetting: gpuSettingInfo,

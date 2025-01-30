@@ -1,3 +1,5 @@
+
+
 export type SystemResourceInfo = {
   memAvailable: number
 }
@@ -8,6 +10,7 @@ export type GpuSetting = {
   gpus: GpuSettingInfo[]
   // TODO: This needs to be set based on user toggle in settings
   vulkan: boolean
+  cpu?: any
 }
 
 export type GpuSettingInfo = {
