@@ -1,7 +1,7 @@
 import { extensionManager } from '@/extension'
 import { appService } from './appService'
 
-test('should return correct system information when monitoring extension is found', async () => {
+test('should return correct system information when hardware extension is found', async () => {
 
   (global as any).isMac = false;
   (global as any).PLATFORM = "win32";
@@ -19,6 +19,7 @@ test('should return correct system information when monitoring extension is foun
 
   expect(result).toEqual({
     gpuSetting: {gpus: mock.gpus, vulkan: false},
+    cpu: {arch: mock.cpu.arch},
     osInfo: {
       platform: 'win32',
       arch: mock.cpu.arch,
