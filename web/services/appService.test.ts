@@ -18,8 +18,7 @@ test('should return correct system information when hardware extension is found'
   expect(mockHardwareExtension.getHardware).toHaveBeenCalled()
 
   expect(result).toEqual({
-    gpuSetting: {gpus: mock.gpus, vulkan: false},
-    cpu: {arch: mock.cpu.arch},
+    gpuSetting: {gpus: mock.gpus, vulkan: false, cpu: {arch: mock.cpu.arch},},
     osInfo: {
       platform: 'win32',
       arch: mock.cpu.arch,
