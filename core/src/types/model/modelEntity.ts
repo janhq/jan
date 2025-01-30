@@ -71,7 +71,7 @@ export type Model = {
   /**
    * The model identifier, modern version of id.
    */
-  mode?: string
+  model?: string
 
   /**
    * Human-readable name that is used for UI.
