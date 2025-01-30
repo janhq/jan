@@ -104,7 +104,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
       >
         <div className="flex justify-between border-b border-inherit px-4 py-2">
           <h6 className="text-[hsla(var(--destructive-bg))]">Error</h6>
-          <div className="flex gap-x-4 text-xs">
+          <div className="flex items-center gap-x-4 text-xs">
             <div>
               <span
                 className="flex cursor-pointer items-center gap-x-1 text-[hsla(var(--app-link))]"
