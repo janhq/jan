@@ -170,6 +170,7 @@ const ChatBody = memo(
                     <ChatItem
                       {...messages[virtualRow.index]}
                       loadModelError={loadModelError}
+                      messageIndex={virtualRow.index}
                       isCurrentMessage={
                         virtualRow.index === messages?.length - 1
                       }

@@ -1,13 +1,26 @@
-import React, { useState } from 'react'
+import React from 'react'
 
+import { atom, useAtom } from 'jotai'
 import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
 
 interface Props {
   text: string
+  index: number
+  status: string
 }
-const ThinkingBlock = ({ text }: Props) => {
-  const [isExpanded, setIsExpanded] = useState(false)
-  const loading = !text.includes('</think>')
+
+const thinkingBlockStateAtom = atom<{ [index: number]: boolean }>({})
+
+const ThinkingBlock = ({ text, index, status }: Props) => {
+  const [thinkingState, setThinkingState] = useAtom(thinkingBlockStateAtom)
+
+  const isExpanded = thinkingState[index] ?? false
+
+  const loading = !text.includes('</think>') && status !== 'completed'
+
+  const handleClick = () => {
+    setThinkingState((prev) => ({ ...prev, [index]: !isExpanded }))
+  }
 
   if (!text.replace(/<\/?think>/g, '').trim()) return null
 
@@ -16,10 +29,10 @@ const ThinkingBlock = ({ text }: Props) => {
       <div className="mb-4 rounded-lg border border-dashed border-[hsla(var(--app-border))] p-2">
         <div
           className="flex cursor-pointer items-center gap-3"
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={handleClick}
         >
           {loading && (
-            <Loader className="h-4 w-4 animate-spin text-[hsla(var(--bg-primary))]" />
+            <Loader className="h-4 w-4 animate-spin text-[hsla(var(--primary-bg))]" />
           )}
           <button className="flex items-center gap-2 focus:outline-none">
             {isExpanded ? (
@@ -42,4 +55,5 @@ const ThinkingBlock = ({ text }: Props) => {
     </div>
   )
 }
+
 export default ThinkingBlock
