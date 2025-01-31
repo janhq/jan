@@ -18,6 +18,7 @@ module.exports = {
       'slide-in': 'slide-in 1.2s cubic-bezier(.41,.73,.51,1.02)',
       'leave': 'leave 150ms ease-in forwards',
       'bounce-right': 'bounce-right 3s infinite',
+      'spin': 'spin 2s linear infinite',
     },
     keyframes: {
       'wave': {
@@ -46,6 +47,10 @@ module.exports = {
         '0%,20%, 50%,80%,100%': { transform: 'translateX(0)' },
         '40%': { transform: 'translateX(-8px)' },
         '60%': { transform: 'translateX(-4px)' },
+      },
+      'spin': {
+        '0%': { transform: 'rotate(0deg)' },
+        '100%': { transform: 'rotate(360deg)' },
       },
     },
     extend: {

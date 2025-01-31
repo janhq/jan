@@ -16,6 +16,7 @@ import MessageToolbar from '../MessageToolbar'
 import DocMessage from './DocMessage'
 import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
+import ThinkingBlock from './ThinkingBlock'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -40,6 +41,24 @@ const MessageContainer: React.FC<
       props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? '',
     [props.content]
   )
+
+  const { reasoningSegment, textSegment } = useMemo(() => {
+    const thinkRegex = /<think>([\s\S]*?)<\/think>/
+    if (text.includes('<think>') && !text.includes('</think>'))
+      return { reasoningSegment: text, textSegment: '' }
+    const thinkMatch = text.match(thinkRegex)
+    if (thinkMatch) {
+      const thinkStartIndex = thinkMatch.index
+      if (thinkStartIndex !== undefined) {
+        const thinkEndIndex = thinkStartIndex + thinkMatch[0].length
+        const reasoningSegment = text.slice(0, thinkEndIndex)
+        const textSegment = text.slice(thinkEndIndex)
+
+        return { reasoningSegment, textSegment }
+      }
+    }
+    return { textSegment: text }
+  }, [text])
 
   const image = useMemo(
     () =>
@@ -144,9 +163,10 @@ const MessageContainer: React.FC<
                 )}
                 dir="ltr"
               >
+                {reasoningSegment && <ThinkingBlock text={reasoningSegment} />}
                 <MarkdownTextMessage
                   id={props.id}
-                  text={text}
+                  text={textSegment}
                   isUser={isUser}
                 />
               </div>
