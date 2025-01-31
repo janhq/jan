@@ -12,25 +12,29 @@ const ThinkingBlock = ({ text }: Props) => {
   if (!text.replace(/<\/?think>/g, '').trim()) return null
 
   return (
-    <div className="mx-auto w-full max-w-2xl">
-      <div className="mb-4 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-4">
-        <div className="mb-2 flex items-center gap-3">
-          {loading && <Loader className="animate-spin h-4 w-4 text-blue-500" />}
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 focus:outline-none"
-          >
+    <div className="mx-auto w-full">
+      <div className="mb-4 rounded-lg border border-dashed border-[hsla(var(--app-border))] p-2">
+        <div
+          className="flex cursor-pointer items-center gap-3"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          {loading && (
+            <Loader className="animate-spin h-4 w-4 text-[hsla(var(--bg-primary))]" />
+          )}
+          <button className="flex items-center gap-2 focus:outline-none">
             {isExpanded ? (
               <ChevronUp className="h-4 w-4" />
             ) : (
               <ChevronDown className="h-4 w-4" />
             )}
-            <span className="font-medium">Reasoning Process</span>
+            <span className="font-medium">
+              {loading ? 'Thinking...' : 'Thought'}
+            </span>
           </button>
         </div>
 
         {isExpanded && (
-          <div className="mt-2 pl-6 text-gray-600">
+          <div className="mt-2 pl-6 text-[hsla(var(--text-secondary))]">
             {text.replace(/<\/?think>/g, '').trim()}
           </div>
         )}
