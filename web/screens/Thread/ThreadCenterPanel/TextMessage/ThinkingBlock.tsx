@@ -19,7 +19,7 @@ const ThinkingBlock = ({ text }: Props) => {
           onClick={() => setIsExpanded(!isExpanded)}
         >
           {loading && (
-            <Loader className="animate-spin h-4 w-4 text-[hsla(var(--bg-primary))]" />
+            <Loader className="h-4 w-4 animate-spin text-[hsla(var(--bg-primary))]" />
           )}
           <button className="flex items-center gap-2 focus:outline-none">
             {isExpanded ? (
