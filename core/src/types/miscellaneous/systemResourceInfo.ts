@@ -4,8 +4,6 @@ export type SystemResourceInfo = {
   memAvailable: number
 }
 
-export type RunMode = 'cpu' | 'gpu'
-
 export type GpuSetting = {
   gpus: GpuSettingInfo[]
   // TODO: This needs to be set based on user toggle in settings

@@ -20,7 +20,7 @@ const gpuRunMode = (settings?: GpuSetting): string => {
 
   if (!settings) return ''
 
-  return settings.vulkan === true || settings.run_mode === 'cpu' ? '' : 'cuda'
+  return settings.vulkan === true || settings.gpus.some((gpu) => gpu.activated !== true) ? '' : 'cuda'
 }
 
 /**

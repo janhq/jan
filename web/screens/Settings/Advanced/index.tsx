@@ -123,7 +123,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
     })
     stopModel()
     setVulkanEnabled(e)
-    await saveSettings({ vulkan: e, gpusInUse: [] })
+    await saveSettings({ vulkan: e })
     // Relaunch to apply settings
     if (relaunch) window.location.reload()
   }
@@ -155,7 +155,11 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   useEffect(() => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
-      setGpuEnabled(settings.run_mode === 'gpu' && settings.gpus?.length > 0)
+      setGpuEnabled(
+        settings.gpus.some(
+          (gpu: { activated: boolean }) => gpu.activated === true
+        ) === 'gpu' && settings.gpus?.length > 0
+      )
       setGpusInUse(settings.gpus_in_use || [])
       setVulkanEnabled(settings.vulkan || false)
       if (settings.gpus) {
@@ -194,7 +198,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
       if (gpuId && gpuId.trim()) updatedGpusInUse.push(gpuId)
     }
     setGpusInUse(updatedGpusInUse)
-    await saveSettings({ gpusInUse: updatedGpusInUse.filter((e) => !!e) })
     // Reload window to apply changes
     // This will trigger engine servers to restart
     window.location.reload()
@@ -280,7 +283,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
                       checked={gpuEnabled}
                       onChange={(e) => {
                         if (e.target.checked === true) {
-                          saveSettings({ runMode: 'gpu' })
                           setGpuEnabled(true)
                           snackbar({
                             description:
@@ -288,7 +290,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
                             type: 'success',
                           })
                         } else {
-                          saveSettings({ runMode: 'cpu' })
                           setGpuEnabled(false)
                           snackbar({
                             description:
