@@ -290,7 +290,13 @@ export default function ModelHandler() {
           .catch(() => undefined)
         if (updatedMessage) {
           deleteMessage(message.id)
-          addNewMessage(updatedMessage)
+          addNewMessage({
+            ...updatedMessage,
+            metadata: {
+              ...updatedMessage.metadata,
+              reserve_id: message.id,
+            },
+          })
           setTokenSpeed((prev) =>
             prev ? { ...prev, message: updatedMessage.id } : undefined
           )
