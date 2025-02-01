@@ -43,21 +43,18 @@ const MessageContainer: React.FC<
   )
 
   const { reasoningSegment, textSegment } = useMemo(() => {
-    const thinkRegex = /<think>([\s\S]*?)<\/think>/
-    if (text.includes('<think>') && !text.includes('</think>'))
-      return { reasoningSegment: text, textSegment: '' }
-    const thinkMatch = text.match(thinkRegex)
-    if (thinkMatch) {
-      const thinkStartIndex = thinkMatch.index
-      if (thinkStartIndex !== undefined) {
-        const thinkEndIndex = thinkStartIndex + thinkMatch[0].length
-        const reasoningSegment = text.slice(0, thinkEndIndex)
-        const textSegment = text.slice(thinkEndIndex)
+    const isThinking = text.includes('<think>') && !text.includes('</think>')
+    if (isThinking) return { reasoningSegment: text, textSegment: '' }
 
-        return { reasoningSegment, textSegment }
-      }
+    const match = text.match(/<think>([\s\S]*?)<\/think>/)
+    if (match?.index === undefined)
+      return { reasoningSegment: undefined, textSegment: text }
+
+    const splitIndex = match.index + match[0].length
+    return {
+      reasoningSegment: text.slice(0, splitIndex),
+      textSegment: text.slice(splitIndex),
     }
-    return { textSegment: text }
   }, [text])
 
   const image = useMemo(
