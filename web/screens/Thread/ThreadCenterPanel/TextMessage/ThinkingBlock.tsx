@@ -16,7 +16,7 @@ const ThinkingBlock = ({ id, text, status }: Props) => {
 
   const isExpanded = thinkingState[id] ?? false
 
-  const loading = !text.includes('</think>') && status !== 'completed'
+  const loading = !text.includes('</think>') && status === 'pending'
 
   const handleClick = () => {
     setThinkingState((prev) => ({ ...prev, [id]: !isExpanded }))
