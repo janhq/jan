@@ -160,7 +160,12 @@ const ChatBody = memo(
             >
               {items.map((virtualRow) => (
                 <div
-                  key={messages[virtualRow.index]?.id}
+                  key={
+                    (messages[virtualRow.index]?.metadata
+                      ?.reserve_id as string) ??
+                    messages[virtualRow.index]?.id ??
+                    virtualRow.index
+                  }
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
                 >
@@ -170,7 +175,6 @@ const ChatBody = memo(
                     <ChatItem
                       {...messages[virtualRow.index]}
                       loadModelError={loadModelError}
-                      messageIndex={virtualRow.index}
                       isCurrentMessage={
                         virtualRow.index === messages?.length - 1
                       }

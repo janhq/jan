@@ -5,21 +5,21 @@ import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
 
 interface Props {
   text: string
-  index: number
   status: string
+  id: string
 }
 
-const thinkingBlockStateAtom = atom<{ [index: number]: boolean }>({})
+const thinkingBlockStateAtom = atom<{ [id: string]: boolean }>({})
 
-const ThinkingBlock = ({ text, index, status }: Props) => {
+const ThinkingBlock = ({ id, text, status }: Props) => {
   const [thinkingState, setThinkingState] = useAtom(thinkingBlockStateAtom)
 
-  const isExpanded = thinkingState[index] ?? false
+  const isExpanded = thinkingState[id] ?? false
 
   const loading = !text.includes('</think>') && status !== 'completed'
 
   const handleClick = () => {
-    setThinkingState((prev) => ({ ...prev, [index]: !isExpanded }))
+    setThinkingState((prev) => ({ ...prev, [id]: !isExpanded }))
   }
 
   if (!text.replace(/<\/?think>/g, '').trim()) return null
