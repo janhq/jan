@@ -36,15 +36,4 @@ export default defineConfig([
       CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.49'),
     },
   },
-  {
-    input: 'src/node/cpuInfo.ts',
-    output: {
-      format: 'cjs',
-      file: 'dist/node/cpuInfo.js',
-    },
-    external: ['cpu-instructions'],
-    resolve: {
-      extensions: ['.ts', '.js', '.svg'],
-    },
-  },
 ])

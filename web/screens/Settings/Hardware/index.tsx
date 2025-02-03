@@ -308,7 +308,7 @@ const Hardware = () => {
                                     <span>
                                       {
                                         item.additional_information
-                                          .driver_version
+                                          ?.driver_version
                                       }
                                     </span>
                                   </div>
