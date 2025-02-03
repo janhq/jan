@@ -156,7 +156,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
     const setUseGpuIfPossible = async () => {
       const settings = await readSettings()
       setGpuEnabled(
-        settings.gpus.some(
+        settings.gpus?.some(
           (gpu: { activated: boolean }) => gpu.activated === true
         ) === 'gpu' && settings.gpus?.length > 0
       )

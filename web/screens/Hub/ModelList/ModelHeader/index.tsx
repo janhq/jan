@@ -57,7 +57,7 @@ const ModelItemHeader = ({ model, onClick, open }: Props) => {
 
   // Default nvidia returns vram in MB, need to convert to bytes to match the unit of totalRamW
   let ram = nvidiaTotalVram * 1024 * 1024
-  if (ram === 0 || settings?.gpus.some((gpu) => gpu.activated !== true)) {
+  if (ram === 0 || settings?.gpus?.some((gpu) => gpu.activated !== true)) {
     ram = totalRam
   }
   const serverEnabled = useAtomValue(serverEnabledAtom)

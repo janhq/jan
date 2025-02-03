@@ -35,7 +35,7 @@ export const useSettings = () => {
       settings.vulkan = vulkan
       // GPU enabled, set run_mode to 'gpu'
       if (settings.vulkan === true) {
-        settings?.gpus.some((gpu: { activated: boolean }) =>
+        settings?.gpus?.some((gpu: { activated: boolean }) =>
           gpu.activated === true ? 'gpu' : 'cpu'
         )
       }

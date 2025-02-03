@@ -20,7 +20,10 @@ const gpuRunMode = (settings?: GpuSetting): string => {
 
   if (!settings) return ''
 
-  return settings.vulkan === true || settings.gpus.some((gpu) => gpu.activated !== true) ? '' : 'cuda'
+  return settings.vulkan === true ||
+    settings.gpus?.some((gpu) => gpu.activated !== true)
+    ? ''
+    : 'cuda'
 }
 
 /**
@@ -31,10 +34,10 @@ const os = (): string => {
   return process.platform === 'win32'
     ? 'windows-amd64'
     : process.platform === 'darwin'
-      ? process.arch === 'arm64'
-        ? 'mac-arm64'
-        : 'mac-amd64'
-      : 'linux-amd64'
+    ? process.arch === 'arm64'
+      ? 'mac-arm64'
+      : 'mac-amd64'
+    : 'linux-amd64'
 }
 
 /**
@@ -45,12 +48,14 @@ const os = (): string => {
 const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
   const isUsingCuda =
     settings?.vulkan !== true &&
-      settings?.gpus.some((gpu) => gpu.activated === true ? 'gpu' : 'cpu') &&
+    settings?.gpus?.some((gpu) => (gpu.activated === true ? 'gpu' : 'cpu')) &&
     !os().includes('mac')
 
   if (!isUsingCuda) return undefined
   // return settings?.cuda?.version === '11' ? '11-7' : '12-0'
-  return settings.gpus.some(gpu => gpu.version.includes("12")) ? "12-0" : "11-7"
+  return settings.gpus?.some((gpu) => gpu.version.includes('12'))
+    ? '12-0'
+    : '11-7'
 }
 
 /**
@@ -62,16 +67,15 @@ const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
  * Find which variant to run based on the current platform.
  */
 const engineVariant = async (gpuSetting?: GpuSetting): Promise<string> => {
-
   let engineVariant = [
     os(),
     gpuSetting?.vulkan
       ? 'vulkan'
-      : gpuRunMode(gpuSetting) === 'cuda'
-        && // GPU mode - packaged CUDA variants of avx2 and noavx
-          gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')  || gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
-          ? 'avx2'
-          : 'noavx',
+      : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx
+          gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
+        gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
+      ? 'avx2'
+      : 'noavx',
     gpuRunMode(gpuSetting),
     cudaVersion(gpuSetting),
   ]

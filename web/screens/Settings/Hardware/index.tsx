@@ -100,7 +100,7 @@ const Hardware = () => {
         // Append GPUs from the previous state that are not in the hardware.gpus
         // This preserves user-reordered GPUs that aren't present in the new data
         const remainingGpus = prevGpus.filter(
-          (prevGpu) => !hardware.gpus.some((gpu) => gpu.uuid === prevGpu.uuid)
+          (prevGpu) => !hardware.gpus?.some((gpu) => gpu.uuid === prevGpu.uuid)
         )
 
         return [...updatedGpus, ...remainingGpus]
