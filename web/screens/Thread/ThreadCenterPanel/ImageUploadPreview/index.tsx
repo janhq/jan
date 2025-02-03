@@ -35,13 +35,10 @@ const ImageUploadPreview: React.FC<Props> = ({ file }) => {
 
   return (
     <div className="flex flex-col rounded-t-lg border border-b-0 border-[hsla(var(--app-border))] p-4">
-      <div className="bg-secondary relative w-60 rounded-lg p-4">
+      <div className="relative w-40 overflow-hidden rounded-lg border border-[hsla(var(--app-border))]">
         <img src={base64} alt={file.name} className="object-cover" />
-        <h6 className="mt-2 line-clamp-1 font-medium">
-          {file.name.replaceAll(/[-._]/g, ' ')}
-        </h6>
         <div
-          className="absolute -right-2 -top-2 cursor-pointer rounded-full p-0.5"
+          className="absolute right-2 top-2 cursor-pointer rounded-full bg-[hsla(var(--destructive-bg))] p-0.5 text-[hsla(var(--destructive-fg))]"
           onClick={onDeleteClick}
         >
           <XIcon size={14} className="text-background" />
