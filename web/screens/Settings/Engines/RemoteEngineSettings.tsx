@@ -28,6 +28,7 @@ import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 import { getTitleByEngine } from '@/utils/modelEngine'
 
 import ModalAddModel from './ModalAddModel'
+import ModalDeleteModel from './ModalDeleteModel'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
@@ -218,6 +219,7 @@ const RemoteEngineSettings = ({
                               >
                                 {item.name}
                               </h6>
+                              <ModalDeleteModel model={item} />
                             </div>
                           </div>
                         </div>
