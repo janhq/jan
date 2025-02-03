@@ -1,31 +1,20 @@
 import { memo, useState } from 'react'
 
-import { EngineReleased, InferenceEngine } from '@janhq/core'
+import { Model } from '@janhq/core'
 import { Button, Modal, ModalClose } from '@janhq/joi'
 
 import { Trash2Icon } from 'lucide-react'
 
-import {
-  uninstallEngine,
-  useGetDefaultEngineVariant,
-  useGetInstalledEngines,
-} from '@/hooks/useEngineManagement'
+import useDeleteModel from '@/hooks/useDeleteModel'
 
-const DeleteEngineVariant = ({
-  variant,
-  engine,
-}: {
-  variant: EngineReleased
-  engine: InferenceEngine
-}) => {
+const ModalDeleteModel = ({ model }: { model: Model }) => {
   const [open, setOpen] = useState(false)
 
-  const { mutate: mutateInstalledEngines } = useGetInstalledEngines(engine)
-  const { defaultEngineVariant } = useGetDefaultEngineVariant(engine)
+  const { deleteModel } = useDeleteModel()
 
   return (
     <Modal
-      title={<span>Delete Variant</span>}
+      title={<span>Delete Model</span>}
       open={open}
       onOpenChange={() => setOpen(!open)}
       trigger={
@@ -39,8 +28,8 @@ const DeleteEngineVariant = ({
       content={
         <div>
           <p className="text-[hsla(var(--text-secondary))]">
-            Are you sure you want to delete {variant.name}? This action cannot
-            be undone.
+            Are you sure you want to delete {model.id}? This action cannot be
+            undone.
           </p>
           <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose
@@ -56,11 +45,7 @@ const DeleteEngineVariant = ({
               <Button
                 theme="destructive"
                 onClick={() => {
-                  uninstallEngine(engine, {
-                    variant: variant.name,
-                    version: String(defaultEngineVariant?.version),
-                  })
-                  mutateInstalledEngines()
+                  deleteModel(model)
                 }}
                 autoFocus
               >
@@ -74,4 +59,4 @@ const DeleteEngineVariant = ({
   )
 }
 
-export default memo(DeleteEngineVariant)
+export default memo(ModalDeleteModel)
