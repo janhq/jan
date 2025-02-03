@@ -28,7 +28,7 @@ const os = (settings?: GpuSetting): string => {
   return PLATFORM === 'win32'
     ? 'windows-amd64'
     : PLATFORM === 'darwin'
-    ? settings?.cpu?.arc === 'arm64'
+    ? settings?.cpu?.arch === 'arm64'
       ? 'mac-arm64'
       : 'mac-amd64'
     : 'linux-amd64'
