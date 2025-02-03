@@ -14,7 +14,7 @@ const ModalDeleteModel = ({ model }: { model: Model }) => {
 
   return (
     <Modal
-      title={<span>Delete {model.name}</span>}
+      title={<span>Delete Model</span>}
       open={open}
       onOpenChange={() => setOpen(!open)}
       trigger={

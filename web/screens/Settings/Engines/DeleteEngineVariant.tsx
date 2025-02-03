@@ -25,7 +25,7 @@ const DeleteEngineVariant = ({
 
   return (
     <Modal
-      title={<span>Delete {variant.name}</span>}
+      title={<span>Delete Variant</span>}
       open={open}
       onOpenChange={() => setOpen(!open)}
       trigger={
