@@ -1,6 +1,6 @@
 ---
-title: "How to run AI models locally: A Complete Guide for Beginners"
-description: "A simple guide to running AI models locally on your computer. It's for beginners - no technical knowledge needed."
+title: "How to Run AI Models Locally: A Beginner's Guide"
+description: "A straightforward guide to running AI models locally on your computer, regardless of your background."
 tags: AI, local models, Jan, GGUF, privacy, local AI
 categories: guides
 date: 2024-01-31
@@ -10,9 +10,9 @@ ogImage: assets/jan-local-ai.jpg
 import { Callout } from 'nextra/components'
 import CTABlog from '@/components/Blog/CTA'
 
-# How to run AI models locally: A Complete Guide for Beginners
+# How to Run AI Models Locally: A Beginner's Guide
 
-Running AI models locally means installing them on your computer instead of using cloud services. This guide shows you how to run open-source AI models like Llama, Mistral, or DeepSeek on your computer - even if you're not technical.
+DeepSeek R1 is one of the best open-source models in the market right now, and the best part is that we can run different versions of it on our laptop. This guide will show you how to run open-source AI models like DeepSeek, Llama, or Mistral locally on your computer, regardless of your background.
 
 ## Quick steps:
 1. Download [Jan](https://jan.ai)
@@ -34,7 +34,7 @@ Benefits of running AI locally:
 
 ## How to run AI models locally as a beginner
 
-[Jan](https://jan.ai) makes it easy to run AI models. Just download the app and you're ready to go - no complex setup needed.
+[Jan](https://jan.ai) makes it straightforward to run AI models. Download Jan and you're ready to go - the setup process is streamlined and automated.
 
 <Callout type="tip">
 What you can do with Jan:
@@ -45,7 +45,7 @@ What you can do with Jan:
 
 ## Understanding Local AI models
 
-Think of AI models like apps - some are small and fast, others are bigger but smarter. Let's understand two important terms you'll see often: parameters and quantization.
+Think of AI models like engines powering applications - some are compact and efficient, while others are more powerful but require more resources. Let's understand two important terms you'll see often: parameters and quantization.
 
 ### What's a "Parameter"?
 
@@ -67,17 +67,24 @@ Which size to choose?
 
 ### What's Quantization?
 
-Quantization makes AI models smaller so they can run on your computer. Think of it like compressing a video to save space:
+Quantization is a technique that optimizes AI models to run efficiently on your computer. Think of it like an engine tuning process that balances performance with resource usage:
 
 ![AI model quantization explained](./_assets/open-source-ai-quantization.jpg)
 *Quantization: Balance between size and quality*
 
 Simple guide:
-- **Q4:** Best choice for most people - runs fast and works well
-- **Q6:** Better quality but runs slower
-- **Q8:** Best quality but needs a powerful computer
+- **Q4:** Most efficient choice - good balance of speed and quality
+- **Q6:** Enhanced quality with moderate resource usage
+- **Q8:** Highest quality but requires more computational power
 
-Example: A 7B model with Q4 works well on most computers.
+<Callout type="info">
+Understanding model versions:
+- **Original models:** Full-sized versions with maximum capability (e.g., original DeepSeek)
+- **Distilled models:** Optimized versions that maintain good performance while using fewer resources
+- When you see names like "Qwen" or "Llama", these refer to different model architectures and training approaches
+</Callout>
+
+Example: A 7B model with Q4 quantization provides an excellent balance for most users.
 
 ## Hardware Requirements
 
@@ -103,6 +110,11 @@ The most important thing is VRAM:
 2. Select "About This Mac"
 3. Click "More Info"
 4. Look under "Graphics/Displays"
+
+**On Linux:**
+1. Open Terminal
+2. Run: `nvidia-smi` (for NVIDIA GPUs)
+3. Or: `lspci -v | grep -i vga` (for general GPU info)
 
 ### Which models can you run?
 

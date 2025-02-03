@@ -1,6 +1,6 @@
 ---
-title: "Beginner's Guide: Run DeepSeek R1 Locally (Private)"
-description: "Quick steps on how to run DeepSeek R1 locally for full privacy. Perfect for beginners—no coding required."
+title: "Beginner's Guide: Run DeepSeek R1 Locally"
+description: "A straightforward guide to running DeepSeek R1 locally for enhanced privacy, regardless of your background."
 tags: DeepSeek, R1, local AI, Jan, GGUF, Qwen, Llama
 categories: guides
 date: 2024-01-31
@@ -10,85 +10,91 @@ ogImage: assets/run-deepseek-r1-locally-in-jan.jpg
 import { Callout } from 'nextra/components'
 import CTABlog from '@/components/Blog/CTA'
 
-# Beginner’s Guide: Run DeepSeek R1 Locally 
+# Beginner's Guide: Run DeepSeek R1 Locally 
 
 ![image](./_assets/run-deepseek-r1-locally-in-jan.jpg)
 
-You can run DeepSeek R1 on your own computer! While the full model needs very powerful hardware, we'll use a smaller version that works great on regular computers.
+DeepSeek R1 brings state-of-the-art AI capabilities to your local machine. With optimized versions available for different hardware configurations, you can run this powerful model directly on your laptop or desktop computer. This guide will show you how to run open-source AI models like DeepSeek, Llama, or Mistral locally on your computer, regardless of your background.
 
-Why use a smaller version?
-- Works smoothly on most modern computers
-- Downloads much faster
-- Uses less storage space on your computer
+Why use an optimized version?
+- Efficient performance on standard hardware
+- Faster download and initialization
+- Optimized storage requirements
+- Maintains most of the original model's capabilities
 
 ## Quick Steps at a Glance
-1. Download and install [Jan](https://jan.ai/) (just like any other app!)
-2. Pick a version that fits your computer
-3. Choose the best settings
-4. Set up a quick template & start chatting!
+1. Download [Jan](https://jan.ai/)
+2. Select a model version suited to your hardware
+3. Configure optimal settings
+4. Set up the prompt template & begin interacting
 
-Keep reading for a step-by-step guide with pictures.
+Let's walk through each step with detailed instructions.
 
 ## Step 1: Download Jan
-[Jan](https://jan.ai/) is a free app that helps you run AI models on your computer. It works on Windows, Mac, and Linux, and it's super easy to use - no coding needed!
+[Jan](https://jan.ai/) is an open-source application that enables you to run AI models locally. It's available for Windows, Mac, and Linux, with a streamlined setup process.
 
 ![image](./_assets/download-jan.jpg)
 
-- Get Jan from [jan.ai](https://jan.ai)
-- Install it like you would any other app
-- That's it! Jan takes care of all the technical stuff for you
+1. Visit [jan.ai](https://jan.ai)
+2. Download the appropriate version for your operating system
+3. Follow the standard installation process
 
 ## Step 2: Choose Your DeepSeek R1 Version
-DeepSeek R1 comes in different sizes. Let's help you pick the right one for your computer.
+DeepSeek R1 is available in different architectures and sizes. Here's how to select the right version for your system.
 
 <Callout type="info">
-💡 Not sure how much VRAM your computer has? 
-- Windows: Press Windows + R, type "dxdiag", press Enter, and click the "Display" tab
-- Mac: Click Apple menu > About This Mac > More Info > Graphics/Displays
+To check your system's VRAM:
+- Windows: Press Windows + R, type "dxdiag", press Enter, click "Display" tab
+- Mac: Apple menu > About This Mac > More Info > Graphics/Displays
+- Linux: Open Terminal, run `nvidia-smi` (NVIDIA GPUs) or `lspci -v | grep -i vga`
 </Callout>
 
-Below is a detailed table showing which version you can run based on your computer's VRAM:
+Understanding the versions:
+- **Qwen architecture:** Optimized for efficiency while maintaining high performance
+- **Llama architecture:** Known for robust performance and reliability
+- **Original vs Distilled:** Distilled versions are optimized models that preserve core capabilities while reducing resource requirements
 
-| Version | Link to Paste into Jan Hub | Required VRAM for smooth performance |
-|---------|---------------------------|---------------|
-| Qwen 1.5B | [https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF) | 6GB+ VRAM |
-| Qwen 7B | [https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF) | 8GB+ VRAM |
-| Llama 8B | [https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF) | 8GB+ VRAM |
-| Qwen 14B | [https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF) | 16GB+ VRAM |
-| Qwen 32B | [https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF) | 16GB+ VRAM |
-| Llama 70B | [https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF) | 48GB+ VRAM |
+| Version | Model Link | Required VRAM |
+|---------|------------|---------------|
+| Qwen 1.5B | [DeepSeek-R1-Distill-Qwen-1.5B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF) | 6GB+ |
+| Qwen 7B | [DeepSeek-R1-Distill-Qwen-7B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF) | 8GB+ |
+| Llama 8B | [DeepSeek-R1-Distill-Llama-8B-GGUF](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF) | 8GB+ |
+| Qwen 14B | [DeepSeek-R1-Distill-Qwen-14B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-14B-GGUF) | 16GB+ |
+| Qwen 32B | [DeepSeek-R1-Distill-Qwen-32B-GGUF](https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-32B-GGUF) | 16GB+ |
+| Llama 70B | [DeepSeek-R1-Distill-Llama-70B-GGUF](https://huggingface.co/unsloth/DeepSeek-R1-Distill-Llama-70B-GGUF) | 48GB+ |
 
 <Callout type="info">
-Quick Guide:
-- 6GB VRAM? Start with the 1.5B version - it's fast and works great!
-- 8GB VRAM? Try the 7B or 8B versions - good balance of speed and smarts
-- 16GB+ VRAM? You can run the larger versions for even better results
+Recommendations based on your hardware:
+- 6GB VRAM: The 1.5B version offers efficient performance
+- 8GB VRAM: 7B or 8B versions provide a balanced experience
+- 16GB+ VRAM: Access to larger models for enhanced capabilities
 </Callout>
 
-Ready to download? Here's how:
-1. Open Jan and click the button in the left sidebar to open Jan Hub
-2. Find the "Add Model" section (shown below)
+To download your chosen model:
+1. Launch Jan and navigate to Jan Hub using the sidebar
+2. Locate the "Add Model" section:
 
 ![image](./_assets/jan-library-deepseek-r1.jpg)
 
-3. Copy the link for your chosen version and paste it here:
+3. Input the model link in the designated field:
 
 ![image](./_assets/jan-hub-deepseek-r1.jpg)
 
-## Step 3: Choose Model Settings
-When adding your model, you'll see two options:
+## Step 3: Configure Model Settings
+When configuring your model, you'll encounter quantization options:
 
 <Callout type="tip">
-- **Q4:** Perfect for most users - fast and works great! ✨ (Recommended)
-- **Q8:** Slightly more accurate but needs more powerful hardware
+Quantization balances performance and resource usage:
+- **Q4:** Recommended for most users - optimal balance of efficiency and quality
+- **Q8:** Higher precision but requires more computational resources
 </Callout>
 
-## Step 4: Set Up & Start Chatting
-Almost done! Just one quick setup:
+## Step 4: Configure Prompt Template
+Final configuration step:
 
-1. Click Model Settings in the sidebar
-2. Find the Prompt Template box
-3. Copy and paste this exactly:
+1. Access Model Settings via the sidebar
+2. Locate the Prompt Template configuration
+3. Use this specific format:
 
 <Callout type="warning">
 ```
@@ -96,14 +102,14 @@ Almost done! Just one quick setup:
 ```
 </Callout>
 
-This helps DeepSeek understand when you're talking and when it should respond.
+This template ensures proper communication between you and the model.
 
-Now you're ready to start chatting!
+You're now ready to interact with DeepSeek R1:
 
 ![image](./_assets/jan-runs-deepseek-r1-distills.jpg)
 
-## Need help?
+## Need Assistance?
 
 <Callout type="info">
-Having trouble? We're here to help! [Join our Discord community](https://discord.gg/Exe46xPMbK) for support.
+Join our [Discord community](https://discord.gg/Exe46xPMbK) for support and discussions about running AI models locally.
 </Callout>
