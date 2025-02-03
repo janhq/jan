@@ -22,7 +22,7 @@ export const RelativeImage = ({
       className={onClick ? 'cursor-pointer' : 'cursor-default'}
     >
       <img
-        className="aspect-auto h-[300px]"
+        className="aspect-auto"
         alt={src}
         src={src.includes('files/') ? `file://${path}/${src}` : src}
       />

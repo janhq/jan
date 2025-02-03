@@ -16,7 +16,7 @@ const DocMessage = ({
   const { onViewFile } = usePath()
 
   return (
-    <div className="group/file bg-secondary relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg p-4">
+    <div className="group/file relative mb-2 inline-flex w-60 cursor-pointer gap-x-3 overflow-hidden rounded-lg bg-[hsla(var(--secondary-bg))] p-4">
       <div
         className="absolute left-0 top-0 z-20 hidden h-full w-full bg-black/20 opacity-50 group-hover/file:inline-block"
         onClick={() => onViewFile(`${id}.pdf`)}

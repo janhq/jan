@@ -22,7 +22,7 @@ const FileUploadPreview = () => {
   return (
     <div className="flex flex-col rounded-t-lg border border-b-0 border-[hsla(var(--app-border))] p-4">
       {!!fileUpload && (
-        <div className="bg-secondary relative inline-flex w-60 space-x-3 rounded-lg p-4">
+        <div className="relative inline-flex w-60 space-x-3 rounded-lg bg-[hsla(var(--secondary-bg))] p-4">
           <Icon type={fileUpload?.type} />
 
           <div className="w-full">
@@ -35,10 +35,10 @@ const FileUploadPreview = () => {
           </div>
 
           <div
-            className="absolute -right-2 -top-2 cursor-pointer rounded-full p-0.5"
+            className="absolute -right-2 -top-2 cursor-pointer rounded-full bg-[hsla(var(--destructive-bg))] p-0.5 text-[hsla(var(--destructive-fg))]"
             onClick={onDeleteClick}
           >
-            <XIcon size={14} className="text-background" />
+            <XIcon size={14} className="text-white" />
           </div>
         </div>
       )}

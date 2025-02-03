@@ -138,14 +138,14 @@ const ChatInput = () => {
 
   return (
     <div className="relative p-4 pb-2">
+      {renderPreview(fileUpload)}
       <div className="relative flex w-full flex-col">
-        {renderPreview(fileUpload)}
         <RichTextEditor
           className={twMerge(
             'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
             'focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0',
             'overflow-y-auto',
-            fileUpload && 'rounded-t-none',
+            fileUpload && 'rounded-t-none border-t-0',
             experimentalFeature && 'pl-10',
             activeSettingInputBox && 'pb-14 pr-16'
           )}
