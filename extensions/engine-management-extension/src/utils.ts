@@ -11,9 +11,6 @@ import {
  */
 
  const gpuRunMode = (settings?: GpuSetting): string => {
-  if (process.platform === 'darwin')
-    // MacOS now has universal binaries
-    return ''
 
   if (!settings) return ''
 
@@ -27,11 +24,11 @@ import {
  * The OS & architecture that the current process is running on.
  * @returns win, mac-x64, mac-arm64, or linux
  */
-const os = (): string => {
-  return process.platform === 'win32'
+const os = (settings?: GpuSetting): string => {
+  return PLATFORM === 'win32'
     ? 'windows-amd64'
-    : process.platform === 'darwin'
-    ? process.arch === 'arm64'
+    : PLATFORM === 'darwin'
+    ? settings?.cpu?.arc === 'arm64'
       ? 'mac-arm64'
       : 'mac-amd64'
     : 'linux-amd64'
@@ -65,7 +62,7 @@ const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
  */
 export const engineVariant = async (gpuSetting?: GpuSetting): Promise<string> => {
   let engineVariant = [
-    os(),
+    os(gpuSetting),
     gpuSetting?.vulkan
       ? 'vulkan'
       : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx

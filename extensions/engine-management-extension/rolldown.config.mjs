@@ -13,6 +13,7 @@ export default defineConfig([
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       API_URL: JSON.stringify('http://127.0.0.1:39291'),
       SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
+      PLATFORM: JSON.stringify(process.platform),
       CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.49'),
       DEFAULT_REMOTE_ENGINES: JSON.stringify(engines),
       DEFAULT_REMOTE_MODELS: JSON.stringify(models),
