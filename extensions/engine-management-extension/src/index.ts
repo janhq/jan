@@ -19,6 +19,7 @@ import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
 import { EngineError } from './error'
 import { getJanDataFolderPath } from '@janhq/core'
+import { engineVariant } from './utils'
 
 interface ModelList {
   data: Model[]
@@ -276,11 +277,7 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
         error instanceof EngineError
       ) {
         const systemInfo = await systemInformation()
-        const variant = await executeOnMain(
-          NODE,
-          'engineVariant',
-          systemInfo.gpuSetting
-        )
+        const variant = await engineVariant(systemInfo.gpuSetting)
         await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
           variant: variant,
           version: `${CORTEX_ENGINE_VERSION}`,

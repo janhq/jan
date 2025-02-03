@@ -8,7 +8,9 @@
     "forceConsistentCasingInFileNames": true,
     "strict": false,
     "skipLibCheck": true,
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "resolveJsonModule": true
   },
-  "include": ["./src"]
+  "include": ["./src"],
+  "exclude": ["src/**/*.test.ts", "rolldown.config.mjs"]
 }

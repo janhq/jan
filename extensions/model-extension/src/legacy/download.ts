@@ -2,15 +2,12 @@ import {
   downloadFile,
   DownloadRequest,
   fs,
-  GpuSetting,
-  InferenceEngine,
   joinPath,
   Model,
 } from '@janhq/core'
 
 export const downloadModel = async (
   model: Model,
-  gpuSettings?: GpuSetting,
   network?: { ignoreSSL?: boolean; proxy?: string }
 ): Promise<void> => {
   const homedir = 'file://models'
@@ -26,41 +23,6 @@ export const downloadModel = async (
       jsonFilePath,
       JSON.stringify(model, null, 2)
     )
-
-  if (model.engine === InferenceEngine.nitro_tensorrt_llm) {
-    if (!gpuSettings || gpuSettings.gpus.length === 0) {
-      console.error('No GPU found. Please check your GPU setting.')
-      return
-    }
-    const firstGpu = gpuSettings.gpus[0]
-    if (!firstGpu.name.toLowerCase().includes('nvidia')) {
-      console.error('No Nvidia GPU found. Please check your GPU setting.')
-      return
-    }
-    const gpuArch = firstGpu.arch
-    if (gpuArch === undefined) {
-      console.error('No GPU architecture found. Please check your GPU setting.')
-      return
-    }
-
-    if (!supportedGpuArch.includes(gpuArch)) {
-      console.debug(
-        `Your GPU: ${JSON.stringify(firstGpu)} is not supported. Only 30xx, 40xx series are supported.`
-      )
-      return
-    }
-
-    const os = 'windows' // TODO: remove this hard coded value
-
-    const newSources = model.sources.map((source) => {
-      const newSource = { ...source }
-      newSource.url = newSource.url
-        .replace(/<os>/g, os)
-        .replace(/<gpuarch>/g, gpuArch)
-      return newSource
-    })
-    model.sources = newSources
-  }
 
   console.debug(`Download sources: ${JSON.stringify(model.sources)}`)
 

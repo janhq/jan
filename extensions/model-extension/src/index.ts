@@ -15,8 +15,6 @@ import {
 } from '@janhq/core'
 import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
-import { downloadModel } from './legacy/download'
-import { systemInformation } from '@janhq/core'
 import { deleteModelFiles } from './legacy/delete'
 
 export enum Settings {
@@ -71,18 +69,6 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async pullModel(model: string, id?: string, name?: string): Promise<void> {
-    if (id) {
-      const model: Model = ModelManager.instance().get(id)
-      // Clip vision model - should not be handled by cortex.cpp
-      // TensorRT model - should not be handled by cortex.cpp
-      if (
-        model &&
-        (model.engine === InferenceEngine.nitro_tensorrt_llm ||
-          model.settings.vision_model)
-      ) {
-        return downloadModel(model, (await systemInformation()).gpuSetting)
-      }
-    }
     /**
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */

@@ -8,6 +8,8 @@ export const mainViewStateAtom = atom<MainViewState>(MainViewState.Thread)
 
 export const defaultJanDataFolderAtom = atom<string>('')
 
+export const LocalEngineDefaultVariantAtom = atom<string>('')
+
 const SHOW_RIGHT_PANEL = 'showRightPanel'
 
 // Store panel atom

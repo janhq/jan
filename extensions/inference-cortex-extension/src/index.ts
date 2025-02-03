@@ -112,8 +112,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
     // Run the process watchdog
-    const systemInfo = await systemInformation()
-    this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
+    // const systemInfo = await systemInformation()
+    this.queue.add(() => executeOnMain(NODE, 'run'))
     this.queue.add(() => this.healthz())
     this.subscribeToEvents()
 

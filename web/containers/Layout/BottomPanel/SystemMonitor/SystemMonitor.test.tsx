@@ -87,7 +87,7 @@ describe('SystemMonitor', () => {
 
     expect(screen.getByText('Running Models')).toBeInTheDocument()
     expect(screen.getByText('App Log')).toBeInTheDocument()
-    expect(screen.getByText('7.45/14.90 GB')).toBeInTheDocument()
+    expect(screen.getByText('7.45GB / 14.90GB')).toBeInTheDocument()
     expect(screen.getByText('30%')).toBeInTheDocument()
   })
 
