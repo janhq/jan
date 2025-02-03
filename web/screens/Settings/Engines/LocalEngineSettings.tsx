@@ -9,6 +9,7 @@ import {
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
 
+import { useAtom } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -27,6 +28,8 @@ import { formatDownloadPercentage } from '@/utils/converter'
 import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
+
+import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -86,8 +89,8 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     (x: any) => x.version === defaultEngineVariant?.version
   )
 
-  const [selectedVariants, setSelectedVariants] = useState(
-    defaultEngineVariant?.variant
+  const [selectedVariants, setSelectedVariants] = useAtom(
+    LocalEngineDefaultVariantAtom
   )
 
   const selectedVariant = useMemo(
@@ -102,7 +105,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     if (defaultEngineVariant?.variant) {
       setSelectedVariants(defaultEngineVariant.variant || '')
     }
-  }, [defaultEngineVariant])
+  }, [defaultEngineVariant, setSelectedVariants])
 
   const handleEngineUpdate = useCallback(
     async (event: { id: string; type: DownloadEvent; percent: number }) => {

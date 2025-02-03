@@ -1,7 +1,6 @@
 import { describe, expect, it } from '@jest/globals'
 import engine from './index'
-import { GpuSetting } from '@janhq/core/node'
-import { cpuInfo } from 'cpu-instructions'
+import { GpuSetting } from '@janhq/core'
 import { fork } from 'child_process'
 
 let testSettings: GpuSetting = {
@@ -23,22 +22,12 @@ let testSettings: GpuSetting = {
 }
 const originalPlatform = process.platform
 
-jest.mock('cpu-instructions', () => ({
-  cpuInfo: {
-    cpuInfo: jest.fn(),
-  },
-}))
-let mockCpuInfo = cpuInfo.cpuInfo as jest.Mock
-mockCpuInfo.mockReturnValue([])
 
-jest.mock('@janhq/core/node', () => ({
+
+jest.mock('@janhq/core', () => ({
   appResourcePath: () => '.',
   log: jest.fn(),
 }))
-jest.mock('child_process', () => ({
-  fork: jest.fn(),
-}))
-const mockFork = fork as jest.Mock
 
 describe('test executable cortex file', () => {
   afterAll(function () {
@@ -48,14 +37,7 @@ describe('test executable cortex file', () => {
   })
 
   it('executes on MacOS', () => {
-    const mockProcess = {
-      on: jest.fn((event, callback) => {
-        if (event === 'message') {
-          callback('noavx')
-        }
-      }),
-      send: jest.fn(),
-    }
+
     Object.defineProperty(process, 'platform', {
       value: 'darwin',
     })
@@ -63,7 +45,7 @@ describe('test executable cortex file', () => {
       value: 'arm64',
     })
 
-    mockFork.mockReturnValue(mockProcess)
+
     expect(engine.engineVariant(testSettings)).resolves.toEqual('mac-arm64')
   })
 
@@ -83,7 +65,7 @@ describe('test executable cortex file', () => {
       }),
       send: jest.fn(),
     }
-    mockFork.mockReturnValue(mockProcess)
+
     Object.defineProperty(process, 'arch', {
       value: 'x64',
     })
@@ -107,7 +89,6 @@ describe('test executable cortex file', () => {
       }),
       send: jest.fn(),
     }
-    mockFork.mockReturnValue(mockProcess)
 
     expect(engine.engineVariant()).resolves.toEqual('windows-amd64-avx')
   })
@@ -145,7 +126,6 @@ describe('test executable cortex file', () => {
       }),
       send: jest.fn(),
     }
-    mockFork.mockReturnValue(mockProcess)
 
     expect(engine.engineVariant(settings)).resolves.toEqual(
       'windows-amd64-avx2-cuda-11-7'
@@ -176,26 +156,11 @@ describe('test executable cortex file', () => {
         },
       ],
     }
-    mockFork.mockReturnValue({
-      on: jest.fn((event, callback) => {
-        if (event === 'message') {
-          callback('noavx')
-        }
-      }),
-      send: jest.fn(),
-    })
 
     expect(engine.engineVariant(settings)).resolves.toEqual(
       'windows-amd64-noavx-cuda-12-0'
     )
-    mockFork.mockReturnValue({
-      on: jest.fn((event, callback) => {
-        if (event === 'message') {
-          callback('avx512')
-        }
-      }),
-      send: jest.fn(),
-    })
+
     expect(engine.engineVariant(settings)).resolves.toEqual(
       'windows-amd64-avx2-cuda-12-0'
     )
@@ -209,14 +174,6 @@ describe('test executable cortex file', () => {
       ...testSettings,
       run_mode: 'cpu',
     }
-    mockFork.mockReturnValue({
-      on: jest.fn((event, callback) => {
-        if (event === 'message') {
-          callback('noavx')
-        }
-      }),
-      send: jest.fn(),
-    })
 
     expect(engine.engineVariant()).resolves.toEqual('linux-amd64-noavx')
   })
@@ -245,16 +202,6 @@ describe('test executable cortex file', () => {
         },
       ],
     }
-
-    mockFork.mockReturnValue({
-      on: jest.fn((event, callback) => {
-        if (event === 'message') {
-          callback('avx512')
-        }
-      }),
-      send: jest.fn(),
-    })
-
     expect(engine.engineVariant(settings)).resolves.toBe(
       'linux-amd64-avx2-cuda-11-7'
     )
@@ -284,14 +231,7 @@ describe('test executable cortex file', () => {
         },
       ],
     }
-    mockFork.mockReturnValue({
-      on: jest.fn((event, callback) => {
-        if (event === 'message') {
-          callback('avx2')
-        }
-      }),
-      send: jest.fn(),
-    })
+
 
     expect(engine.engineVariant(settings)).resolves.toEqual(
       'linux-amd64-avx2-cuda-12-0'
@@ -310,15 +250,6 @@ describe('test executable cortex file', () => {
 
     const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
     cpuInstructions.forEach((instruction) => {
-      mockFork.mockReturnValue({
-        on: jest.fn((event, callback) => {
-          if (event === 'message') {
-            callback(instruction)
-          }
-        }),
-        send: jest.fn(),
-      })
-
       expect(engine.engineVariant(settings)).resolves.toEqual(
         `linux-amd64-${instruction}`
       )
@@ -335,14 +266,7 @@ describe('test executable cortex file', () => {
     }
     const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
     cpuInstructions.forEach((instruction) => {
-      mockFork.mockReturnValue({
-        on: jest.fn((event, callback) => {
-          if (event === 'message') {
-            callback(instruction)
-          }
-        }),
-        send: jest.fn(),
-      })
+
       expect(engine.engineVariant(settings)).resolves.toEqual(
         `windows-amd64-${instruction}`
       )
@@ -376,14 +300,7 @@ describe('test executable cortex file', () => {
     }
     const cpuInstructions = ['avx512', 'avx2', 'avx', 'noavx']
     cpuInstructions.forEach((instruction) => {
-      mockFork.mockReturnValue({
-        on: jest.fn((event, callback) => {
-          if (event === 'message') {
-            callback(instruction)
-          }
-        }),
-        send: jest.fn(),
-      })
+
       expect(engine.engineVariant(settings)).resolves.toEqual(
         `windows-amd64-${instruction === 'avx512' || instruction === 'avx2' ? 'avx2' : 'noavx'}-cuda-12-0`
       )
@@ -417,14 +334,7 @@ describe('test executable cortex file', () => {
       ],
     }
     cpuInstructions.forEach((instruction) => {
-      mockFork.mockReturnValue({
-        on: jest.fn((event, callback) => {
-          if (event === 'message') {
-            callback(instruction)
-          }
-        }),
-        send: jest.fn(),
-      })
+
       expect(engine.engineVariant(settings)).resolves.toEqual(
         `linux-amd64-${instruction === 'avx512' || instruction === 'avx2' ? 'avx2' : 'noavx'}-cuda-12-0`
       )
@@ -459,14 +369,7 @@ describe('test executable cortex file', () => {
       ],
     }
     cpuInstructions.forEach((instruction) => {
-      mockFork.mockReturnValue({
-        on: jest.fn((event, callback) => {
-          if (event === 'message') {
-            callback(instruction)
-          }
-        }),
-        send: jest.fn(),
-      })
+
       expect(engine.engineVariant(settings)).resolves.toEqual(
         `linux-amd64-vulkan`
       )

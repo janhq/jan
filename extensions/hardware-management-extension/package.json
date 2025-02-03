@@ -1,8 +1,8 @@
 {
-  "name": "@janhq/engine-management-extension",
-  "productName": "Engine Management",
+  "name": "@janhq/hardware-management-extension",
+  "productName": "Hardware Management",
   "version": "1.0.0",
-  "description": "Manages AI engines and their configurations.",
+  "description": "Manages Better Hardware settings.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",
@@ -29,13 +29,15 @@
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
+    "cpu-instructions": "^0.0.13",
     "ky": "^1.7.2",
     "p-queue": "^8.0.1"
   },
   "bundledDependencies": [
+    "cpu-instructions",
     "@janhq/core"
   ],
-  "engines": {
+  "hardwares": {
     "node": ">=18.0.0"
   },
   "files": [
