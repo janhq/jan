@@ -1,0 +1,200 @@
+---
+title: "How to Run AI Models Locally: A Beginner's Guide"
+description: "A straightforward guide to running AI models locally on your computer, regardless of your background."
+tags: AI, local models, Jan, GGUF, privacy, local AI
+categories: guides
+date: 2024-01-31
+ogImage: assets/jan-local-ai.jpg
+---
+
+import { Callout } from 'nextra/components'
+import CTABlog from '@/components/Blog/CTA'
+
+# How to Run AI Models Locally: A Beginner's Guide
+
+DeepSeek R1 is one of the best open-source models in the market right now, and the best part is that we can run different versions of it on our laptop. This guide will show you how to run open-source AI models like DeepSeek, Llama, or Mistral locally on your computer, regardless of your background.
+
+## Quick steps:
+1. Download [Jan](https://jan.ai)
+2. Pick a recommended model
+3. Start chatting
+
+Read [Quickstart](https://jan.ai/docs/quickstart) to get started. For more details, keep reading.
+
+![Run AI models locally with Jan](./_assets/jan-local-ai.jpg)
+*Jan is for running AI models locally. Download [Jan](https://jan.ai)*
+
+<Callout type="info">
+Benefits of running AI locally:
+- **Privacy:** Your data stays on your computer
+- **No internet needed:** Use AI even offline
+- **No limits:** Chat as much as you want
+- **Full control:** Choose which AI models to use
+</Callout>
+
+## How to run AI models locally as a beginner
+
+[Jan](https://jan.ai) makes it straightforward to run AI models. Download Jan and you're ready to go - the setup process is streamlined and automated.
+
+<Callout type="tip">
+What you can do with Jan:
+- Download AI models with one click
+- Everything is set up automatically
+- Find models that work on your computer
+</Callout>
+
+## Understanding Local AI models
+
+Think of AI models like engines powering applications - some are compact and efficient, while others are more powerful but require more resources. Let's understand two important terms you'll see often: parameters and quantization.
+
+### What's a "Parameter"?
+
+When looking at AI models, you'll see names like "Llama-2-7B" or "Mistral-7B". Here's what that means:
+
+![AI model parameters explained](./_assets/local-ai-model-parameters.jpg)
+*Model sizes: Bigger models = Better results + More resources*
+
+- The "B" means "billion parameters" (like brain cells)
+- More parameters = smarter AI but needs a faster computer
+- Fewer parameters = simpler AI but works on most computers
+
+<Callout type="info">
+Which size to choose?
+- **7B models:** Best for most people - works on most computers
+- **13B models:** Smarter but needs a good graphics card
+- **70B models:** Very smart but needs a powerful computer
+</Callout>
+
+### What's Quantization?
+
+Quantization is a technique that optimizes AI models to run efficiently on your computer. Think of it like an engine tuning process that balances performance with resource usage:
+
+![AI model quantization explained](./_assets/open-source-ai-quantization.jpg)
+*Quantization: Balance between size and quality*
+
+Simple guide:
+- **Q4:** Most efficient choice - good balance of speed and quality
+- **Q6:** Enhanced quality with moderate resource usage
+- **Q8:** Highest quality but requires more computational power
+
+<Callout type="info">
+Understanding model versions:
+- **Original models:** Full-sized versions with maximum capability (e.g., original DeepSeek)
+- **Distilled models:** Optimized versions that maintain good performance while using fewer resources
+- When you see names like "Qwen" or "Llama", these refer to different model architectures and training approaches
+</Callout>
+
+Example: A 7B model with Q4 quantization provides an excellent balance for most users.
+
+## Hardware Requirements
+
+Before downloading an AI model, let's check if your computer can run it.
+
+<Callout type="info">
+The most important thing is VRAM:
+- VRAM is your graphics card's memory
+- More VRAM = ability to run bigger AI models
+- Most computers have between 4GB to 16GB VRAM
+</Callout>
+
+### How to check your VRAM:
+
+**On Windows:**
+1. Press Windows + R
+2. Type "dxdiag" and press Enter
+3. Click "Display" tab
+4. Look for "Display Memory"
+
+**On Mac:**
+1. Click Apple menu
+2. Select "About This Mac"
+3. Click "More Info"
+4. Look under "Graphics/Displays"
+
+**On Linux:**
+1. Open Terminal
+2. Run: `nvidia-smi` (for NVIDIA GPUs)
+3. Or: `lspci -v | grep -i vga` (for general GPU info)
+
+### Which models can you run?
+
+Here's a simple guide:
+
+| Your VRAM | What You Can Run | What It Can Do |
+|-----------|-----------------|----------------|
+| 4GB | Small models (1-3B) | Basic writing and questions |
+| 6GB | Medium models (7B) | Good for most tasks |
+| 8GB | Larger models (13B) | Better understanding |
+| 16GB | Largest models (32B) | Best performance |
+
+<Callout type="tip">
+Start with smaller models:
+- Try 7B models first - they work well for most people
+- Test how they run on your computer
+- Try larger models only if you need better results
+</Callout>
+
+## Setting Up Your Local AI
+
+### 1. Get Started
+Download Jan from [jan.ai](https://jan.ai) - it sets everything up for you.
+
+### 2. Get an AI Model
+
+You can get models two ways:
+
+### 1. Use Jan Hub (Recommended):
+   - Click "Download Model" in Jan
+   - Pick a recommended model
+   - Choose one that fits your computer
+
+![AI model parameters explained](./_assets/jan-model-download.jpg)
+*Use Jan Hub to download AI models*
+
+### 2. Use Hugging Face:
+
+<Callout type="warning">
+Important: Only GGUF models will work with Jan. Make sure to use models that have "GGUF" in their name.
+</Callout>
+
+#### Step 1: Get the model link
+Find and copy a GGUF model link from [Hugging Face](https://huggingface.co)
+
+![Finding a GGUF model on Hugging Face](./_assets/hugging-face-jan-model-download.jpg)
+*Look for models with "GGUF" in their name*
+
+#### Step 2: Open Jan
+Launch Jan and go to the Models tab
+
+![Opening Jan's model section](./_assets/jan-library-deepseek-r1.jpg)
+*Navigate to the Models section in Jan*
+
+#### Step 3: Add the model
+Paste your Hugging Face link into Jan
+
+![Adding a model from Hugging Face](./_assets/jan-hub-deepseek-r1.jpg)
+*Paste your GGUF model link here*
+
+#### Step 4: Download
+Select your quantization and start the download
+
+![Downloading the model](./_assets/jan-hf-model-download.jpg)
+*Choose your preferred model size and download*
+
+### Common Questions
+
+<Callout type="info"> 
+**"My computer doesn't have a graphics card - can I still use AI?"**
+Yes! It will run slower but still work. Start with 7B models.
+
+**"Which model should I start with?"**
+Try a 7B model first - it's the best balance of smart and fast.
+
+**"Will it slow down my computer?"**
+Only while you're using the AI. Close other big programs for better speed.
+</Callout>
+
+## Need help?
+<Callout type="info">
+Having trouble? We're here to help! [Join our Discord community](https://discord.gg/Exe46xPMbK) for support.
+</Callout>
