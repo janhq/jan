@@ -63,7 +63,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
   async modifyThread(thread: Thread): Promise<void> {
     return this.queue
       .add(() =>
-        ky.post(`${API_URL}/v1/threads/${thread.id}`, { json: thread })
+        ky.patch(`${API_URL}/v1/threads/${thread.id}`, { json: thread })
       )
       .then()
   }
@@ -101,7 +101,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
   async modifyMessage(message: ThreadMessage): Promise<ThreadMessage> {
     return this.queue.add(() =>
       ky
-        .post(
+        .patch(
           `${API_URL}/v1/threads/${message.thread_id}/messages/${message.id}`,
           {
             json: message,
