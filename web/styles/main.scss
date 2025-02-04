@@ -41,12 +41,13 @@
   --text-tertiary: 0, 0%, 0%, 0.4;
   --text-quaternary: 0, 0%, 0%, 0.2;
 
+  --app-code-block: 0, 0%, 95%, 0.8;
   --hljs-comment: #6e7781;
   --hljs-variable: #cf222e;
   --hljs-number: #bc4c00;
   --hljs-attribute: #b58407;
-  --hljs-string: #116329;
-  --hljs-title: #0550ae;
+  --hljs-string: #0f766e;
+  --hljs-title: #0e7490;
   --hljs-keyword: #8250df;
 }
 
@@ -77,6 +78,7 @@ html.dark {
   --text-tertiary: 0, 0%, 68%, 0.4;
   --text-quaternary: 0, 0%, 68%, 0.2;
 
+  --app-code-block: 0, 0%, 100%, 0.05;
   --hljs-comment: #8b949e;
   --hljs-variable: #ff7b72;
   --hljs-number: #f0883e;

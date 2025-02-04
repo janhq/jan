@@ -111,14 +111,15 @@ export const MarkdownTextMessage = memo(
                       tagName: 'div',
                       properties: {
                         className:
-                          'code-header bg-[hsla(var(--app-code-block))] flex justify-between items-center py-2 px-3 code-header--border rounded-t-lg',
+                          'code-header bg-[hsla(var(--app-code-block))] flex justify-between items-center py-2 px-3 border-b border-[hsla(var(--app-border))] rounded-t-lg',
                       },
                       children: [
                         {
                           type: 'element',
                           tagName: 'span',
                           properties: {
-                            className: 'text-xs font-medium text-gray-300',
+                            className:
+                              'text-xs font-medium dark text-[hsla(var(--text-primary))]',
                           },
                           children: [
                             {
@@ -134,7 +135,7 @@ export const MarkdownTextMessage = memo(
                           tagName: 'button',
                           properties: {
                             className:
-                              'copy-button ml-auto flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600 focus:outline-none',
+                              'copy-button ml-auto flex items-center gap-1 text-xs font-medium text-[hsla(var(--text-primary))] focus:outline-none',
                             onClick: (event: Event) => {
                               clipboard.copy(extractCodeLines(node))
 
@@ -146,7 +147,7 @@ export const MarkdownTextMessage = memo(
 
                               setTimeout(() => {
                                 button.innerHTML = `
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-gray-400"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy pointer-events-none text-[hsla(var(--text-primary))]"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
                                   <span>Copy</span>
                                 `
                               }, 2000)
@@ -167,7 +168,7 @@ export const MarkdownTextMessage = memo(
                                 strokeLinecap: 'round',
                                 strokeLinejoin: 'round',
                                 className:
-                                  'lucide lucide-copy pointer-events-none text-gray-400',
+                                  'lucide lucide-copy pointer-events-none text-[hsla(var(--text-primary))]',
                               },
                               children: [
                                 {
