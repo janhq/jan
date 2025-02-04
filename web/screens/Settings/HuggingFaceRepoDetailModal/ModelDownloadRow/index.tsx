@@ -51,7 +51,9 @@ const ModelDownloadRow: React.FC<Props> = ({
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const assistants = useAtomValue(assistantsAtom)
   const downloadedModel = downloadedModels.find((md) => md.id === fileName)
-  const isDownloading = downloadingModels.some((md) => md === fileName)
+  const isDownloading = downloadingModels.some(
+    (md) => md === fileName || fileName.includes(md)
+  )
 
   const setHfImportingStage = useSetAtom(importHuggingFaceModelStageAtom)
 
