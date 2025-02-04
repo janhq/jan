@@ -2,6 +2,7 @@ import React from 'react'
 
 import { atom, useAtom } from 'jotai'
 import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
+import { MarkdownTextMessage } from './MarkdownTextMessage'
 
 interface Props {
   text: string
@@ -48,7 +49,9 @@ const ThinkingBlock = ({ id, text, status }: Props) => {
 
         {isExpanded && (
           <div className="mt-2 pl-6 text-[hsla(var(--text-secondary))]">
-            {text.replace(/<\/?think>/g, '').trim()}
+            <MarkdownTextMessage
+              text={text.replace(/<\/?think>/g, '').trim()}
+            />
           </div>
         )}
       </div>
