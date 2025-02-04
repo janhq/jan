@@ -2,6 +2,7 @@ import React from 'react'
 
 import { atom, useAtom } from 'jotai'
 import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
+
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 
 interface Props {
