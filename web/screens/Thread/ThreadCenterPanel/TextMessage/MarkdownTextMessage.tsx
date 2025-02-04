@@ -19,7 +19,7 @@ import { useClipboard } from '@/hooks/useClipboard'
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 
 export const MarkdownTextMessage = memo(
-  ({ text, isUser }: { id: string; text: string; isUser: boolean }) => {
+  ({ text, isUser }: { id?: string; text: string; isUser?: boolean }) => {
     const clipboard = useClipboard({ timeout: 1000 })
 
     // Escapes headings
