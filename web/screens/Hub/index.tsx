@@ -398,10 +398,10 @@ const HubScreen = () => {
                           <div
                             key={e.value}
                             className={twMerge(
-                              'rounded-md border duration-200 hover:border-gray-200 hover:bg-gray-200',
+                              'rounded-md border border-[hsla(var(--app-border))] duration-200 hover:bg-[hsla(var(--secondary-bg))]',
                               e.value === filterOption
-                                ? 'border-gray-200 bg-gray-200'
-                                : 'border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))]'
+                                ? 'bg-[hsla(var(--secondary-bg))]'
+                                : 'bg-[hsla(var(--app-bg))]'
                             )}
                           >
                             <Button

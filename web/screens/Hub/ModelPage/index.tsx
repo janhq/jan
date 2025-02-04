@@ -149,7 +149,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                           key={item.id}
                           className="border-t border-[hsla(var(--app-border))] font-medium text-[hsla(var(--text-secondary))]"
                         >
-                          <td className="flex items-center space-x-4 px-6 py-4 text-black">
+                          <td className="flex items-center space-x-4 px-6 py-4">
                             <span className="line-clamp-1">
                               {item.id?.split(':')?.pop()}
                             </span>
@@ -172,7 +172,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                               </td>
                             </>
                           )}
-                          <td className="pr-4 text-right text-black">
+                          <td className="pr-4 text-right">
                             {(model.type !== 'cloud' ||
                               (model.metadata?.apiKey?.length ?? 0) > 0) && (
                               <ModelDownloadButton

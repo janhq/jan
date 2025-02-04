@@ -38,6 +38,7 @@
   justify-content: space-between; /* Distribute space between children */
   align-items: center; /* Optional: Align items vertically */
   gap: 16px;
+  border-color: hsla(var(--app-border));
 }
 .DropdownMenuCheckboxItem,
 .DropdownMenuRadioItem,
@@ -70,7 +71,7 @@
 .DropdownMenuSeparator {
   height: 1px;
   width: '100%';
-  background-color: hsla(var(--secondary-bg));
+  background-color: hsla(var(--app-border));
 }
 
 .DropdownMenuItem::hover {
