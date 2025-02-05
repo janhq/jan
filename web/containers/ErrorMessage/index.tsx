@@ -103,9 +103,12 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         key={message.id}
       >
         <div className="flex justify-between border-b border-inherit px-4 py-2">
-          <h6 className="text-[hsla(var(--destructive-bg))]">Error</h6>
+          <h6 className="flex items-center gap-x-1 font-semibold text-[hsla(var(--destructive-bg))]">
+            <span className="h-2 w-2 rounded-full bg-[hsla(var(--destructive-bg))]" />
+            <span>Error</span>
+          </h6>
           <div className="flex items-center gap-x-4 text-xs">
-            <div>
+            <div className="font-semibold">
               <span
                 className="flex cursor-pointer items-center gap-x-1 text-[hsla(var(--app-link))]"
                 onClick={() => setModalTroubleShooting(true)}
@@ -116,7 +119,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
               <ModalTroubleShooting />
             </div>
             <div
-              className="flex cursor-pointer items-center gap-x-1 text-[hsla(var(--text-secondary))]"
+              className="flex cursor-pointer items-center gap-x-1 font-semibold text-[hsla(var(--text-secondary))]"
               onClick={handleCopy}
             >
               {copied ? (
@@ -138,7 +141,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
         </div>
         <div className="max-h-[80px] w-full overflow-x-auto p-4 py-2">
           <div
-            className="text-xs leading-relaxed text-[hsla(var(--text-secondary))]"
+            className="font-serif text-xs leading-relaxed text-[hsla(var(--text-secondary))]"
             ref={errorDivRef}
           >
             {getErrorTitle()}
