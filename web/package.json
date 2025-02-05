@@ -30,7 +30,7 @@
     "jotai": "^2.6.0",
     "katex": "^0.16.10",
     "lodash": "^4.17.21",
-    "lucide-react": "^0.291.0",
+    "lucide-react": "^0.311.0",
     "marked": "^9.1.2",
     "next": "14.2.3",
     "next-themes": "^0.2.1",

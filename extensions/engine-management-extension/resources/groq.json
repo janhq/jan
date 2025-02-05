@@ -17,6 +17,7 @@
       "chat_completions": {
         "template": "{ {% set first = true %} {% for key, value in input_request %} {% if key == \"choices\" or key == \"created\" or key == \"model\" or key == \"service_tier\" or key == \"system_fingerprint\" or key == \"stream\" or key == \"object\" or key == \"usage\" %} {% if not first %},{% endif %} \"{{ key }}\": {{ tojson(value) }} {% set first = false %} {% endif %} {% endfor %} }"
       }
-    }
+    },
+    "explore_models_url": "https://console.groq.com/docs/models"
   }
 }

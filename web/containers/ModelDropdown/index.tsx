@@ -293,6 +293,7 @@ const ModelDropdown = ({
       updateThreadMetadata,
       setThreadModelParams,
       updateModelParameter,
+      stopModel,
     ]
   )
 

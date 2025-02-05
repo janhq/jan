@@ -17,6 +17,7 @@
       "chat_completions": {
         "template": "{{tojson(input_request)}}"
       }
-    }
+    },
+    "explore_models_url": "https://docs.mistral.ai/getting-started/models/models_overview/"
   }
 }

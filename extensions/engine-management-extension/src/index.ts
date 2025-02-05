@@ -167,7 +167,9 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
       ky.post(`${API_URL}/v1/engines`, { json: engineConfig }).then((e) => {
         if (persistModels && engineConfig.metadata?.get_models_url) {
           // Pull /models from remote models endpoint
-          return this.populateRemoteModels(engineConfig).then(() => e)
+          return this.populateRemoteModels(engineConfig)
+            .then(() => e)
+            .catch(() => e)
         }
         return e
       })
