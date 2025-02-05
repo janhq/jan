@@ -195,7 +195,21 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
   async addRemoteModel(model: Model) {
     return this.queue
       .add(() =>
-        ky.post(`${API_URL}/v1/models/add`, { json: model }).then((e) => e)
+        ky
+          .post(`${API_URL}/v1/models/add`, {
+            json: {
+              inference_params: {
+                max_tokens: 8192,
+                temperature: 0.7,
+                top_p: 0.95,
+                stream: true,
+                frequency_penalty: 0,
+                presence_penalty: 0,
+              },
+              ...model,
+            },
+          })
+          .then((e) => e)
       )
       .then(() => {})
   }
