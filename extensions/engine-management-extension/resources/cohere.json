@@ -17,6 +17,7 @@
       "chat_completions": {
         "template": "{% if input_request.stream %} {\"object\": \"chat.completion.chunk\", \"model\": \"{{ input_request.model }}\", \"choices\": [{\"index\": 0, \"delta\": { {% if input_request.event_type == \"text-generation\" %} \"role\": \"assistant\", \"content\": \"{{ input_request.text }}\" {% else %} \"role\": \"assistant\", \"content\": null {% endif %} }, {% if input_request.event_type == \"stream-end\" %} \"finish_reason\": \"{{ input_request.finish_reason }}\" {% else %} \"finish_reason\": null {% endif %} }]} {% else %} {\"id\": \"{{ input_request.generation_id }}\", \"created\": null, \"object\": \"chat.completion\", \"model\": {% if input_request.model %} \"{{ input_request.model }}\" {% else %} \"command-r-plus-08-2024\" {% endif %}, \"choices\": [{ \"index\": 0, \"message\": { \"role\": \"assistant\", \"content\": {% if not input_request.text %} null {% else %}  \"{{ input_request.text }}\" {% endif %}, \"refusal\": null }, \"logprobs\": null, \"finish_reason\": \"{{ input_request.finish_reason }}\" } ], \"usage\": { \"prompt_tokens\": {{ input_request.meta.tokens.input_tokens }}, \"completion_tokens\": {{ input_request.meta.tokens.output_tokens }},\"total_tokens\": {{ input_request.meta.tokens.input_tokens + input_request.meta.tokens.output_tokens }}, \"prompt_tokens_details\": { \"cached_tokens\": 0 },\"completion_tokens_details\": { \"reasoning_tokens\": 0, \"accepted_prediction_tokens\": 0, \"rejected_prediction_tokens\": 0 } }, \"system_fingerprint\": \"fp_6b68a8204b\"} {% endif %}"
       }
-    }
+    },
+    "explore_models_url": "https://docs.cohere.com/v2/docs/models"
   }
 }

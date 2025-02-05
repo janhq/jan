@@ -10,7 +10,7 @@ import { InferenceEngine, Model } from '@janhq/core'
 
 import { Button, Input, Modal } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
-import { PlusIcon } from 'lucide-react'
+import { PlusIcon, ArrowUpRightFromSquare } from 'lucide-react'
 
 import { z } from 'zod'
 
@@ -71,7 +71,7 @@ const ModelAddModel = ({ engine }: { engine: string }) => {
         {prefix}
         {label}
       </span>
-      <p className="mt-1 font-normal text-[hsla(var(--text-secondary))]">
+      <p className="mt-4 font-normal text-[hsla(var(--text-secondary))]">
         {desc}
         {isRequired && <span className="text-red-500">*</span>}
       </p>
@@ -97,7 +97,7 @@ const ModelAddModel = ({ engine }: { engine: string }) => {
       className="w-[500px]"
       content={
         <div>
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
+          <form className="mt-4 space-y-6" onSubmit={handleSubmit(onSubmit)}>
             <div className="space-y-2">
               <label htmlFor="modelName" className="font-semibold">
                 {renderLabel(
@@ -123,14 +123,19 @@ const ModelAddModel = ({ engine }: { engine: string }) => {
                   {errors.modelName.message}
                 </p>
               )}
-              <div className="pt-4">
+              <div className="pt-2">
                 <a
                   target="_blank"
-                  href={engines?.[engine as InferenceEngine]?.[0]?.url}
-                  className="text-[hsla(var(--app-link))]"
+                  href={
+                    engines?.[engine as InferenceEngine]?.[0]?.metadata
+                      ?.explore_models_url ??
+                    engines?.[engine as InferenceEngine]?.[0]?.url
+                  }
+                  className="flex flex-row items-center gap-1 font-medium text-[hsla(var(--app-link))]"
                 >
                   See model list from{' '}
                   {getTitleByEngine(engine as InferenceEngine)}
+                  <ArrowUpRightFromSquare size={13} />
                 </a>
               </div>
             </div>
