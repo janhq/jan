@@ -54,7 +54,7 @@ describe('ModelLabel', () => {
 
   it('renders SlowOnYourDeviceLabel when minimumRamModel is less than totalRam but greater than availableRam', async () => {
     mockUseAtomValue
-      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(50)
       .mockReturnValueOnce(50)
       .mockReturnValueOnce(10)
     mockUseActiveModel.mockReturnValue({
