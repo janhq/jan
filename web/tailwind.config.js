@@ -55,9 +55,8 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        fontFamily: {
-          sans: ['Inter var', ...defaultTheme.fontFamily.sans],
-        },
+        sans: ['Inter', ...defaultTheme.fontFamily.sans],
+        serif: ['Roboto Mono', ...defaultTheme.fontFamily.mono],
       },
     },
   },
