@@ -27,6 +27,8 @@ import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
+import { getLogoEngine } from '@/utils/modelEngine'
+
 import ModalAddModel from './ModalAddModel'
 import ModalDeleteModel from './ModalDeleteModel'
 
@@ -42,6 +44,8 @@ const RemoteEngineSettings = ({
   const [showApiKey, setShowApiKey] = useState(false)
   const remoteModels = downloadedModels.filter((e) => e.engine === name)
   const [isActiveAdvanceSetting, setisActiveAdvanceSetting] = useState(false)
+
+  const customEngineLogo = getLogoEngine(name)
 
   const engine =
     engines &&
@@ -134,17 +138,25 @@ const RemoteEngineSettings = ({
                 <div className="w-full sm:w-3/4">
                   <h6 className="line-clamp-1 font-semibold">API Key</h6>
                   <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                    Enter your authentication key to activate this engine.
-                    {engine.engine && engine.url && (
+                    {!customEngineLogo ? (
                       <span>
-                        &nbsp;Get your API key from{' '}
-                        <a
-                          target="_blank"
-                          href={engine.url}
-                          className="text-[hsla(var(--app-link))]"
-                        >
-                          {getTitleByEngine(engine.engine)}.
-                        </a>
+                        Enter your authentication key to activate this engine.{' '}
+                      </span>
+                    ) : (
+                      <span>
+                        Enter your authentication key to activate this engine.
+                        {engine.engine && engine.url && (
+                          <span>
+                            &nbsp;Get your API key from{' '}
+                            <a
+                              target="_blank"
+                              href={engine.url}
+                              className="text-[hsla(var(--app-link))]"
+                            >
+                              {getTitleByEngine(engine.engine)}.
+                            </a>
+                          </span>
+                        )}
                       </span>
                     )}
                   </p>
