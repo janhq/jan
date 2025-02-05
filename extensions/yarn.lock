@@ -509,61 +509,61 @@ __metadata:
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=28a570&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=3d036d&locator=%40janhq%2Fassistant-extension%40workspace%3Aassistant-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/db6db06721a2eff01d4400d87645529f5447b31274132931cb0848a9bb397b32bc3805105be2f31ca1843be926f4102dbf9fb529502f5f48afb73ae726891232
+  checksum: 10c0/17705794156b91070790dc0bc9adf1ff65405c06b057c9103f325c350f22e25e530fccd9c634b2633d842f8e95eccc30d66370353734f4620ce99657ad4307bd
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=28a570&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=3d036d&locator=%40janhq%2Fconversational-extension%40workspace%3Aconversational-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/db6db06721a2eff01d4400d87645529f5447b31274132931cb0848a9bb397b32bc3805105be2f31ca1843be926f4102dbf9fb529502f5f48afb73ae726891232
+  checksum: 10c0/17705794156b91070790dc0bc9adf1ff65405c06b057c9103f325c350f22e25e530fccd9c634b2633d842f8e95eccc30d66370353734f4620ce99657ad4307bd
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=28a570&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=3d036d&locator=%40janhq%2Fengine-management-extension%40workspace%3Aengine-management-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/db6db06721a2eff01d4400d87645529f5447b31274132931cb0848a9bb397b32bc3805105be2f31ca1843be926f4102dbf9fb529502f5f48afb73ae726891232
+  checksum: 10c0/17705794156b91070790dc0bc9adf1ff65405c06b057c9103f325c350f22e25e530fccd9c634b2633d842f8e95eccc30d66370353734f4620ce99657ad4307bd
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fhardware-management-extension%40workspace%3Ahardware-management-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=28a570&locator=%40janhq%2Fhardware-management-extension%40workspace%3Ahardware-management-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=3d036d&locator=%40janhq%2Fhardware-management-extension%40workspace%3Ahardware-management-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/db6db06721a2eff01d4400d87645529f5447b31274132931cb0848a9bb397b32bc3805105be2f31ca1843be926f4102dbf9fb529502f5f48afb73ae726891232
+  checksum: 10c0/17705794156b91070790dc0bc9adf1ff65405c06b057c9103f325c350f22e25e530fccd9c634b2633d842f8e95eccc30d66370353734f4620ce99657ad4307bd
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=28a570&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=3d036d&locator=%40janhq%2Finference-cortex-extension%40workspace%3Ainference-cortex-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/db6db06721a2eff01d4400d87645529f5447b31274132931cb0848a9bb397b32bc3805105be2f31ca1843be926f4102dbf9fb529502f5f48afb73ae726891232
+  checksum: 10c0/17705794156b91070790dc0bc9adf1ff65405c06b057c9103f325c350f22e25e530fccd9c634b2633d842f8e95eccc30d66370353734f4620ce99657ad4307bd
   languageName: node
   linkType: hard
 
 "@janhq/core@file:../../core/package.tgz::locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension":
   version: 0.1.10
-  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=28a570&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=3d036d&locator=%40janhq%2Fmodel-extension%40workspace%3Amodel-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"
-  checksum: 10c0/db6db06721a2eff01d4400d87645529f5447b31274132931cb0848a9bb397b32bc3805105be2f31ca1843be926f4102dbf9fb529502f5f48afb73ae726891232
+  checksum: 10c0/17705794156b91070790dc0bc9adf1ff65405c06b057c9103f325c350f22e25e530fccd9c634b2633d842f8e95eccc30d66370353734f4620ce99657ad4307bd
   languageName: node
   linkType: hard
 
