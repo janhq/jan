@@ -131,7 +131,7 @@ const ModelAddModel = ({ engine }: { engine: string }) => {
                       ?.explore_models_url ??
                     engines?.[engine as InferenceEngine]?.[0]?.url
                   }
-                  className="flex flex-row items-center gap-1 font-medium text-[hsla(var(--app-link))]"
+                  className="flex flex-row items-center gap-1 font-medium text-[hsla(var(--app-link))] no-underline"
                 >
                   See model list from{' '}
                   {getTitleByEngine(engine as InferenceEngine)}
