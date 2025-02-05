@@ -27,12 +27,12 @@ import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
+import { getLogoEngine } from '@/utils/modelEngine'
+
 import ModalAddModel from './ModalAddModel'
 import ModalDeleteModel from './ModalDeleteModel'
 
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
-
-import { getLogoEngine } from '@/utils/modelEngine'
 
 const RemoteEngineSettings = ({
   engine: name,

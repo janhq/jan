@@ -4,6 +4,7 @@ import { InferenceEngine } from '@janhq/core'
 import { Button, Modal, ModalClose } from '@janhq/joi'
 
 import { Trash2Icon } from 'lucide-react'
+
 import { uninstallEngine } from '@/hooks/useEngineManagement'
 
 const ModalDeleteCustomEngine = ({ engine }: { engine: InferenceEngine }) => {

@@ -8,10 +8,12 @@ import { SettingsIcon } from 'lucide-react'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
+import { getLogoEngine } from '@/utils/modelEngine'
+
+import ModalDeleteCustomEngine from './ModalDeleteCustomEngine'
+
 import { showSettingActiveRemoteEngineAtom } from '@/helpers/atoms/Extension.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { getLogoEngine } from '@/utils/modelEngine'
-import ModalDeleteCustomEngine from './ModalDeleteCustomEngine'
 
 const RemoteEngineItems = ({
   engine,
