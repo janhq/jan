@@ -10,6 +10,8 @@ import { getTitleByEngine } from '@/utils/modelEngine'
 
 import { showSettingActiveRemoteEngineAtom } from '@/helpers/atoms/Extension.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import { getLogoEngine } from '@/utils/modelEngine'
+import ModalDeleteCustomEngine from './ModalDeleteCustomEngine'
 
 const RemoteEngineItems = ({
   engine,
@@ -18,7 +20,7 @@ const RemoteEngineItems = ({
   values: EngineConfig[]
 }) => {
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
-
+  const customEngineLogo = getLogoEngine(engine)
   const [showSettingActiveRemoteEngine, setShowSettingActiveRemoteEngineAtom] =
     useAtom(showSettingActiveRemoteEngineAtom)
 
@@ -60,6 +62,7 @@ const RemoteEngineItems = ({
               checked={!showSettingActiveRemoteEngine.includes(engine)}
               onChange={() => onSwitchChange(engine)}
             />
+            {!customEngineLogo && <ModalDeleteCustomEngine engine={engine} />}
             <Button
               theme="icon"
               variant="outline"
