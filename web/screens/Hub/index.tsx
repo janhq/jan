@@ -232,12 +232,15 @@ const HubScreen = () => {
                     )}
                   >
                     <div
-                      className="h-full w-full rounded-lg border-2 border-[hsla(var(--app-border))] bg-white p-2"
+                      className="h-full w-full rounded-lg border-2 border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] p-2"
                       onClick={() =>
                         setShowHubBannerSetting(!showHubBannerSetting)
                       }
                     >
-                      <ImagePlusIcon size={16} />
+                      <ImagePlusIcon
+                        size={16}
+                        className="text-[hsla(var(--text-secondary))]"
+                      />
                     </div>
                     <div
                       className={twMerge(
