@@ -89,6 +89,9 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
                 {message?.content[0]?.text?.value && (
                   <AutoLink text={message?.content[0]?.text?.value} />
                 )}
+                {!message?.content[0]?.text?.value && (
+                  <span>Something went wrong. Please try again.</span>
+                )}
               </>
             )}
           </p>
