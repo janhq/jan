@@ -65,7 +65,6 @@
 
 pre {
   overflow: auto;
-
   border-radius: 0.4rem;
 }
 pre > code {
@@ -88,6 +87,7 @@ pre > code {
 .code-block {
   pre {
     padding: 0;
+    background: hsla(var(--app-code-block)) !important;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
   }
