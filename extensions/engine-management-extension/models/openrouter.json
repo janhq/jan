@@ -1,16 +1,61 @@
 [
   {
-    "model": "open-router-auto",
+    "model": "deepseek/deepseek-r1:free",
     "object": "model",
-    "name": "OpenRouter",
+    "name": "DeepSeek: R1",
     "version": "1.0",
-    "description": " OpenRouter scouts for the lowest prices and best latencies/throughputs across dozens of providers, and lets you choose how to prioritize them.",
+    "description": "OpenRouter scouts for the lowest prices and best latencies/throughputs across dozens of providers, and lets you choose how to prioritize them.",
     "inference_params": {
-      "max_tokens": 128000,
       "temperature": 0.7,
       "top_p": 0.95,
       "frequency_penalty": 0,
-      "presence_penalty": 0
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "openrouter"
+  },
+  {
+    "model": "deepseek/deepseek-r1-distill-llama-70b:free",
+    "object": "model",
+    "name": "DeepSeek: R1 Distill Llama 70B",
+    "version": "1.0",
+    "description": " OpenRouter scouts for the lowest prices and best latencies/throughputs across dozens of providers, and lets you choose how to prioritize them.",
+    "inference_params": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "openrouter"
+  },
+  {
+    "model": "deepseek/deepseek-r1-distill-llama-70b:free",
+    "object": "model",
+    "name": "DeepSeek: R1 Distill Llama 70B",
+    "version": "1.0",
+    "description": "OpenRouter scouts for the lowest prices and best latencies/throughputs across dozens of providers, and lets you choose how to prioritize them.",
+    "inference_params": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
+    },
+    "engine": "openrouter"
+  },
+  {
+    "model": "meta-llama/llama-3.1-405b-instruct:free",
+    "object": "model",
+    "name": "Meta: Llama 3.1 405B Instruct",
+    "version": "1.0",
+    "description": "OpenRouter scouts for the lowest prices and best latencies/throughputs across dozens of providers, and lets you choose how to prioritize them.",
+    "inference_params": {
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "frequency_penalty": 0,
+      "presence_penalty": 0,
+      "stream": true
     },
     "engine": "openrouter"
   }

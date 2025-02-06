@@ -82,7 +82,6 @@
       "max_tokens": 100000,
       "temperature": 1,
       "top_p": 1,
-      "stream": true,
       "frequency_penalty": 0,
       "presence_penalty": 0
     },

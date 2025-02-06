@@ -1,6 +1,6 @@
 import { Engines, InferenceEngine } from '@janhq/core'
 
-export const getLogoEngine = (engine: InferenceEngine) => {
+export const getLogoEngine = (engine: InferenceEngine | string) => {
   switch (engine) {
     case InferenceEngine.nitro:
     case InferenceEngine.cortex_llamacpp:
@@ -28,6 +28,11 @@ export const getLogoEngine = (engine: InferenceEngine) => {
       return 'images/ModelProvider/cohere.svg'
     case InferenceEngine.nvidia:
       return 'images/ModelProvider/nvidia.svg'
+    // MARK: Deprecating InferenceEngine enum - as it's dynamically provided by the backend
+    case 'google_gemini':
+      return 'images/ModelProvider/google-gemini.svg'
+    case 'deepseek':
+      return 'images/ModelProvider/deepseek.svg'
     default:
       return undefined
   }
@@ -44,7 +49,7 @@ export const isLocalEngine = (engines?: Engines, engine?: string) => {
   return engines[engine as InferenceEngine]?.[0]?.type === 'local'
 }
 
-export const getTitleByEngine = (engine: InferenceEngine) => {
+export const getTitleByEngine = (engine: InferenceEngine | string) => {
   switch (engine) {
     case InferenceEngine.nitro:
     case InferenceEngine.cortex_llamacpp:
@@ -59,6 +64,8 @@ export const getTitleByEngine = (engine: InferenceEngine) => {
       return 'OpenAI'
     case InferenceEngine.openrouter:
       return 'OpenRouter'
+    case 'google_gemini':
+      return 'Google Gemini'
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1)
   }

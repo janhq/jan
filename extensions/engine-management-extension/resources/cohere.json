@@ -1,5 +1,5 @@
 {
-  "id": "@janhq/inference-cohere-extension",
+  "id": "cohere",
   "type": "remote",
   "engine": "cohere",
   "url": "https://dashboard.cohere.com/api-keys",

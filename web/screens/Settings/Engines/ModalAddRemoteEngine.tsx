@@ -124,13 +124,13 @@ const ModalAddRemoteEngine = () => {
             <div className="space-y-2">
               <label htmlFor="chatCmpletionsUrl" className="font-semibold">
                 {renderLabel(
-                  'API Endpoint URL',
+                  'Chat Completions URL',
                   false,
                   `The URL where Jan sends requests to access the AI provider's API.`
                 )}
               </label>
               <Input
-                placeholder="Enter API Endpoint URL"
+                placeholder="Enter Chat Completions Endpoint URL"
                 {...register('chatCmpletionsUrl')}
               />
               {errors.chatCmpletionsUrl && (

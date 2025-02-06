@@ -1,5 +1,5 @@
 {
-  "id": "@janhq/inference-mistral-extension",
+  "id": "mistral",
   "type": "remote",
   "engine": "mistral",
   "url": "https://console.mistral.ai/api-keys/",

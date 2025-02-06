@@ -42,7 +42,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
 import { manualRecommendationModel } from '@/utils/model'
-import { getLogoEngine } from '@/utils/modelEngine'
+import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -252,18 +252,13 @@ const ModelDropdown = ({
           ],
         })
 
-        const defaultContextLength = Math.min(
-          8192,
-          model?.settings.ctx_len ?? 8192
-        )
-
+        const contextLength = model?.settings.ctx_len
+          ? Math.min(8192, model?.settings.ctx_len ?? 8192)
+          : undefined
         const overriddenParameters = {
-          ctx_len: model?.settings.ctx_len ? defaultContextLength : undefined,
-          max_tokens: defaultContextLength
-            ? Math.min(
-                model?.parameters.max_tokens ?? 8192,
-                defaultContextLength
-              )
+          ctx_len: contextLength,
+          max_tokens: contextLength
+            ? Math.min(model?.parameters.max_tokens ?? 8192, contextLength)
             : model?.parameters.max_tokens,
         }
 
@@ -434,7 +429,7 @@ const ModelDropdown = ({
                             />
                           )}
                           <h6 className="font-medium capitalize text-[hsla(var(--text-secondary))]">
-                            {engine.name}
+                            {getTitleByEngine(engine.name)}
                           </h6>
                         </div>
                         <div className="-mr-2 flex gap-1">

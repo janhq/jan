@@ -1,5 +1,5 @@
 {
-  "id": "@janhq/inference-nvidia-extension",
+  "id": "nvidia",
   "type": "remote",
   "engine": "nvidia",
   "url": "https://org.ngc.nvidia.com/setup/personal-keys",
