@@ -196,7 +196,10 @@ export default function useSendChatMessage() {
     }
     updateThread(updatedThread)
 
-    if (!isResend) {
+    if (
+      !isResend &&
+      (newMessage.content.length || newMessage.attachments?.length)
+    ) {
       // Add message
       const createdMessage = await extensionManager
         .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
