@@ -1,5 +1,5 @@
 {
-  "id": "@janhq/inference-anthropic-extension",
+  "id": "anthropic",
   "type": "remote",
   "engine": "anthropic",
   "url": "https://console.anthropic.com/settings/keys",

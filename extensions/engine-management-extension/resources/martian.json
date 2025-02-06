@@ -1,5 +1,5 @@
 {
-  "id": "@janhq/inference-martian-extension",
+  "id": "martian",
   "type": "remote",
   "engine": "martian",
   "url": "https://withmartian.com/dashboard",

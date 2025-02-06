@@ -1,5 +1,5 @@
 {
-  "id": "@janhq/inference-groq-extension",
+  "id": "groq",
   "type": "remote",
   "engine": "groq",
   "url": "https://console.groq.com/keys",

@@ -42,7 +42,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
 
 import { manualRecommendationModel } from '@/utils/model'
-import { getLogoEngine } from '@/utils/modelEngine'
+import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -434,7 +434,7 @@ const ModelDropdown = ({
                             />
                           )}
                           <h6 className="font-medium capitalize text-[hsla(var(--text-secondary))]">
-                            {engine.name}
+                            {getTitleByEngine(engine.name)}
                           </h6>
                         </div>
                         <div className="-mr-2 flex gap-1">
