@@ -252,18 +252,13 @@ const ModelDropdown = ({
           ],
         })
 
-        const defaultContextLength = Math.min(
-          8192,
-          model?.settings.ctx_len ?? 8192
-        )
-
+        const contextLength = model?.settings.ctx_len
+          ? Math.min(8192, model?.settings.ctx_len ?? 8192)
+          : undefined
         const overriddenParameters = {
-          ctx_len: model?.settings.ctx_len ? defaultContextLength : undefined,
-          max_tokens: defaultContextLength
-            ? Math.min(
-                model?.parameters.max_tokens ?? 8192,
-                defaultContextLength
-              )
+          ctx_len: contextLength,
+          max_tokens: contextLength
+            ? Math.min(model?.parameters.max_tokens ?? 8192, contextLength)
             : model?.parameters.max_tokens,
         }
 
