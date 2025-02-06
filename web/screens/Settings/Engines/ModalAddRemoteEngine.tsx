@@ -90,7 +90,7 @@ const ModalAddRemoteEngine = () => {
         <div>
           <p>Install Remote Engine</p>
           <p className="text-sm font-normal text-[hsla(var(--text-secondary))]">
-            Only OpenAI API-compatible engines are supported
+            Only OpenAI API-compatible engines are supported.
           </p>
         </div>
       }
@@ -123,10 +123,14 @@ const ModalAddRemoteEngine = () => {
 
             <div className="space-y-2">
               <label htmlFor="chatCmpletionsUrl" className="font-semibold">
-                {renderLabel('Chat Completion URL', false)}
+                {renderLabel(
+                  'API Endpoint URL',
+                  false,
+                  `The URL where Jan sends requests to access the AI provider's API.`
+                )}
               </label>
               <Input
-                placeholder="Enter your chat completion URL."
+                placeholder="Enter API Endpoint URL"
                 {...register('chatCmpletionsUrl')}
               />
               {errors.chatCmpletionsUrl && (
@@ -141,7 +145,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Model List URL',
                   false,
-                  `URL for fetching available models`
+                  `The endpoint URL to fetch available models.`
                 )}
               </label>
               <Input
@@ -160,7 +164,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'API Key',
                   false,
-                  `Your authentication key from the provider`
+                  `Your authentication key to activate this engine.`
                 )}
               </label>
               <Input
@@ -175,7 +179,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Request Headers Template',
                   false,
-                  `Template for request headers format.`
+                  `HTTP headers template required for API authentication and version specification.`
                 )}
               </label>
               <TextArea
@@ -194,7 +198,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Request Format Conversion',
                   false,
-                  `Function to convert Jan’s request format to this engine API’s format`
+                  `Template to transform OpenAI-compatible requests into provider-specific format.`
                 )}
               </label>
               <TextArea
@@ -208,7 +212,7 @@ const ModalAddRemoteEngine = () => {
                 {renderLabel(
                   'Response Format Conversion',
                   false,
-                  `Function to convert this engine API’s response format to Jan’s format`
+                  `Template to transform provider responses into OpenAI-compatible format.`
                 )}
               </label>
               <TextArea

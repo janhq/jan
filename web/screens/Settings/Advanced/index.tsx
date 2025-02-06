@@ -437,7 +437,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
                 <h6 className="font-semibold capitalize">HTTPS Proxy</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Optional proxy server for internet connections
+                Optional proxy server for internet connections.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -462,11 +462,11 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
                 <h6 className="font-semibold capitalize">Jan Quick Ask</h6>
               </div>
               <p className="font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-                Enable Quick Ask to be triggered via the default hotkey .
+                Enable Quick Ask to be triggered via the default hotkey
                 <span className="text-[hsla(var(--text-secondary)] bg-secondary inline-flex items-center justify-center rounded-full px-1 py-0.5 text-xs font-bold">
                   <span className="font-bold">{isMac ? '⌘' : 'Ctrl'} + J</span>
                 </span>{' '}
-                (reload needed).
+                .
               </p>
             </div>
             <Switch

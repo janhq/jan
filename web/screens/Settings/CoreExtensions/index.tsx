@@ -129,13 +129,6 @@ const ExtensionCatalog = () => {
         </div>
 
         <div className="block w-full px-4">
-          {coreActiveExtensions.length > 0 && (
-            <div className="mb-3 mt-8 border-b border-[hsla(var(--app-border))] pb-4">
-              <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Core Extension
-              </h6>
-            </div>
-          )}
           {coreActiveExtensions
             .filter((x) => x.name.includes(searchText.toLowerCase().trim()))
             .sort((a, b) => a.name.localeCompare(b.name))
