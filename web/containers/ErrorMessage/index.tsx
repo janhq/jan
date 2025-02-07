@@ -23,7 +23,13 @@ import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
-const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
+const ErrorMessage = ({
+  message,
+  errorComponent,
+}: {
+  message?: ThreadMessage
+  errorComponent?: React.ReactNode
+}) => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
@@ -50,7 +56,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
   const getErrorTitle = () => {
     const engine = getEngine()
 
-    switch (message.metadata?.error_code) {
+    switch (message?.metadata?.error_code) {
       case ErrorCode.InvalidApiKey:
       case ErrorCode.AuthenticationError:
         return (
@@ -77,7 +83,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             data-testid="passthrough-error-message"
             className="first-letter:uppercase"
           >
-            {message.content[0]?.text?.value === 'Failed to fetch' &&
+            {message?.content[0]?.text?.value === 'Failed to fetch' &&
             engine &&
             engine?.name !== InferenceEngine.cortex_llamacpp ? (
               <span>
@@ -103,7 +109,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
     <div className="mx-auto my-6 max-w-[700px] px-4">
       <div
         className="mx-auto  max-w-[400px] rounded-lg border border-[hsla(var(--app-border))]"
-        key={message.id}
+        key={message?.id}
       >
         <div className="flex justify-between border-b border-inherit px-4 py-2">
           <h6 className="flex items-center gap-x-1 font-semibold text-[hsla(var(--destructive-bg))]">
@@ -147,7 +153,7 @@ const ErrorMessage = ({ message }: { message: ThreadMessage }) => {
             className="font-serif text-xs leading-relaxed text-[hsla(var(--text-secondary))]"
             ref={errorDivRef}
           >
-            {getErrorTitle()}
+            {errorComponent ? errorComponent : getErrorTitle()}
           </div>
         </div>
       </div>
