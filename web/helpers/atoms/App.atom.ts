@@ -30,3 +30,30 @@ export const copyOverInstructionEnabledAtom = atomWithStorage(
   COPY_OVER_INSTRUCTION_ENABLED,
   false
 )
+
+/**
+ * App Banner Hub Atom - storage last banner setting - default undefined
+ */
+const appBannerHubStorageAtom = atomWithStorage<string | undefined>(
+  'appBannerHub',
+  undefined,
+  undefined,
+  {
+    getOnInit: true,
+  }
+)
+/**
+ * App Hub Banner configured image - Retrieve from appBannerHubStorageAtom - fallback a random banner
+ */
+export const getAppBannerHubAtom = atom<string>(
+  (get) =>
+    get(appBannerHubStorageAtom) ??
+    `./images/HubBanner/banner-${Math.floor(Math.random() * 30) + 1}.jpg`
+)
+
+/**
+ * Set App Hub Banner - store in appBannerHubStorageAtom
+ */
+export const setAppBannerHubAtom = atom(null, (get, set, banner: string) => {
+  set(appBannerHubStorageAtom, banner)
+})

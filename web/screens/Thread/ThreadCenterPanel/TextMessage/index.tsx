@@ -144,11 +144,7 @@ const MessageContainer: React.FC<
                 )}
                 dir="ltr"
               >
-                <MarkdownTextMessage
-                  id={props.id}
-                  text={text}
-                  isUser={isUser}
-                />
+                <MarkdownTextMessage text={text} isUser={isUser} />
               </div>
             )}
           </>

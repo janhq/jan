@@ -21,7 +21,6 @@ import { SUCCESS_SET_NEW_DESTINATION } from '@/screens/Settings/Advanced/DataFol
 import CancelModelImportModal from '@/screens/Settings/CancelModelImportModal'
 import ChooseWhatToImportModal from '@/screens/Settings/ChooseWhatToImportModal'
 import EditModelInfoModal from '@/screens/Settings/EditModelInfoModal'
-import HuggingFaceRepoDetailModal from '@/screens/Settings/HuggingFaceRepoDetailModal'
 import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
@@ -148,7 +147,6 @@ const BaseLayout = () => {
         {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
         <ChooseWhatToImportModal />
         <InstallingExtensionModal />
-        <HuggingFaceRepoDetailModal />
         {showProductAnalyticPrompt && (
           <div className="fixed bottom-4 z-50 m-4 max-w-full rounded-xl border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] p-6 shadow-2xl sm:bottom-8 sm:right-4 sm:m-0 sm:max-w-[400px]">
             <div className="mb-4 flex items-center gap-x-2">
