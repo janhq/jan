@@ -37,6 +37,7 @@ import {
   productAnalyticPromptAtom,
   reduceTransparentAtom,
 } from '@/helpers/atoms/Setting.atom'
+import ModalAppUpdaterChangelog from '../ModalAppUpdaterChangelog'
 
 const BaseLayout = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -222,6 +223,7 @@ const BaseLayout = () => {
         )}
       </div>
       <BottomPanel />
+      <ModalAppUpdaterChangelog />
     </div>
   )
 }
