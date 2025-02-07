@@ -1,6 +1,7 @@
 import { EngineManager, InferenceEngine } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import ErrorMessage from '@/containers/ErrorMessage'
 import ModalTroubleShooting, {
   modalTroubleShootingAtom,
 } from '@/containers/ModalTroubleShoot'
@@ -12,7 +13,6 @@ import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import ErrorMessage from '@/containers/ErrorMessage'
 
 const LoadModelError = () => {
   const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
