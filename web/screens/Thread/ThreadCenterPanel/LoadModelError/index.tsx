@@ -2,9 +2,6 @@ import { EngineManager, InferenceEngine } from '@janhq/core'
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import ErrorMessage from '@/containers/ErrorMessage'
-import ModalTroubleShooting, {
-  modalTroubleShootingAtom,
-} from '@/containers/ModalTroubleShoot'
 
 import { MainViewState } from '@/constants/screens'
 
@@ -15,7 +12,6 @@ import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 
 const LoadModelError = () => {
-  const setModalTroubleShooting = useSetAtom(modalTroubleShootingAtom)
   const loadModelError = useAtomValue(loadModelErrorAtom)
   const setMainState = useSetAtom(mainViewStateAtom)
   const setSelectedSettingScreen = useSetAtom(selectedSettingAtom)
