@@ -3,8 +3,14 @@ title: "How to run AI models locally as a beginner?"
 description: "A straightforward guide to running AI models locally on your computer, regardless of your background."
 tags: AI, local models, Jan, GGUF, privacy, local AI
 categories: guides
-date: 2024-01-31
-ogImage: assets/jan-local-ai.jpg
+date: 2025-01-31
+ogImage: assets/run-ai-locally-with-jan.jpg
+twitter:
+  card: summary_large_image
+  site: "@jandotai"
+  title: "How to run AI models locally as a beginner?"
+  description: "Learn how to run AI models locally on your computer for enhanced privacy and control. Perfect for beginners!"
+  image: assets/run-ai-locally-with-jan.jpg
 ---
 
 import { Callout } from 'nextra/components'
@@ -12,120 +18,147 @@ import CTABlog from '@/components/Blog/CTA'
 
 # How to run AI models locally as a beginner?
 
-Most people think running AI models locally is complicated. It's not. The real complexity lies in believing you need cloud services to use AI. In 2025, anyone can run powerful AI models like DeepSeek, Llama, and Mistral on their own computer. The advantages are significant: complete privacy, no subscription fees, and full control over your AI interactions. This guide will show you how, even if you've never written a line of code.
+Most people think running AI models locally is complicated. It's not. Anyone can run powerful AI models like DeepSeek, Llama, and Mistral on their own computer. This guide will show you how, even if you've never written a line of code.
 
 ## Quick steps:
-1. Download [Jan](https://jan.ai)
-2. Choose a model that fits your hardware
-3. Start using AI locally!
+### 1. Download [Jan](https://jan.ai)
 
-<Callout type="info">
-Benefits of running AI locally:
-- **Privacy:** Your data stays on your device
-- **No subscription:** Pay once for hardware
-- **Speed:** No internet latency
-- **Reliability:** Works offline
-- **Full control:** Choose which AI models to use
+![Jan AI's official website showing the download options](./_assets/jan.ai.jpg "Download Jan from the official website - it's free and open source")
+*Download Jan from [jan.ai](https://jan.ai) - it's free and open source.*
+
+### 2. Choose a model that fits your hardware
+
+![Jan's model selection interface showing various AI models](./_assets/jan-model-selection.jpg "Jan helps you pick the right AI model for your computer")
+*Jan helps you pick the right AI model for your computer.*
+
+### 3. Start using AI locally
+
+That's all to run your first AI model locally!
+
+![Jan's simple and clean chat interface for local AI](./_assets/run-ai-locally-with-jan.jpg "Jan's easy-to-use chat interface after installation")
+*Jan's easy-to-use chat interface after installation.*
+
+Keep reading to learn key terms of local AI and the things you should know before running AI models locally.
+
+## How Local AI Works
+
+Before diving into the details, let's understand how AI runs on your computer:
+
+<Callout>
+**Why do we need special tools for local AI?**
+Think of AI models like compressed files - they need to be "unpacked" to work on your computer. Tools like llama.cpp do this job:
+- They make AI models run efficiently on regular computers
+- Convert complex AI math into something your computer understands
+- Help run large AI models even with limited resources
 </Callout>
 
-## How to run AI models locally as a beginner?
+![llama.cpp GitHub repository showing its popularity and wide adoption](./_assets/ai-locally-llama.cpp.jpg "llama.cpp is widely used and trusted in the AI community")
+*llama.cpp helps millions of people run AI locally on their computers.*
 
-[Jan](https://jan.ai) makes it straightforward to run AI models. Download Jan and you're ready to go - the setup process is streamlined and automated.
+<Callout>
+**What is GGUF and why do we need it?**
 
-<Callout type="info">
-What you can do with Jan:
-- Download Jan
-- Find models that work on your computer
+Original AI models are huge and complex - like trying to read a book in a language your computer doesn't understand. Here's where GGUF comes in:
+
+1. **Problem it solves:**
+   - Original AI models are too big (100s of GB)
+   - They're designed for specialized AI computers
+   - They use too much memory
+
+2. **How GGUF helps:**
+   - Converts models to a smaller size
+   - Makes them work on regular computers
+   - Keeps the AI smart while using less memory
+
+When browsing models, you'll see "GGUF" in the name (like "DeepSeek-R1-GGUF"). Don't worry about finding them - Jan automatically shows you the right GGUF versions for your computer.
 </Callout>
 
-Before diving deeper, let's be clear: this guide is opinionated. Instead of overwhelming you with every possible option, we'll focus on what actually works for beginners. You'll learn essential local AI terms, and more importantly, get clear recommendations on what to do. No "it depends" answers here - just straightforward guidance based on real experience.
+## Understanding AI Models
 
-## Understanding Local AI models
+Think of AI models like apps on your computer - some are light and quick to use, while others are bigger but can do more things. When you're choosing an AI model to run on your computer, you'll see names like "Llama-3-8B" or "Mistral-7B". Let's break down what this means in simple terms.
 
-Think of AI models like engines powering applications - some are compact and efficient, while others are more powerful but require more resources. Let's understand two important terms you'll see often: parameters and quantization.
+<Callout>
+The "B" in model names (like 7B) stands for "billion" - it's just telling you the size of the AI model. Just like how some apps take up more space on your computer, bigger AI models need more space on your computer.
 
-### What's a "Parameter"?
-
-When looking at AI models, you'll see names like "Llama-2-7B" or "Mistral-7B". Here's what that means:
-
-- The "B" means "billion parameters" (like brain cells)
-- More parameters = smarter AI but needs a faster computer
-- Fewer parameters = simpler AI but works on most computers
-
-<Callout type="info">
-Which size to choose?
-- **7B models:** Best for most people - works on most computers
-- **13B models:** Smarter but needs a good graphics card
-- **70B models:** Very smart but needs a powerful computer
+- Smaller models (1-7B): Work great on most computers
+- Bigger models (13B+): Need more powerful computers but can do more complex tasks
 </Callout>
 
-### What's Quantization?
+![Jan Hub interface showing model sizes and types](./_assets/jan-hub-for-ai-models.jpg "Jan Hub makes it easy to understand different model sizes and versions")
+*Jan Hub makes it easy to understand different model sizes and versions*
 
-Quantization is a technique that optimizes AI models to run efficiently on your computer. Think of it like an engine tuning process that balances performance with resource usage:
+**Good news:** Jan helps you pick the right model size for your computer automatically! You don't need to worry about the technical details - just choose a model that matches what Jan recommends for your computer.
 
-Simple guide:
-- **Q4:** Most efficient choice - good balance of speed and quality
-- **Q6:** Enhanced quality with moderate resource usage
-- **Q8:** Highest quality but requires more computational power
+## What You Can Do with Local AI
 
 <Callout type="info">
-Understanding model versions:
-- **Original models:** Full-sized versions with maximum capability (e.g., original DeepSeek)
-- **Distilled models:** Optimized versions that maintain good performance while using fewer resources
-- When you see names like "Qwen" or "Llama", these refer to different model architectures and training approaches
+Running AI locally gives you:
+- Complete privacy - your data stays on your computer
+- No internet needed - works offline
+- Full control - you decide what models to use
+- Free to use - no subscription fees
 </Callout>
-
-Example: A 7B model with Q4 quantization provides an excellent balance for most users.
 
 ## Hardware Requirements
 
-Before downloading an AI model, let's check if your computer can run it.
+Before downloading an AI model, consider checking if your computer can run it. Here's a basic guide:
+
+**The basics your computer needs:**
+- A decent processor (CPU) - most computers from the last 5 years will work fine
+- At least 8GB of RAM - 16GB or more is better
+- Some free storage space - at least 5GB recommended
+
+### What Models Can Your Computer Run?
+
+| | | |
+|---|---|---|
+| Regular Laptop | 3B-7B models | Good for chatting and writing. Like having a helpful assistant |
+| Gaming Laptop | 7B-13B models | More capable. Better at complex tasks like coding and analysis |
+| Powerful Desktop | 13B+ models | Better performance. Great for professional work and advanced tasks |
 
 <Callout type="info">
-The most important thing is VRAM:
-- VRAM is your graphics card's memory
-- More VRAM = ability to run bigger AI models
-- Most computers have between 4GB to 16GB VRAM
+**Not Sure About Your Computer?**
+Start with a smaller model (3B-7B) - Jan will help you choose one that works well on your system.
 </Callout>
 
-### How to check your VRAM:
+## Getting Started with Models
 
-**On Windows:**
-1. Press Windows + R
-2. Type "dxdiag" and press Enter
-3. Click "Display" tab
-4. Look for "Display Memory"
+### Model Versions
 
-**On Mac:**
-1. Click Apple menu
-2. Select "About This Mac"
-3. Click "More Info"
-4. Look under "Graphics/Displays"
+When browsing models in Jan, you'll see terms like "Q4", "Q6", or "Q8". Here's what that means in simple terms:
 
-**On Linux:**
-1. Open Terminal
-2. Run: `nvidia-smi` (for NVIDIA GPUs)
-3. Or: `lspci -v | grep -i vga` (for general GPU info)
+<Callout>
+These are different versions of the same AI model, just packaged differently to work better on different computers:
 
-### Which models can you run?
-
-Here's a simple guide:
-
-| Your VRAM | What You Can Run | What It Can Do |
-|-----------|-----------------|----------------|
-| 4GB | Small models (1-3B) | Basic writing and questions |
-| 6GB | Medium models (7B) | Good for most tasks |
-| 8GB | Larger models (13B) | Better understanding |
-| 16GB | Largest models (32B) | Best performance |
-
-<Callout type="tip">
-Start with smaller models:
-- Try 7B models first - they work well for most people
-- Test how they run on your computer
-- Try larger models only if you need better results
+- **Q4 versions**: Like a "lite" version of an app - runs fast and works on most computers
+- **Q6 versions**: The "standard" version - good balance of speed and quality
+- **Q8 versions**: The "premium" version - highest quality but needs a more powerful computer
 </Callout>
 
-## Setting Up Your Local AI
+**Pro tip**: Start with Q4 versions - they work great for most people and run smoothly on regular computers!
+
+### Getting Models from Hugging Face
+
+You'll often see links to "Hugging Face" when downloading AI models. Think of Hugging Face as the "GitHub for AI" - it's where the AI community shares their models. Jan makes it super easy to use:
+
+1. Jan has a built-in connection to Hugging Face
+2. You can download models right from Jan's interface
+3. No need to visit the Hugging Face website unless you want to explore more options
+
+## Setting up your local AI
+
+### Getting Models from Hugging Face
+
+You'll often see links to "Hugging Face" when downloading AI models. Think of Hugging Face as the "GitHub for AI" - it's where the AI community shares their models. This sounds technical, but Jan makes it super easy to use:
+
+1. Jan has a built-in connection to Hugging Face
+2. You can download models right from Jan's interface
+3. No need to visit the Hugging Face website unless you want to explore more options
+
+<Callout>
+**What powers local AI?**
+Jan uses [llama.cpp](https://github.com/ggerganov/llama.cpp), an inference that makes AI models run efficiently on regular computers. It's like a translator that helps AI models speak your computer's language, making them run faster and use less memory.
+</Callout>
 
 ### 1. Get Started
 Download Jan from [jan.ai](https://jan.ai) - it sets everything up for you.
@@ -134,58 +167,59 @@ Download Jan from [jan.ai](https://jan.ai) - it sets everything up for you.
 
 You can get models two ways:
 
-### 1. Use Jan Hub (Recommended):
+#### 1. Use Jan Hub (Recommended):
    - Click "Download Model" in Jan
    - Pick a recommended model
    - Choose one that fits your computer
 
-![AI model parameters explained](./_assets/jan-model-download.jpg)
+![AI model parameters explained](./_assets/jan-model-download.jpg "Jan Hub makes it easy to download AI models")
 *Use Jan Hub to download AI models*
 
-### 2. Use Hugging Face:
+#### 2. Use Hugging Face:
 
 <Callout type="warning">
 Important: Only GGUF models will work with Jan. Make sure to use models that have "GGUF" in their name.
 </Callout>
 
-#### Step 1: Get the model link
+##### Step 1: Get the model link
 Find and copy a GGUF model link from [Hugging Face](https://huggingface.co)
 
-![Finding a GGUF model on Hugging Face](./_assets/hugging-face-jan-model-download.jpg)
+![Finding a GGUF model on Hugging Face](./_assets/hugging-face-jan-model-download.jpg "Find GGUF models on Hugging Face")
 *Look for models with "GGUF" in their name*
 
-#### Step 2: Open Jan
+##### Step 2: Open Jan
 Launch Jan and go to the Models tab
 
-![Opening Jan's model section](./_assets/jan-library-deepseek-r1.jpg)
+![Opening Jan's model section](./_assets/jan-library-deepseek-r1.jpg "Navigate to the Models section in Jan")
 *Navigate to the Models section in Jan*
 
-#### Step 3: Add the model
+##### Step 3: Add the model
 Paste your Hugging Face link into Jan
 
-![Adding a model from Hugging Face](./_assets/jan-hub-deepseek-r1.jpg)
+![Adding a model from Hugging Face](./_assets/jan-hub-deepseek-r1.jpg "Paste your GGUF model link here")
 *Paste your GGUF model link here*
 
-#### Step 4: Download
+##### Step 4: Download
 Select your quantization and start the download
 
-![Downloading the model](./_assets/jan-hf-model-download.jpg)
+![Downloading the model](./_assets/jan-hf-model-download.jpg "Choose your preferred model size and download")
 *Choose your preferred model size and download*
 
 ### Common Questions
 
-<Callout type="info"> 
 **"My computer doesn't have a graphics card - can I still use AI?"**
+
 Yes! It will run slower but still work. Start with 7B models.
 
 **"Which model should I start with?"**
+
 Try a 7B model first - it's the best balance of smart and fast.
 
 **"Will it slow down my computer?"**
+
 Only while you're using the AI. Close other big programs for better speed.
-</Callout>
 
 ## Need help?
 <Callout type="info">
-Having trouble? We're here to help! [Join our Discord community](https://discord.gg/Exe46xPMbK) for support.
+[Join our Discord community](https://discord.gg/Exe46xPMbK) for support.
 </Callout>
