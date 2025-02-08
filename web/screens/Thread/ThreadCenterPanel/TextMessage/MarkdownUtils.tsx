@@ -1,7 +1,7 @@
 import { Components } from 'react-markdown'
 
 export const markdownComponents: Partial<Components> = {
-  a: ({ node, href, children, ...props }) => (
+  a: ({ href, children, ...props }) => (
     <a
       target="_blank"
       href={href}
