@@ -20,6 +20,8 @@ import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 
+import { markdownComponents } from './MarkdownUtils'
+
 interface Props {
   text: string
   isUser?: boolean
@@ -222,6 +224,7 @@ export const MarkdownTextMessage = memo(
               wrapCodeBlocksWithoutVisit,
             ].filter((e) => !!e) as PluggableList
           }
+          components={markdownComponents}
         >
           {preprocessMarkdown(text)}
         </Markdown>
