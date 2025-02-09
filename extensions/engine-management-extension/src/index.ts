@@ -250,7 +250,10 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
     return this.queue.add(() =>
       ky
         .post(`${API_URL}/v1/engines/${name}/update`, { json: engineConfig })
-        .then((e) => e)
+        .then((e) => {
+          this.populateRemoteModels(engineConfig)
+          return e
+        })
     ) as Promise<{ messages: string }>
   }
 
@@ -357,7 +360,7 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
     return this.getRemoteModels(engineConfig.engine)
       .then((models: ModelList) => {
         Promise.all(
-          models.data?.map((model) =>
+          models?.data?.map((model) =>
             this.addRemoteModel({
               ...model,
               engine: engineConfig.engine as InferenceEngine,
