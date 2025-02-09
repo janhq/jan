@@ -25,10 +25,10 @@ interface ModelList {
   data: Model[]
 }
 /**
- * JSONEngineManagementExtension is a EngineManagementExtension implementation that provides
+ * JanEngineManagementExtension is a EngineManagementExtension implementation that provides
  * functionality for managing engines.
  */
-export default class JSONEngineManagementExtension extends EngineManagementExtension {
+export default class JanEngineManagementExtension extends EngineManagementExtension {
   queue = new PQueue({ concurrency: 1 })
 
   /**
