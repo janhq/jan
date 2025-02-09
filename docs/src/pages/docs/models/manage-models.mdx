@@ -18,7 +18,7 @@ keywords:
   ]
 ---
 import { Callout, Steps } from 'nextra/components'
-import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
+import { Settings, Trash2, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-react'
 
 
 # Model Management
@@ -201,12 +201,12 @@ Modify model parameters under the settings array. Key fields to configure:
 
 ## Cloud model
 <Callout type="info">
-When using cloud models, be aware of any associated costs and rate limits from the providers.
+When using cloud models, be aware of any associated costs and rate limits from the providers. See detailed guide for each cloud model provider [here](/docs/remote-models/anthropic).
 </Callout>
 
 Jan supports connecting to various AI cloud providers that are OpenAI API-compatible, including: OpenAI (GPT-4, o1,...), Anthropic (Claude), Groq, Mistral, and more.
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines** section in the left sidebar, choose your preferred engines (OpenAI, Anthropic, etc.)
+2. Under **Remote Engine** section in the left sidebar, choose your preferred engines (OpenAI, Anthropic, etc.)
 3. Enter your API key
 4. The activated cloud models will be available in your model selector in **Threads**
 
@@ -214,7 +214,25 @@ Jan supports connecting to various AI cloud providers that are OpenAI API-compat
 ![Download Model](../_assets/model-management-06.png)
 <br/>
 
-Cloud models cannot be deleted, but you can hide them by disabling their respective provider engines in **Settings** > **Engines**.
+You can manage & hide respective provider engines in **Settings** > **Engines**:
 <br/>
 ![Download Model](../_assets/model-management-07.png)
+<br/>
+
+### Add Models
+1. In your respective provider's settings page, click **Add Model**
+2. Enter the **model ID**. Check detailed model IDs in the provider's model list, for example, `claude-3-opus-latest`.
+3. A success message will appear when the model is added
+
+<br/>
+![Add Model](../_assets/model-management-08.png)
+<br/>
+
+### Delete Models
+1. In your respective provider's settings page, choose the model you want to delete
+2. Click **Trash Bin** (<Trash2 width={16} height={16} style={{display:"inline"}}/>) icon
+3. The model will be removed from your available models list
+
+<br/>
+![Delete Model](../_assets/model-management-09.png)
 <br/>
