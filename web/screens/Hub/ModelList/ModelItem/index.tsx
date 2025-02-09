@@ -10,6 +10,8 @@ import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 
+import { markdownComponents } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownUtils'
+
 import { toGigabytes } from '@/utils/converter'
 import { extractDescription } from '@/utils/modelSource'
 import '@/styles/components/model.scss'
@@ -31,7 +33,10 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
             <ModelLabel size={model.models?.[0]?.size} />
           </div>
           <div className="flex flex-col">
-            <Markdown className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]">
+            <Markdown
+              className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]"
+              components={markdownComponents}
+            >
               {extractDescription(model.metadata?.description) || '-'}
             </Markdown>
           </div>
