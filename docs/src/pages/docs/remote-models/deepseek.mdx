@@ -1,6 +1,6 @@
 ---
-title: Anthropic
-description: Learn how to integrate Anthropic with Jan for enhanced functionality.
+title: DeepSeek
+description: Learn how to integrate DeepSeek with Jan for enhanced functionality.
 keywords:
   [
     Anthropic API,
@@ -18,15 +18,15 @@ keywords:
 import { Callout, Steps } from 'nextra/components'
 import { Settings, Plus } from 'lucide-react'
 
-# Anthropic
+# DeepSeek
 
-Jan supports [Anthropic](https://anthropic.com/) API integration, allowing you to use Claude models (Claude 3, Claude 2.1, and more) through Jan's interface.
+Jan supports [DeepSeek](https://www.deepseek.com/) API integration, allowing you to use DeepSeek models through Jan's interface.
 
-## Integrate Anthropic API with Jan
+## Integrate DeepSeek API with Jan
 
 <Steps>
 ### Step 1: Get Your API Key 
-1. Visit [Anthropic Console](https://console.anthropic.com/settings/keys) and sign in 
+1. Visit [DeepSeek Console](https://platform.deepseek.com/) and sign in 
 2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
@@ -34,35 +34,35 @@ Ensure your API key has sufficient credits
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your Anthropic API keys in Jan:
+There are two ways to add your DeepSeek API keys in Jan:
 
 **Through Threads:**
 1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
 2. Once the selector is poped up, choose the **Cloud** tab
-3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Anthropic**
-4. Once you are directed to Anthropic settings, insert your **API Key**  
+3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **DeepSeek**
+4. Once you are directed to DeepSeek settings, insert your **API Key**  
 
 **Through Settings:**
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines**, select **Anthropic**
+2. Under **Remote Engines**, select **DeepSeek**
 3. Insert your **API Key**  
 
 <br/>
-![Anthropic](../_assets/anthropic.png)
+![DeepSeek](../_assets/deepseek.png)
 <br/>
 
 ### Step 3: Start Using Anthropic's Models
 
 1. In any existing **Threads** or create a new one
-2. Select an Anthropic model from **model selector**
+2. Select an DeepSeek model from **model selector**
 3. Start chatting
 </Steps>
 
-## Available Anthropic Models
+## Available DeepSeek Models
 
 Jan automatically includes Anthropic's available models. In case you want to use a specific Anthropic model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
-  - See list of available models in [Anthropic Models](https://docs.anthropic.com/claude/docs/models-overview).
-  - The `id` property must match the model name in the list. For example, `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, or `claude-2.1`.
+  - See list of available models in [DeepSeek Models](https://api-docs.deepseek.com/quick_start/pricing).
+  - The `id` property must match the model name in the list. For example, `deepseek-chat` or `deepseek-reasoner`.
 
 ## Troubleshooting
 
@@ -75,7 +75,7 @@ Common issues and solutions:
 
 **2. Connection Problems**
 - Check your internet connection
-- Verify Anthropic's system status
+- Verify [DeepSeek's system status](https://status.deepseek.com/)
 - Look for error messages in [Jan's logs](/docs/troubleshooting#how-to-get-error-logs)
 
 **3. Model Unavailable**
@@ -83,4 +83,4 @@ Common issues and solutions:
 - Check if you're using the correct model ID
 - Verify your Anthropic account has the necessary permissions
 
-Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [Anthropic documentation](https://docs.anthropic.com/claude/docs).
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH).
