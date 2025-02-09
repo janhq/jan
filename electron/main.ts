@@ -28,6 +28,7 @@ import { setupReactDevTool } from './utils/dev'
 import { trayManager } from './managers/tray'
 import { logSystemInfo } from './utils/system'
 import { registerGlobalShortcuts } from './utils/shortcut'
+import { registerLogger } from './utils/logger'
 
 const preloadPath = join(__dirname, 'preload.js')
 const rendererPath = join(__dirname, '..', 'renderer')
@@ -79,6 +80,7 @@ app
   })
   .then(setupCore)
   .then(createUserSpace)
+  .then(registerLogger)
   .then(migrate)
   .then(setupExtensions)
   .then(setupMenu)
