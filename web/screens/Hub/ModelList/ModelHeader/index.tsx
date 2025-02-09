@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import { ModelSource } from '@janhq/core'
 
@@ -19,6 +19,8 @@ import { useSettings } from '@/hooks/useSettings'
 import { toGigabytes } from '@/utils/converter'
 
 import { extractModelName } from '@/utils/modelSource'
+
+import { fuzzySearch } from '@/utils/search'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -66,6 +68,11 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const isDownloaded = downloadedModels.some((md) =>
     model.models.some((m) => m.id === md.id)
   )
+  const defaultModel = useMemo(() => {
+    return model.models?.find(
+      (e) => e.id.includes('q4-km') || fuzzySearch('q4km', e.id)
+    )
+  }, [model])
 
   let downloadButton = (
     <div className="group flex h-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--primary-bg))]">
@@ -76,19 +83,21 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
         <span className="mx-4 font-medium text-white">Download</span>
       </div>
       <Dropdown
-        className="z-50 max-h-[240px] min-w-[240px] max-w-[320px] overflow-y-auto border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow"
+        className="z-50 min-w-[240px]"
         options={model.models?.map((e) => ({
           name: (
             <div className="flex space-x-2">
               <span className="line-clamp-1 max-w-[340px] font-normal">
                 {e.id}
               </span>
-              <Badge
-                theme="secondary"
-                className="inline-flex w-[60px] items-center font-medium"
-              >
-                <span>Default</span>
-              </Badge>
+              {e.id === defaultModel?.id && (
+                <Badge
+                  theme="secondary"
+                  className="inline-flex w-[60px] items-center font-medium"
+                >
+                  <span>Default</span>
+                </Badge>
+              )}
             </div>
           ),
           value: e.id,
