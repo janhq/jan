@@ -17,7 +17,7 @@ interface EngineConfig extends OriginalEngineConfig {
 
 import { ScrollArea, Input, TextArea } from '@janhq/joi'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { set } from 'lodash'
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
@@ -32,7 +32,11 @@ import { getLogoEngine } from '@/utils/modelEngine'
 import ModalAddModel from './ModalAddModel'
 import ModalDeleteModel from './ModalDeleteModel'
 
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import {
+  downloadedModelsAtom,
+  selectedModelAtom,
+} from '@/helpers/atoms/Model.atom'
+import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -44,8 +48,9 @@ const RemoteEngineSettings = ({
   const [showApiKey, setShowApiKey] = useState(false)
   const remoteModels = downloadedModels.filter((e) => e.engine === name)
   const [isActiveAdvanceSetting, setisActiveAdvanceSetting] = useState(false)
-
+  const setSelectedModel = useSetAtom(selectedModelAtom)
   const customEngineLogo = getLogoEngine(name)
+  const threads = useAtomValue(threadsAtom)
 
   const engine =
     engines &&
@@ -100,6 +105,9 @@ const RemoteEngineSettings = ({
   })
 
   useEffect(() => {
+    if (threads.length === 0) {
+      setSelectedModel(remoteModels[0])
+    }
     if (engine) {
       setData({
         api_key: engine.api_key || '',
