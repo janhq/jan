@@ -359,17 +359,18 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
   private populateRemoteModels = async (engineConfig: EngineConfig) => {
     return this.getRemoteModels(engineConfig.engine)
       .then((models: ModelList) => {
-        Promise.all(
-          models?.data?.map((model) =>
-            this.addRemoteModel({
-              ...model,
-              engine: engineConfig.engine as InferenceEngine,
-              model: model.model ?? model.id,
-            }).catch(console.info)
-          )
-        ).then(() => {
-          events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
-        })
+        if (models?.data)
+          Promise.all(
+            models.data.map((model) =>
+              this.addRemoteModel({
+                ...model,
+                engine: engineConfig.engine as InferenceEngine,
+                model: model.model ?? model.id,
+              }).catch(console.info)
+            )
+          ).then(() => {
+            events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
+          })
       })
       .catch(console.info)
   }
