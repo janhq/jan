@@ -250,10 +250,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
     return this.queue.add(() =>
       ky
         .post(`${API_URL}/v1/engines/${name}/update`, { json: engineConfig })
-        .then((e) => {
-          this.populateRemoteModels(engineConfig)
-          return e
-        })
+        .then((e) => e)
     ) as Promise<{ messages: string }>
   }
 
