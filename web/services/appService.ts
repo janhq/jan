@@ -34,7 +34,9 @@ export const appService = {
     const hardwareInfo = await hardwareExtension?.getHardware()
 
     const gpuSettingInfo: GpuSetting | undefined = {
-      gpus: hardwareInfo.gpus as GpuSettingInfo[],
+      gpus: hardwareInfo.gpus.filter(
+        (gpu) => gpu.total_vram > 0
+      ) as GpuSettingInfo[],
       vulkan: isMac ? false : selectedVariants.includes('vulkan'),
       cpu: hardwareInfo.cpu,
     }
