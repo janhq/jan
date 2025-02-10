@@ -549,75 +549,82 @@ const ModelDropdown = ({
                               (c) => c.id === model.id
                             )
                             return (
-                              <li
-                                key={model.id}
-                                className={twMerge(
-                                  'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                                  !isConfigured
-                                    ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
-                                    : 'text-[hsla(var(--text-primary))]'
-                                )}
-                                onClick={() => {
-                                  if (!isConfigured && engine.type === 'remote')
-                                    return null
-                                  if (isDownloaded) {
-                                    onClickModelItem(model.id)
-                                  }
-                                }}
-                              >
-                                <div className="flex gap-x-2">
-                                  <p
+                              <>
+                                {isDownloaded && (
+                                  <li
+                                    key={model.id}
                                     className={twMerge(
-                                      'line-clamp-1',
-                                      !isDownloaded &&
-                                        'text-[hsla(var(--text-secondary))]'
+                                      'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
+                                      !isConfigured
+                                        ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
+                                        : 'text-[hsla(var(--text-primary))]'
                                     )}
-                                    title={model.name}
-                                  >
-                                    {model.name}
-                                  </p>
-                                  <ModelLabel
-                                    metadata={model.metadata}
-                                    compact
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                  {!isDownloaded && (
-                                    <span className="font-medium">
-                                      {toGibibytes(model.metadata?.size)}
-                                    </span>
-                                  )}
-                                  {!isDownloading && !isDownloaded ? (
-                                    <DownloadCloudIcon
-                                      size={18}
-                                      className="cursor-pointer text-[hsla(var(--app-link))]"
-                                      onClick={() =>
-                                        downloadModel(
-                                          model.sources[0].url,
-                                          model.id
-                                        )
+                                    onClick={() => {
+                                      if (
+                                        !isConfigured &&
+                                        engine.type === 'remote'
+                                      )
+                                        return null
+                                      if (isDownloaded) {
+                                        onClickModelItem(model.id)
                                       }
-                                    />
-                                  ) : (
-                                    Object.values(downloadStates)
-                                      .filter((x) => x.modelId === model.id)
-                                      .map((item) => (
-                                        <ProgressCircle
-                                          key={item.modelId}
-                                          percentage={
-                                            formatDownloadPercentage(
-                                              item?.percent,
-                                              {
-                                                hidePercentage: true,
-                                              }
-                                            ) as number
+                                    }}
+                                  >
+                                    <div className="flex gap-x-2">
+                                      <p
+                                        className={twMerge(
+                                          'line-clamp-1',
+                                          !isDownloaded &&
+                                            'text-[hsla(var(--text-secondary))]'
+                                        )}
+                                        title={model.name}
+                                      >
+                                        {model.name}
+                                      </p>
+                                      <ModelLabel
+                                        metadata={model.metadata}
+                                        compact
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                      {!isDownloaded && (
+                                        <span className="font-medium">
+                                          {toGibibytes(model.metadata?.size)}
+                                        </span>
+                                      )}
+                                      {!isDownloading && !isDownloaded ? (
+                                        <DownloadCloudIcon
+                                          size={18}
+                                          className="cursor-pointer text-[hsla(var(--app-link))]"
+                                          onClick={() =>
+                                            downloadModel(
+                                              model.sources[0].url,
+                                              model.id
+                                            )
                                           }
-                                          size={100}
                                         />
-                                      ))
-                                  )}
-                                </div>
-                              </li>
+                                      ) : (
+                                        Object.values(downloadStates)
+                                          .filter((x) => x.modelId === model.id)
+                                          .map((item) => (
+                                            <ProgressCircle
+                                              key={item.modelId}
+                                              percentage={
+                                                formatDownloadPercentage(
+                                                  item?.percent,
+                                                  {
+                                                    hidePercentage: true,
+                                                  }
+                                                ) as number
+                                              }
+                                              size={100}
+                                            />
+                                          ))
+                                      )}
+                                    </div>
+                                  </li>
+                                )}
+                              </>
                             )
                           })}
                       </ul>
