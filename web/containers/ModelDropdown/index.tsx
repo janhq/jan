@@ -489,7 +489,8 @@ const ModelDropdown = ({
                                     <span className="font-medium">
                                       {toGibibytes(model.metadata?.size)}
                                     </span>
-                                    {!isDownloading ? (
+                                    {!isDownloading &&
+                                    isLocalEngine(model.engine) ? (
                                       <DownloadCloudIcon
                                         size={18}
                                         className="cursor-pointer text-[hsla(var(--app-link))]"
