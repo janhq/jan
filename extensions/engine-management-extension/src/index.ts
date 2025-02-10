@@ -341,9 +341,11 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
         })
       )
       events.emit(EngineEvent.OnEngineUpdate, {})
-      DEFAULT_REMOTE_MODELS.forEach(async (data: Model) => {
-        await this.addRemoteModel(data).catch(() => {})
-      })
+      await Promise.all(
+        DEFAULT_REMOTE_MODELS.map((data: Model) =>
+          this.addRemoteModel(data).catch(() => {})
+        )
+      )
       events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
     }
   }
