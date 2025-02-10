@@ -11,6 +11,7 @@ import {
   events,
   DownloadEvent,
   OptionType,
+  ModelSource,
 } from '@janhq/core'
 import { CortexAPI } from './cortex'
 import { scanModelsFolder } from './legacy/model-json'
@@ -242,6 +243,35 @@ export default class JanModelExtension extends ModelExtension {
   ): Promise<void> {
     return this.cortexAPI.importModel(model, modelPath, name, option)
   }
+
+  // BEGIN - Model Sources
+  /**
+   * Get model sources
+   * @param model
+   */
+  async getSources(): Promise<ModelSource[]> {
+    const sources = await this.cortexAPI.getSources()
+    return sources.concat(
+      DEFAULT_MODEL_SOURCES.filter((e) => !sources.some((x) => x.id === e.id))
+    )
+  }
+
+  /**
+   * Add a model source
+   * @param model
+   */
+  async addSource(source: string): Promise<any> {
+    return this.cortexAPI.addSource(source)
+  }
+
+  /**
+   * Delete a model source
+   * @param model
+   */
+  async deleteSource(source: string): Promise<any> {
+    return this.cortexAPI.deleteSource(source)
+  }
+  // END - Model Sources
 
   /**
    * Check model status

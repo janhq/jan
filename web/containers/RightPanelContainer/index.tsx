@@ -7,7 +7,7 @@ import {
 } from 'react'
 
 import { ScrollArea, useClickOutside, useMediaQuery } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { atom, useAtom, useAtomValue } from 'jotai'
 
 import { twMerge } from 'tailwind-merge'
 
@@ -19,11 +19,11 @@ type Props = PropsWithChildren
 const DEFAULT_RIGHT_PANEL_WIDTH = 280
 export const RIGHT_PANEL_WIDTH = 'rightPanelWidth'
 
+export const rightPanelWidthAtom = atom(DEFAULT_RIGHT_PANEL_WIDTH)
+
 const RightPanelContainer = ({ children }: Props) => {
   const [isResizing, setIsResizing] = useState(false)
-  const [threadRightPanelWidth, setRightPanelWidth] = useState(
-    Number(localStorage.getItem(RIGHT_PANEL_WIDTH)) || DEFAULT_RIGHT_PANEL_WIDTH
-  )
+  const [rightPanelWidth, setRightPanelWidth] = useAtom(rightPanelWidthAtom)
   const [rightPanelRef, setRightPanelRef] = useState<HTMLDivElement | null>(
     null
   )
@@ -40,10 +40,12 @@ const RightPanelContainer = ({ children }: Props) => {
 
   const startResizing = useCallback(() => {
     setIsResizing(true)
+    document.body.classList.add('select-none')
   }, [])
 
   const stopResizing = useCallback(() => {
     setIsResizing(false)
+    document.body.classList.remove('select-none')
   }, [])
 
   const resize = useCallback(
@@ -72,7 +74,7 @@ const RightPanelContainer = ({ children }: Props) => {
         }
       }
     },
-    [isResizing, rightPanelRef, setShowRightPanel]
+    [isResizing, rightPanelRef, setRightPanelWidth, setShowRightPanel]
   )
 
   useEffect(() => {
@@ -86,7 +88,7 @@ const RightPanelContainer = ({ children }: Props) => {
       window.removeEventListener('mousemove', resize)
       window.removeEventListener('mouseup', stopResizing)
     }
-  }, [resize, stopResizing])
+  }, [resize, setRightPanelWidth, stopResizing])
 
   return (
     <div
@@ -100,7 +102,7 @@ const RightPanelContainer = ({ children }: Props) => {
         reduceTransparent &&
           'border-l border-[hsla(var(--app-border))] bg-[hsla(var(--right-panel-bg))]'
       )}
-      style={{ width: showRightPanel ? threadRightPanelWidth : 0 }}
+      style={{ width: showRightPanel ? rightPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.preventDefault()}
     >
       <ScrollArea className="h-full w-full">

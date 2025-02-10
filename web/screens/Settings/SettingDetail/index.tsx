@@ -1,9 +1,12 @@
+import React, { useState } from 'react'
+
 import { InferenceEngine } from '@janhq/core'
 import { useAtomValue } from 'jotai'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import Advanced from '@/screens/Settings/Advanced'
+import ProxySettings from '@/screens/Settings/Advanced/ProxySettings'
 import AppearanceOptions from '@/screens/Settings/Appearance'
 import ExtensionCatalog from '@/screens/Settings/CoreExtensions'
 import Engines from '@/screens/Settings/Engines'
@@ -21,6 +24,7 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 const SettingDetail = () => {
   const selectedSetting = useAtomValue(selectedSettingAtom)
   const { engines } = useGetEngines()
+  const [subdir, setSubdir] = useState<string | null>(null)
 
   switch (selectedSetting) {
     case 'Engines':
@@ -39,7 +43,12 @@ const SettingDetail = () => {
       return <Privacy />
 
     case 'Advanced Settings':
-      return <Advanced />
+      switch (subdir) {
+        case 'proxy':
+          return <ProxySettings onBack={() => setSubdir(null)} />
+        default:
+          return <Advanced setSubdir={setSubdir} />
+      }
 
     case 'My Models':
       return <MyModels />

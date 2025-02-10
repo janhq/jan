@@ -16,7 +16,7 @@ import useDeleteModel from '@/hooks/useDeleteModel'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
@@ -57,8 +57,7 @@ const MyModelList = ({ model }: Props) => {
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                !isLocalEngine(engines, model.engine) &&
-                  'max-w-none text-[hsla(var(--text-secondary))]'
+                !isLocalEngine(engines, model.engine) && 'max-w-none'
               )}
               title={model.name}
             >
@@ -81,7 +80,7 @@ const MyModelList = ({ model }: Props) => {
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">
-                {model.metadata?.size ? toGibibytes(model.metadata?.size) : '-'}
+                {model.metadata?.size ? toGigabytes(model.metadata?.size) : '-'}
               </Badge>
             </div>
 

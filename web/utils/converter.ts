@@ -1,4 +1,4 @@
-export const toGibibytes = (
+export const toGigabytes = (
   input: number,
   options?: { hideUnit?: boolean }
 ) => {
@@ -24,7 +24,7 @@ export const formatDownloadPercentage = (
 
 export const formatDownloadSpeed = (input: number | undefined) => {
   if (!input) return '0B/s'
-  return toGibibytes(input) + '/s'
+  return toGigabytes(input) + '/s'
 }
 
 export const formatTwoDigits = (input: number) => {

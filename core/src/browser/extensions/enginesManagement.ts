@@ -5,6 +5,7 @@ import {
   EngineReleased,
   EngineConfig,
   DefaultEngineVariant,
+  Model,
 } from '../../types'
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
 
@@ -102,6 +103,11 @@ export abstract class EngineManagementExtension extends BaseExtension {
     name: InferenceEngine,
     engineConfig?: EngineConfig
   ): Promise<{ messages: string }>
+
+  /**
+   * Add a new remote model for a specific engine
+   */
+  abstract addRemoteModel(model: Model): Promise<void>
 
   /**
    * @returns A Promise that resolves to an object of remote models list .

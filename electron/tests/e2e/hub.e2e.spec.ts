@@ -17,7 +17,7 @@ test('explores hub', async ({ hubPage }) => {
   await hubPage.navigateByMenu()
   await hubPage.verifyContainerVisible()
   await hubPage.scrollToBottom()
-  const useModelBtn = page.getByTestId(/^use-model-btn-.*/).first()
+  const useModelBtn = page.getByTestId(/^setup-btn/).first()
 
   await expect(useModelBtn).toBeVisible({
     timeout: TIMEOUT,

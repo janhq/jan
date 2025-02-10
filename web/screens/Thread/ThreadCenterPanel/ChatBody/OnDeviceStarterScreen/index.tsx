@@ -26,7 +26,7 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
   getLogoEngine,
@@ -112,7 +112,10 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
 
   return (
     <CenterPanelContainer isShowStarterScreen={isShowStarterScreen}>
-      <ScrollArea className="flex h-full w-full items-center">
+      <ScrollArea
+        className="flex h-full w-full items-center"
+        data-testid="onboard-screen"
+      >
         <div className="relative mt-4 flex h-full w-full flex-col items-center justify-center">
           <div className="mx-auto flex h-full w-3/4 flex-col items-center justify-center py-16 text-center">
             <LogoMark
@@ -162,11 +165,11 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               >
                                 {model.name}
                               </p>
-                              <ModelLabel metadata={model.metadata} compact />
+                              <ModelLabel size={model.metadata?.size} compact />
                             </div>
                             <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                               <span className="font-medium">
-                                {toGibibytes(model.metadata?.size)}
+                                {toGigabytes(model.metadata?.size)}
                               </span>
                               {!isDownloading ? (
                                 <DownloadCloudIcon
@@ -259,7 +262,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               </div>
                             ))}
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGibibytes(featModel.metadata?.size)}
+                            {toGigabytes(featModel.metadata?.size)}
                           </span>
                         </div>
                       ) : (
@@ -278,7 +281,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                             Download
                           </Button>
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGibibytes(featModel.metadata?.size)}
+                            {toGigabytes(featModel.metadata?.size)}
                           </span>
                         </div>
                       )}

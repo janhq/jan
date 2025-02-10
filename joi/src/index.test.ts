@@ -15,6 +15,7 @@ jest.mock('./core/Select/styles.scss', () => ({}))
 jest.mock('./core/TextArea/styles.scss', () => ({}))
 jest.mock('./core/Tabs/styles.scss', () => ({}))
 jest.mock('./core/Accordion/styles.scss', () => ({}))
+jest.mock('./core/Dropdown/styles.scss', () => ({}))
 
 describe('Exports', () => {
   it('exports all components and hooks', () => {
