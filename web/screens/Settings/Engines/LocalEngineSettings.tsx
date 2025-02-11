@@ -60,7 +60,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
 
   const isEngineUpdated =
     latestReleasedEngine &&
-    latestReleasedEngine.every((item) =>
+    latestReleasedEngine.some((item) =>
       item.name.includes(
         defaultEngineVariant?.version.replace(/^v/, '') as string
       )
