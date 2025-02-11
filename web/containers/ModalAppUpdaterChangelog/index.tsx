@@ -1,9 +1,15 @@
-import { Button, Modal } from '@janhq/joi'
 import React, { useEffect, useState } from 'react'
-import LogoMark from '../Brand/Logo/Mark'
-import { useGetLatestRelease } from '@/hooks/useGetLatestRelease'
-import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
+
+import { Button, Modal } from '@janhq/joi'
+
 import { useAtom } from 'jotai'
+
+import { useGetLatestRelease } from '@/hooks/useGetLatestRelease'
+
+import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
+
+import LogoMark from '../Brand/Logo/Mark'
+
 import { appUpdateAvailableAtom } from '@/helpers/atoms/App.atom'
 
 const ModalAppUpdaterChangelog = () => {

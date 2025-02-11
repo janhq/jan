@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import useSWR from 'swr'
 
 const fetchLatestRelease = async (includeBeta: boolean) => {

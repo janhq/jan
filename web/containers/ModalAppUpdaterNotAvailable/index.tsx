@@ -1,7 +1,11 @@
-import { Button, Modal } from '@janhq/joi'
 import React, { useEffect, useState } from 'react'
-import LogoMark from '../Brand/Logo/Mark'
+
+import { Button, Modal } from '@janhq/joi'
+
 import { useAtom } from 'jotai'
+
+import LogoMark from '../Brand/Logo/Mark'
+
 import { appUpdateNotAvailableAtom } from '@/helpers/atoms/App.atom'
 
 const ModalAppUpdaterNotAvailable = () => {
