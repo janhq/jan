@@ -13,7 +13,7 @@ export type GpuAdditionalInformation = {
 
 export type Gpu = {
   activated: boolean
-  additional_information: GpuAdditionalInformation
+  additional_information?: GpuAdditionalInformation
   free_vram: number
   id: string
   name: string
