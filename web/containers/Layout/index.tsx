@@ -38,6 +38,7 @@ import {
   reduceTransparentAtom,
 } from '@/helpers/atoms/Setting.atom'
 import ModalAppUpdaterChangelog from '../ModalAppUpdaterChangelog'
+import ModalAppUpdaterNotAvailable from '../ModalAppUpdaterNotAvailable'
 
 const BaseLayout = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -224,6 +225,7 @@ const BaseLayout = () => {
       </div>
       <BottomPanel />
       <ModalAppUpdaterChangelog />
+      <ModalAppUpdaterNotAvailable />
     </div>
   )
 }

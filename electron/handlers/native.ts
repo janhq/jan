@@ -1,4 +1,5 @@
 import { app, ipcMain, dialog, shell, nativeTheme } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { join } from 'path'
 import { windowManager } from '../managers/window'
 import {
@@ -26,6 +27,10 @@ export function handleAppIPCs() {
    */
   ipcMain.handle(NativeRoute.openAppDirectory, async (_event) => {
     shell.openPath(getJanDataFolderPath())
+  })
+
+  ipcMain.handle(NativeRoute.appUpdateDownload, async (_event) => {
+    autoUpdater.downloadUpdate()
   })
 
   /**

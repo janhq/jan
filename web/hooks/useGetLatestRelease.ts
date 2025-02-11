@@ -1,18 +1,32 @@
 import useSWR from 'swr'
 
-const fetchLatestRelease = async () => {
-  const res = await fetch(
-    'https://api.github.com/repos/janhq/jan/releases/latest'
+const fetchLatestRelease = async (includeBeta: boolean) => {
+  const res = await fetch('https://api.github.com/repos/janhq/jan/releases')
+  if (!res.ok) throw new Error('Failed to fetch releases')
+
+  const releases = await res.json()
+
+  // Filter stable and beta releases
+  const stableRelease = releases.find(
+    (release: { prerelease: any; draft: any }) =>
+      !release.prerelease && !release.draft
   )
-  if (!res.ok) throw new Error('Failed to fetch latest release')
-  return res.json()
+  const betaRelease = releases.find(
+    (release: { prerelease: any }) => release.prerelease
+  )
+
+  return includeBeta ? (betaRelease ?? stableRelease) : stableRelease
 }
 
-export function useGetLatestRelease() {
-  const { data, error, mutate } = useSWR('latestRelease', fetchLatestRelease, {
-    revalidateOnFocus: false,
-    revalidateOnReconnect: true,
-  })
+export function useGetLatestRelease(includeBeta = false) {
+  const { data, error, mutate } = useSWR(
+    ['latestRelease', includeBeta],
+    () => fetchLatestRelease(includeBeta),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  )
 
   return { release: data, error, mutate }
 }
