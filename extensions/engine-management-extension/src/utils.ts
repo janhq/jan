@@ -60,8 +60,13 @@ const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
 export const engineVariant = async (
   gpuSetting?: GpuSetting
 ): Promise<string> => {
+  const platform = os(gpuSetting)
+
+  // There is no need to append the variant extension for mac
+  if (platform.startsWith('mac')) return platform
+
   let engineVariant = [
-    os(gpuSetting),
+    platform,
     gpuSetting?.vulkan
       ? 'vulkan'
       : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx
