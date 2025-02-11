@@ -27,6 +27,9 @@ function run(): Promise<any> {
     const binPath = path.join(__dirname, '..', 'bin')
 
     const executablePath = path.join(binPath, binaryName)
+
+    addEnvPaths(binPath)
+
     const sharedPath = path.join(appResourcePath(), 'shared')
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executablePath}`)
@@ -73,6 +76,22 @@ function run(): Promise<any> {
  */
 function dispose() {
   watchdog?.terminate()
+}
+
+/**
+ * Set the environment paths for the cortex subprocess
+ * @param dest
+ */
+function addEnvPaths(dest: string) {
+  // Add engine path to the PATH and LD_LIBRARY_PATH
+  if (process.platform === 'win32') {
+    process.env.PATH = (process.env.PATH || '').concat(path.delimiter, dest)
+  } else {
+    process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
+      path.delimiter,
+      dest
+    )
+  }
 }
 
 /**
