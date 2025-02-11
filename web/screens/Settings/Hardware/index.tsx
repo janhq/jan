@@ -317,7 +317,7 @@ const Hardware = () => {
                                       Compute Capability
                                     </div>
                                     <span>
-                                      {item.additional_information.compute_cap}
+                                      {item.additional_information?.compute_cap}
                                     </span>
                                   </div>
                                 </div>

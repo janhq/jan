@@ -1,4 +1,4 @@
-
+import { GpuAdditionalInformation } from '../hardware'
 
 export type SystemResourceInfo = {
   memAvailable: number
@@ -12,13 +12,14 @@ export type GpuSetting = {
 }
 
 export type GpuSettingInfo = {
-  activated: boolean;
-  free_vram: number;
-  id: string;
-  name: string;
-  total_vram: number;
-  uuid: string;
-  version: string;
+  activated: boolean
+  free_vram: number
+  id: string
+  name: string
+  total_vram: number
+  uuid: string
+  version: string
+  additional_information?: GpuAdditionalInformation
 }
 
 export type SystemInformation = {

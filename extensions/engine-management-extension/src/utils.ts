@@ -1,8 +1,4 @@
-
-import {
-  GpuSetting,
-  log,
-} from '@janhq/core'
+import { GpuSetting, log } from '@janhq/core'
 
 /**
  * The GPU runMode that will be set - either 'vulkan', 'cuda', or empty for cpu.
@@ -10,14 +6,15 @@ import {
  * @returns
  */
 
- const gpuRunMode = (settings?: GpuSetting): string => {
-
-  if (!settings) return ''
-
-  return settings.vulkan === true ||
-    settings.gpus?.some((gpu) => gpu.activated !== true)
-    ? ''
-    : 'cuda'
+const gpuRunMode = (settings?: GpuSetting): string => {
+  return settings.gpus?.some(
+    (gpu) =>
+      gpu.activated === true &&
+      gpu.additional_information &&
+      gpu.additional_information.driver_version
+  )
+    ? 'cuda'
+    : ''
 }
 
 /**
@@ -28,10 +25,10 @@ const os = (settings?: GpuSetting): string => {
   return PLATFORM === 'win32'
     ? 'windows-amd64'
     : PLATFORM === 'darwin'
-    ? settings?.cpu?.arch === 'arm64'
-      ? 'mac-arm64'
-      : 'mac-amd64'
-    : 'linux-amd64'
+      ? settings?.cpu?.arch === 'arm64'
+        ? 'mac-arm64'
+        : 'mac-amd64'
+      : 'linux-amd64'
 }
 
 /**
@@ -60,16 +57,18 @@ const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
 /**
  * Find which variant to run based on the current platform.
  */
-export const engineVariant = async (gpuSetting?: GpuSetting): Promise<string> => {
+export const engineVariant = async (
+  gpuSetting?: GpuSetting
+): Promise<string> => {
   let engineVariant = [
     os(gpuSetting),
     gpuSetting?.vulkan
       ? 'vulkan'
       : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx
-          gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
-        gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
-      ? 'avx2'
-      : 'noavx',
+            gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
+          gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
+        ? 'avx2'
+        : 'noavx',
     gpuRunMode(gpuSetting),
     cudaVersion(gpuSetting),
   ]
