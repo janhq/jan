@@ -35,8 +35,7 @@ import FactoryReset from './FactoryReset'
 
 import {
   experimentalFeatureEnabledAtom,
-  proxyEnabledAtom,
-  vulkanEnabledAtom,
+  proxyEnabledAtomAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
@@ -116,7 +115,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
     if (e.target.checked) return
 
     // It affects other settings, so we need to reset them
-    const isRelaunch = quickAskEnabled || vulkanEnabled
+    const isRelaunch = quickAskEnabled
     if (quickAskEnabled) await updateQuickAskEnabled(false, false)
     if (isRelaunch) window.core?.api?.relaunch()
   }
