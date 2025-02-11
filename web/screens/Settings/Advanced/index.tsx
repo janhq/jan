@@ -1,32 +1,19 @@
 'use client'
 
-import { useEffect, useState, ChangeEvent } from 'react'
+import { ChangeEvent } from 'react'
 
-import { openExternalUrl, AppConfiguration } from '@janhq/core'
+import { AppConfiguration } from '@janhq/core'
 
-import {
-  ScrollArea,
-  Switch,
-  Input,
-  Tooltip,
-  Checkbox,
-  useClickOutside,
-  Button,
-} from '@janhq/joi'
+import { ScrollArea, Switch, Button } from '@janhq/joi'
 
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { ChevronDownIcon, ArrowRightIcon } from 'lucide-react'
-import { AlertTriangleIcon, AlertCircleIcon } from 'lucide-react'
-
-import { twMerge } from 'tailwind-merge'
+import { ArrowRightIcon } from 'lucide-react'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import { snackbar, toaster } from '@/containers/Toast'
+import { toaster } from '@/containers/Toast'
 
-import { useActiveModel } from '@/hooks/useActiveModel'
 import { useConfigurations } from '@/hooks/useConfigurations'
-import { useSettings } from '@/hooks/useSettings'
 
 import ModalDeleteAllThreads from '@/screens/Thread/ThreadLeftPanel/ModalDeleteAllThreads'
 
@@ -35,19 +22,13 @@ import FactoryReset from './FactoryReset'
 
 import {
   experimentalFeatureEnabledAtom,
-  proxyEnabledAtomAtom,
+  proxyEnabledAtom,
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
 import { ThreadModalAction } from '@/helpers/atoms/Thread.atom'
 
 import { modalActionThreadAtom } from '@/helpers/atoms/Thread.atom'
-
-type GPU = {
-  id: string
-  vram: number | null
-  name: string
-}
 
 /**
  * Advanced Settings Screen
@@ -61,16 +42,8 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
   const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
 
-  const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
-    null
-  )
   const { configurePullOptions } = useConfigurations()
 
-  const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
-
-  const { readSettings, saveSettings } = useSettings()
-  const { stopModel } = useActiveModel()
-  const [open, setOpen] = useState(false)
   const setModalActionThread = useSetAtom(modalActionThreadAtom)
 
   /**
@@ -119,11 +92,6 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
     if (quickAskEnabled) await updateQuickAskEnabled(false, false)
     if (isRelaunch) window.core?.api?.relaunch()
   }
-
-  /**
-   * Handle click outside
-   */
-  useClickOutside(() => setOpen(false), null, [dropdownOptions, toggle])
 
   return (
     <ScrollArea className="h-full w-full px-4">
