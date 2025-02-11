@@ -31,6 +31,8 @@ export enum NativeRoute {
 
   startServer = 'startServer',
   stopServer = 'stopServer',
+
+  appUpdateDownload = 'appUpdateDownload',
 }
 
 /**
@@ -50,6 +52,8 @@ export enum AppRoute {
 }
 
 export enum AppEvent {
+  onAppUpdateNotAvailable = 'onAppUpdateNotAvailable',
+  onAppUpdateAvailable = 'onAppUpdateAvailable',
   onAppUpdateDownloadUpdate = 'onAppUpdateDownloadUpdate',
   onAppUpdateDownloadError = 'onAppUpdateDownloadError',
   onAppUpdateDownloadSuccess = 'onAppUpdateDownloadSuccess',
