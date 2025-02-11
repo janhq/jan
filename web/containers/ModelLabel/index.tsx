@@ -48,8 +48,6 @@ const ModelLabel = ({ metadata, compact }: Props) => {
             ? (activeModel.metadata.size * 1.25) / (1024 * 1024)
             : 0))
 
-    console.log(activeModel?.metadata?.size)
-
     if (minimumRamModel > totalRam) {
       return (
         <NotEnoughMemoryLabel
