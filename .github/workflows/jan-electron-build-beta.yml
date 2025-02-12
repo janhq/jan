@@ -63,7 +63,9 @@ jobs:
     steps:
       - name: Set version to environment variable
         run: |
-          echo "VERSION=${{ needs.get-update-version.outputs.new_version }}" >> $GITHUB_ENV
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
