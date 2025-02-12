@@ -8,10 +8,10 @@ import { MarkdownTextMessage } from './MarkdownTextMessage'
 interface Props {
   text: string
   status: string
-  id: string
+  id: number
 }
 
-const thinkingBlockStateAtom = atom<{ [id: string]: boolean }>({})
+const thinkingBlockStateAtom = atom<{ [id: number]: boolean }>({})
 
 const ThinkingBlock = ({ id, text, status }: Props) => {
   const [thinkingState, setThinkingState] = useAtom(thinkingBlockStateAtom)

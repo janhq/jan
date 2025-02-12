@@ -143,8 +143,7 @@ export default function ModelHandler() {
         return
       }
 
-      // The thread title should not be updated if the message is less than 10 words
-      // And no new line character is present
+      // No new line character is presented in the title
       // And non-alphanumeric characters should be removed
       if (messageContent.includes('\n')) {
         messageContent = messageContent.replace(/\n/g, ' ')
@@ -290,13 +289,7 @@ export default function ModelHandler() {
           .catch(() => undefined)
         if (updatedMessage) {
           deleteMessage(message.id)
-          addNewMessage({
-            ...updatedMessage,
-            metadata: {
-              ...updatedMessage.metadata,
-              reserve_id: message.id,
-            },
-          })
+          addNewMessage(updatedMessage)
           setTokenSpeed((prev) =>
             prev ? { ...prev, message: updatedMessage.id } : undefined
           )

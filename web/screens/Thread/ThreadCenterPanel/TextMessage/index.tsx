@@ -27,7 +27,7 @@ import {
 import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 
 const MessageContainer: React.FC<
-  ThreadMessage & { isCurrentMessage: boolean }
+  ThreadMessage & { isCurrentMessage: boolean; index: number }
 > = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
@@ -162,7 +162,7 @@ const MessageContainer: React.FC<
               >
                 {reasoningSegment && (
                   <ThinkingBlock
-                    id={(props.metadata?.reserve_id as string) ?? props.id}
+                    id={props.index}
                     text={reasoningSegment}
                     status={props.status}
                   />
