@@ -25,10 +25,10 @@ const os = (settings?: GpuSetting): string => {
   return PLATFORM === 'win32'
     ? 'windows-amd64'
     : PLATFORM === 'darwin'
-      ? settings?.cpu?.arch === 'arm64'
-        ? 'mac-arm64'
-        : 'mac-amd64'
-      : 'linux-amd64'
+    ? settings?.cpu?.arch === 'arm64'
+      ? 'mac-arm64'
+      : 'mac-amd64'
+    : 'linux-amd64'
 }
 
 /**
@@ -67,13 +67,13 @@ export const engineVariant = async (
 
   let engineVariant = [
     platform,
-    gpuSetting?.vulkan
+    gpuSetting?.vulkan || gpuSetting.gpus.some((e) => !e.additional_information)
       ? 'vulkan'
       : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx
-            gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
-          gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
-        ? 'avx2'
-        : 'noavx',
+          gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
+        gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
+      ? 'avx2'
+      : 'noavx',
     gpuRunMode(gpuSetting),
     cudaVersion(gpuSetting),
   ]
