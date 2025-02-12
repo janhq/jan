@@ -267,7 +267,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
                 {releasedEnginesByVersion &&
                   releasedEnginesByVersion
                     ?.filter((item) => {
-                      return !item.name.includes('cuda-')
+                      return !item.name.startsWith('cuda-')
                     })
                     .map((item, i) => {
                       return (
