@@ -57,7 +57,6 @@ const Hardware = () => {
     setGpus(updatedGpus)
     // Call the API to update the active GPUs
     try {
-      console.log(updatedGpus)
       const activeGpuIds = updatedGpus
         .filter((gpu) => gpu.activated)
         .map((gpu) => Number(gpu.id))
