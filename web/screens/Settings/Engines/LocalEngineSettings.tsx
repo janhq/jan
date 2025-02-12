@@ -265,92 +265,98 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
 
               <div>
                 {releasedEnginesByVersion &&
-                  releasedEnginesByVersion?.map((item, i) => {
-                    return (
-                      <div
-                        key={i}
-                        className={twMerge(
-                          'border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b',
-                          releasedEnginesByVersion?.length === 1 && 'rounded-lg'
-                        )}
-                      >
-                        <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex w-full gap-x-8">
-                            <div className="flex h-full w-full items-center justify-between gap-2">
-                              <h6
-                                className={twMerge(
-                                  'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                                  'max-w-none text-[hsla(var(--text-secondary))]'
-                                )}
-                              >
-                                {item.name}
-                              </h6>
+                  releasedEnginesByVersion
+                    ?.filter((item) => {
+                      return !item.name.startsWith('cuda-')
+                    })
+                    .map((item, i) => {
+                      return (
+                        <div
+                          key={i}
+                          className={twMerge(
+                            'border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b',
+                            releasedEnginesByVersion?.length === 1 &&
+                              'rounded-lg'
+                          )}
+                        >
+                          <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex w-full gap-x-8">
+                              <div className="flex h-full w-full items-center justify-between gap-2">
+                                <h6
+                                  className={twMerge(
+                                    'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
+                                    'max-w-none text-[hsla(var(--text-secondary))]'
+                                  )}
+                                >
+                                  {item.name}
+                                </h6>
 
-                              {installedEngineByVersion?.some(
-                                (x) => x.name === item.name
-                              ) ? (
-                                <DeleteEngineVariant
-                                  variant={item}
-                                  engine={engine}
-                                />
-                              ) : (
-                                <>
-                                  {installingEngines.has(item.name) ? (
-                                    <Button variant="soft">
-                                      <div className="flex items-center space-x-2">
-                                        <Progress
-                                          className="inline-block h-2 w-[80px]"
-                                          value={
-                                            formatDownloadPercentage(
+                                {installedEngineByVersion?.some(
+                                  (x) => x.name === item.name
+                                ) ? (
+                                  <DeleteEngineVariant
+                                    variant={item}
+                                    engine={engine}
+                                  />
+                                ) : (
+                                  <>
+                                    {installingEngines.has(item.name) ? (
+                                      <Button variant="soft">
+                                        <div className="flex items-center space-x-2">
+                                          <Progress
+                                            className="inline-block h-2 w-[80px]"
+                                            value={
+                                              formatDownloadPercentage(
+                                                installingEngines.get(
+                                                  item.name
+                                                ) ?? 0,
+                                                {
+                                                  hidePercentage: true,
+                                                }
+                                              ) as number
+                                            }
+                                          />
+                                          <span className="tabular-nums">
+                                            {formatDownloadPercentage(
                                               installingEngines.get(
                                                 item.name
-                                              ) ?? 0,
-                                              {
-                                                hidePercentage: true,
-                                              }
-                                            ) as number
-                                          }
-                                        />
-                                        <span className="tabular-nums">
-                                          {formatDownloadPercentage(
-                                            installingEngines.get(item.name) ??
-                                              0
-                                          )}
-                                        </span>
-                                      </div>
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      variant="soft"
-                                      onClick={() => {
-                                        setInstallingEngines((prev) => {
-                                          const updated = new Map(prev)
-                                          updated.set(item.name, 0)
-                                          return updated
-                                        })
-                                        installEngine(engine, {
-                                          variant: item.name,
-                                          version: String(
-                                            defaultEngineVariant?.version
-                                          ),
-                                        }).then(() => {
-                                          if (selectedVariants === '') {
-                                            setSelectedVariants(item.name)
-                                          }
-                                        })
-                                      }}
-                                    >
-                                      Download
-                                    </Button>
-                                  )}
-                                </>
-                              )}
+                                              ) ?? 0
+                                            )}
+                                          </span>
+                                        </div>
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="soft"
+                                        onClick={() => {
+                                          setInstallingEngines((prev) => {
+                                            const updated = new Map(prev)
+                                            updated.set(item.name, 0)
+                                            return updated
+                                          })
+                                          installEngine(engine, {
+                                            variant: item.name,
+                                            version: String(
+                                              defaultEngineVariant?.version
+                                            ),
+                                          }).then(() => {
+                                            if (selectedVariants === '') {
+                                              setSelectedVariants(item.name)
+                                            }
+                                          })
+                                        }}
+                                      >
+                                        Download
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
               </div>
             </div>
           </div>
