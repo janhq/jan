@@ -25,10 +25,10 @@ const os = (settings?: GpuSetting): string => {
   return PLATFORM === 'win32'
     ? 'windows-amd64'
     : PLATFORM === 'darwin'
-      ? settings?.cpu?.arch === 'arm64'
-        ? 'mac-arm64'
-        : 'mac-amd64'
-      : 'linux-amd64'
+    ? settings?.cpu?.arch === 'arm64'
+      ? 'mac-arm64'
+      : 'mac-amd64'
+    : 'linux-amd64'
 }
 
 /**
@@ -65,21 +65,22 @@ export const engineVariant = async (
   // There is no need to append the variant extension for mac
   if (platform.startsWith('mac')) return platform
 
-  let engineVariant = [
-    platform,
-    gpuSetting?.vulkan
-      ? 'vulkan'
-      : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx
-            gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
-          gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
-        ? 'avx2'
-        : 'noavx',
-    gpuRunMode(gpuSetting),
-    cudaVersion(gpuSetting),
-  ]
-    .filter((e) => !!e)
-    .join('-')
+  let engineVariant =
+    gpuSetting?.vulkan || gpuSetting.gpus.some((e) => !e.additional_information)
+      ? [platform, 'vulkan']
+      : [
+          platform,
+          gpuRunMode(gpuSetting) === 'cuda' &&
+          (gpuSetting.cpu.instructions.includes('avx2') ||
+            gpuSetting.cpu.instructions.includes('avx512'))
+            ? 'avx2'
+            : 'noavx',
+          gpuRunMode(gpuSetting),
+          cudaVersion(gpuSetting),
+        ].filter(Boolean) // Remove any falsy values
 
-  log(`[CORTEX]: Engine variant: ${engineVariant}`)
-  return engineVariant
+  let engineVariantString = engineVariant.join('-')
+
+  log(`[CORTEX]: Engine variant: ${engineVariantString}`)
+  return engineVariantString
 }
