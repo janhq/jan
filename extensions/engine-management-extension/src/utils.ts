@@ -65,21 +65,22 @@ export const engineVariant = async (
   // There is no need to append the variant extension for mac
   if (platform.startsWith('mac')) return platform
 
-  let engineVariant = [
-    platform,
+  let engineVariant =
     gpuSetting?.vulkan || gpuSetting.gpus.some((e) => !e.additional_information)
-      ? 'vulkan'
-      : (gpuRunMode(gpuSetting) === 'cuda' && // GPU mode - packaged CUDA variants of avx2 and noavx
-          gpuSetting.cpu.instructions.some((inst) => inst === 'avx2')) ||
-        gpuSetting.cpu.instructions.some((inst) => inst === 'avx512')
-      ? 'avx2'
-      : 'noavx',
-    gpuRunMode(gpuSetting),
-    cudaVersion(gpuSetting),
-  ]
-    .filter((e) => !!e)
-    .join('-')
+      ? [platform, 'vulkan']
+      : [
+          platform,
+          gpuRunMode(gpuSetting) === 'cuda' &&
+          (gpuSetting.cpu.instructions.includes('avx2') ||
+            gpuSetting.cpu.instructions.includes('avx512'))
+            ? 'avx2'
+            : 'noavx',
+          gpuRunMode(gpuSetting),
+          cudaVersion(gpuSetting),
+        ].filter(Boolean) // Remove any falsy values
 
-  log(`[CORTEX]: Engine variant: ${engineVariant}`)
-  return engineVariant
+  let engineVariantString = engineVariant.join('-')
+
+  log(`[CORTEX]: Engine variant: ${engineVariantString}`)
+  return engineVariantString
 }
