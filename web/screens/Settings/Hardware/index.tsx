@@ -50,13 +50,14 @@ const Hardware = () => {
   }
 
   // Handle switch toggle for GPU activation
-  const handleSwitchChange = async (index: number, isActive: boolean) => {
-    const updatedGpus = gpus.map((gpu, i) =>
-      i === index ? { ...gpu, activated: isActive } : gpu
+  const handleSwitchChange = async (id: string, isActive: boolean) => {
+    const updatedGpus = gpus.map((gpu) =>
+      gpu.id === id ? { ...gpu, activated: isActive } : gpu
     )
     setGpus(updatedGpus)
     // Call the API to update the active GPUs
     try {
+      console.log(updatedGpus)
       const activeGpuIds = updatedGpus
         .filter((gpu) => gpu.activated)
         .map((gpu) => Number(gpu.id))
@@ -282,7 +283,10 @@ const Hardware = () => {
                                     <Switch
                                       checked={item.activated}
                                       onChange={(e) =>
-                                        handleSwitchChange(i, e.target.checked)
+                                        handleSwitchChange(
+                                          item.id,
+                                          e.target.checked
+                                        )
                                       }
                                     />
 
