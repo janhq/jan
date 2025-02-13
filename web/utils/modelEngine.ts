@@ -30,7 +30,7 @@ export const getLogoEngine = (engine: InferenceEngine | string) => {
       return 'images/ModelProvider/nvidia.svg'
     // MARK: Deprecating InferenceEngine enum - as it's dynamically provided by the backend
     case 'google_gemini':
-      return 'images/ModelProvider/google-gemini.svg'
+      return 'images/ModelProvider/google.svg'
     case 'deepseek':
       return 'images/ModelProvider/deepseek.svg'
     default:
