@@ -35,7 +35,7 @@ export function requestInference(
           if (response.status === 401) {
             throw {
               code: ErrorCode.InvalidApiKey,
-              message: 'Invalid API key.',
+              message: 'Invalid API Key.',
             }
           }
           let data = await response.json()
