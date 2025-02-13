@@ -148,7 +148,7 @@ export abstract class OAIEngine extends AIEngine {
             value:
               typeof message === 'string'
                 ? err.message
-                : (err.message?.detail ?? err.detail),
+                : (JSON.stringify(err.message) ?? err.detail),
             annotations: [],
           },
         }

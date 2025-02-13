@@ -79,11 +79,7 @@
     "description": "OpenAI o1 is a new model with complex reasoning",
     "format": "api",
     "inference_params": {
-      "max_tokens": 100000,
-      "temperature": 1,
-      "top_p": 1,
-      "frequency_penalty": 0,
-      "presence_penalty": 0
+      "max_tokens": 100000
     },
     "engine": "openai"
   },
@@ -96,11 +92,7 @@
     "format": "api",
     "inference_params": {
       "max_tokens": 32768,
-      "temperature": 1,
-      "top_p": 1,
-      "stream": true,
-      "frequency_penalty": 0,
-      "presence_penalty": 0
+      "stream": true
     },
     "engine": "openai"
   },
@@ -113,11 +105,7 @@
     "format": "api",
     "inference_params": {
       "max_tokens": 65536,
-      "temperature": 1,
-      "top_p": 1,
-      "stream": true,
-      "frequency_penalty": 0,
-      "presence_penalty": 0
+      "stream": true
     },
     "engine": "openai"
   }
