@@ -176,7 +176,7 @@ const MyModelList = ({ model }: Props) => {
                       onClick={() => {
                         setTimeout(async () => {
                           if (!serverEnabled) {
-                            await stopModel()
+                            if (activeModel?.id === model.id) await stopModel()
                             deleteModel(model)
                           }
                         }, 500)
