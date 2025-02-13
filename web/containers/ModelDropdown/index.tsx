@@ -475,7 +475,7 @@ const ModelDropdown = ({
                                 >
                                   <div className="flex items-center gap-2">
                                     <p
-                                      className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                      className="max-w-[200px] overflow-hidden truncate whitespace-nowrap text-[hsla(var(--text-secondary))]"
                                       title={model.name}
                                     >
                                       {model.name}
@@ -573,7 +573,7 @@ const ModelDropdown = ({
                                     <div className="flex gap-x-2">
                                       <p
                                         className={twMerge(
-                                          'line-clamp-1',
+                                          'max-w-[200px] overflow-hidden truncate whitespace-nowrap',
                                           !isDownloaded &&
                                             'text-[hsla(var(--text-secondary))]'
                                         )}
