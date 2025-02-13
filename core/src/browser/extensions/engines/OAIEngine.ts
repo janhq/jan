@@ -42,7 +42,9 @@ export abstract class OAIEngine extends AIEngine {
    */
   override onLoad() {
     super.onLoad()
-    events.on(MessageEvent.OnMessageSent, (data: MessageRequest) => this.inference(data))
+    events.on(MessageEvent.OnMessageSent, (data: MessageRequest) =>
+      this.inference(data)
+    )
     events.on(InferenceEvent.OnInferenceStopped, () => this.stopInference())
   }
 
@@ -128,7 +130,9 @@ export abstract class OAIEngine extends AIEngine {
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       complete: async () => {
-        message.status = message.content.length ? MessageStatus.Ready : MessageStatus.Error
+        message.status = message.content.length
+          ? MessageStatus.Ready
+          : MessageStatus.Error
         events.emit(MessageEvent.OnMessageUpdate, message)
       },
       error: async (err: any) => {
@@ -141,7 +145,10 @@ export abstract class OAIEngine extends AIEngine {
         message.content[0] = {
           type: ContentType.Text,
           text: {
-            value: err.message,
+            value:
+              typeof message === 'string'
+                ? err.message
+                : (err.message?.detail ?? err.detail),
             annotations: [],
           },
         }
