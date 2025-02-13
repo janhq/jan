@@ -20,6 +20,8 @@ import {
 
 import { toGibibytes } from '@/utils/converter'
 
+import { utilizedMemory } from '@/utils/memory'
+
 import {
   cpuUsageAtom,
   ramUtilitizedAtom,
@@ -27,12 +29,15 @@ import {
   usedRamAtom,
   gpusAtom,
 } from '@/helpers/atoms/SystemBar.atom'
-import useGetSystemResources from '@/hooks/useGetSystemResources'
-import { utilizedMemory } from '@/utils/memory'
+
+const orderGpusAtom = atomWithStorage<any>('orderGpus', [], undefined, {
+  getOnInit: true,
+})
 
 const Hardware = () => {
-  const { hardware } = useGetHardwareInfo()
-  const { watch } = useGetSystemResources()
+  const { hardware, mutate } = useGetHardwareInfo()
+  const [isActivatingGpu, setIsActivatingGpu] = useState<Set<string>>(new Set())
+
   const [openPanels, setOpenPanels] = useState<Record<number, boolean>>({})
 
   const cpuUsage = useAtomValue(cpuUsageAtom)
@@ -41,10 +46,6 @@ const Hardware = () => {
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
 
   const [gpus, setGpus] = useAtom(gpusAtom)
-
-  const orderGpusAtom = atomWithStorage<string[]>('orderGpus', [], undefined, {
-    getOnInit: true,
-  })
 
   const [orderGpus, setOrderGpus] = useAtom(orderGpusAtom)
 
@@ -57,6 +58,8 @@ const Hardware = () => {
 
   // Handle switch toggle for GPU activation
   const handleSwitchChange = async (id: string, isActive: boolean) => {
+    setIsActivatingGpu((prev) => new Set(prev).add(id))
+
     const updatedGpus = gpus.map((gpu) =>
       gpu.id === id ? { ...gpu, activated: isActive } : gpu
     )
@@ -66,6 +69,7 @@ const Hardware = () => {
         .filter((gpu: any) => gpu.activated)
         .map((gpu: any) => Number(gpu.id))
       await setActiveGpus({ gpus: activeGpuIds })
+      mutate()
     } catch (error) {
       console.error('Failed to update active GPUs:', error)
     }
@@ -73,15 +77,58 @@ const Hardware = () => {
 
   const handleDragEnd = (result: any) => {
     if (!result.destination) return
-    const reorderedGpus = Array.from(orderGpus)
+    const reorderedGpus = Array.from(gpus)
     const [movedGpu] = reorderedGpus.splice(result.source.index, 1)
     reorderedGpus.splice(result.destination.index, 0, movedGpu)
-    setOrderGpus(reorderedGpus) // Update the atom, which persists to localStorage
+
+    setGpus(reorderedGpus)
+    setOrderGpus(reorderedGpus.map((gpu) => gpu.id))
   }
 
   React.useEffect(() => {
-    watch()
-  }, [])
+    if (hardware?.gpus) {
+      setGpus((prevGpus: any) => {
+        // Create a map of existing GPUs by UUID for quick lookup
+        const gpuMap = new Map(prevGpus.map((gpu: any) => [gpu.uuid, gpu]))
+
+        // Update existing GPUs or add new ones
+        const updatedGpus = hardware.gpus.map((newGpu) => {
+          const existingGpu: any = gpuMap.get(newGpu.uuid)
+
+          if (existingGpu) {
+            // Update the GPU properties while keeping the original order
+
+            if (existingGpu.activated !== newGpu.activated) {
+              setIsActivatingGpu((prev) => {
+                const updated = new Set(prev)
+                updated.delete(existingGpu.id)
+                return updated
+              })
+            }
+
+            return {
+              ...existingGpu,
+              activated: newGpu.activated,
+              free_vram: newGpu.free_vram,
+              total_vram: newGpu.total_vram,
+            }
+          }
+
+          // Return the new GPU if not already in the state
+          return newGpu
+        })
+
+        // Append GPUs from the previous state that are not in the hardware.gpus
+        // This preserves user-reordered GPUs that aren't present in the new data
+        const remainingGpus = prevGpus.filter(
+          (prevGpu: any) =>
+            !hardware.gpus?.some((gpu) => gpu.uuid === prevGpu.uuid)
+        )
+
+        return [...updatedGpus, ...remainingGpus]
+      })
+    }
+  }, [hardware?.gpus, setGpus])
 
   return (
     <ScrollArea className="h-full w-full px-4">
@@ -177,131 +224,154 @@ const Hardware = () => {
                       ref={provided.innerRef}
                       className="mt-4"
                     >
-                      {gpus.map((item: any, i) => {
-                        const gpuUtilization = utilizedMemory(
-                          item.free_vram,
-                          item.total_vram
-                        )
-                        return (
-                          <Draggable key={i} draggableId={String(i)} index={i}>
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={twMerge(
-                                  'cursor-pointer border border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg',
-                                  gpus.length > 1 && 'last:rounded-t-none',
-                                  snapshot.isDragging
-                                    ? 'border-b'
-                                    : 'border-b-0 last:border-b'
-                                )}
-                                onClick={() => togglePanel(i)}
-                              >
-                                <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-                                  <div className="flex w-full items-center justify-between">
-                                    <div className="flex h-full flex-shrink-0 items-center gap-2">
-                                      <GripVerticalIcon
-                                        size={14}
-                                        className="text-[hsla(var(--text-tertiary))]"
-                                      />
-                                      <div
-                                        className={twMerge(
-                                          'h-2 w-2 rounded-full',
-                                          item.activated
-                                            ? 'bg-green-400'
-                                            : 'bg-neutral-300'
-                                        )}
-                                      />
-                                      <h6 title={item.name}>{item.name}</h6>
-                                    </div>
-                                    <div className="flex flex-shrink-0 items-end gap-4">
-                                      {item.activated && (
-                                        <div className="flex w-40 items-center gap-3">
-                                          <Progress
-                                            value={gpuUtilization}
-                                            size="small"
-                                            className="w-full"
-                                          />
-                                          <span className="font-medium">
-                                            {gpuUtilization}%
-                                          </span>
-                                        </div>
-                                      )}
+                      {gpus
+                        .sort((a, b) => {
+                          const orderA = orderGpus.indexOf(a.id)
+                          const orderB = orderGpus.indexOf(b.id)
+                          return orderA - orderB
+                        })
+                        .map((item: any, i) => {
+                          const gpuUtilization = utilizedMemory(
+                            item.free_vram,
+                            item.total_vram
+                          )
+                          const isLoading = isActivatingGpu.has(item.id)
 
-                                      <div className="flex justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
+                          return (
+                            <Draggable
+                              key={i}
+                              draggableId={String(i)}
+                              index={i}
+                            >
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={twMerge(
+                                    'cursor-pointer border border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg',
+                                    gpus.length > 1 && 'last:rounded-t-none',
+                                    snapshot.isDragging
+                                      ? 'border-b'
+                                      : 'border-b-0 last:border-b'
+                                  )}
+                                  onClick={() => togglePanel(i)}
+                                >
+                                  <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex w-full items-center justify-between">
+                                      <div className="flex h-full flex-shrink-0 items-center gap-2">
+                                        <GripVerticalIcon
+                                          size={14}
+                                          className="text-[hsla(var(--text-tertiary))]"
+                                        />
+                                        <div
+                                          className={twMerge(
+                                            'h-2 w-2 rounded-full',
+                                            item.activated
+                                              ? 'bg-green-400'
+                                              : 'bg-neutral-300'
+                                          )}
+                                        />
+                                        <h6 title={item.name}>{item.name}</h6>
+                                      </div>
+                                      <div className="flex flex-shrink-0 items-end gap-4">
                                         {item.activated && (
+                                          <div className="flex w-40 items-center gap-3">
+                                            <Progress
+                                              value={gpuUtilization}
+                                              size="small"
+                                              className="w-full"
+                                            />
+                                            <span className="font-medium">
+                                              {gpuUtilization}%
+                                            </span>
+                                          </div>
+                                        )}
+
+                                        <div className="flex justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
+                                          {item.activated && (
+                                            <span>
+                                              {(
+                                                (Number(item.total_vram) -
+                                                  Number(item.free_vram)) /
+                                                1024
+                                              ).toFixed(2)}
+                                              GB /{' '}
+                                            </span>
+                                          )}
                                           <span>
                                             {(
-                                              (Number(item.total_vram) -
-                                                Number(item.free_vram)) /
-                                              1024
+                                              Number(item.total_vram) / 1024
                                             ).toFixed(2)}
-                                            GB /{' '}
+                                            GB
                                           </span>
+                                        </div>
+
+                                        <Switch
+                                          checked={item.activated}
+                                          className={twMerge(
+                                            isLoading && 'pointer-events-none'
+                                          )}
+                                          disabled={
+                                            Boolean(isActivatingGpu.size) &&
+                                            !isLoading
+                                          }
+                                          onChange={(e) =>
+                                            handleSwitchChange(
+                                              item.id,
+                                              e.target.checked
+                                            )
+                                          }
+                                        />
+
+                                        {isLoading && (
+                                          <div className="ml-2 h-4 w-4 animate-spin rounded-full border-t-2 border-solid border-blue-500" />
                                         )}
+
+                                        <ChevronDownIcon
+                                          size={14}
+                                          className={twMerge(
+                                            'relative z-10 transform cursor-pointer transition-transform',
+                                            openPanels[i]
+                                              ? 'rotate-180'
+                                              : 'rotate-0'
+                                          )}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {openPanels[i] && (
+                                    <div className="space-y-4 p-4 pb-0 text-[hsla(var(--text-secondary))]">
+                                      <div className="flex">
+                                        <div className="w-[200px]">
+                                          Driver Version
+                                        </div>
                                         <span>
-                                          {(
-                                            Number(item.total_vram) / 1024
-                                          ).toFixed(2)}
-                                          GB
+                                          {
+                                            item.additional_information
+                                              ?.driver_version
+                                          }
                                         </span>
                                       </div>
-
-                                      <Switch
-                                        checked={item.activated}
-                                        onChange={(e) =>
-                                          handleSwitchChange(
-                                            item.id,
-                                            e.target.checked
-                                          )
-                                        }
-                                      />
-
-                                      <ChevronDownIcon
-                                        size={14}
-                                        className={twMerge(
-                                          'relative z-10 transform cursor-pointer transition-transform',
-                                          openPanels[i]
-                                            ? 'rotate-180'
-                                            : 'rotate-0'
-                                        )}
-                                      />
+                                      <div className="flex">
+                                        <div className="w-[200px]">
+                                          Compute Capability
+                                        </div>
+                                        <span>
+                                          {
+                                            item.additional_information
+                                              ?.compute_cap
+                                          }
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
+                                  )}
                                 </div>
-
-                                {openPanels[i] && (
-                                  <div className="space-y-4 p-4 pb-0 text-[hsla(var(--text-secondary))]">
-                                    <div className="flex">
-                                      <div className="w-[200px]">
-                                        Driver Version
-                                      </div>
-                                      <span>
-                                        {
-                                          item.additional_information
-                                            ?.driver_version
-                                        }
-                                      </span>
-                                    </div>
-                                    <div className="flex">
-                                      <div className="w-[200px]">
-                                        Compute Capability
-                                      </div>
-                                      <span>
-                                        {
-                                          item.additional_information
-                                            ?.compute_cap
-                                        }
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </Draggable>
-                        )
-                      })}
+                              )}
+                            </Draggable>
+                          )
+                        })}
                       {provided.placeholder}
                     </div>
                   )}
