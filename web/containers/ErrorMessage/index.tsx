@@ -66,7 +66,6 @@ const ErrorMessage = ({
               <button
                 className="font-medium text-[hsla(var(--app-link))] underline"
                 onClick={() => {
-                  console.log(engine?.name)
                   setMainState(MainViewState.Settings)
                   setSelectedSettingScreen(activeAssistant?.model?.engine ?? '')
                 }}
