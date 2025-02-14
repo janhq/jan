@@ -17,6 +17,7 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
+import { markdownComponents } from './MarkdownUtils'
 
 export const MarkdownTextMessage = memo(
   ({ text, isUser }: { id?: string; text: string; isUser?: boolean }) => {
@@ -209,6 +210,7 @@ export const MarkdownTextMessage = memo(
             [rehypeHighlightCodeLines, { showLineNumbers: true }],
             wrapCodeBlocksWithoutVisit,
           ]}
+          components={markdownComponents}
         >
           {preprocessMarkdown(text)}
         </Markdown>
