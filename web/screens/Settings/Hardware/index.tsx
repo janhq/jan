@@ -102,6 +102,7 @@ const Hardware = () => {
               setIsActivatingGpu((prev) => {
                 const updated = new Set(prev)
                 updated.delete(existingGpu.id)
+                updated.clear()
                 return updated
               })
             }
