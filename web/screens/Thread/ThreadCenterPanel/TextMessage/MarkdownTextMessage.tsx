@@ -17,6 +17,7 @@ import 'highlight.js/styles/atom-one-dark.css'
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
+
 import { markdownComponents } from './MarkdownUtils'
 
 export const MarkdownTextMessage = memo(
