@@ -65,7 +65,7 @@ export const getTitleByEngine = (engine: InferenceEngine | string) => {
     case InferenceEngine.openrouter:
       return 'OpenRouter'
     case 'google_gemini':
-      return 'Gemini'
+      return 'Google'
     default:
       return engine.charAt(0).toUpperCase() + engine.slice(1)
   }
