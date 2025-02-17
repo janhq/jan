@@ -108,5 +108,18 @@
       "stream": true
     },
     "engine": "openai"
+  },
+  {
+    "model": "o3-mini",
+    "object": "model",
+    "name": "OpenAI o3-mini",
+    "version": "1.0",
+    "description": "OpenAI most recent reasoning model, providing high intelligence at the same cost and latency targets of o1-mini.",
+    "format": "api",
+    "inference_params": {
+      "max_tokens": 100000,
+      "stream": true
+    },
+    "engine": "openai"
   }
 ]
