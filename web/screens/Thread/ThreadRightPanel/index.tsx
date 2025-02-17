@@ -182,7 +182,6 @@ const ThreadRightPanel = () => {
       if (!activeThread || !activeAssistant) return
 
       setEngineParamsUpdate(true)
-      resetModel()
 
       updateModelParameter(activeThread, {
         params: { [key]: value },
@@ -204,13 +203,7 @@ const ThreadRightPanel = () => {
         }
       }
     },
-    [
-      activeAssistant,
-      activeThread,
-      resetModel,
-      setEngineParamsUpdate,
-      updateModelParameter,
-    ]
+    [activeAssistant, activeThread, setEngineParamsUpdate, updateModelParameter]
   )
 
   if (!activeThread) {
@@ -287,7 +280,10 @@ const ThreadRightPanel = () => {
                 <AccordionItem title={ENGINE_SETTINGS} value={ENGINE_SETTINGS}>
                   <EngineSetting
                     componentData={settings.engineSettings}
-                    onValueChanged={onValueChanged}
+                    onValueChanged={(key, value) => {
+                      resetModel()
+                      onValueChanged(key, value)
+                    }}
                   />
                 </AccordionItem>
               )}
