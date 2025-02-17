@@ -5,12 +5,16 @@ import { useSetAtom } from 'jotai'
 
 import {
   appDownloadProgressAtom,
+  appUpdateAvailableAtom,
   updateVersionErrorAtom,
+  appUpdateNotAvailableAtom,
 } from '@/helpers/atoms/App.atom'
 
 const AppUpdateListener = () => {
   const setProgress = useSetAtom(appDownloadProgressAtom)
   const setUpdateVersionError = useSetAtom(updateVersionErrorAtom)
+  const setAppUpdateAvailable = useSetAtom(appUpdateAvailableAtom)
+  const setAppUpdateNotvailable = useSetAtom(appUpdateNotAvailableAtom)
 
   useEffect(() => {
     if (window && window.electronAPI) {
@@ -36,8 +40,17 @@ const AppUpdateListener = () => {
       window.electronAPI.onAppUpdateDownloadSuccess(() => {
         setProgress(-1)
       })
+
+      window.electronAPI.onAppUpdateAvailable(() => {
+        setAppUpdateAvailable(true)
+      })
+
+      window.electronAPI.onAppUpdateNotAvailable(() => {
+        setAppUpdateAvailable(false)
+        setAppUpdateNotvailable(true)
+      })
     }
-  }, [setProgress, setUpdateVersionError])
+  }, [setProgress, setUpdateVersionError, setAppUpdateAvailable])
 
   return <Fragment></Fragment>
 }

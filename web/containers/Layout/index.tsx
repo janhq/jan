@@ -29,6 +29,10 @@ import LoadingModal from '../LoadingModal'
 
 import MainViewContainer from '../MainViewContainer'
 
+import ModalAppUpdaterChangelog from '../ModalAppUpdaterChangelog'
+
+import ModalAppUpdaterNotAvailable from '../ModalAppUpdaterNotAvailable'
+
 import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
@@ -222,6 +226,8 @@ const BaseLayout = () => {
         )}
       </div>
       <BottomPanel />
+      <ModalAppUpdaterChangelog />
+      <ModalAppUpdaterNotAvailable />
     </div>
   )
 }
