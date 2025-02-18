@@ -70,6 +70,7 @@ const Hardware = () => {
         .map((gpu: any) => Number(gpu.id))
       await setActiveGpus({ gpus: activeGpuIds })
       mutate()
+      window.location.reload()
     } catch (error) {
       console.error('Failed to update active GPUs:', error)
     }
