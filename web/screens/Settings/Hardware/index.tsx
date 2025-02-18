@@ -18,7 +18,7 @@ import {
   setActiveGpus,
 } from '@/hooks/useHardwareManagement'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { utilizedMemory } from '@/utils/memory'
 
@@ -169,8 +169,8 @@ const Hardware = () => {
             <div className="flex flex-col items-end gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>
-                  {toGibibytes(usedRam, { hideUnit: true })}GB /{' '}
-                  {toGibibytes(totalRam, { hideUnit: true })}GB
+                  {toGigabytes(usedRam, { hideUnit: true })}GB /{' '}
+                  {toGigabytes(totalRam, { hideUnit: true })}GB
                 </span>
                 {hardware?.ram.type && (
                   <>

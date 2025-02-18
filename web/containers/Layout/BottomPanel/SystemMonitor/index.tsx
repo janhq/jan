@@ -134,8 +134,8 @@ const SystemMonitor = () => {
                 <div className="flex items-center justify-between gap-2">
                   <h6 className="font-bold">Memory</h6>
                   <span>
-                    {toGibibytes(usedRam, { hideUnit: true })}GB /{' '}
-                    {toGibibytes(totalRam, { hideUnit: true })}GB
+                    {toGigabytes(usedRam, { hideUnit: true })}GB /{' '}
+                    {toGigabytes(totalRam, { hideUnit: true })}GB
                   </span>
                 </div>
                 <div className="flex items-center gap-x-4">
