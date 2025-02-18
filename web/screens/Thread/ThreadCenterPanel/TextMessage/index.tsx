@@ -167,10 +167,7 @@ const MessageContainer: React.FC<
                     status={props.status}
                   />
                 )}
-                <MarkdownTextMessage
-                  text={textSegment}
-                  isUser={isUser}
-                />
+                <MarkdownTextMessage text={textSegment} isUser={isUser} />
               </div>
             )}
           </>
