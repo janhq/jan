@@ -108,7 +108,7 @@ jobs:
           cat ./package.json
           echo "------------------------"
           cat ./electron/scripts/uninstaller.nsh
-          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "github", "owner": "janhq", "repo": "jan", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
 
@@ -136,7 +136,7 @@ jobs:
           # check public_provider is true or not
           echo "public_provider is ${{ inputs.public_provider }}"
           if [ "${{ inputs.public_provider }}" == "none" ]; then
-            make build    
+            make build
           else
             make build-and-publish
           fi
@@ -160,8 +160,6 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANALYTICS_ID: ${{ secrets.JAN_APP_UMAMI_PROJECT_API_KEY }}
-          ANALYTICS_HOST: ${{ secrets.JAN_APP_UMAMI_URL }}
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

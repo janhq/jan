@@ -49,6 +49,13 @@ import qwen2514bJson from './resources/models/qwen2.5-14b-instruct/model.json' w
 import qwen2532bJson from './resources/models/qwen2.5-32b-instruct/model.json' with { type: 'json' }
 import qwen2572bJson from './resources/models/qwen2.5-72b-instruct/model.json' with { type: 'json' }
 
+import deepseekR1DistillQwen_1_5b from './resources/models/deepseek-r1-distill-qwen-1.5b/model.json' with { type: 'json' }
+import deepseekR1DistillQwen_7b from './resources/models/deepseek-r1-distill-qwen-7b/model.json' with { type: 'json' }
+import deepseekR1DistillQwen_14b from './resources/models/deepseek-r1-distill-qwen-14b/model.json' with { type: 'json' }
+import deepseekR1DistillQwen_32b from './resources/models/deepseek-r1-distill-qwen-32b/model.json' with { type: 'json' }
+import deepseekR1DistillLlama_8b from './resources/models/deepseek-r1-distill-llama-8b/model.json' with { type: 'json' }
+import deepseekR1DistillLlama_70b from './resources/models/deepseek-r1-distill-llama-70b/model.json' with { type: 'json' }
+
 export default defineConfig([
   {
     input: 'src/index.ts',
@@ -106,12 +113,18 @@ export default defineConfig([
         qwen2514bJson,
         qwen2532bJson,
         qwen2572bJson,
+        deepseekR1DistillQwen_1_5b,
+        deepseekR1DistillQwen_7b,
+        deepseekR1DistillQwen_14b,
+        deepseekR1DistillQwen_32b,
+        deepseekR1DistillLlama_8b,
+        deepseekR1DistillLlama_70b,
       ]),
       NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
       SETTINGS: JSON.stringify(defaultSettingJson),
       CORTEX_API_URL: JSON.stringify('http://127.0.0.1:39291'),
       CORTEX_SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.46'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.49'),
     },
   },
   {

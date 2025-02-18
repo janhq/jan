@@ -2,7 +2,6 @@ import React from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 import { ScrollArea } from '@janhq/joi'
-import { useAtomValue } from 'jotai'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 

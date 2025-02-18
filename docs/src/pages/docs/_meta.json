@@ -14,6 +14,11 @@
   "desktop": "Installation",
   "data-folder": "Jan Data Folder",
   "privacy": "Privacy",
+  "privacy-policy": {
+    "type": "page",
+    "display": "hidden",
+    "title": "Privacy Policy"
+  },
   "user-guides": {
     "title": "BASIC USAGE",
     "type": "separator"

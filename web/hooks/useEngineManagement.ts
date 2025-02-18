@@ -8,6 +8,8 @@ import {
   EngineConfig,
   events,
   EngineEvent,
+  Model,
+  ModelEvent,
 } from '@janhq/core'
 import { useAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
@@ -379,6 +381,34 @@ export const uninstallEngine = async (
     // Call the extension's method
     const response = await extension.uninstallEngine(name, engineConfig)
     events.emit(EngineEvent.OnEngineUpdate, {})
+    return response
+  } catch (error) {
+    console.error('Failed to install engine variant:', error)
+    throw error
+  }
+}
+
+/**
+ * Add a new remote engine model
+ * @param name
+ * @param engine
+ * @returns
+ */
+export const addRemoteEngineModel = async (name: string, engine: string) => {
+  const extension = getExtension()
+
+  if (!extension) {
+    throw new Error('Extension is not available')
+  }
+
+  try {
+    // Call the extension's method
+    const response = await extension.addRemoteModel({
+      id: name,
+      model: name,
+      engine: engine as InferenceEngine,
+    } as unknown as Model)
+    events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)

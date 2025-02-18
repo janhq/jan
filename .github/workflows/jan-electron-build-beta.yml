@@ -9,31 +9,6 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  create-draft-release:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      version: ${{ steps.get_version.outputs.version }}
-    permissions:
-      contents: write
-    steps:
-      - name: Extract tag name without v prefix
-        id: get_version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
-        env:
-          GITHUB_REF: ${{ github.ref }}
-      - name: Create Draft Release
-        id: create_release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-          name: "${{ env.VERSION }}"
-          draft: true
-          prerelease: false
-          generate_release_notes: true
-
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
     secrets: inherit
@@ -65,7 +40,7 @@ jobs:
       beta: true
 
   sync-temp-to-latest:
-    needs: [build-macos, create-draft-release, build-windows-x64, build-linux-x64]
+    needs: [build-macos, build-windows-x64, build-linux-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -82,19 +57,15 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
 
-      - name: set release to prerelease
-        run: |
-          gh release edit v${{ needs.create-draft-release.outputs.version }} --draft=false --prerelease
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   noti-discord-and-update-url-readme:
-    needs: [build-macos, create-draft-release, build-windows-x64, build-linux-x64, sync-temp-to-latest]
+    needs: [build-macos, get-update-version, build-windows-x64, build-linux-x64, sync-temp-to-latest]
     runs-on: ubuntu-latest
     steps:
       - name: Set version to environment variable
         run: |
-          echo "VERSION=${{ needs.create-draft-release.outputs.version }}" >> $GITHUB_ENV
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Notify Discord
         uses: Ilshidur/action-discord@master
@@ -105,6 +76,5 @@ jobs:
             - macOS Universal: https://delta.jan.ai/beta/jan-beta-mac-universal-{{ VERSION }}.dmg
             - Linux Deb: https://delta.jan.ai/beta/jan-beta-linux-amd64-{{ VERSION }}.deb
             - Linux AppImage: https://delta.jan.ai/beta/jan-beta-linux-x86_64-{{ VERSION }}.AppImage
-            - Github Release URL: https://github.com/janhq/jan/releases/tag/v{{ VERSION }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_JAN_BETA }}

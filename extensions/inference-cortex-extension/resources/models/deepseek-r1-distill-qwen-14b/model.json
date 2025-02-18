@@ -1,0 +1,35 @@
+{
+  "sources": [
+    {
+      "filename": "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-14B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf"
+    }
+  ],
+  "id": "deepseek-r1-distill-qwen-14b",
+  "object": "model",
+  "name": "DeepSeek R1 Distill Qwen 14B Q4",
+  "version": "1.0",
+  "description": "DeepSeek-R1 is a cheaper and open-source model that excels at agentic reasoning, superior multilingual capabilities, large context windows, and generalization across domains.",
+  "format": "gguf",
+  "settings": {
+    "ctx_len": 131072,
+    "prompt_template": "<｜User｜> {prompt} <｜Assistant｜>",
+    "llama_model_path": "DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf",
+    "ngl": 49
+  },
+  "parameters": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "stream": true,
+    "max_tokens": 131072,
+    "stop": [],
+    "frequency_penalty": 0,
+    "presence_penalty": 0
+  },
+  "metadata": {
+    "author": "DeepSeek",
+    "tags": ["14B", "Featured"],
+    "size": 8990000000
+  },
+  "engine": "llama-cpp"
+}

@@ -19,12 +19,16 @@ import ky, { HTTPError } from 'ky'
 import PQueue from 'p-queue'
 import { EngineError } from './error'
 import { getJanDataFolderPath } from '@janhq/core'
+import { engineVariant } from './utils'
 
+interface ModelList {
+  data: Model[]
+}
 /**
- * JSONEngineManagementExtension is a EngineManagementExtension implementation that provides
+ * JanEngineManagementExtension is a EngineManagementExtension implementation that provides
  * functionality for managing engines.
  */
-export default class JSONEngineManagementExtension extends EngineManagementExtension {
+export default class JanEngineManagementExtension extends EngineManagementExtension {
   queue = new PQueue({ concurrency: 1 })
 
   /**
@@ -63,13 +67,12 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
    * @returns A Promise that resolves to an object of list engines.
    */
   async getRemoteModels(name: string): Promise<any> {
-    return this.queue.add(() =>
-      ky
-        .get(`${API_URL}/v1/models/remote/${name}`)
-        .json<Model[]>()
-        .then((e) => e)
-        .catch(() => [])
-    ) as Promise<Model[]>
+    return ky
+      .get(`${API_URL}/v1/models/remote/${name}`)
+      .json<ModelList>()
+      .catch(() => ({
+        data: [],
+      })) as Promise<ModelList>
   }
 
   /**
@@ -138,9 +141,38 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
    * Add a new remote engine
    * @returns A Promise that resolves to intall of engine.
    */
-  async addRemoteEngine(engineConfig: EngineConfig) {
+  async addRemoteEngine(
+    engineConfig: EngineConfig,
+    persistModels: boolean = true
+  ) {
+    // Populate default settings
+    if (
+      engineConfig.metadata?.transform_req?.chat_completions &&
+      !engineConfig.metadata.transform_req.chat_completions.template
+    )
+      engineConfig.metadata.transform_req.chat_completions.template =
+        DEFAULT_REQUEST_PAYLOAD_TRANSFORM
+
+    if (
+      engineConfig.metadata?.transform_resp?.chat_completions &&
+      !engineConfig.metadata.transform_resp.chat_completions?.template
+    )
+      engineConfig.metadata.transform_resp.chat_completions.template =
+        DEFAULT_RESPONSE_BODY_TRANSFORM
+
+    if (engineConfig.metadata && !engineConfig.metadata?.header_template)
+      engineConfig.metadata.header_template = DEFAULT_REQUEST_HEADERS_TRANSFORM
+
     return this.queue.add(() =>
-      ky.post(`${API_URL}/v1/engines`, { json: engineConfig }).then((e) => e)
+      ky.post(`${API_URL}/v1/engines`, { json: engineConfig }).then((e) => {
+        if (persistModels && engineConfig.metadata?.get_models_url) {
+          // Pull /models from remote models endpoint
+          return this.populateRemoteModels(engineConfig)
+            .then(() => e)
+            .catch(() => e)
+        }
+        return e
+      })
     ) as Promise<{ messages: string }>
   }
 
@@ -161,9 +193,25 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
    * @param model - Remote model object.
    */
   async addRemoteModel(model: Model) {
-    return this.queue.add(() =>
-      ky.post(`${API_URL}/v1/models/add`, { json: model }).then((e) => e)
-    )
+    return this.queue
+      .add(() =>
+        ky
+          .post(`${API_URL}/v1/models/add`, {
+            json: {
+              inference_params: {
+                max_tokens: 4096,
+                temperature: 0.7,
+                top_p: 0.95,
+                stream: true,
+                frequency_penalty: 0,
+                presence_penalty: 0,
+              },
+              ...model,
+            },
+          })
+          .then((e) => e)
+      )
+      .then(() => {})
   }
 
   /**
@@ -245,11 +293,7 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
         error instanceof EngineError
       ) {
         const systemInfo = await systemInformation()
-        const variant = await executeOnMain(
-          NODE,
-          'engineVariant',
-          systemInfo.gpuSetting
-        )
+        const variant = await engineVariant(systemInfo.gpuSetting)
         await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
           variant: variant,
           version: `${CORTEX_ENGINE_VERSION}`,
@@ -293,14 +337,40 @@ export default class JSONEngineManagementExtension extends EngineManagementExten
           data.api_key = api_key
           /// END - Migrate legacy api key settings
 
-          await this.addRemoteEngine(data).catch(console.error)
+          await this.addRemoteEngine(data, false).catch(console.error)
         })
       )
       events.emit(EngineEvent.OnEngineUpdate, {})
-      DEFAULT_REMOTE_MODELS.forEach(async (data: Model) => {
-        await this.addRemoteModel(data).catch(() => {})
-      })
+      await Promise.all(
+        DEFAULT_REMOTE_MODELS.map((data: Model) =>
+          this.addRemoteModel(data).catch(() => {})
+        )
+      )
       events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
     }
+  }
+
+  /**
+   * Pulls models list from the remote provider and persist
+   * @param engineConfig
+   * @returns
+   */
+  private populateRemoteModels = async (engineConfig: EngineConfig) => {
+    return this.getRemoteModels(engineConfig.engine)
+      .then((models: ModelList) => {
+        if (models?.data)
+          Promise.all(
+            models.data.map((model) =>
+              this.addRemoteModel({
+                ...model,
+                engine: engineConfig.engine as InferenceEngine,
+                model: model.model ?? model.id,
+              }).catch(console.info)
+            )
+          ).then(() => {
+            events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
+          })
+      })
+      .catch(console.info)
   }
 }

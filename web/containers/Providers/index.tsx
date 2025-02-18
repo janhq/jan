@@ -4,14 +4,10 @@ import { PropsWithChildren } from 'react'
 
 import { Toaster } from 'react-hot-toast'
 
-import { SWRConfig } from 'swr'
-
 import EventListener from '@/containers/Providers/EventListener'
 import JotaiWrapper from '@/containers/Providers/Jotai'
 
 import ThemeWrapper from '@/containers/Providers/Theme'
-
-import Umami from '@/utils/umami'
 
 import { CoreConfigurator } from './CoreConfigurator'
 import DataLoader from './DataLoader'
@@ -28,7 +24,6 @@ const Providers = ({ children }: PropsWithChildren) => {
     <SWRConfigProvider>
       <ThemeWrapper>
         <JotaiWrapper>
-          <Umami />
           <CoreConfigurator>
             <>
               <Responsive />

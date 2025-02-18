@@ -14,6 +14,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "17.0.0",
     "@hookform/resolvers": "^3.9.1",
     "@janhq/core": "link:../core",
     "@janhq/joi": "link:../joi",
@@ -29,7 +30,7 @@
     "jotai": "^2.6.0",
     "katex": "^0.16.10",
     "lodash": "^4.17.21",
-    "lucide-react": "^0.291.0",
+    "lucide-react": "^0.311.0",
     "marked": "^9.1.2",
     "next": "14.2.3",
     "next-themes": "^0.2.1",
@@ -56,7 +57,7 @@
     "slate-react": "0.110.3",
     "swr": "^2.2.5",
     "tailwind-merge": "^2.0.0",
-    "tailwindcss": "3.3.5",
+    "tailwindcss": "3.4.17",
     "ulidx": "^2.3.0",
     "use-debounce": "^10.0.0",
     "uuid": "^9.0.1",

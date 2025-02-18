@@ -7,9 +7,9 @@ import { twMerge } from 'tailwind-merge'
 
 import { MainViewState } from '@/constants/screens'
 
-import { LEFT_PANEL_WIDTH } from '../LeftPanelContainer'
+import { leftPanelWidthAtom } from '../LeftPanelContainer'
 
-import { RIGHT_PANEL_WIDTH } from '../RightPanelContainer'
+import { rightPanelWidthAtom } from '../RightPanelContainer'
 
 import {
   mainViewStateAtom,
@@ -28,6 +28,8 @@ const CenterPanelContainer = ({ children, isShowStarterScreen }: Props) => {
   const showLeftPanel = useAtomValue(showLeftPanelAtom)
   const showRightPanel = useAtomValue(showRightPanelAtom)
   const mainViewState = useAtomValue(mainViewStateAtom)
+  const rightPanelWidth = useAtomValue(rightPanelWidthAtom)
+  const leftPanelWidth = useAtomValue(leftPanelWidthAtom)
 
   return (
     <div
@@ -36,7 +38,7 @@ const CenterPanelContainer = ({ children, isShowStarterScreen }: Props) => {
         maxWidth: matches
           ? '100%'
           : mainViewState === MainViewState.Thread && !isShowStarterScreen
-            ? `calc(100% - (${showRightPanel ? Number(localStorage.getItem(RIGHT_PANEL_WIDTH)) : 0}px + ${showLeftPanel ? Number(localStorage.getItem(LEFT_PANEL_WIDTH)) : 0}px))`
+            ? `calc(100% - (${showRightPanel ? rightPanelWidth : 0}px + ${showLeftPanel ? leftPanelWidth : 0}px))`
             : '100%',
       }}
     >

@@ -1,5 +1,3 @@
-import { FileMetadata } from '../file'
-
 /**
  * Represents the information about a model.
  * @stored
@@ -69,6 +67,11 @@ export type Model = {
    * The model identifier, which can be referenced in the API endpoints.
    */
   id: string
+
+  /**
+   * The model identifier, modern version of id.
+   */
+  model?: string
 
   /**
    * Human-readable name that is used for UI.
@@ -147,6 +150,7 @@ export type ModelSettingParams = {
  */
 export type ModelRuntimeParams = {
   temperature?: number
+  max_temperature?: number
   token_limit?: number
   top_k?: number
   top_p?: number

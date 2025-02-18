@@ -57,8 +57,7 @@ const MyModelList = ({ model }: Props) => {
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                !isLocalEngine(engines, model.engine) &&
-                  'max-w-none text-[hsla(var(--text-secondary))]'
+                !isLocalEngine(engines, model.engine) && 'max-w-none'
               )}
               title={model.name}
             >
@@ -177,7 +176,7 @@ const MyModelList = ({ model }: Props) => {
                       onClick={() => {
                         setTimeout(async () => {
                           if (!serverEnabled) {
-                            await stopModel()
+                            if (activeModel?.id === model.id) await stopModel()
                             deleteModel(model)
                           }
                         }, 500)
