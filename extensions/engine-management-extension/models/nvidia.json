@@ -8,6 +8,7 @@
     "inference_params": {
       "max_tokens": 1024,
       "temperature": 0.3,
+      "max_temperature": 1.0,
       "top_p": 1,
       "stream": false,
       "frequency_penalty": 0,

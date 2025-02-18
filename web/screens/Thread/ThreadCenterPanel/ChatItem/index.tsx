@@ -21,6 +21,7 @@ type Ref = HTMLDivElement
 type Props = {
   loadModelError?: string
   isCurrentMessage?: boolean
+  index: number
 } & ThreadMessage
 
 const ChatItem = forwardRef<Ref, Props>((message, ref) => {
@@ -78,6 +79,7 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
               {...message}
               content={content}
               status={status}
+              index={message.index}
               isCurrentMessage={message.isCurrentMessage ?? false}
             />
           </div>

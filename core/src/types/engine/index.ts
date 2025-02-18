@@ -18,6 +18,7 @@ export type EngineMetadata = {
       template?: string
     }
   }
+  explore_models_url?: string
 }
 
 export type EngineVariant = {

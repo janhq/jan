@@ -73,7 +73,7 @@ const SliderRightPanel = ({
           trigger={
             <Input
               type="text"
-              className="-mt-4 h-8 w-[60px]"
+              className="-mt-4 h-8 w-[68px]"
               min={min}
               max={max}
               value={val}

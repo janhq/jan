@@ -16,6 +16,7 @@ import MessageToolbar from '../MessageToolbar'
 import DocMessage from './DocMessage'
 import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
+import ThinkingBlock from './ThinkingBlock'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -26,7 +27,7 @@ import {
 import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 
 const MessageContainer: React.FC<
-  ThreadMessage & { isCurrentMessage: boolean }
+  ThreadMessage & { isCurrentMessage: boolean; index: number }
 > = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
@@ -40,6 +41,21 @@ const MessageContainer: React.FC<
       props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? '',
     [props.content]
   )
+
+  const { reasoningSegment, textSegment } = useMemo(() => {
+    const isThinking = text.includes('<think>') && !text.includes('</think>')
+    if (isThinking) return { reasoningSegment: text, textSegment: '' }
+
+    const match = text.match(/<think>([\s\S]*?)<\/think>/)
+    if (match?.index === undefined)
+      return { reasoningSegment: undefined, textSegment: text }
+
+    const splitIndex = match.index + match[0].length
+    return {
+      reasoningSegment: text.slice(0, splitIndex),
+      textSegment: text.slice(splitIndex),
+    }
+  }, [text])
 
   const image = useMemo(
     () =>
@@ -144,7 +160,14 @@ const MessageContainer: React.FC<
                 )}
                 dir="ltr"
               >
-                <MarkdownTextMessage text={text} isUser={isUser} />
+                {reasoningSegment && (
+                  <ThinkingBlock
+                    id={props.index}
+                    text={reasoningSegment}
+                    status={props.status}
+                  />
+                )}
+                <MarkdownTextMessage text={textSegment} isUser={isUser} />
               </div>
             )}
           </>

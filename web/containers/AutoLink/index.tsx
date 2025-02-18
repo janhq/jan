@@ -10,23 +10,25 @@ const AutoLink = ({ text }: Props) => {
 
   return (
     <>
-      {text.split(delimiter).map((word) => {
-        const match = word.match(delimiter)
-        if (match) {
-          const url = match[0]
-          return (
-            <a
-              key={url}
-              target="blank"
-              href={url.startsWith('http') ? url : `http://${url}`}
-              className="text-[hsla(var(--app-link))]"
-            >
-              {url}
-            </a>
-          )
-        }
-        return word
-      })}
+      {text &&
+        typeof text === 'string' &&
+        text.split(delimiter).map((word) => {
+          const match = word.match(delimiter)
+          if (match) {
+            const url = match[0]
+            return (
+              <a
+                key={url}
+                target="blank"
+                href={url.startsWith('http') ? url : `http://${url}`}
+                className="text-[hsla(var(--app-link))]"
+              >
+                {url}
+              </a>
+            )
+          }
+          return word
+        })}
     </>
   )
 }

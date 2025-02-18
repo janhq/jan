@@ -28,6 +28,8 @@ import ModelLabel from '@/containers/ModelLabel'
 
 import SetupRemoteModel from '@/containers/SetupRemoteModel'
 
+import { useActiveModel } from '@/hooks/useActiveModel'
+
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
@@ -40,7 +42,7 @@ import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
 import { manualRecommendationModel } from '@/utils/model'
-import { getLogoEngine } from '@/utils/modelEngine'
+import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -93,6 +95,7 @@ const ModelDropdown = ({
   const { updateModelParameter } = useUpdateModelParameters()
   const searchInputRef = useRef<HTMLInputElement>(null)
   const configuredModels = useAtomValue(configuredModelsAtom)
+  const { stopModel } = useActiveModel()
 
   const featuredModels = configuredModels.filter(
     (x) =>
@@ -226,6 +229,7 @@ const ModelDropdown = ({
       const model = downloadedModels.find((m) => m.id === modelId)
       setSelectedModel(model)
       setOpen(false)
+      stopModel()
 
       if (activeThread) {
         // Change assistand tools based on model support RAG
@@ -248,18 +252,13 @@ const ModelDropdown = ({
           ],
         })
 
-        const defaultContextLength = Math.min(
-          8192,
-          model?.settings.ctx_len ?? 8192
-        )
-
+        const contextLength = model?.settings.ctx_len
+          ? Math.min(8192, model?.settings.ctx_len ?? 8192)
+          : undefined
         const overriddenParameters = {
-          ctx_len: model?.settings.ctx_len ? defaultContextLength : undefined,
-          max_tokens: defaultContextLength
-            ? Math.min(
-                model?.parameters.max_tokens ?? 8192,
-                defaultContextLength
-              )
+          ctx_len: contextLength,
+          max_tokens: contextLength
+            ? Math.min(model?.parameters.max_tokens ?? 8192, contextLength)
             : model?.parameters.max_tokens,
         }
 
@@ -289,6 +288,7 @@ const ModelDropdown = ({
       updateThreadMetadata,
       setThreadModelParams,
       updateModelParameter,
+      stopModel,
     ]
   )
 
@@ -429,7 +429,7 @@ const ModelDropdown = ({
                             />
                           )}
                           <h6 className="font-medium capitalize text-[hsla(var(--text-secondary))]">
-                            {engine.name}
+                            {getTitleByEngine(engine.name)}
                           </h6>
                         </div>
                         <div className="-mr-2 flex gap-1">
@@ -475,7 +475,7 @@ const ModelDropdown = ({
                                 >
                                   <div className="flex items-center gap-2">
                                     <p
-                                      className="line-clamp-1 text-[hsla(var(--text-secondary))]"
+                                      className="max-w-[200px] overflow-hidden truncate whitespace-nowrap text-[hsla(var(--text-secondary))]"
                                       title={model.name}
                                     >
                                       {model.name}
@@ -549,75 +549,82 @@ const ModelDropdown = ({
                               (c) => c.id === model.id
                             )
                             return (
-                              <li
-                                key={model.id}
-                                className={twMerge(
-                                  'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                                  !isConfigured
-                                    ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
-                                    : 'text-[hsla(var(--text-primary))]'
-                                )}
-                                onClick={() => {
-                                  if (!isConfigured && engine.type === 'remote')
-                                    return null
-                                  if (isDownloaded) {
-                                    onClickModelItem(model.id)
-                                  }
-                                }}
-                              >
-                                <div className="flex gap-x-2">
-                                  <p
+                              <>
+                                {isDownloaded && (
+                                  <li
+                                    key={model.id}
                                     className={twMerge(
-                                      'line-clamp-1',
-                                      !isDownloaded &&
-                                        'text-[hsla(var(--text-secondary))]'
+                                      'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
+                                      !isConfigured
+                                        ? 'cursor-not-allowed text-[hsla(var(--text-tertiary))]'
+                                        : 'text-[hsla(var(--text-primary))]'
                                     )}
-                                    title={model.name}
-                                  >
-                                    {model.name}
-                                  </p>
-                                  <ModelLabel
-                                    size={model.metadata?.size}
-                                    compact
-                                  />
-                                </div>
-                                <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
-                                  {!isDownloaded && (
-                                    <span className="font-medium">
-                                      {toGigabytes(model.metadata?.size)}
-                                    </span>
-                                  )}
-                                  {!isDownloading && !isDownloaded ? (
-                                    <DownloadCloudIcon
-                                      size={18}
-                                      className="cursor-pointer text-[hsla(var(--app-link))]"
-                                      onClick={() =>
-                                        downloadModel(
-                                          model.sources[0].url,
-                                          model.id
-                                        )
+                                    onClick={() => {
+                                      if (
+                                        !isConfigured &&
+                                        engine.type === 'remote'
+                                      )
+                                        return null
+                                      if (isDownloaded) {
+                                        onClickModelItem(model.id)
                                       }
-                                    />
-                                  ) : (
-                                    Object.values(downloadStates)
-                                      .filter((x) => x.modelId === model.id)
-                                      .map((item) => (
-                                        <ProgressCircle
-                                          key={item.modelId}
-                                          percentage={
-                                            formatDownloadPercentage(
-                                              item?.percent,
-                                              {
-                                                hidePercentage: true,
-                                              }
-                                            ) as number
+                                    }}
+                                  >
+                                    <div className="flex gap-x-2">
+                                      <p
+                                        className={twMerge(
+                                          'max-w-[200px] overflow-hidden truncate whitespace-nowrap',
+                                          !isDownloaded &&
+                                            'text-[hsla(var(--text-secondary))]'
+                                        )}
+                                        title={model.name}
+                                      >
+                                        {model.name}
+                                      </p>
+                                      <ModelLabel
+                                        size={model.metadata?.size}
+                                        compact
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                      {!isDownloaded && (
+                                        <span className="font-medium">
+                                          {toGigabytes(model.metadata?.size)}
+                                        </span>
+                                      )}
+                                      {!isDownloading && !isDownloaded ? (
+                                        <DownloadCloudIcon
+                                          size={18}
+                                          className="cursor-pointer text-[hsla(var(--app-link))]"
+                                          onClick={() =>
+                                            downloadModel(
+                                              model.sources[0].url,
+                                              model.id
+                                            )
                                           }
-                                          size={100}
                                         />
-                                      ))
-                                  )}
-                                </div>
-                              </li>
+                                      ) : (
+                                        Object.values(downloadStates)
+                                          .filter((x) => x.modelId === model.id)
+                                          .map((item) => (
+                                            <ProgressCircle
+                                              key={item.modelId}
+                                              percentage={
+                                                formatDownloadPercentage(
+                                                  item?.percent,
+                                                  {
+                                                    hidePercentage: true,
+                                                  }
+                                                ) as number
+                                              }
+                                              size={100}
+                                            />
+                                          ))
+                                      )}
+                                    </div>
+                                  </li>
+                                )}
+                              </>
                             )
                           })}
                       </ul>

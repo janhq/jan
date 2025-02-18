@@ -29,12 +29,10 @@
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
-    "cpu-instructions": "^0.0.13",
     "ky": "^1.7.2",
     "p-queue": "^8.0.1"
   },
   "bundledDependencies": [
-    "cpu-instructions",
     "@janhq/core"
   ],
   "engines": {

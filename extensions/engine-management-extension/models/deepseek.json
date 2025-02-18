@@ -1,0 +1,28 @@
+[
+  {
+    "model": "deepseek-chat",
+    "object": "model",
+    "name": "DeepSeek Chat",
+    "version": "1.0",
+    "description": "The deepseek-chat model has been upgraded to DeepSeek-V3. deepseek-reasoner points to the new model DeepSeek-R1",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "deepseek"
+  },
+  {
+    "model": "deepseek-reasoner",
+    "object": "model",
+    "name": "DeepSeek R1",
+    "version": "1.0",
+    "description": "CoT (Chain of Thought) is the reasoning content deepseek-reasoner gives before output the final answer. For details, please refer to Reasoning Model.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "deepseek"
+  }
+]
