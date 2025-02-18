@@ -64,10 +64,12 @@ const LocalEngineItems = ({ engine }: { engine: InferenceEngine }) => {
             </div>
           </div>
           <div className="flex items-center gap-x-3">
-            <Switch
-              checked={!showSettingActiveLocalEngine.includes(engine)}
-              onChange={() => onSwitchChange(engine)}
-            />
+            {engine !== InferenceEngine.cortex_llamacpp && (
+              <Switch
+                checked={!showSettingActiveLocalEngine.includes(engine)}
+                onChange={() => onSwitchChange(engine)}
+              />
+            )}
             <Button
               theme="icon"
               variant="outline"

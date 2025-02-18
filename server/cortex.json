@@ -5,77 +5,470 @@
       "post": {
         "operationId": "AssistantsController_create",
         "summary": "Create assistant",
-        "description": "Creates a new assistant.",
-        "parameters": [],
+        "description": "Creates a new assistant with the specified configuration.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateAssistantDto"
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "The model identifier to use for the assistant."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "The name of the assistant."
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "The description of the assistant."
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "description": "Instructions for the assistant's behavior."
+                  },
+                  "tools": {
+                    "type": "array",
+                    "description": "A list of tools enabled on the assistant. Maximum of 128 tools.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "code_interpreter",
+                            "file_search",
+                            "function"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "tool_resources": {
+                    "type": "object",
+                    "description": "Resources used by the assistant's tools.",
+                    "properties": {
+                      "code_interpreter": {
+                        "type": "object"
+                      },
+                      "file_search": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "description": "Set of key-value pairs for the assistant.",
+                    "additionalProperties": true
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "format": "float",
+                    "description": "Temperature parameter for response generation."
+                  },
+                  "top_p": {
+                    "type": "number",
+                    "format": "float",
+                    "description": "Top p parameter for response generation."
+                  },
+                  "response_format": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "enum": ["auto"]
+                      },
+                      {
+                        "type": "object"
+                      }
+                    ]
+                  }
+                },
+                "required": ["model"]
               }
             }
           }
         },
-        "responses": {
-          "201": {
-            "description": "The assistant has been successfully created."
-          }
-        },
-        "tags": ["Assistants"]
-      },
-      "get": {
-        "operationId": "AssistantsController_findAll",
-        "summary": "List assistants",
-        "description": "Returns a list of assistants.",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "A limit on the number of objects to be returned. Limit can range between 1 and 100, and the default is 20.",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "order",
-            "required": false,
-            "in": "query",
-            "description": "Sort order by the created_at timestamp of the objects. asc for ascending order and desc for descending order.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "required": false,
-            "in": "query",
-            "description": "A cursor for use in pagination. after is an object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, ending with obj_foo, your subsequent call can include after=obj_foo in order to fetch the next page of the list.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "before",
-            "required": false,
-            "in": "query",
-            "description": "A cursor for use in pagination. before is an object ID that defines your place in the list. For instance, if you make a list request and receive 100 objects, ending with obj_foo, your subsequent call can include before=obj_foo in order to fetch the previous page of the list.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Ok",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AssistantEntity"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The unique identifier of the assistant."
+                    },
+                    "object": {
+                      "type": "string",
+                      "enum": ["assistant"],
+                      "description": "The object type, which is always 'assistant'."
+                    },
+                    "created_at": {
+                      "type": "integer",
+                      "description": "Unix timestamp (in seconds) of when the assistant was created."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The model identifier used by the assistant."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "The name of the assistant."
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "The description of the assistant."
+                    },
+                    "instructions": {
+                      "type": "string",
+                      "description": "Instructions for the assistant's behavior."
+                    },
+                    "tools": {
+                      "type": "array",
+                      "description": "A list of tools enabled on the assistant.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "code_interpreter",
+                              "file_search",
+                              "function"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "tool_resources": {
+                      "type": "object",
+                      "description": "Resources used by the assistant's tools.",
+                      "properties": {
+                        "code_interpreter": {
+                          "type": "object"
+                        },
+                        "file_search": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "description": "Set of key-value pairs that can be attached to the assistant.",
+                      "additionalProperties": true
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Temperature parameter for response generation."
+                    },
+                    "top_p": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Top p parameter for response generation."
+                    },
+                    "response_format": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": ["auto"]
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "object",
+                    "created_at",
+                    "model",
+                    "metadata"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Assistants"]
+      },
+      "patch": {
+        "operationId": "AssistantsController_update",
+        "summary": "Update assistant",
+        "description": "Updates an assistant. Requires at least one modifiable field.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the assistant.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "OpenAI-Beta",
+            "required": true,
+            "in": "header",
+            "description": "Beta feature header.",
+            "schema": {
+              "type": "string",
+              "enum": ["assistants=v2"]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "description": "The model identifier to use for the assistant."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "The name of the assistant."
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "The description of the assistant."
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "description": "Instructions for the assistant's behavior."
+                  },
+                  "tools": {
+                    "type": "array",
+                    "description": "A list of tools enabled on the assistant. Maximum of 128 tools.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "code_interpreter",
+                            "file_search",
+                            "function"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "tool_resources": {
+                    "type": "object",
+                    "description": "Resources used by the assistant's tools.",
+                    "properties": {
+                      "code_interpreter": {
+                        "type": "object"
+                      },
+                      "file_search": {
+                        "type": "object"
+                      }
+                    }
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "description": "Set of key-value pairs for the assistant.",
+                    "additionalProperties": true
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "format": "float",
+                    "description": "Temperature parameter for response generation."
+                  },
+                  "top_p": {
+                    "type": "number",
+                    "format": "float",
+                    "description": "Top p parameter for response generation."
+                  },
+                  "response_format": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "enum": ["auto"]
+                      },
+                      {
+                        "type": "object"
+                      }
+                    ]
                   }
+                },
+                "minProperties": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The unique identifier of the assistant."
+                    },
+                    "object": {
+                      "type": "string",
+                      "enum": ["assistant"],
+                      "description": "The object type, which is always 'assistant'."
+                    },
+                    "created_at": {
+                      "type": "integer",
+                      "description": "Unix timestamp (in seconds) of when the assistant was created."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The model identifier used by the assistant."
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "The name of the assistant."
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "The description of the assistant."
+                    },
+                    "instructions": {
+                      "type": "string",
+                      "description": "Instructions for the assistant's behavior."
+                    },
+                    "tools": {
+                      "type": "array",
+                      "description": "A list of tools enabled on the assistant.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "code_interpreter",
+                              "file_search",
+                              "function"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "tool_resources": {
+                      "type": "object",
+                      "description": "Resources used by the assistant's tools.",
+                      "properties": {
+                        "code_interpreter": {
+                          "type": "object"
+                        },
+                        "file_search": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "description": "Set of key-value pairs that can be attached to the assistant.",
+                      "additionalProperties": true
+                    },
+                    "temperature": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Temperature parameter for response generation."
+                    },
+                    "top_p": {
+                      "type": "number",
+                      "format": "float",
+                      "description": "Top p parameter for response generation."
+                    },
+                    "response_format": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": ["auto"]
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "object",
+                    "created_at",
+                    "model",
+                    "metadata"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Assistants"]
+      },
+      "get": {
+        "operationId": "AssistantsController_list",
+        "summary": "List assistants",
+        "description": "Returns a list of assistants.",
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "object": {
+                      "type": "string",
+                      "enum": ["list"],
+                      "description": "The object type, which is always 'list' for a list response."
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "The unique identifier of the assistant."
+                          },
+                          "object": {
+                            "type": "string",
+                            "enum": ["assistant"],
+                            "description": "The object type, which is always 'assistant'."
+                          },
+                          "created_at": {
+                            "type": "integer",
+                            "description": "Unix timestamp (in seconds) of when the assistant was created."
+                          },
+                          "model": {
+                            "type": "string",
+                            "description": "The model identifier used by the assistant."
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "description": "Set of key-value pairs that can be attached to the assistant.",
+                            "additionalProperties": true
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "object",
+                          "created_at",
+                          "model",
+                          "metadata"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["object", "data"]
                 }
               }
             }
@@ -88,7 +481,77 @@
       "get": {
         "operationId": "AssistantsController_findOne",
         "summary": "Get assistant",
-        "description": "Retrieves a specific assistant defined by an assistant's `id`.",
+        "description": "Retrieves a specific assistant by ID.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "The unique identifier of the assistant.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "OpenAI-Beta",
+            "required": true,
+            "in": "header",
+            "description": "Beta feature header.",
+            "schema": {
+              "type": "string",
+              "enum": ["assistants=v2"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The unique identifier of the assistant."
+                    },
+                    "object": {
+                      "type": "string",
+                      "enum": ["assistant"],
+                      "description": "The object type, which is always 'assistant'."
+                    },
+                    "created_at": {
+                      "type": "integer",
+                      "description": "Unix timestamp (in seconds) of when the assistant was created."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The model identifier used by the assistant."
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "description": "Set of key-value pairs attached to the assistant.",
+                      "additionalProperties": true
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "object",
+                    "created_at",
+                    "model",
+                    "metadata"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Assistants"]
+      },
+      "delete": {
+        "operationId": "AssistantsController_remove",
+        "summary": "Delete assistant",
+        "description": "Deletes a specific assistant by ID.",
         "parameters": [
           {
             "name": "id",
@@ -106,36 +569,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AssistantEntity"
-                }
-              }
-            }
-          }
-        },
-        "tags": ["Assistants"]
-      },
-      "delete": {
-        "operationId": "AssistantsController_remove",
-        "summary": "Delete assistant",
-        "description": "Deletes a specific assistant defined by an assistant's `id`.",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "The unique identifier of the assistant.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The assistant has been successfully deleted.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DeleteAssistantResponseDto"
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The unique identifier of the deleted assistant."
+                    },
+                    "object": {
+                      "type": "string",
+                      "enum": ["assistant.deleted"],
+                      "description": "The object type for a deleted assistant."
+                    },
+                    "deleted": {
+                      "type": "boolean",
+                      "enum": [true],
+                      "description": "Indicates the assistant was successfully deleted."
+                    }
+                  },
+                  "required": ["id", "object", "deleted"]
                 }
               }
             }
@@ -2199,6 +2650,84 @@
         "tags": ["Engines"]
       }
     },
+    "/engines/{name}/releases/{version}": {
+      "get": {
+        "summary": "List variants for a specific engine version",
+        "description": "Lists all available variants (builds) for a specific version of an engine. Variants can include different CPU architectures (AVX, AVX2, AVX512), GPU support (CUDA, Vulkan), and operating systems (Windows, Linux, macOS).",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["llama-cpp", "onnxruntime", "tensorrt-llm"],
+              "default": "llama-cpp"
+            },
+            "description": "The type of engine"
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "The version of the engine"
+          },
+          {
+            "name": "show",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["all", "compatible"],
+              "default": "all"
+            },
+            "description": "Filter the variants list. Use 'compatible' to show only variants compatible with the current system, or 'all' to show all available variants."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successfully retrieved variants list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "The name of the variant, including OS, architecture, and capabilities",
+                        "example": "linux-amd64-avx-cuda-11-7"
+                      },
+                      "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Creation timestamp of the variant",
+                        "example": "2024-11-13T04:51:16Z"
+                      },
+                      "size": {
+                        "type": "integer",
+                        "description": "Size of the variant in bytes",
+                        "example": 151224604
+                      },
+                      "download_count": {
+                        "type": "integer",
+                        "description": "Number of times this variant has been downloaded",
+                        "example": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Engines"]
+      }
+    },
     "/engines/{name}/releases/latest": {
       "get": {
         "summary": "Get latest release",
@@ -2314,7 +2843,7 @@
                       "get_models_url": {
                         "type": "string",
                         "description": "The URL to get models",
-                        "example": "https://api.openai.com/v1/models"
+                        "example": "https://api.openai.com/models"
                       }
                     }
                   }
@@ -3378,6 +3907,7 @@
         "Files",
         "Hardware",
         "Events",
+        "Assistants",
         "Threads",
         "Messages",
         "Pulling Models",
@@ -4858,8 +5388,8 @@
           "engine",
           "version",
           "inference_params",
-          "TransformReq",
-          "TransformResp",
+          "transform_req",
+          "transform_resp",
           "metadata"
         ],
         "properties": {
@@ -4867,9 +5397,9 @@
             "type": "string",
             "description": "The identifier of the model."
           },
-          "api_key_template": {
+          "header_template": {
             "type": "string",
-            "description": "Template for the API key header."
+            "description": "Template for the header."
           },
           "engine": {
             "type": "string",
@@ -4902,7 +5432,7 @@
               }
             }
           },
-          "TransformReq": {
+          "transform_req": {
             "type": "object",
             "properties": {
               "get_models": {
@@ -4924,7 +5454,7 @@
               }
             }
           },
-          "TransformResp": {
+          "transform_resp": {
             "type": "object",
             "properties": {
               "chat_completions": {
@@ -5632,9 +6162,9 @@
             "description": "Number of GPU layers.",
             "example": 33
           },
-          "api_key_template": {
+          "header_template": {
             "type": "string",
-            "description": "Template for the API key header."
+            "description": "Template for the header."
           },
           "version": {
             "type": "string",

@@ -29,15 +29,20 @@ const ModelLabel = ({ size, compact }: Props) => {
   const { settings } = useSettings()
 
   const getLabel = (size: number) => {
-    const minimumRamModel = size * 1.25
-    const availableRam =
-      settings?.run_mode === 'gpu'
-        ? availableVram * 1000000 // MB to bytes
-        : totalRam - usedRam + (activeModel?.metadata?.size ?? 0)
+    const minimumRamModel = (size * 1.25) / (1024 * 1024)
+
+    const availableRam = settings?.gpus?.some((gpu) => gpu.activated)
+      ? availableVram * 1000000 // MB to bytes
+      : totalRam -
+        (usedRam +
+          (activeModel?.metadata?.size
+            ? (activeModel.metadata.size * 1.25) / (1024 * 1024)
+            : 0))
+
     if (minimumRamModel > totalRam) {
       return (
         <NotEnoughMemoryLabel
-          unit={settings?.run_mode === 'gpu' ? 'VRAM' : 'RAM'}
+          unit={settings?.gpus?.some((gpu) => gpu.activated) ? 'VRAM' : 'RAM'}
           compact={compact}
         />
       )

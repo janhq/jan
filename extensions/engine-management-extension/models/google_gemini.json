@@ -1,0 +1,67 @@
+[
+  {
+    "model": "gemini-2.0-flash",
+    "object": "model",
+    "name": "Gemini 2.0 Flash",
+    "version": "1.0",
+    "description": "Gemini 2.0 Flash delivers next-gen features and improved capabilities, including superior speed, native tool use, multimodal generation, and a 1M token context window.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "google_gemini"
+  },
+  {
+    "model": "gemini-2.0-flash-lite-preview",
+    "object": "model",
+    "name": "Gemini 2.0 Flash-Lite Preview",
+    "version": "1.0",
+    "description": "A Gemini 2.0 Flash model optimized for cost efficiency and low latency.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "google_gemini"
+  },
+  {
+    "model": "gemini-1.5-flash",
+    "object": "model",
+    "name": "Gemini 1.5 Flash",
+    "version": "1.0",
+    "description": "Gemini 1.5 Flash is a fast and versatile multimodal model for scaling across diverse tasks.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "google_gemini"
+  },
+  {
+    "model": "gemini-1.5-flash-8b",
+    "object": "model",
+    "name": "Gemini 1.5 Flash-8B",
+    "version": "1.0",
+    "description": "Gemini 1.5 Flash-8B is a small model designed for lower intelligence tasks.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "google_gemini"
+  },
+  {
+    "model": "gemini-1.5-pro",
+    "object": "model",
+    "name": "Gemini 1.5 Pro",
+    "version": "1.0",
+    "description": "Gemini 1.5 Pro is a mid-size multimodal model that is optimized for a wide-range of reasoning tasks. 1.5 Pro can process large amounts of data at once, including 2 hours of video, 19 hours of audio, codebases with 60,000 lines of code, or 2,000 pages of text. ",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.6,
+      "stream": true
+    },
+    "engine": "google_gemini"
+  }
+]

@@ -124,16 +124,20 @@ const LocalServerRightPanel = () => {
               clipboard.copy(selectedModel?.id)
             }}
             suffixIcon={
-              clipboard.copied ? (
-                <CheckIcon
-                  size={14}
-                  className="text-[hsla(var(--success-bg))]"
-                />
+              selectedModel ? (
+                clipboard.copied ? (
+                  <CheckIcon
+                    size={14}
+                    className="text-[hsla(var(--success-bg))]"
+                  />
+                ) : (
+                  <CopyIcon
+                    size={14}
+                    className="cursor-pointer text-[hsla(var(--text-secondary))]"
+                  />
+                )
               ) : (
-                <CopyIcon
-                  size={14}
-                  className="cursor-pointer text-[hsla(var(--text-secondary))]"
-                />
+                <></>
               )
             }
           />

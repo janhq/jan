@@ -27,6 +27,10 @@ export const getConfigurationsData = (
                 componentSetting.controllerProps.max ||
                 4096
               break
+            case 'temperature':
+              componentSetting.controllerProps.max =
+                selectedModel?.parameters?.max_temperature || 2
+              break
             case 'ctx_len':
               componentSetting.controllerProps.max =
                 selectedModel?.settings.ctx_len ||

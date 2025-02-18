@@ -25,6 +25,8 @@ import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
+import { getAppDistinctId, updateDistinctId } from '@/utils/settings'
+
 import LoadingModal from '../LoadingModal'
 
 import MainViewContainer from '../MainViewContainer'
@@ -96,8 +98,16 @@ const BaseLayout = () => {
           return properties
         },
       })
-      posthog.opt_in_capturing()
-      posthog.register({ app_version: VERSION })
+      // Attempt to restore distinct Id from app global settings
+      getAppDistinctId()
+        .then((id) => {
+          if (id) posthog.identify(id)
+        })
+        .finally(() => {
+          posthog.opt_in_capturing()
+          posthog.register({ app_version: VERSION })
+          updateDistinctId(posthog.get_distinct_id())
+        })
     } else {
       posthog.opt_out_capturing()
     }

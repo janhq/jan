@@ -25,7 +25,7 @@ const DeleteEngineVariant = ({
 
   return (
     <Modal
-      title={<span>Delete {variant.name}</span>}
+      title={<span>Delete Variant</span>}
       open={open}
       onOpenChange={() => setOpen(!open)}
       trigger={
@@ -39,7 +39,8 @@ const DeleteEngineVariant = ({
       content={
         <div>
           <p className="text-[hsla(var(--text-secondary))]">
-            Are you sure you want to delete this variant?
+            Are you sure you want to delete {variant.name}? This action cannot
+            be undone.
           </p>
           <div className="mt-4 flex justify-end gap-x-2">
             <ModalClose
