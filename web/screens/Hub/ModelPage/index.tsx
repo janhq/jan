@@ -9,7 +9,6 @@ import {
   FileJson,
   SettingsIcon,
 } from 'lucide-react'
-import '@/styles/components/marked.scss'
 
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
@@ -193,7 +192,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
               <MarkdownTextMessage
                 text={model.metadata?.description ?? ''}
-                className="markdown-content h-full w-full text-[hsla(var(--text-secondary))]"
+                className="h-full w-full text-[hsla(var(--text-secondary))]"
               />
             </div>
           </div>
