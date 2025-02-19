@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 
-const Spinner = ({ size = 40, strokeWidth = 4, className =""}) => {
+const Spinner = ({ size = 40, strokeWidth = 4, className = '' }) => {
   const radius = size / 2 - strokeWidth
   const circumference = 2 * Math.PI * radius
 

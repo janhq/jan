@@ -29,11 +29,14 @@ import {
 } from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
+import Spinner from '@/containers/Loader/Spinner'
+
 import {
   addRemoteEngineModel,
   updateEngine,
   useGetEngines,
   useGetRemoteModels,
+  useRefreshModelList,
 } from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
@@ -48,7 +51,6 @@ import {
   selectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
-import Spinner from '@/containers/Loader/Spinner'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -63,8 +65,7 @@ const RemoteEngineSettings = ({
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const customEngineLogo = getLogoEngine(name)
   const threads = useAtomValue(threadsAtom)
-  const { mutate: fetchRemoteModels } = useGetRemoteModels(name)
-  const [refreshingModels, setRefreshingModels] = useState(false)
+  const { refreshingModels, refreshModels } = useRefreshModelList(name)
 
   const engine =
     engines &&
@@ -73,20 +74,6 @@ const RemoteEngineSettings = ({
       .flatMap(([_, engineArray]) => engineArray as EngineConfig)[0]
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
-
-  const refreshModels = useCallback(() => {
-    setRefreshingModels(true)
-    fetchRemoteModels()
-      .then((remoteModelList) =>
-        Promise.all(
-          remoteModelList?.data?.map(
-            (model: { id?: string }) =>
-              model?.id ? addRemoteEngineModel(model.id, name).catch(() => {}) : {}
-          ) ?? []
-        )
-      )
-      .finally(() => setRefreshingModels(false))
-  }, [fetchRemoteModels, name])
 
   const handleChange = useCallback(
     (field: string, value: any) => {

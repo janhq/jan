@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import {
   ExtensionTypeEnum,
@@ -34,7 +34,7 @@ export const releasedEnginesLatestCacheAtom = atomWithStorage<{
 
 export interface RemoteModelList {
   data?: {
-    id?: string,
+    id?: string
     name?: string
   }[]
 }
@@ -96,7 +96,11 @@ export function useGetRemoteModels(name: string) {
     mutate,
   } = useSWR(
     extension ? `remoteModels_${name}` : null,
-    () => fetchExtensionData(extension, (ext) => ext.getRemoteModels(name) as Promise<RemoteModelList>),
+    () =>
+      fetchExtensionData(
+        extension,
+        (ext) => ext.getRemoteModels(name) as Promise<RemoteModelList>
+      ),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
@@ -462,4 +466,31 @@ export const useGetEngineModelSources = () => {
           }) as unknown as ModelSource
       ),
   }
+}
+
+/**
+ * Refresh model list
+ * @param engine
+ * @returns
+ */
+export const useRefreshModelList = (engine: string) => {
+  const [refreshingModels, setRefreshingModels] = useState(false)
+  const { mutate: fetchRemoteModels } = useGetRemoteModels(engine)
+
+  const refreshModels = useCallback(() => {
+    setRefreshingModels(true)
+    fetchRemoteModels()
+      .then((remoteModelList) =>
+        Promise.all(
+          remoteModelList?.data?.map((model: { id?: string }) =>
+            model?.id
+              ? addRemoteEngineModel(model.id, engine).catch(() => {})
+              : {}
+          ) ?? []
+        )
+      )
+      .finally(() => setRefreshingModels(false))
+  }, [fetchRemoteModels])
+
+  return { refreshingModels, refreshModels }
 }
