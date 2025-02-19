@@ -9,10 +9,17 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
+  # Different Jan instances should have different Cortex server port configurations
+  set-cortex-api-port:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set CORTEX_API_PORT environment variable
+        run: echo "CORTEX_API_PORT=39271" >> $GITHUB_ENV
+
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, set-cortex-api-port]
     with:
       ref: ${{ github.ref }}
       public_provider: github
@@ -22,7 +29,7 @@ jobs:
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, set-cortex-api-port]
     with:
       ref: ${{ github.ref }}
       public_provider: github
@@ -32,7 +39,7 @@ jobs:
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, set-cortex-api-port]
     with:
       ref: ${{ github.ref }}
       public_provider: github

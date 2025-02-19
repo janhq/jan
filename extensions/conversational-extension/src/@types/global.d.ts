@@ -1,5 +1,4 @@
 declare const API_URL: string
-declare const SOCKET_URL: string
 
 interface Core {
   api: APIFunctions
