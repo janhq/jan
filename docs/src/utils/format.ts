@@ -1,5 +1,5 @@
 export function formatCompactNumber(count: number) {
-  const formatter = Intl.NumberFormat('en', { notation: 'compact' })
+  const formatter = Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
   return formatter.format(count)
 }
 
