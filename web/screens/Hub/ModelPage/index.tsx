@@ -9,7 +9,6 @@ import {
   FileJson,
   SettingsIcon,
 } from 'lucide-react'
-import '@/styles/components/marked.scss'
 
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
@@ -50,7 +49,9 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             {/* Header */}
             <div className="flex items-center justify-between py-2">
               <span className="line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline">
-                {extractModelName(model.metadata.id)}
+                {model.type !== 'cloud'
+                  ? extractModelName(model.metadata.id)
+                  : model.metadata.id}
               </span>
               <div className="inline-flex items-center space-x-2">
                 {model.type !== 'cloud' ? (
@@ -151,7 +152,9 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                         >
                           <td className="flex items-center space-x-4 px-6 py-4">
                             <span className="line-clamp-1">
-                              {item.id?.split(':')?.pop()}
+                              {model.type === 'cloud'
+                                ? item.id
+                                : item.id?.split(':')?.pop()}
                             </span>
                             {i === 0 && model.type !== 'cloud' && (
                               <Badge
@@ -193,7 +196,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
               <MarkdownTextMessage
                 text={model.metadata?.description ?? ''}
-                className="markdown-content h-full w-full text-[hsla(var(--text-secondary))]"
+                className="h-full w-full text-[hsla(var(--text-secondary))]"
               />
             </div>
           </div>

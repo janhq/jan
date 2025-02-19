@@ -16,6 +16,10 @@ import remarkMath from 'remark-math'
 
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/atom-one-dark.css'
+import '@/styles/components/marked.scss'
+
+import { twMerge } from 'tailwind-merge'
+
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
@@ -214,7 +218,7 @@ export const MarkdownTextMessage = memo(
     return (
       <>
         <Markdown
-          className={className}
+          className={twMerge('markdown-content', className)}
           remarkPlugins={[remarkMath, remarkGfm]}
           rehypePlugins={
             [
