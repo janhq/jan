@@ -32,10 +32,8 @@ import { twMerge } from 'tailwind-merge'
 import Spinner from '@/containers/Loader/Spinner'
 
 import {
-  addRemoteEngineModel,
   updateEngine,
   useGetEngines,
-  useGetRemoteModels,
   useRefreshModelList,
 } from '@/hooks/useEngineManagement'
 
