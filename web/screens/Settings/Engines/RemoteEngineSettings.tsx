@@ -15,15 +15,27 @@ interface EngineConfig extends OriginalEngineConfig {
   [key: string]: any
 }
 
-import { ScrollArea, Input, TextArea } from '@janhq/joi'
+import { ScrollArea, Input, TextArea, Button } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { set } from 'lodash'
-import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  RefreshCwIcon,
+} from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
+import Spinner from '@/containers/Loader/Spinner'
+
+import {
+  updateEngine,
+  useGetEngines,
+  useRefreshModelList,
+} from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
@@ -51,6 +63,7 @@ const RemoteEngineSettings = ({
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const customEngineLogo = getLogoEngine(name)
   const threads = useAtomValue(threadsAtom)
+  const { refreshingModels, refreshModels } = useRefreshModelList(name)
 
   const engine =
     engines &&
@@ -214,7 +227,21 @@ const RemoteEngineSettings = ({
                 <div>
                   <h6 className="mb-2 line-clamp-1 font-semibold">Model</h6>
                 </div>
-                <ModalAddModel engine={name} />
+                <div className="flex gap-2">
+                  <Button
+                    theme={'ghost'}
+                    variant={'outline'}
+                    onClick={() => refreshModels()}
+                  >
+                    {refreshingModels ? (
+                      <Spinner size={16} strokeWidth={2} className="mr-2" />
+                    ) : (
+                      <RefreshCwIcon size={16} className="mr-2" />
+                    )}
+                    Refresh
+                  </Button>
+                  <ModalAddModel engine={name} />
+                </div>
               </div>
 
               <div>

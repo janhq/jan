@@ -7,12 +7,16 @@ import {
   ArrowLeftIcon,
   DownloadIcon,
   FileJson,
+  RefreshCwIcon,
   SettingsIcon,
 } from 'lucide-react'
 
+import Spinner from '@/containers/Loader/Spinner'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
 import { MainViewState } from '@/constants/screens'
+
+import { useRefreshModelList } from '@/hooks/useEngineManagement'
 
 import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
 
@@ -30,6 +34,8 @@ type Props = {
 const ModelPage = ({ model, onGoBack }: Props) => {
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
+  const { refreshingModels, refreshModels } = useRefreshModelList(model.id)
+
   return (
     <ScrollArea data-testid="hub-container-test-id" className="h-full w-full">
       <div className="flex h-full w-full justify-center">
@@ -127,7 +133,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                 <table className="w-full p-4">
                   <thead className="bg-[hsla(var(--tertiary-bg))]">
                     <tr>
-                      <th className="flex-1 px-6 py-3 text-left text-sm font-semibold">
+                      <th className="flex flex-1 flex-row items-center justify-between px-6 py-3 text-left text-sm font-semibold">
                         {model.type !== 'cloud' ? 'Version' : 'Models'}
                       </th>
                       {model.type !== 'cloud' && (
@@ -140,7 +146,27 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                           </th>
                         </>
                       )}
-                      <th className="w-[120px]"></th>
+                      <th className="w-[120px]">
+                        {model.type === 'cloud' && (
+                          <Button
+                            theme={'ghost'}
+                            variant={'outline'}
+                            className="h-7 px-2"
+                            onClick={() => refreshModels()}
+                          >
+                            {refreshingModels ? (
+                              <Spinner
+                                size={16}
+                                strokeWidth={2}
+                                className="mr-2"
+                              />
+                            ) : (
+                              <RefreshCwIcon size={16} className="mr-2" />
+                            )}
+                            Refresh
+                          </Button>
+                        )}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
