@@ -18,12 +18,13 @@ import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/atom-one-dark.css'
 import '@/styles/components/marked.scss'
 
+import { twMerge } from 'tailwind-merge'
+
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
 
 import { markdownComponents } from './MarkdownUtils'
-import { twMerge } from 'tailwind-merge'
 
 interface Props {
   text: string
