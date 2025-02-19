@@ -83,7 +83,7 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
         <span className="mx-4 font-medium text-white">Download</span>
       </div>
       <Dropdown
-        className="z-50 min-w-[240px]"
+        className="z-50  max-h-[240px] min-w-[240px] max-w-[320px] overflow-y-auto border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow"
         options={model.models?.map((e) => ({
           name: (
             <div className="flex space-x-2">
