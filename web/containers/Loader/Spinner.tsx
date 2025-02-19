@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 
-const Spinner = ({ size = 40, strokeWidth = 4 }) => {
+const Spinner = ({ size = 40, strokeWidth = 4, className =""}) => {
   const radius = size / 2 - strokeWidth
   const circumference = 2 * Math.PI * radius
 
@@ -11,6 +11,7 @@ const Spinner = ({ size = 40, strokeWidth = 4 }) => {
       viewBox={`0 0 ${size} ${size}`}
       style={{ overflow: 'visible' }}
       animate={{ rotate: 360 }}
+      className={className}
       transition={{
         repeat: Infinity,
         duration: 2, // Adjust for desired speed

@@ -32,6 +32,13 @@ export const releasedEnginesLatestCacheAtom = atomWithStorage<{
   timestamp: number
 } | null>('releasedEnginesLatestCache', null, undefined, { getOnInit: true })
 
+export interface RemoteModelList {
+  data?: {
+    id?: string,
+    name?: string
+  }[]
+}
+
 // fetcher function
 async function fetchExtensionData<T>(
   extension: EngineManagementExtension | null,
@@ -88,8 +95,8 @@ export function useGetRemoteModels(name: string) {
     error,
     mutate,
   } = useSWR(
-    extension ? 'remoteModels' : null,
-    () => fetchExtensionData(extension, (ext) => ext.getRemoteModels(name)),
+    extension ? `remoteModels_${name}` : null,
+    () => fetchExtensionData(extension, (ext) => ext.getRemoteModels(name) as Promise<RemoteModelList>),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,

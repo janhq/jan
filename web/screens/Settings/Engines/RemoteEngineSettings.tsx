@@ -15,15 +15,26 @@ interface EngineConfig extends OriginalEngineConfig {
   [key: string]: any
 }
 
-import { ScrollArea, Input, TextArea } from '@janhq/joi'
+import { ScrollArea, Input, TextArea, Button } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { set } from 'lodash'
-import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  RefreshCwIcon,
+} from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
+import {
+  addRemoteEngineModel,
+  updateEngine,
+  useGetEngines,
+  useGetRemoteModels,
+} from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
@@ -37,6 +48,7 @@ import {
   selectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
+import Spinner from '@/containers/Loader/Spinner'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -51,6 +63,8 @@ const RemoteEngineSettings = ({
   const setSelectedModel = useSetAtom(selectedModelAtom)
   const customEngineLogo = getLogoEngine(name)
   const threads = useAtomValue(threadsAtom)
+  const { mutate: fetchRemoteModels } = useGetRemoteModels(name)
+  const [refreshingModels, setRefreshingModels] = useState(false)
 
   const engine =
     engines &&
@@ -59,6 +73,20 @@ const RemoteEngineSettings = ({
       .flatMap(([_, engineArray]) => engineArray as EngineConfig)[0]
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
+
+  const refreshModels = useCallback(() => {
+    setRefreshingModels(true)
+    fetchRemoteModels()
+      .then((remoteModelList) =>
+        Promise.all(
+          remoteModelList?.data?.map(
+            (model: { id?: string }) =>
+              model?.id ? addRemoteEngineModel(model.id, name).catch(() => {}) : {}
+          ) ?? []
+        )
+      )
+      .finally(() => setRefreshingModels(false))
+  }, [fetchRemoteModels, name])
 
   const handleChange = useCallback(
     (field: string, value: any) => {
@@ -214,7 +242,21 @@ const RemoteEngineSettings = ({
                 <div>
                   <h6 className="mb-2 line-clamp-1 font-semibold">Model</h6>
                 </div>
-                <ModalAddModel engine={name} />
+                <div className="flex gap-2">
+                  <Button
+                    theme={'ghost'}
+                    variant={'outline'}
+                    onClick={() => refreshModels()}
+                  >
+                    {refreshingModels ? (
+                      <Spinner size={16} strokeWidth={2} className="mr-2" />
+                    ) : (
+                      <RefreshCwIcon size={16} className="mr-2" />
+                    )}
+                    Refresh
+                  </Button>
+                  <ModalAddModel engine={name} />
+                </div>
               </div>
 
               <div>
