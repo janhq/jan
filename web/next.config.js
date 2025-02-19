@@ -35,7 +35,8 @@ const nextConfig = {
         POSTHOG_HOST: JSON.stringify(process.env.POSTHOG_HOST),
         ANALYTICS_HOST: JSON.stringify(process.env.ANALYTICS_HOST),
         API_BASE_URL: JSON.stringify(
-          process.env.API_BASE_URL ?? 'http://127.0.0.1:39291'
+          process.env.API_BASE_URL ??
+            `http://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
         ),
         isMac: process.platform === 'darwin',
         isWindows: process.platform === 'win32',

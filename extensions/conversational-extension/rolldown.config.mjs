@@ -8,7 +8,6 @@ export default defineConfig({
   },
   platform: 'browser',
   define: {
-    API_URL: JSON.stringify('http://127.0.0.1:39291'),
-    SOCKET_URL: JSON.stringify('ws://127.0.0.1:39291'),
+    API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
   },
 })

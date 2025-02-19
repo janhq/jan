@@ -26,6 +26,9 @@ export default defineConfig([
     resolve: {
       extensions: ['.js', '.ts'],
     },
+    define: {
+      CORTEX_API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
+    },
     platform: 'node',
   },
 ])

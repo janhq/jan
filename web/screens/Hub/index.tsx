@@ -290,7 +290,7 @@ const HubScreen = () => {
                         )}
                         {hubBannerOption === 'upload' && (
                           <div
-                            className={`m-2 flex h-[172px] w-full cursor-pointer items-center justify-center rounded-md border`}
+                            className={`mx-2 mb-2 flex h-[172px] cursor-pointer items-center justify-center rounded-md border`}
                             onClick={() => {
                               imageInputRef.current?.click()
                             }}
