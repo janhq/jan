@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      nightly:
+        required: false
+        type: boolean
+        default: false
       cortex_api_port:
         required: false
         type: string

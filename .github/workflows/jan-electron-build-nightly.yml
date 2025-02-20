@@ -47,55 +47,36 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  rename-icons:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-        with:
-          ref: ${{ needs.set-public-provider.outputs.ref }}
-
-      - name: Rename Icons
-        run: |
-          mv electron/icons/jan-nightly-512x512.png electron/icons/512x512.png
-          mv electron/icons/jan-nightly.ico electron/icons/icon.ico
-          mv electron/icons/jan-nightly.png electron/icons/icon.png
-          mv electron/icons/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
-          mv electron/icons/jan-nightly-tray.png electron/icons/icon-tray.png
-
-      - name: Upload Icons
-        uses: actions/upload-artifact@v3
-        with:
-          name: renamed-icons
-          path: electron/icons/
-
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
-    needs: [get-update-version, set-public-provider, rename-icons]
+    needs: [get-update-version, set-public-provider]
     secrets: inherit
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      nightly: true
       cortex_api_port: "39261"
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [get-update-version, set-public-provider, rename-icons]
+    needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      nightly: true
       cortex_api_port: "39261"
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [get-update-version, set-public-provider, rename-icons]
+    needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      nightly: true
       cortex_api_port: "39261"
 
   sync-temp-to-latest:
@@ -164,4 +145,3 @@ jobs:
           RUN_ID=${{ github.run_id }}
           COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
           gh pr comment $PR_URL --body "$COMMENT"
-    
