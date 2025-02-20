@@ -135,9 +135,11 @@ const MyModelList = ({ model }: Props) => {
                         <div
                           className={twMerge(
                             'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                            serverEnabled && 'cursor-not-allowed opacity-40'
+                            (serverEnabled || stateModel.loading) &&
+                              'cursor-not-allowed opacity-40'
                           )}
                           onClick={() => {
+                            if (serverEnabled || stateModel.loading) return
                             onModelActionClick(model.id)
                             setMore(false)
                           }}
@@ -159,7 +161,7 @@ const MyModelList = ({ model }: Props) => {
                           </span>
                         </div>
                       }
-                      disabled={!serverEnabled}
+                      disabled={!serverEnabled || stateModel.loading}
                       content={
                         <span>
                           {activeModel && activeModel.id === model.id
