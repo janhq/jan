@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      cortex_api_port:
+        required: false
+        type: string
+        default: null
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -153,6 +157,7 @@ jobs:
           AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
 
       - name: Build app and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false

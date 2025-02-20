@@ -47,40 +47,36 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  # Different Jan instances should have different Cortex server port configurations
-  set-cortex-api-port:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set CORTEX_API_PORT environment variable
-        run: echo "CORTEX_API_PORT=39261" >> $GITHUB_ENV
-
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
-    needs: [get-update-version, set-public-provider, set-cortex-api-port]
+    needs: [get-update-version, set-public-provider]
     secrets: inherit
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      cortex_api_port: "39261"
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [get-update-version, set-public-provider, set-cortex-api-port]
+    needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      cortex_api_port: "39261"
 
           
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [get-update-version, set-public-provider, set-cortex-api-port]
+    needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      cortex_api_port: "39261"
 
   sync-temp-to-latest:
     needs: [set-public-provider, build-windows-x64, build-linux-x64, build-macos]

@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      cortex_api_port:
+        required: false
+        type: string
+        default: null
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
