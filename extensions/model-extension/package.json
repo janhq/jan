@@ -7,7 +7,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "test": "jest",
+    "test": "vitest run",
     "build": "rolldown -c rolldown.config.mjs",
     "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
@@ -16,8 +16,8 @@
     "rimraf": "^3.0.2",
     "rolldown": "1.0.0-beta.1",
     "run-script-os": "^1.1.6",
-    "ts-loader": "^9.5.0",
-    "typescript": "5.3.3"
+    "typescript": "5.3.3",
+    "vitest": "^3.0.6"
   },
   "files": [
     "dist/*",

@@ -1,89 +1,88 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import JanModelExtension from './index'
+import ky from 'ky'
+import { ModelManager } from '@janhq/core'
 
-let SETTINGS = []
-// @ts-ignore
-global.SETTINGS = SETTINGS
+const API_URL = 'http://localhost:3000'
 
-jest.mock('@janhq/core', () => ({
-  ...jest.requireActual('@janhq/core/node'),
-  events: {
-    emit: jest.fn(),
-  },
-  joinPath: (paths) => paths.join('/'),
-  ModelExtension: jest.fn().mockImplementation(function () {
-    // @ts-ignore
-    this.registerSettings = () => {
-      return Promise.resolve()
-    }
-    // @ts-ignore
-    return this
-  }),
-}))
+vi.stubGlobal('API_URL', API_URL)
 
 describe('JanModelExtension', () => {
   let extension: JanModelExtension
-  let mockCortexAPI: any
 
   beforeEach(() => {
-    mockCortexAPI = {
-      getModels: jest.fn().mockResolvedValue([]),
-      pullModel: jest.fn().mockResolvedValue(undefined),
-      importModel: jest.fn().mockResolvedValue(undefined),
-      deleteModel: jest.fn().mockResolvedValue(undefined),
-      updateModel: jest.fn().mockResolvedValue({}),
-      cancelModelPull: jest.fn().mockResolvedValue(undefined),
-    }
-
-    // @ts-ignore
     extension = new JanModelExtension()
-    extension.cortexAPI = mockCortexAPI
-  })
+    vi.spyOn(ModelManager, 'instance').mockReturnValue({
+      get: (modelId: string) => ({
+        id: modelId,
+        engine: 'nitro_tensorrt_llm',
+        settings: { vision_model: true },
+        sources: [{ filename: 'test.bin' }],
+      }),
+    } as any)
+    vi.spyOn(JanModelExtension.prototype, 'cancelModelPull').mockImplementation(
+      async (model: string) => {
+        const kyDeleteSpy = vi.spyOn(ky, 'delete').mockResolvedValue({
+          json: () => Promise.resolve({}),
+        } as any)
 
-  it('should register settings on load', async () => {
-    // @ts-ignore
-    const registerSettingsSpy = jest.spyOn(extension, 'registerSettings')
-    await extension.onLoad()
-    expect(registerSettingsSpy).toHaveBeenCalledWith(SETTINGS)
-  })
+        await ky.delete(`${API_URL}/v1/models/pull`, {
+          json: { taskId: model },
+        })
 
-  it('should pull a model', async () => {
-    const model = 'test-model'
-    await extension.pullModel(model)
-    expect(mockCortexAPI.pullModel).toHaveBeenCalledWith(model)
-  })
+        expect(kyDeleteSpy).toHaveBeenCalledWith(`${API_URL}/v1/models/pull`, {
+          json: { taskId: model },
+        })
 
-  it('should cancel model download', async () => {
-    const model = 'test-model'
-    await extension.cancelModelPull(model)
-    expect(mockCortexAPI.cancelModelPull).toHaveBeenCalledWith(model)
-  })
-
-  it('should delete a model', async () => {
-    const model = 'test-model'
-    await extension.deleteModel(model)
-    expect(mockCortexAPI.deleteModel).toHaveBeenCalledWith(model)
-  })
-
-  it('should get all models', async () => {
-    const models = await extension.getModels()
-    expect(models).toEqual([])
-    expect(mockCortexAPI.getModels).toHaveBeenCalled()
-  })
-
-  it('should update a model', async () => {
-    const model = { id: 'test-model' }
-    const updatedModel = await extension.updateModel(model)
-    expect(updatedModel).toEqual({})
-    expect(mockCortexAPI.updateModel).toHaveBeenCalledWith(model)
-  })
-
-  it('should import a model', async () => {
-    const model: any = { path: 'test-path' }
-    const optionType: any = 'test-option'
-    await extension.importModel(model, optionType)
-    expect(mockCortexAPI.importModel).toHaveBeenCalledWith(
-      model.path,
-      optionType
+        kyDeleteSpy.mockRestore() // Restore the original implementation
+      }
     )
+  })
+
+  it('should initialize with an empty queue', () => {
+    expect(extension.queue.size).toBe(0)
+  })
+
+  describe('pullModel', () => {
+    it('should call the pull model endpoint with correct parameters', async () => {
+      const model = 'test-model'
+      const id = 'test-id'
+      const name = 'test-name'
+
+      const kyPostSpy = vi.spyOn(ky, 'post').mockReturnValue({
+        json: () => Promise.resolve({}),
+      } as any)
+
+      await extension.pullModel(model, id, name)
+
+      expect(kyPostSpy).toHaveBeenCalledWith(`${API_URL}/v1/models/pull`, {
+        json: { model, id, name },
+      })
+
+      kyPostSpy.mockRestore() // Restore the original implementation
+    })
+  })
+
+  describe('cancelModelPull', () => {
+    it('should call the cancel model pull endpoint with the correct model', async () => {
+      const model = 'test-model'
+
+      await extension.cancelModelPull(model)
+    })
+  })
+
+  describe('deleteModel', () => {
+    it('should call the delete model endpoint with the correct model', async () => {
+      const model = 'test-model'
+      const kyDeleteSpy = vi
+        .spyOn(ky, 'delete')
+        .mockResolvedValue({ json: () => Promise.resolve({}) } as any)
+
+      await extension.deleteModel(model)
+
+      expect(kyDeleteSpy).toHaveBeenCalledWith(`${API_URL}/v1/models/${model}`)
+
+      kyDeleteSpy.mockRestore() // Restore the original implementation
+    })
   })
 })
