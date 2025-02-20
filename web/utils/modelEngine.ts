@@ -90,7 +90,7 @@ export const getDescriptionByEngine = (engine: InferenceEngine) => {
     case InferenceEngine.openrouter:
       return 'A unified platform aggregating top AI models from various providers. Simplifies AI deployment by offering seamless access to multiple services through standardized integration.'
     default:
-      return `Access models from ${engine} via their API.`
+      return `Access models from ${getTitleByEngine(engine)} via their API.`
   }
 }
 
