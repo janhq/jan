@@ -122,13 +122,16 @@ const MessageContainer: React.FC<
           )}
         >
           <div>
-            {tokenSpeed &&
+            {((!!tokenSpeed &&
               tokenSpeed.message === props.id &&
-              tokenSpeed.tokenSpeed > 0 && (
-                <p className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-                  Token Speed: {Number(tokenSpeed.tokenSpeed).toFixed(2)}t/s
-                </p>
-              )}
+              tokenSpeed.tokenSpeed > 0) ||
+              (props.metadata &&
+                'token_speed' in props.metadata &&
+                !!props.metadata?.token_speed)) && (
+              <p className="text-xs font-medium text-[hsla(var(--text-secondary))]">
+                Token Speed: {Number(props.metadata?.token_speed ?? tokenSpeed?.tokenSpeed).toFixed(2)}t/s
+              </p>
+            )}
           </div>
 
           <MessageToolbar message={props} />
