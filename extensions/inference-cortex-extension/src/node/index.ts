@@ -3,13 +3,11 @@ import {
   appResourcePath,
   getJanDataFolderPath,
   log,
-  SystemInformation,
 } from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
-import { readdir, symlink } from 'fs/promises'
 
 // The HOST address to use for the Nitro subprocess
-const LOCAL_PORT = '39291'
+const LOCAL_PORT = CORTEX_API_URL.split(":").pop() ?? "39291"
 let watchdog: ProcessWatchdog | undefined = undefined
 
 /**

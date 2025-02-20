@@ -28,7 +28,7 @@ export class Retrieval {
     this.timeWeightedVectorStore = new MemoryVectorStore(
       new OpenAIEmbeddings(
         { openAIApiKey: 'cortex-embedding' },
-        { basePath: 'http://127.0.0.1:39291/v1' }
+        { basePath: `${CORTEX_API_URL}/v1` }
       )
     )
     this.timeWeightedretriever = new TimeWeightedVectorStoreRetriever({
@@ -51,7 +51,7 @@ export class Retrieval {
     this.embeddingModel = new OpenAIEmbeddings(
       { openAIApiKey: 'cortex-embedding', model },
       // TODO: Raw settings
-      { basePath: 'http://127.0.0.1:39291/v1' }
+      { basePath: `${CORTEX_API_URL}/v1` }
     )
 
     // update time-weighted embedding model

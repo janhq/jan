@@ -98,7 +98,7 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
     })
 
     server.register(require('@fastify/http-proxy'), {
-      upstream: 'http://127.0.0.1:39291/v1',
+      upstream: `${CORTEX_API_URL}/v1`,
       prefix: configs?.prefix ?? '/v1',
       http2: false,
     })

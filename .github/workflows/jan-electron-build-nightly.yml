@@ -55,6 +55,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      cortex_api_port: "39261"
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
@@ -64,6 +65,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      cortex_api_port: "39261"
 
           
   build-linux-x64:
@@ -74,6 +76,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+      cortex_api_port: "39261"
 
   sync-temp-to-latest:
     needs: [set-public-provider, build-windows-x64, build-linux-x64, build-macos]
