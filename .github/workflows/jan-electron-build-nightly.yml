@@ -16,6 +16,20 @@ on:
     types: [submitted]
 
 jobs:
+  rename-icons-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Replace Icons for Nightly Build
+        run: |
+          mv electron/icons/jan-nightly-512x512.png electron/icons/512x512.png
+          mv electron/icons/jan-nightly.ico electron/icons/icon.ico
+          mv electron/icons/jan-nightly.png electron/icons/icon.png
+          mv electron/icons/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
+          mv electron/icons/jan-nightly-tray.png electron/icons/icon-tray.png
+  
   set-public-provider:
     runs-on: ubuntu-latest
     outputs:
@@ -49,7 +63,7 @@ jobs:
 
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
-    needs: [get-update-version, set-public-provider]
+    needs: [rename-icons-nightly, get-update-version, set-public-provider]
     secrets: inherit
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
@@ -59,7 +73,7 @@ jobs:
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [get-update-version, set-public-provider]
+    needs: [rename-icons-nightly, get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -69,7 +83,7 @@ jobs:
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [get-update-version, set-public-provider]
+    needs: [rename-icons-nightly, get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
