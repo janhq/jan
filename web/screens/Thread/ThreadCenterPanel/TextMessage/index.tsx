@@ -129,7 +129,11 @@ const MessageContainer: React.FC<
                 'token_speed' in props.metadata &&
                 !!props.metadata?.token_speed)) && (
               <p className="text-xs font-medium text-[hsla(var(--text-secondary))]">
-                Token Speed: {Number(props.metadata?.token_speed ?? tokenSpeed?.tokenSpeed).toFixed(2)}t/s
+                Token Speed:{' '}
+                {Number(
+                  props.metadata?.token_speed ?? tokenSpeed?.tokenSpeed
+                ).toFixed(2)}
+                t/s
               </p>
             )}
           </div>

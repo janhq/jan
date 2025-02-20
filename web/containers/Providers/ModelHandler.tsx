@@ -75,7 +75,7 @@ export default function ModelHandler() {
   const activeThreadRef = useRef(activeThread)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
-  
+
   const [tokenSpeed, setTokenSpeed] = useAtom(tokenSpeedAtom)
   const { engines } = useGetEngines()
   const tokenSpeedRef = useRef(tokenSpeed)
