@@ -445,7 +445,7 @@ const HubScreen = () => {
               {/* Filters and Model List */}
               <div className="ml-4 mt-8 flex h-full w-full flex-row">
                 {/* Filters */}
-                <div className="hidden h-full w-[224px] shrink-0 flex-col border-r border-[hsla(var(--app-border))] pr-6 md:flex">
+                <div className="hidden h-full w-[200px] shrink-0 flex-col mr-6 md:flex sticky top-10">
                   <div className="flex w-full flex-row justify-between">
                     Filters
                     <button
@@ -477,7 +477,7 @@ const HubScreen = () => {
                 </div>
 
                 {/* Model List */}
-                <div className="w-full p-4 py-0 sm:px-16">
+                <div className="w-full p-4 py-0 sm:px-16 md:border-l border-[hsla(var(--app-border))] border-0">
                   <>
                     <div className="flex flex-row">
                       <div className="flex w-full flex-col items-start justify-between gap-4 py-4 first:pt-0 sm:flex-row">
