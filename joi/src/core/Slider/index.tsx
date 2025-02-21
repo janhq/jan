@@ -39,7 +39,7 @@ const Slider = ({
     <SliderPrimitive.Track className="slider__track">
       <SliderPrimitive.Range className="slider__range" />
     </SliderPrimitive.Track>
-    {value.map((_, i) => (
+    {value?.map((_, i) => (
       <SliderPrimitive.Thumb className="slider__thumb" key={i} />
     ))}
   </SliderPrimitive.Root>
