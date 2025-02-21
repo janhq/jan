@@ -9,7 +9,7 @@ type Props = {
 
 const ModelList = ({ models, onSelectedModel }: Props) => {
   return (
-    <div className="relative h-full w-full flex-shrink-0">
+    <div className="w-full">
       {models.map((model) => (
         <ModelItem
           key={model.id}
