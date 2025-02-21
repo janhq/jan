@@ -29,7 +29,7 @@ jest.mock('@radix-ui/react-slider', () => ({
 
 describe('@joi/core/Slider', () => {
   it('renders correctly with default props', () => {
-    render(<Slider />)
+    render(<Slider value={[1]}/>)
     expect(screen.getByTestId('slider-root')).toBeInTheDocument()
     expect(screen.getByTestId('slider-track')).toBeInTheDocument()
     expect(screen.getByTestId('slider-range')).toBeInTheDocument()

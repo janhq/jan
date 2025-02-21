@@ -1,48 +1,51 @@
-import { Model, InferenceEngine } from '@janhq/core'
-import JanModelExtension from './index'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+
+vi.stubGlobal('API_URL', 'http://localhost:3000')
+
 
 // Mock the @janhq/core module
-jest.mock('@janhq/core', () => ({
+vi.mock('@janhq/core', (actual) => ({
+  ...actual,
   ModelExtension: class {},
   InferenceEngine: {
     nitro: 'nitro',
   },
-  joinPath: jest.fn(),
-  dirName: jest.fn(),
+  joinPath: vi.fn(),
+  dirName: vi.fn(),
+  fs: {
+    existsSync: vi.fn(),
+    readFileSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+  },
 }))
 
-// Mock the CortexAPI
-jest.mock('./cortex', () => ({
-  CortexAPI: jest.fn().mockImplementation(() => ({
-    getModels: jest.fn(),
-    importModel: jest.fn(),
-  })),
-}))
+import { Model, InferenceEngine } from '@janhq/core'
+
+import JanModelExtension from './index'
 
 // Mock the model-json module
-jest.mock('./model-json', () => ({
-  scanModelsFolder: jest.fn(),
+vi.mock('./legacy/model-json', () => ({
+  scanModelsFolder: vi.fn(),
 }))
 
 // Import the mocked scanModelsFolder after the mock is set up
-const { scanModelsFolder } = jest.requireMock('./model-json')
+import * as legacy from './legacy/model-json'
 
 describe('JanModelExtension', () => {
   let extension: JanModelExtension
   let mockLocalStorage: { [key: string]: string }
-  let mockCortexAPI: jest.Mock
 
   beforeEach(() => {
     // @ts-ignore
     extension = new JanModelExtension()
     mockLocalStorage = {}
-    mockCortexAPI = extension.cortexAPI as any
 
     // Mock localStorage
     Object.defineProperty(global, 'localStorage', {
       value: {
-        getItem: jest.fn((key) => mockLocalStorage[key]),
-        setItem: jest.fn((key, value) => {
+        getItem: vi.fn((key) => mockLocalStorage[key]),
+        setItem: vi.fn((key, value) => {
           mockLocalStorage[key] = value
         }),
       },
@@ -76,22 +79,13 @@ describe('JanModelExtension', () => {
           file_path: '/path/to/model2',
         },
       ] as any
-      scanModelsFolder.mockResolvedValue(mockModels)
-      extension.cortexAPI.importModel = jest
-        .fn()
-        .mockResolvedValueOnce(mockModels[0])
-      extension.cortexAPI.getModels = jest
-        .fn()
-        .mockResolvedValue([mockModels[0]])
-      extension.cortexAPI.importModel = jest
-        .fn()
-        .mockResolvedValueOnce(mockModels[1])
-      extension.cortexAPI.getModels = jest
-        .fn()
-        .mockResolvedValue([mockModels[0], mockModels[1]])
-
+      vi.mocked(legacy.scanModelsFolder).mockResolvedValue(mockModels)
+      vi.spyOn(extension, 'fetchModels').mockResolvedValue([mockModels[0]])
+      vi.spyOn(extension, 'updateModel').mockResolvedValue(undefined)
+      vi.spyOn(extension, 'importModel').mockResolvedValueOnce(mockModels[1])
+      vi.spyOn(extension, 'fetchModels').mockResolvedValue([mockModels[0], mockModels[1]])
       const result = await extension.getModels()
-      expect(scanModelsFolder).toHaveBeenCalled()
+      expect(legacy.scanModelsFolder).toHaveBeenCalled()
       expect(result).toEqual(mockModels)
     })
 
@@ -121,9 +115,8 @@ describe('JanModelExtension', () => {
         },
       ] as any
       mockLocalStorage['downloadedModels'] = JSON.stringify(mockModels)
-
-      extension.cortexAPI.getModels = jest.fn().mockResolvedValue([])
-      extension.importModel = jest.fn().mockResolvedValue(undefined)
+      vi.spyOn(extension, 'updateModel').mockResolvedValue(undefined)
+      vi.spyOn(extension, 'importModel').mockResolvedValue(undefined)
 
       const result = await extension.getModels()
 
@@ -155,12 +148,12 @@ describe('JanModelExtension', () => {
         },
       ] as any
       mockLocalStorage['downloadedModels'] = JSON.stringify(mockModels)
-
-      extension.cortexAPI.getModels = jest.fn().mockResolvedValue(mockModels)
+      vi.spyOn(extension, 'fetchModels').mockResolvedValue(mockModels)
+      extension.getModels = vi.fn().mockResolvedValue(mockModels)
 
       const result = await extension.getModels()
 
-      expect(extension.cortexAPI.getModels).toHaveBeenCalled()
+      expect(extension.getModels).toHaveBeenCalled()
       expect(result).toEqual(mockModels)
     })
   })

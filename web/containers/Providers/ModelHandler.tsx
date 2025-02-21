@@ -18,7 +18,7 @@ import {
   extractInferenceParams,
   ModelExtension,
 } from '@janhq/core'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
@@ -75,8 +75,10 @@ export default function ModelHandler() {
   const activeThreadRef = useRef(activeThread)
   const activeModelParams = useAtomValue(getActiveThreadModelParamsAtom)
   const activeModelParamsRef = useRef(activeModelParams)
-  const setTokenSpeed = useSetAtom(tokenSpeedAtom)
+
+  const [tokenSpeed, setTokenSpeed] = useAtom(tokenSpeedAtom)
   const { engines } = useGetEngines()
+  const tokenSpeedRef = useRef(tokenSpeed)
 
   useEffect(() => {
     activeThreadRef.current = activeThread
@@ -105,6 +107,10 @@ export default function ModelHandler() {
   useEffect(() => {
     messageGenerationSubscriber.current = subscribedGeneratingMessage
   }, [subscribedGeneratingMessage])
+
+  useEffect(() => {
+    tokenSpeedRef.current = tokenSpeed
+  }, [tokenSpeed])
 
   const onNewMessageResponse = useCallback(
     async (message: ThreadMessage) => {
@@ -274,6 +280,12 @@ export default function ModelHandler() {
           ...thread,
           metadata,
         })
+
+      // Update message's metadata with token usage
+      message.metadata = {
+        ...message.metadata,
+        token_speed: tokenSpeedRef.current?.tokenSpeed,
+      }
 
       if (message.status === MessageStatus.Error) {
         message.metadata = {

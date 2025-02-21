@@ -11,5 +11,5 @@
     "rootDir": "./src"
   },
   "include": ["./src"],
-  "exclude": ["**/*.test.ts"]
+  "exclude": ["**/*.test.ts", "vite.config.ts"]
 }

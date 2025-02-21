@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      nightly:
+        required: false
+        type: boolean
+        default: false
       cortex_api_port:
         required: false
         type: string
@@ -55,6 +59,26 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Replace Icons for Beta Build
+        if: inputs.beta == true
+        shell: bash
+        run: |
+          mv electron/icons/jan-beta-512x512.png electron/icons/512x512.png
+          mv electron/icons/jan-beta.ico electron/icons/icon.ico
+          mv electron/icons/jan-beta.png electron/icons/icon.png
+          mv electron/icons/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
+          mv electron/icons/jan-beta-tray.png electron/icons/icon-tray.png
+
+      - name: Replace Icons for Nightly Build
+        if: inputs.nightly == true
+        shell: bash
+        run: |
+          mv electron/icons/jan-nightly-512x512.png electron/icons/512x512.png
+          mv electron/icons/jan-nightly.ico electron/icons/icon.ico
+          mv electron/icons/jan-nightly.png electron/icons/icon.png
+          mv electron/icons/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
+          mv electron/icons/jan-nightly-tray.png electron/icons/icon-tray.png
 
       - name: Installing node
         uses: actions/setup-node@v1
