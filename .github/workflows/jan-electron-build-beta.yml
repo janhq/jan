@@ -9,24 +9,10 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  rename-icons-beta:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
-
-      - name: Replace Icons for Beta Build
-        run: |
-          mv electron/icons/jan-beta-512x512.png electron/icons/512x512.png
-          mv electron/icons/jan-beta.ico electron/icons/icon.ico
-          mv electron/icons/jan-beta.png electron/icons/icon.png
-          mv electron/icons/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
-          mv electron/icons/jan-beta-tray.png electron/icons/icon-tray.png
-
   build-macos:
     uses: ./.github/workflows/template-build-macos.yml
     secrets: inherit
-    needs: [rename-icons-beta, get-update-version]
+    needs: [get-update-version]
     with:
       ref: ${{ github.ref }}
       public_provider: github
@@ -37,7 +23,7 @@ jobs:
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
     secrets: inherit
-    needs: [rename-icons-beta, get-update-version]
+    needs: [get-update-version]
     with:
       ref: ${{ github.ref }}
       public_provider: github
@@ -48,7 +34,7 @@ jobs:
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
     secrets: inherit
-    needs: [rename-icons-beta, get-update-version]
+    needs: [get-update-version]
     with:
       ref: ${{ github.ref }}
       public_provider: github
