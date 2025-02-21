@@ -2,20 +2,17 @@ import { useState } from 'react'
 
 import { Slider, Input, Tooltip } from '@janhq/joi'
 
-import { useClickOutside } from '@janhq/joi'
 import { atom, useAtom } from 'jotai'
 import { InfoIcon } from 'lucide-react'
 
 export const hubCtxLenAtom = atom(0)
 
 export default function ContextLengthFilter() {
-  const [showTooltip, setShowTooltip] = useState({ max: false, min: false })
   const [value, setValue] = useAtom(hubCtxLenAtom)
-  useClickOutside(() => setShowTooltip({ max: false, min: false }), null, [])
   const [inputingValue, setInputingValue] = useState(false)
 
   const normalizeTextValue = (value: number) => {
-    return value === 0 ? 'Min' : value === 100 ? '1M' : `${value}K`
+    return value === 100 ? '1M' : value === 0 ? 0 : `${value}K`
   }
 
   return (
@@ -44,7 +41,7 @@ export default function ContextLengthFilter() {
             step={1}
           />
           <div className="relative mt-1 flex items-center justify-between text-[hsla(var(--text-secondary))]">
-            <p className="text-xs">Min</p>
+            <p className="text-xs">0</p>
             <p className="text-xs">1M</p>
           </div>
         </div>

@@ -15,7 +15,7 @@ export default function ModelSizeFilter() {
   const [inputingMaxValue, setInputingMaxValue] = useState(false)
 
   const normalizeTextValue = (value: number) => {
-    return value === 0 ? 'Min' : value === 100 ? '100GB' : `${value}GB`
+    return value === 100 ? '100GB' : value === 0 ? 0 : `${value}GB`
   }
 
   return (
