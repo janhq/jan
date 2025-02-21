@@ -7,10 +7,17 @@ import Image from 'next/image'
 
 import { ModelSource } from '@janhq/core'
 
-import { ScrollArea, Button, Select, Tabs, useClickOutside } from '@janhq/joi'
+import {
+  ScrollArea,
+  Button,
+  Select,
+  Tabs,
+  useClickOutside,
+  Switch,
+} from '@janhq/joi'
 import { motion as m } from 'framer-motion'
 
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ImagePlusIcon, UploadCloudIcon, UploadIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -31,6 +38,11 @@ import ModelList from '@/screens/Hub/ModelList'
 import { extractModelRepo } from '@/utils/modelSource'
 import { fuzzySearch } from '@/utils/search'
 
+import ContextLengthFilter, { hubCtxLenAtom } from './ModelFilter/ContextLength'
+import ModelSizeFilter, {
+  hubModelSizeMaxAtom,
+  hubModelSizeMinAtom,
+} from './ModelFilter/ModelSize'
 import ModelPage from './ModelPage'
 
 import {
@@ -38,6 +50,8 @@ import {
   setAppBannerHubAtom,
 } from '@/helpers/atoms/App.atom'
 import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
+
+import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 const sortMenus = [
   {
@@ -64,6 +78,8 @@ const filterOptions = [
   },
 ]
 
+const hubCompatibleAtom = atom(false)
+
 const HubScreen = () => {
   const { sources } = useGetModelSources()
   const { sources: remoteModelSources } = useGetEngineModelSources()
@@ -83,6 +99,14 @@ const HubScreen = () => {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const hubBannerSettingRef = useRef<HTMLDivElement>(null)
+
+  const [compatible, setCompatible] = useAtom(hubCompatibleAtom)
+  const totalRam = useAtomValue(totalRamAtom)
+  const [ctxLenFilter, setCtxLenFilter] = useAtom(hubCtxLenAtom)
+  const [minModelSizeFilter, setMinModelSizeFilter] =
+    useAtom(hubModelSizeMinAtom)
+  const [maxModelSizeFilter, setMaxModelSizeFilter] =
+    useAtom(hubModelSizeMaxAtom)
 
   const searchedModels = useMemo(
     () =>
@@ -110,6 +134,32 @@ const HubScreen = () => {
       }
     })
   }, [sortSelected, sources])
+
+  const filteredModels = useMemo(() => {
+    return sortedModels.filter((model) => {
+      const isCompatible =
+        !compatible ||
+        model.models?.some((e) => e.size * 1.5 < totalRam * (1 << 20))
+      const matchesCtxLen =
+        !ctxLenFilter ||
+        model.metadata?.gguf?.context_length > ctxLenFilter * 1000
+      const matchesMinSize =
+        !minModelSizeFilter ||
+        model.models.some((e) => e.size >= minModelSizeFilter * (1 << 30))
+      const matchesMaxSize =
+        maxModelSizeFilter === 100 ||
+        model.models.some((e) => e.size <= maxModelSizeFilter * (1 << 30))
+
+      return isCompatible && matchesCtxLen && matchesMinSize && matchesMaxSize
+    })
+  }, [
+    sortedModels,
+    compatible,
+    ctxLenFilter,
+    minModelSizeFilter,
+    maxModelSizeFilter,
+    totalRam,
+  ])
 
   useEffect(() => {
     if (modelDetail) {
@@ -215,8 +265,8 @@ const HubScreen = () => {
             className="h-full w-full"
           >
             <>
-              <div className="relative h-40 p-4 sm:h-auto">
-                <div className="group">
+              <div className="relative hidden h-40 w-full p-4 sm:h-auto md:flex">
+                <div className="group w-full">
                   <Image
                     src={appBannerHub}
                     alt="Hub Banner"
@@ -392,55 +442,92 @@ const HubScreen = () => {
                   </Button>
                 </div>
               </div>
-              <div className="mt-8 p-4 py-0 sm:px-16">
-                <>
-                  <div className="flex flex-row">
-                    <div className="flex w-full flex-col items-start justify-between gap-4 py-4 first:pt-0 sm:flex-row">
-                      <div className="flex items-center gap-x-2">
-                        {filterOptions.map((e) => (
-                          <div
-                            key={e.value}
-                            className={twMerge(
-                              'rounded-md border border-[hsla(var(--app-border))] duration-200 hover:bg-[hsla(var(--secondary-bg))]',
-                              e.value === filterOption
-                                ? 'bg-[hsla(var(--secondary-bg))]'
-                                : 'bg-[hsla(var(--app-bg))]'
-                            )}
-                          >
-                            <Button
-                              theme={'ghost'}
-                              variant={'soft'}
-                              onClick={() => setFilterOption(e.value)}
+              {/* Filters and Model List */}
+              <div className="ml-4 mt-8 flex h-full w-full flex-row">
+                {/* Filters */}
+                <div className="hidden h-full w-[224px] shrink-0 flex-col border-r border-[hsla(var(--app-border))] pr-6 md:flex">
+                  <div className="flex w-full flex-row justify-between">
+                    Filters
+                    <button
+                      className="font-medium text-blue-500"
+                      onClick={() => {
+                        setCtxLenFilter(0)
+                        setMinModelSizeFilter(0)
+                        setMaxModelSizeFilter(100)
+                        setCompatible(false)
+                      }}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                  <div className="mt-8 flex flex-row gap-2">
+                    <Switch
+                      checked={compatible}
+                      onChange={() => setCompatible(!compatible)}
+                      className="w-9"
+                    />
+                    Compatible with my device
+                  </div>
+                  <div className="mt-12">
+                    <ContextLengthFilter />
+                  </div>
+                  <div className="mt-12">
+                    <ModelSizeFilter />
+                  </div>
+                </div>
+
+                {/* Model List */}
+                <div className="w-full p-4 py-0 sm:px-16">
+                  <>
+                    <div className="flex flex-row">
+                      <div className="flex w-full flex-col items-start justify-between gap-4 py-4 first:pt-0 sm:flex-row">
+                        <div className="flex items-center gap-x-2">
+                          {filterOptions.map((e) => (
+                            <div
+                              key={e.value}
+                              className={twMerge(
+                                'shrink-0 rounded-md border border-[hsla(var(--app-border))] duration-200 hover:bg-[hsla(var(--secondary-bg))]',
+                                e.value === filterOption
+                                  ? 'bg-[hsla(var(--secondary-bg))]'
+                                  : 'bg-[hsla(var(--app-bg))]'
+                              )}
                             >
-                              {e.name}
-                            </Button>
-                          </div>
-                        ))}
+                              <Button
+                                theme={'ghost'}
+                                variant={'soft'}
+                                onClick={() => setFilterOption(e.value)}
+                              >
+                                {e.name}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="mb-4 flex w-full justify-end">
+                        <Select
+                          value={sortSelected}
+                          onValueChange={(value) => {
+                            setSortSelected(value)
+                          }}
+                          options={sortMenus}
+                        />
                       </div>
                     </div>
-                    <div className="mb-4 flex w-full justify-end">
-                      <Select
-                        value={sortSelected}
-                        onValueChange={(value) => {
-                          setSortSelected(value)
-                        }}
-                        options={sortMenus}
+                    {(filterOption === 'on-device' ||
+                      filterOption === 'all') && (
+                      <ModelList
+                        models={filteredModels}
+                        onSelectedModel={(model) => setSelectedModel(model)}
                       />
-                    </div>
-                  </div>
-                  {(filterOption === 'on-device' || filterOption === 'all') && (
-                    <ModelList
-                      models={sortedModels}
-                      onSelectedModel={(model) => setSelectedModel(model)}
-                    />
-                  )}
-                  {(filterOption === 'cloud' || filterOption === 'all') && (
-                    <ModelList
-                      models={remoteModelSources}
-                      onSelectedModel={(model) => setSelectedModel(model)}
-                    />
-                  )}
-                </>
+                    )}
+                    {(filterOption === 'cloud' || filterOption === 'all') && (
+                      <ModelList
+                        models={remoteModelSources}
+                        onSelectedModel={(model) => setSelectedModel(model)}
+                      />
+                    )}
+                  </>
+                </div>
               </div>
             </>
           </ScrollArea>

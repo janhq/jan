@@ -98,21 +98,15 @@ const MyModels = () => {
       return InferenceEngine.cortex_llamacpp
     return x.engine
   })
-  const groupByEngine = findByEngine
-    .filter(function (item, index) {
-      if (findByEngine.indexOf(item) === index) return item
-    })
-    .sort((a, b) => {
-      if (priorityEngine.includes(a) && priorityEngine.includes(b)) {
-        return priorityEngine.indexOf(a) - priorityEngine.indexOf(b)
-      } else if (priorityEngine.includes(a)) {
-        return -1
-      } else if (priorityEngine.includes(b)) {
-        return 1
-      } else {
-        return 0 // Leave the rest in their original order
-      }
-    })
+
+  const groupByEngine = [...new Set(findByEngine)].sort((a, b) => {
+    const aPriority = priorityEngine.indexOf(a)
+    const bPriority = priorityEngine.indexOf(b)
+    if (aPriority !== -1 && bPriority !== -1) return aPriority - bPriority
+    if (aPriority !== -1) return -1
+    if (bPriority !== -1) return 1
+    return 0
+  })
 
   const getEngineStatusReady: InferenceEngine[] = Object.entries(engines ?? {})
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
