@@ -438,7 +438,9 @@ export default class JanModelExtension extends ModelExtension {
           methods: ['get'],
         },
       })
-      .then(() => {})
+      .then(() => {
+        this.queue.concurrency = Infinity
+      })
   }
 
   /**

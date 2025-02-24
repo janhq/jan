@@ -25,6 +25,7 @@ export default defineConfig([
       DEFAULT_REQUEST_HEADERS_TRANSFORM: JSON.stringify(
         'Authorization: Bearer {{api_key}}'
       ),
+      VERSION: JSON.stringify(pkgJson.version ?? '0.0.0'),
     },
   },
   {

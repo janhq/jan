@@ -228,7 +228,7 @@ export abstract class BaseExtension implements ExtensionType {
 
     const settings = await this.getSettings()
 
-    const updatedSettings = settings.map((setting) => {
+    let updatedSettings = settings.map((setting) => {
       const updatedSetting = componentProps.find(
         (componentProp) => componentProp.key === setting.key
       )
@@ -238,12 +238,19 @@ export abstract class BaseExtension implements ExtensionType {
       return setting
     })
 
-    const settingPath = await joinPath([
+    if (!updatedSettings.length) updatedSettings = componentProps as SettingComponentProps[]
+
+    const settingFolder = await joinPath([
       await getJanDataFolderPath(),
       this.settingFolderName,
       this.name,
-      this.settingFileName,
     ])
+
+    if (!(await fs.existsSync(settingFolder))) {
+      await fs.mkdir(settingFolder)
+    }
+
+    const settingPath = await joinPath([settingFolder, this.settingFileName])
 
     await fs.writeFileSync(settingPath, JSON.stringify(updatedSettings, null, 2))
 
