@@ -22,6 +22,7 @@ import { toGigabytes } from '@/utils/converter'
 
 import { utilizedMemory } from '@/utils/memory'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import {
   cpuUsageAtom,
   ramUtilitizedAtom,
@@ -29,7 +30,6 @@ import {
   usedRamAtom,
   gpusAtom,
 } from '@/helpers/atoms/SystemBar.atom'
-import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const orderGpusAtom = atomWithStorage<any>('orderGpus', [], undefined, {
   getOnInit: true,

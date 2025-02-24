@@ -1,6 +1,7 @@
-import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { ScrollArea, Badge } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
+
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const availableHotkeys = [
   {

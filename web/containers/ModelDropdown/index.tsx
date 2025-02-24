@@ -52,11 +52,11 @@ import {
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   chatInputMode?: boolean

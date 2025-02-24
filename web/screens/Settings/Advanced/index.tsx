@@ -26,10 +26,10 @@ import {
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { ThreadModalAction } from '@/helpers/atoms/Thread.atom'
 
 import { modalActionThreadAtom } from '@/helpers/atoms/Thread.atom'
-import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 /**
  * Advanced Settings Screen

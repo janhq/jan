@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea, Badge, Input } from '@janhq/joi'
 
+import { useAtomValue } from 'jotai'
 import { SearchIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
@@ -13,7 +14,6 @@ import { formatExtensionsName } from '@/utils/converter'
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
-import { useAtomValue } from 'jotai'
 
 const ExtensionCatalog = () => {
   const [coreActiveExtensions, setCoreActiveExtensions] = useState<Extension[]>(

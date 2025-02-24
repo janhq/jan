@@ -51,8 +51,8 @@ import {
 } from '@/helpers/atoms/App.atom'
 import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
 
-import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
 
 const sortMenus = [
   {

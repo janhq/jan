@@ -4,8 +4,8 @@ import { ScrollArea } from '@janhq/joi'
 
 import { useAtomValue } from 'jotai'
 
-import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
 
 const ListContainer = ({ children }: PropsWithChildren) => {
   const listRef = useRef<HTMLDivElement>(null)

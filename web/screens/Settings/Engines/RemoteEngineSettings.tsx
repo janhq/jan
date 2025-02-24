@@ -48,8 +48,8 @@ import {
   downloadedModelsAtom,
   selectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
-import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const RemoteEngineSettings = ({
   engine: name,
