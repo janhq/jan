@@ -160,7 +160,6 @@ const HubScreen = () => {
     })
   }, [sortSelected, filteredModels])
 
-
   useEffect(() => {
     if (modelDetail) {
       setSelectedModel(sources?.find((e) => e.id === modelDetail))
