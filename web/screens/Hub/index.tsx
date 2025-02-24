@@ -121,22 +121,8 @@ const HubScreen = () => {
     [sources, searchValue]
   )
 
-  const sortedModels = useMemo(() => {
-    if (!sources) return []
-    return sources.sort((a, b) => {
-      if (sortSelected === 'most-downloaded') {
-        return b.metadata.downloads - a.metadata.downloads
-      } else {
-        return (
-          new Date(b.metadata.createdAt).getTime() -
-          new Date(a.metadata.createdAt).getTime()
-        )
-      }
-    })
-  }, [sortSelected, sources])
-
   const filteredModels = useMemo(() => {
-    return sortedModels.filter((model) => {
+    return (sources ?? []).filter((model) => {
       const isCompatible =
         !compatible ||
         model.models?.some((e) => e.size * 1.5 < totalRam * (1 << 20))
@@ -153,13 +139,26 @@ const HubScreen = () => {
       return isCompatible && matchesCtxLen && matchesMinSize && matchesMaxSize
     })
   }, [
-    sortedModels,
+    sources,
     compatible,
     ctxLenFilter,
     minModelSizeFilter,
     maxModelSizeFilter,
     totalRam,
   ])
+
+  const sortedModels = useMemo(() => {
+    return filteredModels.sort((a, b) => {
+      if (sortSelected === 'most-downloaded') {
+        return b.metadata.downloads - a.metadata.downloads
+      } else {
+        return (
+          new Date(b.metadata.createdAt).getTime() -
+          new Date(a.metadata.createdAt).getTime()
+        )
+      }
+    })
+  }, [sortSelected, filteredModels])
 
   useEffect(() => {
     if (modelDetail) {
@@ -516,7 +515,7 @@ const HubScreen = () => {
                     {(filterOption === 'on-device' ||
                       filterOption === 'all') && (
                       <ModelList
-                        models={filteredModels}
+                        models={sortedModels}
                         onSelectedModel={(model) => setSelectedModel(model)}
                       />
                     )}
