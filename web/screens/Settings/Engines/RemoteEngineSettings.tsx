@@ -49,6 +49,7 @@ import {
   selectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const RemoteEngineSettings = ({
   engine: name,
@@ -64,6 +65,7 @@ const RemoteEngineSettings = ({
   const customEngineLogo = getLogoEngine(name)
   const threads = useAtomValue(threadsAtom)
   const { refreshingModels, refreshModels } = useRefreshModelList(name)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const engine =
     engines &&
@@ -150,7 +152,10 @@ const RemoteEngineSettings = ({
   if (!engine) return null
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       <div className="block w-full px-4">
         <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
           <div className="flex w-full flex-col items-start justify-between sm:flex-row">

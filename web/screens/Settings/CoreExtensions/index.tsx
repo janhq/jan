@@ -12,12 +12,14 @@ import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+import { useAtomValue } from 'jotai'
 
 const ExtensionCatalog = () => {
   const [coreActiveExtensions, setCoreActiveExtensions] = useState<Extension[]>(
     []
   )
-
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [searchText, setSearchText] = useState('')
   const [showLoading, setShowLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -103,7 +105,10 @@ const ExtensionCatalog = () => {
 
   return (
     <>
-      <ScrollArea className="h-full w-full">
+      <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
+        className="h-full w-full"
+      >
         <div className="flex w-full flex-col items-start justify-between gap-y-2 p-4 sm:flex-row">
           <div className="w-full sm:w-[300px]">
             <Input

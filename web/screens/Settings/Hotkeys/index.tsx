@@ -1,4 +1,6 @@
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { ScrollArea, Badge } from '@janhq/joi'
+import { useAtomValue } from 'jotai'
 
 const availableHotkeys = [
   {
@@ -42,8 +44,12 @@ const availableHotkeys = [
 ]
 
 const Hotkeys = () => {
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   return (
-    <ScrollArea className="h-full w-full p-4">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full p-4"
+    >
       <div className="mb-2 flex flex-col items-center justify-center gap-2">
         <div className="hidden w-full gap-x-4 border-b border-[hsla(var(--app-border))] pb-2 sm:flex">
           <div className="w-1/2 pb-2">

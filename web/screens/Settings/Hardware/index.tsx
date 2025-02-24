@@ -29,6 +29,7 @@ import {
   usedRamAtom,
   gpusAtom,
 } from '@/helpers/atoms/SystemBar.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const orderGpusAtom = atomWithStorage<any>('orderGpus', [], undefined, {
   getOnInit: true,
@@ -44,7 +45,7 @@ const Hardware = () => {
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
-
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [gpus, setGpus] = useAtom(gpusAtom)
 
   const [orderGpus, setOrderGpus] = useAtom(orderGpusAtom)
@@ -133,7 +134,10 @@ const Hardware = () => {
   }, [hardware?.gpus, setGpus])
 
   return (
-    <ScrollArea className="h-full w-full px-4">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full px-4"
+    >
       <div className="block w-full py-4">
         {/* CPU */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">

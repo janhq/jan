@@ -52,6 +52,7 @@ import {
 import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
 
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const sortMenus = [
   {
@@ -94,6 +95,7 @@ const HubScreen = () => {
   const [selectedModel, setSelectedModel] = useState<ModelSource | undefined>(
     undefined
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [modelDetail, setModelDetail] = useAtom(modelDetailAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -260,6 +262,7 @@ const HubScreen = () => {
       >
         {!selectedModel && (
           <ScrollArea
+            type={showScrollBar ? 'always' : 'scroll'}
             data-testid="hub-container-test-id"
             className="h-full w-full"
           >
@@ -311,7 +314,10 @@ const HubScreen = () => {
                           />
                         </div>
                         {hubBannerOption === 'gallery' && (
-                          <ScrollArea className="h-[350px] w-full">
+                          <ScrollArea
+                            type={showScrollBar ? 'always' : 'scroll'}
+                            className="h-[350px] w-full"
+                          >
                             {Array.from({ length: 30 }, (_, i) => i + 1).map(
                               (e) => {
                                 return (

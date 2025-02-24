@@ -5,6 +5,7 @@ import { ScrollArea } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
 
 import { activeThreadAtom } from '@/helpers/atoms/Thread.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const ListContainer = ({ children }: PropsWithChildren) => {
   const listRef = useRef<HTMLDivElement>(null)
@@ -12,6 +13,7 @@ const ListContainer = ({ children }: PropsWithChildren) => {
   const isUserManuallyScrollingUp = useRef(false)
   const activeThread = useAtomValue(activeThreadAtom)
   const prevActiveThread = useRef(activeThread)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   // Handle active thread changes
   useEffect(() => {
@@ -59,6 +61,7 @@ const ListContainer = ({ children }: PropsWithChildren) => {
 
   return (
     <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
       className="flex h-full w-full flex-col overflow-x-hidden"
       ref={listRef}
       onScroll={handleScroll}
