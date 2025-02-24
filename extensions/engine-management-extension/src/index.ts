@@ -46,7 +46,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
     this.populateDefaultRemoteEngines()
 
     // Migrate
-    this.migrate()
+    this.queue.add(() => this.migrate())
   }
 
   /**
