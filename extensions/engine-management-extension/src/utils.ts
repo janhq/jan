@@ -65,10 +65,12 @@ export const engineVariant = async (
   // There is no need to append the variant extension for mac
   if (platform.startsWith('mac')) return platform
 
+  // Only Nvidia GPUs have addition_information set and activated by default
   let engineVariant =
-    gpuSetting?.vulkan || gpuSetting.gpus.some((e) => !e.additional_information)
-      ? [platform, 'vulkan']
-      : [
+    !gpuSetting?.vulkan ||
+    !gpuSetting.gpus?.length ||
+    gpuSetting.gpus.some((e) => e.additional_information && e.activated)
+      ? [
           platform,
           gpuRunMode(gpuSetting) === 'cuda' &&
           (gpuSetting.cpu.instructions.includes('avx2') ||
@@ -78,6 +80,7 @@ export const engineVariant = async (
           gpuRunMode(gpuSetting),
           cudaVersion(gpuSetting),
         ].filter(Boolean) // Remove any falsy values
+      : [platform, 'vulkan']
 
   let engineVariantString = engineVariant.join('-')
 

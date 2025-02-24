@@ -226,7 +226,7 @@ export const MarkdownTextMessage = memo(
               renderKatex ? [rehypeKatex, { throwOnError: false }] : undefined,
               [rehypeHighlightCodeLines, { showLineNumbers: true }],
               wrapCodeBlocksWithoutVisit,
-            ].filter((e) => !!e) as PluggableList
+            ].filter(Boolean) as PluggableList
           }
           components={markdownComponents}
         >

@@ -112,7 +112,7 @@ export const scanModelsFolder = async (): Promise<
         }
         return undefined
       })
-      .filter((e) => !!e)
+      .filter(Boolean)
 
     return modelData
   } catch (err) {
