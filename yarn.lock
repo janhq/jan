@@ -378,6 +378,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@babel/runtime@npm:^7.25.6":
+  version: 7.26.9
+  resolution: "@babel/runtime@npm:7.26.9"
+  dependencies:
+    regenerator-runtime: "npm:^0.14.0"
+  checksum: 10c0/e8517131110a6ec3a7360881438b85060e49824e007f4a64b5dfa9192cf2bb5c01e84bfc109f02d822c7edb0db926928dd6b991e3ee460b483fb0fac43152d9b
+  languageName: node
+  linkType: hard
+
 "@babel/template@npm:^7.25.9, @babel/template@npm:^7.3.3":
   version: 7.25.9
   resolution: "@babel/template@npm:7.25.9"
@@ -844,6 +853,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@hello-pangea/dnd@npm:17.0.0":
+  version: 17.0.0
+  resolution: "@hello-pangea/dnd@npm:17.0.0"
+  dependencies:
+    "@babel/runtime": "npm:^7.25.6"
+    css-box-model: "npm:^1.2.1"
+    memoize-one: "npm:^6.0.0"
+    raf-schd: "npm:^4.0.3"
+    react-redux: "npm:^9.1.2"
+    redux: "npm:^5.0.1"
+    use-memo-one: "npm:^1.1.3"
+  peerDependencies:
+    react: ^18.0.0
+    react-dom: ^18.0.0
+  checksum: 10c0/93417c055267f6f12a37a1cdb08d9db85ab021b102315e1e5a70a79d7de6c2ffaeff211e3ec40441c110f39e60688cfcea85ab86c21820041d974415c1ca715e
+  languageName: node
+  linkType: hard
+
 "@hookform/resolvers@npm:^3.9.1":
   version: 3.9.1
   resolution: "@hookform/resolvers@npm:3.9.1"
@@ -1068,6 +1095,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@janhq/web@workspace:web"
   dependencies:
+    "@hello-pangea/dnd": "npm:17.0.0"
     "@hookform/resolvers": "npm:^3.9.1"
     "@janhq/core": "link:../core"
     "@janhq/joi": "link:../joi"
@@ -1109,7 +1137,7 @@ __metadata:
     jotai: "npm:^2.6.0"
     katex: "npm:^0.16.10"
     lodash: "npm:^4.17.21"
-    lucide-react: "npm:^0.291.0"
+    lucide-react: "npm:^0.311.0"
     marked: "npm:^9.1.2"
     next: "npm:14.2.3"
     next-themes: "npm:^0.2.1"
@@ -1140,7 +1168,7 @@ __metadata:
     slate-react: "npm:0.110.3"
     swr: "npm:^2.2.5"
     tailwind-merge: "npm:^2.0.0"
-    tailwindcss: "npm:3.3.5"
+    tailwindcss: "npm:3.4.17"
     ts-jest: "npm:^29.2.5"
     typescript: "npm:^5.3.3"
     ulidx: "npm:^2.3.0"
@@ -4494,6 +4522,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/use-sync-external-store@npm:^0.0.6":
+  version: 0.0.6
+  resolution: "@types/use-sync-external-store@npm:0.0.6"
+  checksum: 10c0/77c045a98f57488201f678b181cccd042279aff3da34540ad242f893acc52b358bd0a8207a321b8ac09adbcef36e3236944390e2df4fcedb556ce7bb2a88f2a8
+  languageName: node
+  linkType: hard
+
 "@types/uuid@npm:^9.0.6":
   version: 9.0.8
   resolution: "@types/uuid@npm:9.0.8"
@@ -6227,7 +6262,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"chokidar@npm:^3.5.3, chokidar@npm:^3.6.0":
+"chokidar@npm:^3.6.0":
   version: 3.6.0
   resolution: "chokidar@npm:3.6.0"
   dependencies:
@@ -6764,6 +6799,15 @@ __metadata:
     shebang-command: "npm:^2.0.0"
     which: "npm:^2.0.1"
   checksum: 10c0/053ea8b2135caff68a9e81470e845613e374e7309a47731e81639de3eaeb90c3d01af0e0b44d2ab9d50b43467223b88567dfeb3262db942dc063b9976718ffc1
+  languageName: node
+  linkType: hard
+
+"css-box-model@npm:^1.2.1":
+  version: 1.2.1
+  resolution: "css-box-model@npm:1.2.1"
+  dependencies:
+    tiny-invariant: "npm:^1.0.6"
+  checksum: 10c0/611e56d76b16e4e21956ed9fa53f1936fbbfaccd378659587e9c929f342037fc6c062f8af9447226e11fe7c95e31e6c007a37e592f9bff4c2d40e6915553104a
   languageName: node
   linkType: hard
 
@@ -8544,7 +8588,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"fast-glob@npm:^3.0.3, fast-glob@npm:^3.2.9, fast-glob@npm:^3.3.0, fast-glob@npm:^3.3.2":
+"fast-glob@npm:^3.0.3, fast-glob@npm:^3.2.9, fast-glob@npm:^3.3.2":
   version: 3.3.2
   resolution: "fast-glob@npm:3.3.2"
   dependencies:
@@ -11576,7 +11620,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jiti@npm:^1.19.1, jiti@npm:^1.21.6":
+"jiti@npm:^1.21.6":
   version: 1.21.7
   resolution: "jiti@npm:1.21.7"
   bin:
@@ -12039,7 +12083,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lilconfig@npm:^2.0.3, lilconfig@npm:^2.0.5, lilconfig@npm:^2.1.0":
+"lilconfig@npm:^2.0.3, lilconfig@npm:^2.0.5":
   version: 2.1.0
   resolution: "lilconfig@npm:2.1.0"
   checksum: 10c0/64645641aa8d274c99338e130554abd6a0190533c0d9eb2ce7ebfaf2e05c7d9961f3ffe2bfa39efd3b60c521ba3dd24fa236fe2775fc38501bf82bf49d4678b8
@@ -12263,12 +12307,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lucide-react@npm:^0.291.0":
-  version: 0.291.0
-  resolution: "lucide-react@npm:0.291.0"
+"lucide-react@npm:^0.311.0":
+  version: 0.311.0
+  resolution: "lucide-react@npm:0.311.0"
   peerDependencies:
     react: ^16.5.1 || ^17.0.0 || ^18.0.0
-  checksum: 10c0/4a26b884b7da87887faed79275d9e6038bc352c2082fa493dffa1e138c74fc1120742370bd4a3ea0811d258708a993c76dbea79a7af07c1ffd5d785f4688fe14
+  checksum: 10c0/64b21c93e2d36c9fae7c2e360bd697dc5c2e33e469cf3e3425414e3a0b3e2d9292c7526a1cf78daa0ff25bae03fbc9f65b5d1243a9ba14cbad156bd0755afe83
   languageName: node
   linkType: hard
 
@@ -12668,6 +12712,13 @@ __metadata:
   version: 2.0.14
   resolution: "mdn-data@npm:2.0.14"
   checksum: 10c0/67241f8708c1e665a061d2b042d2d243366e93e5bf1f917693007f6d55111588b952dcbfd3ea9c2d0969fb754aad81b30fdcfdcc24546495fc3b24336b28d4bd
+  languageName: node
+  linkType: hard
+
+"memoize-one@npm:^6.0.0":
+  version: 6.0.0
+  resolution: "memoize-one@npm:6.0.0"
+  checksum: 10c0/45c88e064fd715166619af72e8cf8a7a17224d6edf61f7a8633d740ed8c8c0558a4373876c9b8ffc5518c2b65a960266adf403cc215cb1e90f7e262b58991f54
   languageName: node
   linkType: hard
 
@@ -14891,7 +14942,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss-load-config@npm:^4.0.1, postcss-load-config@npm:^4.0.2":
+"postcss-load-config@npm:^4.0.2":
   version: 4.0.2
   resolution: "postcss-load-config@npm:4.0.2"
   dependencies:
@@ -15045,7 +15096,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss-nested@npm:^6.0.1, postcss-nested@npm:^6.2.0":
+"postcss-nested@npm:^6.2.0":
   version: 6.2.0
   resolution: "postcss-nested@npm:6.2.0"
   dependencies:
@@ -15190,7 +15241,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss-selector-parser@npm:^6.0.10, postcss-selector-parser@npm:^6.0.11, postcss-selector-parser@npm:^6.0.4, postcss-selector-parser@npm:^6.0.5, postcss-selector-parser@npm:^6.0.9, postcss-selector-parser@npm:^6.1.1, postcss-selector-parser@npm:^6.1.2":
+"postcss-selector-parser@npm:^6.0.10, postcss-selector-parser@npm:^6.0.4, postcss-selector-parser@npm:^6.0.5, postcss-selector-parser@npm:^6.0.9, postcss-selector-parser@npm:^6.1.1, postcss-selector-parser@npm:^6.1.2":
   version: 6.1.2
   resolution: "postcss-selector-parser@npm:6.1.2"
   dependencies:
@@ -15265,7 +15316,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"postcss@npm:^8.4.23, postcss@npm:^8.4.47":
+"postcss@npm:^8.4.47":
   version: 8.4.49
   resolution: "postcss@npm:8.4.49"
   dependencies:
@@ -15613,6 +15664,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"raf-schd@npm:^4.0.3":
+  version: 4.0.3
+  resolution: "raf-schd@npm:4.0.3"
+  checksum: 10c0/ecabf0957c05fad059779bddcd992f1a9d3a35dfea439a6f0935c382fcf4f7f7fa60489e467b4c2db357a3665167d2a379782586b59712bb36c766e02824709b
+  languageName: node
+  linkType: hard
+
 "randomatic@npm:^3.0.0":
   version: 3.1.1
   resolution: "randomatic@npm:3.1.1"
@@ -15756,6 +15814,25 @@ __metadata:
     "@types/react": ">=18"
     react: ">=18"
   checksum: 10c0/3a3895dbd56647bc864b8da46dd575e71a9e609eb1e43fea8e8e6209d86e208eddd5b07bf8d7b5306a194b405440760a8d134aebd5a4ce5dc7dee4299e84db96
+  languageName: node
+  linkType: hard
+
+"react-redux@npm:^9.1.2":
+  version: 9.2.0
+  resolution: "react-redux@npm:9.2.0"
+  dependencies:
+    "@types/use-sync-external-store": "npm:^0.0.6"
+    use-sync-external-store: "npm:^1.4.0"
+  peerDependencies:
+    "@types/react": ^18.2.25 || ^19
+    react: ^18.0 || ^19
+    redux: ^5.0.0
+  peerDependenciesMeta:
+    "@types/react":
+      optional: true
+    redux:
+      optional: true
+  checksum: 10c0/00d485f9d9219ca1507b4d30dde5f6ff8fb68ba642458f742e0ec83af052f89e65cd668249b99299e1053cc6ad3d2d8ac6cb89e2f70d2ac5585ae0d7fa0ef259
   languageName: node
   linkType: hard
 
@@ -15982,6 +16059,13 @@ __metadata:
     indent-string: "npm:^4.0.0"
     strip-indent: "npm:^3.0.0"
   checksum: 10c0/d64a6b5c0b50eb3ddce3ab770f866658a2b9998c678f797919ceb1b586bab9259b311407280bd80b804e2a7c7539b19238ae6a2a20c843f1a7fcff21d48c2eae
+  languageName: node
+  linkType: hard
+
+"redux@npm:^5.0.1":
+  version: 5.0.1
+  resolution: "redux@npm:5.0.1"
+  checksum: 10c0/b10c28357194f38e7d53b760ed5e64faa317cc63de1fb95bc5d9e127fab956392344368c357b8e7a9bedb0c35b111e7efa522210cfdc3b3c75e5074718e9069c
   languageName: node
   linkType: hard
 
@@ -16285,7 +16369,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"resolve@npm:^1.1.7, resolve@npm:^1.11.0, resolve@npm:^1.19.0, resolve@npm:^1.20.0, resolve@npm:^1.22.1, resolve@npm:^1.22.2, resolve@npm:^1.22.4, resolve@npm:^1.22.8":
+"resolve@npm:^1.1.7, resolve@npm:^1.11.0, resolve@npm:^1.19.0, resolve@npm:^1.20.0, resolve@npm:^1.22.1, resolve@npm:^1.22.4, resolve@npm:^1.22.8":
   version: 1.22.10
   resolution: "resolve@npm:1.22.10"
   dependencies:
@@ -16311,7 +16395,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"resolve@patch:resolve@npm%3A^1.1.7#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.11.0#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.19.0#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.20.0#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.1#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.2#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.4#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.8#optional!builtin<compat/resolve>":
+"resolve@patch:resolve@npm%3A^1.1.7#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.11.0#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.19.0#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.20.0#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.1#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.4#optional!builtin<compat/resolve>, resolve@patch:resolve@npm%3A^1.22.8#optional!builtin<compat/resolve>":
   version: 1.22.10
   resolution: "resolve@patch:resolve@npm%3A1.22.10#optional!builtin<compat/resolve>::version=1.22.10&hash=c3c19d"
   dependencies:
@@ -17775,7 +17859,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"sucrase@npm:^3.32.0, sucrase@npm:^3.35.0":
+"sucrase@npm:^3.35.0":
   version: 3.35.0
   resolution: "sucrase@npm:3.35.0"
   dependencies:
@@ -17887,40 +17971,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tailwindcss@npm:3.3.5":
-  version: 3.3.5
-  resolution: "tailwindcss@npm:3.3.5"
-  dependencies:
-    "@alloc/quick-lru": "npm:^5.2.0"
-    arg: "npm:^5.0.2"
-    chokidar: "npm:^3.5.3"
-    didyoumean: "npm:^1.2.2"
-    dlv: "npm:^1.1.3"
-    fast-glob: "npm:^3.3.0"
-    glob-parent: "npm:^6.0.2"
-    is-glob: "npm:^4.0.3"
-    jiti: "npm:^1.19.1"
-    lilconfig: "npm:^2.1.0"
-    micromatch: "npm:^4.0.5"
-    normalize-path: "npm:^3.0.0"
-    object-hash: "npm:^3.0.0"
-    picocolors: "npm:^1.0.0"
-    postcss: "npm:^8.4.23"
-    postcss-import: "npm:^15.1.0"
-    postcss-js: "npm:^4.0.1"
-    postcss-load-config: "npm:^4.0.1"
-    postcss-nested: "npm:^6.0.1"
-    postcss-selector-parser: "npm:^6.0.11"
-    resolve: "npm:^1.22.2"
-    sucrase: "npm:^3.32.0"
-  bin:
-    tailwind: lib/cli.js
-    tailwindcss: lib/cli.js
-  checksum: 10c0/a57c0a9cdba9db19097e34e25b7e4690fab43f31ba200afc3bb9635a03036ca93e9884a17b616fb8a2486d57d2ecc9a06862ce4685b3ace57f7a67436e7594a0
-  languageName: node
-  linkType: hard
-
-"tailwindcss@npm:^3.4.1":
+"tailwindcss@npm:3.4.17, tailwindcss@npm:^3.4.1":
   version: 3.4.17
   resolution: "tailwindcss@npm:3.4.17"
   dependencies:
@@ -18098,6 +18149,13 @@ __metadata:
   version: 1.3.1
   resolution: "tiny-invariant@npm:1.3.1"
   checksum: 10c0/5b87c1d52847d9452b60d0dcb77011b459044e0361ca8253bfe7b43d6288106e12af926adb709a6fc28900e3864349b91dad9a4ac93c39aa15f360b26c2ff4db
+  languageName: node
+  linkType: hard
+
+"tiny-invariant@npm:^1.0.6":
+  version: 1.3.3
+  resolution: "tiny-invariant@npm:1.3.3"
+  checksum: 10c0/65af4a07324b591a059b35269cd696aba21bef2107f29b9f5894d83cc143159a204b299553435b03874ebb5b94d019afa8b8eff241c8a4cfee95872c2e1c1c4a
   languageName: node
   linkType: hard
 
@@ -18821,6 +18879,15 @@ __metadata:
   peerDependencies:
     react: "*"
   checksum: 10c0/73494fc44b2bd58a7ec799a528fc20077c45fe2e94fedff6dcd88d136f7a39f417d77f584d5613aac615ed32aeb2ea393797ae1f7d5b2645eab57cb497a6d0cb
+  languageName: node
+  linkType: hard
+
+"use-memo-one@npm:^1.1.3":
+  version: 1.1.3
+  resolution: "use-memo-one@npm:1.1.3"
+  peerDependencies:
+    react: ^16.8.0 || ^17.0.0 || ^18.0.0
+  checksum: 10c0/3d596e65a6b47b2f1818061599738e00daad1f9a9bb4e5ce1f014b20a35b297e50fe4bf1d8c1699ab43ea97f01f84649a736c15ceff96de83bfa696925f6cc6b
   languageName: node
   linkType: hard
 
