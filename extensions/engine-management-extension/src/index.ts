@@ -44,6 +44,9 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
 
     // Populate default remote engines
     this.populateDefaultRemoteEngines()
+
+    // Migrate
+    this.migrate()
   }
 
   /**
@@ -372,5 +375,37 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
           })
       })
       .catch(console.info)
+  }
+
+  /**
+   * Update engine settings to the latest version
+   */
+  migrate = async () => {
+    // Ensure health check is done
+    await this.queue.onEmpty()
+
+    const version = await this.getSetting<string>('version', '0.0.0')
+    const engines = await this.getEngines()
+    if (version < VERSION) {
+
+      console.log('Migrating engine settings...')
+      // Migrate engine settings
+      await Promise.all(
+        DEFAULT_REMOTE_ENGINES.map((engine) => {
+          const { id, ...data } = engine
+
+          data.api_key = engines[id]?.api_key
+          return this.updateEngine(data).catch(console.error)
+        })
+      )
+      await this.updateSettings([
+        {
+          key: 'version',
+          controllerProps: {
+            value: VERSION,
+          },
+        },
+      ])
+    }
   }
 }
