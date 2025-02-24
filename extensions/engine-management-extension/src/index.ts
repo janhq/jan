@@ -46,7 +46,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
     this.populateDefaultRemoteEngines()
 
     // Migrate
-    this.queue.add(() => this.migrate())
+    this.migrate()
   }
 
   /**
@@ -381,6 +381,9 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * Update engine settings to the latest version
    */
   migrate = async () => {
+    // Ensure health check is done
+    await this.queue.onEmpty()
+
     const version = await this.getSetting<string>('version', '0.0.0')
     const engines = await this.getEngines()
     if (version < VERSION) {
