@@ -12,7 +12,10 @@ import { atom, useAtom, useAtomValue } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import { showRightPanelAtom } from '@/helpers/atoms/App.atom'
-import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
+import {
+  reduceTransparentAtom,
+  showScrollBarAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 type Props = PropsWithChildren
 
@@ -28,6 +31,7 @@ const RightPanelContainer = ({ children }: Props) => {
     null
   )
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const [showRightPanel, setShowRightPanel] = useAtom(showRightPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
@@ -105,7 +109,10 @@ const RightPanelContainer = ({ children }: Props) => {
       style={{ width: showRightPanel ? rightPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.preventDefault()}
     >
-      <ScrollArea className="h-full w-full">
+      <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
+        className="h-full w-full"
+      >
         {children}
         {showRightPanel && !matches && (
           <Fragment>

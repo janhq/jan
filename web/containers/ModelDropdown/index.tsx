@@ -52,6 +52,7 @@ import {
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   setThreadModelParamsAtom,
@@ -74,6 +75,7 @@ const ModelDropdown = ({
   const [modelDropdownState, setModelDropdownState] = useAtom(
     modelDropdownStateAtom
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const [searchFilter, setSearchFilter] = useState('local')
   const [searchText, setSearchText] = useState('')
@@ -384,7 +386,10 @@ const ModelDropdown = ({
               }
             />
           </div>
-          <ScrollArea className="h-[calc(100%-90px)] w-full">
+          <ScrollArea
+            type={showScrollBar ? 'always' : 'scroll'}
+            className="h-[calc(100%-90px)] w-full"
+          >
             {engineList
               .filter((e) => e.type === searchFilter)
               .filter(

@@ -26,6 +26,7 @@ import {
   quickAskEnabledAtom,
 } from '@/helpers/atoms/AppConfig.atom'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { ThreadModalAction } from '@/helpers/atoms/Thread.atom'
 
 import { modalActionThreadAtom } from '@/helpers/atoms/Thread.atom'
@@ -38,6 +39,7 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   const [experimentalEnabled, setExperimentalEnabled] = useAtom(
     experimentalFeatureEnabledAtom
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const [proxyEnabled, setProxyEnabled] = useAtom(proxyEnabledAtom)
   const quickAskEnabled = useAtomValue(quickAskEnabledAtom)
@@ -94,7 +96,10 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
   }
 
   return (
-    <ScrollArea className="h-full w-full px-4">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full px-4"
+    >
       <div className="block w-full py-4">
         {/* Experimental */}
         <div className="flex w-full flex-row items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none">

@@ -12,7 +12,10 @@ import { atom, useAtom, useAtomValue } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import { showLeftPanelAtom } from '@/helpers/atoms/App.atom'
-import { reduceTransparentAtom } from '@/helpers/atoms/Setting.atom'
+import {
+  reduceTransparentAtom,
+  showScrollBarAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 type Props = PropsWithChildren
 
@@ -27,6 +30,7 @@ const LeftPanelContainer = ({ children }: Props) => {
   const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   useClickOutside(
     () => matches && showLeftPanel && setShowLeftPanel(false),
@@ -101,7 +105,10 @@ const LeftPanelContainer = ({ children }: Props) => {
       style={{ width: showLeftPanel ? leftPanelWidth : 0 }}
       onMouseDown={(e) => isResizing && e.stopPropagation()}
     >
-      <ScrollArea className="h-full w-full">
+      <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
+        className="h-full w-full"
+      >
         {children}
         {showLeftPanel && !matches && (
           <Fragment>

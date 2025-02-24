@@ -2,7 +2,7 @@ import Image from 'next/image'
 
 import { ModelSource } from '@janhq/core'
 import { Badge, Button, ScrollArea } from '@janhq/joi'
-import { useSetAtom } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 import {
   ArrowLeftIcon,
   DownloadIcon,
@@ -24,7 +24,10 @@ import { toGigabytes } from '@/utils/converter'
 import { extractModelName } from '@/utils/modelSource'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import {
+  selectedSettingAtom,
+  showScrollBarAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   model: ModelSource
@@ -35,9 +38,14 @@ const ModelPage = ({ model, onGoBack }: Props) => {
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { refreshingModels, refreshModels } = useRefreshModelList(model.id)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   return (
-    <ScrollArea data-testid="hub-container-test-id" className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      data-testid="hub-container-test-id"
+      className="h-full w-full"
+    >
       <div className="flex h-full w-full justify-center">
         <div className="flex w-full max-w-[800px] flex-col ">
           <div className="sticky top-0 flex h-12 items-center bg-[hsla(var(--app-bg))] px-4">

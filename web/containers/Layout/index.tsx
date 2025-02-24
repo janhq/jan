@@ -42,6 +42,7 @@ import {
   productAnalyticAtom,
   productAnalyticPromptAtom,
   reduceTransparentAtom,
+  showScrollBarAtom,
 } from '@/helpers/atoms/Setting.atom'
 
 const BaseLayout = () => {
@@ -52,6 +53,7 @@ const BaseLayout = () => {
   const [productAnalyticPrompt, setProductAnalyticPrompt] = useAtom(
     productAnalyticPromptAtom
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [showProductAnalyticPrompt, setShowProductAnalyticPrompt] =
     useState(false)
 
@@ -150,7 +152,12 @@ const BaseLayout = () => {
       )}
     >
       <TopPanel />
-      <div className="relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen">
+      <div
+        className={twMerge(
+          'relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen',
+          showScrollBar && 'show-scroll-bar'
+        )}
+      >
         <RibbonPanel />
         <MainViewContainer />
         <LoadingModal />
