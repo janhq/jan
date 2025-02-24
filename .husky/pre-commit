@@ -1,1 +1,1 @@
-yarn lint --fix
+yarn lint --fix --quiet
