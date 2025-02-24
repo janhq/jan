@@ -51,27 +51,30 @@ jest.mock('@/hooks/useDownloadModel', () => ({
 const mockAtomValue = jest.spyOn(jotai, 'useAtomValue')
 const mockSetAtom = jest.spyOn(jotai, 'useSetAtom')
 
-describe('OnDeviceStarterScreen', () => {
-  const mockExtensionHasSettings = [
-    {
-      name: 'Test Extension',
-      setting: 'test-setting',
-      apiKey: 'test-key',
-      provider: 'test-provider',
-    },
-  ]
+jest.mock('@/hooks/useModelSource')
 
+import * as source from '@/hooks/useModelSource'
+
+describe('OnDeviceStarterScreen', () => {
   beforeEach(() => {
     mockAtomValue.mockImplementation(() => [])
     mockSetAtom.mockImplementation(() => jest.fn())
   })
+  jest.spyOn(source, 'useGetModelSources').mockReturnValue({
+    sources: [],
+    error: null,
+    mutate: jest.fn(),
+  })
 
   it('renders the component', () => {
+    jest.spyOn(source, 'useGetModelSources').mockReturnValue({
+      sources: [],
+      error: null,
+      mutate: jest.fn(),
+    })
     render(
       <Provider>
-        <OnDeviceStarterScreen
-          extensionHasSettings={mockExtensionHasSettings}
-        />
+        <OnDeviceStarterScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -80,11 +83,14 @@ describe('OnDeviceStarterScreen', () => {
   })
 
   it('handles search input', () => {
+    jest.spyOn(source, 'useGetModelSources').mockReturnValue({
+      sources: [],
+      error: null,
+      mutate: jest.fn(),
+    })
     render(
       <Provider>
-        <OnDeviceStarterScreen
-          extensionHasSettings={mockExtensionHasSettings}
-        />
+        <OnDeviceStarterScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -97,11 +103,14 @@ describe('OnDeviceStarterScreen', () => {
   it('displays "No Result Found" when no models match the search', () => {
     mockAtomValue.mockImplementation(() => [])
 
+    jest.spyOn(source, 'useGetModelSources').mockReturnValue({
+      sources: [],
+      error: null,
+      mutate: jest.fn(),
+    })
     render(
       <Provider>
-        <OnDeviceStarterScreen
-          extensionHasSettings={mockExtensionHasSettings}
-        />
+        <OnDeviceStarterScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -114,38 +123,60 @@ describe('OnDeviceStarterScreen', () => {
   it('renders featured models', () => {
     const mockConfiguredModels = [
       {
-        id: 'gemma-2-9b-it',
-        name: 'Gemma 2B',
+        id: 'cortexso/deepseek-r1',
+        name: 'DeepSeek R1',
         metadata: {
           tags: ['Featured'],
           author: 'Test Author',
           size: 3000000000,
         },
+        models: [
+          {
+            id: 'cortexso/deepseek-r1',
+            name: 'DeepSeek R1',
+            metadata: {
+              tags: ['Featured'],
+            },
+          },
+        ],
       },
       {
-        id: 'llama3.1-8b-instruct',
+        id: 'cortexso/llama3.2',
         name: 'Llama 3.1',
         metadata: { tags: [], author: 'Test Author', size: 2000000000 },
+        models: [
+          {
+            id: 'cortexso/deepseek-r1',
+            name: 'DeepSeek R1',
+            metadata: {
+              tags: ['Featured'],
+            },
+          },
+        ],
       },
     ]
 
-    mockAtomValue.mockImplementation((atom) => {
-      return mockConfiguredModels
+    jest.spyOn(source, 'useGetModelSources').mockReturnValue({
+      sources: mockConfiguredModels,
+      error: null,
+      mutate: jest.fn(),
     })
 
     render(
       <Provider>
-        <OnDeviceStarterScreen
-          extensionHasSettings={mockExtensionHasSettings}
-        />
+        <OnDeviceStarterScreen isShowStarterScreen={true} />
       </Provider>
     )
 
-    expect(screen.getByText('Gemma 2B')).toBeInTheDocument()
-    expect(screen.queryByText('Llama 3.1')).not.toBeInTheDocument()
+    expect(screen.getAllByText('deepseek-r1')[0]).toBeInTheDocument()
   })
 
   it('renders cloud models', () => {
+    jest.spyOn(source, 'useGetModelSources').mockReturnValue({
+      sources: [],
+      error: null,
+      mutate: jest.fn(),
+    })
     const mockRemoteModels = [
       { id: 'remote-model-1', name: 'Remote Model 1', engine: 'openai' },
       { id: 'remote-model-2', name: 'Remote Model 2', engine: 'anthropic' },
@@ -160,9 +191,7 @@ describe('OnDeviceStarterScreen', () => {
 
     render(
       <Provider>
-        <OnDeviceStarterScreen
-          extensionHasSettings={mockExtensionHasSettings}
-        />
+        <OnDeviceStarterScreen isShowStarterScreen={true} />
       </Provider>
     )
 

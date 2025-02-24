@@ -1,1 +1,1 @@
-npx oxlint@latest --fix
+yarn lint --fix --quiet
