@@ -26,6 +26,8 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
+import { useGetModelSources } from '@/hooks/useModelSource'
+
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
@@ -34,14 +36,14 @@ import {
   isLocalEngine,
 } from '@/utils/modelEngine'
 
+import { extractModelName } from '@/utils/modelSource'
+
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
   configuredModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import { useGetModelSources } from '@/hooks/useModelSource'
-import { extractModelName } from '@/utils/modelSource'
 
 type Props = {
   isShowStarterScreen?: boolean

@@ -35,6 +35,7 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
+import { useGetModelSources } from '@/hooks/useModelSource'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
@@ -43,6 +44,8 @@ import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
 import { manualRecommendationModel } from '@/utils/model'
 import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
+
+import { extractModelName } from '@/utils/modelSource'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -56,8 +59,6 @@ import {
   activeThreadAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { useGetModelSources } from '@/hooks/useModelSource'
-import { extractModelName } from '@/utils/modelSource'
 
 type Props = {
   chatInputMode?: boolean

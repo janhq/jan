@@ -10,7 +10,7 @@ export const normalizeModelId = (downloadUrl: string): string => {
 
 /**
  * Default models to recommend to users when they first open the app.
- * TODO: These will be replaced when we have a proper recommendation system 
+ * TODO: These will be replaced when we have a proper recommendation system
  * AND cortexso repositories are updated with tags.
  */
 export const manualRecommendationModel = [
