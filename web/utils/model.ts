@@ -8,7 +8,12 @@ export const normalizeModelId = (downloadUrl: string): string => {
   return downloadUrl.split('/').pop() ?? downloadUrl
 }
 
+/**
+ * Default models to recommend to users when they first open the app.
+ * TODO: These will be replaced when we have a proper recommendation system 
+ * AND cortexso repositories are updated with tags.
+ */
 export const manualRecommendationModel = [
-  'llama3.2-1b-instruct',
-  'llama3.2-3b-instruct',
+  'cortexso/deepseek-r1',
+  'cortexso/llama3.2',
 ]

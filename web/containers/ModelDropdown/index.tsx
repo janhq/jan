@@ -56,6 +56,8 @@ import {
   activeThreadAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { useGetModelSources } from '@/hooks/useModelSource'
+import { extractModelName } from '@/utils/modelSource'
 
 type Props = {
   chatInputMode?: boolean
@@ -84,6 +86,7 @@ const ModelDropdown = ({
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
+  const { sources } = useGetModelSources()
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
@@ -97,11 +100,8 @@ const ModelDropdown = ({
   const configuredModels = useAtomValue(configuredModelsAtom)
   const { stopModel } = useActiveModel()
 
-  const featuredModels = configuredModels.filter(
-    (x) =>
-      manualRecommendationModel.includes(x.id) &&
-      x.metadata?.tags?.includes('Featured') &&
-      x.metadata?.size < 5000000000
+  const featuredModels = sources?.filter((x) =>
+    manualRecommendationModel.includes(x.id)
   )
   const { updateThreadMetadata } = useCreateNewThread()
 
@@ -464,9 +464,9 @@ const ModelDropdown = ({
                         showModel &&
                         !searchText.length && (
                           <ul className="pb-2">
-                            {featuredModels.map((model) => {
+                            {featuredModels?.map((model) => {
                               const isDownloading = downloadingModels.some(
-                                (md) => md === model.id
+                                (md) => md === (model.models[0]?.id ?? model.id)
                               )
                               return (
                                 <li
@@ -475,34 +475,35 @@ const ModelDropdown = ({
                                 >
                                   <div className="flex items-center gap-2">
                                     <p
-                                      className="max-w-[200px] overflow-hidden truncate whitespace-nowrap text-[hsla(var(--text-secondary))]"
-                                      title={model.name}
+                                      className="max-w-[200px] overflow-hidden truncate whitespace-nowrap capitalize text-[hsla(var(--text-secondary))]"
+                                      title={model.id}
                                     >
-                                      {model.name}
+                                      {extractModelName(model.id)}
                                     </p>
                                     <ModelLabel
-                                      size={model.metadata?.size}
+                                      size={model.models[0]?.size}
                                       compact
                                     />
                                   </div>
                                   <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                     <span className="font-medium">
-                                      {toGigabytes(model.metadata?.size)}
+                                      {toGigabytes(model.models[0]?.size)}
                                     </span>
                                     {!isDownloading ? (
                                       <DownloadCloudIcon
                                         size={18}
                                         className="cursor-pointer text-[hsla(var(--app-link))]"
                                         onClick={() =>
-                                          downloadModel(
-                                            model.sources[0].url,
-                                            model.id
-                                          )
+                                          downloadModel(model.models[0]?.id)
                                         }
                                       />
                                     ) : (
                                       Object.values(downloadStates)
-                                        .filter((x) => x.modelId === model.id)
+                                        .filter(
+                                          (x) =>
+                                            x.modelId ===
+                                            (model.models[0]?.id ?? model.id)
+                                        )
                                         .map((item) => (
                                           <ProgressCircle
                                             key={item.modelId}
