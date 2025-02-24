@@ -210,7 +210,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                   </p>
                 </div>
 
-                {featuredModels?.slice(0, 2).map((featModel) => {
+                {featuredModels?.map((featModel) => {
                   const isDownloading = downloadingModels.some(
                     (md) => md === (featModel.models[0]?.id ?? featModel.id)
                   )
