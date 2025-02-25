@@ -1,0 +1,141 @@
+app-id: ai.jan.Jan
+base: org.electronjs.Electron2.BaseApp
+base-version: "24.08"
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node20
+
+command: jan
+finish-args:
+  # Might not be strictly required but "legends" tell using it to make sure x11 performance is achived on all platforms
+  - --share=ipc
+  # for experimental wayland support
+  - --socket=wayland
+  # All GUI apps on Linux will need this
+  - --socket=x11
+  # For GPU support
+  - --device=dri
+  # For downloading models
+  - --share=network
+  # The app creates a "test-data" folder in the home directory
+  # This will change in the future
+  - --filesystem=~/test-data:create
+  # For accessing documents (RAG)
+  - --filesystem=xdg-documents:ro
+  # For correct cursor scaling under Wayland
+  - --env=XCURSOR_PATH=/run/host/user-share/icons:/run/host/share/icons
+
+modules:
+  - name: volk
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DVOLK_INSTALL=ON
+    sources:
+      - type: archive
+        url: https://github.com/zeux/volk/archive/refs/tags/vulkan-sdk-1.3.280.0.zip
+        sha256: 178875134d36e8b90f7e3ec31171355df3b71f47eba49cca2f98158e6552b011
+
+  - name: vulkan-headers
+    buildsystem: cmake-ninja
+    builddir: true
+    sources:
+      - type: archive
+        url: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.283.zip
+        sha256: 2094159c87fb4b6d8f734bd4cad59564cef7ef32feb00cf6d8ca7e75a84df921
+
+  - name: vulkan-tools
+    buildsystem: cmake-ninja
+    builddir: true
+    sources:
+      - type: archive
+        url: https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/v1.3.283.zip
+        sha256: 11ec6b474e91dc8cb6e7f22891294ede549bb6ed67c19d230e293b3fc9610883
+
+  - name: shaderc
+    buildsystem: cmake-ninja
+    builddir: true
+    config-opts:
+      - -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
+      - -DSHADERC_SKIP_EXAMPLES=ON
+      - -DSHADERC_SKIP_TESTS=ON
+      - -DSPIRV_SKIP_EXECUTABLES=ON
+      - -DENABLE_GLSLANG_BINARIES=OFF
+    cleanup:
+      - /bin
+      - /include
+      - /lib/cmake
+      - /lib/pkgconfig
+    sources:
+      - type: git
+        url: https://github.com/google/shaderc.git
+        tag: v2024.1
+        commit: 47a9387ef5b3600d30d84c71ec77a59dc7db46fa
+      # https://github.com/google/shaderc/blob/known-good/known_good.json
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Tools.git
+        commit: dd4b663e13c07fea4fbb3f70c1c91c86731099f7
+        dest: third_party/spirv-tools
+      - type: git
+        url: https://github.com/KhronosGroup/SPIRV-Headers.git
+        commit: 5e3ad389ee56fca27c9705d093ae5387ce404df4
+        dest: third_party/spirv-headers
+      - type: git
+        url: https://github.com/KhronosGroup/glslang.git
+        commit: 142052fa30f9eca191aa9dcf65359fcaed09eeec
+        dest: third_party/glslang
+
+  - name: cuda-toolkit
+    only-arches:
+      - x86_64
+    cleanup:
+      - /cuda
+    buildsystem: simple
+    build-commands:
+      - mkdir /app/cuda
+      - sh cuda_toolkit.run --silent --toolkit --toolkitpath=/app/cuda
+      - mv /app/cuda/lib64/libcudart.* /app/lib/
+      - mv /app/cuda/lib64/libcublas* /app/lib/
+    sources:
+      - type: file
+        only-arches:
+          - x86_64
+        url: https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_570.86.10_linux.run
+        dest-filename: cuda_toolkit.run
+        md5: c71027cf1a4ce84f80b9cbf81116e767
+
+  - name: jan
+    only-arches: [x86_64]
+    buildsystem: simple
+    build-commands:
+      - install jan.sh /app/bin/jan
+      - install -Dm644 ai.jan.Jan.desktop /app/share/application/ai.jan.Jan.desktop
+      - install -Dm644 ai.jan.Jan.metainfo.xml /app/share/metainfo/ai.jan.Jan.metainfo.xml
+      - install -Dm644 logo.svg /app/share/icons/hicolor/scalable/apps/ai.jan.Jan.svg
+      - ar x jan.deb
+      - tar -xf data.tar.xz
+      - mv -v opt/Jan /app/bin/Jan
+      - rm -rfv jan.deb control.tar.* data.tar.xz debian-binary usr
+    sources:
+      - type: file
+        path: jan.sh
+      - type: file
+        path: ai.jan.Jan.desktop
+      - type: file
+        path: logo.svg
+      - type: file
+        path: ai.jan.Jan.metainfo.xml
+      - type: file
+        dest-filename: jan.deb
+        url: https://github.com/janhq/jan/releases/download/v0.5.15/jan-linux-amd64-0.5.15.deb
+        sha256: 943083b2b7ab05a11fdfd144d2e95c8ffb7de9963aaa9f15da2b3c5298bc30c6
+        size: 1100047192
+        x-checker-data:
+          type: json
+          url: https://api.github.com/repos/janhq/jan/releases/latest
+          version-query: .tag_name
+          timestamp-query: .published_at
+          url-query: '"https://github.com/janhq/jan/releases/download/" + $version + "/jan-linux-amd64-" + $version + ".deb"'
