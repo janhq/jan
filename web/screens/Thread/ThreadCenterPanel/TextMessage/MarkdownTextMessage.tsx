@@ -107,7 +107,6 @@ export const MarkdownTextMessage = memo(
                       'code-block',
                       'group/item',
                       'relative',
-                      'my-4',
                       'overflow-auto',
                     ],
                   },
