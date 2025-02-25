@@ -233,6 +233,7 @@ export default function ModelHandler() {
             tokenSpeed: averageTokenSpeed,
             tokenCount: totalTokenCount,
             message: message.id,
+            model: activeModelRef.current?.name,
           }
         })
         return
@@ -285,6 +286,7 @@ export default function ModelHandler() {
       message.metadata = {
         ...message.metadata,
         token_speed: tokenSpeedRef.current?.tokenSpeed,
+        model: activeModelRef.current?.name,
       }
 
       if (message.status === MessageStatus.Error) {
