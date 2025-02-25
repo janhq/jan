@@ -1,11 +1,12 @@
 import { useCallback, useMemo } from 'react'
 
-import { ModelSource } from '@janhq/core'
+import { InferenceEngine, ModelSource } from '@janhq/core'
 
 import { Button, Tooltip, Dropdown, Badge } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
+import Image from 'next/image'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
@@ -35,6 +36,8 @@ import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
+import { getLogoEngine } from '@/utils/modelEngine'
+import { twMerge } from 'tailwind-merge'
 
 type Props = {
   model: ModelSource
@@ -167,9 +170,23 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       <div className="flex items-center justify-between py-2">
         <div className="group flex cursor-pointer items-center gap-2">
           <span
-            className="line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline"
+            className={twMerge(
+              'line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline',
+              model.type === 'cloud' && 'flex items-center gap-x-2'
+            )}
             onClick={onSelectedModel}
           >
+            {model.type === 'cloud' && (
+              <>
+                <Image
+                  className="h-6 w-6 flex-shrink-0"
+                  width={48}
+                  height={48}
+                  src={getLogoEngine(model.id as InferenceEngine) || ''}
+                  alt="logo"
+                />
+              </>
+            )}
             {extractModelName(model.metadata?.id)}
           </span>
         </div>

@@ -17,13 +17,15 @@ import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { twMerge } from 'tailwind-merge'
 
 interface Props {
   id: string
   theme?: 'primary' | 'ghost' | 'icon' | 'destructive' | undefined
   variant?: 'solid' | 'soft' | 'outline' | undefined
+  className?: string
 }
-const ModelDownloadButton = ({ id, theme, variant }: Props) => {
+const ModelDownloadButton = ({ id, theme, variant, className }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
@@ -59,7 +61,8 @@ const ModelDownloadButton = ({ id, theme, variant }: Props) => {
   const defaultButton = (
     <Button
       theme={theme ? theme : 'primary'}
-      variant={variant ? variant : 'solid'}
+      // variant={variant ? variant : 'solid'}
+      className={twMerge('min-w-[70px]', className)}
       onClick={(e) => {
         e.stopPropagation()
         onDownloadClick()
