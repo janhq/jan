@@ -79,7 +79,7 @@ const filterOptions = [
   },
 ]
 
-const hubCompatibleAtom = atom(false)
+const hubCompatibleAtom = atom(true)
 
 const HubScreen = () => {
   const { sources } = useGetModelSources()
@@ -450,7 +450,7 @@ const HubScreen = () => {
               {/* Filters and Model List */}
               <div className="ml-4 mt-8 flex h-full w-full flex-row">
                 {/* Filters */}
-                <div className="sticky top-10 mr-6 hidden h-full w-[200px] shrink-0 flex-col md:flex">
+                <div className="sticky top-8 mr-6 hidden h-full w-[200px] shrink-0 flex-col md:flex">
                   <div className="flex w-full flex-row justify-between">
                     Filters
                     <button

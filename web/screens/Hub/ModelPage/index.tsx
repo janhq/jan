@@ -14,6 +14,8 @@ import {
 import Spinner from '@/containers/Loader/Spinner'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
+import ModelLabel from '@/containers/ModelLabel'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useRefreshModelList } from '@/hooks/useEngineManagement'
@@ -146,6 +148,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       </th>
                       {model.type !== 'cloud' && (
                         <>
+                          <th></th>
                           <th className="hidden max-w-32 px-6 py-3 text-left text-sm font-semibold sm:table-cell">
                             Format
                           </th>
@@ -201,6 +204,9 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                           </td>
                           {model.type !== 'cloud' && (
                             <>
+                              <td>
+                                <ModelLabel size={item.size} compact />
+                              </td>
                               <td className="hidden px-6 py-4 sm:table-cell">
                                 GGUF
                               </td>
@@ -215,7 +221,11 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                               <ModelDownloadButton
                                 id={item.id}
                                 theme={i === 0 ? 'primary' : 'ghost'}
-                                variant={i === 0 ? 'solid' : 'outline'}
+                                className={
+                                  i !== 0
+                                    ? '!bg-[hsla(var(--secondary-bg))]'
+                                    : ''
+                                }
                               />
                             )}
                           </td>
