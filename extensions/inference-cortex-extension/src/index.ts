@@ -10,7 +10,6 @@ import {
   Model,
   executeOnMain,
   EngineEvent,
-  systemInformation,
   joinPath,
   LocalOAIEngine,
   InferenceEngine,
@@ -84,10 +83,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
-    const models = MODELS as Model[]
-
-    this.registerModels(models)
-
     super.onLoad()
 
     // Register Settings
