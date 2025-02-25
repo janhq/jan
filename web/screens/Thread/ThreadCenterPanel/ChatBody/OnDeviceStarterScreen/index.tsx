@@ -1,4 +1,4 @@
-import React, { Fragment, useState } from 'react'
+import React, { Fragment, useMemo, useState } from 'react'
 
 import Image from 'next/image'
 
@@ -70,6 +70,14 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
     manualRecommendationModel.includes(x.id)
   )
 
+  const filteredModels = useMemo(
+    () =>
+      sources?.filter((x) =>
+        x.id.toLowerCase().includes(searchValue.toLowerCase())
+      ),
+    [sources, searchValue]
+  )
+
   const remoteModel = configuredModels.filter(
     (x) => !isLocalEngine(engines, x.engine)
   )
@@ -139,7 +147,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                         </p>
                       </div>
                     ) : (
-                      sources?.map((model) => {
+                      filteredModels?.map((model) => {
                         const isDownloading = downloadingModels.some(
                           (md) => md === (model.models[0]?.id ?? model.id)
                         )
