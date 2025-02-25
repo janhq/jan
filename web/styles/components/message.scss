@@ -28,4 +28,10 @@
   blockquote {
     @apply inline-flex flex-col border-s-4 border-[hsla(var(--primary-bg))] bg-[hsla(var(--primary-bg-soft))] px-4 py-2;
   }
+
+  .markdown-content pre {
+    margin-top: 0 !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+  }
 }
