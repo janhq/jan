@@ -40,6 +40,7 @@ import {
   downloadedModelsAtom,
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const MyModels = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
@@ -49,6 +50,7 @@ const MyModels = () => {
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const { engines } = useGetEngines()
 
@@ -124,7 +126,10 @@ const MyModels = () => {
 
   return (
     <div {...getRootProps()} className="h-full w-full">
-      <ScrollArea className="h-full w-full">
+      <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
+        className="h-full w-full"
+      >
         {isDragActive && (
           <div className="absolute z-50 mx-auto h-full w-full bg-[hsla(var(--app-bg))]/50 p-8 backdrop-blur-lg">
             <div

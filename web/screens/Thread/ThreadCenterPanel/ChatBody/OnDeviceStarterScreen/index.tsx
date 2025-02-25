@@ -43,7 +43,10 @@ import {
   configuredModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
-import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
+import {
+  selectedSettingAtom,
+  showScrollBarAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 type Props = {
   isShowStarterScreen?: boolean
@@ -57,6 +60,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const { engines } = useGetEngines()
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const configuredModels = useAtomValue(configuredModelsAtom)
   const { sources } = useGetModelSources()
@@ -98,6 +102,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   return (
     <CenterPanelContainer isShowStarterScreen={isShowStarterScreen}>
       <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
         className="flex h-full w-full items-center"
         data-testid="onboard-screen"
       >

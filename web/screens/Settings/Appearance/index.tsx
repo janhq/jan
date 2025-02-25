@@ -14,6 +14,7 @@ import {
   chatWidthAtom,
   reduceTransparentAtom,
   selectedThemeIdAtom,
+  showScrollBarAtom,
   spellCheckAtom,
   themeDataAtom,
   themesOptionsAtom,
@@ -29,6 +30,7 @@ export default function AppearanceOptions() {
     reduceTransparentAtom
   )
   const [spellCheck, setSpellCheck] = useAtom(spellCheckAtom)
+  const [showScrollBar, setShowScrollBar] = useAtom(showScrollBarAtom)
   const [chatWidth, setChatWidth] = useAtom(chatWidthAtom)
 
   const chatWidthOption = [
@@ -191,6 +193,22 @@ export default function AppearanceOptions() {
           <Switch
             checked={spellCheck}
             onChange={(e) => setSpellCheck(e.target.checked)}
+          />
+        </div>
+      </div>
+      <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
+        <div className="w-full space-y-1 lg:w-3/4">
+          <div className="flex gap-x-2">
+            <h6 className="font-semibold capitalize">Scrolling Bar</h6>
+          </div>
+          <p className=" font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
+            Turn on to make scrolling bar visible across windows.
+          </p>
+        </div>
+        <div className="flex-shrink-0">
+          <Switch
+            checked={showScrollBar}
+            onChange={(e) => setShowScrollBar(e.target.checked)}
           />
         </div>
       </div>

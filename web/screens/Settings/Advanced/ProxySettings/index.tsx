@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 
 import { Input, ScrollArea, Switch } from '@janhq/joi'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { EyeIcon, EyeOffIcon, XIcon, ArrowLeftIcon } from 'lucide-react'
 import { useDebouncedCallback } from 'use-debounce'
 
@@ -18,6 +18,7 @@ import {
   proxyUsernameAtom,
   proxyPasswordAtom,
 } from '@/helpers/atoms/AppConfig.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const ProxySettings = ({ onBack }: { onBack: () => void }) => {
   const [proxy, setProxy] = useAtom(proxyAtom)
@@ -38,6 +39,7 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
   const [verifyPeerSSL, setVerifyPeerSSL] = useAtom(verifyPeerSslAtom)
   const [verifyHostSSL, setVerifyHostSSL] = useAtom(verifyHostSslAtom)
   const [showPassword, setShowPassword] = useState(false)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const updatePullOptions = useDebouncedCallback(
     () => configurePullOptions(),
@@ -102,7 +104,10 @@ const ProxySettings = ({ onBack }: { onBack: () => void }) => {
   )
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       {/* Header */}
       <div className="sticky top-0 z-10 flex h-12 items-center border-b border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] px-4">
         <div className="flex items-center gap-2">
