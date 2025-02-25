@@ -14,6 +14,8 @@ import {
 import Spinner from '@/containers/Loader/Spinner'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
+import ModelLabel from '@/containers/ModelLabel'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useRefreshModelList } from '@/hooks/useEngineManagement'
@@ -28,7 +30,6 @@ import {
   selectedSettingAtom,
   showScrollBarAtom,
 } from '@/helpers/atoms/Setting.atom'
-import ModelLabel from '@/containers/ModelLabel'
 
 type Props = {
   model: ModelSource

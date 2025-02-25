@@ -1,12 +1,15 @@
 import { useCallback, useMemo } from 'react'
 
+import Image from 'next/image'
+
 import { InferenceEngine, ModelSource } from '@janhq/core'
 
 import { Button, Tooltip, Dropdown, Badge } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
-import Image from 'next/image'
+
+import { twMerge } from 'tailwind-merge'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
@@ -19,6 +22,7 @@ import { useSettings } from '@/hooks/useSettings'
 
 import { toGigabytes } from '@/utils/converter'
 
+import { getLogoEngine } from '@/utils/modelEngine'
 import { extractModelName } from '@/utils/modelSource'
 
 import { fuzzySearch } from '@/utils/search'
@@ -36,8 +40,6 @@ import {
   nvidiaTotalVramAtom,
   totalRamAtom,
 } from '@/helpers/atoms/SystemBar.atom'
-import { getLogoEngine } from '@/utils/modelEngine'
-import { twMerge } from 'tailwind-merge'
 
 type Props = {
   model: ModelSource

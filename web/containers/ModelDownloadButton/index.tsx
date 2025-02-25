@@ -3,6 +3,8 @@ import { useCallback, useMemo } from 'react'
 import { Button, Tooltip } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
@@ -17,7 +19,6 @@ import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
-import { twMerge } from 'tailwind-merge'
 
 interface Props {
   id: string
