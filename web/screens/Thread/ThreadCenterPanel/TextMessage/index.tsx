@@ -91,7 +91,7 @@ const MessageContainer: React.FC<
           {!isUser && (
             <>
               {props.metadata && 'model' in props.metadata
-                ? props.metadata?.model
+                ? (props.metadata?.model as string)
                 : props.isCurrentMessage
                   ? selectedModel?.name
                   : (activeAssistant?.assistant_name ?? props.role)}
