@@ -25,14 +25,6 @@ export function handleAppUpdates() {
     )
   })
 
-  /* New Update Not Available */
-  autoUpdater.on('update-not-available', async (_info: UpdateInfo) => {
-    windowManager.mainWindow?.webContents.send(
-      AppEvent.onAppUpdateNotAvailable,
-      {}
-    )
-  })
-
   /* App Update Completion Message */
   autoUpdater.on('update-downloaded', async (_info: UpdateDownloadedEvent) => {
     windowManager.mainWindow?.webContents.send(
