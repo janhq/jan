@@ -26,6 +26,8 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
+import { useGetModelSources } from '@/hooks/useModelSource'
+
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 import { manualRecommendationModel } from '@/utils/model'
 import {
@@ -33,6 +35,8 @@ import {
   getTitleByEngine,
   isLocalEngine,
 } from '@/utils/modelEngine'
+
+import { extractModelName } from '@/utils/modelSource'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
@@ -55,35 +59,16 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const { engines } = useGetEngines()
 
   const configuredModels = useAtomValue(configuredModelsAtom)
+  const { sources } = useGetModelSources()
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const featuredModel = configuredModels.filter((x) => {
-    const manualRecommendModel = configuredModels.filter((x) =>
-      manualRecommendationModel.includes(x.id)
-    )
-
-    if (manualRecommendModel.length === 2) {
-      return (
-        x.id === manualRecommendationModel[0] ||
-        x.id === manualRecommendationModel[1]
-      )
-    } else {
-      return (
-        x.metadata?.tags?.includes('Featured') && x.metadata?.size < 5000000000
-      )
-    }
-  })
+  const featuredModels = sources?.filter((x) =>
+    manualRecommendationModel.includes(x.id)
+  )
 
   const remoteModel = configuredModels.filter(
     (x) => !isLocalEngine(engines, x.engine)
   )
-
-  const filteredModels = configuredModels.filter((model) => {
-    return (
-      isLocalEngine(engines, model.engine) &&
-      model.name.toLowerCase().includes(searchValue.toLowerCase())
-    )
-  })
 
   const remoteModelEngine = remoteModel.map((x) => x.engine)
 
@@ -142,16 +127,16 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                       !isOpen ? 'invisible' : 'visible'
                     )}
                   >
-                    {!filteredModels.length ? (
+                    {!featuredModels?.length ? (
                       <div className="p-3 text-center">
                         <p className="line-clamp-1 text-[hsla(var(--text-secondary))]">
                           No Result Found
                         </p>
                       </div>
                     ) : (
-                      filteredModels.map((model) => {
+                      sources?.map((model) => {
                         const isDownloading = downloadingModels.some(
-                          (md) => md === model.id
+                          (md) => md === (model.models[0]?.id ?? model.id)
                         )
                         return (
                           <div
@@ -160,16 +145,19 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                           >
                             <div className="flex items-center gap-2">
                               <p
-                                className={twMerge('line-clamp-1')}
-                                title={model.name}
+                                className={'line-clamp-1 capitalize'}
+                                title={extractModelName(model.id)}
                               >
-                                {model.name}
+                                {extractModelName(model.id)}
                               </p>
-                              <ModelLabel size={model.metadata?.size} compact />
+                              <ModelLabel
+                                size={model.models[0]?.size}
+                                compact
+                              />
                             </div>
                             <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                               <span className="font-medium">
-                                {toGigabytes(model.metadata?.size)}
+                                {toGigabytes(model.models[0]?.size)}
                               </span>
                               {!isDownloading ? (
                                 <DownloadCloudIcon
@@ -177,15 +165,15 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                                   className="cursor-pointer text-[hsla(var(--app-link))]"
                                   onClick={() =>
                                     downloadModel(
-                                      model.sources[0].url,
-                                      model.id,
-                                      model.name
+                                      model.models[0]?.id ?? model.id
                                     )
                                   }
                                 />
                               ) : (
                                 Object.values(downloadStates)
-                                  .filter((x) => x.modelId === model.id)
+                                  .filter(
+                                    (x) => x.modelId === model.models[0]?.id
+                                  )
                                   .map((item) => (
                                     <ProgressCircle
                                       key={item.modelId}
@@ -222,9 +210,9 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                   </p>
                 </div>
 
-                {featuredModel.slice(0, 2).map((featModel) => {
+                {featuredModels?.map((featModel) => {
                   const isDownloading = downloadingModels.some(
-                    (md) => md === featModel.id
+                    (md) => md === (featModel.models[0]?.id ?? featModel.id)
                   )
                   return (
                     <div
@@ -232,13 +220,17 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                       className="my-2 flex items-start justify-between gap-2 border-b border-[hsla(var(--app-border))] pb-4 pt-1 last:border-none"
                     >
                       <div className="w-full text-left">
-                        <h6 className="mt-1.5 font-medium">{featModel.name}</h6>
+                        <h6 className="mt-1.5 font-medium capitalize">
+                          {extractModelName(featModel.id)}
+                        </h6>
                       </div>
 
                       {isDownloading ? (
                         <div className="flex w-full flex-col items-end gap-2">
                           {Object.values(downloadStates)
-                            .filter((x) => x.modelId === featModel.id)
+                            .filter(
+                              (x) => x.modelId === featModel.models[0]?.id
+                            )
                             .map((item, i) => (
                               <div
                                 className="mt-1.5 flex w-full items-center gap-2"
@@ -262,7 +254,7 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                               </div>
                             ))}
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGigabytes(featModel.metadata?.size)}
+                            {toGigabytes(featModel.models[0]?.size)}
                           </span>
                         </div>
                       ) : (
@@ -271,17 +263,13 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                             theme="ghost"
                             className="!bg-[hsla(var(--secondary-bg))]"
                             onClick={() =>
-                              downloadModel(
-                                featModel.sources[0].url,
-                                featModel.id,
-                                featModel.name
-                              )
+                              downloadModel(featModel.models[0]?.id)
                             }
                           >
                             Download
                           </Button>
                           <span className="text-[hsla(var(--text-secondary))]">
-                            {toGigabytes(featModel.metadata?.size)}
+                            {toGigabytes(featModel.models[0]?.size)}
                           </span>
                         </div>
                       )}
