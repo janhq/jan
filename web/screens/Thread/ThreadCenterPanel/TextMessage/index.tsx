@@ -24,8 +24,8 @@ import {
   tokenSpeedAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 
-import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
+import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 
 const MessageContainer: React.FC<
   ThreadMessage & { isCurrentMessage: boolean; index: number }
