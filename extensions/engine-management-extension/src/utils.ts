@@ -1,10 +1,12 @@
 import { GpuSetting, log } from '@janhq/core'
 
+// Supported run modes
 enum RunMode {
   Cuda = 'cuda',
   CPU = 'cpu',
 }
 
+// Supported instruction sets
 const instructionBinaryNames = ['noavx', 'avx', 'avx2', 'avx512']
 
 /**

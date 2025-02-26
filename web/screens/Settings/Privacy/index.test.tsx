@@ -22,23 +22,6 @@ global.window.core = {
   },
 }
 
-const setSettingsMock = jest.fn()
-
-// Mock useSettings hook
-jest.mock('@/hooks/useSettings', () => ({
-  __esModule: true,
-  useSettings: () => ({
-    readSettings: () => ({
-      run_mode: 'gpu',
-      experimental: false,
-      proxy: false,
-      gpus: [{ name: 'gpu-1' }, { name: 'gpu-2' }],
-      gpus_in_use: ['0'],
-      quick_ask: false,
-    }),
-    setSettings: setSettingsMock,
-  }),
-}))
 
 import * as toast from '@/containers/Toast'
 
