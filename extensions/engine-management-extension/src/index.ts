@@ -266,7 +266,9 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
       .get(`${API_URL}/healthz`, {
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
       })
-      .then(() => {})
+      .then(() => {
+        this.queue.concurrency = Infinity
+      })
   }
 
   /**
