@@ -71,7 +71,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
               </span>
               <div className="inline-flex items-center space-x-2">
                 {model.type !== 'cloud' ? (
-                  <ModelDownloadButton id={model.models?.[0].id} />
+                  <ModelDownloadButton
+                    id={model.models?.[0].id}
+                    hideProgress={true}
+                  />
                 ) : (
                   <>
                     {!model.metadata?.apiKey?.length ? (
