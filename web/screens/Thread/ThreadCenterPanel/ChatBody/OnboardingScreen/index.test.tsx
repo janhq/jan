@@ -72,6 +72,7 @@ describe('OnDeviceStarterScreen', () => {
       error: null,
       mutate: jest.fn(),
     })
+    jest.spyOn(source, 'useGetFeaturedSources').mockReturnValue([])
     render(
       <Provider>
         <OnboardingScreen isShowStarterScreen={true} />
@@ -88,6 +89,7 @@ describe('OnDeviceStarterScreen', () => {
       error: null,
       mutate: jest.fn(),
     })
+    jest.spyOn(source, 'useGetFeaturedSources').mockReturnValue([])
     render(
       <Provider>
         <OnboardingScreen isShowStarterScreen={true} />
@@ -108,6 +110,7 @@ describe('OnDeviceStarterScreen', () => {
       error: null,
       mutate: jest.fn(),
     })
+    jest.spyOn(source, 'useGetFeaturedSources').mockReturnValue([])
     render(
       <Provider>
         <OnboardingScreen isShowStarterScreen={true} />
@@ -126,31 +129,31 @@ describe('OnDeviceStarterScreen', () => {
         id: 'cortexso/deepseek-r1',
         name: 'DeepSeek R1',
         metadata: {
-          tags: ['Featured'],
           author: 'Test Author',
           size: 3000000000,
+          tags: ['featured'],
         },
         models: [
           {
             id: 'cortexso/deepseek-r1',
             name: 'DeepSeek R1',
-            metadata: {
-              tags: ['Featured'],
-            },
+            metadata: {},
           },
         ],
       },
       {
         id: 'cortexso/llama3.2',
         name: 'Llama 3.1',
-        metadata: { tags: [], author: 'Test Author', size: 2000000000 },
+        metadata: {
+          author: 'Test Author',
+          size: 2000000000,
+          tags: ['featured'],
+        },
         models: [
           {
             id: 'cortexso/deepseek-r1',
             name: 'DeepSeek R1',
-            metadata: {
-              tags: ['Featured'],
-            },
+            metadata: {},
           },
         ],
       },
@@ -161,6 +164,13 @@ describe('OnDeviceStarterScreen', () => {
       error: null,
       mutate: jest.fn(),
     })
+    jest
+      .spyOn(source, 'useGetFeaturedSources')
+      .mockReturnValue({
+        sources: mockConfiguredModels,
+        error: null,
+        mutate: jest.fn(),
+      })
 
     render(
       <Provider>
@@ -181,6 +191,10 @@ describe('OnDeviceStarterScreen', () => {
       { id: 'remote-model-1', name: 'Remote Model 1', engine: 'openai' },
       { id: 'remote-model-2', name: 'Remote Model 2', engine: 'anthropic' },
     ]
+
+    jest
+      .spyOn(source, 'useGetFeaturedSources')
+      .mockReturnValue(mockRemoteModels)
 
     mockAtomValue.mockImplementation((atom) => {
       if (atom === jotai.atom([])) {
