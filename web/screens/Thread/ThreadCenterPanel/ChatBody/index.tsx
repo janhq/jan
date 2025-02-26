@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ThreadMessage } from '@janhq/core'
+import { ScrollArea } from '@janhq/joi'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
 import { useAtomValue } from 'jotai'
@@ -14,6 +15,7 @@ import LoadModelError from '../LoadModelError'
 import EmptyThread from './EmptyThread'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   isBlockingSendAtom,
@@ -65,6 +67,7 @@ const ChatBody = memo(
     const isUserManuallyScrollingUp = useRef(false)
     const currentThread = useAtomValue(activeThreadAtom)
     const isBlockingSend = useAtomValue(isBlockingSendAtom)
+    const showScrollBar = useAtomValue(showScrollBarAtom)
 
     const count = useMemo(
       () => (messages?.length ?? 0) + (loadModelError ? 1 : 0),
@@ -129,7 +132,8 @@ const ChatBody = memo(
 
     return (
       <div className="flex h-full w-full flex-col overflow-x-hidden">
-        <div
+        <ScrollArea
+          type={showScrollBar ? 'always' : 'scroll'}
           ref={parentRef}
           onScroll={handleScroll}
           className="List"
@@ -180,7 +184,7 @@ const ChatBody = memo(
               ))}
             </div>
           </div>
-        </div>
+        </ScrollArea>
       </div>
     )
   }
