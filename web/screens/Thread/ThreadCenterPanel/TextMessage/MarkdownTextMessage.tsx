@@ -5,7 +5,6 @@ import React, { memo } from 'react'
 
 import Markdown from 'react-markdown'
 
-import { PluggableList } from 'react-markdown/lib'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
 
@@ -225,7 +224,7 @@ export const MarkdownTextMessage = memo(
               renderKatex ? [rehypeKatex, { throwOnError: false }] : undefined,
               [rehypeHighlightCodeLines, { showLineNumbers: true }],
               wrapCodeBlocksWithoutVisit,
-            ].filter(Boolean) as PluggableList
+            ].filter(Boolean) as any
           }
           components={markdownComponents}
         >
