@@ -15,6 +15,7 @@ import ModalCancelDownload from '../ModalCancelDownload'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
@@ -25,10 +26,12 @@ interface Props {
   theme?: 'primary' | 'ghost' | 'icon' | 'destructive' | undefined
   variant?: 'solid' | 'soft' | 'outline' | undefined
   className?: string
+  hideProgress?: boolean
 }
-const ModelDownloadButton = ({ id, theme, variant, className }: Props) => {
+const ModelDownloadButton = ({ id, theme, className, hideProgress }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
+  const serverEnabled = useAtomValue(serverEnabledAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const assistants = useAtomValue(assistantsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -62,7 +65,6 @@ const ModelDownloadButton = ({ id, theme, variant, className }: Props) => {
   const defaultButton = (
     <Button
       theme={theme ? theme : 'primary'}
-      // variant={variant ? variant : 'solid'}
       className={twMerge('min-w-[70px]', className)}
       onClick={(e) => {
         e.stopPropagation()
@@ -72,7 +74,10 @@ const ModelDownloadButton = ({ id, theme, variant, className }: Props) => {
       Download
     </Button>
   )
-  const downloadingButton = <ModalCancelDownload modelId={id} />
+  const downloadingButton = !hideProgress && (
+    <ModalCancelDownload modelId={id} />
+  )
+
   const downloadedButton = (
     <Tooltip
       trigger={
@@ -82,11 +87,13 @@ const ModelDownloadButton = ({ id, theme, variant, className }: Props) => {
           variant="outline"
           theme="ghost"
           className="min-w-[70px]"
+          disabled={serverEnabled}
         >
           Use
         </Button>
       }
       content="Threads are disabled while the server is running"
+      disabled={!serverEnabled}
     />
   )
   return (
