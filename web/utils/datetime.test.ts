@@ -7,7 +7,6 @@ test("should return only time for today's timestamp", () => {
   const expectedTime = `${today.toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: true,
   })}`
   expect(displayDate(timestamp / 1000)).toBe(expectedTime)
