@@ -70,12 +70,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                   : model.metadata.id}
               </span>
               <div className="inline-flex items-center space-x-2">
-                {model.type !== 'cloud' ? (
-                  <ModelDownloadButton
-                    id={model.models?.[0].id}
-                    hideProgress={true}
-                  />
-                ) : (
+                {model.type === 'cloud' && (
                   <>
                     {!model.metadata?.apiKey?.length ? (
                       <Button
