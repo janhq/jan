@@ -15,11 +15,11 @@ import ModalCancelDownload from '../ModalCancelDownload'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
-import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 
 interface Props {
   id: string
