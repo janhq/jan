@@ -35,14 +35,16 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { useGetModelSources } from '@/hooks/useModelSource'
+import {
+  useGetModelSources,
+  useGetFeaturedSources,
+} from '@/hooks/useModelSource'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
-import { manualRecommendationModel } from '@/utils/model'
 import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { extractModelName } from '@/utils/modelSource'
@@ -93,6 +95,7 @@ const ModelDropdown = ({
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
+  const { sources: featuredModels } = useGetFeaturedSources()
 
   const { engines } = useGetEngines()
 
@@ -103,9 +106,6 @@ const ModelDropdown = ({
   const configuredModels = useAtomValue(configuredModelsAtom)
   const { stopModel } = useActiveModel()
 
-  const featuredModels = sources?.filter((x) =>
-    manualRecommendationModel.includes(x.id)
-  )
   const { updateThreadMetadata } = useCreateNewThread()
 
   const engineList = useMemo(

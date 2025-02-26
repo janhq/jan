@@ -4,12 +4,22 @@
  */
 export const extractDescription = (text?: string) => {
   if (!text) return text
+  const normalizedText = removeYamlFrontMatter(text)
   const overviewPattern = /(?:##\s*Overview\s*\n)([\s\S]*?)(?=\n\s*##|$)/
-  const matches = text?.match(overviewPattern)
+  const matches = normalizedText?.match(overviewPattern)
   if (matches && matches[1]) {
     return matches[1].trim()
   }
-  return text?.slice(0, 500).trim()
+  return normalizedText?.slice(0, 500).trim()
+}
+
+/**
+ * Remove YAML (HF metadata) front matter from content
+ * @param content
+ * @returns
+ */
+export const removeYamlFrontMatter = (content: string): string => {
+  return content.replace(/^---\n([\s\S]*?)\n---\n/, '')
 }
 
 /**

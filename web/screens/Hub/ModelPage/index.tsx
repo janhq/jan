@@ -23,7 +23,7 @@ import { useRefreshModelList } from '@/hooks/useEngineManagement'
 import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
 
 import { toGigabytes } from '@/utils/converter'
-import { extractModelName } from '@/utils/modelSource'
+import { extractModelName, removeYamlFrontMatter } from '@/utils/modelSource'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
@@ -239,7 +239,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             {/* README */}
             <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
               <MarkdownTextMessage
-                text={model.metadata?.description ?? ''}
+                text={removeYamlFrontMatter(model.metadata?.description ?? '')}
                 className="h-full w-full text-[hsla(var(--text-secondary))]"
               />
             </div>
