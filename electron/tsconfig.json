@@ -19,5 +19,5 @@
     "esm": true
   },
   "include": ["./**/*.ts"],
-  "exclude": ["core", "build", "dist", "tests", "node_modules"]
+  "exclude": ["core", "build", "dist", "tests", "node_modules", "test-data"]
 }

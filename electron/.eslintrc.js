@@ -35,5 +35,12 @@ module.exports = {
       { name: 'Link', linkAttribute: 'to' },
     ],
   },
-  ignorePatterns: ['build', 'renderer', 'node_modules', '@global', 'playwright-report'],
+  ignorePatterns: [
+    'build',
+    'renderer',
+    'node_modules',
+    '@global',
+    'playwright-report',
+    'test-data',
+  ],
 }

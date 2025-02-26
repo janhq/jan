@@ -52,7 +52,7 @@ type Props = {
   isShowStarterScreen?: boolean
 }
 
-const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
+function OnboardingScreen({ isShowStarterScreen }: Props) {
   const [searchValue, setSearchValue] = useState('')
   const [isOpen, setIsOpen] = useState(Boolean(searchValue.length))
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
@@ -62,7 +62,6 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   const { engines } = useGetEngines()
   const showScrollBar = useAtomValue(showScrollBarAtom)
 
-  const configuredModels = useAtomValue(configuredModelsAtom)
   const { sources } = useGetModelSources()
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
@@ -78,16 +77,6 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
     [sources, searchValue]
   )
 
-  const remoteModel = configuredModels.filter(
-    (x) => !isLocalEngine(engines, x.engine)
-  )
-
-  const remoteModelEngine = remoteModel.map((x) => x.engine)
-
-  const groupByEngine = remoteModelEngine.filter(function (item, index) {
-    if (remoteModelEngine.indexOf(item) === index) return item
-  })
-
   const itemsPerRow = 5
 
   const getRows = (array: string[], itemsPerRow: number) => {
@@ -98,8 +87,10 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
     return rows
   }
 
-  const rows = getRows(
-    groupByEngine.sort((a, b) => a.localeCompare(b)),
+  const cloudProviders = getRows(
+    Object.keys(engines ?? {})
+      .filter((e) => engines?.[e as InferenceEngine]?.[0]?.type === 'remote')
+      .sort((a, b) => a.localeCompare(b)),
     itemsPerRow
   )
 
@@ -297,57 +288,51 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
                 </div>
 
                 <div className="flex flex-col justify-center gap-6">
-                  {rows.slice(0, visibleRows).map((row, rowIndex) => {
+                  {cloudProviders.slice(0, visibleRows).map((row, rowIndex) => {
                     return (
                       <div
                         key={rowIndex}
                         className="my-2 flex items-center gap-4 md:gap-10"
                       >
-                        {row
-                          .filter(
-                            (e) =>
-                              engines?.[e as InferenceEngine]?.[0]?.type ===
-                              'remote'
+                        {row.map((remoteEngine) => {
+                          const engineLogo = getLogoEngine(
+                            remoteEngine as InferenceEngine
                           )
-                          .map((remoteEngine) => {
-                            const engineLogo = getLogoEngine(
-                              remoteEngine as InferenceEngine
-                            )
 
-                            return (
-                              <div
-                                className="flex cursor-pointer flex-col items-center justify-center gap-4"
-                                key={remoteEngine}
-                                onClick={() => {
-                                  setMainViewState(MainViewState.Settings)
-                                  setSelectedSetting(
-                                    remoteEngine as InferenceEngine
-                                  )
-                                }}
-                              >
-                                {engineLogo && (
-                                  <Image
-                                    width={48}
-                                    height={48}
-                                    src={engineLogo}
-                                    alt="Engine logo"
-                                    className="h-10 w-10 flex-shrink-0"
-                                  />
+                          return (
+                            <div
+                              className="flex cursor-pointer flex-col items-center justify-center gap-4"
+                              key={remoteEngine}
+                              onClick={() => {
+                                setMainViewState(MainViewState.Settings)
+                                setSelectedSetting(
+                                  remoteEngine as InferenceEngine
+                                )
+                              }}
+                            >
+                              {engineLogo && (
+                                <Image
+                                  width={48}
+                                  height={48}
+                                  src={engineLogo}
+                                  alt="Engine logo"
+                                  className="h-10 w-10 flex-shrink-0"
+                                />
+                              )}
+
+                              <p className="font-medium">
+                                {getTitleByEngine(
+                                  remoteEngine as InferenceEngine
                                 )}
-
-                                <p className="font-medium">
-                                  {getTitleByEngine(
-                                    remoteEngine as InferenceEngine
-                                  )}
-                                </p>
-                              </div>
-                            )
-                          })}
+                              </p>
+                            </div>
+                          )
+                        })}
                       </div>
                     )
                   })}
                 </div>
-                {visibleRows < rows.length && (
+                {visibleRows < cloudProviders.length && (
                   <button
                     onClick={() => setVisibleRows(visibleRows + 1)}
                     className="mt-4 text-[hsla(var(--text-secondary))]"
@@ -364,4 +349,4 @@ const OnDeviceStarterScreen = ({ isShowStarterScreen }: Props) => {
   )
 }
 
-export default OnDeviceStarterScreen
+export default OnboardingScreen

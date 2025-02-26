@@ -1,7 +1,7 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider } from 'jotai'
-import OnDeviceStarterScreen from './index'
+import OnboardingScreen from './index'
 import * as jotai from 'jotai'
 import '@testing-library/jest-dom'
 
@@ -74,7 +74,7 @@ describe('OnDeviceStarterScreen', () => {
     })
     render(
       <Provider>
-        <OnDeviceStarterScreen isShowStarterScreen={true} />
+        <OnboardingScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -90,7 +90,7 @@ describe('OnDeviceStarterScreen', () => {
     })
     render(
       <Provider>
-        <OnDeviceStarterScreen isShowStarterScreen={true} />
+        <OnboardingScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -110,7 +110,7 @@ describe('OnDeviceStarterScreen', () => {
     })
     render(
       <Provider>
-        <OnDeviceStarterScreen isShowStarterScreen={true} />
+        <OnboardingScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -164,7 +164,7 @@ describe('OnDeviceStarterScreen', () => {
 
     render(
       <Provider>
-        <OnDeviceStarterScreen isShowStarterScreen={true} />
+        <OnboardingScreen isShowStarterScreen={true} />
       </Provider>
     )
 
@@ -191,7 +191,7 @@ describe('OnDeviceStarterScreen', () => {
 
     render(
       <Provider>
-        <OnDeviceStarterScreen isShowStarterScreen={true} />
+        <OnboardingScreen isShowStarterScreen={true} />
       </Provider>
     )
 
