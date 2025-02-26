@@ -10,6 +10,13 @@ export const defaultJanDataFolderAtom = atom<string>('')
 
 export const LocalEngineDefaultVariantAtom = atom<string>('')
 
+export const RecommendEngineVariantAtom = atomWithStorage<string>(
+  'recommendEngineVariant',
+  '',
+  undefined,
+  { getOnInit: true }
+)
+
 const SHOW_RIGHT_PANEL = 'showRightPanel'
 
 // Store panel atom
