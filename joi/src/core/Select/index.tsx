@@ -7,7 +7,7 @@ import './styles.scss'
 import { twMerge } from 'tailwind-merge'
 
 type Props = {
-  options?: { name: string; value: string }[]
+  options?: { name: string; value: string; recommend?: boolean }[]
   open?: boolean
   block?: boolean
   value?: string
@@ -62,9 +62,16 @@ const Select = ({
                   className="select__item"
                   value={item.value}
                 >
-                  <SelectPrimitive.ItemText>
-                    {item.name}
-                  </SelectPrimitive.ItemText>
+                  <div className="flex items-center gap-x-2">
+                    <SelectPrimitive.ItemText>
+                      <span>{item.name}</span>
+                    </SelectPrimitive.ItemText>
+                    {item.recommend && (
+                      <span className="rounded bg-[hsla(var(--secondary-bg))] px-2 py-0.5 text-xs font-medium">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
                   <SelectPrimitive.ItemIndicator className="select__item-indicator">
                     <CheckIcon />
                   </SelectPrimitive.ItemIndicator>

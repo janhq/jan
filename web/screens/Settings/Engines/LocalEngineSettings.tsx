@@ -29,7 +29,10 @@ import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
 
-import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
+import {
+  LocalEngineDefaultVariantAtom,
+  RecommendEngineVariantAtom,
+} from '@/helpers/atoms/App.atom'
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 const os = () => {
   switch (PLATFORM) {
@@ -60,6 +63,10 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   >(new Map())
   const { stopModel } = useActiveModel()
 
+  const [recommendEngineVariant, setRecommendEngineVariant] = useAtom(
+    RecommendEngineVariantAtom
+  )
+
   const isEngineUpdated =
     latestReleasedEngine &&
     latestReleasedEngine.some((item) =>
@@ -85,6 +92,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       .map((x: any) => ({
         name: x.name,
         value: x.name,
+        recommend: recommendEngineVariant === x.name,
       }))
 
   const installedEngineByVersion = installedEngines?.filter(
@@ -107,7 +115,10 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     if (defaultEngineVariant?.variant) {
       setSelectedVariants(defaultEngineVariant.variant || '')
     }
-  }, [defaultEngineVariant, setSelectedVariants])
+    if (!recommendEngineVariant.length) {
+      setRecommendEngineVariant(defaultEngineVariant?.variant || '')
+    }
+  }, [defaultEngineVariant, setSelectedVariants, setRecommendEngineVariant])
 
   const handleEngineUpdate = useCallback(
     async (event: { id: string; type: DownloadEvent; percent: number }) => {
