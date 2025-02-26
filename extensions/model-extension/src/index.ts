@@ -451,7 +451,7 @@ export default class JanModelExtension extends ModelExtension {
 
     return this.queue.add(() =>
       ky
-        .get(`${API_URL}/v1/models/hub?author=cortexso`)
+        .get(`${API_URL}/v1/models/hub?author=cortexso&tag=cortex.cpp`)
         .json<Data<string>>()
         .then((e) => {
           e.data?.forEach((model) => {

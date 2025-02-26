@@ -26,23 +26,19 @@ import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { useGetModelSources } from '@/hooks/useModelSource'
+import {
+  useGetFeaturedSources,
+  useGetModelSources,
+} from '@/hooks/useModelSource'
 
 import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
-import { manualRecommendationModel } from '@/utils/model'
-import {
-  getLogoEngine,
-  getTitleByEngine,
-  isLocalEngine,
-} from '@/utils/modelEngine'
+
+import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { extractModelName } from '@/utils/modelSource'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
-import {
-  configuredModelsAtom,
-  getDownloadingModelAtom,
-} from '@/helpers/atoms/Model.atom'
+import { getDownloadingModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   selectedSettingAtom,
   showScrollBarAtom,
@@ -65,9 +61,7 @@ function OnboardingScreen({ isShowStarterScreen }: Props) {
   const { sources } = useGetModelSources()
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  const featuredModels = sources?.filter((x) =>
-    manualRecommendationModel.includes(x.id)
-  )
+  const { sources: featuredModels } = useGetFeaturedSources()
 
   const filteredModels = useMemo(
     () =>
