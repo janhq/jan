@@ -404,34 +404,44 @@ const HubScreen = () => {
                       <div
                         className={twMerge(
                           'invisible absolute mt-2 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
-                          searchedModels.length > 0 && 'visible'
+                          searchValue.length > 0 && 'visible'
                         )}
                       >
-                        {searchedModels.map((model) => (
-                          <div
-                            key={model.id}
-                            className="z-10 flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
-                            onClick={(e) => {
-                              setSelectedModel(model)
-                              e.stopPropagation()
-                            }}
-                          >
-                            <span className="text-bold flex flex-row text-[hsla(var(--app-text-primary))]">
-                              {searchValue.includes('huggingface.co') && (
-                                <>
-                                  <Image
-                                    src={'icons/huggingFace.svg'}
-                                    width={16}
-                                    height={16}
-                                    className="mr-2"
-                                    alt=""
-                                  />{' '}
-                                </>
-                              )}
-                              {extractModelRepo(model.id)}
+                        {searchedModels.length === 0 ? (
+                          <div className="p-2 text-center">
+                            <span className="text-[hsla(var(--text-tertiary))]">
+                              No results found
                             </span>
                           </div>
-                        ))}
+                        ) : (
+                          <>
+                            {searchedModels.map((model) => (
+                              <div
+                                key={model.id}
+                                className="z-10 flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                                onClick={(e) => {
+                                  setSelectedModel(model)
+                                  e.stopPropagation()
+                                }}
+                              >
+                                <span className="text-bold flex flex-row text-[hsla(var(--app-text-primary))]">
+                                  {searchValue.includes('huggingface.co') && (
+                                    <>
+                                      <Image
+                                        src={'icons/huggingFace.svg'}
+                                        width={16}
+                                        height={16}
+                                        className="mr-2"
+                                        alt=""
+                                      />{' '}
+                                    </>
+                                  )}
+                                  {extractModelRepo(model.id)}
+                                </span>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -523,6 +533,7 @@ const HubScreen = () => {
                       <ModelList
                         models={sortedModels}
                         onSelectedModel={(model) => setSelectedModel(model)}
+                        filterOption={filterOption}
                       />
                     )}
                     {(filterOption === 'cloud' || filterOption === 'all') && (
