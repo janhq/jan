@@ -28,24 +28,8 @@ export const useSettings = () => {
     return {}
   }, [])
 
-  const saveSettings = async ({ vulkan }: { vulkan?: boolean | undefined }) => {
-    const settingsFile = await joinPath(['file://settings', 'settings.json'])
-    const settings = await readSettings()
-    if (vulkan != null) {
-      settings.vulkan = vulkan
-      // GPU enabled, set run_mode to 'gpu'
-      if (settings.vulkan === true) {
-        settings?.gpus?.some((gpu: { activated: boolean }) =>
-          gpu.activated === true ? 'gpu' : 'cpu'
-        )
-      }
-    }
-    await fs.writeFileSync(settingsFile, JSON.stringify(settings))
-  }
-
   return {
     readSettings,
-    saveSettings,
     settings,
   }
 }
