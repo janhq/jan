@@ -18,8 +18,6 @@ import { MainViewState } from '@/constants/screens'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 
-import { useSettings } from '@/hooks/useSettings'
-
 import { toGigabytes } from '@/utils/converter'
 
 import { getLogoEngine } from '@/utils/modelEngine'
@@ -53,16 +51,13 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const { requestCreateNewThread } = useCreateNewThread()
   const totalRam = useAtomValue(totalRamAtom)
-  const { settings } = useSettings()
 
   const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
   // Default nvidia returns vram in MB, need to convert to bytes to match the unit of totalRamW
-  let ram = nvidiaTotalVram * 1024 * 1024
-  if (ram === 0 || settings?.gpus?.some((gpu) => gpu.activated !== true)) {
-    ram = totalRam
-  }
+  const ram = nvidiaTotalVram > 0 ? nvidiaTotalVram * 1024 * 1024 : totalRam
+
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const assistants = useAtomValue(assistantsAtom)
 

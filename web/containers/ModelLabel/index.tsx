@@ -4,8 +4,6 @@ import { useAtomValue } from 'jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 
-import { useSettings } from '@/hooks/useSettings'
-
 import NotEnoughMemoryLabel from './NotEnoughMemoryLabel'
 
 import SlowOnYourDeviceLabel from './SlowOnYourDeviceLabel'
@@ -26,23 +24,23 @@ const ModelLabel = ({ size, compact }: Props) => {
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
   const availableVram = useAtomValue(availableVramAtom)
-  const { settings } = useSettings()
 
   const getLabel = (size: number) => {
     const minimumRamModel = (size * 1.25) / (1024 * 1024)
 
-    const availableRam = settings?.gpus?.some((gpu) => gpu.activated)
-      ? availableVram * 1000000 // MB to bytes
-      : totalRam -
-        (usedRam +
-          (activeModel?.metadata?.size
-            ? (activeModel.metadata.size * 1.25) / (1024 * 1024)
-            : 0))
+    const availableRam =
+      availableVram > 0
+        ? availableVram * 1000000 // MB to bytes
+        : totalRam -
+          (usedRam +
+            (activeModel?.metadata?.size
+              ? (activeModel.metadata.size * 1.25) / (1024 * 1024)
+              : 0))
 
     if (minimumRamModel > totalRam) {
       return (
         <NotEnoughMemoryLabel
-          unit={settings?.gpus?.some((gpu) => gpu.activated) ? 'VRAM' : 'RAM'}
+          unit={availableVram > 0 ? 'VRAM' : 'RAM'}
           compact={compact}
         />
       )
