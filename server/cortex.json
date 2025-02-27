@@ -596,6 +596,11 @@
       }
     },
     "/healthz": {
+      "servers": [
+        {
+          "url": "/"
+        }
+      ],
       "get": {
         "operationId": "HealthController_check",
         "summary": "Check health",
@@ -613,6 +618,11 @@
       }
     },
     "/processManager/destroy": {
+      "servers": [
+        {
+          "url": "/"
+        }
+      ],
       "delete": {
         "operationId": "Terminate server process",
         "summary": "Terminate server",
@@ -2442,6 +2452,11 @@
       }
     },
     "/system": {
+      "servers": [
+        {
+          "url": "/"
+        }
+      ],
       "delete": {
         "operationId": "SystemController_delete",
         "summary": "Stop api server",
@@ -2468,6 +2483,11 @@
       }
     },
     "/system/events/download": {
+      "servers": [
+        {
+          "url": "/"
+        }
+      ],
       "get": {
         "operationId": "SystemController_downloadEvent",
         "summary": "Get download status",
@@ -2489,6 +2509,11 @@
       }
     },
     "/system/events/model": {
+      "servers": [
+        {
+          "url": "/"
+        }
+      ],
       "get": {
         "operationId": "SystemController_modelEvent",
         "summary": "Get model status",
@@ -2510,6 +2535,11 @@
       }
     },
     "/system/events/resources": {
+      "servers": [
+        {
+          "url": "/"
+        }
+      ],
       "get": {
         "operationId": "SystemController_resourcesEvent",
         "summary": "Get resources status",
