@@ -41,10 +41,10 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
             </Markdown>
           </div>
           <div className="mb-6 flex flex-row divide-x">
-            {model.metadata?.author && (
+            {(model?.author ?? model?.metadata?.author) && (
               <p
                 className="font-regular mt-3 line-clamp-1 flex flex-row pr-4 capitalize text-[hsla(var(--text-secondary))]"
-                title={model.metadata?.author}
+                title={model?.author ?? model?.metadata?.author}
               >
                 {model.id?.includes('huggingface.co') && (
                   <>
@@ -57,7 +57,7 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
                     />{' '}
                   </>
                 )}{' '}
-                {model.metadata?.author}
+                {model?.author ?? model?.metadata?.author}
               </p>
             )}
             {model.models?.length > 0 && (
