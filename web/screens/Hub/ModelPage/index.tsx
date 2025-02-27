@@ -25,6 +25,8 @@ import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMess
 import { toGigabytes } from '@/utils/converter'
 import { extractModelName, removeYamlFrontMatter } from '@/utils/modelSource'
 
+import RemoteModelRefresh from './RemoteModelRefresh'
+
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
   selectedSettingAtom,
@@ -39,7 +41,6 @@ type Props = {
 const ModelPage = ({ model, onGoBack }: Props) => {
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
-  const { refreshingModels, refreshModels } = useRefreshModelList(model.id)
   const showScrollBar = useAtomValue(showScrollBarAtom)
 
   return (
@@ -157,23 +158,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       )}
                       <th className="w-[120px]">
                         {model.type === 'cloud' && (
-                          <Button
-                            theme={'ghost'}
-                            variant={'outline'}
-                            className="h-7 px-2"
-                            onClick={() => refreshModels()}
-                          >
-                            {refreshingModels ? (
-                              <Spinner
-                                size={16}
-                                strokeWidth={2}
-                                className="mr-2"
-                              />
-                            ) : (
-                              <RefreshCwIcon size={16} className="mr-2" />
-                            )}
-                            Refresh
-                          </Button>
+                          <RemoteModelRefresh id={model.id} />
                         )}
                       </th>
                     </tr>
