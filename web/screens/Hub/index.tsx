@@ -35,6 +35,7 @@ import {
 
 import ModelList from '@/screens/Hub/ModelList'
 
+import { toGigabytes } from '@/utils/converter'
 import { extractModelRepo } from '@/utils/modelSource'
 import { fuzzySearch } from '@/utils/search'
 
@@ -53,7 +54,6 @@ import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
 
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
-import { toGigabytes } from '@/utils/converter'
 
 const sortMenus = [
   {
