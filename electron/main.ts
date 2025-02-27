@@ -85,9 +85,9 @@ app
   .then(setupExtensions)
   .then(setupMenu)
   .then(handleIPCs)
-  .then(handleAppUpdates)
   .then(() => process.env.CI !== 'e2e' && createQuickAskWindow())
   .then(createMainWindow)
+  .then(handleAppUpdates)
   .then(registerGlobalShortcuts)
   .then(() => {
     if (!app.isPackaged) {
