@@ -84,6 +84,8 @@ export default function AppearanceOptions() {
           </p>
         </div>
         <Select
+          position="popper"
+          sideOffset={4}
           value={selectedIdTheme}
           options={themeOptions}
           onValueChange={(e) => handleClickTheme(e)}

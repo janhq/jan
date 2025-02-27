@@ -11,10 +11,13 @@ type Props = {
   open?: boolean
   block?: boolean
   value?: string
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  position?: 'item-aligned' | 'popper'
   placeholder?: string
   disabled?: boolean
   containerPortal?: HTMLDivElement | undefined | null
   className?: string
+  sideOffset?: number
   onValueChange?: (value: string) => void
   onOpenChange?: (open: boolean) => void
 }
@@ -26,7 +29,10 @@ const Select = ({
   disabled,
   containerPortal,
   block,
+  sideOffset,
+  position,
   className,
+  side,
   open,
   onValueChange,
   onOpenChange,
@@ -52,7 +58,12 @@ const Select = ({
     </SelectPrimitive.Trigger>
 
     <SelectPrimitive.Portal container={containerPortal}>
-      <SelectPrimitive.Content className="select__content">
+      <SelectPrimitive.Content
+        side={side}
+        position={position}
+        sideOffset={sideOffset}
+        className="select__content"
+      >
         <SelectPrimitive.Viewport className="select__viewport">
           {options &&
             options.map((item, i) => {
@@ -79,7 +90,6 @@ const Select = ({
               )
             })}
         </SelectPrimitive.Viewport>
-        <SelectPrimitive.Arrow />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
   </SelectPrimitive.Root>
