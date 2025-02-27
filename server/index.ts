@@ -97,9 +97,28 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       transformSpecificationClone: true,
     })
 
-    server.register(require('@fastify/http-proxy'), {
+    const proxy = require('@fastify/http-proxy')
+    server.register(proxy, {
       upstream: `${CORTEX_API_URL}/v1`,
       prefix: configs?.prefix ?? '/v1',
+      http2: false,
+    })
+
+    server.register(proxy, {
+      upstream: `${CORTEX_API_URL}/system`,
+      prefix:'/system',
+      http2: false,
+    })
+
+    server.register(proxy, {
+      upstream: `${CORTEX_API_URL}/processManager`,
+      prefix:'/processManager',
+      http2: false,
+    })
+
+    server.register(proxy, {
+      upstream: `${CORTEX_API_URL}/healthz`,
+      prefix:'/healthz',
       http2: false,
     })
 
