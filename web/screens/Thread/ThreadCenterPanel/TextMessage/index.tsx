@@ -112,7 +112,7 @@ const MessageContainer: React.FC<
             'absolute right-0 order-1 mt-2 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
             isUser
               ? 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
-              : 'relative left-0 order-2 -mt-1 flex w-full justify-between opacity-0 group-hover:opacity-100'
+              : 'relative left-0 order-2 flex w-full justify-between opacity-0 group-hover:opacity-100'
           )}
         >
           <div>
