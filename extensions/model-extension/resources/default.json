@@ -1,6 +1,6 @@
 [
   {
-    "author": "cortexso",
+    "author": "CohereForAI",
     "id": "cortexso/command-r",
     "metadata": {
       "_id": "66751b98585f2bf57092b2ae",
@@ -90,7 +90,7 @@
     ]
   },
   {
-    "author": "cortexso",
+    "author": "Google",
     "id": "cortexso/gemma2",
     "metadata": {
       "_id": "66b06c37491b555fefe0a0bf",
@@ -264,7 +264,7 @@
     ]
   },
   {
-    "author": "cortexso",
+    "author": "CohereForAI",
     "id": "cortexso/aya",
     "metadata": {
       "_id": "66790e21db26e8589ccd3816",
@@ -314,7 +314,7 @@
     ]
   },
   {
-    "author": "cortexso",
+    "author": "Qwen",
     "id": "cortexso/qwen2.5",
     "metadata": {
       "_id": "671d0d55748faf685e6450a3",
@@ -740,7 +740,7 @@
     ]
   },
   {
-    "author": "cortexso",
+    "author": "meta-llama",
     "id": "cortexso/llama3.2",
     "metadata": {
       "_id": "66f63309ba963b1db95deaa4",
@@ -888,7 +888,7 @@
     ]
   },
   {
-    "author": "cortexso",
+    "author": "DeepSeek-AI",
     "id": "cortexso/deepseek-r1",
     "metadata": {
       "_id": "67a0bcf13ac2dd6adf0bdfcf",
@@ -1142,7 +1142,7 @@
     ]
   },
   {
-    "author": "cortexso",
+    "author": "meta-llama",
     "id": "cortexso/llama3.1",
     "metadata": {
       "_id": "66a76e01a1037fe261a5a472",
