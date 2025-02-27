@@ -26,7 +26,7 @@ export default function ContextLengthFilter() {
               className="flex-shrink-0 text-[hsl(var(--text-secondary))]"
             />
           }
-          content={''}
+          content="Controls how much text the model can consider at once. Longer context allows the model to handle more input but uses more memory and runs slower."
         />
       </div>
       <div className="flex items-center gap-x-4">

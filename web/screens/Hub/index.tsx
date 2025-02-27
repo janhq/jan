@@ -53,6 +53,7 @@ import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
 
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { totalRamAtom } from '@/helpers/atoms/SystemBar.atom'
+import { toGigabytes } from '@/utils/converter'
 
 const sortMenus = [
   {
@@ -110,6 +111,14 @@ const HubScreen = () => {
   const [maxModelSizeFilter, setMaxModelSizeFilter] =
     useAtom(hubModelSizeMaxAtom)
 
+  const largestModel =
+    sources &&
+    sources
+      .flatMap((model) => model.models)
+      .reduce((max, model) => (model.size > max.size ? model : max), {
+        size: 0,
+      })
+
   const searchedModels = useMemo(
     () =>
       searchValue.length
@@ -135,7 +144,7 @@ const HubScreen = () => {
         !minModelSizeFilter ||
         model.models.some((e) => e.size >= minModelSizeFilter * (1 << 30))
       const matchesMaxSize =
-        maxModelSizeFilter === 100 ||
+        maxModelSizeFilter === largestModel?.size ||
         model.models.some((e) => e.size <= maxModelSizeFilter * (1 << 30))
 
       return isCompatible && matchesCtxLen && matchesMinSize && matchesMaxSize
@@ -168,6 +177,19 @@ const HubScreen = () => {
       setModelDetail(undefined)
     }
   }, [modelDetail, sources, setModelDetail, addModelSource])
+
+  useEffect(() => {
+    if (largestModel) {
+      setMaxModelSizeFilter(
+        Number(
+          toGigabytes(Number(largestModel?.size), {
+            hideUnit: true,
+            toFixed: 0,
+          })
+        )
+      )
+    }
+  }, [largestModel])
 
   useEffect(() => {
     if (selectedModel) {
@@ -403,7 +425,7 @@ const HubScreen = () => {
                       <ModelSearch onSearchLocal={onSearchUpdate} />
                       <div
                         className={twMerge(
-                          'invisible absolute mt-2 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
+                          'invisible absolute mt-2 max-h-[400px] w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
                           searchValue.length > 0 && 'visible'
                         )}
                       >
@@ -414,7 +436,10 @@ const HubScreen = () => {
                             </span>
                           </div>
                         ) : (
-                          <>
+                          <ScrollArea
+                            type={showScrollBar ? 'always' : 'scroll'}
+                            className="w-full"
+                          >
                             {searchedModels.map((model) => (
                               <div
                                 key={model.id}
@@ -440,7 +465,7 @@ const HubScreen = () => {
                                 </span>
                               </div>
                             ))}
-                          </>
+                          </ScrollArea>
                         )}
                       </div>
                     </div>
@@ -468,7 +493,7 @@ const HubScreen = () => {
                       onClick={() => {
                         setCtxLenFilter(0)
                         setMinModelSizeFilter(0)
-                        setMaxModelSizeFilter(100)
+                        setMaxModelSizeFilter(Number(largestModel?.size))
                         setCompatible(false)
                       }}
                     >
@@ -487,7 +512,14 @@ const HubScreen = () => {
                     <ContextLengthFilter />
                   </div>
                   <div className="mt-12">
-                    <ModelSizeFilter />
+                    <ModelSizeFilter
+                      max={Number(
+                        toGigabytes(Number(largestModel?.size), {
+                          hideUnit: true,
+                          toFixed: 0,
+                        })
+                      )}
+                    />
                   </div>
                 </div>
 

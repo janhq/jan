@@ -70,8 +70,9 @@ const MessageContainer: React.FC<
   return (
     <div
       className={twMerge(
-        'group relative mx-auto p-4',
-        chatWidth === 'compact' && 'max-w-[700px]'
+        'group relative mx-auto px-4 py-2',
+        chatWidth === 'compact' && 'max-w-[700px]',
+        isUser && 'pb-4 pt-0'
       )}
     >
       <div
@@ -109,11 +110,9 @@ const MessageContainer: React.FC<
         <div
           className={twMerge(
             'absolute right-0 order-1 mt-2 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
-            isUser &&
-              'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex',
-            props.isCurrentMessage && !isUser
-              ? 'relative left-0 order-2 flex w-full justify-between'
-              : 'relative left-0 order-2 hidden w-full justify-between group-hover:flex'
+            isUser
+              ? 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
+              : 'relative left-0 order-2 -mt-1 flex w-full justify-between opacity-0 group-hover:opacity-100'
           )}
         >
           <div>
