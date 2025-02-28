@@ -493,8 +493,15 @@ const HubScreen = () => {
                       onClick={() => {
                         setCtxLenFilter(0)
                         setMinModelSizeFilter(0)
-                        setMaxModelSizeFilter(Number(largestModel?.size))
-                        setCompatible(false)
+                        setMaxModelSizeFilter(
+                          Number(
+                            toGigabytes(Number(largestModel?.size), {
+                              hideUnit: true,
+                              toFixed: 0,
+                            })
+                          )
+                        )
+                        setCompatible(true)
                       }}
                     >
                       Reset

@@ -90,3 +90,19 @@
   margin: 16px 0px;
   border-color: hsla(var(--app-border));
 }
+
+.markdown-content {
+  ol,
+  ul {
+    padding-left: 16px;
+    li {
+      line-height: 2;
+    }
+  }
+  ol {
+    list-style: number;
+  }
+  ul {
+    list-style: disc;
+  }
+}
