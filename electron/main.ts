@@ -31,6 +31,7 @@ import { registerGlobalShortcuts } from './utils/shortcut'
 import { registerLogger } from './utils/logger'
 
 const preloadPath = join(__dirname, 'preload.js')
+const preloadQuickAskPath = join(__dirname, 'preload.quickask.js')
 const rendererPath = join(__dirname, '..', 'renderer')
 const quickAskPath = join(rendererPath, 'search.html')
 const mainPath = join(rendererPath, 'index.html')
@@ -133,7 +134,7 @@ function createQuickAskWindow() {
   // Feature Toggle for Quick Ask
   if (!getAppConfigurations().quick_ask) return
   const startUrl = app.isPackaged ? `file://${quickAskPath}` : quickAskUrl
-  windowManager.createQuickAskWindow(preloadPath, startUrl)
+  windowManager.createQuickAskWindow(preloadQuickAskPath, startUrl)
 }
 
 /**

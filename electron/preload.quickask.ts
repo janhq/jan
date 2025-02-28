@@ -3,9 +3,8 @@
  * @module preload
  */
 
-import { APIEvents, APIRoutes, AppConfiguration } from '@janhq/core/node'
+import { APIEvents, APIRoutes } from '@janhq/core/node'
 import { contextBridge, ipcRenderer } from 'electron'
-import { readdirSync } from 'fs'
 
 const interfaces: { [key: string]: (...args: any[]) => any } = {}
 
@@ -25,36 +24,9 @@ APIEvents.forEach((method) => {
   interfaces[method] = (handler: any) => ipcRenderer.on(method, handler)
 })
 
-interfaces['changeDataFolder'] = async (path) => {
-  const appConfiguration: AppConfiguration = await ipcRenderer.invoke(
-    'getAppConfigurations'
-  )
-  const currentJanDataFolder = appConfiguration.data_folder
-  appConfiguration.data_folder = path
-  const reflect = require('@alumna/reflect')
-  const { err } = await reflect({
-    src: currentJanDataFolder,
-    dest: path,
-    recursive: true,
-    delete: false,
-    overwrite: true,
-    errorOnExist: false,
-  })
-  if (err) {
-    console.error(err)
-    throw err
-  }
-  await ipcRenderer.invoke('updateAppConfiguration', appConfiguration)
-}
-
-interfaces['isDirectoryEmpty'] = async (path) => {
-  const dirChildren = await readdirSync(path)
-  return dirChildren.filter((x) => x !== '.DS_Store').length === 0
-}
-
 // Expose the 'interfaces' object in the main world under the name 'electronAPI'
 // This allows the renderer process to access these methods directly
 contextBridge.exposeInMainWorld('electronAPI', {
   ...interfaces,
-  isQuickAsk: () => false,
+  isQuickAsk: () => true,
 })

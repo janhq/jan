@@ -8,9 +8,6 @@ import { useSetAtom } from 'jotai'
 
 import ClipboardListener from '@/containers/Providers/ClipboardListener'
 
-import JotaiWrapper from '@/containers/Providers/Jotai'
-import ThemeWrapper from '@/containers/Providers/Theme'
-
 import { useLoadTheme } from '@/hooks/useLoadTheme'
 
 import { setupCoreServices } from '@/services/coreService'
@@ -48,15 +45,9 @@ export default function RootLayout() {
   useLoadTheme()
 
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased">
-        <JotaiWrapper>
-          <ThemeWrapper>
-            <ClipboardListener />
-            <Search />
-          </ThemeWrapper>
-        </JotaiWrapper>
-      </body>
-    </html>
+    <>
+      <ClipboardListener />
+      <Search />
+    </>
   )
 }

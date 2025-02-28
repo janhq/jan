@@ -43,7 +43,7 @@ export function useGetFeaturedSources() {
   const { sources, error, mutate } = useGetModelSources()
 
   return {
-    sources: sources?.filter((e) => e.metadata?.tags.includes('featured')),
+    sources: sources?.filter((e) => e.metadata?.tags?.includes('featured')),
     error,
     mutate,
   }

@@ -9,6 +9,8 @@ import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
+import { useApp } from '@/hooks/useApp'
+
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
@@ -23,6 +25,7 @@ const ExtensionCatalog = () => {
   const [searchText, setSearchText] = useState('')
   const [showLoading, setShowLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { relaunch } = useApp()
 
   useEffect(() => {
     const getAllSettings = async () => {
@@ -74,7 +77,7 @@ const ExtensionCatalog = () => {
     // Send the filename of the to be installed extension
     // to the main process for installation
     const installed = await extensionManager.install([extensionFile])
-    if (installed) window.core?.api?.relaunch()
+    if (installed) relaunch()
   }
 
   /**
@@ -87,7 +90,7 @@ const ExtensionCatalog = () => {
     // Send the filename of the to be uninstalled extension
     // to the main process for removal
     const res = await extensionManager.uninstall([name])
-    if (res) window.core?.api?.relaunch()
+    if (res) relaunch()
   }
 
   /**

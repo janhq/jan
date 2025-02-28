@@ -66,7 +66,7 @@ const UserInput = () => {
           <LogoMark width={28} height={28} className="mx-auto" />
           <input
             ref={inputRef}
-            className="flex-1 bg-transparent font-bold focus:outline-none"
+            className="flex-1 bg-transparent font-bold text-[hsla(var(--text-primary))] focus:outline-none"
             type="text"
             value={inputValue}
             onChange={handleChange}

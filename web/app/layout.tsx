@@ -13,10 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: PropsWithChildren) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="h-screen font-sans text-sm antialiased">
-        <div className="dragable-bar" />
-        {children}
-      </body>
+      <body className="h-screen font-sans text-sm antialiased">{children}</body>
     </html>
   )
 }
