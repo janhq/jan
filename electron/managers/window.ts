@@ -141,6 +141,9 @@ class WindowManager {
     return this._quickAskWindow?.isDestroyed() ?? true
   }
 
+  /**
+   * Expand the quick ask window
+   */
   expandQuickAskWindow(heightOffset: number): void {
     const width = quickAskWindowConfig.width!
     const height = quickAskWindowConfig.height! + heightOffset
@@ -148,6 +151,9 @@ class WindowManager {
     this._quickAskWindow?.setSize(width, height, true)
   }
 
+  /**
+   * Send the selected text to the quick ask window.
+   */
   sendQuickAskSelectedText(selectedText: string): void {
     this._quickAskWindow?.webContents.send(
       AppEvent.onSelectedText,
@@ -180,6 +186,9 @@ class WindowManager {
     }
   }
 
+  /**
+   * Clean up all windows.
+   */
   cleanUp(): void {
     if (!this.mainWindow?.isDestroyed()) {
       this.mainWindow?.close()

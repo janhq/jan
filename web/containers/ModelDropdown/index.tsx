@@ -35,10 +35,7 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import {
-  useGetModelSources,
-  useGetFeaturedSources,
-} from '@/hooks/useModelSource'
+import { useGetFeaturedSources } from '@/hooks/useModelSource'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
@@ -91,7 +88,6 @@ const ModelDropdown = ({
   const [toggle, setToggle] = useState<HTMLDivElement | null>(null)
   const [selectedModel, setSelectedModel] = useAtom(selectedModelAtom)
   const { recommendedModel, downloadedModels } = useRecommendedModel()
-  const { sources } = useGetModelSources()
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )

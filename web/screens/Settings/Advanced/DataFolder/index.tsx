@@ -9,6 +9,8 @@ import Loader from '@/containers/Loader'
 
 export const SUCCESS_SET_NEW_DESTINATION = 'successSetNewDestination'
 
+import { useApp } from '@/hooks/useApp'
+
 import ModalChangeDirectory, {
   showDirectoryConfirmModalAtom,
 } from './ModalChangeDirectory'
@@ -32,6 +34,7 @@ const DataFolder = () => {
 
   const [destinationPath, setDestinationPath] = useState(undefined)
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
+  const { relaunch } = useApp()
 
   const onChangeFolderClick = useCallback(async () => {
     const destFolder = await window.core?.api?.selectDirectory()
@@ -78,7 +81,7 @@ const DataFolder = () => {
       setTimeout(() => {
         setShowLoader(false)
       }, 1200)
-      await window.core?.api?.relaunch()
+      await relaunch()
     } catch (e) {
       console.error(e)
       setShowLoader(false)
