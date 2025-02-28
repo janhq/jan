@@ -83,7 +83,7 @@ const ModalTroubleShooting = () => {
                       >
                         Discord
                       </a>
-                      &nbsp;& send it to #🆘|get-help channel for further
+                      &nbsp;& send it to #🆘|jan-help channel for further
                       support.
                     </p>
                   </li>
