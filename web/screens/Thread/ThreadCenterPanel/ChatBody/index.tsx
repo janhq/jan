@@ -167,6 +167,7 @@ const ChatBody = memo(
                   key={messages[virtualRow.index]?.id ?? virtualRow.index}
                   data-index={virtualRow.index}
                   ref={virtualizer.measureElement}
+                  className="first:mt-4"
                 >
                   {loadModelError && virtualRow.index === count - 1 ? (
                     <LoadModelError />
