@@ -131,12 +131,52 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @returns A Promise that resolves to an array of ThreadMessage objects.
    */
   async listMessages(threadId: string): Promise<ThreadMessage[]> {
-    return this.queue.add(() =>
+    let db = false;
+    let i = new Promise((resolve, reject) => {
+      let messages = [];
+      var h = setInterval(async () => {
+        if (db) return false;
+        db = true;
+        if (messages.length == 0) {
+          let stop = false;
+          let e = await (await ky.get(`${API_URL}/v1/threads/${threadId}/messages?order=asc&limit=-1`)).json<MessageList>();
+          for(const i of e.data){
+            messages.push(i);
+          }
+          if (e.data.length < 255) {
+            stop = true;
+          }
+          if (stop) {
+            resolve(messages);
+            clearInterval(h);
+          } else { 
+            db = false;
+          };
+        } else {
+          let stop = false;
+          let e = await (await ky.get(`${API_URL}/v1/threads/${threadId}/messages?order=asc&limit=-1&after=${messages[messages.length - 1].id}`)).json<MessageList>();
+          for(const i of e.data){
+            messages.push(i);
+          }
+          if (e.data.length < 255) {
+            stop = true;
+          }
+          if (stop) { 
+            resolve(messages);
+            clearInterval(h);
+          } else { db = false };
+        }
+      }, 10)
+    });
+
+    /*return this.queue.add(() =>
       ky
         .get(`${API_URL}/v1/threads/${threadId}/messages?order=asc&limit=-1`)
         .json<MessageList>()
         .then((e) => e.data)
-    ) as Promise<ThreadMessage[]>
+    ) as Promise<ThreadMessage[]>*/
+
+    return this.queue.add(() => i); // Fix for pagination issue, max was 255 messages per thread that could be loaded.
   }
 
   /**
