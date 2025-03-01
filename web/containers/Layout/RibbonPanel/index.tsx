@@ -26,7 +26,7 @@ export default function RibbonPanel() {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const showLeftPanel = useAtomValue(showLeftPanelAtom)
+  const [ showLeftPanel, setShowLeftPanel ] = useAtom(showLeftPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
@@ -38,6 +38,7 @@ export default function RibbonPanel() {
     if (mainViewState === state) return
     if (serverEnabled && state === MainViewState.Thread) return
     if (state === MainViewState.Settings) setSelectedSetting('My Models')
+    if (state === MainViewState.Settings) setShowLeftPanel(true)
     setMainViewState(state)
     setEditMessage('')
   }
