@@ -3,8 +3,8 @@ import { useCallback } from 'react'
 import {
   ExtensionTypeEnum,
   ImportingModel,
-  LocalImportModelEvent,
   Model,
+  ModelEvent,
   ModelExtension,
   OptionType,
   events,
@@ -25,6 +25,7 @@ import {
   downloadedModelsAtom,
   importingModelsAtom,
   removeDownloadingModelAtom,
+  setImportingModelSuccessAtom,
 } from '@/helpers/atoms/Model.atom'
 
 export type ImportModelStage =
@@ -59,6 +60,7 @@ const useImportModel = () => {
   const addDownloadingModel = useSetAtom(addDownloadingModelAtom)
   const removeDownloadingModel = useSetAtom(removeDownloadingModelAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
+  const setImportingModelSuccess = useSetAtom(setImportingModelSuccessAtom)
 
   const incrementalModelName = useCallback(
     (name: string, startIndex: number = 0): string => {
@@ -83,10 +85,9 @@ const useImportModel = () => {
             ?.importModel(modelId, model.path, model.name, optionType)
             .finally(() => {
               removeDownloadingModel(modelId)
-              events.emit(LocalImportModelEvent.onLocalImportModelSuccess, {
-                importId: model.importId,
-                modelId: modelId,
-              })
+
+              events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
+              setImportingModelSuccess(model.importId, modelId)
             })
         }
       })
