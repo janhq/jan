@@ -368,10 +368,10 @@ const HubScreen = () => {
                         {hubBannerOption === 'upload' && (
                           <div
                             className={`mx-2 mb-2 flex h-[172px] cursor-pointer items-center justify-center rounded-md border`}
+                            {...getRootProps()}
                             onClick={() => {
                               imageInputRef.current?.click()
                             }}
-                            {...getRootProps()}
                           >
                             <div className="flex flex-col items-center justify-center">
                               <div className="mx-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-200">

@@ -158,7 +158,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       )}
                       <th className="w-[120px]">
                         {model.type === 'cloud' && (
-                          <RemoteModelRefresh id={model.id} />
+                          <RemoteModelRefresh engine={model.id} />
                         )}
                       </th>
                     </tr>

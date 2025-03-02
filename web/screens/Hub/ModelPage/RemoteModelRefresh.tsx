@@ -6,15 +6,15 @@ import Spinner from '@/containers/Loader/Spinner'
 
 import { useRefreshModelList } from '@/hooks/useEngineManagement'
 
-function RemoteModelRefresh({ id }: { id: string }) {
-  const { refreshingModels, refreshModels } = useRefreshModelList(id)
+function RemoteModelRefresh({ engine }: { engine: string }) {
+  const { refreshingModels, refreshModels } = useRefreshModelList(engine)
 
   return (
     <Button
       theme={'ghost'}
       variant={'outline'}
       className="h-7 px-2"
-      onClick={() => refreshModels()}
+      onClick={() => refreshModels(engine)}
     >
       {refreshingModels ? (
         <Spinner size={16} strokeWidth={2} className="mr-2" />
