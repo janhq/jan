@@ -40,10 +40,7 @@ const ExtensionCatalog = () => {
           'provider' in extension &&
           typeof extension.provider === 'string'
         ) {
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
+          if (settings && settings.length > 0) {
             engineMenu.push({
               ...extension,
               provider:

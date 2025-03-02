@@ -25,7 +25,6 @@ export default defineConfig([
       '@types/pacote',
       '@npmcli/arborist',
       'ulidx',
-      'node-fetch',
       'fs',
       'request',
       'crypto',

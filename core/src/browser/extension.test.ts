@@ -39,11 +39,6 @@ describe('BaseExtension', () => {
     expect(baseExtension.onUnload).toBeDefined()
   })
 
-  it('should have installationState() return "NotRequired"', async () => {
-    const installationState = await baseExtension.installationState()
-    expect(installationState).toBe('NotRequired')
-  })
-
   it('should install the extension', async () => {
     await baseExtension.install()
     // Add your assertions here
@@ -82,11 +77,6 @@ describe('BaseExtension', () => {
   it('should have abstract methods onLoad() and onUnload()', () => {
     expect(baseExtension.onLoad).toBeDefined()
     expect(baseExtension.onUnload).toBeDefined()
-  })
-
-  it('should have installationState() return "NotRequired"', async () => {
-    const installationState = await baseExtension.installationState()
-    expect(installationState).toBe('NotRequired')
   })
 
   it('should install the extension', async () => {

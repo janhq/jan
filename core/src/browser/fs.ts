@@ -55,17 +55,23 @@ const unlinkSync = (...args: any[]) => globalThis.core.api?.unlinkSync(...args)
  */
 const appendFileSync = (...args: any[]) => globalThis.core.api?.appendFileSync(...args)
 
+/**
+ * Copies a file from the source path to the destination path.
+ * @param src
+ * @param dest
+ * @returns
+ */
 const copyFile: (src: string, dest: string) => Promise<void> = (src, dest) =>
   globalThis.core.api?.copyFile(src, dest)
 
 /**
  * Gets the list of gguf files in a directory
- * 
+ *
  * @param path - The paths to the file.
  * @returns {Promise<{any}>} - A promise that resolves with the list of gguf and non-gguf files
  */
-const getGgufFiles: (paths: string[]) => Promise<any> = (
-  paths) => globalThis.core.api?.getGgufFiles(paths)
+const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
+  globalThis.core.api?.getGgufFiles(paths)
 
 /**
  * Gets the file's stats.

@@ -7,7 +7,6 @@ import { twMerge } from 'tailwind-merge'
 import DownloadingState from './DownloadingState'
 
 import ImportingModelState from './ImportingModelState'
-import InstallingExtension from './InstallingExtension'
 import SystemMonitor from './SystemMonitor'
 import UpdateApp from './UpdateApp'
 import UpdatedFailedModal from './UpdateFailedModal'
@@ -49,7 +48,6 @@ const BottomPanel = () => {
         <ImportingModelState />
         <DownloadingState />
         <UpdatedFailedModal />
-        <InstallingExtension />
       </div>
       <div className="flex items-center gap-x-1">
         <SystemMonitor />
