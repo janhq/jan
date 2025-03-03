@@ -16,6 +16,7 @@ import Search from './page'
 
 import { defaultJanDataFolderAtom } from '@/helpers/atoms/App.atom'
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
+import ThemeWrapper from '@/containers/Providers/Theme'
 
 export default function RootLayout() {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
@@ -45,9 +46,9 @@ export default function RootLayout() {
   useLoadTheme()
 
   return (
-    <>
+    <ThemeWrapper>
       <ClipboardListener />
       <Search />
-    </>
+    </ThemeWrapper>
   )
 }
