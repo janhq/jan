@@ -8,6 +8,8 @@ import { useSetAtom } from 'jotai'
 
 import ClipboardListener from '@/containers/Providers/ClipboardListener'
 
+import ThemeWrapper from '@/containers/Providers/Theme'
+
 import { useLoadTheme } from '@/hooks/useLoadTheme'
 
 import { setupCoreServices } from '@/services/coreService'
@@ -16,7 +18,6 @@ import Search from './page'
 
 import { defaultJanDataFolderAtom } from '@/helpers/atoms/App.atom'
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
-import ThemeWrapper from '@/containers/Providers/Theme'
 
 export default function RootLayout() {
   const setJanDataFolderPath = useSetAtom(janDataFolderPathAtom)
