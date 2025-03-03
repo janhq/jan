@@ -8,6 +8,8 @@ import { useSetAtom } from 'jotai'
 
 import ClipboardListener from '@/containers/Providers/ClipboardListener'
 
+import ThemeWrapper from '@/containers/Providers/Theme'
+
 import { useLoadTheme } from '@/hooks/useLoadTheme'
 
 import { setupCoreServices } from '@/services/coreService'
@@ -45,9 +47,9 @@ export default function RootLayout() {
   useLoadTheme()
 
   return (
-    <>
+    <ThemeWrapper>
       <ClipboardListener />
       <Search />
-    </>
+    </ThemeWrapper>
   )
 }
