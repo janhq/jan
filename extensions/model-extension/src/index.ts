@@ -173,16 +173,16 @@ export default class JanModelExtension extends ModelExtension {
         toImportModels.map(async (model: Model & { file_path: string }) => {
           return this.importModel(
             model.id,
-            model.sources[0].url.startsWith('http') ||
-              !(await fs.existsSync(model.sources[0].url))
+            model.sources?.[0]?.url.startsWith('http') ||
+              !(await fs.existsSync(model.sources?.[0]?.url))
               ? await joinPath([
                   await dirName(model.file_path),
-                  model.sources[0]?.filename ??
+                  model.sources?.[0]?.filename ??
                     model.settings?.llama_model_path ??
-                    model.sources[0]?.url.split('/').pop() ??
+                    model.sources?.[0]?.url.split('/').pop() ??
                     model.id,
                 ]) // Copied models
-              : model.sources[0].url, // Symlink models,
+              : model.sources?.[0]?.url, // Symlink models,
             model.name
           )
             .then((e) => {
