@@ -62,7 +62,7 @@ jobs:
           ref: ${{ inputs.ref }}
       
       - name: Replace Icons for Beta Build
-        if: inputs.beta == true
+        if: inputs.beta == true && inputs.nightly != true
         shell: bash
         run: |
           rm -f electron/icons/512x512.png
@@ -77,7 +77,7 @@ jobs:
           mv electron/icons/jan-beta-tray.png electron/icons/icon-tray.png
 
       - name: Replace Icons for Nightly Build
-        if: inputs.nightly == true
+        if: inputs.nightly == true && inputs.beta != true
         shell: bash
         run: |
           rm -f electron/icons/512x512.png
