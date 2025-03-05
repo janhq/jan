@@ -51,7 +51,7 @@
         "deb"
       ],
       "category": "Utility",
-      "icon": "icons/"
+      "icon": "icons/icon.png"
     },
     "win": {
       "icon": "icons/icon.png",
