@@ -52,24 +52,58 @@ jobs:
           ref: ${{ inputs.ref }}
 
       - name: Replace Icons for Beta Build
-        if: inputs.beta == true
+        if: inputs.beta == true && inputs.nightly != true
         shell: bash
         run: |
+          echo "Icons before replacement:"
+          ls -la electron/icons/
+          
+          echo "Setting up beta icons"
+          
+          # Replace the key icon files with move operations (no need for rm first)
           mv electron/icons/jan-beta-512x512.png electron/icons/512x512.png
           mv electron/icons/jan-beta.ico electron/icons/icon.ico
           mv electron/icons/jan-beta.png electron/icons/icon.png
           mv electron/icons/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
           mv electron/icons/jan-beta-tray.png electron/icons/icon-tray.png
+          
+          # Remove any remaining nightly icon files
+          rm -f electron/icons/jan-nightly-512x512.png
+          rm -f electron/icons/jan-nightly.ico
+          rm -f electron/icons/jan-nightly.png
+          rm -f electron/icons/jan-nightly-tray@2x.png
+          rm -f electron/icons/jan-nightly-tray.png
+          
+          # Verify the replacement
+          echo "Icons after replacement:"
+          ls -la electron/icons/
 
       - name: Replace Icons for Nightly Build
-        if: inputs.nightly == true
+        if: inputs.nightly == true && inputs.beta != true
         shell: bash
         run: |
+          echo "Icons before replacement:"
+          ls -la electron/icons/
+          
+          echo "Setting up nightly icons"
+          
+          # Replace the key icon files with move operations (no need for rm first)
           mv electron/icons/jan-nightly-512x512.png electron/icons/512x512.png
           mv electron/icons/jan-nightly.ico electron/icons/icon.ico
           mv electron/icons/jan-nightly.png electron/icons/icon.png
           mv electron/icons/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
           mv electron/icons/jan-nightly-tray.png electron/icons/icon-tray.png
+          
+          # Remove any remaining beta icon files
+          rm -f electron/icons/jan-beta-512x512.png
+          rm -f electron/icons/jan-beta.ico
+          rm -f electron/icons/jan-beta.png
+          rm -f electron/icons/jan-beta-tray@2x.png
+          rm -f electron/icons/jan-beta-tray.png
+          
+          # Verify the replacement
+          echo "Icons after replacement:"
+          ls -la electron/icons/
 
       - name: Installing node
         uses: actions/setup-node@v1
