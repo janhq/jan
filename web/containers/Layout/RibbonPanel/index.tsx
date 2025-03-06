@@ -1,4 +1,7 @@
+import { useEffect } from 'react'
+
 import { Tooltip, useMediaQuery } from '@janhq/joi'
+
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   MessageCircleIcon,
@@ -26,7 +29,7 @@ export default function RibbonPanel() {
   const [mainViewState, setMainViewState] = useAtom(mainViewStateAtom)
   const [serverEnabled] = useAtom(serverEnabledAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
-  const [ showLeftPanel, setShowLeftPanel ] = useAtom(showLeftPanelAtom)
+  const [showLeftPanel, setShowLeftPanel] = useAtom(showLeftPanelAtom)
   const matches = useMediaQuery('(max-width: 880px)')
   const reduceTransparent = useAtomValue(reduceTransparentAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
@@ -34,11 +37,17 @@ export default function RibbonPanel() {
   const threads = useAtomValue(threadsAtom)
   const isDownloadALocalModel = useAtomValue(isDownloadALocalModelAtom)
 
+  useEffect(() => {
+    if (mainViewState === MainViewState.Settings) {
+      setShowLeftPanel(true)
+    }
+    return () => setShowLeftPanel(showLeftPanel)
+  }, [mainViewState])
+
   const onMenuClick = (state: MainViewState) => {
     if (mainViewState === state) return
     if (serverEnabled && state === MainViewState.Thread) return
     if (state === MainViewState.Settings) setSelectedSetting('My Models')
-    if (state === MainViewState.Settings) setShowLeftPanel(true)
     setMainViewState(state)
     setEditMessage('')
   }
