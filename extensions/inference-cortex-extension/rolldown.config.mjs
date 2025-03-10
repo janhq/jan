@@ -13,9 +13,13 @@ export default defineConfig([
     define: {
       NODE: JSON.stringify(`${packageJson.name}/${packageJson.node}`),
       SETTINGS: JSON.stringify(defaultSettingJson),
-      CORTEX_API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
-      CORTEX_SOCKET_URL: JSON.stringify(`ws://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.49'),
+      CORTEX_API_URL: JSON.stringify(
+        `http://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
+      ),
+      CORTEX_SOCKET_URL: JSON.stringify(
+        `ws://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
+      ),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.54'),
     },
   },
   {
@@ -31,7 +35,9 @@ export default defineConfig([
       extensions: ['.js', '.ts', '.json'],
     },
     define: {
-      CORTEX_API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
+      CORTEX_API_URL: JSON.stringify(
+        `http://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
+      ),
     },
     platform: 'node',
   },

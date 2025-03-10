@@ -1,8 +1,4 @@
-import {
-  executeOnMain,
-  HardwareManagementExtension,
-  HardwareInformation,
-} from '@janhq/core'
+import { HardwareManagementExtension, HardwareInformation } from '@janhq/core'
 import ky from 'ky'
 import PQueue from 'p-queue'
 

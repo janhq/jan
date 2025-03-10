@@ -10,15 +10,11 @@ import {
   Model,
   executeOnMain,
   EngineEvent,
-  joinPath,
   LocalOAIEngine,
   InferenceEngine,
-  getJanDataFolderPath,
   extractModelLoadParams,
-  fs,
   events,
   ModelEvent,
-  dirName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
 import ky from 'ky'

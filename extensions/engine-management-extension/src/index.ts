@@ -286,7 +286,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
       if (
         !installedEngines.some(
           (e) => e.name === variant.variant && e.version === variant.version
-        )
+        ) || variant.version < CORTEX_ENGINE_VERSION
       ) {
         throw new EngineError(
           'Default engine is not available, use bundled version.'
