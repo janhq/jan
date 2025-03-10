@@ -1,13 +1,7 @@
 import path from 'path'
-import {
-  appResourcePath,
-  getJanDataFolderPath,
-  log,
-} from '@janhq/core/node'
+import { appResourcePath, getJanDataFolderPath, log } from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
 
-// The HOST address to use for the Nitro subprocess
-const LOCAL_PORT = CORTEX_API_URL.split(":").pop() ?? "39291"
 let watchdog: ProcessWatchdog | undefined = undefined
 
 /**
@@ -36,6 +30,9 @@ function run(): Promise<any> {
     if (watchdog) {
       watchdog.terminate()
     }
+
+    // The HOST address to use for the cortex subprocess
+    const LOCAL_PORT = CORTEX_API_URL.split(':').pop() ?? '39291'
 
     watchdog = new ProcessWatchdog(
       executablePath,

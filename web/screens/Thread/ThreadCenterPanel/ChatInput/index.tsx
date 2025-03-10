@@ -170,7 +170,7 @@ const ChatInput = () => {
                     !!fileUpload ||
                     (activeAssistant?.tools &&
                       !activeAssistant?.tools[0]?.enabled &&
-                      !activeAssistant?.model.settings?.vision_model)
+                      !activeAssistant?.model.settings?.mmproj)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -193,7 +193,7 @@ const ChatInput = () => {
                 {!!fileUpload ||
                   (activeAssistant?.tools &&
                     !activeAssistant?.tools[0]?.enabled &&
-                    !activeAssistant?.model.settings?.vision_model && (
+                    !activeAssistant?.model.settings?.mmproj && (
                       <>
                         {!!fileUpload && (
                           <span>
@@ -231,13 +231,13 @@ const ChatInput = () => {
               <li
                 className={twMerge(
                   'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                  activeAssistant?.model.settings?.vision_model &&
+                  activeAssistant?.model.settings?.mmproj &&
                     isModelSupportRagAndTools
                     ? 'cursor-pointer'
                     : 'cursor-not-allowed opacity-50'
                 )}
                 onClick={() => {
-                  if (activeAssistant?.model.settings?.vision_model) {
+                  if (activeAssistant?.model.settings?.mmproj) {
                     imageInputRef.current?.click()
                     setShowAttachmentMenus(false)
                   }
