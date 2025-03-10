@@ -286,7 +286,8 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
       if (
         !installedEngines.some(
           (e) => e.name === variant.variant && e.version === variant.version
-        ) || variant.version < CORTEX_ENGINE_VERSION
+        ) ||
+        variant.version < CORTEX_ENGINE_VERSION
       ) {
         throw new EngineError(
           'Default engine is not available, use bundled version.'
@@ -397,7 +398,9 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
           const { id, ...data } = engine
 
           data.api_key = engines[id]?.api_key
-          return this.updateEngine(data).catch(console.error)
+          return this.updateEngine(id,{
+            ...data,
+          }).catch(console.error)
         })
       )
       await this.updateSettings([
