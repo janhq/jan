@@ -52,25 +52,25 @@ import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const RemoteEngineSettings = ({
-  engine: name,
+  engine: engineName,
 }: {
   engine: InferenceEngine
 }) => {
   const { engines, mutate } = useGetEngines()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [showApiKey, setShowApiKey] = useState(false)
-  const remoteModels = downloadedModels.filter((e) => e.engine === name)
+  const remoteModels = downloadedModels.filter((e) => e.engine === engineName)
   const [isActiveAdvanceSetting, setisActiveAdvanceSetting] = useState(false)
   const setSelectedModel = useSetAtom(selectedModelAtom)
-  const customEngineLogo = getLogoEngine(name)
+  const customEngineLogo = getLogoEngine(engineName)
   const threads = useAtomValue(threadsAtom)
-  const { refreshingModels, refreshModels } = useRefreshModelList(name)
+  const { refreshingModels, refreshModels } = useRefreshModelList(engineName)
   const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const engine =
     engines &&
     Object.entries(engines)
-      .filter(([key]) => key === name)
+      .filter(([key]) => key === engineName)
       .flatMap(([_, engineArray]) => engineArray as EngineConfig)[0]
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
@@ -92,12 +92,12 @@ const RemoteEngineSettings = ({
       debounceRef.current = setTimeout(async () => {
         const updatedEngine = { ...engine }
         set(updatedEngine, field, value)
-        await updateEngine(name, updatedEngine)
+        await updateEngine(engineName, updatedEngine)
         mutate()
         events.emit(EngineEvent.OnEngineUpdate, {})
       }, 300)
     },
-    [engine, name, mutate]
+    [engine, engineName, mutate]
   )
 
   const [data, setData] = useState({
@@ -237,7 +237,7 @@ const RemoteEngineSettings = ({
                   <Button
                     theme={'ghost'}
                     variant={'outline'}
-                    onClick={() => refreshModels()}
+                    onClick={() => refreshModels(engineName)}
                   >
                     {refreshingModels ? (
                       <Spinner size={16} strokeWidth={2} className="mr-2" />
@@ -246,7 +246,7 @@ const RemoteEngineSettings = ({
                     )}
                     Refresh
                   </Button>
-                  <ModalAddModel engine={name} />
+                  <ModalAddModel engine={engineName} />
                 </div>
               </div>
 

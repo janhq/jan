@@ -147,36 +147,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   override async loadModel(
     model: Model & { file_path?: string }
   ): Promise<void> {
-    if (
-      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
-      model.settings.llama_model_path
-    ) {
-      // Legacy chat model support
-      model.settings = {
-        ...model.settings,
-        llama_model_path: await getModelFilePath(
-          model,
-          model.settings.llama_model_path
-        ),
-      }
-    } else {
-      const { llama_model_path, ...settings } = model.settings
-      model.settings = settings
-    }
+    // Cortex will handle these settings
+    const { llama_model_path, mmproj, ...settings } = model.settings
+    model.settings = settings
 
-    if (
-      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
-      model.settings.mmproj
-    ) {
-      // Legacy clip vision model support
-      model.settings = {
-        ...model.settings,
-        mmproj: await getModelFilePath(model, model.settings.mmproj),
-      }
-    } else {
-      const { mmproj, ...settings } = model.settings
-      model.settings = settings
-    }
     const controller = new AbortController()
     const { signal } = controller
 
@@ -334,22 +308,3 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
   }
 }
-
-/// Legacy
-const getModelFilePath = async (
-  model: Model & { file_path?: string },
-  file: string
-): Promise<string> => {
-  // Symlink to the model file
-  if (
-    !model.sources[0]?.url.startsWith('http') &&
-    (await fs.existsSync(model.sources[0].url))
-  ) {
-    return model.sources[0]?.url
-  }
-  if (model.file_path) {
-    await joinPath([await dirName(model.file_path), file])
-  }
-  return joinPath([await getJanDataFolderPath(), 'models', model.id, file])
-}
-///

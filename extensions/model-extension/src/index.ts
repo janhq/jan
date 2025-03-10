@@ -5,11 +5,6 @@ import {
   joinPath,
   dirName,
   fs,
-  ModelManager,
-  abortDownload,
-  DownloadState,
-  events,
-  DownloadEvent,
   OptionType,
   ModelSource,
   extractInferenceParams,
@@ -54,9 +49,6 @@ export default class JanModelExtension extends ModelExtension {
     if (huggingfaceToken) {
       this.updateCortexConfig({ huggingface_token: huggingfaceToken })
     }
-
-    // Listen to app download events
-    this.handleDesktopEvents()
 
     // Sync with cortexsohub
     this.fetchCortexsoModels()
@@ -107,21 +99,6 @@ export default class JanModelExtension extends ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelPull(model: string): Promise<void> {
-    if (model) {
-      const modelDto: Model = ModelManager.instance().get(model)
-      // Clip vision model - should not be handled by cortex.cpp
-      // TensorRT model - should not be handled by cortex.cpp
-      if (
-        modelDto &&
-        (modelDto.engine === InferenceEngine.nitro_tensorrt_llm ||
-          modelDto.settings.vision_model)
-      ) {
-        for (const source of modelDto.sources) {
-          const path = await joinPath(['models', modelDto.id, source.filename])
-          await abortDownload(path)
-        }
-      }
-    }
     /**
      * Sending DELETE to /models/pull/{id} endpoint to cancel a model pull
      */
@@ -196,16 +173,16 @@ export default class JanModelExtension extends ModelExtension {
         toImportModels.map(async (model: Model & { file_path: string }) => {
           return this.importModel(
             model.id,
-            model.sources[0].url.startsWith('http') ||
-              !(await fs.existsSync(model.sources[0].url))
+            model.sources?.[0]?.url.startsWith('http') ||
+              !(await fs.existsSync(model.sources?.[0]?.url))
               ? await joinPath([
                   await dirName(model.file_path),
-                  model.sources[0]?.filename ??
+                  model.sources?.[0]?.filename ??
                     model.settings?.llama_model_path ??
-                    model.sources[0]?.url.split('/').pop() ??
+                    model.sources?.[0]?.url.split('/').pop() ??
                     model.id,
                 ]) // Copied models
-              : model.sources[0].url, // Symlink models,
+              : model.sources?.[0]?.url, // Symlink models,
             model.name
           )
             .then((e) => {
@@ -362,32 +339,6 @@ export default class JanModelExtension extends ModelExtension {
   // END: - Public API
 
   // BEGIN: - Private API
-  /**
-   * Handle download state from main app
-   */
-  private handleDesktopEvents() {
-    if (window && window.electronAPI) {
-      window.electronAPI.onFileDownloadUpdate(
-        async (_event: string, state: DownloadState | undefined) => {
-          if (!state) return
-          state.downloadState = 'downloading'
-          events.emit(DownloadEvent.onFileDownloadUpdate, state)
-        }
-      )
-      window.electronAPI.onFileDownloadError(
-        async (_event: string, state: DownloadState) => {
-          state.downloadState = 'error'
-          events.emit(DownloadEvent.onFileDownloadError, state)
-        }
-      )
-      window.electronAPI.onFileDownloadSuccess(
-        async (_event: string, state: DownloadState) => {
-          state.downloadState = 'end'
-          events.emit(DownloadEvent.onFileDownloadSuccess, state)
-        }
-      )
-    }
-  }
 
   /**
    * Transform model to the expected format (e.g. parameters, settings, metadata)

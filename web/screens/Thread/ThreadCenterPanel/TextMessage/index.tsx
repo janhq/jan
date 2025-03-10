@@ -133,7 +133,7 @@ const MessageContainer: React.FC<
             )}
           </div>
 
-          <MessageToolbar message={props} />
+          {editMessage !== props.id && <MessageToolbar message={props} />}
         </div>
         <div
           className={twMerge(

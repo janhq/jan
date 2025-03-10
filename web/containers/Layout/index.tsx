@@ -35,8 +35,6 @@ import ModalAppUpdaterChangelog from '../ModalAppUpdaterChangelog'
 
 import ModalAppUpdaterNotAvailable from '../ModalAppUpdaterNotAvailable'
 
-import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
-
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
   productAnalyticAtom,
@@ -167,7 +165,6 @@ const BaseLayout = () => {
         {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
         {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
         <ChooseWhatToImportModal />
-        <InstallingExtensionModal />
         {showProductAnalyticPrompt && (
           <div className="fixed bottom-4 z-50 m-4 max-w-full rounded-xl border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] p-6 shadow-2xl sm:bottom-8 sm:right-4 sm:m-0 sm:max-w-[400px]">
             <div className="mb-4 flex items-center gap-x-2">
