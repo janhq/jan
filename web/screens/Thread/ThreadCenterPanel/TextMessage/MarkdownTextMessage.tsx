@@ -7,9 +7,9 @@ import Markdown from 'react-markdown'
 
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
+import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 
-import rehypeKatex from 'rehype-katex'
 import remarkGfm from 'remark-gfm'
 
 import remarkMath from 'remark-math'
