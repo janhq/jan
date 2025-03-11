@@ -15,6 +15,7 @@ import {
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {
+  CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   DownloadCloudIcon,
@@ -590,6 +591,12 @@ const ModelDropdown = ({
                                       />
                                     </div>
                                     <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                      {selectedModel?.id === model.id && (
+                                        <CheckIcon
+                                          size={14}
+                                          className="text-[hsla(var(--text-secondary))]"
+                                        />
+                                      )}
                                       {!isDownloaded && (
                                         <span className="font-medium">
                                           {toGigabytes(model.metadata?.size)}
