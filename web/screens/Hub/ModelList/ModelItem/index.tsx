@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { ModelSource } from '@janhq/core'
 
 import { DownloadIcon, FileJson } from 'lucide-react'
+import rehypeRaw from 'rehype-raw'
 
 import ModelLabel from '@/containers/ModelLabel'
 
@@ -36,6 +37,7 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
             <Markdown
               className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]"
               components={markdownComponents}
+              rehypePlugins={[rehypeRaw]}
             >
               {extractDescription(model.metadata?.description) || '-'}
             </Markdown>
