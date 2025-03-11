@@ -24,7 +24,7 @@ const symlinkEngines = async () => {
     'cortex.llamacpp'
   )
   const variantFolders = await readdir(sourceEnginePath)
-  const isAppImage = !!process.env.APPIMAGE
+  const isStandalone = process.platform === 'linux'
   
   for (const variant of variantFolders) {
     const targetVariantPath = path.join(
@@ -48,7 +48,7 @@ const symlinkEngines = async () => {
       continue
     }
 
-    if (isAppImage) {
+    if (isStandalone) {
       // Copy files for AppImage environments instead of symlinking
       await cp(targetVariantPath, symlinkVariantPath, { recursive: true }).catch(
         (error) => log(JSON.stringify(error))
