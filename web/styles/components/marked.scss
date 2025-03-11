@@ -63,7 +63,8 @@
   border-spacing: 0px;
   border: solid hsla(var(--app-border)) 1px;
   border-radius: 8px;
-  overflow: hidden;
+  overflow: auto;
+  display: flow;
   margin-top: 16px;
   margin-bottom: 16px;
 }
@@ -102,4 +103,8 @@
       line-height: 2;
     }
   }
+}
+
+.markdown-content .code-block-wrapper pre {
+  margin-top: 0;
 }

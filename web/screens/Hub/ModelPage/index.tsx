@@ -138,8 +138,8 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             </div>
             {/* Table of versions */}
             <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
-              <div className="w-full flex-shrink-0 rounded-lg border border-[hsla(var(--app-border))] text-[hsla(var(--text-secondary))]">
-                <table className="w-full p-4">
+              <div className="w-full flex-shrink-0 overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] text-[hsla(var(--text-secondary))]">
+                <table className="w-full table-auto p-4">
                   <thead className="bg-[hsla(var(--tertiary-bg))]">
                     <tr>
                       <th className="flex flex-1 flex-row items-center justify-between px-6 py-3 text-left text-sm font-semibold">

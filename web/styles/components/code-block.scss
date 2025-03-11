@@ -156,9 +156,8 @@ span.code-line {
 
 .numbered-code-line::before {
   content: attr(data-line-number);
-  margin-left: -4px;
   margin-right: 16px;
-  width: 1.2rem;
+  width: 1.8rem;
   font-size: 12px;
   /* color: rgba($color: #fff, $alpha: 0.4); */
   text-align: right;
