@@ -4,9 +4,8 @@ import Image from 'next/image'
 
 import { ModelSource } from '@janhq/core'
 
-import rehypeRaw from 'rehype-raw'
-
 import { DownloadIcon, FileJson } from 'lucide-react'
+import rehypeRaw from 'rehype-raw'
 
 import ModelLabel from '@/containers/ModelLabel'
 
