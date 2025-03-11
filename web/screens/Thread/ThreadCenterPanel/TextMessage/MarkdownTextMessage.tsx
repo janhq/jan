@@ -7,8 +7,9 @@ import Markdown from 'react-markdown'
 
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
-
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+
 import remarkGfm from 'remark-gfm'
 
 import remarkMath from 'remark-math'
@@ -30,10 +31,17 @@ interface Props {
   isUser?: boolean
   className?: string
   renderKatex?: boolean
+  renderRaw?: boolean
 }
 
 export const MarkdownTextMessage = memo(
-  ({ text, isUser, className, renderKatex = true }: Props) => {
+  ({
+    text,
+    isUser,
+    className,
+    renderKatex = true,
+    renderRaw = true,
+  }: Props) => {
     const clipboard = useClipboard({ timeout: 1000 })
 
     // Escapes headings
@@ -77,6 +85,7 @@ export const MarkdownTextMessage = memo(
       // Join the lines with newline characters for proper formatting
       return codeLines.join('\n')
     }
+
     function wrapCodeBlocksWithoutVisit() {
       return (tree: { children: any[] }) => {
         tree.children = tree.children.map((node) => {
@@ -213,6 +222,7 @@ export const MarkdownTextMessage = memo(
         })
       }
     }
+
     return (
       <>
         <Markdown
@@ -220,6 +230,7 @@ export const MarkdownTextMessage = memo(
           remarkPlugins={[remarkMath, remarkGfm]}
           rehypePlugins={
             [
+              renderRaw ? rehypeRaw : undefined,
               rehypeHighlight,
               renderKatex ? [rehypeKatex, { throwOnError: false }] : undefined,
               [rehypeHighlightCodeLines, { showLineNumbers: true }],
