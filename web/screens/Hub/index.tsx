@@ -425,7 +425,7 @@ const HubScreen = () => {
                       <ModelSearch onSearchLocal={onSearchUpdate} />
                       <div
                         className={twMerge(
-                          'invisible absolute mt-2 max-h-[400px] w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
+                          'invisible absolute mt-2 max-h-[400px] w-full overflow-y-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
                           searchValue.length > 0 && 'visible'
                         )}
                       >
@@ -436,10 +436,7 @@ const HubScreen = () => {
                             </span>
                           </div>
                         ) : (
-                          <ScrollArea
-                            type={showScrollBar ? 'always' : 'scroll'}
-                            className="w-full"
-                          >
+                          <div className="w-full">
                             {searchedModels.map((model) => (
                               <div
                                 key={model.id}
@@ -465,7 +462,7 @@ const HubScreen = () => {
                                 </span>
                               </div>
                             ))}
-                          </ScrollArea>
+                          </div>
                         )}
                       </div>
                     </div>
