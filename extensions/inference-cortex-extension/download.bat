@@ -2,7 +2,7 @@
 set BIN_PATH=./bin
 set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
-set ENGINE_VERSION=0.1.54
+set ENGINE_VERSION=0.1.55
 
 @REM Download cortex.llamacpp binaries
 set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/v%ENGINE_VERSION%/cortex.llamacpp-%ENGINE_VERSION%-windows-amd64

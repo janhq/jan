@@ -19,7 +19,7 @@ export default defineConfig([
       CORTEX_SOCKET_URL: JSON.stringify(
         `ws://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
       ),
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.54'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.55'),
     },
   },
   {
