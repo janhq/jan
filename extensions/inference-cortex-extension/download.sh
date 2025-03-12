@@ -2,7 +2,7 @@
 
 # Read CORTEX_VERSION
 CORTEX_VERSION=$(cat ./bin/version.txt)
-ENGINE_VERSION=0.1.54
+ENGINE_VERSION=0.1.55
 CORTEX_RELEASE_URL="https://github.com/janhq/cortex.cpp/releases/download"
 ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v${ENGINE_VERSION}/cortex.llamacpp-${ENGINE_VERSION}"
 CUDA_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v${ENGINE_VERSION}"
