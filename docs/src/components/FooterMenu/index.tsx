@@ -95,7 +95,7 @@ const menus = [
       },
       {
         menu: 'Careers',
-        path: 'https://homebrew.bamboohr.com/careers',
+        path: 'https://menlo.bamboohr.com/careers',
         external: true,
       },
     ],
