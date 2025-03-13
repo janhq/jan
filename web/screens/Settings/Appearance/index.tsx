@@ -75,7 +75,7 @@ export default function AppearanceOptions() {
   return (
     <ScrollArea
       type={showScrollBar ? 'always' : 'scroll'}
-      className="h-full w-full px-4"
+      className="h-full w-full"
     >
       <div className="m-4 block">
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
