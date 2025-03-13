@@ -51,7 +51,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
     >
       <div className="flex h-full w-full justify-center">
         <div className="flex w-full max-w-[800px] flex-col ">
-          <div className="sticky top-0 flex h-12 items-center bg-[hsla(var(--app-bg))] px-4">
+          <div className="sticky top-0 z-10 flex h-12 items-center bg-[hsla(var(--app-bg))] px-4">
             <div className="flex items-center gap-2">
               <button
                 onClick={onGoBack}
