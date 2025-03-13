@@ -100,6 +100,9 @@
     list-style-position: inside;
     li {
       line-height: 2;
+      p {
+        display: inline;
+      }
     }
   }
 }
