@@ -7,18 +7,14 @@ import {
   ArrowLeftIcon,
   DownloadIcon,
   FileJson,
-  RefreshCwIcon,
   SettingsIcon,
 } from 'lucide-react'
 
-import Spinner from '@/containers/Loader/Spinner'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
 import ModelLabel from '@/containers/ModelLabel'
 
 import { MainViewState } from '@/constants/screens'
-
-import { useRefreshModelList } from '@/hooks/useEngineManagement'
 
 import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
 
