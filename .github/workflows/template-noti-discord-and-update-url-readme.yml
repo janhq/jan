@@ -34,7 +34,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: "0"
+          fetch-depth: '0'
           token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
           ref: ${{ inputs.ref }}
 
@@ -51,6 +51,6 @@ jobs:
             - macOS Universal: https://delta.jan.ai/nightly/jan-nightly-mac-universal-{{ VERSION }}.dmg
             - Linux Deb: https://delta.jan.ai/nightly/jan-nightly-linux-amd64-{{ VERSION }}.deb
             - Linux AppImage: https://delta.jan.ai/nightly/jan-nightly-linux-x86_64-{{ VERSION }}.AppImage
-            - Github action run: https://github.com/janhq/jan/actions/runs/{{ GITHUB_RUN_ID }}
+            - Github action run: https://github.com/menloresearch/jan/actions/runs/{{ GITHUB_RUN_ID }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

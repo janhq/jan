@@ -26,7 +26,7 @@ const socials = [
     icon: (
       <AiOutlineGithub className="text-lg text-black/60 dark:text-white/60" />
     ),
-    href: 'https://github.com/janhq/jan',
+    href: 'https://github.com/menloresearch/jan',
   },
   {
     icon: <FaLinkedin className="text-lg text-black/60 dark:text-white/60" />,
@@ -62,7 +62,7 @@ const menus = [
     child: [
       {
         menu: 'Github',
-        path: 'https://github.com/janhq/jan',
+        path: 'https://github.com/menloresearch/jan',
         external: true,
       },
       {
