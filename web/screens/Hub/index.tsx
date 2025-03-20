@@ -80,7 +80,7 @@ const filterOptions = [
   },
 ]
 
-const hubCompatibleAtom = atom(true)
+const hubCompatibleAtom = atom(false)
 
 const HubScreen = () => {
   const { sources } = useGetModelSources()
