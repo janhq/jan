@@ -4,7 +4,7 @@ import {
   ThreadAssistantInfo,
   ThreadMessage,
 } from '@janhq/core'
-import ky from 'ky'
+import ky, { KyInstance } from 'ky'
 import PQueue from 'p-queue'
 
 type ThreadList = {
@@ -26,17 +26,18 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * Extended API instance for making requests to the Cortex API.
    * @returns
    */
-  api = () =>
-    ky.extend({
-      prefixUrl: API_URL,
-      headers: {
-        Authorization: `Bearer ${CORTEX_API_KEY}`,
-      },
-    })
+  api: KyInstance
   /**
    * Called when the extension is loaded.
    */
   async onLoad() {
+    const apiKey = await window.core?.api.appToken() ?? 'cortex.cpp'
+    this.api = ky.extend({
+        prefixUrl: API_URL,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      })
     this.queue.add(() => this.healthz())
   }
 
@@ -50,7 +51,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async listThreads(): Promise<Thread[]> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .get('v1/threads?limit=-1')
         .json<ThreadList>()
         .then((e) => e.data)
@@ -63,7 +64,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async createThread(thread: Thread): Promise<Thread> {
     return this.queue.add(() =>
-      this.api().post('v1/threads', { json: thread }).json<Thread>()
+      this.api.post('v1/threads', { json: thread }).json<Thread>()
     ) as Promise<Thread>
   }
 
@@ -74,7 +75,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
   async modifyThread(thread: Thread): Promise<void> {
     return this.queue
       .add(() =>
-        this.api().patch(`v1/threads/${thread.id}`, { json: thread })
+        this.api.patch(`v1/threads/${thread.id}`, { json: thread })
       )
       .then()
   }
@@ -85,7 +86,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async deleteThread(threadId: string): Promise<void> {
     return this.queue
-      .add(() => this.api().delete(`v1/threads/${threadId}`))
+      .add(() => this.api.delete(`v1/threads/${threadId}`))
       .then()
   }
 
@@ -96,7 +97,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async createMessage(message: ThreadMessage): Promise<ThreadMessage> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .post(`v1/threads/${message.thread_id}/messages`, {
           json: message,
         })
@@ -111,7 +112,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async modifyMessage(message: ThreadMessage): Promise<ThreadMessage> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .patch(
           `v1/threads/${message.thread_id}/messages/${message.id}`,
           {
@@ -131,7 +132,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
   async deleteMessage(threadId: string, messageId: string): Promise<void> {
     return this.queue
       .add(() =>
-        this.api().delete(`v1/threads/${threadId}/messages/${messageId}`)
+        this.api.delete(`v1/threads/${threadId}/messages/${messageId}`)
       )
       .then()
   }
@@ -143,7 +144,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async listMessages(threadId: string): Promise<ThreadMessage[]> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .get(`v1/threads/${threadId}/messages?order=asc&limit=-1`)
         .json<MessageList>()
         .then((e) => e.data)
@@ -158,7 +159,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    */
   async getThreadAssistant(threadId: string): Promise<ThreadAssistantInfo> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .get(`v1/assistants/${threadId}?limit=-1`)
         .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
@@ -174,7 +175,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
     assistant: ThreadAssistantInfo
   ): Promise<ThreadAssistantInfo> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .post(`v1/assistants/${threadId}`, { json: assistant })
         .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
@@ -191,7 +192,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
     assistant: ThreadAssistantInfo
   ): Promise<ThreadAssistantInfo> {
     return this.queue.add(() =>
-      this.api()
+      this.api
         .patch(`v1/assistants/${threadId}`, { json: assistant })
         .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
@@ -202,7 +203,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @returns
    */
   async healthz(): Promise<void> {
-    return this.api()
+    return this.api
       .get('healthz', {
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
       })

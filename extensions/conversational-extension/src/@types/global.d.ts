@@ -1,5 +1,4 @@
 declare const API_URL: string
-declare const CORTEX_API_KEY: string
 
 interface Core {
   api: APIFunctions

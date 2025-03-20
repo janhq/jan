@@ -33,6 +33,8 @@ export enum NativeRoute {
   stopServer = 'stopServer',
 
   appUpdateDownload = 'appUpdateDownload',
+
+  appToken = 'appToken',
 }
 
 /**

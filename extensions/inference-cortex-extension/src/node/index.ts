@@ -46,7 +46,7 @@ function run(): Promise<any> {
         dataFolderPath,
         'config',
         '--api_keys',
-        CORTEX_API_KEY ?? 'cortexserver',
+        process.env.appToken ?? 'cortex.cpp',
       ],
       {
         env: {
