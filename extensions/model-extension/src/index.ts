@@ -32,6 +32,19 @@ type Data<T> = {
  */
 export default class JanModelExtension extends ModelExtension {
   queue = new PQueue({ concurrency: 1 })
+
+  /**
+   * Extended API instance for making requests to the Cortex API.
+   * @returns
+   */
+  api = () =>
+    ky.extend({
+      prefixUrl: CORTEX_API_URL,
+      headers: {
+        Authorization: `Bearer ${CORTEX_API_KEY}`,
+      },
+    })
+
   /**
    * Called when the extension is loaded.
    * @override
@@ -82,8 +95,8 @@ export default class JanModelExtension extends ModelExtension {
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */
     return this.queue.add(() =>
-      ky
-        .post(`${API_URL}/v1/models/pull`, { json: { model, id, name } })
+      this.api()
+        .post('v1/models/pull', { json: { model, id, name } })
         .json()
         .catch(async (e) => {
           throw (await e.response?.json()) ?? e
@@ -103,8 +116,8 @@ export default class JanModelExtension extends ModelExtension {
      * Sending DELETE to /models/pull/{id} endpoint to cancel a model pull
      */
     return this.queue.add(() =>
-      ky
-        .delete(`${API_URL}/v1/models/pull`, { json: { taskId: model } })
+      this.api()
+        .delete('v1/models/pull', { json: { taskId: model } })
         .json()
         .then()
     )
@@ -117,7 +130,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async deleteModel(model: string): Promise<void> {
     return this.queue
-      .add(() => ky.delete(`${API_URL}/v1/models/${model}`).json().then())
+      .add(() => this.api().delete(`v1/models/${model}`).json().then())
       .catch((e) => console.debug(e))
       .finally(async () => {
         // Delete legacy model files
@@ -219,8 +232,8 @@ export default class JanModelExtension extends ModelExtension {
   async updateModel(model: Partial<Model>): Promise<Model> {
     return this.queue
       .add(() =>
-        ky
-          .patch(`${API_URL}/v1/models/${model.id}`, { json: { ...model } })
+        this.api()
+          .patch(`v1/models/${model.id}`, { json: { ...model } })
           .json()
           .then()
       )
@@ -233,8 +246,8 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getModel(model: string): Promise<Model> {
     return this.queue.add(() =>
-      ky
-        .get(`${API_URL}/v1/models/${model}`)
+      this.api()
+        .get(`v1/models/${model}`)
         .json()
         .then((e) => this.transformModel(e))
     ) as Promise<Model>
@@ -252,8 +265,8 @@ export default class JanModelExtension extends ModelExtension {
     option?: OptionType
   ): Promise<void> {
     return this.queue.add(() =>
-      ky
-        .post(`${API_URL}/v1/models/import`, {
+      this.api()
+        .post('v1/models/import', {
           json: { model, modelPath, name, option },
         })
         .json()
@@ -269,7 +282,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getSources(): Promise<ModelSource[]> {
     const sources = await this.queue
-      .add(() => ky.get(`${API_URL}/v1/models/sources`).json<Data<ModelSource>>())
+      .add(() => this.api().get('v1/models/sources').json<Data<ModelSource>>())
       .then((e) => (typeof e === 'object' ? (e.data as ModelSource[]) : []))
       .catch(() => [])
     return sources.concat(
@@ -283,7 +296,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async addSource(source: string): Promise<any> {
     return this.queue.add(() =>
-      ky.post(`${API_URL}/v1/models/sources`, {
+      this.api().post('v1/models/sources', {
         json: {
           source,
         },
@@ -297,7 +310,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async deleteSource(source: string): Promise<any> {
     return this.queue.add(() =>
-      ky.delete(`${API_URL}/v1/models/sources`, {
+      this.api().delete('v1/models/sources', {
         json: {
           source,
         },
@@ -312,7 +325,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async isModelLoaded(model: string): Promise<boolean> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/v1/models/status/${model}`))
+      .add(() => this.api().get(`v1/models/status/${model}`))
       .then((e) => true)
       .catch(() => false)
   }
@@ -324,14 +337,14 @@ export default class JanModelExtension extends ModelExtension {
     return this.updateCortexConfig(options).catch((e) => console.debug(e))
   }
 
-   /**
+  /**
    * Fetches models list from cortex.cpp
    * @param model
    * @returns
    */
-   async fetchModels(): Promise<Model[]> {
+  async fetchModels(): Promise<Model[]> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/v1/models?limit=-1`).json<Data<Model>>())
+      .add(() => this.api().get('v1/models?limit=-1').json<Data<Model>>())
       .then((e) =>
         typeof e === 'object' ? e.data.map((e) => this.transformModel(e)) : []
       )
@@ -371,7 +384,9 @@ export default class JanModelExtension extends ModelExtension {
   }): Promise<void> {
     return this.queue
       .add(() =>
-        ky.patch(`${API_URL}/v1/configs`, { json: body }).then(() => {})
+        this.api()
+          .patch('v1/configs', { json: body })
+          .then(() => {})
       )
       .catch((e) => console.debug(e))
   }
@@ -381,8 +396,8 @@ export default class JanModelExtension extends ModelExtension {
    * @returns
    */
   private healthz(): Promise<void> {
-    return ky
-      .get(`${API_URL}/healthz`, {
+    return this.api()
+      .get('healthz', {
         retry: {
           limit: 20,
           delay: () => 500,
@@ -401,8 +416,8 @@ export default class JanModelExtension extends ModelExtension {
     const models = await this.fetchModels()
 
     return this.queue.add(() =>
-      ky
-        .get(`${API_URL}/v1/models/hub?author=cortexso&tag=cortex.cpp`)
+      this.api()
+        .get('v1/models/hub?author=cortexso&tag=cortex.cpp')
         .json<Data<string>>()
         .then((e) => {
           e.data?.forEach((model) => {

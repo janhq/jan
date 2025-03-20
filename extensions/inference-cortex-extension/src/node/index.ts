@@ -44,8 +44,9 @@ function run(): Promise<any> {
         `${path.join(dataFolderPath, '.janrc')}`,
         '--data_folder_path',
         dataFolderPath,
-        '--loglevel',
-        'INFO',
+        'config',
+        '--api_keys',
+        CORTEX_API_KEY ?? 'cortexserver',
       ],
       {
         env: {

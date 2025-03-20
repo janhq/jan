@@ -19,12 +19,13 @@ export default defineConfig([
       CORTEX_SOCKET_URL: JSON.stringify(
         `ws://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
       ),
+      CORTEX_API_KEY: JSON.stringify(process.env.CORTEX_API_KEY ?? 'cortexserver'),
       CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.55'),
     },
   },
   {
     input: 'src/node/index.ts',
-    external: ['@janhq/core/node', 'cpu-instructions'],
+    external: ['@janhq/core/node'],
     output: {
       format: 'cjs',
       file: 'dist/node/index.cjs.js',
@@ -35,6 +36,7 @@ export default defineConfig([
       extensions: ['.js', '.ts', '.json'],
     },
     define: {
+      CORTEX_API_KEY: JSON.stringify(process.env.CORTEX_API_KEY ?? 'cortexserver'),
       CORTEX_API_URL: JSON.stringify(
         `http://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
       ),
