@@ -2,9 +2,7 @@
 import useSWR from 'swr'
 
 const fetchLatestRelease = async (includeBeta: boolean) => {
-  const res = await fetch(
-    'https://api.github.com/menloresearch/janhq/jan/releases'
-  )
+  const res = await fetch('https://api.github.com/menloresearch/jan/releases')
   if (!res.ok) throw new Error('Failed to fetch releases')
 
   const releases = await res.json()
