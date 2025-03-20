@@ -21,7 +21,7 @@ const UpdatedFailedModal = () => {
             <span className="font-medium">{error}</span>. We appreciate your
             help with{' '}
             <a
-              href="https://github.com/janhq/jan#download"
+              href="https://github.com/menloresearch/jan#download"
               target="_blank"
               className="font-medium text-[hsla(var(--app-link))]"
             >
@@ -35,7 +35,10 @@ const UpdatedFailedModal = () => {
             <ModalClose
               asChild
               onClick={() => {
-                window.open('https://github.com/janhq/jan#download', '_blank')
+                window.open(
+                  'https://github.com/menloresearch/jan#download',
+                  '_blank'
+                )
                 setError(undefined)
               }}
             >

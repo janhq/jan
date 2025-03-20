@@ -30,7 +30,7 @@ const config: DocsThemeConfig = {
       </div>
     </span>
   ),
-  docsRepositoryBase: 'https://github.com/janhq/jan/tree/dev/docs',
+  docsRepositoryBase: 'https://github.com/menloresearch/jan/tree/dev/docs',
   feedback: {
     content: 'Question? Give us feedback →',
     labels: 'feedback',
@@ -59,7 +59,7 @@ const config: DocsThemeConfig = {
         <a href="https://twitter.com/jandotai" target="_blank">
           <RiTwitterXFill className="text-lg text-black/60 dark:text-white/60" />
         </a>
-        <a href="https://github.com/janhq/jan" target="_blank">
+        <a href="https://github.com/menloresearch/jan" target="_blank">
           <AiOutlineGithub className="text-xl text-black/60 dark:text-white/60" />
         </a>
       </div>

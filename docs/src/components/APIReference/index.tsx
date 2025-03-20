@@ -27,7 +27,7 @@ export const APIReference = () => {
       <ApiReferenceReact
         configuration={{
           spec: {
-            url: 'https://raw.githubusercontent.com/janhq/docs/main/public/openapi/jan.json',
+            url: 'https://raw.githubusercontent.com/menloresearch/docs/main/public/openapi/jan.json',
           },
           theme: 'alternate',
           hideModels: true,

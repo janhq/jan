@@ -13,7 +13,7 @@ import CTABlog from '@/components/Blog/CTA'
 
 ## Abstract
 
-We present a straightforward approach to customizing small, open-source models using fine-tuning and RAG that outperforms GPT-3.5 for specialized use cases. With it, we achieved superior Q&A results of [technical documentation](https://nitro.jan.ai/docs) for a small codebase [codebase](https://github.com/janhq/nitro).
+We present a straightforward approach to customizing small, open-source models using fine-tuning and RAG that outperforms GPT-3.5 for specialized use cases. With it, we achieved superior Q&A results of [technical documentation](https://nitro.jan.ai/docs) for a small codebase [codebase](https://github.com/menloresearch/nitro).
 
 In short, (1) extending a general foundation model like [Mistral](https://huggingface.co/mistralai/Mistral-7B-v0.1) with strong math and coding, and (2) training it over a high-quality, synthetic dataset generated from the intended corpus, and (3) adding RAG capabilities, can lead to significant accuracy improvements.
 
@@ -93,11 +93,11 @@ This final model can be found [here on Huggingface](https://huggingface.co/jan-h
 
 As an additional step, we also added [Retrieval Augmented Generation (RAG)](https://blogs.nvidia.com/blog/what-is-retrieval-augmented-generation/) as an experiment parameter.
 
-A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** and the **[bge-en-base-v1.5 embedding](https://huggingface.co/BAAI/bge-base-en-v1.5)** model for efficient documentation retrieval and question-answering. You can find the RAG implementation [here](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/rag/nitro_rag.ipynb).
+A simple RAG setup was done using **[Llamaindex](https://www.llamaindex.ai/)** and the **[bge-en-base-v1.5 embedding](https://huggingface.co/BAAI/bge-base-en-v1.5)** model for efficient documentation retrieval and question-answering. You can find the RAG implementation [here](https://github.com/menloresearch/open-foundry/blob/main/rag-is-not-enough/rag/nitro_rag.ipynb).
 
 ## Benchmarking the Results
 
-We curated a new set of [50 multiple-choice questions](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/rag/mcq_nitro.csv) (MCQ) based on the Nitro docs. The questions had varying levels of difficulty and had trick components that challenged the model's ability to discern misleading information.
+We curated a new set of [50 multiple-choice questions](https://github.com/menloresearch/open-foundry/blob/main/rag-is-not-enough/rag/mcq_nitro.csv) (MCQ) based on the Nitro docs. The questions had varying levels of difficulty and had trick components that challenged the model's ability to discern misleading information.
 
 ![image](https://hackmd.io/_uploads/By9vaE1Ta.png)
 
@@ -121,7 +121,7 @@ We conclude that this combination of model merging + finetuning + RAG yields pro
 
 Anecdotally, we’ve had some success using this model in practice to onboard new team members to the Nitro codebase.
 
-A full research report with more statistics can be found [here](https://github.com/janhq/open-foundry/blob/main/rag-is-not-enough/README.md).
+A full research report with more statistics can be found [here](https://github.com/menloresearch/open-foundry/blob/main/rag-is-not-enough/README.md).
 
 # References
 

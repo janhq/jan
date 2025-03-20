@@ -57,7 +57,7 @@ const Changelog = () => {
           <p className="text-base mt-2 leading-relaxed">
             Latest release updates from the Jan team. Check out our&nbsp;
             <a
-              href="https://github.com/orgs/janhq/projects/5/views/52"
+              href="https://github.com/orgs/menloresearch/projects/5/views/52"
               className="text-blue-600 dark:text-blue-400 cursor-pointer"
             >
               Roadmap
@@ -150,7 +150,7 @@ const Changelog = () => {
 
       <div className="text-center">
         <Link
-          href="https://github.com/janhq/jan/releases"
+          href="https://github.com/menloresearch/jan/releases"
           target="_blank"
           className="dark:nx-bg-neutral-900 dark:text-white bg-black text-white hover:text-white justify-center dark:border dark:border-neutral-800 flex-shrink-0 px-4 py-3 rounded-xl inline-flex items-center"
         >
