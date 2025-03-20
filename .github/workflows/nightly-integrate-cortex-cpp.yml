@@ -36,7 +36,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
       run: |
-        curl -s https://api.github.com/repos/janhq/cortex/releases > /tmp/github_api_releases.json
+        curl -s https://api.github.com/repos/menloresearch/cortex/releases > /tmp/github_api_releases.json
         latest_prerelease_name=$(cat /tmp/github_api_releases.json | jq -r '.[] | select(.prerelease) | .name' | head -n 1)
 
         get_asset_count() {

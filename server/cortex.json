@@ -2668,7 +2668,7 @@
                       },
                       "url": {
                         "type": "string",
-                        "example": "https://api.github.com/repos/janhq/cortex.llamacpp/releases/186479804"
+                        "example": "https://api.github.com/repos/menloresearch/cortex.llamacpp/releases/186479804"
                       }
                     }
                   }
