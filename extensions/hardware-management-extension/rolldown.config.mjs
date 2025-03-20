@@ -11,6 +11,7 @@ export default defineConfig([
     define: {
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
       API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
+      CORTEX_API_KEY: JSON.stringify(process.env.CORTEX_API_KEY ?? 'cortexserver'),
     },
   },
 ])

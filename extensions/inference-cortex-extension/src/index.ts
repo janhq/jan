@@ -76,6 +76,28 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   abortControllers = new Map<string, AbortController>()
 
   /**
+   * Extended API instance for making requests to the Cortex API.
+   * @returns
+   */
+  api = () =>
+    ky.extend({
+      prefixUrl: CORTEX_API_URL,
+      headers: {
+        Authorization: `Bearer ${CORTEX_API_KEY}`,
+      },
+    })
+
+  /**
+   * Authorization headers for the API requests.
+   * @returns
+   */
+  headers(): Promise<HeadersInit> {
+    return Promise.resolve({
+      Authorization: `Bearer ${CORTEX_API_KEY}`,
+    })
+  }
+
+  /**
    * Subscribes to events emitted by the @janhq/core package.
    */
   async onLoad() {
@@ -153,8 +175,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.abortControllers.set(model.id, controller)
 
     return await this.queue.add(() =>
-      ky
-        .post(`${CORTEX_API_URL}/v1/models/start`, {
+      this.api()
+        .post('v1/models/start', {
           json: {
             ...extractModelLoadParams(model.settings),
             model: model.id,
@@ -183,8 +205,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   override async unloadModel(model: Model): Promise<void> {
-    return ky
-      .post(`${CORTEX_API_URL}/v1/models/stop`, {
+    return this.api()
+      .post('v1/models/stop', {
         json: { model: model.id },
       })
       .json()
@@ -199,8 +221,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async healthz(): Promise<void> {
-    return ky
-      .get(`${CORTEX_API_URL}/healthz`, {
+    return this.api()
+      .get('healthz', {
         retry: {
           limit: 20,
           delay: () => 500,
@@ -215,8 +237,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async clean(): Promise<any> {
-    return ky
-      .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
+    return this.api()
+      .delete('processmanager/destroy', {
         timeout: 2000, // maximum 2 seconds
         retry: {
           limit: 0,

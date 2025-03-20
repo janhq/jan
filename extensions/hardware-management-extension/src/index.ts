@@ -10,6 +10,17 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
   queue = new PQueue({ concurrency: 1 })
 
   /**
+   * Extended API instance for making requests to the Cortex API.
+   * @returns 
+   */
+  api = () =>
+    ky.extend({
+      prefixUrl: API_URL,
+      headers: {
+       'Authorization': `Bearer ${CORTEX_API_KEY}`,
+      },
+    });
+  /**
    * Called when the extension is loaded.
    */
   async onLoad() {
@@ -27,8 +38,8 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
    * @returns
    */
   async healthz(): Promise<void> {
-    return ky
-      .get(`${API_URL}/healthz`, {
+    return this.api()
+      .get('healthz', {
         retry: { limit: 20, delay: () => 500, methods: ['get'] },
       })
       .then(() => {})
@@ -39,8 +50,8 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
    */
   async getHardware(): Promise<HardwareInformation> {
     return this.queue.add(() =>
-      ky
-        .get(`${API_URL}/v1/hardware`)
+      this.api()
+        .get('v1/hardware')
         .json<HardwareInformation>()
         .then((e) => e)
     ) as Promise<HardwareInformation>
@@ -54,7 +65,7 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
     activated_gpus: number[]
   }> {
     return this.queue.add(() =>
-      ky.post(`${API_URL}/v1/hardware/activate`, { json: data }).then((e) => e)
+      this.api().post('v1/hardware/activate', { json: data }).then((e) => e)
     ) as Promise<{
       message: string
       activated_gpus: number[]

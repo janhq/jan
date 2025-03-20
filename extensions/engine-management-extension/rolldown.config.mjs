@@ -28,6 +28,7 @@ export default defineConfig([
         'Authorization: Bearer {{api_key}}'
       ),
       VERSION: JSON.stringify(pkgJson.version ?? '0.0.0'),
+      CORTEX_API_KEY: JSON.stringify(process.env.CORTEX_API_KEY ?? 'cortexserver'),
     },
   },
   {
