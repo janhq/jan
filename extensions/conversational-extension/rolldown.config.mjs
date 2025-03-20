@@ -9,6 +9,5 @@ export default defineConfig({
   platform: 'browser',
   define: {
     API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
-    CORTEX_API_KEY: JSON.stringify(process.env.CORTEX_API_KEY ?? 'cortexserver'),
   },
 })

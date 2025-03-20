@@ -13,6 +13,5 @@ export default defineConfig({
     SETTINGS: JSON.stringify(settingJson),
     CORTEX_API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
     DEFAULT_MODEL_SOURCES: JSON.stringify(modelSources),
-    CORTEX_API_KEY: JSON.stringify(process.env.CORTEX_API_KEY ?? 'cortexserver'),
   },
 })

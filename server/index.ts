@@ -90,7 +90,7 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       if (req.url.includes('/configs')) return headers
       return {
         ...headers,
-        authorization: `Bearer ${CORTEX_API_KEY}`, // Add or modify Authorization header
+        authorization: `Bearer ${process.env.appToken}`, // Add or modify Authorization header
       }
     }
 
