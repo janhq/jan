@@ -95,7 +95,7 @@ export default class JanModelExtension extends ModelExtension {
      */
     return this.queue.add(() =>
       this.api
-        .post('v1/models/pull', { json: { model, id, name } })
+        .post('v1/models/pull', { json: { model, id, name }, timeout: false })
         .json()
         .catch(async (e) => {
           throw (await e.response?.json()) ?? e
@@ -232,7 +232,10 @@ export default class JanModelExtension extends ModelExtension {
     return this.queue
       .add(() =>
         this.api
-          .patch(`v1/models/${model.id}`, { json: { ...model } })
+          .patch(`v1/models/${model.id}`, {
+            json: { ...model },
+            timeout: false,
+          })
           .json()
           .then()
       )
@@ -267,6 +270,7 @@ export default class JanModelExtension extends ModelExtension {
       this.api
         .post('v1/models/import', {
           json: { model, modelPath, name, option },
+          timeout: false,
         })
         .json()
         .catch((e) => console.debug(e)) // Ignore error
@@ -313,6 +317,7 @@ export default class JanModelExtension extends ModelExtension {
         json: {
           source,
         },
+        timeout: false,
       })
     )
   }
@@ -382,11 +387,7 @@ export default class JanModelExtension extends ModelExtension {
     [key: string]: any
   }): Promise<void> {
     return this.queue
-      .add(() =>
-        this.api
-          .patch('v1/configs', { json: body })
-          .then(() => {})
-      )
+      .add(() => this.api.patch('v1/configs', { json: body }).then(() => {}))
       .catch((e) => console.debug(e))
   }
 

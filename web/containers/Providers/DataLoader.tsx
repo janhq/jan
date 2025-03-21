@@ -35,7 +35,7 @@ const DataLoader: React.FC = () => {
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
   const { getData: loadModels } = useModels()
   const { mutate } = useGetEngines()
-  const { mutate: getHardwareInfo } = useGetHardwareInfo()
+  const { mutate: getHardwareInfo } = useGetHardwareInfo(false)
 
   useThreads()
   useAssistants()
