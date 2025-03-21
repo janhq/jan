@@ -15,6 +15,7 @@ import { useDebouncedCallback } from 'use-debounce'
 import useAssistants from '@/hooks/useAssistants'
 import { useGetEngines } from '@/hooks/useEngineManagement'
 import useGetSystemResources from '@/hooks/useGetSystemResources'
+import { useGetHardwareInfo } from '@/hooks/useHardwareManagement'
 import useModels from '@/hooks/useModels'
 import useThreads from '@/hooks/useThreads'
 
@@ -34,6 +35,7 @@ const DataLoader: React.FC = () => {
   const setJanSettingScreen = useSetAtom(janSettingScreenAtom)
   const { getData: loadModels } = useModels()
   const { mutate } = useGetEngines()
+  const { mutate: getHardwareInfo } = useGetHardwareInfo()
 
   useThreads()
   useAssistants()
@@ -42,6 +44,7 @@ const DataLoader: React.FC = () => {
   useEffect(() => {
     // Load data once
     loadModels()
+    getHardwareInfo()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const reloadData = useDebouncedCallback(() => {
