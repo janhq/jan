@@ -75,7 +75,22 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   abortControllers = new Map<string, AbortController>()
 
-  api!: KyInstance
+  api?: KyInstance
+  /**
+   * Get the API instance
+   * @returns
+   */
+  async apiInstance(): Promise<KyInstance> {
+    if(this.api) return this.api
+    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
+    this.api = ky.extend({
+      prefixUrl: CORTEX_API_URL,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    return this.api
+  }
 
   /**
    * Authorization headers for the API requests.
@@ -92,13 +107,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    */
   async onLoad() {
     super.onLoad()
-    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
-    this.api = ky.extend({
-      prefixUrl: CORTEX_API_URL,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    })
 
     // Register Settings
     this.registerSettings(SETTINGS)
@@ -172,45 +180,49 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.abortControllers.set(model.id, controller)
 
     return await this.queue.add(() =>
-      this.api
-        .post('v1/models/start', {
-          json: {
-            ...extractModelLoadParams(model.settings),
-            model: model.id,
-            engine:
-              model.engine === InferenceEngine.nitro // Legacy model cache
-                ? InferenceEngine.cortex_llamacpp
-                : model.engine,
-            cont_batching: this.cont_batching,
-            n_parallel: this.n_parallel,
-            caching_enabled: this.caching_enabled,
-            flash_attn: this.flash_attn,
-            cache_type: this.cache_type,
-            use_mmap: this.use_mmap,
-            ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
-          },
-          timeout: false,
-          signal,
-        })
-        .json()
-        .catch(async (e) => {
-          throw (await e.response?.json()) ?? e
-        })
-        .finally(() => this.abortControllers.delete(model.id))
-        .then()
+      this.apiInstance().then((api) =>
+        api
+          .post('v1/models/start', {
+            json: {
+              ...extractModelLoadParams(model.settings),
+              model: model.id,
+              engine:
+                model.engine === InferenceEngine.nitro // Legacy model cache
+                  ? InferenceEngine.cortex_llamacpp
+                  : model.engine,
+              cont_batching: this.cont_batching,
+              n_parallel: this.n_parallel,
+              caching_enabled: this.caching_enabled,
+              flash_attn: this.flash_attn,
+              cache_type: this.cache_type,
+              use_mmap: this.use_mmap,
+              ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
+            },
+            timeout: false,
+            signal,
+          })
+          .json()
+          .catch(async (e) => {
+            throw (await e.response?.json()) ?? e
+          })
+          .finally(() => this.abortControllers.delete(model.id))
+          .then()
+      )
     )
   }
 
   override async unloadModel(model: Model): Promise<void> {
-    return this.api
-      .post('v1/models/stop', {
-        json: { model: model.id },
-      })
-      .json()
-      .finally(() => {
-        this.abortControllers.get(model.id)?.abort()
-      })
-      .then()
+    return this.apiInstance().then((api) =>
+      api
+        .post('v1/models/stop', {
+          json: { model: model.id },
+        })
+        .json()
+        .finally(() => {
+          this.abortControllers.get(model.id)?.abort()
+        })
+        .then()
+    )
   }
 
   /**
@@ -218,15 +230,17 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async healthz(): Promise<void> {
-    return this.api
-      .get('healthz', {
-        retry: {
-          limit: 20,
-          delay: () => 500,
-          methods: ['get'],
-        },
-      })
-      .then(() => {})
+    return this.apiInstance().then((api) =>
+      api
+        .get('healthz', {
+          retry: {
+            limit: 20,
+            delay: () => 500,
+            methods: ['get'],
+          },
+        })
+        .then(() => {})
+    )
   }
 
   /**
@@ -234,13 +248,15 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async clean(): Promise<any> {
-    return this.api
-      .delete('processmanager/destroy', {
-        timeout: 2000, // maximum 2 seconds
-        retry: {
-          limit: 0,
-        },
-      })
+    return this.apiInstance()
+      .then((api) =>
+        api.delete('processmanager/destroy', {
+          timeout: 2000, // maximum 2 seconds
+          retry: {
+            limit: 0,
+          },
+        })
+      )
       .catch(() => {
         // Do nothing
       })

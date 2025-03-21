@@ -17,18 +17,21 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
     this.queue.add(() => this.healthz())
   }
 
+  api?: KyInstance
   /**
    * Get the API instance
    * @returns
    */
   async apiInstance(): Promise<KyInstance> {
+    if(this.api) return this.api
     const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
-    return ky.extend({
+    this.api = ky.extend({
       prefixUrl: API_URL,
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
     })
+    return this.api
   }
 
   /**
