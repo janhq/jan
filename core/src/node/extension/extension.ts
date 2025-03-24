@@ -94,8 +94,6 @@ export default class Extension {
         `Package ${this.origin} does not contain a valid manifest: ${error}`
       )
     }
-
-    return true
   }
 
   /**

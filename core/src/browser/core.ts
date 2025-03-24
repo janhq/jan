@@ -15,7 +15,6 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
   ...args
 ) => globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
 
-
 /**
  * Gets Jan's data folder path.
  *
@@ -36,8 +35,8 @@ const openFileExplorer: (path: string) => Promise<any> = (path) =>
  * @param paths - The paths to join.
  * @returns {Promise<string>} A promise that resolves with the joined path.
  */
-const joinPath: (paths: string[]) => Promise<string> = (paths) =>
-  globalThis.core.api?.joinPath(paths)
+const joinPath: (args: string[]) => Promise<string> = (args) =>
+  globalThis.core.api?.joinPath({ args })
 
 /**
  * Get dirname of a file path.

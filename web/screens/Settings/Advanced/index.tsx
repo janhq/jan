@@ -73,7 +73,9 @@ const Advanced = ({ setSubdir }: { setSubdir: (subdir: string) => void }) => {
     const appConfiguration: AppConfiguration =
       await window.core?.api?.getAppConfigurations()
     appConfiguration.quick_ask = e
-    await window.core?.api?.updateAppConfiguration(appConfiguration)
+    await window.core?.api?.updateAppConfiguration({
+      configuration: appConfiguration,
+    })
     if (relaunchApp) relaunch()
   }
 

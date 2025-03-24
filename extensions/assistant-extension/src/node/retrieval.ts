@@ -27,7 +27,7 @@ export class Retrieval {
   }
 
   private async initialize() {
-    const apiKey = await window.core?.api.appToken() ?? 'cortex.cpp'
+    const apiKey = await window.core?.api.appToken()
 
     // declare time-weighted retriever and storage
     this.timeWeightedVectorStore = new MemoryVectorStore(
@@ -53,7 +53,7 @@ export class Retrieval {
   }
 
   public async updateEmbeddingEngine(model: string, engine: string) {
-    const apiKey = await window.core?.api.appToken() ?? 'cortex.cpp'
+    const apiKey = await window.core?.api.appToken()
     this.embeddingModel = new OpenAIEmbeddings(
       { openAIApiKey: apiKey, model },
       // TODO: Raw settings

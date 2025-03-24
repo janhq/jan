@@ -60,7 +60,7 @@ export default function useFactoryReset() {
           quick_ask: appConfiguration?.quick_ask ?? false,
           distinct_id: appConfiguration?.distinct_id,
         }
-        await window.core?.api?.updateAppConfiguration(configuration)
+        await window.core?.api?.updateAppConfiguration({ configuration })
       }
 
       // Perform factory reset

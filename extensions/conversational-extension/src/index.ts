@@ -5,7 +5,6 @@ import {
   ThreadMessage,
 } from '@janhq/core'
 import ky, { KyInstance } from 'ky'
-import PQueue from 'p-queue'
 
 type ThreadList = {
   data: Thread[]
@@ -20,21 +19,22 @@ type MessageList = {
  * functionality for managing threads.
  */
 export default class CortexConversationalExtension extends ConversationalExtension {
-  queue = new PQueue({ concurrency: 1 })
-
   api?: KyInstance
   /**
    * Get the API instance
    * @returns
    */
   async apiInstance(): Promise<KyInstance> {
-    if(this.api) return this.api
-    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
+    if (this.api) return this.api
+    const apiKey = (await window.core?.api.appToken())
     this.api = ky.extend({
       prefixUrl: API_URL,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: apiKey
+        ? {
+            Authorization: `Bearer ${apiKey}`,
+          }
+        : {},
+      retry: 10,
     })
     return this.api
   }
@@ -42,7 +42,7 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * Called when the extension is loaded.
    */
   async onLoad() {
-    this.queue.add(() => this.healthz())
+    // this.queue.add(() => this.healthz())
   }
 
   /**
@@ -54,13 +54,11 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * Returns a Promise that resolves to an array of Conversation objects.
    */
   async listThreads(): Promise<Thread[]> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get('v1/threads?limit=-1')
-          .json<ThreadList>()
-          .then((e) => e.data)
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .get('v1/threads?limit=-1')
+        .json<ThreadList>()
+        .then((e) => e.data)
     ) as Promise<Thread[]>
   }
 
@@ -69,10 +67,8 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @param thread The Thread object to save.
    */
   async createThread(thread: Thread): Promise<Thread> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api.post('v1/threads', { json: thread }).json<Thread>()
-      )
+    return this.apiInstance().then((api) =>
+      api.post('v1/threads', { json: thread }).json<Thread>()
     ) as Promise<Thread>
   }
 
@@ -81,12 +77,9 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @param thread The Thread object to save.
    */
   async modifyThread(thread: Thread): Promise<void> {
-    return this.queue
-      .add(() =>
-        this.apiInstance().then((api) =>
-          api.patch(`v1/threads/${thread.id}`, { json: thread })
-        )
-      )
+    return this.apiInstance()
+      .then((api) => api.patch(`v1/threads/${thread.id}`, { json: thread }))
+
       .then()
   }
 
@@ -95,10 +88,8 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @param threadId The ID of the thread to delete.
    */
   async deleteThread(threadId: string): Promise<void> {
-    return this.queue
-      .add(() =>
-        this.apiInstance().then((api) => api.delete(`v1/threads/${threadId}`))
-      )
+    return this.apiInstance()
+      .then((api) => api.delete(`v1/threads/${threadId}`))
       .then()
   }
 
@@ -108,14 +99,12 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @returns A Promise that resolves when the message has been added.
    */
   async createMessage(message: ThreadMessage): Promise<ThreadMessage> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .post(`v1/threads/${message.thread_id}/messages`, {
-            json: message,
-          })
-          .json<ThreadMessage>()
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .post(`v1/threads/${message.thread_id}/messages`, {
+          json: message,
+        })
+        .json<ThreadMessage>()
     ) as Promise<ThreadMessage>
   }
 
@@ -125,14 +114,12 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @returns
    */
   async modifyMessage(message: ThreadMessage): Promise<ThreadMessage> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .patch(`v1/threads/${message.thread_id}/messages/${message.id}`, {
-            json: message,
-          })
-          .json<ThreadMessage>()
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .patch(`v1/threads/${message.thread_id}/messages/${message.id}`, {
+          json: message,
+        })
+        .json<ThreadMessage>()
     ) as Promise<ThreadMessage>
   }
 
@@ -143,12 +130,8 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @returns A Promise that resolves when the message has been successfully deleted.
    */
   async deleteMessage(threadId: string, messageId: string): Promise<void> {
-    return this.queue
-      .add(() =>
-        this.apiInstance().then((api) =>
-          api.delete(`v1/threads/${threadId}/messages/${messageId}`)
-        )
-      )
+    return this.apiInstance()
+      .then((api) => api.delete(`v1/threads/${threadId}/messages/${messageId}`))
       .then()
   }
 
@@ -158,13 +141,11 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * @returns A Promise that resolves to an array of ThreadMessage objects.
    */
   async listMessages(threadId: string): Promise<ThreadMessage[]> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get(`v1/threads/${threadId}/messages?order=asc&limit=-1`)
-          .json<MessageList>()
-          .then((e) => e.data)
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .get(`v1/threads/${threadId}/messages?order=asc&limit=-1`)
+        .json<MessageList>()
+        .then((e) => e.data)
     ) as Promise<ThreadMessage[]>
   }
 
@@ -175,12 +156,8 @@ export default class CortexConversationalExtension extends ConversationalExtensi
    * the details of the assistant associated with the specified thread.
    */
   async getThreadAssistant(threadId: string): Promise<ThreadAssistantInfo> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get(`v1/assistants/${threadId}?limit=-1`)
-          .json<ThreadAssistantInfo>()
-      )
+    return this.apiInstance().then((api) =>
+      api.get(`v1/assistants/${threadId}?limit=-1`).json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
   }
   /**
@@ -193,12 +170,10 @@ export default class CortexConversationalExtension extends ConversationalExtensi
     threadId: string,
     assistant: ThreadAssistantInfo
   ): Promise<ThreadAssistantInfo> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .post(`v1/assistants/${threadId}`, { json: assistant })
-          .json<ThreadAssistantInfo>()
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .post(`v1/assistants/${threadId}`, { json: assistant })
+        .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
   }
 
@@ -212,26 +187,10 @@ export default class CortexConversationalExtension extends ConversationalExtensi
     threadId: string,
     assistant: ThreadAssistantInfo
   ): Promise<ThreadAssistantInfo> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .patch(`v1/assistants/${threadId}`, { json: assistant })
-          .json<ThreadAssistantInfo>()
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .patch(`v1/assistants/${threadId}`, { json: assistant })
+        .json<ThreadAssistantInfo>()
     ) as Promise<ThreadAssistantInfo>
-  }
-
-  /**
-   * Do health check on cortex.cpp
-   * @returns
-   */
-  async healthz(): Promise<void> {
-    return this.apiInstance()
-      .then((api) =>
-        api.get('healthz', {
-          retry: { limit: 20, delay: () => 500, methods: ['get'] },
-        })
-      )
-      .then(() => {})
   }
 }
