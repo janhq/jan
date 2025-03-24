@@ -25,7 +25,7 @@ const readFileSync = (...args: any[]) => globalThis.core.api?.readFileSync(...ar
  * @param {string} path
  * @returns {boolean} A boolean indicating whether the path is a file.
  */
-const existsSync = (...args: any[]) => globalThis.core.api?.existsSync(...args)
+const existsSync = (...args: any[]) => globalThis.core.api?.existsSync({ args })
 /**
  * List the directory files
  * @returns {Promise<any>} A Promise that resolves with the contents of the directory.

@@ -229,14 +229,10 @@ export default function useSendChatMessage() {
     }
     setIsGeneratingResponse(true)
 
-    // Process message request with Assistants tools
-    const request = await ToolManager.instance().process(
-      requestBuilder.build(),
-      activeAssistantRef?.current.tools ?? []
-    )
-
     // Request for inference
-    EngineManager.instance().get(InferenceEngine.cortex)?.inference(request)
+    EngineManager.instance()
+      .get(InferenceEngine.cortex)
+      ?.inference(requestBuilder.build())
 
     // Reset states
     setReloadModel(false)

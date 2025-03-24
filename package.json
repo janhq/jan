@@ -18,9 +18,11 @@
     "test-local": "yarn lint && yarn build:test && yarn test",
     "copy:assets": "cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"themes/**\" \"electron/themes\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
+    "dev:web:standalone": "concurrently \"yarn workspace @janhq/web dev\" \"wait-on http://localhost:3000 && rsync -av --prune-empty-dirs --include '*/' --include 'dist/***' --include 'package.json' --include 'tsconfig.json' --exclude '*' ./extensions/ web/.next/static/extensions/\"",
     "dev:web": "yarn workspace @janhq/web dev",
     "dev:server": "yarn workspace @janhq/server dev",
     "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web\" \"yarn dev:electron\"",
+    "dev:tauri": "tauri dev",
     "build:server": "cd server && yarn build",
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
@@ -35,12 +37,14 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.2.5",
     "concurrently": "^9.1.0",
     "cpx": "^1.5.0",
     "husky": "^9.1.5",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "rimraf": "^3.0.2",
+    "run-script-os": "^1.1.6",
     "wait-on": "^7.0.1"
   },
   "version": "0.0.0",

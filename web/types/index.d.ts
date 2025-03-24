@@ -14,12 +14,13 @@ declare global {
   declare const isWindows: boolean
   declare const isLinux: boolean
   declare const PLATFORM: string
+  declare const IS_TAURI: boolean
   interface Core {
     api: APIFunctions
     events: EventEmitter
   }
   interface Window {
-    core?: Core | undefined
-    electronAPI?: any | undefined
+    core?: Core
+    electronAPI?: any
   }
 }
