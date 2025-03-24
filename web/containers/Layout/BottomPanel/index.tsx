@@ -23,7 +23,7 @@ const menuLinks = [
   {
     name: 'Github',
     icon: <FaGithub size={14} className="flex-shrink-0" />,
-    link: 'https://github.com/janhq/jan',
+    link: 'https://github.com/menloresearch/jan',
   },
 ]
 

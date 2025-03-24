@@ -89,39 +89,39 @@ jobs:
       pull-requests: write
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v3
-      with:
-        submodules: recursive
-        fetch-depth: 0
-        token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.PAT_SERVICE_ACCOUNT }}
 
-    - name: Wait for CI to pass
-      env:
+      - name: Wait for CI to pass
+        env:
           GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
-      run: |
-        pr_number=${{ needs.update-submodule.outputs.pr_number }}
-        while true; do
-          ci_completed=$(gh pr checks $pr_number --json completedAt --jq '.[].completedAt')
-          if echo "$ci_completed" | grep -q "0001-01-01T00:00:00Z"; then
-            echo "CI is still running, waiting..."
-            sleep 60
-          else
-            echo "CI has completed, checking states..."
-            ci_states=$(gh pr checks $pr_number --json state --jq '.[].state')
-            if echo "$ci_states" | grep -vqE "SUCCESS|SKIPPED"; then
-              echo "CI failed, exiting..."
-              exit 1
+        run: |
+          pr_number=${{ needs.update-submodule.outputs.pr_number }}
+          while true; do
+            ci_completed=$(gh pr checks $pr_number --json completedAt --jq '.[].completedAt')
+            if echo "$ci_completed" | grep -q "0001-01-01T00:00:00Z"; then
+              echo "CI is still running, waiting..."
+              sleep 60
             else
-              echo "CI passed, merging PR..."
-              break
+              echo "CI has completed, checking states..."
+              ci_states=$(gh pr checks $pr_number --json state --jq '.[].state')
+              if echo "$ci_states" | grep -vqE "SUCCESS|SKIPPED"; then
+                echo "CI failed, exiting..."
+                exit 1
+              else
+                echo "CI passed, merging PR..."
+                break
+              fi
             fi
-          fi
-        done
+          done
 
-    - name: Merge the PR
-      env:
+      - name: Merge the PR
+        env:
           GITHUB_TOKEN: ${{ secrets.PAT_SERVICE_ACCOUNT }}
-      run: |
-        pr_number=${{ needs.update-submodule.outputs.pr_number }}
-        gh pr merge $pr_number --merge --admin
+        run: |
+          pr_number=${{ needs.update-submodule.outputs.pr_number }}
+          gh pr merge $pr_number --merge --admin
