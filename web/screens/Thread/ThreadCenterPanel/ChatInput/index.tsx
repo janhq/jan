@@ -3,7 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 
-import { TextArea, Button, Tooltip, useClickOutside, Badge } from '@janhq/joi'
+import {
+  TextArea,
+  Button,
+  Tooltip,
+  useClickOutside,
+  badgeVariants,
+} from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   FileTextIcon,
@@ -350,16 +356,17 @@ const ChatInput = () => {
         >
           <div className="flex items-center gap-x-2">
             <ModelDropdown chatInputMode />
-            <Badge
-              theme="secondary"
+            <button
               className={twMerge(
+                badgeVariants({
+                  theme: 'secondary',
+                  variant:
+                    activeTabThreadRightPanel === 'model' ? 'solid' : 'outline',
+                }),
                 'flex cursor-pointer items-center gap-x-1',
                 activeTabThreadRightPanel === 'model' &&
                   'border border-transparent'
               )}
-              variant={
-                activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
-              }
               onClick={() => {
                 // TODO @faisal: should be refactor later and better experience beetwen tab and toggle button
                 if (showRightPanel && activeTabThreadRightPanel !== 'model') {
@@ -384,7 +391,7 @@ const ChatInput = () => {
                 size={16}
                 className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
               />
-            </Badge>
+            </button>
           </div>
           {selectedModel && (
             <Button

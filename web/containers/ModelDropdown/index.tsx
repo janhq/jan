@@ -4,7 +4,7 @@ import Image from 'next/image'
 
 import { EngineConfig, InferenceEngine } from '@janhq/core'
 import {
-  Badge,
+  badgeVariants,
   Button,
   Input,
   ScrollArea,
@@ -311,11 +311,13 @@ const ModelDropdown = ({
     >
       <div className="flex [&>div]:w-full" ref={setToggle}>
         {chatInputMode ? (
-          <Badge
+          <button
             data-testid="model-selector-badge"
-            theme="secondary"
-            variant={open ? 'solid' : 'outline'}
             className={twMerge(
+              badgeVariants({
+                theme: 'secondary',
+                variant: open ? 'solid' : 'outline',
+              }),
               'inline-block max-w-[200px] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap',
               open && 'border border-transparent'
             )}
@@ -328,7 +330,7 @@ const ModelDropdown = ({
             >
               {selectedModel?.name || 'Select a model'}
             </span>
-          </Badge>
+          </button>
         ) : (
           <Input
             value={selectedModel?.name || ''}
