@@ -86,6 +86,14 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       },
     })
 
+    const rewriteRequestHeaders = (req: any, headers: any) => {
+      if (req.url.includes('/configs')) return headers
+      return {
+        ...headers,
+        authorization: `Bearer ${process.env.appToken}`, // Add or modify Authorization header
+      }
+    }
+
     // Register Swagger UI
     await server.register(require('@fastify/swagger-ui'), {
       routePrefix: '/',
@@ -102,24 +110,36 @@ export const startServer = async (configs?: ServerConfig): Promise<boolean> => {
       upstream: `${CORTEX_API_URL}/v1`,
       prefix: configs?.prefix ?? '/v1',
       http2: false,
-    })
-
-    server.register(proxy, {
-      upstream: `${CORTEX_API_URL}/system`,
-      prefix:'/system',
-      http2: false,
+      replyOptions: {
+        rewriteRequestHeaders,
+      },
     })
 
     server.register(proxy, {
       upstream: `${CORTEX_API_URL}/processManager`,
-      prefix:'/processManager',
+      prefix: '/processManager',
       http2: false,
+      replyOptions: {
+        rewriteRequestHeaders,
+      },
+    })
+
+    server.register(proxy, {
+      upstream: `${CORTEX_API_URL}/system`,
+      prefix: '/system',
+      http2: false,
+      replyOptions: {
+        rewriteRequestHeaders,
+      },
     })
 
     server.register(proxy, {
       upstream: `${CORTEX_API_URL}/healthz`,
-      prefix:'/healthz',
+      prefix: '/healthz',
       http2: false,
+      replyOptions: {
+        rewriteRequestHeaders,
+      },
     })
 
     // Start listening for requests

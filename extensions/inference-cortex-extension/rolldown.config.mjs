@@ -24,7 +24,7 @@ export default defineConfig([
   },
   {
     input: 'src/node/index.ts',
-    external: ['@janhq/core/node', 'cpu-instructions'],
+    external: ['@janhq/core/node'],
     output: {
       format: 'cjs',
       file: 'dist/node/index.cjs.js',

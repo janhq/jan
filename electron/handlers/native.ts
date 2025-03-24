@@ -317,4 +317,11 @@ export function handleAppIPCs() {
     const { stopServer } = require('@janhq/server')
     return stopServer()
   })
+
+  /**
+   * Handles the "appToken" IPC message to generate a random app ID.
+   */
+  ipcMain.handle(NativeRoute.appToken, async (_event): Promise<string> => {
+    return process.env.appToken ?? 'cortex.cpp'
+  })
 }

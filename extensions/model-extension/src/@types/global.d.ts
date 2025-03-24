@@ -1,5 +1,5 @@
 declare const NODE: string
-declare const API_URL: string
+declare const CORTEX_API_URL: string
 declare const SETTINGS: SettingComponentProps[]
 declare const DEFAULT_MODEL_SOURCES: any
 

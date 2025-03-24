@@ -23,11 +23,16 @@ export class Retrieval {
 
   constructor(chunkSize: number = 4000, chunkOverlap: number = 200) {
     this.updateTextSplitter(chunkSize, chunkOverlap)
+    this.initialize()
+  }
+
+  private async initialize() {
+    const apiKey = await window.core?.api.appToken() ?? 'cortex.cpp'
 
     // declare time-weighted retriever and storage
     this.timeWeightedVectorStore = new MemoryVectorStore(
       new OpenAIEmbeddings(
-        { openAIApiKey: 'cortex-embedding' },
+        { openAIApiKey: apiKey },
         { basePath: `${CORTEX_API_URL}/v1` }
       )
     )
@@ -47,9 +52,10 @@ export class Retrieval {
     })
   }
 
-  public updateEmbeddingEngine(model: string, engine: string): void {
+  public async updateEmbeddingEngine(model: string, engine: string) {
+    const apiKey = await window.core?.api.appToken() ?? 'cortex.cpp'
     this.embeddingModel = new OpenAIEmbeddings(
-      { openAIApiKey: 'cortex-embedding', model },
+      { openAIApiKey: apiKey, model },
       // TODO: Raw settings
       { basePath: `${CORTEX_API_URL}/v1` }
     )
