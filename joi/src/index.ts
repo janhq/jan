@@ -12,6 +12,7 @@ export * from './core/Select'
 export * from './core/TextArea'
 export * from './core/Tabs'
 export * from './core/Accordion'
+export * from './core/Dropdown'
 
 export * from './hooks/useClipboard'
 export * from './hooks/usePageLeave'

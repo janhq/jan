@@ -1,5 +1,5 @@
-/* eslint-disable  @typescript-eslint/no-explicit-any */
-/* eslint-disable  react/no-unescaped-entities */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable react/no-unescaped-entities */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import React, { useCallback, useRef, useState, useEffect } from 'react'
@@ -15,15 +15,27 @@ interface EngineConfig extends OriginalEngineConfig {
   [key: string]: any
 }
 
-import { ScrollArea, Input, TextArea } from '@janhq/joi'
+import { ScrollArea, Input, TextArea, Button } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 
 import { set } from 'lodash'
-import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  RefreshCwIcon,
+} from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
+import Spinner from '@/containers/Loader/Spinner'
+
+import {
+  updateEngine,
+  useGetEngines,
+  useRefreshModelList,
+} from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
@@ -36,26 +48,29 @@ import {
   downloadedModelsAtom,
   selectedModelAtom,
 } from '@/helpers/atoms/Model.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const RemoteEngineSettings = ({
-  engine: name,
+  engine: engineName,
 }: {
   engine: InferenceEngine
 }) => {
   const { engines, mutate } = useGetEngines()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [showApiKey, setShowApiKey] = useState(false)
-  const remoteModels = downloadedModels.filter((e) => e.engine === name)
+  const remoteModels = downloadedModels.filter((e) => e.engine === engineName)
   const [isActiveAdvanceSetting, setisActiveAdvanceSetting] = useState(false)
   const setSelectedModel = useSetAtom(selectedModelAtom)
-  const customEngineLogo = getLogoEngine(name)
+  const customEngineLogo = getLogoEngine(engineName)
   const threads = useAtomValue(threadsAtom)
+  const { refreshingModels, refreshModels } = useRefreshModelList(engineName)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const engine =
     engines &&
     Object.entries(engines)
-      .filter(([key]) => key === name)
+      .filter(([key]) => key === engineName)
       .flatMap(([_, engineArray]) => engineArray as EngineConfig)[0]
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
@@ -77,12 +92,12 @@ const RemoteEngineSettings = ({
       debounceRef.current = setTimeout(async () => {
         const updatedEngine = { ...engine }
         set(updatedEngine, field, value)
-        await updateEngine(name, updatedEngine)
+        await updateEngine(engineName, updatedEngine)
         mutate()
         events.emit(EngineEvent.OnEngineUpdate, {})
       }, 300)
     },
-    [engine, name, mutate]
+    [engine, engineName, mutate]
   )
 
   const [data, setData] = useState({
@@ -137,7 +152,10 @@ const RemoteEngineSettings = ({
   if (!engine) return null
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       <div className="block w-full px-4">
         <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
           <div className="flex w-full flex-col items-start justify-between sm:flex-row">
@@ -148,7 +166,8 @@ const RemoteEngineSettings = ({
                   <p className="mt-1 text-[hsla(var(--text-secondary))]">
                     {!customEngineLogo ? (
                       <span>
-                        Enter your authentication key to activate this engine.{' '}
+                        Enter your authentication key to activate this
+                        engine.{' '}
                       </span>
                     ) : (
                       <span>
@@ -214,7 +233,21 @@ const RemoteEngineSettings = ({
                 <div>
                   <h6 className="mb-2 line-clamp-1 font-semibold">Model</h6>
                 </div>
-                <ModalAddModel engine={name} />
+                <div className="flex gap-2">
+                  <Button
+                    theme={'ghost'}
+                    variant={'outline'}
+                    onClick={() => refreshModels(engineName)}
+                  >
+                    {refreshingModels ? (
+                      <Spinner size={16} strokeWidth={2} className="mr-2" />
+                    ) : (
+                      <RefreshCwIcon size={16} className="mr-2" />
+                    )}
+                    Refresh
+                  </Button>
+                  <ModalAddModel engine={engineName} />
+                </div>
               </div>
 
               <div>

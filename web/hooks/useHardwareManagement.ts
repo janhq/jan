@@ -32,7 +32,7 @@ const getExtension = () =>
 /**
  * @returns A Promise that resolves to an object of list engines.
  */
-export function useGetHardwareInfo() {
+export function useGetHardwareInfo(updatePeriodically: boolean = true) {
   const setCpuUsage = useSetAtom(cpuUsageAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
   const setTotalRam = useSetAtom(totalRamAtom)
@@ -56,7 +56,7 @@ export function useGetHardwareInfo() {
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
-      refreshInterval: 2000,
+      refreshInterval: updatePeriodically ? 2000 : undefined,
     }
   )
 

@@ -1,24 +1,23 @@
-import React, { ReactNode } from 'react'
+import React from 'react'
 
 import * as SelectPrimitive from '@radix-ui/react-select'
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-} from '@radix-ui/react-icons'
+import { CheckIcon, ChevronDownIcon } from '@radix-ui/react-icons'
 
 import './styles.scss'
 import { twMerge } from 'tailwind-merge'
 
 type Props = {
-  options?: { name: string; value: string }[]
+  options?: { name: string; value: string; recommend?: boolean }[]
   open?: boolean
   block?: boolean
   value?: string
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  position?: 'item-aligned' | 'popper'
   placeholder?: string
   disabled?: boolean
   containerPortal?: HTMLDivElement | undefined | null
   className?: string
+  sideOffset?: number
   onValueChange?: (value: string) => void
   onOpenChange?: (open: boolean) => void
 }
@@ -30,7 +29,10 @@ const Select = ({
   disabled,
   containerPortal,
   block,
+  sideOffset,
+  position,
   className,
+  side,
   open,
   onValueChange,
   onOpenChange,
@@ -56,7 +58,12 @@ const Select = ({
     </SelectPrimitive.Trigger>
 
     <SelectPrimitive.Portal container={containerPortal}>
-      <SelectPrimitive.Content className="select__content">
+      <SelectPrimitive.Content
+        side={side}
+        position={position}
+        sideOffset={sideOffset}
+        className="select__content"
+      >
         <SelectPrimitive.Viewport className="select__viewport">
           {options &&
             options.map((item, i) => {
@@ -66,9 +73,16 @@ const Select = ({
                   className="select__item"
                   value={item.value}
                 >
-                  <SelectPrimitive.ItemText>
-                    {item.name}
-                  </SelectPrimitive.ItemText>
+                  <div className="flex items-center gap-x-2">
+                    <SelectPrimitive.ItemText>
+                      <span>{item.name}</span>
+                    </SelectPrimitive.ItemText>
+                    {item.recommend && (
+                      <span className="rounded bg-[hsla(var(--secondary-bg))] px-2 py-0.5 text-xs font-medium">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
                   <SelectPrimitive.ItemIndicator className="select__item-indicator">
                     <CheckIcon />
                   </SelectPrimitive.ItemIndicator>
@@ -76,7 +90,6 @@ const Select = ({
               )
             })}
         </SelectPrimitive.Viewport>
-        <SelectPrimitive.Arrow />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
   </SelectPrimitive.Root>

@@ -30,7 +30,7 @@ jobs:
           local max_retries=3
           local tag
           while [ $retries -lt $max_retries ]; do
-            tag=$(curl -s https://api.github.com/repos/janhq/jan/releases/latest | jq -r .tag_name)
+            tag=$(curl -s https://api.github.com/repos/menloresearch/jan/releases/latest | jq -r .tag_name)
             if [ -n "$tag" ] && [ "$tag" != "null" ]; then
               echo $tag
               return

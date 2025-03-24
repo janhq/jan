@@ -1,15 +1,7 @@
 import path from 'path'
-import {
-  appResourcePath,
-  getJanDataFolderPath,
-  log,
-  SystemInformation,
-} from '@janhq/core/node'
+import { appResourcePath, getJanDataFolderPath, log } from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
-import { readdir, symlink } from 'fs/promises'
 
-// The HOST address to use for the Nitro subprocess
-const LOCAL_PORT = '39291'
 let watchdog: ProcessWatchdog | undefined = undefined
 
 /**
@@ -39,6 +31,9 @@ function run(): Promise<any> {
       watchdog.terminate()
     }
 
+    // The HOST address to use for the cortex subprocess
+    const LOCAL_PORT = CORTEX_API_URL.split(':').pop() ?? '39291'
+
     watchdog = new ProcessWatchdog(
       executablePath,
       [
@@ -49,8 +44,9 @@ function run(): Promise<any> {
         `${path.join(dataFolderPath, '.janrc')}`,
         '--data_folder_path',
         dataFolderPath,
-        '--loglevel',
-        'INFO',
+        'config',
+        '--api_keys',
+        process.env.appToken ?? 'cortex.cpp',
       ],
       {
         env: {

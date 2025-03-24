@@ -2,7 +2,7 @@ import { memo } from 'react'
 
 import { usePath } from '@/hooks/usePath'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import Icon from '../FileUploadPreview/Icon'
 
@@ -31,7 +31,7 @@ const DocMessage = ({
         </h6>
         <p className="text-[hsla(var(--text-secondary)] line-clamp-1 overflow-hidden truncate">
           {metadata && 'size' in metadata
-            ? toGibibytes(Number(metadata.size))
+            ? toGigabytes(Number(metadata.size))
             : id}
         </p>
       </div>

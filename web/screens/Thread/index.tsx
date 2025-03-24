@@ -5,7 +5,7 @@ import { useStarterScreen } from '@/hooks/useStarterScreen'
 import ThreadLeftPanel from '@/screens/Thread/ThreadLeftPanel'
 
 import ThreadCenterPanel from './ThreadCenterPanel'
-import OnDeviceStarterScreen from './ThreadCenterPanel/ChatBody/OnDeviceStarterScreen'
+import OnboardingScreen from './ThreadCenterPanel/ChatBody/OnboardingScreen'
 import ModalCleanThread from './ThreadLeftPanel/ModalCleanThread'
 import ModalDeleteThread from './ThreadLeftPanel/ModalDeleteThread'
 import ModalEditTitleThread from './ThreadLeftPanel/ModalEditTitleThread'
@@ -17,7 +17,7 @@ type Props = {
 
 const ThreadPanels = memo(({ isShowStarterScreen }: Props) => {
   return isShowStarterScreen ? (
-    <OnDeviceStarterScreen isShowStarterScreen={isShowStarterScreen} />
+    <OnboardingScreen isShowStarterScreen={isShowStarterScreen} />
   ) : (
     <>
       <ThreadLeftPanel />

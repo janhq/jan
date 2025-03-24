@@ -1,10 +1,13 @@
 import { BaseExtension, ExtensionTypeEnum } from '../extension'
-import { Model, ModelInterface, OptionType } from '../../types'
+import { Model, ModelInterface, ModelSource, OptionType } from '../../types'
 
 /**
  * Model extension for managing models.
  */
-export abstract class ModelExtension extends BaseExtension implements ModelInterface {
+export abstract class ModelExtension
+  extends BaseExtension
+  implements ModelInterface
+{
   /**
    * Model extension type.
    */
@@ -25,4 +28,16 @@ export abstract class ModelExtension extends BaseExtension implements ModelInter
   abstract updateModel(modelInfo: Partial<Model>): Promise<Model>
   abstract deleteModel(model: string): Promise<void>
   abstract isModelLoaded(model: string): Promise<boolean>
+  /**
+   * Get model sources
+   */
+  abstract getSources(): Promise<ModelSource[]>
+  /**
+   * Add a model source
+   */
+  abstract addSource(source: string): Promise<void>
+  /**
+   * Delete a model source
+   */
+  abstract deleteSource(source: string): Promise<void>
 }

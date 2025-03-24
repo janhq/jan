@@ -1,14 +1,9 @@
 import React, { Fragment, useEffect, useMemo, useState } from 'react'
 
-import {
-  BaseExtension,
-  InstallationState,
-  SettingComponentProps,
-} from '@janhq/core'
+import { SettingComponentProps } from '@janhq/core'
 
 import { useAtomValue } from 'jotai'
 
-import ExtensionItem from '../CoreExtensions/ExtensionItem'
 import SettingDetailItem from '../SettingDetail/SettingDetailItem'
 
 import { extensionManager } from '@/extension'
@@ -17,11 +12,6 @@ import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
 const ExtensionSetting = ({ extensionName }: { extensionName?: string }) => {
   const selectedExtensionName = useAtomValue(selectedSettingAtom)
   const [settings, setSettings] = useState<SettingComponentProps[]>([])
-  const [installationState, setInstallationState] =
-    useState<InstallationState>('NotRequired')
-  const [baseExtension, setBaseExtension] = useState<BaseExtension | undefined>(
-    undefined
-  )
 
   const currentExtensionName = useMemo(
     () => extensionName ?? selectedExtensionName,
@@ -35,14 +25,11 @@ const ExtensionSetting = ({ extensionName }: { extensionName?: string }) => {
       const baseExtension = extensionManager.getByName(currentExtensionName)
       if (!baseExtension) return
 
-      setBaseExtension(baseExtension)
       if (typeof baseExtension.getSettings === 'function') {
         const setting = await baseExtension.getSettings()
         if (setting) allSettings.push(...setting)
       }
       setSettings(allSettings)
-
-      setInstallationState(await baseExtension.installationState())
     }
     getExtensionSettings()
   }, [currentExtensionName])
@@ -74,9 +61,6 @@ const ExtensionSetting = ({ extensionName }: { extensionName?: string }) => {
           componentProps={settings}
           onValueUpdated={onValueChanged}
         />
-      )}
-      {baseExtension && installationState !== 'NotRequired' && (
-        <ExtensionItem item={baseExtension} />
       )}
     </Fragment>
   )

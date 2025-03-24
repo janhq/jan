@@ -16,15 +16,13 @@ export function handleAppUpdates() {
   if (!app.isPackaged) {
     return
   }
+
   /* New Update Available */
   autoUpdater.on('update-available', async (_info: UpdateInfo) => {
-    const action = await dialog.showMessageBox({
-      title: 'Update Available',
-      message: 'Would you like to download and install it now?',
-      buttons: ['Download', 'Later'],
-    })
-
-    if (action.response === 0) await autoUpdater.downloadUpdate()
+    windowManager.mainWindow?.webContents.send(
+      AppEvent.onAppUpdateAvailable,
+      {}
+    )
   })
 
   /* App Update Completion Message */

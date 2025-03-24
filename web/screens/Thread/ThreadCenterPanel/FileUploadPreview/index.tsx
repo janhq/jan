@@ -6,7 +6,7 @@ import { XIcon } from 'lucide-react'
 
 import { currentPromptAtom, fileUploadAtom } from '@/containers/Providers/Jotai'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import Icon from './Icon'
 
@@ -30,7 +30,7 @@ const FileUploadPreview = () => {
               {fileUpload?.file.name.replaceAll(/[-._]/g, ' ')}
             </h6>
             <p className="text-[hsla(var(--text-secondary)]">
-              {toGibibytes(fileUpload?.file.size)}
+              {toGigabytes(fileUpload?.file.size)}
             </p>
           </div>
 

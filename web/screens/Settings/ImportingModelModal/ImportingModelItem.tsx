@@ -7,7 +7,7 @@ import { AlertCircle } from 'lucide-react'
 
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { editingModelIdAtom } from '../EditModelInfoModal'
 import ImportInProgressIcon from '../ImportInProgressIcon'
@@ -32,7 +32,7 @@ const ImportingModelItem = ({ model }: Props) => {
     if (model.status === 'FAILED') {
       return 'Failed'
     } else {
-      return toGibibytes(model.size)
+      return toGigabytes(model.size)
     }
   }, [model.status, model.size])
 

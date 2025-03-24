@@ -1,98 +1,83 @@
-import { useState } from 'react'
+import Markdown from 'react-markdown'
 
-import { Model } from '@janhq/core'
-import { Badge } from '@janhq/joi'
+import Image from 'next/image'
 
-import { twMerge } from 'tailwind-merge'
+import { ModelSource } from '@janhq/core'
+
+import { DownloadIcon, FileJson } from 'lucide-react'
+import rehypeRaw from 'rehype-raw'
 
 import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
 
-import { toGibibytes } from '@/utils/converter'
+import { markdownComponents } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownUtils'
+
+import { toGigabytes } from '@/utils/converter'
+import { extractDescription } from '@/utils/modelSource'
+import '@/styles/components/model.scss'
 
 type Props = {
-  model: Model
+  model: ModelSource
+  onSelectedModel: () => void
 }
 
-const ModelItem: React.FC<Props> = ({ model }) => {
-  const [open, setOpen] = useState('')
-
-  const handleToggle = () => {
-    if (open === model.id) {
-      setOpen('')
-    } else {
-      setOpen(model.id)
-    }
-  }
-
+const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
   return (
-    <div className="mb-6 flex flex-col overflow-hidden rounded-xl border border-[hsla(var(--app-border))]">
-      <ModelItemHeader model={model} onClick={handleToggle} open={open} />
-      {open === model.id && (
-        <div className="flex">
-          <div className="flex w-full flex-col border-t border-[hsla(var(--app-border))] p-4 ">
-            <div className="my-2 inline-flex items-center sm:hidden">
-              <span className="mr-4 font-semibold">
-                {toGibibytes(model.metadata?.size)}
-              </span>
-              <ModelLabel metadata={model.metadata} />
-            </div>
-            <div className="mb-6 flex flex-col gap-1">
-              <span className="font-semibold">About</span>
-              <p className="text-[hsla(var(--text-secondary))]">
-                {model.description || '-'}
-              </p>
-            </div>
-            <div className="flex flex-col gap-y-4 sm:flex-row sm:gap-x-10 sm:gap-y-0">
-              <div>
-                <span className="font-semibold ">Author</span>
-                <p
-                  className="mt-2 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]"
-                  title={model.metadata?.author}
-                >
-                  {model.metadata?.author}
-                </p>
-              </div>
-              <div>
-                <span className="mb-1 font-semibold ">Model ID</span>
-                <p
-                  className="mt-2 line-clamp-1 font-medium text-[hsla(var(--text-secondary))]"
-                  title={model.id}
-                >
-                  {model.id}
-                </p>
-              </div>
-              <div>
-                <span className="mb-1 font-semibold ">Tags</span>
-                <div className="mt-2 flex flex-wrap gap-x-1 gap-y-1">
-                  {model.metadata?.tags?.map((tag: string) => (
-                    <Badge key={tag} title={tag} variant="soft">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
+    <div className="mb-6 flex w-full flex-col overflow-hidden border-b border-[hsla(var(--app-border))] py-4">
+      <ModelItemHeader model={model} onSelectedModel={onSelectedModel} />
 
-          <div className="hidden w-48 flex-shrink-0 border-l border-t border-[hsla(var(--app-border))] p-4">
-            <div>
-              <span className="font-semibold ">Format</span>
+      <div className="flex w-full">
+        <div className="flex w-full flex-col ">
+          <div className="my-2 inline-flex items-center sm:hidden">
+            <span className="mr-4">{toGigabytes(model.models?.[0]?.size)}</span>
+            <ModelLabel size={model.models?.[0]?.size} />
+          </div>
+          <div className="flex flex-col">
+            <Markdown
+              className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]"
+              components={markdownComponents}
+              rehypePlugins={[rehypeRaw]}
+            >
+              {extractDescription(model.metadata?.description) || '-'}
+            </Markdown>
+          </div>
+          <div className="mb-6 flex flex-row divide-x">
+            {(model?.author ?? model?.metadata?.author) && (
               <p
-                className={twMerge(
-                  'mt-2 font-medium',
-                  !model.format?.includes(' ') &&
-                    !model.format?.includes('-') &&
-                    'uppercase'
-                )}
+                className="font-regular mt-3 line-clamp-1 flex flex-row pr-4 capitalize text-[hsla(var(--text-secondary))]"
+                title={model?.author ?? model?.metadata?.author}
               >
-                {model.format}
+                {model.id?.includes('huggingface.co') && (
+                  <>
+                    <Image
+                      src={'icons/huggingFace.svg'}
+                      width={16}
+                      height={16}
+                      className="mr-2"
+                      alt=""
+                    />{' '}
+                  </>
+                )}{' '}
+                {model?.author ?? model?.metadata?.author}
               </p>
-            </div>
+            )}
+            {model.models?.length > 0 && (
+              <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center pl-4 pr-4 text-[hsla(var(--text-secondary))] first:pl-0">
+                <FileJson size={16} className="mr-2" />
+                {model.models?.length}{' '}
+                {model.type === 'cloud' ? 'models' : 'versions'}
+              </p>
+            )}
+            {model.metadata?.downloads > 0 && (
+              <p className="font-regular mt-3 line-clamp-1 flex flex-row items-center px-4 text-[hsla(var(--text-secondary))]">
+                <DownloadIcon size={16} className="mr-2" />
+                {model.metadata?.downloads}
+              </p>
+            )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   )
 }

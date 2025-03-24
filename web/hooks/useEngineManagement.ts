@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
 import {
   ExtensionTypeEnum,
@@ -10,12 +10,17 @@ import {
   EngineEvent,
   Model,
   ModelEvent,
+  ModelSource,
+  ModelSibling,
 } from '@janhq/core'
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import useSWR from 'swr'
 
+import { getDescriptionByEngine, getTitleByEngine } from '@/utils/modelEngine'
+
 import { extensionManager } from '@/extension/ExtensionManager'
+import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
 
 export const releasedEnginesCacheAtom = atomWithStorage<{
   data: EngineReleased[]
@@ -26,6 +31,13 @@ export const releasedEnginesLatestCacheAtom = atomWithStorage<{
   data: EngineReleased[]
   timestamp: number
 } | null>('releasedEnginesLatestCache', null, undefined, { getOnInit: true })
+
+export interface RemoteModelList {
+  data?: {
+    id?: string
+    name?: string
+  }[]
+}
 
 // fetcher function
 async function fetchExtensionData<T>(
@@ -83,8 +95,12 @@ export function useGetRemoteModels(name: string) {
     error,
     mutate,
   } = useSWR(
-    extension ? 'remoteModels' : null,
-    () => fetchExtensionData(extension, (ext) => ext.getRemoteModels(name)),
+    extension ? `remoteModels_${name}` : null,
+    () =>
+      fetchExtensionData(
+        extension,
+        (ext) => ext.getRemoteModels(name) as Promise<RemoteModelList>
+      ),
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: true,
@@ -414,4 +430,70 @@ export const addRemoteEngineModel = async (name: string, engine: string) => {
     console.error('Failed to install engine variant:', error)
     throw error
   }
+}
+
+/**
+ * Remote model sources
+ * @returns A Promise that resolves to an object of model sources.
+ */
+export const useGetEngineModelSources = () => {
+  const { engines } = useGetEngines()
+  const downloadedModels = useAtomValue(downloadedModelsAtom)
+
+  return {
+    sources: Object.entries(engines ?? {})
+      ?.filter((e) => e?.[1]?.[0]?.type === 'remote')
+      .map(
+        ([key, values]) =>
+          ({
+            id: key,
+            models: (
+              downloadedModels.filter((e) => e.engine === values[0]?.engine) ??
+              []
+            ).map(
+              (e) =>
+                ({
+                  id: e.id,
+                  size: e.metadata?.size,
+                }) as unknown as ModelSibling
+            ),
+            metadata: {
+              id: getTitleByEngine(key as InferenceEngine),
+              description: getDescriptionByEngine(key as InferenceEngine),
+              apiKey: values[0]?.api_key,
+            },
+            type: 'cloud',
+          }) as unknown as ModelSource
+      ),
+  }
+}
+
+/**
+ * Refresh model list
+ * @param engine
+ * @returns
+ */
+export const useRefreshModelList = (engine: string) => {
+  const [refreshingModels, setRefreshingModels] = useState(false)
+  const { mutate: fetchRemoteModels } = useGetRemoteModels(engine)
+
+  const refreshModels = useCallback(
+    (engine: string) => {
+      setRefreshingModels(true)
+      fetchRemoteModels()
+        .then((remoteModelList) =>
+          Promise.all(
+            remoteModelList?.data?.map((model: { id?: string }) =>
+              model?.id
+                ? addRemoteEngineModel(model.id, engine).catch(() => {})
+                : {}
+            ) ?? []
+          )
+        )
+        .finally(() => setRefreshingModels(false))
+    },
+    [fetchRemoteModels]
+  )
+
+  return { refreshingModels, refreshModels }
 }

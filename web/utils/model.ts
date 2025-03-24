@@ -7,8 +7,3 @@
 export const normalizeModelId = (downloadUrl: string): string => {
   return downloadUrl.split('/').pop() ?? downloadUrl
 }
-
-export const manualRecommendationModel = [
-  'llama3.2-1b-instruct',
-  'llama3.2-3b-instruct',
-]

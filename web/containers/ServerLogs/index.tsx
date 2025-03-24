@@ -14,6 +14,7 @@ import { useLogs } from '@/hooks/useLogs'
 import { usePath } from '@/hooks/usePath'
 
 import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 type ServerLogsProps = { limit?: number; withCopy?: boolean }
 
@@ -25,6 +26,7 @@ const ServerLogs = (props: ServerLogsProps) => {
   const listRef = useRef<HTMLDivElement>(null)
   const prevScrollTop = useRef(0)
   const isUserManuallyScrollingUp = useRef(false)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const updateLogs = useCallback(
     () =>
@@ -136,6 +138,7 @@ const ServerLogs = (props: ServerLogsProps) => {
         )}
       </div>
       <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
         ref={listRef}
         className={twMerge(
           'h-[calc(100%-49px)] w-full p-4 py-0',

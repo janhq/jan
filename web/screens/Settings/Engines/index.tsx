@@ -3,6 +3,8 @@ import React from 'react'
 import { InferenceEngine } from '@janhq/core'
 import { ScrollArea } from '@janhq/joi'
 
+import { useAtomValue } from 'jotai'
+
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import { isLocalEngine } from '@/utils/modelEngine'
@@ -11,11 +13,17 @@ import LocalEngineItems from './LocalEngineItem'
 import ModalAddRemoteEngine from './ModalAddRemoteEngine'
 import RemoteEngineItems from './RemoteEngineItem'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+
 const Engines = () => {
   const { engines } = useGetEngines()
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       <div className="block w-full px-4">
         <div className="mb-3 mt-4 pb-4">
           <h6 className="text-xs text-[hsla(var(--text-secondary))]">

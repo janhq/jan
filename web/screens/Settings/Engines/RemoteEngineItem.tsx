@@ -6,7 +6,7 @@ import { Button, Switch } from '@janhq/joi'
 import { useAtom, useSetAtom } from 'jotai'
 import { SettingsIcon } from 'lucide-react'
 
-import { getTitleByEngine } from '@/utils/modelEngine'
+import { getDescriptionByEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { getLogoEngine } from '@/utils/modelEngine'
 
@@ -52,10 +52,7 @@ const RemoteEngineItems = ({
               </h6>
             </div>
             <div className="mt-2 w-full font-medium leading-relaxed text-[hsla(var(--text-secondary))]">
-              <p>
-                Access models from {getTitleByEngine(engine as InferenceEngine)}{' '}
-                via their API.
-              </p>
+              <p>{getDescriptionByEngine(engine as InferenceEngine)}</p>
             </div>
           </div>
 

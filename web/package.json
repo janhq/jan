@@ -1,6 +1,6 @@
 {
   "name": "@janhq/web",
-  "version": "0.5.13",
+  "version": "0.5.15",
   "private": true,
   "homepage": "./",
   "scripts": {
@@ -49,6 +49,8 @@
     "rehype-highlight": "^7.0.1",
     "rehype-highlight-code-lines": "^1.0.4",
     "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.0",
     "remark-math": "^6.0.0",
     "sass": "^1.69.4",
     "slate": "latest",

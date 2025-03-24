@@ -1,0 +1,86 @@
+---
+title: DeepSeek
+description: Learn how to integrate DeepSeek with Jan for enhanced functionality.
+keywords:
+  [
+    Anthropic API,
+    Jan,
+    Jan AI,
+    ChatGPT alternative,
+    conversational AI,
+    large language model,
+    integration,
+    Anthropic integration,
+    API integration
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings, Plus } from 'lucide-react'
+
+# DeepSeek
+
+Jan supports [DeepSeek](https://www.deepseek.com/) API integration, allowing you to use DeepSeek models through Jan's interface.
+
+## Integrate DeepSeek API with Jan
+
+<Steps>
+### Step 1: Get Your API Key 
+1. Visit [DeepSeek Console](https://platform.deepseek.com/) and sign in 
+2. Create & copy a new API key or copy your existing one
+
+<Callout type='info'>
+Ensure your API key has sufficient credits
+</Callout>
+
+### Step 2: Configure Jan
+There are two ways to add your DeepSeek API keys in Jan:
+
+**Through Threads:**
+1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
+2. Once the selector is poped up, choose the **Cloud** tab
+3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **DeepSeek**
+4. Once you are directed to DeepSeek settings, insert your **API Key**  
+
+**Through Settings:**
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Remote Engines**, select **DeepSeek**
+3. Insert your **API Key**  
+
+<br/>
+![DeepSeek](../_assets/deepseek.png)
+<br/>
+
+### Step 3: Start Using DeepSeek's Models
+
+1. In any existing **Threads** or create a new one
+2. Select an DeepSeek model from **model selector**
+3. Start chatting
+</Steps>
+
+## Available DeepSeek Models
+
+Jan automatically includes DeepSeek's available models. In case you want to use a specific DeepSeek model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
+  - See list of available models in [DeepSeek Models](https://api-docs.deepseek.com/quick_start/pricing).
+  - The `id` property must match the model name in the list. For example, `deepseek-chat` or `deepseek-reasoner`.
+
+## Troubleshooting
+
+Common issues and solutions:
+
+**1. API Key Issues**
+- Verify your API key is correct and not expired
+- Check if you have billing set up on your DeepSeek account
+- Ensure you have access to the model you're trying to use
+
+**2. Connection Problems**
+- Check your internet connection
+- Verify [DeepSeek's system status](https://status.deepseek.com/)
+- Look for error messages in [Jan's logs](/docs/troubleshooting#how-to-get-error-logs)
+
+**3. Model Unavailable**
+- Confirm your API key has access to the model
+- Check if you're using the correct model ID
+- Verify your DeepSeek account has the necessary permissions
+
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH).

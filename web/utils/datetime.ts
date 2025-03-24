@@ -21,7 +21,6 @@ export const displayDate = (timestamp?: string | number | Date) => {
   })}, ${date.toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: true,
   })}`
 
@@ -29,7 +28,6 @@ export const displayDate = (timestamp?: string | number | Date) => {
     displayDate = date.toLocaleTimeString(undefined, {
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
       hour12: true,
     })
   }

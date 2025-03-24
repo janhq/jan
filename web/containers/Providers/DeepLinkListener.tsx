@@ -4,25 +4,25 @@ import { useSetAtom } from 'jotai'
 
 import { useDebouncedCallback } from 'use-debounce'
 
-import { useGetHFRepoData } from '@/hooks/useGetHFRepoData'
+import { MainViewState } from '@/constants/screens'
+
+import {
+  useGetModelSources,
+  useModelSourcesMutation,
+} from '@/hooks/useModelSource'
 
 import { loadingModalInfoAtom } from '../LoadingModal'
 import { toaster } from '../Toast'
 
-import {
-  importHuggingFaceModelStageAtom,
-  importingHuggingFaceRepoDataAtom,
-} from '@/helpers/atoms/HuggingFace.atom'
+import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
+import { modelDetailAtom } from '@/helpers/atoms/Model.atom'
 
 const DeepLinkListener: React.FC = () => {
-  const { getHfRepoData } = useGetHFRepoData()
+  const { addModelSource } = useModelSourcesMutation()
   const setLoadingInfo = useSetAtom(loadingModalInfoAtom)
-  const setImportingHuggingFaceRepoData = useSetAtom(
-    importingHuggingFaceRepoDataAtom
-  )
-  const setImportHuggingFaceModelStage = useSetAtom(
-    importHuggingFaceModelStageAtom
-  )
+  const setMainView = useSetAtom(mainViewStateAtom)
+  const setModelDetail = useSetAtom(modelDetailAtom)
+  const { mutate } = useGetModelSources()
 
   const handleDeepLinkAction = useDebouncedCallback(
     async (deepLinkAction: DeepLinkAction) => {
@@ -38,17 +38,17 @@ const DeepLinkListener: React.FC = () => {
 
       try {
         setLoadingInfo({
-          title: 'Getting Hugging Face models',
+          title: 'Getting Hugging Face model details',
           message: 'Please wait..',
         })
-        const data = await getHfRepoData(deepLinkAction.resource)
-        setImportingHuggingFaceRepoData(data)
-        setImportHuggingFaceModelStage('REPO_DETAIL')
+        await addModelSource(deepLinkAction.resource).then(() => mutate())
         setLoadingInfo(undefined)
+        setMainView(MainViewState.Hub)
+        setModelDetail(deepLinkAction.resource)
       } catch (err) {
         setLoadingInfo(undefined)
         toaster({
-          title: 'Failed to get Hugging Face models',
+          title: 'Failed to get Hugging Face model details',
           description: err instanceof Error ? err.message : 'Unexpected Error',
           type: 'error',
         })

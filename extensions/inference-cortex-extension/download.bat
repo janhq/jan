@@ -2,14 +2,14 @@
 set BIN_PATH=./bin
 set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
-set ENGINE_VERSION=0.1.49
+set ENGINE_VERSION=0.1.55
 
 @REM Download cortex.llamacpp binaries
-set DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/v%ENGINE_VERSION%/cortex.llamacpp-%ENGINE_VERSION%-windows-amd64
-set CUDA_DOWNLOAD_URL=https://github.com/janhq/cortex.llamacpp/releases/download/v%ENGINE_VERSION%
+set DOWNLOAD_URL=https://github.com/menloresearch/cortex.llamacpp/releases/download/v%ENGINE_VERSION%/cortex.llamacpp-%ENGINE_VERSION%-windows-amd64
+set CUDA_DOWNLOAD_URL=https://github.com/menloresearch/cortex.llamacpp/releases/download/v%ENGINE_VERSION%
 set SUBFOLDERS=windows-amd64-noavx-cuda-12-0 windows-amd64-noavx-cuda-11-7 windows-amd64-avx2-cuda-12-0 windows-amd64-avx2-cuda-11-7 windows-amd64-noavx windows-amd64-avx windows-amd64-avx2 windows-amd64-avx512 windows-amd64-vulkan
 
-call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/janhq/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
+call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/menloresearch/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-12-0.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2-cuda-12-0/v%ENGINE_VERSION%
 call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-11-7.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2-cuda-11-7/v%ENGINE_VERSION%
 call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx-cuda-12-0.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-noavx-cuda-12-0/v%ENGINE_VERSION%

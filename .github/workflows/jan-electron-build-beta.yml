@@ -18,6 +18,8 @@ jobs:
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       beta: true
+      nightly: false
+      cortex_api_port: "39271"
 
   build-windows-x64:
     uses: ./.github/workflows/template-build-windows-x64.yml
@@ -28,6 +30,8 @@ jobs:
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       beta: true
+      nightly: false
+      cortex_api_port: "39271"
 
   build-linux-x64:
     uses: ./.github/workflows/template-build-linux-x64.yml
@@ -38,6 +42,8 @@ jobs:
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       beta: true
+      nightly: false
+      cortex_api_port: "39271"
 
   sync-temp-to-latest:
     needs: [build-macos, build-windows-x64, build-linux-x64]

@@ -1,5 +1,6 @@
 import { Model } from './modelEntity'
 import { OptionType } from './modelImport'
+import { ModelSource } from './modelSource'
 
 /**
  * Model extension for managing models.
@@ -50,4 +51,17 @@ export interface ModelInterface {
     name?: string,
     optionType?: OptionType
   ): Promise<void>
+
+  /**
+   * Get model sources
+   */
+  getSources(): Promise<ModelSource[]>
+  /**
+   * Add a model source
+   */
+  addSource(source: string): Promise<void>
+  /**
+   * Delete a model source
+   */
+  deleteSource(source: string): Promise<void>
 }

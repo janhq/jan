@@ -11,4 +11,11 @@ export const markdownComponents: Partial<Components> = {
       {children}
     </a>
   ),
+  table: ({ children }) => (
+    <div className="w-full overflow-x-auto">
+      <table className="w-full rounded-lg border border-[hsla(var(--app-border))]">
+        {children}
+      </table>
+    </div>
+  ),
 }

@@ -1,18 +1,16 @@
-import React, { ChangeEvent, useCallback, useState } from 'react'
+import React, { ChangeEvent, useCallback, useState, useRef } from 'react'
 
 import { Input } from '@janhq/joi'
-import { useSetAtom } from 'jotai'
 import { SearchIcon } from 'lucide-react'
+
 import { useDebouncedCallback } from 'use-debounce'
 
-import { toaster } from '@/containers/Toast'
-
-import { useGetHFRepoData } from '@/hooks/useGetHFRepoData'
-
 import {
-  importHuggingFaceModelStageAtom,
-  importingHuggingFaceRepoDataAtom,
-} from '@/helpers/atoms/HuggingFace.atom'
+  useGetModelSources,
+  useModelSourcesMutation,
+} from '@/hooks/useModelSource'
+
+import Spinner from '../Loader/Spinner'
 
 type Props = {
   onSearchLocal?: (searchText: string) => void
@@ -20,37 +18,28 @@ type Props = {
 
 const ModelSearch = ({ onSearchLocal }: Props) => {
   const [searchText, setSearchText] = useState('')
-  const { getHfRepoData } = useGetHFRepoData()
-
-  const setImportingHuggingFaceRepoData = useSetAtom(
-    importingHuggingFaceRepoDataAtom
-  )
-  const setImportHuggingFaceModelStage = useSetAtom(
-    importHuggingFaceModelStageAtom
-  )
-
+  const [isSearching, setSearching] = useState(false)
+  const { mutate } = useGetModelSources()
+  const { addModelSource } = useModelSourcesMutation()
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const debounced = useDebouncedCallback(async () => {
     if (searchText.indexOf('/') === -1) {
       // If we don't find / in the text, perform a local search
       onSearchLocal?.(searchText)
       return
     }
+    // Attempt to search local
+    onSearchLocal?.(searchText)
 
-    try {
-      const data = await getHfRepoData(searchText)
-      setImportingHuggingFaceRepoData(data)
-      setImportHuggingFaceModelStage('REPO_DETAIL')
-    } catch (err) {
-      let errMessage = 'Unexpected Error'
-      if (err instanceof Error) {
-        errMessage = err.message
-      }
-      toaster({
-        title: errMessage,
-        type: 'error',
+    setSearching(true)
+    // Attempt to search model source
+    addModelSource(searchText)
+      .then(() => mutate())
+      .then(() => onSearchLocal?.(searchText))
+      .catch((e) => {
+        console.debug(e)
       })
-      console.error(err)
-    }
+      .finally(() => setSearching(false))
   }, 300)
 
   const onSearchChanged = useCallback(
@@ -80,13 +69,24 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
 
   return (
     <Input
-      prefixIcon={<SearchIcon size={16} />}
-      placeholder="Search or paste Hugging Face URL"
+      ref={inputRef}
+      prefixIcon={
+        isSearching ? (
+          <Spinner size={16} strokeWidth={2} />
+        ) : (
+          <SearchIcon size={16} />
+        )
+      }
+      placeholder="Search or enter Hugging Face URL"
       onChange={onSearchChanged}
       onKeyDown={onKeyDown}
       value={searchText}
       clearable={searchText.length > 0}
       onClear={onClear}
+      className="border-0 bg-[hsla(var(--app-bg))]"
+      onClick={() => {
+        onSearchLocal?.(inputRef.current?.value ?? '')
+      }}
     />
   )
 }

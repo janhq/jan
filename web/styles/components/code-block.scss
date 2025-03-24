@@ -1,6 +1,6 @@
 .hljs-comment,
 .hljs-quote {
-  color: var(--hljs-comment);
+  color: var(--hljs-comment) !important;
 }
 
 /* Red */
@@ -12,7 +12,7 @@
 .hljs-selector-class,
 .hljs-regexp,
 .hljs-deletion {
-  color: var(--hljs-variable);
+  color: var(--hljs-variable) !important;
 }
 
 /* Orange */
@@ -24,12 +24,13 @@
 .hljs-params,
 .hljs-meta,
 .hljs-link {
-  color: var(--hljs-number);
+  color: var(--hljs-number) !important;
 }
 
 /* Yellow */
-.hljs-attribute {
-  color: var(--hljs-attribute);
+.hljs-attribute,
+.hljs-attr {
+  color: var(--hljs-attribute) !important;
 }
 
 /* Green */
@@ -37,19 +38,19 @@
 .hljs-symbol,
 .hljs-bullet,
 .hljs-addition {
-  color: var(--hljs-string);
+  color: var(--hljs-string) !important;
 }
 
 /* Blue */
 .hljs-title,
 .hljs-section {
-  color: var(--hljs-title);
+  color: var(--hljs-title) !important;
 }
 
 /* Purple */
 .hljs-keyword,
 .hljs-selector-tag {
-  color: var(--hljs-keyword);
+  color: var(--hljs-keyword) !important;
 }
 
 .hljs {
@@ -62,9 +63,7 @@
 }
 
 pre {
-  background: hsla(var(--app-code-block));
   overflow: auto;
-
   border-radius: 0.4rem;
 }
 pre > code {
@@ -87,6 +86,7 @@ pre > code {
 .code-block {
   pre {
     padding: 0;
+    background: hsla(var(--app-code-block)) !important;
     border-top-left-radius: 0;
     border-top-right-radius: 0;
   }
@@ -127,6 +127,7 @@ pre > code {
   margin-left: -12px;
   margin-right: -12px;
   border-left: 4px solid transparent;
+  color: hsla(var(--text-secondary));
 }
 
 div.code-line:empty {
@@ -155,17 +156,16 @@ span.code-line {
 
 .numbered-code-line::before {
   content: attr(data-line-number);
-  margin-left: -4px;
   margin-right: 16px;
-  width: 1.2rem;
+  width: 1.8rem;
   font-size: 12px;
-  color: rgba($color: #fff, $alpha: 0.4);
+  /* color: rgba($color: #fff, $alpha: 0.4); */
   text-align: right;
   display: inline-block;
 }
 
 .code-header {
-  &--border {
-    border-bottom: 1px solid rgba($color: #fff, $alpha: 0.1);
+  button {
+    background-color: transparent !important;
   }
 }

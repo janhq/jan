@@ -6,22 +6,24 @@ import { useState } from 'react'
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 
 import { Progress, ScrollArea, Switch } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
 import { ChevronDownIcon, GripVerticalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import { activeModelAtom } from '@/hooks/useActiveModel'
 import {
   useGetHardwareInfo,
   setActiveGpus,
 } from '@/hooks/useHardwareManagement'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { utilizedMemory } from '@/utils/memory'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import {
   cpuUsageAtom,
   ramUtilitizedAtom,
@@ -44,8 +46,9 @@ const Hardware = () => {
   const totalRam = useAtomValue(totalRamAtom)
   const usedRam = useAtomValue(usedRamAtom)
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
-
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [gpus, setGpus] = useAtom(gpusAtom)
+  const setActiveModel = useSetAtom(activeModelAtom)
 
   const [orderGpus, setOrderGpus] = useAtom(orderGpusAtom)
 
@@ -69,11 +72,15 @@ const Hardware = () => {
         .filter((gpu: any) => gpu.activated)
         .map((gpu: any) => Number(gpu.id))
       await setActiveGpus({ gpus: activeGpuIds })
+      setActiveModel(undefined)
       mutate()
-      window.location.reload()
     } catch (error) {
       console.error('Failed to update active GPUs:', error)
     }
+    setIsActivatingGpu((prev) => {
+      prev.delete(id)
+      return new Set(prev)
+    })
   }
 
   const handleDragEnd = (result: any) => {
@@ -133,7 +140,10 @@ const Hardware = () => {
   }, [hardware?.gpus, setGpus])
 
   return (
-    <ScrollArea className="h-full w-full px-4">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full px-4"
+    >
       <div className="block w-full py-4">
         {/* CPU */}
         <div className="flex w-full flex-col items-start justify-between gap-4 border-b border-[hsla(var(--app-border))] py-4 first:pt-0 last:border-none sm:flex-row">
@@ -169,8 +179,8 @@ const Hardware = () => {
             <div className="flex flex-col items-end gap-2">
               <div className="flex w-full justify-end gap-2 text-xs text-[hsla(var(--text-secondary))]">
                 <span>
-                  {toGibibytes(usedRam, { hideUnit: true })}GB /{' '}
-                  {toGibibytes(totalRam, { hideUnit: true })}GB
+                  {toGigabytes(usedRam, { hideUnit: true })}GB /{' '}
+                  {toGigabytes(totalRam, { hideUnit: true })}GB
                 </span>
                 {hardware?.ram.type && (
                   <>

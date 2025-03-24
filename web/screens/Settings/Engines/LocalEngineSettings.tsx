@@ -9,7 +9,7 @@ import {
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
 
-import { useAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -29,7 +29,11 @@ import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
 
-import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
+import {
+  LocalEngineDefaultVariantAtom,
+  RecommendEngineVariantAtom,
+} from '@/helpers/atoms/App.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -53,18 +57,28 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     defaultEngineVariant?.version as string,
     os()
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [installingEngines, setInstallingEngines] = useState<
     Map<string, number>
   >(new Map())
   const { stopModel } = useActiveModel()
 
-  const isEngineUpdated =
-    latestReleasedEngine &&
-    latestReleasedEngine.some((item) =>
-      item.name.includes(
-        defaultEngineVariant?.version.replace(/^v/, '') as string
-      )
+  const [recommendEngineVariant, setRecommendEngineVariant] = useAtom(
+    RecommendEngineVariantAtom
+  )
+
+  const isEngineUpdated = useMemo(() => {
+    if (!latestReleasedEngine || !defaultEngineVariant) return false
+    const latestVariant = latestReleasedEngine.find((item) =>
+      item.name.includes(defaultEngineVariant.variant)
     )
+    if (!latestVariant) return false
+    const latestVersion = latestVariant.name
+      .replace(defaultEngineVariant.variant, '')
+      .replaceAll('-', '')
+    const currentVersion = defaultEngineVariant.version.replace(/^v/, '')
+    return latestVersion <= currentVersion
+  }, [latestReleasedEngine, defaultEngineVariant])
 
   const availableVariants = useMemo(
     () =>
@@ -83,6 +97,7 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       .map((x: any) => ({
         name: x.name,
         value: x.name,
+        recommend: recommendEngineVariant === x.name,
       }))
 
   const installedEngineByVersion = installedEngines?.filter(
@@ -105,7 +120,10 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     if (defaultEngineVariant?.variant) {
       setSelectedVariants(defaultEngineVariant.variant || '')
     }
-  }, [defaultEngineVariant, setSelectedVariants])
+    if (!recommendEngineVariant.length) {
+      setRecommendEngineVariant(defaultEngineVariant?.variant || '')
+    }
+  }, [defaultEngineVariant, setSelectedVariants, setRecommendEngineVariant])
 
   const handleEngineUpdate = useCallback(
     async (event: { id: string; type: DownloadEvent; percent: number }) => {
@@ -169,7 +187,10 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   }
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       <div className="block w-full px-4">
         <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
           <div className="flex w-full flex-col items-start justify-between sm:flex-row">

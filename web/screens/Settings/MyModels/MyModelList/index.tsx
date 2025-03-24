@@ -16,7 +16,7 @@ import useDeleteModel from '@/hooks/useDeleteModel'
 
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
-import { toGibibytes } from '@/utils/converter'
+import { toGigabytes } from '@/utils/converter'
 
 import { isLocalEngine } from '@/utils/modelEngine'
 
@@ -53,7 +53,7 @@ const MyModelList = ({ model }: Props) => {
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-x-8 lg:w-1/2">
-          <div className="flex h-full w-full flex-col items-start justify-between gap-2 lg:flex-row lg:items-center">
+          <div className="flex h-full w-full flex-col items-start justify-between gap-2 lg:flex-row lg:items-center lg:justify-start">
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
@@ -80,7 +80,7 @@ const MyModelList = ({ model }: Props) => {
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">
-                {model.metadata?.size ? toGibibytes(model.metadata?.size) : '-'}
+                {model.metadata?.size ? toGigabytes(model.metadata?.size) : '-'}
               </Badge>
             </div>
 
@@ -135,9 +135,11 @@ const MyModelList = ({ model }: Props) => {
                         <div
                           className={twMerge(
                             'flex items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                            serverEnabled && 'cursor-not-allowed opacity-40'
+                            (serverEnabled || stateModel.loading) &&
+                              'cursor-not-allowed opacity-40'
                           )}
                           onClick={() => {
+                            if (serverEnabled || stateModel.loading) return
                             onModelActionClick(model.id)
                             setMore(false)
                           }}
@@ -159,7 +161,7 @@ const MyModelList = ({ model }: Props) => {
                           </span>
                         </div>
                       }
-                      disabled={!serverEnabled}
+                      disabled={!serverEnabled || stateModel.loading}
                       content={
                         <span>
                           {activeModel && activeModel.id === model.id

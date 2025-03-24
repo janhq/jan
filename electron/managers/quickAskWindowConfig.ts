@@ -13,10 +13,10 @@ export const quickAskWindowConfig: Electron.BrowserWindowConstructorOptions = {
   fullscreenable: false,
   resizable: false,
   center: true,
-  movable: false,
+  movable: true,
   maximizable: false,
   focusable: true,
-  transparent: true,
+  transparent: false,
   frame: false,
   type: 'panel',
 }

@@ -15,6 +15,7 @@ import {
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {
+  CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   DownloadCloudIcon,
@@ -35,14 +36,16 @@ import useDownloadModel from '@/hooks/useDownloadModel'
 import { modelDownloadStateAtom } from '@/hooks/useDownloadState'
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
+import { useGetFeaturedSources } from '@/hooks/useModelSource'
 import useRecommendedModel from '@/hooks/useRecommendedModel'
 
 import useUpdateModelParameters from '@/hooks/useUpdateModelParameters'
 
-import { formatDownloadPercentage, toGibibytes } from '@/utils/converter'
+import { formatDownloadPercentage, toGigabytes } from '@/utils/converter'
 
-import { manualRecommendationModel } from '@/utils/model'
 import { getLogoEngine, getTitleByEngine } from '@/utils/modelEngine'
+
+import { extractModelName } from '@/utils/modelSource'
 
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
@@ -52,6 +55,7 @@ import {
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
 
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeThreadAtom,
   setThreadModelParamsAtom,
@@ -74,6 +78,7 @@ const ModelDropdown = ({
   const [modelDropdownState, setModelDropdownState] = useAtom(
     modelDropdownStateAtom
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const [searchFilter, setSearchFilter] = useState('local')
   const [searchText, setSearchText] = useState('')
@@ -87,6 +92,7 @@ const ModelDropdown = ({
   const [dropdownOptions, setDropdownOptions] = useState<HTMLDivElement | null>(
     null
   )
+  const { sources: featuredModels } = useGetFeaturedSources()
 
   const { engines } = useGetEngines()
 
@@ -97,12 +103,6 @@ const ModelDropdown = ({
   const configuredModels = useAtomValue(configuredModelsAtom)
   const { stopModel } = useActiveModel()
 
-  const featuredModels = configuredModels.filter(
-    (x) =>
-      manualRecommendationModel.includes(x.id) &&
-      x.metadata?.tags?.includes('Featured') &&
-      x.metadata?.size < 5000000000
-  )
   const { updateThreadMetadata } = useCreateNewThread()
 
   const engineList = useMemo(
@@ -384,7 +384,10 @@ const ModelDropdown = ({
               }
             />
           </div>
-          <ScrollArea className="h-[calc(100%-90px)] w-full">
+          <ScrollArea
+            type={showScrollBar ? 'always' : 'scroll'}
+            className="h-[calc(100%-90px)] w-full"
+          >
             {engineList
               .filter((e) => e.type === searchFilter)
               .filter(
@@ -464,9 +467,9 @@ const ModelDropdown = ({
                         showModel &&
                         !searchText.length && (
                           <ul className="pb-2">
-                            {featuredModels.map((model) => {
+                            {featuredModels?.map((model) => {
                               const isDownloading = downloadingModels.some(
-                                (md) => md === model.id
+                                (md) => md === (model.models[0]?.id ?? model.id)
                               )
                               return (
                                 <li
@@ -475,34 +478,35 @@ const ModelDropdown = ({
                                 >
                                   <div className="flex items-center gap-2">
                                     <p
-                                      className="max-w-[200px] overflow-hidden truncate whitespace-nowrap text-[hsla(var(--text-secondary))]"
-                                      title={model.name}
+                                      className="max-w-[200px] overflow-hidden truncate whitespace-nowrap capitalize text-[hsla(var(--text-secondary))]"
+                                      title={model.id}
                                     >
-                                      {model.name}
+                                      {extractModelName(model.id)}
                                     </p>
                                     <ModelLabel
-                                      metadata={model.metadata}
+                                      size={model.models[0]?.size}
                                       compact
                                     />
                                   </div>
                                   <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
                                     <span className="font-medium">
-                                      {toGibibytes(model.metadata?.size)}
+                                      {toGigabytes(model.models[0]?.size)}
                                     </span>
                                     {!isDownloading ? (
                                       <DownloadCloudIcon
                                         size={18}
                                         className="cursor-pointer text-[hsla(var(--app-link))]"
                                         onClick={() =>
-                                          downloadModel(
-                                            model.sources[0].url,
-                                            model.id
-                                          )
+                                          downloadModel(model.models[0]?.id)
                                         }
                                       />
                                     ) : (
                                       Object.values(downloadStates)
-                                        .filter((x) => x.modelId === model.id)
+                                        .filter(
+                                          (x) =>
+                                            x.modelId ===
+                                            (model.models[0]?.id ?? model.id)
+                                        )
                                         .map((item) => (
                                           <ProgressCircle
                                             key={item.modelId}
@@ -582,14 +586,20 @@ const ModelDropdown = ({
                                         {model.name}
                                       </p>
                                       <ModelLabel
-                                        metadata={model.metadata}
+                                        size={model.metadata?.size}
                                         compact
                                       />
                                     </div>
                                     <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                      {selectedModel?.id === model.id && (
+                                        <CheckIcon
+                                          size={14}
+                                          className="text-[hsla(var(--text-secondary))]"
+                                        />
+                                      )}
                                       {!isDownloaded && (
                                         <span className="font-medium">
-                                          {toGibibytes(model.metadata?.size)}
+                                          {toGigabytes(model.metadata?.size)}
                                         </span>
                                       )}
                                       {!isDownloading && !isDownloaded ? (
