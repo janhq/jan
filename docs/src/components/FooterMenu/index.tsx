@@ -251,14 +251,14 @@ export default function Footer() {
               )
             })}
           </div>
-          <span>&copy;{getCurrentYear}&nbsp;Homebrew Computer Company</span>
+          <span>&copy;{getCurrentYear}&nbsp;Menlo Research</span>
           <ThemeImage
             source={{
-              light: '/assets/images/general/homebrew-dark.svg',
-              dark: '/assets/images/general/homebrew-white.svg',
+              light: '/assets/images/general/menlo.svg',
+              dark: '/assets/images/general/menlo.svg',
             }}
             alt="App screenshots"
-            width={140}
+            width={80}
             height={200}
           />
         </div>
