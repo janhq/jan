@@ -9,6 +9,7 @@ import {
 } from '@janhq/core'
 import { Button, ScrollArea, Badge, Select, Progress } from '@janhq/joi'
 
+import { useAtom, useAtomValue } from 'jotai'
 import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
@@ -27,6 +28,12 @@ import { formatDownloadPercentage } from '@/utils/converter'
 import ExtensionSetting from '../ExtensionSetting'
 
 import DeleteEngineVariant from './DeleteEngineVariant'
+
+import {
+  LocalEngineDefaultVariantAtom,
+  RecommendEngineVariantAtom,
+} from '@/helpers/atoms/App.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 const os = () => {
   switch (PLATFORM) {
     case 'win32':
@@ -50,18 +57,28 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     defaultEngineVariant?.version as string,
     os()
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [installingEngines, setInstallingEngines] = useState<
     Map<string, number>
   >(new Map())
   const { stopModel } = useActiveModel()
 
-  const isEngineUpdated =
-    latestReleasedEngine &&
-    latestReleasedEngine.every((item) =>
-      item.name.includes(
-        defaultEngineVariant?.version.replace(/^v/, '') as string
-      )
+  const [recommendEngineVariant, setRecommendEngineVariant] = useAtom(
+    RecommendEngineVariantAtom
+  )
+
+  const isEngineUpdated = useMemo(() => {
+    if (!latestReleasedEngine || !defaultEngineVariant) return false
+    const latestVariant = latestReleasedEngine.find((item) =>
+      item.name.includes(defaultEngineVariant.variant)
     )
+    if (!latestVariant) return false
+    const latestVersion = latestVariant.name
+      .replace(defaultEngineVariant.variant, '')
+      .replaceAll('-', '')
+    const currentVersion = defaultEngineVariant.version.replace(/^v/, '')
+    return latestVersion <= currentVersion
+  }, [latestReleasedEngine, defaultEngineVariant])
 
   const availableVariants = useMemo(
     () =>
@@ -80,14 +97,15 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
       .map((x: any) => ({
         name: x.name,
         value: x.name,
+        recommend: recommendEngineVariant === x.name,
       }))
 
   const installedEngineByVersion = installedEngines?.filter(
     (x: any) => x.version === defaultEngineVariant?.version
   )
 
-  const [selectedVariants, setSelectedVariants] = useState(
-    defaultEngineVariant?.variant
+  const [selectedVariants, setSelectedVariants] = useAtom(
+    LocalEngineDefaultVariantAtom
   )
 
   const selectedVariant = useMemo(
@@ -102,7 +120,10 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     if (defaultEngineVariant?.variant) {
       setSelectedVariants(defaultEngineVariant.variant || '')
     }
-  }, [defaultEngineVariant])
+    if (!recommendEngineVariant.length) {
+      setRecommendEngineVariant(defaultEngineVariant?.variant || '')
+    }
+  }, [defaultEngineVariant, setSelectedVariants, setRecommendEngineVariant])
 
   const handleEngineUpdate = useCallback(
     async (event: { id: string; type: DownloadEvent; percent: number }) => {
@@ -166,7 +187,10 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
   }
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       <div className="block w-full px-4">
         <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
           <div className="flex w-full flex-col items-start justify-between sm:flex-row">
@@ -262,92 +286,98 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
 
               <div>
                 {releasedEnginesByVersion &&
-                  releasedEnginesByVersion?.map((item, i) => {
-                    return (
-                      <div
-                        key={i}
-                        className={twMerge(
-                          'border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b',
-                          releasedEnginesByVersion?.length === 1 && 'rounded-lg'
-                        )}
-                      >
-                        <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex w-full gap-x-8">
-                            <div className="flex h-full w-full items-center justify-between gap-2">
-                              <h6
-                                className={twMerge(
-                                  'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                                  'max-w-none text-[hsla(var(--text-secondary))]'
-                                )}
-                              >
-                                {item.name}
-                              </h6>
+                  releasedEnginesByVersion
+                    ?.filter((item) => {
+                      return !item.name.startsWith('cuda-')
+                    })
+                    .map((item, i) => {
+                      return (
+                        <div
+                          key={i}
+                          className={twMerge(
+                            'border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b',
+                            releasedEnginesByVersion?.length === 1 &&
+                              'rounded-lg'
+                          )}
+                        >
+                          <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex w-full gap-x-8">
+                              <div className="flex h-full w-full items-center justify-between gap-2">
+                                <h6
+                                  className={twMerge(
+                                    'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
+                                    'max-w-none text-[hsla(var(--text-secondary))]'
+                                  )}
+                                >
+                                  {item.name}
+                                </h6>
 
-                              {installedEngineByVersion?.some(
-                                (x) => x.name === item.name
-                              ) ? (
-                                <DeleteEngineVariant
-                                  variant={item}
-                                  engine={engine}
-                                />
-                              ) : (
-                                <>
-                                  {installingEngines.has(item.name) ? (
-                                    <Button variant="soft">
-                                      <div className="flex items-center space-x-2">
-                                        <Progress
-                                          className="inline-block h-2 w-[80px]"
-                                          value={
-                                            formatDownloadPercentage(
+                                {installedEngineByVersion?.some(
+                                  (x) => x.name === item.name
+                                ) ? (
+                                  <DeleteEngineVariant
+                                    variant={item}
+                                    engine={engine}
+                                  />
+                                ) : (
+                                  <>
+                                    {installingEngines.has(item.name) ? (
+                                      <Button variant="soft">
+                                        <div className="flex items-center space-x-2">
+                                          <Progress
+                                            className="inline-block h-2 w-[80px]"
+                                            value={
+                                              formatDownloadPercentage(
+                                                installingEngines.get(
+                                                  item.name
+                                                ) ?? 0,
+                                                {
+                                                  hidePercentage: true,
+                                                }
+                                              ) as number
+                                            }
+                                          />
+                                          <span className="tabular-nums">
+                                            {formatDownloadPercentage(
                                               installingEngines.get(
                                                 item.name
-                                              ) ?? 0,
-                                              {
-                                                hidePercentage: true,
-                                              }
-                                            ) as number
-                                          }
-                                        />
-                                        <span className="tabular-nums">
-                                          {formatDownloadPercentage(
-                                            installingEngines.get(item.name) ??
-                                              0
-                                          )}
-                                        </span>
-                                      </div>
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      variant="soft"
-                                      onClick={() => {
-                                        setInstallingEngines((prev) => {
-                                          const updated = new Map(prev)
-                                          updated.set(item.name, 0)
-                                          return updated
-                                        })
-                                        installEngine(engine, {
-                                          variant: item.name,
-                                          version: String(
-                                            defaultEngineVariant?.version
-                                          ),
-                                        }).then(() => {
-                                          if (selectedVariants === '') {
-                                            setSelectedVariants(item.name)
-                                          }
-                                        })
-                                      }}
-                                    >
-                                      Download
-                                    </Button>
-                                  )}
-                                </>
-                              )}
+                                              ) ?? 0
+                                            )}
+                                          </span>
+                                        </div>
+                                      </Button>
+                                    ) : (
+                                      <Button
+                                        variant="soft"
+                                        onClick={() => {
+                                          setInstallingEngines((prev) => {
+                                            const updated = new Map(prev)
+                                            updated.set(item.name, 0)
+                                            return updated
+                                          })
+                                          installEngine(engine, {
+                                            variant: item.name,
+                                            version: String(
+                                              defaultEngineVariant?.version
+                                            ),
+                                          }).then(() => {
+                                            if (selectedVariants === '') {
+                                              setSelectedVariants(item.name)
+                                            }
+                                          })
+                                        }}
+                                      >
+                                        Download
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
               </div>
             </div>
           </div>

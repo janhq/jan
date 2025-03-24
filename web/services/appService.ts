@@ -1,29 +1,56 @@
 import {
   ExtensionTypeEnum,
-  MonitoringExtension,
+  HardwareManagementExtension,
+  SupportedPlatform,
   SystemInformation,
+  GpuSetting,
+  GpuSettingInfo,
 } from '@janhq/core'
+
+import { getDefaultStore } from 'jotai'
 
 import { toaster } from '@/containers/Toast'
 
 import { extensionManager } from '@/extension'
 
+import { LocalEngineDefaultVariantAtom } from '@/helpers/atoms/App.atom'
+
 export const appService = {
   systemInformation: async (): Promise<SystemInformation | undefined> => {
-    const monitorExtension = extensionManager?.get<MonitoringExtension>(
-      ExtensionTypeEnum.SystemMonitoring
+    const selectedVariants = getDefaultStore().get(
+      LocalEngineDefaultVariantAtom
     )
-    if (!monitorExtension) {
-      console.warn('System monitoring extension not found')
+
+    const hardwareExtension =
+      extensionManager?.get<HardwareManagementExtension>(
+        ExtensionTypeEnum.Hardware
+      )
+
+    if (!hardwareExtension) {
+      console.warn('Hardware extension not found')
       return undefined
     }
 
-    const gpuSetting = await monitorExtension.getGpuSetting()
-    const osInfo = await monitorExtension.getOsInfo()
+    const hardwareInfo = await hardwareExtension?.getHardware()
+
+    const gpuSettingInfo: GpuSetting | undefined = {
+      gpus: hardwareInfo.gpus.filter(
+        (gpu) => gpu.total_vram > 0
+      ) as GpuSettingInfo[],
+      vulkan: isMac ? false : selectedVariants.includes('vulkan'),
+      cpu: hardwareInfo.cpu,
+    }
+
+    const updateOsInfo = {
+      platform: PLATFORM as SupportedPlatform,
+      arch: hardwareInfo.cpu.arch,
+      freeMem: hardwareInfo.ram.available,
+      totalMem: hardwareInfo.ram.total,
+    }
 
     return {
-      gpuSetting,
-      osInfo,
+      gpuSetting: gpuSettingInfo,
+      osInfo: updateOsInfo,
     }
   },
 

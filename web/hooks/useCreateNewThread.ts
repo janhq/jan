@@ -82,24 +82,18 @@ export const useCreateNewThread = () => {
     }
 
     // Default context length is 8192
-    const defaultContextLength = Math.min(
-      8192,
-      defaultModel?.settings?.ctx_len ?? 8192
-    )
+    const contextLength = defaultModel?.settings?.ctx_len
+      ? Math.min(8192, defaultModel?.settings?.ctx_len)
+      : undefined
 
     const overriddenSettings = {
-      ctx_len: defaultModel?.settings?.ctx_len
-        ? Math.min(8192, defaultModel?.settings?.ctx_len)
-        : undefined,
+      ctx_len: contextLength,
     }
 
     // Use ctx length by default
     const overriddenParameters = {
-      max_tokens: defaultContextLength
-        ? Math.min(
-            defaultModel?.parameters?.max_tokens ?? 8192,
-            defaultContextLength
-          )
+      max_tokens: contextLength
+        ? Math.min(defaultModel?.parameters?.max_tokens ?? 8192, contextLength)
         : defaultModel?.parameters?.max_tokens,
     }
 

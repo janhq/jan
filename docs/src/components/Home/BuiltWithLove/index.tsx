@@ -23,7 +23,7 @@ const BuiltWithLove = () => {
         </div>
         <div className="flex flex-col lg:flex-row gap-8 mt-8 items-center justify-center">
           <a
-            href="https://github.com/janhq/jan"
+            href="https://github.com/menloresearch/jan"
             target="_blank"
             className="dark:bg-white bg-black inline-flex w-56 px-4 py-3 rounded-xl cursor-pointer justify-center items-start space-x-4 "
           >

@@ -1,79 +1,6 @@
 [
   {
-    "id": "cortexso/deepseek-r1-distill-llama-70b",
-    "metadata": {
-      "_id": "678fe1673b0a6384a4e1f887",
-      "author": "cortexso",
-      "cardData": {
-        "license": "mit"
-      },
-      "createdAt": "2025-01-21T18:03:19.000Z",
-      "description": "---\nlicense: mit\n---\n\n## Overview\n\n**DeepSeek** developed and released the [DeepSeek R1 Distill Llama 70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B) model, a distilled version of the Llama 70B language model. This model represents the pinnacle of the DeepSeek R1 Distill series, designed for exceptional performance in text generation, dialogue tasks, and advanced reasoning, offering unparalleled capabilities for large-scale AI applications.\n\nThe model is ideal for enterprise-grade applications, research, conversational AI, and large-scale knowledge systems, providing top-tier accuracy, safety, and efficiency.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [gguf](https://huggingface.co/cortexso/deepseek-r1-distill-llama-70b/tree/main) | `cortex run deepseek-r1-distill-llama-70b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```text\n    cortexso/deepseek-r1-distill-llama-70b\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run deepseek-r1-distill-llama-70b\n    ```\n\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B#7-license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)\n",
-      "disabled": false,
-      "downloads": 6,
-      "gated": false,
-      "id": "cortexso/deepseek-r1-distill-llama-70b",
-      "inference": "library-not-detected",
-      "lastModified": "2025-01-23T08:58:56.000Z",
-      "likes": 0,
-      "model-index": null,
-      "modelId": "cortexso/deepseek-r1-distill-llama-70b",
-      "private": false,
-      "sha": "59faddbe48125c56544917c3faff6c9f688167ee",
-      "siblings": [
-        {
-          "rfilename": ".gitattributes"
-        },
-        {
-          "rfilename": "README.md"
-        },
-        {
-          "rfilename": "metadata.yml"
-        },
-        {
-          "rfilename": "model.yml"
-        }
-      ],
-      "spaces": [],
-      "tags": ["license:mit", "region:us"],
-      "usedStorage": 310170138880
-    },
-    "models": [
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q2-k",
-        "size": 26375110432
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q3-ks",
-        "size": 30912053024
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q4-km",
-        "size": 42520395552
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q5-ks",
-        "size": 48657448736
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q3-km",
-        "size": 34267496224
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q5-km",
-        "size": 49949818656
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q3-kl",
-        "size": 37140594464
-      },
-      {
-        "id": "deepseek-r1-distill-llama-70b:70b-gguf-q4-ks",
-        "size": 40347221792
-      }
-    ]
-  },
-  {
+    "author": "CohereForAI",
     "id": "cortexso/command-r",
     "metadata": {
       "_id": "66751b98585f2bf57092b2ae",
@@ -82,12 +9,11 @@
         "license": "cc-by-nc-4.0"
       },
       "createdAt": "2024-06-21T06:20:08.000Z",
-      "description": "---\nlicense: cc-by-nc-4.0\n---\n\n## Overview\n\nC4AI Command-R is a research release of a 35 billion parameter highly performant generative model. Command-R is a large language model with open weights optimized for a variety of use cases including reasoning, summarization, and question answering. Command-R has the capability for multilingual generation evaluated in 10 languages and highly performant RAG capabilities.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [35b-gguf](https://huggingface.co/cortexhub/command-r/tree/35b-gguf) | `cortex run command-r:35b-gguf` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexhub/command-r\n    ```\n    \n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run command-r\n    ```\n    \n## Credits\n\n- **Author:** Cohere For AI: [cohere.for.ai](https://cohere.for.ai/)\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [Licence](https://cohere.com/c4ai-cc-by-nc-license)",
+      "description": "---\nlicense: cc-by-nc-4.0\npipeline_tag: text-generation\ntags:\n- cortex.cpp\n---\n\n## Overview\n\nC4AI Command-R is a research release of a 35 billion parameter highly performant generative model. Command-R is a large language model with open weights optimized for a variety of use cases including reasoning, summarization, and question answering. Command-R has the capability for multilingual generation evaluated in 10 languages and highly performant RAG capabilities.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [Command-r-32b](https://huggingface.co/cortexhub/command-r/tree/32b) | `cortex run command-r:32b` |\n| 1 | [Command-r-35b](https://huggingface.co/cortexhub/command-r/tree/35b) | `cortex run command-r:35b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```bash\n    cortexhub/command-r\n    ```\n    \n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run command-r\n    ```\n    \n## Credits\n\n- **Author:** Cohere For AI\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [Licence](https://cohere.com/c4ai-cc-by-nc-license)",
       "disabled": false,
-      "downloads": 9,
+      "downloads": 14,
       "gated": false,
       "id": "cortexso/command-r",
-      "inference": "library-not-detected",
       "lastModified": "2024-11-12T20:13:19.000Z",
       "likes": 1,
       "model-index": null,
@@ -114,220 +40,57 @@
     },
     "models": [
       {
-        "id": "command-r:gguf",
-        "size": 21527041888
-      },
-      {
-        "id": "command-r:32b-gguf-q2-k",
-        "size": 12810767424
-      },
-      {
-        "id": "command-r:32b-gguf-q3-ks",
-        "size": 14708689984
-      },
-      {
-        "id": "command-r:32b-gguf-q3-kl",
-        "size": 17563438144
-      },
-      {
-        "id": "command-r:32b-gguf-q6-k",
-        "size": 26505169984
-      },
-      {
-        "id": "command-r:32b-gguf-q4-ks",
-        "size": 18849516608
+        "id": "command-r:32b-gguf-q8-0",
+        "size": 34326891584
       },
       {
         "id": "command-r:35b-gguf",
         "size": 21527041888
       },
       {
-        "id": "command-r:32b-gguf-q4-km",
-        "size": 19800837184
+        "id": "command-r:32b-gguf-q6-k",
+        "size": 26505169984
       },
       {
         "id": "command-r:32b-gguf-q5-km",
         "size": 23051422784
       },
       {
-        "id": "command-r:32b-gguf-q3-km",
-        "size": 16231746624
-      },
-      {
-        "id": "command-r:32b-gguf-q8-0",
-        "size": 34326891584
+        "id": "command-r:32b-gguf-q4-km",
+        "size": 19800837184
       },
       {
         "id": "command-r:32b-gguf-q5-ks",
         "size": 22494366784
+      },
+      {
+        "id": "command-r:32b-gguf-q2-k",
+        "size": 12810767424
+      },
+      {
+        "id": "command-r:32b-gguf-q3-kl",
+        "size": 17563438144
+      },
+      {
+        "id": "command-r:gguf",
+        "size": 21527041888
+      },
+      {
+        "id": "command-r:32b-gguf-q3-ks",
+        "size": 14708689984
+      },
+      {
+        "id": "command-r:32b-gguf-q3-km",
+        "size": 16231746624
+      },
+      {
+        "id": "command-r:32b-gguf-q4-ks",
+        "size": 18849516608
       }
     ]
   },
   {
-    "id": "cortexso/deepseek-r1-distill-qwen-7b",
-    "metadata": {
-      "_id": "6790a5b2044aeb2bd5922877",
-      "author": "cortexso",
-      "cardData": {
-        "license": "mit"
-      },
-      "createdAt": "2025-01-22T08:00:50.000Z",
-      "description": "---\nlicense: mit\n---\n\n## Overview\n\n**DeepSeek** developed and released the [DeepSeek R1 Distill Qwen 7B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) model, a distilled version of the Qwen 7B language model. This version is fine-tuned for high-performance text generation and optimized for dialogue and information-seeking tasks, providing even greater capabilities with its larger size compared to the 7B variant.\n\nThe model is designed for applications in customer support, conversational AI, and research, focusing on delivering accurate, helpful, and safe outputs while maintaining efficiency.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [gguf](https://huggingface.co/cortexso/deepseek-r1-distill-qwen-7b/tree/main) | `cortex run deepseek-r1-distill-qwen-7b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```text\n    cortexso/deepseek-r1-distill-qwen-7b\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run deepseek-r1-distill-qwen-7b\n    ```\n\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B#7-license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)\n",
-      "disabled": false,
-      "downloads": 0,
-      "gated": false,
-      "id": "cortexso/deepseek-r1-distill-qwen-7b",
-      "inference": "library-not-detected",
-      "lastModified": "2025-01-23T08:43:37.000Z",
-      "likes": 0,
-      "model-index": null,
-      "modelId": "cortexso/deepseek-r1-distill-qwen-7b",
-      "private": false,
-      "sha": "bbe804804125f9ace206eecd2e3040d8034189a6",
-      "siblings": [
-        {
-          "rfilename": ".gitattributes"
-        },
-        {
-          "rfilename": "README.md"
-        },
-        {
-          "rfilename": "metadata.yml"
-        },
-        {
-          "rfilename": "model.yml"
-        }
-      ],
-      "spaces": [],
-      "tags": ["license:mit", "region:us"],
-      "usedStorage": 48658728896
-    },
-    "models": [
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q2-k",
-        "size": 3015939680
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q3-ks",
-        "size": 3492367968
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q4-ks",
-        "size": 4457768544
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q4-km",
-        "size": 4683073120
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q8-0",
-        "size": 8098524768
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q5-ks",
-        "size": 5315176032
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q3-kl",
-        "size": 4088458848
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q6-k",
-        "size": 6254198368
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q5-km",
-        "size": 5444830816
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-7b:7b-gguf-q3-km",
-        "size": 3808390752
-      }
-    ]
-  },
-  {
-    "id": "cortexso/deepseek-r1-distill-qwen-14b",
-    "metadata": {
-      "_id": "678fdf2be186002cc0ba006e",
-      "author": "cortexso",
-      "cardData": {
-        "license": "mit"
-      },
-      "createdAt": "2025-01-21T17:53:47.000Z",
-      "description": "---\nlicense: mit\n---\n\n## Overview\n\n**DeepSeek** developed and released the [DeepSeek R1 Distill Qwen 14B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B) model, a distilled version of the Qwen 14B language model. This variant represents the largest and most powerful model in the DeepSeek R1 Distill series, fine-tuned for high-performance text generation, dialogue optimization, and advanced reasoning tasks. \n\nThe model is designed for applications that require extensive understanding, such as conversational AI, research, large-scale knowledge systems, and customer service, providing superior performance in accuracy, efficiency, and safety.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [gguf](https://huggingface.co/cortexso/deepseek-r1-distill-qwen-14b/tree/main) | `cortex run deepseek-r1-distill-qwen-14b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```text\n    cortexso/deepseek-r1-distill-qwen-14b\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run deepseek-r1-distill-qwen-14b\n    ```\n\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B#7-license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)\n",
-      "disabled": false,
-      "downloads": 12,
-      "gated": false,
-      "id": "cortexso/deepseek-r1-distill-qwen-14b",
-      "inference": "library-not-detected",
-      "lastModified": "2025-01-23T08:48:43.000Z",
-      "likes": 0,
-      "model-index": null,
-      "modelId": "cortexso/deepseek-r1-distill-qwen-14b",
-      "private": false,
-      "sha": "6ff0420f0bf32454e6b28180989d6b14687e19e6",
-      "siblings": [
-        {
-          "rfilename": ".gitattributes"
-        },
-        {
-          "rfilename": "README.md"
-        },
-        {
-          "rfilename": "metadata.yml"
-        },
-        {
-          "rfilename": "model.yml"
-        }
-      ],
-      "spaces": [],
-      "tags": ["license:mit", "region:us"],
-      "usedStorage": 93857311040
-    },
-    "models": [
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q3-kl",
-        "size": 7924767776
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q2-k",
-        "size": 5770497056
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q4-ks",
-        "size": 8573430816
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q3-ks",
-        "size": 6659595296
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q4-km",
-        "size": 8988109856
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q6-k",
-        "size": 12124683296
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q5-ks",
-        "size": 10266553376
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q3-km",
-        "size": 7339203616
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q5-km",
-        "size": 10508872736
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-14b:14b-gguf-q8-0",
-        "size": 15701597216
-      }
-    ]
-  },
-  {
+    "author": "Google",
     "id": "cortexso/gemma2",
     "metadata": {
       "_id": "66b06c37491b555fefe0a0bf",
@@ -336,12 +99,11 @@
         "license": "gemma"
       },
       "createdAt": "2024-08-05T06:07:51.000Z",
-      "description": "---\nlicense: gemma\n---\n\n## Overview\n\nThe [Gemma](https://huggingface.co/google/gemma-2-2b-it), state-of-the-art open model trained with the Gemma datasets that includes both synthetic data and the filtered publicly available websites data with a focus on high-quality and reasoning dense properties. The model belongs to the Gemma family with the 4B, 7B version in two variants 8K and 128K which is the context length (in tokens) that it can support.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [2b-gguf](https://huggingface.co/cortexso/gemma2/tree/2b-gguf) | `cortex run gemma:2b-gguf` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexso/gemma2\n    ```\n    \n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run gemma2\n    ```\n    \n## Credits\n\n- **Author:** Go\u200cogle\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://ai.google.dev/gemma/terms)\n- **Papers:** [Gemma Technical Report](https://arxiv.org/abs/2403.08295)",
+      "description": "---\nlicense: gemma\npipeline_tag: text-generation\ntags:\n- cortex.cpp\n---\n\n## Overview\n\nThe [Gemma](https://huggingface.co/google/gemma-2-2b-it), state-of-the-art open model trained with the Gemma datasets that includes both synthetic data and the filtered publicly available websites data with a focus on high-quality and reasoning dense properties. The model belongs to the Gemma family with the 4B, 7B version in two variants 8K and 128K which is the context length (in tokens) that it can support.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [Gemma2-2b](https://huggingface.co/cortexso/gemma2/tree/2b) | `cortex run gemma2:2b` |\n| 2 | [Gemma2-9b](https://huggingface.co/cortexso/gemma2/tree/9b) | `cortex run gemma2:9b` |\n| 3 | [Gemma2-27b](https://huggingface.co/cortexso/gemma2/tree/27b) | `cortex run gemma2:27b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```bash\n    cortexso/gemma2\n    ```\n    \n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run gemma2\n    ```\n    \n## Credits\n\n- **Author:** Go\u200cogle\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://ai.google.dev/gemma/terms)\n- **Papers:** [Gemma Technical Report](https://arxiv.org/abs/2403.08295)",
       "disabled": false,
-      "downloads": 284,
+      "downloads": 190,
       "gated": false,
       "id": "cortexso/gemma2",
-      "inference": "library-not-detected",
       "lastModified": "2024-11-12T20:13:02.000Z",
       "likes": 0,
       "model-index": null,
@@ -368,32 +130,12 @@
     },
     "models": [
       {
-        "id": "gemma2:2b-gguf-q3-km",
-        "size": 1461667584
-      },
-      {
-        "id": "gemma2:2b-gguf-q4-km",
-        "size": 1708582656
-      },
-      {
         "id": "gemma2:2b-gguf-q6-k",
         "size": 2151393024
       },
       {
-        "id": "gemma2:2b-gguf-q3-ks",
-        "size": 1360660224
-      },
-      {
-        "id": "gemma2:2b-gguf-q8-0",
-        "size": 2784495360
-      },
-      {
-        "id": "gemma2:2b-gguf-q4-ks",
-        "size": 1638651648
-      },
-      {
-        "id": "gemma2:9b-gguf-q3-ks",
-        "size": 4337665120
+        "id": "gemma2:2b-gguf-q3-km",
+        "size": 1461667584
       },
       {
         "id": "gemma2:gguf",
@@ -404,48 +146,16 @@
         "size": 5761057888
       },
       {
+        "id": "gemma2:9b-gguf-q3-ks",
+        "size": 4337665120
+      },
+      {
+        "id": "gemma2:2b-gguf-q4-ks",
+        "size": 1638651648
+      },
+      {
         "id": "gemma2:9b-gguf-q5-ks",
         "size": 6483592288
-      },
-      {
-        "id": "gemma2:9b-gguf-q5-km",
-        "size": 6647366752
-      },
-      {
-        "id": "gemma2:2b-gguf-q5-km",
-        "size": 1923278592
-      },
-      {
-        "id": "gemma2:27b-gguf-q2-k",
-        "size": 10449575584
-      },
-      {
-        "id": "gemma2:onnx",
-        "size": 1708582496
-      },
-      {
-        "id": "gemma2:27b-gguf-q3-kl",
-        "size": 14519361184
-      },
-      {
-        "id": "gemma2:9b-gguf-q6-k",
-        "size": 7589069920
-      },
-      {
-        "id": "gemma2:27b-gguf-q3-ks",
-        "size": 12169060000
-      },
-      {
-        "id": "gemma2:27b-gguf-q3-km",
-        "size": 13424647840
-      },
-      {
-        "id": "gemma2:9b-gguf-q4-ks",
-        "size": 5478925408
-      },
-      {
-        "id": "gemma2:27b-gguf-q4-km",
-        "size": 16645381792
       },
       {
         "id": "gemma2:9b-gguf-q3-km",
@@ -460,32 +170,52 @@
         "size": 18884206240
       },
       {
-        "id": "gemma2:2b-gguf-q3-kl",
-        "size": 1550436096
-      },
-      {
         "id": "gemma2:9b-gguf-q2-k",
         "size": 3805398112
+      },
+      {
+        "id": "gemma2:27b-gguf-q3-km",
+        "size": 13424647840
       },
       {
         "id": "gemma2:2b-gguf",
         "size": 1708582496
       },
       {
-        "id": "gemma2:27b-gguf-q5-km",
-        "size": 19408117408
+        "id": "gemma2:onnx",
+        "size": 1708582496
+      },
+      {
+        "id": "gemma2:27b-gguf-q4-km",
+        "size": 16645381792
+      },
+      {
+        "id": "gemma2:9b-gguf-q5-km",
+        "size": 6647366752
+      },
+      {
+        "id": "gemma2:27b-gguf-q2-k",
+        "size": 10449575584
+      },
+      {
+        "id": "gemma2:9b-gguf-q4-ks",
+        "size": 5478925408
+      },
+      {
+        "id": "gemma2:27b-gguf-q3-ks",
+        "size": 12169060000
       },
       {
         "id": "gemma2:2b-gguf-q2-k",
         "size": 1229829888
       },
       {
-        "id": "gemma2:27b-gguf-q6-k",
-        "size": 22343524000
+        "id": "gemma2:2b-gguf-q4-km",
+        "size": 1708582656
       },
       {
-        "id": "gemma2:2b-gguf-q5-ks",
-        "size": 1882543872
+        "id": "gemma2:27b-gguf-q4-ks",
+        "size": 15739264672
       },
       {
         "id": "gemma2:9b-gguf-q8-0",
@@ -496,12 +226,45 @@
         "size": 28937387680
       },
       {
-        "id": "gemma2:27b-gguf-q4-ks",
-        "size": 15739264672
+        "id": "gemma2:9b-gguf-q6-k",
+        "size": 7589069920
+      },
+      {
+        "id": "gemma2:2b-gguf-q8-0",
+        "size": 2784495360
+      },
+      {
+        "id": "gemma2:27b-gguf-q5-km",
+        "size": 19408117408
+      },
+      {
+        "id": "gemma2:2b-gguf-q3-kl",
+        "size": 1550436096
+      },
+      {
+        "id": "gemma2:27b-gguf-q6-k",
+        "size": 22343524000
+      },
+      {
+        "id": "gemma2:2b-gguf-q3-ks",
+        "size": 1360660224
+      },
+      {
+        "id": "gemma2:27b-gguf-q3-kl",
+        "size": 14519361184
+      },
+      {
+        "id": "gemma2:2b-gguf-q5-ks",
+        "size": 1882543872
+      },
+      {
+        "id": "gemma2:2b-gguf-q5-km",
+        "size": 1923278592
       }
     ]
   },
   {
+    "author": "CohereForAI",
     "id": "cortexso/aya",
     "metadata": {
       "_id": "66790e21db26e8589ccd3816",
@@ -510,12 +273,11 @@
         "license": "apache-2.0"
       },
       "createdAt": "2024-06-24T06:11:45.000Z",
-      "description": "---\nlicense: apache-2.0\n---\n\n## Overview\n\nThe Aya model is a massively multilingual generative language model that follows instructions in 101 languages.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [12.9b-gguf](https://huggingface.co/cortexhub/aya/tree/12.9b-gguf) | `cortex run aya:12.9b-gguf` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexhub/aya\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run aya\n    ```\n\n## Credits\n\n- **Author:** [Cohere For AI](https://cohere.for.ai)\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)",
+      "description": "---\nlicense: cc-by-sa-4.0\npipeline_tag: text-generation\ntags:\n- cortex.cpp\n---\n\n## Overview\n\nAya Expanse is an open-weight research release of a model with highly advanced multilingual capabilities. It focuses on pairing a highly performant pre-trained Command family of models with the result of a year\u2019s dedicated research from Cohere For AI, including data arbitrage, multilingual preference training, safety tuning, and model merging. The result is a powerful multilingual large language model serving 23 languages.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [main](https://huggingface.co/cortexso/aya-expanse/tree/main) | `cortex run aya-expanse` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexso/aya-expanse\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run aya-expanse\n    ```\n\n## Credits\n\n- **Author:** CohereAI\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://cohere.com/c4ai-cc-by-nc-license)\n- **Papers:** [Aya Expanse Blog](https://cohere.com/blog/aya-expanse-connecting-our-world)",
       "disabled": false,
-      "downloads": 11,
+      "downloads": 25,
       "gated": false,
       "id": "cortexso/aya",
-      "inference": "library-not-detected",
       "lastModified": "2024-11-12T20:24:22.000Z",
       "likes": 0,
       "model-index": null,
@@ -552,26 +314,37 @@
     ]
   },
   {
+    "author": "Qwen",
     "id": "cortexso/qwen2.5",
     "metadata": {
       "_id": "671d0d55748faf685e6450a3",
       "author": "cortexso",
       "cardData": {
-        "license": "apache-2.0"
+        "license": "apache-2.0",
+        "pipeline_tag": "text-generation",
+        "tags": ["cortex.cpp"]
       },
       "createdAt": "2024-10-26T15:40:05.000Z",
-      "description": "---\nlicense: apache-2.0\n---\n\n## Overview\n\nQwen2.5 by Qwen is a family of model include various specialized models for coding and mathematics available in multiple sizes from 0.5B to 72B parameters\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [main/default](https://huggingface.co/cortexso/qwen2.5/tree/main) | `cortex run qwen2.5` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexso/qwen2.5\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run qwen2.5\n    ```\n\n## Credits\n\n- **Author:** Qwen\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)\n- **Papers:** [Qwen2.5 Blog](https://qwenlm.github.io/blog/qwen2.5/)",
+      "description": "---\nlicense: apache-2.0\npipeline_tag: text-generation\ntags:\n- cortex.cpp\n---\n\n## Overview\n\nQwen2.5 by Qwen is a family of model include various specialized models for coding and mathematics available in multiple sizes from 0.5B to 72B parameters\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [Qwen-2.5-0.5b](https://huggingface.co/cortexso/qwen2.5/tree/0.5b) | `cortex run qwen2.5:0.5b` |\n| 2 | [Qwen-2.5-1.5b](https://huggingface.co/cortexso/qwen2.5/tree/1.5b) | `cortex run qwen2.5:1.5b` |\n| 3 | [Qwen-2.5-3b](https://huggingface.co/cortexso/qwen2.5/tree/3b) | `cortex run qwen2.5:3b` |\n| 4 | [Qwen-2.5-7b](https://huggingface.co/cortexso/qwen2.5/tree/7b) | `cortex run qwen2.5:7b` |\n| 5 | [Qwen-2.5-14b](https://huggingface.co/cortexso/qwen2.5/tree/14b) | `cortex run qwen2.5:14b` |\n| 6 | [Qwen-2.5-32b](https://huggingface.co/cortexso/qwen2.5/tree/32b) | `cortex run qwen2.5:32b` |\n| 7 | [Qwen-2.5-72b](https://huggingface.co/cortexso/qwen2.5/tree/72b) | `cortex run qwen2.5:72b` |\n| 8 | [Qwen-2.5-coder-1.5b](https://huggingface.co/cortexso/qwen2.5/tree/coder-1.5b) | `cortex run qwen2.5:coder-1.5b` |\n| 9 | [Qwen-2.5-coder-7b](https://huggingface.co/cortexso/qwen2.5/tree/coder-7b) | `cortex run qwen2.5:coder-7b` |\n| 10 | [Qwen-2.5-math-1.5b](https://huggingface.co/cortexso/qwen2.5/tree/math-1.5b) | `cortex run qwen2.5:math-1.5b` |\n| 11 | [Qwen-2.5-math-7b](https://huggingface.co/cortexso/qwen2.5/tree/math-7b) | `cortex run qwen2.5:math-7b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexso/qwen2.5\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run qwen2.5\n    ```\n\n## Credits\n\n- **Author:** Qwen\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License Apache 2.0](https://choosealicense.com/licenses/apache-2.0/)\n- **Papers:** [Qwen2.5 Blog](https://qwenlm.github.io/blog/qwen2.5/)",
       "disabled": false,
-      "downloads": 17,
+      "downloads": 2482,
       "gated": false,
+      "gguf": {
+        "architecture": "qwen2",
+        "bos_token": "<|endoftext|>",
+        "chat_template": "{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- messages[0]['content'] }}\n    {%- else %}\n        {{- 'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.' }}\n    {%- endif %}\n    {{- \"\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>\" }}\n    {%- for tool in tools %}\n        {{- \"\\n\" }}\n        {{- tool | tojson }}\n    {%- endfor %}\n    {{- \"\\n</tools>\\n\\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\\n<tool_call>\\n{\\\"name\\\": <function-name>, \\\"arguments\\\": <args-json-object>}\\n</tool_call><|im_end|>\\n\" }}\n{%- else %}\n    {%- if messages[0]['role'] == 'system' %}\n        {{- '<|im_start|>system\\n' + messages[0]['content'] + '<|im_end|>\\n' }}\n    {%- else %}\n        {{- '<|im_start|>system\\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\\n' }}\n    {%- endif %}\n{%- endif %}\n{%- for message in messages %}\n    {%- if (message.role == \"user\") or (message.role == \"system\" and not loop.first) or (message.role == \"assistant\" and not message.tool_calls) %}\n        {{- '<|im_start|>' + message.role + '\\n' + message.content + '<|im_end|>' + '\\n' }}\n    {%- elif message.role == \"assistant\" %}\n        {{- '<|im_start|>' + message.role }}\n        {%- if message.content %}\n            {{- '\\n' + message.content }}\n        {%- endif %}\n        {%- for tool_call in message.tool_calls %}\n            {%- if tool_call.function is defined %}\n                {%- set tool_call = tool_call.function %}\n            {%- endif %}\n            {{- '\\n<tool_call>\\n{\"name\": \"' }}\n            {{- tool_call.name }}\n            {{- '\", \"arguments\": ' }}\n            {{- tool_call.arguments | tojson }}\n            {{- '}\\n</tool_call>' }}\n        {%- endfor %}\n        {{- '<|im_end|>\\n' }}\n    {%- elif message.role == \"tool\" %}\n        {%- if (loop.index0 == 0) or (messages[loop.index0 - 1].role != \"tool\") %}\n            {{- '<|im_start|>user' }}\n        {%- endif %}\n        {{- '\\n<tool_response>\\n' }}\n        {{- message.content }}\n        {{- '\\n</tool_response>' }}\n        {%- if loop.last or (messages[loop.index0 + 1].role != \"tool\") %}\n            {{- '<|im_end|>\\n' }}\n        {%- endif %}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|im_start|>assistant\\n' }}\n{%- endif %}\n",
+        "context_length": 32768,
+        "eos_token": "<|im_end|>",
+        "total": 494032768
+      },
       "id": "cortexso/qwen2.5",
-      "inference": "library-not-detected",
-      "lastModified": "2024-10-28T12:59:17.000Z",
+      "lastModified": "2025-02-25T07:36:34.000Z",
       "likes": 0,
       "model-index": null,
       "modelId": "cortexso/qwen2.5",
+      "pipeline_tag": "text-generation",
       "private": false,
-      "sha": "3b0b7a4bca6aada4c97cc7d8133a8adb11b025fa",
+      "sha": "7b8b2c31e393f5cf085fe6e535fa5d6ee1cb1c5c",
       "siblings": [
         {
           "rfilename": ".gitattributes"
@@ -584,462 +357,486 @@
         },
         {
           "rfilename": "model.yml"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-0.5b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-1.5b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-14b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-32b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-3b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-72b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-7b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-1.5b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-coder-7b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-1.5b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "qwen2.5-math-7b-instruct-q8_0.gguf"
         }
       ],
       "spaces": [],
-      "tags": ["license:apache-2.0", "region:us"],
-      "usedStorage": 733469812928
+      "tags": [
+        "gguf",
+        "cortex.cpp",
+        "text-generation",
+        "license:apache-2.0",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "usedStorage": 1466939625856,
+      "widgetData": [
+        {
+          "text": "Hi, what can you help me with?"
+        },
+        {
+          "text": "Hey, let's have a conversation!"
+        },
+        {
+          "text": "Hello there!"
+        },
+        {
+          "text": "Hey my name is Clara! How are you?"
+        }
+      ]
     },
     "models": [
       {
-        "id": "qwen2.5:7b-gguf-q2-k",
-        "size": 3015940416
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q3-ks",
-        "size": 3492368704
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q3-km",
-        "size": 3808391488
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q3-kl",
-        "size": 4088459584
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q4-km",
-        "size": 4683073856
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q5-ks",
-        "size": 5315176768
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q5-km",
-        "size": 5444831552
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q6-k",
-        "size": 6254199104
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q3-km",
-        "size": 355466432
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q3-kl",
-        "size": 369358016
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q2-k",
-        "size": 676304768
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q5-km",
-        "size": 420085952
-      },
-      {
-        "id": "qwen2.5:7b-gguf-q8-0",
-        "size": 8098525504
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q3-kl",
-        "size": 880162688
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q4-km",
+        "id": "qwen2.5:1.5b",
         "size": 986048384
       },
       {
-        "id": "qwen2.5:1.5b-gguf-q8-0",
-        "size": 1646572928
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q5-km",
-        "size": 1125050240
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q3-km",
-        "size": 1590475584
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q4-km",
-        "size": 1929902912
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q5-ks",
-        "size": 2169666368
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q4-ks",
-        "size": 940312448
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q4-km",
-        "size": 8988110592
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q6-k",
-        "size": 2538158912
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q3-kl",
-        "size": 7924768512
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q6-k",
-        "size": 6254199168
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q5-ks",
-        "size": 10266554112
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q5-km",
-        "size": 10508873472
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q2-k",
-        "size": 676304864
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q6-k",
-        "size": 12124684032
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q8-0",
-        "size": 15701597952
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q2-k",
-        "size": 12313098752
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q3-km",
-        "size": 15935048192
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q3-kl",
-        "size": 17247078912
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q4-ks",
-        "size": 18784410112
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q5-ks",
-        "size": 22638254592
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q5-km",
-        "size": 1125050336
-      },
-      {
-        "id": "qwen2.5:72b-gguf-q2-k",
-        "size": 29811762464
-      },
-      {
-        "id": "qwen2.5:math-7b-gguf-q3-ks",
-        "size": 3492368704
-      },
-      {
-        "id": "qwen2.5:72b-gguf-q3-ks",
-        "size": 34487788832
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q4-km",
-        "size": 19851336192
-      },
-      {
-        "id": "qwen2.5:math-7b-gguf-q3-kl",
-        "size": 4088459584
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q4-km",
-        "size": 397807808
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q2-k",
-        "size": 1274755904
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q6-k",
-        "size": 505736384
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q3-ks",
-        "size": 760944512
-      },
-      {
-        "id": "qwen2.5:72b-gguf-q3-kl",
-        "size": 39505224992
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q2-k",
-        "size": 3015940480
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q2-k",
-        "size": 5770497792
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q3-ks",
-        "size": 14392330752
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q3-ks",
-        "size": 3492368768
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q6-k",
-        "size": 1272739808
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q3-km",
-        "size": 824178592
-      },
-      {
-        "id": "qwen2.5:math-7b-gguf-q6-k",
-        "size": 6254199104
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q3-km",
-        "size": 3808391552
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q3-kl",
-        "size": 4088459648
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q4-ks",
-        "size": 4457769344
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q8-0",
-        "size": 8098525568
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q5-km",
-        "size": 23262157312
-      },
-      {
-        "id": "qwen2.5:72b-gguf-q3-km",
-        "size": 37698725152
-      },
-      {
-        "id": "qwen2.5:math-7b-gguf-q3-km",
-        "size": 3808391488
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q3-ks",
-        "size": 338263232
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q5-km",
-        "size": 5444831616
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q3-km",
-        "size": 824178656
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q3-kl",
-        "size": 880162784
-      },
-      {
-        "id": "qwen2.5:72b-gguf-q4-km",
-        "size": 47415715104
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q4-ks",
-        "size": 1834384192
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q4-ks",
-        "size": 940312544
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q5-ks",
-        "size": 1098729440
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q3-kl",
-        "size": 1707391808
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q6-k",
-        "size": 1272739744
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q8-0",
-        "size": 34820884992
-      },
-      {
-        "id": "qwen2.5:1.5b-gguf-q6-k",
-        "size": 1272739712
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q8-0",
-        "size": 1646573024
-      },
-      {
-        "id": "qwen2.5:math-7b-gguf-q4-km",
-        "size": 4683073856
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q8-0",
-        "size": 531068096
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q3-ks",
-        "size": 760944544
-      },
-      {
-        "id": "qwen2.5:72b-gguf-q4-ks",
-        "size": 43889222944
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q4-ks",
-        "size": 940312480
-      },
-      {
-        "id": "qwen2.5:math-7b-gguf-q5-ks",
-        "size": 5315176768
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q5-km",
-        "size": 1125050272
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q5-ks",
-        "size": 412710080
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q3-ks",
-        "size": 1454357312
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q2-k",
-        "size": 676304800
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q3-ks",
-        "size": 760944608
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q5-km",
-        "size": 2224814912
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q8-0",
-        "size": 1646572960
-      },
-      {
-        "id": "qwen2.5:0.5b-gguf-q2-k",
-        "size": 338607296
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q3-ks",
-        "size": 6659596032
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q4-km",
+        "id": "qwen2.5:math-1.5b",
         "size": 986048416
       },
       {
-        "id": "qwen2.5:1.5b-gguf-q3-km",
-        "size": 824178560
+        "id": "qwen2.5:7b",
+        "size": 4683073856
       },
       {
-        "id": "qwen2.5:7b-gguf-q4-ks",
-        "size": 4457769280
+        "id": "qwen2.5:0.5b",
+        "size": 397807808
       },
       {
-        "id": "qwen2.5:1.5b-gguf-q5-ks",
-        "size": 1098729344
-      },
-      {
-        "id": "qwen2.5:coder-1.5b-gguf-q4-km",
+        "id": "qwen2.5:coder-1.5b",
         "size": 986048480
       },
       {
-        "id": "qwen2.5:math-7b-gguf-q2-k",
-        "size": 3015940416
+        "id": "qwen2.5:32b",
+        "size": 19851336192
       },
       {
-        "id": "qwen2.5:math-7b-gguf-q5-km",
-        "size": 5444831552
+        "id": "qwen2.5:3b",
+        "size": 1929902912
       },
       {
-        "id": "qwen2.5:0.5b-gguf-q4-ks",
-        "size": 385471680
+        "id": "qwen2.5:14b",
+        "size": 8988110592
       },
       {
-        "id": "qwen2.5:coder-7b-gguf-q5-ks",
-        "size": 5315176832
+        "id": "qwen2.5:math-7b",
+        "size": 4683073856
       },
       {
-        "id": "qwen2.5:math-7b-gguf-q4-ks",
-        "size": 4457769280
+        "id": "qwen2.5:72b",
+        "size": 47415715104
       },
       {
-        "id": "qwen2.5:math-7b-gguf-q8-0",
-        "size": 8098525504
-      },
-      {
-        "id": "qwen2.5:3b-gguf-q8-0",
-        "size": 3285476160
-      },
-      {
-        "id": "qwen2.5:14b-gguf-q3-km",
-        "size": 7339204352
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q3-kl",
-        "size": 880162720
-      },
-      {
-        "id": "qwen2.5:32b-gguf-q6-k",
-        "size": 26886154752
-      },
-      {
-        "id": "qwen2.5:math-1.5b-gguf-q5-ks",
-        "size": 1098729376
-      },
-      {
-        "id": "qwen2.5:coder-7b-gguf-q4-km",
+        "id": "qwen2.5:coder-7b",
         "size": 4683073920
+      },
+      {
+        "id": "qwen2.5:main",
+        "size": 8098525504
       }
     ]
   },
   {
+    "author": "meta-llama",
     "id": "cortexso/llama3.2",
     "metadata": {
       "_id": "66f63309ba963b1db95deaa4",
       "author": "cortexso",
       "cardData": {
-        "license": "llama3.2"
+        "license": "llama3.2",
+        "pipeline_tag": "text-generation",
+        "tags": ["cortex.cpp", "featured"]
       },
       "createdAt": "2024-09-27T04:22:33.000Z",
-      "description": "---\nlicense: llama3.2\n---\n\n## Overview\n\nMeta developed and released the [Meta Llama 3.2](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) family of large language models (LLMs), a collection of pretrained and instruction tuned generative text models in 1B and 3B sizes (text in/text out). The Llama 3.2 instruction-tuned text only models are optimized for multilingual dialogue use cases, including agentic retrieval and summarization tasks. They outperform many of the available open source and closed chat models on common industry benchmarks.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 2 | [gguf](https://huggingface.co/cortexso/llama3.2/tree/gguf) | `cortex run llama3.2:gguf` |\n| 3 | [main/default](https://huggingface.co/cortexso/llama3.2/tree/main) | `cortex run llama3.2` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexso/llama3.2\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run llama3.2\n    ```\n\n## Credits\n\n- **Author:** Meta\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct/blob/main/LICENSE.txt)\n- **Papers:** [Llama-3.2 Blog](https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/)",
+      "description": "---\nlicense: llama3.2\npipeline_tag: text-generation\ntags:\n- cortex.cpp\n- featured\n---\n\n## Overview\n\nMeta developed and released the [Meta Llama 3.2](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) family of large language models (LLMs), a collection of pretrained and instruction tuned generative text models in 1B and 3B sizes (text in/text out). The Llama 3.2 instruction-tuned text only models are optimized for multilingual dialogue use cases, including agentic retrieval and summarization tasks. They outperform many of the available open source and closed chat models on common industry benchmarks.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 2 | [gguf](https://huggingface.co/cortexso/llama3.2/tree/main) | `cortex run llama3.2` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```bash\n    cortexso/llama3.2\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run llama3.2\n    ```\n\n## Credits\n\n- **Author:** Meta\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct/blob/main/LICENSE.txt)\n- **Papers:** [Llama-3.2 Blog](https://ai.meta.com/blog/llama-3-2-connect-2024-vision-edge-mobile-devices/)",
       "disabled": false,
-      "downloads": 422,
+      "downloads": 761,
       "gated": false,
+      "gguf": {
+        "architecture": "llama",
+        "bos_token": "<|begin_of_text|>",
+        "chat_template": "{{- bos_token }}\n{%- if custom_tools is defined %}\n    {%- set tools = custom_tools %}\n{%- endif %}\n{%- if not tools_in_user_message is defined %}\n    {%- set tools_in_user_message = true %}\n{%- endif %}\n{%- if not date_string is defined %}\n    {%- if strftime_now is defined %}\n        {%- set date_string = strftime_now(\"%d %b %Y\") %}\n    {%- else %}\n        {%- set date_string = \"26 Jul 2024\" %}\n    {%- endif %}\n{%- endif %}\n{%- if not tools is defined %}\n    {%- set tools = none %}\n{%- endif %}\n\n{#- This block extracts the system message, so we can slot it into the right place. #}\n{%- if messages[0]['role'] == 'system' %}\n    {%- set system_message = messages[0]['content']|trim %}\n    {%- set messages = messages[1:] %}\n{%- else %}\n    {%- set system_message = \"\" %}\n{%- endif %}\n\n{#- System message #}\n{{- \"<|start_header_id|>system<|end_header_id|>\\n\\n\" }}\n{%- if tools is not none %}\n    {{- \"Environment: ipython\\n\" }}\n{%- endif %}\n{{- \"Cutting Knowledge Date: December 2023\\n\" }}\n{{- \"Today Date: \" + date_string + \"\\n\\n\" }}\n{%- if tools is not none and not tools_in_user_message %}\n    {{- \"You have access to the following functions. To call a function, please respond with JSON for a function call.\" }}\n    {{- 'Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.' }}\n    {{- \"Do not use variables.\\n\\n\" }}\n    {%- for t in tools %}\n        {{- t | tojson(indent=4) }}\n        {{- \"\\n\\n\" }}\n    {%- endfor %}\n{%- endif %}\n{{- system_message }}\n{{- \"<|eot_id|>\" }}\n\n{#- Custom tools are passed in a user message with some extra guidance #}\n{%- if tools_in_user_message and not tools is none %}\n    {#- Extract the first user message so we can plug it in here #}\n    {%- if messages | length != 0 %}\n        {%- set first_user_message = messages[0]['content']|trim %}\n        {%- set messages = messages[1:] %}\n    {%- else %}\n        {{- raise_exception(\"Cannot put tools in the first user message when there's no first user message!\") }}\n{%- endif %}\n    {{- '<|start_header_id|>user<|end_header_id|>\\n\\n' -}}\n    {{- \"Given the following functions, please respond with a JSON for a function call \" }}\n    {{- \"with its proper arguments that best answers the given prompt.\\n\\n\" }}\n    {{- 'Respond in the format {\"name\": function name, \"parameters\": dictionary of argument name and its value}.' }}\n    {{- \"Do not use variables.\\n\\n\" }}\n    {%- for t in tools %}\n        {{- t | tojson(indent=4) }}\n        {{- \"\\n\\n\" }}\n    {%- endfor %}\n    {{- first_user_message + \"<|eot_id|>\"}}\n{%- endif %}\n\n{%- for message in messages %}\n    {%- if not (message.role == 'ipython' or message.role == 'tool' or 'tool_calls' in message) %}\n        {{- '<|start_header_id|>' + message['role'] + '<|end_header_id|>\\n\\n'+ message['content'] | trim + '<|eot_id|>' }}\n    {%- elif 'tool_calls' in message %}\n        {%- if not message.tool_calls|length == 1 %}\n            {{- raise_exception(\"This model only supports single tool-calls at once!\") }}\n        {%- endif %}\n        {%- set tool_call = message.tool_calls[0].function %}\n        {{- '<|start_header_id|>assistant<|end_header_id|>\\n\\n' -}}\n        {{- '{\"name\": \"' + tool_call.name + '\", ' }}\n        {{- '\"parameters\": ' }}\n        {{- tool_call.arguments | tojson }}\n        {{- \"}\" }}\n        {{- \"<|eot_id|>\" }}\n    {%- elif message.role == \"tool\" or message.role == \"ipython\" %}\n        {{- \"<|start_header_id|>ipython<|end_header_id|>\\n\\n\" }}\n        {%- if message.content is mapping or message.content is iterable %}\n            {{- message.content | tojson }}\n        {%- else %}\n            {{- message.content }}\n        {%- endif %}\n        {{- \"<|eot_id|>\" }}\n    {%- endif %}\n{%- endfor %}\n{%- if add_generation_prompt %}\n    {{- '<|start_header_id|>assistant<|end_header_id|>\\n\\n' }}\n{%- endif %}\n",
+        "context_length": 131072,
+        "eos_token": "<|eot_id|>",
+        "total": 1235814432
+      },
       "id": "cortexso/llama3.2",
-      "inference": "library-not-detected",
-      "lastModified": "2024-10-07T06:42:49.000Z",
+      "lastModified": "2025-02-24T10:25:50.000Z",
       "likes": 0,
       "model-index": null,
       "modelId": "cortexso/llama3.2",
+      "pipeline_tag": "text-generation",
       "private": false,
-      "sha": "97784eeed591168e27671d7dd0f8ea68d2e0430c",
+      "sha": "5aabb7db00af6183d866ff69260db98b55760359",
       "siblings": [
         {
           "rfilename": ".gitattributes"
         },
         {
           "rfilename": "README.md"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-1b-instruct-q8_0.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q2_k.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q6_k.gguf"
+        },
+        {
+          "rfilename": "llama-3.2-3b-instruct-q8_0.gguf"
         },
         {
           "rfilename": "metadata.yml"
@@ -1049,73 +846,79 @@
         }
       ],
       "spaces": [],
-      "tags": ["license:llama3.2", "region:us"],
-      "usedStorage": 21014285888
+      "tags": [
+        "gguf",
+        "cortex.cpp",
+        "featured",
+        "text-generation",
+        "license:llama3.2",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "usedStorage": 50404795008,
+      "widgetData": [
+        {
+          "text": "Hi, what can you help me with?"
+        },
+        {
+          "text": "Hey, let's have a conversation!"
+        },
+        {
+          "text": "Hello there!"
+        },
+        {
+          "text": "Hey my name is Clara! How are you?"
+        }
+      ]
     },
     "models": [
       {
-        "id": "llama3.2:3b-gguf-q3-ks",
-        "size": 1542848672
+        "id": "llama3.2:1b",
+        "size": 911503104
       },
       {
-        "id": "llama3.2:3b-gguf-q3-kl",
-        "size": 1815347360
-      },
-      {
-        "id": "llama3.2:3b-gguf-q3-km",
-        "size": 1687158944
-      },
-      {
-        "id": "llama3.2:3b-gguf-q4-ks",
-        "size": 1928200352
-      },
-      {
-        "id": "llama3.2:3b-gguf-q5-ks",
-        "size": 2269511840
-      },
-      {
-        "id": "llama3.2:3b-gguf-q4-km",
-        "size": 2019377312
-      },
-      {
-        "id": "llama3.2:3b-gguf-q6-k",
-        "size": 2643853472
-      },
-      {
-        "id": "llama3.2:3b-gguf-q2-k",
-        "size": 1363935392
-      },
-      {
-        "id": "llama3.2:3b-gguf-q5-km",
-        "size": 2322153632
-      },
-      {
-        "id": "llama3.2:3b-gguf-q8-0",
+        "id": "llama3.2:main",
         "size": 3421898912
+      },
+      {
+        "id": "llama3.2:3b",
+        "size": 2019377312
       }
     ]
   },
   {
-    "id": "cortexso/deepseek-r1-distill-qwen-1.5b",
+    "author": "DeepSeek-AI",
+    "id": "cortexso/deepseek-r1",
     "metadata": {
-      "_id": "678e84d99d66241aabee008a",
+      "_id": "67a0bcf13ac2dd6adf0bdfcf",
       "author": "cortexso",
       "cardData": {
-        "license": "mit"
+        "license": "mit",
+        "pipeline_tag": "text-generation",
+        "tags": ["cortexp.cpp", "featured"]
       },
-      "createdAt": "2025-01-20T17:16:09.000Z",
-      "description": "---\nlicense: mit\n---\n## Overview\n\n**DeepSeek** developed and released the [DeepSeek R1 Distill Qwen 1.5B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B) model, a distilled version of the Qwen 1.5B language model. It is fine-tuned for high-performance text generation and optimized for dialogue and information-seeking tasks. This model achieves a balance of efficiency and accuracy while maintaining a smaller footprint compared to the original Qwen 1.5B.\n\nThe model is designed for applications in customer support, conversational AI, and research, prioritizing both helpfulness and safety.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [gguf](https://huggingface.co/cortexso/deepseek-r1-distill-qwen-1.5b/tree/main) | `cortex run deepseek-r1-distill-qwen-1.5b` |\n\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```text\n    cortexso/deepseek-r1-distill-qwen-1.5b\n    ```\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run deepseek-r1-distill-qwen-1.5b\n    ```\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B#7-license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)",
+      "createdAt": "2025-02-03T12:56:17.000Z",
+      "description": "---\nlicense: mit\npipeline_tag: text-generation\ntags:\n- cortexp.cpp\n- featured\n---\n\n## Overview\n\n**DeepSeek** developed and released the **DeepSeek-R1** series, featuring multiple model sizes fine-tuned for high-performance text generation. These models are optimized for dialogue, reasoning, and information-seeking tasks, providing a balance of efficiency and accuracy while maintaining a smaller footprint compared to their original counterparts.\n\nThe DeepSeek-R1 models include distilled and full-scale variants of both **Qwen** and **Llama** architectures, catering to various applications such as customer support, conversational AI, research, and enterprise automation.\n\n## Variants\n\n### DeepSeek-R1\n\n| No | Variant                                                                                        | Branch | Cortex CLI command                          |\n| -- | ---------------------------------------------------------------------------------------------- | ------- | ------------------------------------------ |\n| 1  | [DeepSeek-R1-Distill-Qwen-1.5B](https://huggingface.co/cortexso/deepseek-r1/tree/1.5b)         | 1.5b    | `cortex run deepseek-r1:1.5b` |\n| 2  | [DeepSeek-R1-Distill-Qwen-7B](https://huggingface.co/cortexso/deepseek-r1/tree/7b)             | 7b      | `cortex run deepseek-r1:7b`   |\n| 3  | [DeepSeek-R1-Distill-Llama-8B](https://huggingface.co/cortexso/deepseek-r1/tree/8b)           | 8b      | `cortex run deepseek-r1:8b`  |\n| 4  | [DeepSeek-R1-Distill-Qwen-14B](https://huggingface.co/cortexso/deepseek-r1/tree/14b)           | 14b     | `cortex run deepseek-r1:14b`  |\n| 5  | [DeepSeek-R1-Distill-Qwen-32B](https://huggingface.co/cortexso/deepseek-r1/tree/32b)           | 32b     | `cortex run deepseek-r1:32b`  |\n| 6  | [DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/cortexso/deepseek-r1/tree/70b)         | 70b     | `cortex run deepseek-r1:70b` |\n\nEach branch contains a default quantized version:\n- **Qwen-1.5B:** q4-km\n- **Qwen-7B:** q4-km\n- **Llama-8B:** q4-km\n- **Qwen-14B:** q4-km\n- **Qwen-32B:** q4-km\n- **Llama-70B:** q4-km\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n   ```text\n   cortexso/deepseek-r1\n   ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n   ```bash\n   cortex run deepseek-r1\n   ```\n\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1#license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)",
       "disabled": false,
-      "downloads": 70,
+      "downloads": 999,
       "gated": false,
-      "id": "cortexso/deepseek-r1-distill-qwen-1.5b",
-      "inference": "library-not-detected",
-      "lastModified": "2025-01-24T04:26:48.000Z",
+      "gguf": {
+        "architecture": "llama",
+        "bos_token": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
+        "chat_template": "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% set ns = namespace(is_first=false, is_tool=false, is_output_first=true, system_prompt='') %}{%- for message in messages %}{%- if message['role'] == 'system' %}{% set ns.system_prompt = message['content'] %}{%- endif %}{%- endfor %}{{bos_token}}{{ns.system_prompt}}{%- for message in messages %}{%- if message['role'] == 'user' %}{%- set ns.is_tool = false -%}{{'<\uff5cUser\uff5c>' + message['content']}}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is none %}{%- set ns.is_tool = false -%}{%- for tool in message['tool_calls']%}{%- if not ns.is_first %}{{'<\uff5cAssistant\uff5c><\uff5ctool\u2581calls\u2581begin\uff5c><\uff5ctool\u2581call\u2581begin\uff5c>' + tool['type'] + '<\uff5ctool\u2581sep\uff5c>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<\uff5ctool\u2581call\u2581end\uff5c>'}}{%- set ns.is_first = true -%}{%- else %}{{'\\n' + '<\uff5ctool\u2581call\u2581begin\uff5c>' + tool['type'] + '<\uff5ctool\u2581sep\uff5c>' + tool['function']['name'] + '\\n' + '```json' + '\\n' + tool['function']['arguments'] + '\\n' + '```' + '<\uff5ctool\u2581call\u2581end\uff5c>'}}{{'<\uff5ctool\u2581calls\u2581end\uff5c><\uff5cend\u2581of\u2581sentence\uff5c>'}}{%- endif %}{%- endfor %}{%- endif %}{%- if message['role'] == 'assistant' and message['content'] is not none %}{%- if ns.is_tool %}{{'<\uff5ctool\u2581outputs\u2581end\uff5c>' + message['content'] + '<\uff5cend\u2581of\u2581sentence\uff5c>'}}{%- set ns.is_tool = false -%}{%- else %}{% set content = message['content'] %}{% if '</think>' in content %}{% set content = content.split('</think>')[-1] %}{% endif %}{{'<\uff5cAssistant\uff5c>' + content + '<\uff5cend\u2581of\u2581sentence\uff5c>'}}{%- endif %}{%- endif %}{%- if message['role'] == 'tool' %}{%- set ns.is_tool = true -%}{%- if ns.is_output_first %}{{'<\uff5ctool\u2581outputs\u2581begin\uff5c><\uff5ctool\u2581output\u2581begin\uff5c>' + message['content'] + '<\uff5ctool\u2581output\u2581end\uff5c>'}}{%- set ns.is_output_first = false %}{%- else %}{{'\\n<\uff5ctool\u2581output\u2581begin\uff5c>' + message['content'] + '<\uff5ctool\u2581output\u2581end\uff5c>'}}{%- endif %}{%- endif %}{%- endfor -%}{% if ns.is_tool %}{{'<\uff5ctool\u2581outputs\u2581end\uff5c>'}}{% endif %}{% if add_generation_prompt and not ns.is_tool %}{{'<\uff5cAssistant\uff5c><think>\\n'}}{% endif %}",
+        "context_length": 131072,
+        "eos_token": "<\uff5cend\u2581of\u2581sentence\uff5c>",
+        "total": 70553706560
+      },
+      "id": "cortexso/deepseek-r1",
+      "lastModified": "2025-02-24T17:35:43.000Z",
       "likes": 0,
       "model-index": null,
-      "modelId": "cortexso/deepseek-r1-distill-qwen-1.5b",
+      "modelId": "cortexso/deepseek-r1",
+      "pipeline_tag": "text-generation",
       "private": false,
-      "sha": "15c639a690dc821d63b82f1b3a0c2b9051411d23",
+      "sha": "b08ca722cc176e8d830a4e348f51367ea47b7bed",
       "siblings": [
         {
           "rfilename": ".gitattributes"
@@ -1124,250 +927,287 @@
           "rfilename": "README.md"
         },
         {
-          "rfilename": "metadata.yml"
+          "rfilename": "deepseek-r1-distill-llama-70b-q4_k_m.gguf"
         },
         {
-          "rfilename": "model.yml"
+          "rfilename": "deepseek-r1-distill-llama-8b-q2_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q6_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-llama-8b-q8_0.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q2_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q6_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-1.5b-q8_0.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q2_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q6_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-14b-q8_0.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q2_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q6_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-32b-q8_0.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q2_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q6_k.gguf"
+        },
+        {
+          "rfilename": "deepseek-r1-distill-qwen-7b-q8_0.gguf"
+        },
+        {
+          "rfilename": "metadata.yaml"
         }
       ],
       "spaces": [],
-      "tags": ["license:mit", "region:us"],
-      "usedStorage": 11611279040
+      "tags": [
+        "gguf",
+        "cortexp.cpp",
+        "featured",
+        "text-generation",
+        "license:mit",
+        "endpoints_compatible",
+        "region:us",
+        "conversational"
+      ],
+      "usedStorage": 825182913408,
+      "widgetData": [
+        {
+          "text": "Hi, what can you help me with?"
+        },
+        {
+          "text": "Hey, let's have a conversation!"
+        },
+        {
+          "text": "Hello there!"
+        },
+        {
+          "text": "Hey my name is Clara! How are you?"
+        }
+      ]
     },
     "models": [
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q3-ks",
-        "size": 861221600
+        "id": "deepseek-r1:1.5b",
+        "size": 1117320480
       },
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q3-km",
-        "size": 924455648
+        "id": "deepseek-r1:14b",
+        "size": 8988109920
       },
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q3-kl",
-        "size": 980439776
+        "id": "deepseek-r1:70b",
+        "size": 42520395584
       },
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q4-ks",
-        "size": 1071584480
+        "id": "deepseek-r1:8b",
+        "size": 4920736256
       },
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q6-k",
-        "size": 1464178400
+        "id": "deepseek-r1:main",
+        "size": 8098524832
       },
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q5-ks",
-        "size": 1259173088
+        "id": "deepseek-r1:7b",
+        "size": 4683073184
       },
       {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q2-k",
-        "size": 752879840
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q5-km",
-        "size": 1285493984
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q4-km",
-        "size": 1117320416
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-1.5b:1.5b-gguf-q8-0",
-        "size": 1894531808
+        "id": "deepseek-r1:32b",
+        "size": 19851335520
       }
     ]
   },
   {
-    "id": "cortexso/deepseek-r1-distill-qwen-32b",
-    "metadata": {
-      "_id": "678fe132df84bd3d94f37e58",
-      "author": "cortexso",
-      "cardData": {
-        "license": "mit"
-      },
-      "createdAt": "2025-01-21T18:02:26.000Z",
-      "description": "---\nlicense: mit\n---\n\n## Overview\n\n**DeepSeek** developed and released the [DeepSeek R1 Distill Qwen 32B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B) model, a distilled version of the Qwen 32B language model. This is the most advanced and largest model in the DeepSeek R1 Distill family, offering unparalleled performance in text generation, dialogue optimization, and reasoning tasks. \n\nThe model is tailored for large-scale applications in conversational AI, research, enterprise solutions, and knowledge systems, delivering exceptional accuracy, efficiency, and safety at scale.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [gguf](https://huggingface.co/cortexso/deepseek-r1-distill-qwen-32b/tree/main) | `cortex run deepseek-r1-distill-qwen-32b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```text\n    cortexso/deepseek-r1-distill-qwen-32b\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run deepseek-r1-distill-qwen-32b\n    ```\n\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B#7-license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)\n",
-      "disabled": false,
-      "downloads": 6,
-      "gated": false,
-      "id": "cortexso/deepseek-r1-distill-qwen-32b",
-      "inference": "library-not-detected",
-      "lastModified": "2025-01-23T08:50:04.000Z",
-      "likes": 0,
-      "model-index": null,
-      "modelId": "cortexso/deepseek-r1-distill-qwen-32b",
-      "private": false,
-      "sha": "a5d2268c4d8bc697597d562172490d3e21059fc4",
-      "siblings": [
-        {
-          "rfilename": ".gitattributes"
-        },
-        {
-          "rfilename": "README.md"
-        },
-        {
-          "rfilename": "metadata.yml"
-        },
-        {
-          "rfilename": "model.yml"
-        }
-      ],
-      "spaces": [],
-      "tags": ["license:mit", "region:us"],
-      "usedStorage": 206130747200
-    },
-    "models": [
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q2-k",
-        "size": 12313098016
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q3-ks",
-        "size": 14392330016
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q3-kl",
-        "size": 17247078176
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q4-ks",
-        "size": 18784409376
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q4-km",
-        "size": 19851335456
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q5-km",
-        "size": 23262156576
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q3-km",
-        "size": 15935047456
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q6-k",
-        "size": 26886154016
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q8-0",
-        "size": 34820884256
-      },
-      {
-        "id": "deepseek-r1-distill-qwen-32b:32b-gguf-q5-ks",
-        "size": 22638253856
-      }
-    ]
-  },
-  {
-    "id": "cortexso/deepseek-r1-distill-llama-8b",
-    "metadata": {
-      "_id": "678f4b5625a9b93997f1f666",
-      "author": "cortexso",
-      "cardData": {
-        "license": "mit"
-      },
-      "createdAt": "2025-01-21T07:23:02.000Z",
-      "description": "---\nlicense: mit\n---\n\n## Overview\n\n**DeepSeek** developed and released the [DeepSeek R1 Distill Llama 8B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B) model, a distilled version of the Llama 8B language model. This variant is fine-tuned for high-performance text generation, optimized for dialogue, and tailored for information-seeking tasks. It offers a robust balance between model size and performance, making it suitable for demanding conversational AI and research use cases.\n\nThe model is designed to deliver accurate, efficient, and safe responses in applications such as customer support, knowledge systems, and research environments.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [gguf](https://huggingface.co/cortexso/deepseek-r1-distill-llama-8b/tree/main) | `cortex run deepseek-r1-distill-llama-8b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```bash\n    cortexso/deepseek-r1-distill-llama-8b\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run deepseek-r1-distill-llama-8b\n    ```\n\n## Credits\n\n- **Author:** DeepSeek\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B#7-license)\n- **Papers:** [DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning](https://arxiv.org/html/2501.12948v1)\n",
-      "disabled": false,
-      "downloads": 59,
-      "gated": false,
-      "id": "cortexso/deepseek-r1-distill-llama-8b",
-      "inference": "library-not-detected",
-      "lastModified": "2025-01-23T08:46:41.000Z",
-      "likes": 0,
-      "model-index": null,
-      "modelId": "cortexso/deepseek-r1-distill-llama-8b",
-      "private": false,
-      "sha": "f69bd2c9e2ea1380cbcaeec136ab71a4b164b200",
-      "siblings": [
-        {
-          "rfilename": ".gitattributes"
-        },
-        {
-          "rfilename": "README.md"
-        },
-        {
-          "rfilename": "metadata.yml"
-        },
-        {
-          "rfilename": "model.yml"
-        }
-      ],
-      "spaces": [],
-      "tags": ["license:mit", "region:us"],
-      "usedStorage": 51266986688
-    },
-    "models": [
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q4-ks",
-        "size": 4692670944
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q3-ks",
-        "size": 3664501216
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q3-km",
-        "size": 4018919904
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q3-kl",
-        "size": 4321958368
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q4-km",
-        "size": 4920736224
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q2-k",
-        "size": 3179133408
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q8-0",
-        "size": 8540772832
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q5-ks",
-        "size": 5599295968
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q5-km",
-        "size": 5732989408
-      },
-      {
-        "id": "deepseek-r1-distill-llama-8b:8b-gguf-q6-k",
-        "size": 6596008416
-      }
-    ]
-  },
-  {
+    "author": "meta-llama",
     "id": "cortexso/llama3.1",
     "metadata": {
       "_id": "66a76e01a1037fe261a5a472",
       "author": "cortexso",
       "cardData": {
-        "license": "llama3.1"
+        "license": "llama3.1",
+        "pipeline_tag": "text-generation",
+        "tags": ["cortex.cpp"]
       },
       "createdAt": "2024-07-29T10:25:05.000Z",
-      "description": "---\nlicense: llama3.1\n---\n\n## Overview\n\nMeta developed and released the [Meta Llama 3.1](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B) family of large language models (LLMs), a collection of pretrained and instruction tuned generative text models in 8 and 70B sizes. The Llama 3 instruction tuned models are optimized for dialogue use cases and outperform many of the available open source chat models on common industry benchmarks. Further, in developing these models, we took great care to optimize helpfulness and safety.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 2 | [gguf](https://huggingface.co/cortexso/llama3.1/tree/gguf) | `cortex run llama3.1:gguf` |\n| 3 | [main/default](https://huggingface.co/cortexso/llama3.1/tree/main) | `cortex run llama3.1` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```\n    cortexso/llama3.1\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```\n    cortex run llama3.1\n    ```\n\n## Credits\n\n- **Author:** Meta\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B/blob/main/LICENSE)\n- **Papers:** [Llama-3.1 Blog](https://scontent.fsgn3-1.fna.fbcdn.net/v/t39.2365-6/452387774_1036916434819166_4173978747091533306_n.pdf?_nc_cat=104&ccb=1-7&_nc_sid=3c67a6&_nc_ohc=DTS7hDTcxZoQ7kNvgHxaQ8K&_nc_ht=scontent.fsgn3-1.fna&oh=00_AYC1gXduoxatzt8eFMfLunrRUzpzQcoKzAktIOT7FieZAQ&oe=66AE9C4D)",
+      "description": "---\nlicense: llama3.1\npipeline_tag: text-generation\ntags:\n- cortex.cpp\n---\n\n## Overview\n\nMeta developed and released the [Meta Llama 3.1](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B) family of large language models (LLMs), a collection of pretrained and instruction tuned generative text models in 8 and 70B sizes. The Llama 3 instruction tuned models are optimized for dialogue use cases and outperform many of the available open source chat models on common industry benchmarks. Further, in developing these models, we took great care to optimize helpfulness and safety.\n\n## Variants\n\n| No | Variant | Cortex CLI command |\n| --- | --- | --- |\n| 1 | [Llama3.1-8b](https://huggingface.co/cortexso/llama3.1/tree/8b) | `cortex run llama3.1:8b` |\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)\n2. Use in Jan model Hub:\n    ```bash\n    cortexso/llama3.1\n    ```\n\n## Use it with Cortex (CLI)\n\n1. Install **Cortex** using [Quickstart](https://cortex.jan.ai/docs/quickstart)\n2. Run the model with command:\n    ```bash\n    cortex run llama3.1\n    ```\n\n## Credits\n\n- **Author:** Meta\n- **Converter:** [Homebrew](https://www.homebrew.ltd/)\n- **Original License:** [License](https://huggingface.co/meta-llama/Meta-Llama-3.1-8B/blob/main/LICENSE)\n- **Papers:** [Llama-3.1 Blog](https://ai.meta.com/blog/meta-llama-3-1/)",
       "disabled": false,
-      "downloads": 29,
+      "downloads": 275,
       "gated": false,
+      "gguf": {
+        "architecture": "llama",
+        "bos_token": "<|begin_of_text|>",
+        "context_length": 131072,
+        "eos_token": "<|end_of_text|>",
+        "total": 8030261312
+      },
       "id": "cortexso/llama3.1",
-      "inference": "library-not-detected",
-      "lastModified": "2024-11-12T20:11:22.000Z",
+      "lastModified": "2025-02-25T07:41:12.000Z",
       "likes": 0,
       "model-index": null,
       "modelId": "cortexso/llama3.1",
+      "pipeline_tag": "text-generation",
       "private": false,
-      "sha": "4702595a4e5e5aba5c0f7d1180199cecc076597d",
+      "sha": "f83805762b13bfe9aaa071c065edb74c48281367",
       "siblings": [
         {
           "rfilename": ".gitattributes"
         },
         {
           "rfilename": "README.md"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q2_k.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q3_k_l.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q3_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q3_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q4_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q4_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q5_k_m.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q5_k_s.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q6_k.gguf"
+        },
+        {
+          "rfilename": "llama-3.1-8b-q8_0.gguf"
         },
         {
           "rfilename": "metadata.yml"
@@ -1377,57 +1217,38 @@
         }
       ],
       "spaces": [],
-      "tags": ["license:llama3.1", "region:us"],
-      "usedStorage": 175802939712
+      "tags": [
+        "gguf",
+        "cortex.cpp",
+        "text-generation",
+        "license:llama3.1",
+        "endpoints_compatible",
+        "region:us"
+      ],
+      "usedStorage": 227069905920,
+      "widgetData": [
+        {
+          "text": "My name is Julien and I like to"
+        },
+        {
+          "text": "I like traveling by train because"
+        },
+        {
+          "text": "Paris is an amazing place to visit,"
+        },
+        {
+          "text": "Once upon a time,"
+        }
+      ]
     },
     "models": [
       {
-        "id": "llama3.1:8b-gguf-q3-ks",
-        "size": 3664504064
+        "id": "llama3.1:8b",
+        "size": 4920734176
       },
       {
-        "id": "llama3.1:8b-gguf-q8-0",
-        "size": 8540775680
-      },
-      {
-        "id": "llama3.1:8b-gguf-q4-ks",
-        "size": 4692673792
-      },
-      {
-        "id": "llama3.1:8b-gguf-q3-km",
-        "size": 4018922752
-      },
-      {
-        "id": "llama3.1:8b-gguf",
-        "size": 4920734656
-      },
-      {
-        "id": "llama3.1:8b-gguf-q3-kl",
-        "size": 4321961216
-      },
-      {
-        "id": "llama3.1:8b-gguf-q4-km",
-        "size": 4920739072
-      },
-      {
-        "id": "llama3.1:8b-gguf-q5-km",
-        "size": 5732992256
-      },
-      {
-        "id": "llama3.1:8b-gguf-q6-k",
-        "size": 6596011264
-      },
-      {
-        "id": "llama3.1:8b-gguf-q5-ks",
-        "size": 5599298816
-      },
-      {
-        "id": "llama3.1:8b-gguf-q2-k",
-        "size": 3179136256
-      },
-      {
-        "id": "llama3.1:gguf",
-        "size": 4920734656
+        "id": "llama3.1:main",
+        "size": 8540770784
       }
     ]
   }

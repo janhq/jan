@@ -1,4 +1,4 @@
-import { fs } from '@janhq/core'
+import { fs, joinPath } from '@janhq/core'
 import { Button, Input, ScrollArea, Switch } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
@@ -10,7 +10,10 @@ import { toaster } from '@/containers/Toast'
 import { usePath } from '@/hooks/usePath'
 
 import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
-import { productAnalyticAtom } from '@/helpers/atoms/Setting.atom'
+import {
+  productAnalyticAtom,
+  showScrollBarAtom,
+} from '@/helpers/atoms/Setting.atom'
 
 const Privacy = () => {
   /**
@@ -19,7 +22,9 @@ const Privacy = () => {
    */
   const clearLogs = async () => {
     try {
-      await fs.rm(`file://logs`)
+      for (const file of await fs.readdirSync(`file://logs`)) {
+        await fs.rm(await joinPath(['file://logs', file]))
+      }
     } catch (err) {
       console.error('Error clearing logs: ', err)
     }
@@ -30,13 +35,16 @@ const Privacy = () => {
       type: 'success',
     })
   }
-
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const { onRevealInFinder } = usePath()
   const [productAnalytic, setProductAnalytic] = useAtom(productAnalyticAtom)
 
   return (
-    <ScrollArea className="h-full w-full px-4">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full px-4"
+    >
       <div className="mb-4 mt-8 rounded-xl bg-[hsla(var(--tertiary-bg))] px-4 py-2 text-[hsla(var(--text-secondary))]">
         <p>
           We prioritize your control over your data. Learn more about our&nbsp;

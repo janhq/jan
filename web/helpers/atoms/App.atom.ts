@@ -8,6 +8,15 @@ export const mainViewStateAtom = atom<MainViewState>(MainViewState.Thread)
 
 export const defaultJanDataFolderAtom = atom<string>('')
 
+export const LocalEngineDefaultVariantAtom = atom<string>('')
+
+export const RecommendEngineVariantAtom = atomWithStorage<string>(
+  'recommendEngineVariant',
+  '',
+  undefined,
+  { getOnInit: true }
+)
+
 const SHOW_RIGHT_PANEL = 'showRightPanel'
 
 // Store panel atom
@@ -23,6 +32,8 @@ export const showRightPanelAtom = atomWithStorage<boolean>(
 export const showSystemMonitorPanelAtom = atom<boolean>(false)
 export const appDownloadProgressAtom = atom<number>(-1)
 export const updateVersionErrorAtom = atom<string | undefined>(undefined)
+export const appUpdateAvailableAtom = atom<boolean>(false)
+export const appUpdateNotAvailableAtom = atom<boolean>(false)
 
 const COPY_OVER_INSTRUCTION_ENABLED = 'copy_over_instruction_enabled'
 

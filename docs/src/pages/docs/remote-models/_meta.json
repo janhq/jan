@@ -7,6 +7,14 @@
     "title": "Cohere",
     "href": "/docs/remote-models/cohere"
   },
+  "deepseek": { 
+    "title": "DeepSeek", 
+    "href": "/docs/remote-models/deepseek"
+  },
+  "google": { 
+    "title": "Google", 
+    "href": "/docs/remote-models/google"
+  },
   "groq": { 
     "title": "Groq", 
     "href": "/docs/remote-models/groq"
@@ -20,7 +28,7 @@
     "href": "/docs/remote-models/mistralai"
   },
   "nvidia-nim": {
-    "title": "Nvidia NIM",
+    "title": "Nvidia",
     "href": "/docs/remote-models/nvidia-nim"
   },
   "openai": {

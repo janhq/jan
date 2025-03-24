@@ -32,20 +32,19 @@ export function requestInference(
     })
       .then(async (response) => {
         if (!response.ok) {
-          const data = await response.json()
-          let errorCode = ErrorCode.Unknown
-          if (data.error) {
-            errorCode = data.error.code ?? data.error.type ?? ErrorCode.Unknown
-          } else if (response.status === 401) {
-            errorCode = ErrorCode.InvalidApiKey
+          if (response.status === 401) {
+            throw {
+              code: ErrorCode.InvalidApiKey,
+              message: 'Invalid API Key.',
+            }
           }
-          const error = {
-            message: data.error?.message ?? data.message ?? 'Error occurred.',
-            code: errorCode,
+          let data = await response.json()
+          try {
+            handleError(data)
+          } catch (err) {
+            subscriber.error(err)
+            return
           }
-          subscriber.error(error)
-          subscriber.complete()
-          return
         }
         // There could be overriden stream parameter in the model
         // that is set in request body (transformed payload)
@@ -54,9 +53,10 @@ export function requestInference(
           model.parameters?.stream === false
         ) {
           const data = await response.json()
-          if (data.error || data.message) {
-            subscriber.error(data.error ?? data)
-            subscriber.complete()
+          try {
+            handleError(data)
+          } catch (err) {
+            subscriber.error(err)
             return
           }
           if (transformResponse) {
@@ -91,13 +91,10 @@ export function requestInference(
                   const toParse = cachedLines + line
                   if (!line.includes('data: [DONE]')) {
                     const data = JSON.parse(toParse.replace('data: ', ''))
-                    if (
-                      'error' in data ||
-                      'message' in data ||
-                      'detail' in data
-                    ) {
-                      subscriber.error(data.error ?? data)
-                      subscriber.complete()
+                    try {
+                      handleError(data)
+                    } catch (err) {
+                      subscriber.error(err)
                       return
                     }
                     content += data.choices[0]?.delta?.content ?? ''
@@ -117,4 +114,19 @@ export function requestInference(
       })
       .catch((err) => subscriber.error(err))
   })
+}
+
+/**
+ * Handle error and normalize it to a common format.
+ * @param data
+ */
+const handleError = (data: any) => {
+  if (
+    data.error ||
+    data.message ||
+    data.detail ||
+    (Array.isArray(data) && data.length && data[0].error)
+  ) {
+    throw data.error ?? data[0]?.error ?? data
+  }
 }

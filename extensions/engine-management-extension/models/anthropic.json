@@ -8,6 +8,7 @@
     "inference_params": {
       "max_tokens": 4096,
       "temperature": 0.7,
+      "max_temperature": 1.0,
       "stream": true
     },
     "engine": "anthropic"
@@ -21,6 +22,7 @@
     "inference_params": {
       "max_tokens": 8192,
       "temperature": 0.7,
+      "max_temperature": 1.0,
       "stream": true
     },
     "engine": "anthropic"
@@ -34,6 +36,21 @@
     "inference_params": {
       "max_tokens": 8192,
       "temperature": 0.7,
+      "max_temperature": 1.0,
+      "stream": true
+    },
+    "engine": "anthropic"
+  },
+  {
+    "model": "claude-3-7-sonnet-latest",
+    "object": "model",
+    "name": "Claude 3.7 Sonnet Latest",
+    "version": "1.0",
+    "description": "Claude 3.7 Sonnet is the first hybrid reasoning model on the market. It is the most intelligent model yet. It is faster, more cost effective, and more capable than any other model in its class.",
+    "inference_params": {
+      "max_tokens": 8192,
+      "temperature": 0.7,
+      "max_temperature": 1.0,
       "stream": true
     },
     "engine": "anthropic"

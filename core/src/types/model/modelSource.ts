@@ -61,6 +61,7 @@ export interface ModelSibling {
  */
 export interface ModelSource {
   id: string
+  author?: string
   metadata: Metadata
   models: ModelSibling[]
   type?: string

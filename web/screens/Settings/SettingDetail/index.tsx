@@ -13,6 +13,7 @@ import Engines from '@/screens/Settings/Engines'
 import LocalEngineSettings from '@/screens/Settings/Engines/LocalEngineSettings'
 import RemoteEngineSettings from '@/screens/Settings/Engines/RemoteEngineSettings'
 import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
+import Hardware from '@/screens/Settings/Hardware'
 import Hotkeys from '@/screens/Settings/Hotkeys'
 import MyModels from '@/screens/Settings/MyModels'
 import Privacy from '@/screens/Settings/Privacy'
@@ -38,6 +39,9 @@ const SettingDetail = () => {
 
     case 'Keyboard Shortcuts':
       return <Hotkeys />
+
+    case 'Hardware':
+      return <Hardware />
 
     case 'Privacy':
       return <Privacy />

@@ -38,8 +38,14 @@ describe('OAIEngine', () => {
 
   it('should subscribe to events on load', () => {
     engine.onLoad()
-    expect(events.on).toHaveBeenCalledWith(MessageEvent.OnMessageSent, expect.any(Function))
-    expect(events.on).toHaveBeenCalledWith(InferenceEvent.OnInferenceStopped, expect.any(Function))
+    expect(events.on).toHaveBeenCalledWith(
+      MessageEvent.OnMessageSent,
+      expect.any(Function)
+    )
+    expect(events.on).toHaveBeenCalledWith(
+      InferenceEvent.OnInferenceStopped,
+      expect.any(Function)
+    )
   })
 
   it('should handle inference request', async () => {
@@ -77,7 +83,12 @@ describe('OAIEngine', () => {
     expect(events.emit).toHaveBeenCalledWith(
       MessageEvent.OnMessageUpdate,
       expect.objectContaining({
-        content: [{ type: ContentType.Text, text: { value: 'test response', annotations: [] } }],
+        content: [
+          {
+            type: ContentType.Text,
+            text: { value: 'test response', annotations: [] },
+          },
+        ],
         status: MessageStatus.Ready,
       })
     )
@@ -101,11 +112,10 @@ describe('OAIEngine', () => {
 
     await engine.inference(data)
 
-    expect(events.emit).toHaveBeenCalledWith(
+    expect(events.emit).toHaveBeenLastCalledWith(
       MessageEvent.OnMessageUpdate,
       expect.objectContaining({
-        content: [{ type: ContentType.Text, text: { value: 'test error', annotations: [] } }],
-        status: MessageStatus.Error,
+        status: 'error',
         error_code: 500,
       })
     )

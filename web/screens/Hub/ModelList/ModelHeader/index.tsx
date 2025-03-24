@@ -1,11 +1,15 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
-import { ModelSource } from '@janhq/core'
+import Image from 'next/image'
+
+import { InferenceEngine, ModelSource } from '@janhq/core'
 
 import { Button, Tooltip, Dropdown, Badge } from '@janhq/joi'
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { ChevronDownIcon } from 'lucide-react'
+
+import { twMerge } from 'tailwind-merge'
 
 import ModalCancelDownload from '@/containers/ModalCancelDownload'
 
@@ -14,11 +18,12 @@ import { MainViewState } from '@/constants/screens'
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
 import useDownloadModel from '@/hooks/useDownloadModel'
 
-import { useSettings } from '@/hooks/useSettings'
-
 import { toGigabytes } from '@/utils/converter'
 
+import { getLogoEngine } from '@/utils/modelEngine'
 import { extractModelName } from '@/utils/modelSource'
+
+import { fuzzySearch } from '@/utils/search'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
@@ -29,10 +34,6 @@ import {
   getDownloadingModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { selectedSettingAtom } from '@/helpers/atoms/Setting.atom'
-import {
-  nvidiaTotalVramAtom,
-  totalRamAtom,
-} from '@/helpers/atoms/SystemBar.atom'
 
 type Props = {
   model: ModelSource
@@ -45,17 +46,9 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setSelectedSetting = useSetAtom(selectedSettingAtom)
   const { requestCreateNewThread } = useCreateNewThread()
-  const totalRam = useAtomValue(totalRamAtom)
-  const { settings } = useSettings()
 
-  const nvidiaTotalVram = useAtomValue(nvidiaTotalVramAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
 
-  // Default nvidia returns vram in MB, need to convert to bytes to match the unit of totalRamW
-  let ram = nvidiaTotalVram * 1024 * 1024
-  if (ram === 0 || settings?.run_mode === 'cpu') {
-    ram = totalRam
-  }
   const serverEnabled = useAtomValue(serverEnabledAtom)
   const assistants = useAtomValue(assistantsAtom)
 
@@ -66,6 +59,11 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
   const isDownloaded = downloadedModels.some((md) =>
     model.models.some((m) => m.id === md.id)
   )
+  const defaultModel = useMemo(() => {
+    return model.models?.find(
+      (e) => e.id.includes('q4-km') || fuzzySearch('q4km', e.id)
+    )
+  }, [model])
 
   let downloadButton = (
     <div className="group flex h-8 cursor-pointer items-center justify-center rounded-md bg-[hsla(var(--primary-bg))]">
@@ -76,19 +74,21 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
         <span className="mx-4 font-medium text-white">Download</span>
       </div>
       <Dropdown
-        className="z-50 max-h-[240px] min-w-[240px] max-w-[320px] overflow-y-auto border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow"
+        className="z-50  max-h-[240px] min-w-[240px] max-w-[320px] overflow-y-auto border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow"
         options={model.models?.map((e) => ({
           name: (
             <div className="flex space-x-2">
               <span className="line-clamp-1 max-w-[340px] font-normal">
                 {e.id}
               </span>
-              <Badge
-                theme="secondary"
-                className="inline-flex w-[60px] items-center font-medium"
-              >
-                <span>Default</span>
-              </Badge>
+              {e.id === defaultModel?.id && (
+                <Badge
+                  theme="secondary"
+                  className="inline-flex w-[60px] items-center font-medium"
+                >
+                  <span>Default</span>
+                </Badge>
+              )}
             </div>
           ),
           value: e.id,
@@ -158,9 +158,23 @@ const ModelItemHeader = ({ model, onSelectedModel }: Props) => {
       <div className="flex items-center justify-between py-2">
         <div className="group flex cursor-pointer items-center gap-2">
           <span
-            className="line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline"
+            className={twMerge(
+              'line-clamp-1 text-base font-medium capitalize group-hover:text-blue-500 group-hover:underline',
+              model.type === 'cloud' && 'flex items-center gap-x-2'
+            )}
             onClick={onSelectedModel}
           >
+            {model.type === 'cloud' && (
+              <>
+                <Image
+                  className="h-6 w-6 flex-shrink-0"
+                  width={48}
+                  height={48}
+                  src={getLogoEngine(model.id as InferenceEngine) || ''}
+                  alt="logo"
+                />
+              </>
+            )}
             {extractModelName(model.metadata?.id)}
           </span>
         </div>

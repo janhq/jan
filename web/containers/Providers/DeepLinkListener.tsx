@@ -6,7 +6,10 @@ import { useDebouncedCallback } from 'use-debounce'
 
 import { MainViewState } from '@/constants/screens'
 
-import { useModelSourcesMutation } from '@/hooks/useModelSource'
+import {
+  useGetModelSources,
+  useModelSourcesMutation,
+} from '@/hooks/useModelSource'
 
 import { loadingModalInfoAtom } from '../LoadingModal'
 import { toaster } from '../Toast'
@@ -19,6 +22,7 @@ const DeepLinkListener: React.FC = () => {
   const setLoadingInfo = useSetAtom(loadingModalInfoAtom)
   const setMainView = useSetAtom(mainViewStateAtom)
   const setModelDetail = useSetAtom(modelDetailAtom)
+  const { mutate } = useGetModelSources()
 
   const handleDeepLinkAction = useDebouncedCallback(
     async (deepLinkAction: DeepLinkAction) => {
@@ -37,7 +41,7 @@ const DeepLinkListener: React.FC = () => {
           title: 'Getting Hugging Face model details',
           message: 'Please wait..',
         })
-        await addModelSource(deepLinkAction.resource)
+        await addModelSource(deepLinkAction.resource).then(() => mutate())
         setLoadingInfo(undefined)
         setMainView(MainViewState.Hub)
         setModelDetail(deepLinkAction.resource)

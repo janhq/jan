@@ -3,24 +3,29 @@ import React, { useState, useEffect, useRef } from 'react'
 
 import { Button, ScrollArea, Badge, Input } from '@janhq/joi'
 
+import { useAtomValue } from 'jotai'
 import { SearchIcon } from 'lucide-react'
 import { Marked, Renderer } from 'marked'
 
 import Loader from '@/containers/Loader'
 
+import { useApp } from '@/hooks/useApp'
+
 import { formatExtensionsName } from '@/utils/converter'
 
 import { extensionManager } from '@/extension'
 import Extension from '@/extension/Extension'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const ExtensionCatalog = () => {
   const [coreActiveExtensions, setCoreActiveExtensions] = useState<Extension[]>(
     []
   )
-
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [searchText, setSearchText] = useState('')
   const [showLoading, setShowLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { relaunch } = useApp()
 
   useEffect(() => {
     const getAllSettings = async () => {
@@ -35,10 +40,7 @@ const ExtensionCatalog = () => {
           'provider' in extension &&
           typeof extension.provider === 'string'
         ) {
-          if (
-            (settings && settings.length > 0) ||
-            (await extension.installationState()) !== 'NotRequired'
-          ) {
+          if (settings && settings.length > 0) {
             engineMenu.push({
               ...extension,
               provider:
@@ -72,7 +74,7 @@ const ExtensionCatalog = () => {
     // Send the filename of the to be installed extension
     // to the main process for installation
     const installed = await extensionManager.install([extensionFile])
-    if (installed) window.core?.api?.relaunch()
+    if (installed) relaunch()
   }
 
   /**
@@ -85,7 +87,7 @@ const ExtensionCatalog = () => {
     // Send the filename of the to be uninstalled extension
     // to the main process for removal
     const res = await extensionManager.uninstall([name])
-    if (res) window.core?.api?.relaunch()
+    if (res) relaunch()
   }
 
   /**
@@ -103,7 +105,10 @@ const ExtensionCatalog = () => {
 
   return (
     <>
-      <ScrollArea className="h-full w-full">
+      <ScrollArea
+        type={showScrollBar ? 'always' : 'scroll'}
+        className="h-full w-full"
+      >
         <div className="flex w-full flex-col items-start justify-between gap-y-2 p-4 sm:flex-row">
           <div className="w-full sm:w-[300px]">
             <Input
@@ -129,13 +134,6 @@ const ExtensionCatalog = () => {
         </div>
 
         <div className="block w-full px-4">
-          {coreActiveExtensions.length > 0 && (
-            <div className="mb-3 mt-8 border-b border-[hsla(var(--app-border))] pb-4">
-              <h6 className="text-base font-semibold text-[hsla(var(--text-primary))]">
-                Core Extension
-              </h6>
-            </div>
-          )}
           {coreActiveExtensions
             .filter((x) => x.name.includes(searchText.toLowerCase().trim()))
             .sort((a, b) => a.name.localeCompare(b.name))

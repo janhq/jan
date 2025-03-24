@@ -25,17 +25,22 @@ import ImportModelOptionModal from '@/screens/Settings/ImportModelOptionModal'
 import ImportingModelModal from '@/screens/Settings/ImportingModelModal'
 import SelectingModelModal from '@/screens/Settings/SelectingModelModal'
 
+import { getAppDistinctId, updateDistinctId } from '@/utils/settings'
+
 import LoadingModal from '../LoadingModal'
 
 import MainViewContainer from '../MainViewContainer'
 
-import InstallingExtensionModal from './BottomPanel/InstallingExtension/InstallingExtensionModal'
+import ModalAppUpdaterChangelog from '../ModalAppUpdaterChangelog'
+
+import ModalAppUpdaterNotAvailable from '../ModalAppUpdaterNotAvailable'
 
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import {
   productAnalyticAtom,
   productAnalyticPromptAtom,
   reduceTransparentAtom,
+  showScrollBarAtom,
 } from '@/helpers/atoms/Setting.atom'
 
 const BaseLayout = () => {
@@ -46,6 +51,7 @@ const BaseLayout = () => {
   const [productAnalyticPrompt, setProductAnalyticPrompt] = useAtom(
     productAnalyticPromptAtom
   )
+  const showScrollBar = useAtomValue(showScrollBarAtom)
   const [showProductAnalyticPrompt, setShowProductAnalyticPrompt] =
     useState(false)
 
@@ -92,8 +98,16 @@ const BaseLayout = () => {
           return properties
         },
       })
-      posthog.opt_in_capturing()
-      posthog.register({ app_version: VERSION })
+      // Attempt to restore distinct Id from app global settings
+      getAppDistinctId()
+        .then((id) => {
+          if (id) posthog.identify(id)
+        })
+        .finally(() => {
+          posthog.opt_in_capturing()
+          posthog.register({ app_version: VERSION })
+          updateDistinctId(posthog.get_distinct_id())
+        })
     } else {
       posthog.opt_out_capturing()
     }
@@ -136,7 +150,12 @@ const BaseLayout = () => {
       )}
     >
       <TopPanel />
-      <div className="relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen">
+      <div
+        className={twMerge(
+          'relative top-9 flex h-[calc(100vh-(36px+36px))] w-screen',
+          showScrollBar && 'show-scroll-bar'
+        )}
+      >
         <RibbonPanel />
         <MainViewContainer />
         <LoadingModal />
@@ -146,7 +165,6 @@ const BaseLayout = () => {
         {importModelStage === 'EDIT_MODEL_INFO' && <EditModelInfoModal />}
         {importModelStage === 'CONFIRM_CANCEL' && <CancelModelImportModal />}
         <ChooseWhatToImportModal />
-        <InstallingExtensionModal />
         {showProductAnalyticPrompt && (
           <div className="fixed bottom-4 z-50 m-4 max-w-full rounded-xl border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] p-6 shadow-2xl sm:bottom-8 sm:right-4 sm:m-0 sm:max-w-[400px]">
             <div className="mb-4 flex items-center gap-x-2">
@@ -222,6 +240,8 @@ const BaseLayout = () => {
         )}
       </div>
       <BottomPanel />
+      <ModalAppUpdaterChangelog />
+      <ModalAppUpdaterNotAvailable />
     </div>
   )
 }

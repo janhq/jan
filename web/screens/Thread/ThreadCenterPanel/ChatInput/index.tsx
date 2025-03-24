@@ -138,14 +138,14 @@ const ChatInput = () => {
 
   return (
     <div className="relative p-4 pb-2">
+      {renderPreview(fileUpload)}
       <div className="relative flex w-full flex-col">
-        {renderPreview(fileUpload)}
         <RichTextEditor
           className={twMerge(
             'relative mb-1 max-h-[400px] resize-none rounded-lg border border-[hsla(var(--app-border))] p-3 pr-20',
             'focus-within:outline-none focus-visible:outline-0 focus-visible:ring-1 focus-visible:ring-[hsla(var(--primary-bg))] focus-visible:ring-offset-0',
             'overflow-y-auto',
-            fileUpload && 'rounded-t-none',
+            fileUpload && 'rounded-t-none border-t-0',
             experimentalFeature && 'pl-10',
             activeSettingInputBox && 'pb-14 pr-16'
           )}
@@ -170,7 +170,7 @@ const ChatInput = () => {
                     !!fileUpload ||
                     (activeAssistant?.tools &&
                       !activeAssistant?.tools[0]?.enabled &&
-                      !activeAssistant?.model.settings?.vision_model)
+                      !activeAssistant?.model.settings?.mmproj)
                   ) {
                     e.stopPropagation()
                   } else {
@@ -193,7 +193,7 @@ const ChatInput = () => {
                 {!!fileUpload ||
                   (activeAssistant?.tools &&
                     !activeAssistant?.tools[0]?.enabled &&
-                    !activeAssistant?.model.settings?.vision_model && (
+                    !activeAssistant?.model.settings?.mmproj && (
                       <>
                         {!!fileUpload && (
                           <span>
@@ -231,13 +231,13 @@ const ChatInput = () => {
               <li
                 className={twMerge(
                   'text-[hsla(var(--text-secondary)] hover:bg-secondary flex w-full items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
-                  activeAssistant?.model.settings?.vision_model &&
+                  activeAssistant?.model.settings?.mmproj &&
                     isModelSupportRagAndTools
                     ? 'cursor-pointer'
                     : 'cursor-not-allowed opacity-50'
                 )}
                 onClick={() => {
-                  if (activeAssistant?.model.settings?.vision_model) {
+                  if (activeAssistant?.model.settings?.mmproj) {
                     imageInputRef.current?.click()
                     setShowAttachmentMenus(false)
                   }

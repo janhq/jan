@@ -6,6 +6,8 @@ import groq from './resources/groq.json' with { type: 'json' }
 import martian from './resources/martian.json' with { type: 'json' }
 import mistral from './resources/mistral.json' with { type: 'json' }
 import nvidia from './resources/nvidia.json' with { type: 'json' }
+import deepseek from './resources/deepseek.json' with { type: 'json' }
+import googleGemini from './resources/google_gemini.json' with { type: 'json' }
 
 import anthropicModels from './models/anthropic.json' with { type: 'json' }
 import cohereModels from './models/cohere.json' with { type: 'json' }
@@ -15,6 +17,8 @@ import groqModels from './models/groq.json' with { type: 'json' }
 import martianModels from './models/martian.json' with { type: 'json' }
 import mistralModels from './models/mistral.json' with { type: 'json' }
 import nvidiaModels from './models/nvidia.json' with { type: 'json' }
+import deepseekModels from './models/deepseek.json' with { type: 'json' }
+import googleGeminiModels from './models/google_gemini.json' with { type: 'json' }
 
 const engines = [
   anthropic,
@@ -25,6 +29,8 @@ const engines = [
   mistral,
   martian,
   nvidia,
+  deepseek,
+  googleGemini,
 ]
 const models = [
   ...anthropicModels,
@@ -35,5 +41,7 @@ const models = [
   ...mistralModels,
   ...martianModels,
   ...nvidiaModels,
+  ...deepseekModels,
+  ...googleGeminiModels,
 ]
 export { engines, models }

@@ -10,19 +10,14 @@ import {
   Model,
   executeOnMain,
   EngineEvent,
-  systemInformation,
-  joinPath,
   LocalOAIEngine,
   InferenceEngine,
-  getJanDataFolderPath,
   extractModelLoadParams,
-  fs,
   events,
   ModelEvent,
-  dirName,
 } from '@janhq/core'
 import PQueue from 'p-queue'
-import ky from 'ky'
+import ky, { KyInstance } from 'ky'
 
 /**
  * Event subscription types of Downloader
@@ -80,14 +75,37 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   abortControllers = new Map<string, AbortController>()
 
+  api?: KyInstance
   /**
-   * Subscribes to events emitted by the @janhq/core package.
+   * Get the API instance
+   * @returns
+   */
+  async apiInstance(): Promise<KyInstance> {
+    if(this.api) return this.api
+    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
+    this.api = ky.extend({
+      prefixUrl: CORTEX_API_URL,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    return this.api
+  }
+
+  /**
+   * Authorization headers for the API requests.
+   * @returns
+   */
+  headers(): Promise<HeadersInit> {
+    return window.core?.api.appToken().then((token: string) => ({
+      Authorization: `Bearer ${token}`,
+    }))
+  }
+
+  /**
+   * Called when the extension is loaded.
    */
   async onLoad() {
-    const models = MODELS as Model[]
-
-    this.registerModels(models)
-
     super.onLoad()
 
     // Register Settings
@@ -112,8 +130,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
     // Run the process watchdog
-    const systemInfo = await systemInformation()
-    this.queue.add(() => executeOnMain(NODE, 'run', systemInfo))
+    // const systemInfo = await systemInformation()
+    this.queue.add(() => executeOnMain(NODE, 'run'))
     this.queue.add(() => this.healthz())
     this.subscribeToEvents()
 
@@ -152,81 +170,59 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   override async loadModel(
     model: Model & { file_path?: string }
   ): Promise<void> {
-    if (
-      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
-      model.settings.llama_model_path
-    ) {
-      // Legacy chat model support
-      model.settings = {
-        ...model.settings,
-        llama_model_path: await getModelFilePath(
-          model,
-          model.settings.llama_model_path
-        ),
-      }
-    } else {
-      const { llama_model_path, ...settings } = model.settings
-      model.settings = settings
-    }
+    // Cortex will handle these settings
+    const { llama_model_path, mmproj, ...settings } = model.settings
+    model.settings = settings
 
-    if (
-      (model.engine === InferenceEngine.nitro || model.settings.vision_model) &&
-      model.settings.mmproj
-    ) {
-      // Legacy clip vision model support
-      model.settings = {
-        ...model.settings,
-        mmproj: await getModelFilePath(model, model.settings.mmproj),
-      }
-    } else {
-      const { mmproj, ...settings } = model.settings
-      model.settings = settings
-    }
     const controller = new AbortController()
     const { signal } = controller
 
     this.abortControllers.set(model.id, controller)
 
     return await this.queue.add(() =>
-      ky
-        .post(`${CORTEX_API_URL}/v1/models/start`, {
-          json: {
-            ...extractModelLoadParams(model.settings),
-            model: model.id,
-            engine:
-              model.engine === InferenceEngine.nitro // Legacy model cache
-                ? InferenceEngine.cortex_llamacpp
-                : model.engine,
-            cont_batching: this.cont_batching,
-            n_parallel: this.n_parallel,
-            caching_enabled: this.caching_enabled,
-            flash_attn: this.flash_attn,
-            cache_type: this.cache_type,
-            use_mmap: this.use_mmap,
-            ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
-          },
-          timeout: false,
-          signal,
-        })
-        .json()
-        .catch(async (e) => {
-          throw (await e.response?.json()) ?? e
-        })
-        .finally(() => this.abortControllers.delete(model.id))
-        .then()
+      this.apiInstance().then((api) =>
+        api
+          .post('v1/models/start', {
+            json: {
+              ...extractModelLoadParams(model.settings),
+              model: model.id,
+              engine:
+                model.engine === InferenceEngine.nitro // Legacy model cache
+                  ? InferenceEngine.cortex_llamacpp
+                  : model.engine,
+              cont_batching: this.cont_batching,
+              n_parallel: this.n_parallel,
+              caching_enabled: this.caching_enabled,
+              flash_attn: this.flash_attn,
+              cache_type: this.cache_type,
+              use_mmap: this.use_mmap,
+              ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
+            },
+            timeout: false,
+            signal,
+          })
+          .json()
+          .catch(async (e) => {
+            throw (await e.response?.json()) ?? e
+          })
+          .finally(() => this.abortControllers.delete(model.id))
+          .then()
+      )
     )
   }
 
   override async unloadModel(model: Model): Promise<void> {
-    return ky
-      .post(`${CORTEX_API_URL}/v1/models/stop`, {
-        json: { model: model.id },
-      })
-      .json()
-      .finally(() => {
-        this.abortControllers.get(model.id)?.abort()
-      })
-      .then()
+    return this.apiInstance().then((api) =>
+      api
+        .post('v1/models/stop', {
+          json: { model: model.id },
+        })
+        .json()
+        .finally(() => {
+          this.abortControllers.get(model.id)?.abort()
+        })
+        .then()
+    )
   }
 
   /**
@@ -234,15 +230,17 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async healthz(): Promise<void> {
-    return ky
-      .get(`${CORTEX_API_URL}/healthz`, {
-        retry: {
-          limit: 20,
-          delay: () => 500,
-          methods: ['get'],
-        },
-      })
-      .then(() => {})
+    return this.apiInstance().then((api) =>
+      api
+        .get('healthz', {
+          retry: {
+            limit: 20,
+            delay: () => 500,
+            methods: ['get'],
+          },
+        })
+        .then(() => {})
+    )
   }
 
   /**
@@ -250,13 +248,15 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   private async clean(): Promise<any> {
-    return ky
-      .delete(`${CORTEX_API_URL}/processmanager/destroy`, {
-        timeout: 2000, // maximum 2 seconds
-        retry: {
-          limit: 0,
-        },
-      })
+    return this.apiInstance()
+      .then((api) =>
+        api.delete('processmanager/destroy', {
+          timeout: 2000, // maximum 2 seconds
+          retry: {
+            limit: 0,
+          },
+        })
+      )
       .catch(() => {
         // Do nothing
       })
@@ -339,22 +339,3 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
   }
 }
-
-/// Legacy
-const getModelFilePath = async (
-  model: Model & { file_path?: string },
-  file: string
-): Promise<string> => {
-  // Symlink to the model file
-  if (
-    !model.sources[0]?.url.startsWith('http') &&
-    (await fs.existsSync(model.sources[0].url))
-  ) {
-    return model.sources[0]?.url
-  }
-  if (model.file_path) {
-    await joinPath([await dirName(model.file_path), file])
-  }
-  return joinPath([await getJanDataFolderPath(), 'models', model.id, file])
-}
-///

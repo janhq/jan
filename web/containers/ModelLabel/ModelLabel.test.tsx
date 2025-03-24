@@ -1,8 +1,7 @@
 import React from 'react'
-import { render, waitFor, screen } from '@testing-library/react'
+import { render } from '@testing-library/react'
 import { useAtomValue } from 'jotai'
 import { useActiveModel } from '@/hooks/useActiveModel'
-import { useSettings } from '@/hooks/useSettings'
 import ModelLabel from '@/containers/ModelLabel'
 
 jest.mock('jotai', () => ({
@@ -14,14 +13,9 @@ jest.mock('@/hooks/useActiveModel', () => ({
   useActiveModel: jest.fn(),
 }))
 
-jest.mock('@/hooks/useSettings', () => ({
-  useSettings: jest.fn(),
-}))
-
 describe('ModelLabel', () => {
   const mockUseAtomValue = useAtomValue as jest.Mock
   const mockUseActiveModel = useActiveModel as jest.Mock
-  const mockUseSettings = useSettings as jest.Mock
 
   const defaultProps: any = {
     metadata: {
@@ -44,7 +38,6 @@ describe('ModelLabel', () => {
     mockUseActiveModel.mockReturnValue({
       activeModel: { metadata: { size: 0 } },
     })
-    mockUseSettings.mockReturnValue({ settings: { run_mode: 'cpu' } })
 
     const props = {
       ...defaultProps,

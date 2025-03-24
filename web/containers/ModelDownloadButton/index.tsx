@@ -3,6 +3,8 @@ import { useCallback, useMemo } from 'react'
 import { Button, Tooltip } from '@janhq/joi'
 import { useAtomValue, useSetAtom } from 'jotai'
 
+import { twMerge } from 'tailwind-merge'
+
 import { MainViewState } from '@/constants/screens'
 
 import { useCreateNewThread } from '@/hooks/useCreateNewThread'
@@ -13,6 +15,7 @@ import ModalCancelDownload from '../ModalCancelDownload'
 import { mainViewStateAtom } from '@/helpers/atoms/App.atom'
 import { assistantsAtom } from '@/helpers/atoms/Assistant.atom'
 
+import { serverEnabledAtom } from '@/helpers/atoms/LocalServer.atom'
 import {
   downloadedModelsAtom,
   getDownloadingModelAtom,
@@ -22,10 +25,13 @@ interface Props {
   id: string
   theme?: 'primary' | 'ghost' | 'icon' | 'destructive' | undefined
   variant?: 'solid' | 'soft' | 'outline' | undefined
+  className?: string
+  hideProgress?: boolean
 }
-const ModelDownloadButton = ({ id, theme, variant }: Props) => {
+const ModelDownloadButton = ({ id, theme, className, hideProgress }: Props) => {
   const { downloadModel } = useDownloadModel()
   const downloadingModels = useAtomValue(getDownloadingModelAtom)
+  const serverEnabled = useAtomValue(serverEnabledAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const assistants = useAtomValue(assistantsAtom)
   const setMainViewState = useSetAtom(mainViewStateAtom)
@@ -59,7 +65,7 @@ const ModelDownloadButton = ({ id, theme, variant }: Props) => {
   const defaultButton = (
     <Button
       theme={theme ? theme : 'primary'}
-      variant={variant ? variant : 'solid'}
+      className={twMerge('min-w-[70px]', className)}
       onClick={(e) => {
         e.stopPropagation()
         onDownloadClick()
@@ -68,7 +74,10 @@ const ModelDownloadButton = ({ id, theme, variant }: Props) => {
       Download
     </Button>
   )
-  const downloadingButton = <ModalCancelDownload modelId={id} />
+  const downloadingButton = !hideProgress && (
+    <ModalCancelDownload modelId={id} />
+  )
+
   const downloadedButton = (
     <Tooltip
       trigger={
@@ -78,11 +87,13 @@ const ModelDownloadButton = ({ id, theme, variant }: Props) => {
           variant="outline"
           theme="ghost"
           className="min-w-[70px]"
+          disabled={serverEnabled}
         >
           Use
         </Button>
       }
       content="Threads are disabled while the server is running"
+      disabled={!serverEnabled}
     />
   )
   return (

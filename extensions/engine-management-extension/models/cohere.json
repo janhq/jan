@@ -8,7 +8,8 @@
     "inference_params": {
       "max_tokens": 4096,
       "temperature": 0.7,
-      "stream": false
+      "max_temperature": 1.0,
+      "stream": true
     },
     "engine": "cohere"
   },
@@ -21,7 +22,8 @@
     "inference_params": {
       "max_tokens": 4096,
       "temperature": 0.7,
-      "stream": false
+      "max_temperature": 1.0,
+      "stream": true
     },
     "engine": "cohere"
   }

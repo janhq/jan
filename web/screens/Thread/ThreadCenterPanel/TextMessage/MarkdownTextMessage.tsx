@@ -5,30 +5,43 @@ import React, { memo } from 'react'
 
 import Markdown from 'react-markdown'
 
-import { PluggableList } from 'react-markdown/lib'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeHighlightCodeLines from 'rehype-highlight-code-lines'
-
 import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+
 import remarkGfm from 'remark-gfm'
 
 import remarkMath from 'remark-math'
 
 import 'katex/dist/katex.min.css'
 import 'highlight.js/styles/atom-one-dark.css'
+import '@/styles/components/marked.scss'
+
+import { twMerge } from 'tailwind-merge'
+
 import { useClipboard } from '@/hooks/useClipboard'
 
 import { getLanguageFromExtension } from '@/utils/codeLanguageExtension'
+
+import { markdownComponents } from './MarkdownUtils'
 
 interface Props {
   text: string
   isUser?: boolean
   className?: string
   renderKatex?: boolean
+  renderRaw?: boolean
 }
 
 export const MarkdownTextMessage = memo(
-  ({ text, isUser, className, renderKatex = true }: Props) => {
+  ({
+    text,
+    isUser,
+    className,
+    renderKatex = true,
+    renderRaw = true,
+  }: Props) => {
     const clipboard = useClipboard({ timeout: 1000 })
 
     // Escapes headings
@@ -72,6 +85,7 @@ export const MarkdownTextMessage = memo(
       // Join the lines with newline characters for proper formatting
       return codeLines.join('\n')
     }
+
     function wrapCodeBlocksWithoutVisit() {
       return (tree: { children: any[] }) => {
         tree.children = tree.children.map((node) => {
@@ -101,7 +115,6 @@ export const MarkdownTextMessage = memo(
                       'code-block',
                       'group/item',
                       'relative',
-                      'my-4',
                       'overflow-auto',
                     ],
                   },
@@ -209,19 +222,22 @@ export const MarkdownTextMessage = memo(
         })
       }
     }
+
     return (
       <>
         <Markdown
-          className={className}
+          className={twMerge('markdown-content', className)}
           remarkPlugins={[remarkMath, remarkGfm]}
           rehypePlugins={
             [
+              renderRaw ? rehypeRaw : undefined,
               rehypeHighlight,
               renderKatex ? [rehypeKatex, { throwOnError: false }] : undefined,
               [rehypeHighlightCodeLines, { showLineNumbers: true }],
               wrapCodeBlocksWithoutVisit,
-            ].filter((e) => !!e) as PluggableList
+            ].filter(Boolean) as any
           }
+          components={markdownComponents}
         >
           {preprocessMarkdown(text)}
         </Markdown>

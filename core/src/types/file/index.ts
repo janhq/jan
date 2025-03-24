@@ -16,39 +16,7 @@ export type DownloadState = {
 
   error?: string
   extensionId?: string
-  downloadType?: DownloadType | string
   localPath?: string
-}
-
-export type DownloadType = 'model' | 'extension'
-
-export type DownloadRequest = {
-  /**
-   * The URL to download the file from.
-   */
-  url: string
-
-  /**
-   * The local path to save the file to.
-   */
-  localPath: string
-
-  /**
-   * The extension ID of the extension that initiated the download.
-   *
-   * Can be extension name.
-   */
-  extensionId?: string
-
-  /**
-   * The model ID of the model that initiated the download.
-   */
-  modelId?: string
-
-  /**
-   * The download type.
-   */
-  downloadType?: DownloadType | string
 }
 
 type DownloadTime = {
@@ -60,7 +28,6 @@ type DownloadSize = {
   total: number
   transferred: number
 }
-
 /**
  * The file metadata
  */

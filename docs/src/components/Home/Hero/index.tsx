@@ -44,7 +44,7 @@ const Hero = () => {
       <div className="mt-10 text-center">
         <div>
           <Link
-            href="https://github.com/janhq/jan/releases"
+            href="https://github.com/menloresearch/jan/releases"
             target="_blank"
             className="hidden lg:inline-block"
           >

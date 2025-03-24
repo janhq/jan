@@ -7,7 +7,6 @@ import { twMerge } from 'tailwind-merge'
 import DownloadingState from './DownloadingState'
 
 import ImportingModelState from './ImportingModelState'
-import InstallingExtension from './InstallingExtension'
 import SystemMonitor from './SystemMonitor'
 import UpdateApp from './UpdateApp'
 import UpdatedFailedModal from './UpdateFailedModal'
@@ -24,7 +23,7 @@ const menuLinks = [
   {
     name: 'Github',
     icon: <FaGithub size={14} className="flex-shrink-0" />,
-    link: 'https://github.com/janhq/jan',
+    link: 'https://github.com/menloresearch/jan',
   },
 ]
 
@@ -49,7 +48,6 @@ const BottomPanel = () => {
         <ImportingModelState />
         <DownloadingState />
         <UpdatedFailedModal />
-        <InstallingExtension />
       </div>
       <div className="flex items-center gap-x-1">
         <SystemMonitor />

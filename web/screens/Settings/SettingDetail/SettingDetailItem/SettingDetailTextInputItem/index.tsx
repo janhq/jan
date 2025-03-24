@@ -102,6 +102,7 @@ const SettingDetailTextInputItem = ({
               <InputExtraActions
                 actions={inputActions ?? []}
                 onAction={onAction}
+                value={value}
                 copied={copied}
                 obscure={obscure}
               />
@@ -118,11 +119,13 @@ type InputActionProps = {
   onAction: (action: InputAction) => void
   copied: boolean
   obscure: boolean
+  value: string | string[]
 }
 
 const InputExtraActions: React.FC<InputActionProps> = ({
   actions,
   onAction,
+  value,
   copied,
   obscure,
 }) => {
@@ -141,11 +144,15 @@ const InputExtraActions: React.FC<InputActionProps> = ({
                 className="text-green-600"
               />
             ) : (
-              <CopyIcon
-                key={action}
-                size={16}
-                onClick={() => onAction('copy')}
-              />
+              <>
+                {value.length > 0 && (
+                  <CopyIcon
+                    key={action}
+                    size={16}
+                    onClick={() => onAction('copy')}
+                  />
+                )}
+              </>
             )
 
           case 'unobscure':

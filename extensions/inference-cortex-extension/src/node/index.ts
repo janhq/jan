@@ -1,30 +1,27 @@
 import path from 'path'
-import {
-  appResourcePath,
-  getJanDataFolderPath,
-  log,
-  SystemInformation,
-} from '@janhq/core/node'
+import { appResourcePath, getJanDataFolderPath, log } from '@janhq/core/node'
 import { ProcessWatchdog } from './watchdog'
-import { readdir, symlink } from 'fs/promises'
 
-// The HOST address to use for the Nitro subprocess
-const LOCAL_PORT = '39291'
 let watchdog: ProcessWatchdog | undefined = undefined
 
 /**
  * Spawns a Nitro subprocess.
  * @returns A promise that resolves when the Nitro subprocess is started.
  */
-function run(systemInfo?: SystemInformation): Promise<any> {
+function run(): Promise<any> {
   log(`[CORTEX]:: Spawning cortex subprocess...`)
 
   return new Promise<void>(async (resolve, reject) => {
-    let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
-    let binaryName = `cortex-server${process.platform === 'win32' ? '.exe' : ''}`
+    // let gpuVisibleDevices = systemInfo?.gpuSetting?.gpus_in_use.join(',') ?? ''
+    let binaryName = `cortex-server${
+      process.platform === 'win32' ? '.exe' : ''
+    }`
     const binPath = path.join(__dirname, '..', 'bin')
 
     const executablePath = path.join(binPath, binaryName)
+
+    addEnvPaths(binPath)
+
     const sharedPath = path.join(appResourcePath(), 'shared')
     // Execute the binary
     log(`[CORTEX]:: Spawn cortex at path: ${executablePath}`)
@@ -33,6 +30,9 @@ function run(systemInfo?: SystemInformation): Promise<any> {
     if (watchdog) {
       watchdog.terminate()
     }
+
+    // The HOST address to use for the cortex subprocess
+    const LOCAL_PORT = CORTEX_API_URL.split(':').pop() ?? '39291'
 
     watchdog = new ProcessWatchdog(
       executablePath,
@@ -44,15 +44,18 @@ function run(systemInfo?: SystemInformation): Promise<any> {
         `${path.join(dataFolderPath, '.janrc')}`,
         '--data_folder_path',
         dataFolderPath,
+        'config',
+        '--api_keys',
+        process.env.appToken ?? 'cortex.cpp',
       ],
       {
         env: {
           ...process.env,
-          CUDA_VISIBLE_DEVICES: gpuVisibleDevices,
-          // Vulkan - Support 1 device at a time for now
-          ...(gpuVisibleDevices?.length > 0 && {
-            GGML_VK_VISIBLE_DEVICES: gpuVisibleDevices,
-          }),
+          // CUDA_VISIBLE_DEVICES: gpuVisibleDevices,
+          // // Vulkan - Support 1 device at a time for now
+          // ...(gpuVisibleDevices?.length > 0 && {
+          //   GGML_VK_VISIBLE_DEVICES: gpuVisibleDevices,
+          // }),
         },
         cwd: sharedPath,
       }
@@ -69,6 +72,22 @@ function run(systemInfo?: SystemInformation): Promise<any> {
  */
 function dispose() {
   watchdog?.terminate()
+}
+
+/**
+ * Set the environment paths for the cortex subprocess
+ * @param dest
+ */
+function addEnvPaths(dest: string) {
+  // Add engine path to the PATH and LD_LIBRARY_PATH
+  if (process.platform === 'win32') {
+    process.env.PATH = (process.env.PATH || '').concat(path.delimiter, dest)
+  } else {
+    process.env.LD_LIBRARY_PATH = (process.env.LD_LIBRARY_PATH || '').concat(
+      path.delimiter,
+      dest
+    )
+  }
 }
 
 /**

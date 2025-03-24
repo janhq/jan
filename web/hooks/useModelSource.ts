@@ -36,6 +36,22 @@ export function useGetModelSources() {
   return { sources, error, mutate }
 }
 
+/**
+ * @returns A Promise that resolves to featured model sources.
+ */
+export function useGetFeaturedSources() {
+  const { sources, error, mutate } = useGetModelSources()
+
+  return {
+    sources: sources?.filter((e) => e.metadata?.tags?.includes('featured')),
+    error,
+    mutate,
+  }
+}
+
+/**
+ * @returns A Promise that resolves to model source mutation.
+ */
 export const useModelSourcesMutation = () => {
   const extension = useMemo(
     () => extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model),

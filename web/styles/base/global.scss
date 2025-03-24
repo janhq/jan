@@ -7,18 +7,18 @@
     text-decoration: underline;
   }
 
-  .dragable-bar {
+  .draggable-bar {
     position: absolute;
     left: 0px;
     top: 0px;
     width: 100%;
-    height: 32px;
-    user-select: none;
     -webkit-app-region: drag;
   }
 
   .unset-drag {
+    user-select: inherit;
     -webkit-app-region: no-drag;
+    pointer-events: all; /* Ensure it receives input events */
   }
 
   .unselect {
@@ -33,6 +33,7 @@
   }
 
   input[type='number'] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 
@@ -41,4 +42,21 @@
     -webkit-appearance: none;
     margin: 0;
   }
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-thumb {
+  background-clip: content-box;
+  border-radius: inherit;
+}
+::-webkit-scrollbar-track {
+  background: hsla(var(--scrollbar-tracker));
+}
+::-webkit-scrollbar-thumb {
+  background: hsla(var(--scrollbar-thumb));
+  border-radius: 20px;
 }

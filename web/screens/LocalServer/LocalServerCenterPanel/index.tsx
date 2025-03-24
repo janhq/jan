@@ -27,7 +27,7 @@ const LocalServerCenterPanel = () => {
   return (
     <CenterPanelContainer>
       <div className="flex h-full w-full flex-col">
-        <div className="sticky top-0 z-10  flex items-center justify-between border-b border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] px-4 py-2">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] px-4 py-2">
           <h2 className="font-bold">Server Logs</h2>
           <div className="space-x-2">
             <Button

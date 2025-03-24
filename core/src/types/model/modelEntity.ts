@@ -71,7 +71,7 @@ export type Model = {
   /**
    * The model identifier, modern version of id.
    */
-  mode?: string
+  model?: string
 
   /**
    * Human-readable name that is used for UI.
@@ -150,6 +150,7 @@ export type ModelSettingParams = {
  */
 export type ModelRuntimeParams = {
   temperature?: number
+  max_temperature?: number
   token_limit?: number
   top_k?: number
   top_p?: number

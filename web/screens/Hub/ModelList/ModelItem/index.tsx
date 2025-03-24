@@ -5,10 +5,13 @@ import Image from 'next/image'
 import { ModelSource } from '@janhq/core'
 
 import { DownloadIcon, FileJson } from 'lucide-react'
+import rehypeRaw from 'rehype-raw'
 
 import ModelLabel from '@/containers/ModelLabel'
 
 import ModelItemHeader from '@/screens/Hub/ModelList/ModelHeader'
+
+import { markdownComponents } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownUtils'
 
 import { toGigabytes } from '@/utils/converter'
 import { extractDescription } from '@/utils/modelSource'
@@ -31,15 +34,19 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
             <ModelLabel size={model.models?.[0]?.size} />
           </div>
           <div className="flex flex-col">
-            <Markdown className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]">
+            <Markdown
+              className="md-short-desc line-clamp-3 max-w-full overflow-hidden font-light text-[hsla(var(--text-secondary))]"
+              components={markdownComponents}
+              rehypePlugins={[rehypeRaw]}
+            >
               {extractDescription(model.metadata?.description) || '-'}
             </Markdown>
           </div>
           <div className="mb-6 flex flex-row divide-x">
-            {model.metadata?.author && (
+            {(model?.author ?? model?.metadata?.author) && (
               <p
                 className="font-regular mt-3 line-clamp-1 flex flex-row pr-4 capitalize text-[hsla(var(--text-secondary))]"
-                title={model.metadata?.author}
+                title={model?.author ?? model?.metadata?.author}
               >
                 {model.id?.includes('huggingface.co') && (
                   <>
@@ -52,7 +59,7 @@ const ModelItem: React.FC<Props> = ({ model, onSelectedModel }) => {
                     />{' '}
                   </>
                 )}{' '}
-                {model.metadata?.author}
+                {model?.author ?? model?.metadata?.author}
               </p>
             )}
             {model.models?.length > 0 && (

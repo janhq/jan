@@ -28,9 +28,10 @@ const template: (Electron.MenuItemConstructorOptions | Electron.MenuItem)[] = [
                 !updateCheckResult?.updateInfo ||
                 updateCheckResult?.updateInfo.version === app.getVersion()
               ) {
-                dialog.showMessageBox({
-                  message: `No updates available.`,
-                })
+                windowManager.mainWindow?.webContents.send(
+                  AppEvent.onAppUpdateNotAvailable,
+                  {}
+                )
                 return
               }
             })

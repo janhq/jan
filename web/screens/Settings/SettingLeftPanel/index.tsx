@@ -43,7 +43,7 @@ const SettingLeftPanel = () => {
 
       for (const extension of extensions) {
         const settings = await extension.getSettings()
-        if (settings && settings.length > 0) {
+        if (settings && settings.length > 0 && settings.some((e) => e.title)) {
           extensionsMenu.push({
             name: extension.productName,
             setting: extension.name,

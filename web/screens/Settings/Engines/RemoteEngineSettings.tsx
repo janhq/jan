@@ -15,37 +15,62 @@ interface EngineConfig extends OriginalEngineConfig {
   [key: string]: any
 }
 
-import { ScrollArea, Input, TextArea } from '@janhq/joi'
+import { ScrollArea, Input, TextArea, Button } from '@janhq/joi'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { set } from 'lodash'
-import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  RefreshCwIcon,
+} from 'lucide-react'
 import { twMerge } from 'tailwind-merge'
 
-import { updateEngine, useGetEngines } from '@/hooks/useEngineManagement'
+import Spinner from '@/containers/Loader/Spinner'
+
+import {
+  updateEngine,
+  useGetEngines,
+  useRefreshModelList,
+} from '@/hooks/useEngineManagement'
 
 import { getTitleByEngine } from '@/utils/modelEngine'
 
-import ModalAddModel from './ModalAddModel'
+import { getLogoEngine } from '@/utils/modelEngine'
 
-import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+import ModalAddModel from './ModalAddModel'
+import ModalDeleteModel from './ModalDeleteModel'
+
+import {
+  downloadedModelsAtom,
+  selectedModelAtom,
+} from '@/helpers/atoms/Model.atom'
+import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+import { threadsAtom } from '@/helpers/atoms/Thread.atom'
 
 const RemoteEngineSettings = ({
-  engine: name,
+  engine: engineName,
 }: {
   engine: InferenceEngine
 }) => {
   const { engines, mutate } = useGetEngines()
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const [showApiKey, setShowApiKey] = useState(false)
-  const remoteModels = downloadedModels.filter((e) => e.engine === name)
+  const remoteModels = downloadedModels.filter((e) => e.engine === engineName)
   const [isActiveAdvanceSetting, setisActiveAdvanceSetting] = useState(false)
+  const setSelectedModel = useSetAtom(selectedModelAtom)
+  const customEngineLogo = getLogoEngine(engineName)
+  const threads = useAtomValue(threadsAtom)
+  const { refreshingModels, refreshModels } = useRefreshModelList(engineName)
+  const showScrollBar = useAtomValue(showScrollBarAtom)
 
   const engine =
     engines &&
     Object.entries(engines)
-      .filter(([key]) => key === name)
+      .filter(([key]) => key === engineName)
       .flatMap(([_, engineArray]) => engineArray as EngineConfig)[0]
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null)
@@ -67,12 +92,12 @@ const RemoteEngineSettings = ({
       debounceRef.current = setTimeout(async () => {
         const updatedEngine = { ...engine }
         set(updatedEngine, field, value)
-        await updateEngine(name, updatedEngine)
+        await updateEngine(engineName, updatedEngine)
         mutate()
         events.emit(EngineEvent.OnEngineUpdate, {})
       }, 300)
     },
-    [engine, name, mutate]
+    [engine, engineName, mutate]
   )
 
   const [data, setData] = useState({
@@ -95,6 +120,9 @@ const RemoteEngineSettings = ({
   })
 
   useEffect(() => {
+    if (threads.length === 0) {
+      setSelectedModel(remoteModels[0])
+    }
     if (engine) {
       setData({
         api_key: engine.api_key || '',
@@ -124,7 +152,10 @@ const RemoteEngineSettings = ({
   if (!engine) return null
 
   return (
-    <ScrollArea className="h-full w-full">
+    <ScrollArea
+      type={showScrollBar ? 'always' : 'scroll'}
+      className="h-full w-full"
+    >
       <div className="block w-full px-4">
         <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
           <div className="flex w-full flex-col items-start justify-between sm:flex-row">
@@ -133,17 +164,26 @@ const RemoteEngineSettings = ({
                 <div className="w-full sm:w-3/4">
                   <h6 className="line-clamp-1 font-semibold">API Key</h6>
                   <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                    Enter your authentication key to activate this engine.
-                    {engine.engine && engine.url && (
+                    {!customEngineLogo ? (
                       <span>
-                        &nbsp;Get your API key from{' '}
-                        <a
-                          target="_blank"
-                          href={engine.url}
-                          className="text-[hsla(var(--app-link))]"
-                        >
-                          {getTitleByEngine(engine.engine)}.
-                        </a>
+                        Enter your authentication key to activate this
+                        engine.{' '}
+                      </span>
+                    ) : (
+                      <span>
+                        Enter your authentication key to activate this engine.
+                        {engine.engine && engine.url && (
+                          <span>
+                            &nbsp;Get your API key from{' '}
+                            <a
+                              target="_blank"
+                              href={engine.url}
+                              className="text-[hsla(var(--app-link))]"
+                            >
+                              {getTitleByEngine(engine.engine)}.
+                            </a>
+                          </span>
+                        )}
                       </span>
                     )}
                   </p>
@@ -193,7 +233,21 @@ const RemoteEngineSettings = ({
                 <div>
                   <h6 className="mb-2 line-clamp-1 font-semibold">Model</h6>
                 </div>
-                <ModalAddModel engine={name} />
+                <div className="flex gap-2">
+                  <Button
+                    theme={'ghost'}
+                    variant={'outline'}
+                    onClick={() => refreshModels(engineName)}
+                  >
+                    {refreshingModels ? (
+                      <Spinner size={16} strokeWidth={2} className="mr-2" />
+                    ) : (
+                      <RefreshCwIcon size={16} className="mr-2" />
+                    )}
+                    Refresh
+                  </Button>
+                  <ModalAddModel engine={engineName} />
+                </div>
               </div>
 
               <div>
@@ -218,6 +272,7 @@ const RemoteEngineSettings = ({
                               >
                                 {item.name}
                               </h6>
+                              <ModalDeleteModel model={item} />
                             </div>
                           </div>
                         </div>
@@ -235,7 +290,7 @@ const RemoteEngineSettings = ({
           className="flex cursor-pointer items-center text-sm font-medium text-[hsla(var(--text-secondary))]"
           onClick={() => setisActiveAdvanceSetting(!isActiveAdvanceSetting)}
         >
-          <span>Advance Settings</span>
+          <span>Advanced Settings</span>
           <span>
             {isActiveAdvanceSetting ? (
               <ChevronDown size={14} className="ml-1" />
@@ -291,7 +346,7 @@ const RemoteEngineSettings = ({
                         Model List URL
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        The base URL of the provider's API.
+                        The endpoint URL to fetch available models.
                       </p>
                     </div>
                     <div className="w-full">
@@ -321,7 +376,8 @@ const RemoteEngineSettings = ({
                         Request Headers Template
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template for request headers format.
+                        HTTP headers template required for API authentication
+                        and version specification.
                       </p>
                     </div>
                     <div className="w-full">
@@ -351,8 +407,8 @@ const RemoteEngineSettings = ({
                         Request Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Function to convert Jan’s request format to this engine
-                        API’s format.
+                        Template to transform OpenAI-compatible requests into
+                        provider-specific format.
                       </p>
                     </div>
                     <div className="w-full">
@@ -385,8 +441,8 @@ const RemoteEngineSettings = ({
                         Response Format Conversion
                       </h6>
                       <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Function to convert Jan’s request format to this engine
-                        API’s format.
+                        Template to transform provider responses into
+                        OpenAI-compatible format.
                       </p>
                     </div>
                     <div className="w-full">

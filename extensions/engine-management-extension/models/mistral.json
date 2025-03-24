@@ -8,6 +8,7 @@
     "inference_params": {
       "max_tokens": 32000,
       "temperature": 0.7,
+      "max_temperature": 1.0,
       "top_p": 0.95,
       "stream": true
     },
@@ -22,6 +23,7 @@
     "inference_params": {
       "max_tokens": 32000,
       "temperature": 0.7,
+      "max_temperature": 1.0,
       "top_p": 0.95,
       "stream": true
     },
@@ -36,6 +38,7 @@
     "inference_params": {
       "max_tokens": 32000,
       "temperature": 0.7,
+      "max_temperature": 1.0,
       "top_p": 0.95,
       "stream": true
     },
