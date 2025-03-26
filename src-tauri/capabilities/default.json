@@ -9,6 +9,7 @@
   "permissions": [
     "core:default",
     "shell:allow-spawn",
+    "shell:allow-open",
     {
       "identifier": "http:default",
       "allow": [{ "url": "https://*:*" }, { "url": "http://*:*" }],
