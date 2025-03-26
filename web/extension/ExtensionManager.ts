@@ -125,27 +125,29 @@ export class ExtensionManager {
   async activateExtension(extension: Extension) {
     // Import class
     const extensionUrl = extension.url
-    await import(/* webpackIgnore: true */ convertFileSrc(extensionUrl)).then(
-      (extensionClass) => {
-        // Register class if it has a default export
-        if (
-          typeof extensionClass.default === 'function' &&
-          extensionClass.default.prototype
-        ) {
-          this.register(
+    await import(
+      /* webpackIgnore: true */ IS_TAURI
+        ? convertFileSrc(extensionUrl)
+        : extensionUrl
+    ).then((extensionClass) => {
+      // Register class if it has a default export
+      if (
+        typeof extensionClass.default === 'function' &&
+        extensionClass.default.prototype
+      ) {
+        this.register(
+          extension.name,
+          new extensionClass.default(
+            extension.url,
             extension.name,
-            new extensionClass.default(
-              extension.url,
-              extension.name,
-              extension.productName,
-              extension.active,
-              extension.description,
-              extension.version
-            )
+            extension.productName,
+            extension.active,
+            extension.description,
+            extension.version
           )
-        }
+        )
       }
-    )
+    })
   }
 
   /**

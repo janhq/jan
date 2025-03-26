@@ -20,8 +20,8 @@ export const setupBaseExtensions = async () => {
   if (IS_TAURI) {
     await window.core?.api.installExtensions()
     window.location.reload()
+    return
   }
-  return
   const baseExtensions = await window.core?.api.baseExtensions()
 
   if (
