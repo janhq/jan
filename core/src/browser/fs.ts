@@ -41,7 +41,7 @@ const mkdir = (...args: any[]) => globalThis.core.api?.mkdir({ args })
  * Removes a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
  */
-const rm = (...args: any[]) => globalThis.core.api?.rm(...args, { recursive: true, force: true })
+const rm = (...args: any[]) => globalThis.core.api?.rm({ args })
 
 /**
  * Deletes a file from the local file system.
