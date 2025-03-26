@@ -107,6 +107,23 @@ pub fn get_jan_extensions_path(app_handle: tauri::AppHandle) -> PathBuf {
 }
 
 #[tauri::command]
+pub fn get_themes(app_handle: tauri::AppHandle) -> Vec<String> {
+    let mut themes = vec![];
+    let themes_path = get_jan_data_folder_path(app_handle).join("themes");
+    if themes_path.exists() {
+        for entry in fs::read_dir(themes_path).unwrap() {
+            let entry = entry.unwrap();
+            if entry.path().is_dir() {
+                if let Some(name) = entry.file_name().to_str() {
+                    themes.push(name.to_string());
+                }
+            }
+        }
+    }
+    themes
+}
+
+#[tauri::command]
 pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
@@ -273,6 +290,10 @@ pub fn install_extensions(app: tauri::AppHandle) -> Result<(), String> {
                 "version": extension_manifest
                     .as_ref()
                     .and_then(|manifest| manifest["version"].as_str())
+                    .unwrap_or(""),
+                "productName": extension_manifest
+                    .as_ref()
+                    .and_then(|manifest| manifest["productName"].as_str())
                     .unwrap_or(""),
             });
 

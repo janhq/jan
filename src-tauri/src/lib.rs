@@ -47,10 +47,14 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
-            // handlers::fs::join_path,
-            // handlers::fs::mkdir,
-            // handlers::fs::exists_sync,
-            // handlers::fs::rm,
+            handlers::fs::join_path,
+            handlers::fs::mkdir,
+            handlers::fs::exists_sync,
+            handlers::fs::readdir_sync,
+            handlers::fs::read_file_sync,
+            handlers::fs::rm,
+            // App commands
+            handlers::cmd::get_themes,
             handlers::cmd::get_app_configurations,
             handlers::cmd::get_active_extensions,
             handlers::cmd::get_user_home_path,
@@ -111,12 +115,16 @@ pub fn run() {
                 eprintln!("Failed to install extensions: {}", e);
             }
 
-            // Copy binaries to app_data
+            // Copy engine binaries to app_data
             let app_data_dir = app.app_handle().path().app_data_dir().unwrap();
             let binaries_dir = app.app_handle().path().resource_dir().unwrap().join("binaries");
+            let themes_dir = app.app_handle().path().resource_dir().unwrap().join("resources");
 
-            if let Err(e) = copy_dir_all(binaries_dir, app_data_dir) {
+            if let Err(e) = copy_dir_all(binaries_dir, app_data_dir.clone()) {
                 eprintln!("Failed to copy binaries: {}", e);
+            }
+            if let Err(e) = copy_dir_all(themes_dir, app_data_dir.clone()) {
+                eprintln!("Failed to copy themes: {}", e);
             }
 
             Ok(())

@@ -4,13 +4,10 @@ import { useTheme } from 'next-themes'
 
 import { fs, joinPath } from '@janhq/core'
 
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 
 import cssVars from '@/utils/jsonToCssVariables'
 
-import themeData from '@/../../public/theme.json' with { type: 'json' }
-
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   selectedThemeIdAtom,
   themeDataAtom,
@@ -20,7 +17,6 @@ import {
 type NativeThemeProps = 'light' | 'dark'
 
 export const useLoadTheme = () => {
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const [themeOptions, setThemeOptions] = useAtom(themesOptionsAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
@@ -51,48 +47,28 @@ export const useLoadTheme = () => {
   }
 
   const getThemes = useCallback(async () => {
-    if (!janDataFolderPath.length) return
-    const folderPath = await joinPath([janDataFolderPath, 'themes'])
-    const installedThemes = await fs.readdirSync(folderPath)
+    const installedThemes = await window.core.api.getThemes()
 
-    const themesOptions: { name: string; value: string }[] = installedThemes
-      .filter((x: string) => x !== '.DS_Store')
-      .map(async (x: string) => {
-        const y = await joinPath([`${folderPath}/${x}`, `theme.json`])
-        const c: Theme = JSON.parse(await fs.readFileSync(y, 'utf-8'))
-        return { name: c?.displayName, value: c.id }
-      })
-    Promise.all(themesOptions).then((results) => {
-      setThemeOptions(results)
-    })
+    const themesOptions: { name: string; value: string }[] =
+      installedThemes.map((x: string) => ({
+      name: x.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
+      value: x,
+      }))
+    setThemeOptions(themesOptions)
 
-    if (janDataFolderPath.length > 0) {
-      if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
-      const filePath = await joinPath([
-        `${folderPath}/${selectedIdTheme}`,
-        `theme.json`,
-      ])
-      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+    if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
+    const filePath = await joinPath([
+      'file://themes',
+      selectedIdTheme,
+      'theme.json',
+    ])
 
-      setThemeData(theme)
-      setNativeTheme(theme.nativeTheme)
-      applyTheme(theme)
-    } else {
-      // Apply default bundled theme
-      const theme: Theme | undefined = themeData
-      if (theme) {
-        setThemeData(theme)
-        applyTheme(theme)
-      }
-    }
-  }, [
-    janDataFolderPath,
-    selectedIdTheme,
-    setNativeTheme,
-    setSelectedIdTheme,
-    setThemeData,
-    setThemeOptions,
-  ])
+    const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+
+    setThemeData(theme)
+    setNativeTheme(theme.nativeTheme)
+    applyTheme(theme)
+  }, [])
 
   const configureTheme = useCallback(async () => {
     if (!themeData || !themeOptions) {
@@ -105,11 +81,9 @@ export const useLoadTheme = () => {
 
   useEffect(() => {
     configureTheme()
-  }, [
-    configureTheme,
-    selectedIdTheme,
-    setNativeTheme,
-    setSelectedIdTheme,
-    themeData?.nativeTheme,
-  ])
+  }, [themeData])
+
+  useEffect(() => {
+    getThemes()
+  }, [])
 }

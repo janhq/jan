@@ -51,7 +51,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "binaries/engines/**/*"
+      "binaries/engines/**/*",
+      "resources/themes/**/*"
     ],
     "externalBin": ["binaries/cortex-server"]
   }
