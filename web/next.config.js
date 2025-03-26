@@ -42,7 +42,7 @@ const nextConfig = {
         isWindows: process.platform === 'win32',
         isLinux: process.platform === 'linux',
         PLATFORM: JSON.stringify(process.platform),
-        IS_TAURI: true,
+        IS_TAURI: process.env.IS_TAURI === 'true',
       }),
     ]
     return config

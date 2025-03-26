@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../web/out",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "yarn dev:web",
+    "beforeDevCommand": "yarn dev:web:tauri",
     "beforeBuildCommand": "yarn build:web"
   },
   "app": {

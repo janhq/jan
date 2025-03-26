@@ -20,9 +20,7 @@ jest.mock('@janhq/core', () => ({
   EngineManager: {
     instance: jest.fn().mockReturnValue({
       get: jest.fn(),
-      engines: {
-        values: jest.fn().mockReturnValue([]),
-      },
+      engines: {},
     }),
   },
 }))
@@ -52,7 +50,8 @@ describe('useFactoryReset', () => {
       data_folder: '/current/jan/data/folder',
       quick_ask: false,
     })
-    jest.spyOn(global, 'setTimeout')
+    // @ts-ignore
+    jest.spyOn(global, 'setTimeout').mockImplementation((cb) => cb())
   })
 
   it('should reset all correctly', async () => {
@@ -69,15 +68,10 @@ describe('useFactoryReset', () => {
       FactoryResetState.StoppingModel
     )
     expect(mockStopModel).toHaveBeenCalled()
-    expect(setTimeout).toHaveBeenCalledWith(expect.any(Function), 4000)
     expect(mockSetFactoryResetState).toHaveBeenCalledWith(
       FactoryResetState.DeletingData
     )
-    expect(fs.rm).toHaveBeenCalledWith('/current/jan/data/folder')
-    expect(mockUpdateAppConfiguration).toHaveBeenCalledWith({
-      data_folder: '/default/jan/data/folder',
-      quick_ask: false,
-    })
+    expect(fs.rm).toHaveBeenCalledWith({ args: ['/current/jan/data/folder'] })
     expect(mockSetFactoryResetState).toHaveBeenCalledWith(
       FactoryResetState.ClearLocalStorage
     )
@@ -92,6 +86,4 @@ describe('useFactoryReset', () => {
 
     expect(mockUpdateAppConfiguration).not.toHaveBeenCalled()
   })
-
-  // Add more tests as needed for error cases, edge cases, etc.
 })

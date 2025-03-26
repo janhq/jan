@@ -42,6 +42,6 @@ export const restAPI = {
   }, {}),
   openExternalUrl,
   // Jan Server URL
-  baseApiUrl: undefined, //process.env.API_BASE_URL ?? API_BASE_URL,
+  baseApiUrl: process.env.API_BASE_URL ?? API_BASE_URL,
   pollingInterval: 5000,
 }
