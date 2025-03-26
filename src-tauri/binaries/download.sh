@@ -14,7 +14,7 @@ download() {
 }
 
 # Read CORTEX_VERSION
-CORTEX_VERSION=1.0.12
+CORTEX_VERSION=1.0.13-rc1
 ENGINE_VERSION=0.1.55
 CORTEX_RELEASE_URL="https://github.com/menloresearch/cortex.cpp/releases/download"
 ENGINE_DOWNLOAD_URL="https://github.com/menloresearch/cortex.llamacpp/releases/download/v${ENGINE_VERSION}/cortex.llamacpp-${ENGINE_VERSION}"
@@ -58,6 +58,7 @@ elif [ "$OS_TYPE" == "Darwin" ]; then
     rm -rf ./cortex-beta
     chmod +x "./cortex-server"
     mv ./cortex-server ./cortex-server-universal-apple-darwin
+    cp ./cortex-server-universal-apple-darwin ./cortex-server-aarch64-apple-darwin
 
     # Download engines for macOS
     download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" "${SHARED_PATH}/engines/cortex.llamacpp/mac-arm64/v${ENGINE_VERSION}"

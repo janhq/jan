@@ -202,6 +202,10 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             .unwrap()
             .to_str()
             .unwrap(),
+        "--cors",
+        "ON",
+        "--allowed_origins",
+        "http://localhost:3000",
         "config",
         "--api_keys",
         app_state.inner().app_token.as_deref().unwrap_or(""),
