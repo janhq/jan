@@ -40,7 +40,7 @@ export enum NativeRoute {
 /**
  * App Route APIs
  * @description Enum of all the routes exposed by the app
- */
+*/
 export enum AppRoute {
   getAppConfigurations = 'getAppConfigurations',
   updateAppConfiguration = 'updateAppConfiguration',
@@ -51,6 +51,7 @@ export enum AppRoute {
   log = 'log',
   systemInformation = 'systemInformation',
   showToast = 'showToast',
+  getThemes = 'getThemes',
 }
 
 export enum AppEvent {

@@ -8,6 +8,7 @@ import {
   normalizeFilePath,
   getJanDataFolderPath,
 } from '../../helper'
+import { readdirSync } from 'fs'
 
 export class App implements Processor {
   observer?: Function
@@ -69,8 +70,20 @@ export class App implements Processor {
     writeLog(args)
   }
 
+  /**
+   * Get app configurations.
+   */
   getAppConfigurations() {
     return appConfiguration()
+  }
+
+  /**
+   * Get themes from the app data folder.
+   * @returns
+   */
+  getThemes() {
+    const themesPath = join(getJanDataFolderPath(), 'themes')
+    return readdirSync(themesPath)
   }
 
   async updateAppConfiguration(args: any) {

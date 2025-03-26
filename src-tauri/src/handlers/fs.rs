@@ -41,6 +41,38 @@ pub fn exists_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<bo
     Ok(path.exists())
 }
 
+#[tauri::command]
+pub fn read_file_sync(
+    app_handle: tauri::AppHandle,
+    args: Vec<String>,
+) -> Result<String, String> {
+    if args.is_empty() || args[0].is_empty() {
+        return Err("read_file_sync error: Invalid argument".to_string());
+    }
+
+    let path = resolve_path(app_handle, &args[0]);
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn readdir_sync(
+    app_handle: tauri::AppHandle,
+    args: Vec<String>,
+) -> Result<Vec<String>, String> {
+    if args.is_empty() || args[0].is_empty() {
+        return Err("read_dir_sync error: Invalid argument".to_string());
+    }
+
+    let path = resolve_path(app_handle, &args[0]);
+    println!("Reading directory: {:?}", path);
+    let entries = fs::read_dir(&path).map_err(|e| e.to_string())?;
+    let paths: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path().to_string_lossy().to_string())
+        .collect();
+    Ok(paths)
+}
+
 fn normalize_file_path(path: &str) -> String {
     path.replace("file:/", "").replace("file:\\", "")
 }
@@ -48,7 +80,8 @@ fn normalize_file_path(path: &str) -> String {
 fn resolve_path(app_handle: tauri::AppHandle, path: &str) -> PathBuf {
     let path = if path.starts_with("file:/") || path.starts_with("file:\\") {
         let normalized = normalize_file_path(path);
-        get_jan_data_folder_path(app_handle).join(normalized)
+        let relative_normalized = normalized.strip_prefix("/").unwrap_or(&normalized);
+        get_jan_data_folder_path(app_handle).join(relative_normalized)
     } else {
         PathBuf::from(path)
     };
