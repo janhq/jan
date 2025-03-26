@@ -1,10 +1,8 @@
 use flate2::read::GzDecoder;
-use tauri::{App, Manager};
+use tauri::{App, Listener, Manager};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
-use std::fs::{self, File};
-use std::io::Read;
-use std::path::PathBuf;
+use std::{fs::{self, File}, io::Read, path::PathBuf, sync::{Arc, Mutex}};
 use tar::Archive;
 
 use crate::AppState;
@@ -189,7 +187,10 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         });
     }
 
-    let (mut rx, mut _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
+    let (mut rx, _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
+    let child = Arc::new(Mutex::new(Some(_child)));
+    let child_clone = child.clone();
+
     tauri::async_runtime::spawn(async move {
         // read events such as stdout
         while let Some(event) = rx.recv().await {
@@ -197,6 +198,13 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 let line = String::from_utf8_lossy(&line_bytes);
                 println!("Outputs: {:?}", line)
             }
+        }
+    });
+
+    app.handle().listen("kill-sidecar", move |_| {
+        let mut child_guard = child_clone.lock().unwrap();
+        if let Some(actual_child) = child_guard.take() {
+            actual_child.kill().unwrap();
         }
     });
     Ok(())
