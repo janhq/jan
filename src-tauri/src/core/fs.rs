@@ -42,10 +42,7 @@ pub fn exists_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<bo
 }
 
 #[tauri::command]
-pub fn read_file_sync(
-    app_handle: tauri::AppHandle,
-    args: Vec<String>,
-) -> Result<String, String> {
+pub fn read_file_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<String, String> {
     if args.is_empty() || args[0].is_empty() {
         return Err("read_file_sync error: Invalid argument".to_string());
     }

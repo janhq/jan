@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::Manager;
 
+use super::setup;
+
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -193,6 +195,13 @@ pub fn open_file_explorer(path: String) {
 }
 
 #[tauri::command]
+pub fn install_extensions(app: AppHandle) {
+    if let Err(err) = setup::install_extensions(app, true) {
+        eprintln!("Failed to install extensions: {}", err);
+    }
+}
+
+#[tauri::command]
 pub fn get_active_extensions(app: AppHandle) -> Vec<serde_json::Value> {
     let mut path = get_jan_extensions_path(app);
     path.push("extensions.json");
@@ -225,5 +234,3 @@ pub fn get_active_extensions(app: AppHandle) -> Vec<serde_json::Value> {
 pub fn get_user_home_path(app: AppHandle) -> String {
     return get_app_configurations(app.clone()).data_folder;
 }
-
-
