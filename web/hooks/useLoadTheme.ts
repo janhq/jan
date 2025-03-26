@@ -51,8 +51,10 @@ export const useLoadTheme = () => {
 
     const themesOptions: { name: string; value: string }[] =
       installedThemes.map((x: string) => ({
-      name: x.replace(/-/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()),
-      value: x,
+        name: x
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, (char) => char.toUpperCase()),
+        value: x,
       }))
     setThemeOptions(themesOptions)
 

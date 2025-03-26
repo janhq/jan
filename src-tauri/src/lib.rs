@@ -61,6 +61,7 @@ pub fn run() {
             handlers::cmd::update_app_configuration,
             handlers::cmd::get_jan_data_folder_path,
             handlers::cmd::get_jan_extensions_path,
+            handlers::cmd::relaunch,
             app_token,
         ])
         .manage(AppState {

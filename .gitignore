@@ -51,3 +51,5 @@ electron/shared/**
 # docs
 docs/yarn.lock
 electron/.version.bak
+src-tauri/binaries/engines/cortex.llamacpp
+src-tauri/resources/themes

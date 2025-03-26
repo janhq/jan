@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use tar::Archive;
-use tauri::AppHandle;
+use tauri::{process, AppHandle};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -148,6 +148,11 @@ pub fn default_data_folder_path(app_handle: tauri::AppHandle) -> String {
         .to_str()
         .unwrap()
         .to_string();
+}
+
+#[tauri::command]
+pub fn relaunch(app: AppHandle) {
+    app.restart()
 }
 
 #[tauri::command]

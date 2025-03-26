@@ -56,11 +56,6 @@ export default function AppearanceOptions() {
       const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
       setThemeData(theme)
       setTheme(String(theme?.nativeTheme))
-      if (theme?.reduceTransparent) {
-        setReduceTransparent(reduceTransparent)
-      } else {
-        setReduceTransparent(true)
-      }
     },
     [
       janDataFolderPath,

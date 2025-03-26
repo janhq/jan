@@ -39,18 +39,16 @@ export default function useFactoryReset() {
       await stopModel()
 
       await Promise.all(
-        EngineManager.instance()
-          .engines.values()
-          .map(async (engine) => {
-            await engine.onUnload()
-          })
+        Object.values(EngineManager.instance().engines).map(async (engine) => {
+          await engine.onUnload()
+        })
       )
 
       await new Promise((resolve) => setTimeout(resolve, 4000))
 
       // 2: Delete the old jan data folder
       setFactoryResetState(FactoryResetState.DeletingData)
-      await fs.rm(janDataFolderPath)
+      await fs.rm({ args: [janDataFolderPath] })
 
       // 3: Set the default jan data folder
       if (!keepCurrentFolder) {
@@ -64,16 +62,15 @@ export default function useFactoryReset() {
       }
 
       // Perform factory reset
-      await window.core?.api?.factoryReset()
+      // await window.core?.api?.factoryReset()
 
       // 4: Clear app local storage
       setFactoryResetState(FactoryResetState.ClearLocalStorage)
       // reset the localStorage
       localStorage.clear()
 
-      window.core = undefined
       // 5: Relaunch the app
-      window.location.reload()
+      window.core.api.relaunch()
     },
     [defaultJanDataFolder, stopModel, setFactoryResetState]
   )
