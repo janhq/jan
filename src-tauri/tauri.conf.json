@@ -13,9 +13,9 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "jan-app",
-        "width": 800,
-        "height": 600,
+        "title": "Jan",
+        "width": 1000,
+        "height": 700,
         "resizable": true,
         "fullscreen": false,
         "hiddenTitle": true,

@@ -14,8 +14,7 @@ struct AppState {
 
 #[command]
 fn app_token(state: State<'_, AppState>) -> Option<String> {
-    // state.app_token.clone()
-    None
+    state.app_token.clone()
 }
 
 fn generate_app_token() -> String {
@@ -62,6 +61,8 @@ pub fn run() {
             handlers::cmd::get_jan_data_folder_path,
             handlers::cmd::get_jan_extensions_path,
             handlers::cmd::relaunch,
+            handlers::cmd::open_app_directory,
+            handlers::cmd::open_file_explorer,
             app_token,
         ])
         .manage(AppState {
@@ -77,6 +78,7 @@ pub fn run() {
             }
 
             // Setup sidecar
+            let app_state = app.state::<AppState>();
             let sidecar_command = app.shell().sidecar("cortex-server").unwrap().args([
                 "--start-server",
                 "--port",
@@ -96,8 +98,9 @@ pub fn run() {
                     .unwrap()
                     .to_str()
                     .unwrap(),
-                // "config",
-                // "--api_keys",
+                "config",
+                "--api_keys",
+                app_state.inner().app_token.as_deref().unwrap_or("")
                 
             ]);
             let (mut rx, mut _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");

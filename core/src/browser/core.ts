@@ -28,7 +28,7 @@ const getJanDataFolderPath = (): Promise<string> => globalThis.core.api?.getJanD
  * @returns {Promise<any>} A promise that resolves when the file explorer is opened.
  */
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
-  globalThis.core.api?.openFileExplorer(path)
+  globalThis.core.api?.openFileExplorer({ path })
 
 /**
  * Joins multiple paths together.
