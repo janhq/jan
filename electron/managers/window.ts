@@ -1,4 +1,4 @@
-import { BrowserWindow, app, shell } from 'electron'
+import { BrowserWindow, app, shell, Menu, MenuItem } from 'electron'
 import { quickAskWindowConfig } from './quickAskWindowConfig'
 import { mainWindowConfig } from './mainWindowConfig'
 import { getAppConfigurations, AppEvent } from '@janhq/core/node'
@@ -35,7 +35,47 @@ class WindowManager {
         nodeIntegration: true,
         preload: preloadPath,
         webSecurity: false,
+        spellcheck: true,
       },
+    })
+
+    // Enable spell checker
+    // TODO: should use SpellCheckerAtom to determine this.
+    // Need to determine which language to use as well.
+
+    // An array of all available language codes
+    // const possibleLanguages = myWindow.webContents.session.availableSpellCheckerLanguages
+
+    this.mainWindow.webContents.session.setSpellCheckerEnabled(true)
+    this.mainWindow.webContents.session.setSpellCheckerLanguages(['en-US'])
+
+    // NOTE: This doesn't work right now but could given the ability to actually
+    // run the app locally.
+    this.mainWindow.webContents.on('context-menu', (event, params) => {
+      // TODO: if event is right-clicking on a spelling error, show context menu
+      // else: don't show menu.
+
+      const menu = new Menu()
+    
+      // Add each spelling suggestion
+      for (const suggestion of params.dictionarySuggestions) {
+        menu.append(new MenuItem({
+          label: suggestion,
+          click: () => this.mainWindow?.webContents.replaceMisspelling(suggestion)
+        }))
+      }
+    
+      // Allow users to add the misspelled word to the dictionary
+      if (params.misspelledWord) {
+        menu.append(
+          new MenuItem({
+            label: 'Add to dictionary',
+            click: () => this.mainWindow?.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+          })
+        )
+      }
+    
+      menu.popup()
     })
 
     if (process.platform === 'win32' || process.platform === 'linux') {
@@ -65,6 +105,7 @@ class WindowManager {
       shell.openExternal(url)
       return { action: 'deny' }
     })
+
 
     app.on('before-quit', function () {
       isAppQuitting = true
