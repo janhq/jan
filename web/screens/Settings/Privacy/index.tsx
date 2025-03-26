@@ -125,7 +125,7 @@ const Privacy = () => {
               <FolderOpenIcon
                 size={16}
                 className="absolute right-2 top-1/2 z-10 -translate-y-1/2 cursor-pointer"
-                onClick={() => onRevealInFinder('Logs')}
+                onClick={() => onRevealInFinder('logs')}
               />
             </div>
           </div>
