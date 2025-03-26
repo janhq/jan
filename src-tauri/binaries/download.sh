@@ -24,6 +24,11 @@ SHARED_PATH="."
 # Detect platform
 OS_TYPE=$(uname)
 
+if ls ./cortex-server* 1> /dev/null 2>&1; then
+    echo "cortex-server file with prefix already exists. Exiting."
+    exit 0
+fi
+
 if [ "$OS_TYPE" == "Linux" ]; then
     # Linux downloads
     download "${CORTEX_RELEASE_URL}/v${CORTEX_VERSION}/cortex-${CORTEX_VERSION}-linux-amd64.tar.gz" "${BIN_PATH}"

@@ -2,7 +2,7 @@ mod core;
 use core::setup::{self, setup_engine_binaries, setup_sidecar};
 
 use rand::{distributions::Alphanumeric, Rng};
-use tauri::{command, State};
+use tauri::{command, Emitter, State};
 
 struct AppState {
     app_token: Option<String>,
@@ -68,6 +68,12 @@ pub fn run() {
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
 
             Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                window.emit("kill-sidecar", ()).unwrap();
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
