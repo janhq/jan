@@ -129,9 +129,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
-    // Run the process watchdog
-    // const systemInfo = await systemInformation()
-    await executeOnMain(NODE, 'run')
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -143,7 +140,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     console.log('Clean up cortex.cpp services')
     this.shouldReconnect = false
     this.clean()
-    // await executeOnMain(NODE, 'dispose')
     super.onUnload()
   }
 
@@ -219,24 +215,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
           this.abortControllers.get(model.id)?.abort()
         })
         .then()
-    )
-  }
-
-  /**
-   * Do health check on cortex.cpp
-   * @returns
-   */
-  private async healthz(): Promise<void> {
-    return this.apiInstance().then((api) =>
-      api
-        .get('healthz', {
-          retry: {
-            limit: 20,
-            delay: () => 500,
-            methods: ['get'],
-          },
-        })
-        .then(() => {})
     )
   }
 

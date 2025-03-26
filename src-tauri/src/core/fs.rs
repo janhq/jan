@@ -1,4 +1,4 @@
-use crate::handlers::cmd::get_jan_data_folder_path;
+use crate::core::cmd::get_jan_data_folder_path;
 use std::fs;
 use std::path::PathBuf;
 
