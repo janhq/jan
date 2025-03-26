@@ -60,7 +60,6 @@ export default function AppearanceOptions() {
     [
       janDataFolderPath,
       reduceTransparent,
-      setReduceTransparent,
       setSelectedIdTheme,
       setTheme,
       setThemeData,

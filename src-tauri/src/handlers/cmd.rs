@@ -4,7 +4,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 use tar::Archive;
-use tauri::{process, AppHandle};
+use tauri::AppHandle;
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -153,6 +153,48 @@ pub fn default_data_folder_path(app_handle: tauri::AppHandle) -> String {
 #[tauri::command]
 pub fn relaunch(app: AppHandle) {
     app.restart()
+}
+
+#[tauri::command]
+pub fn open_app_directory(app: AppHandle) {
+    let app_path = app.path().app_data_dir().unwrap();
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("explorer")
+            .arg(app_path)
+            .spawn()
+            .expect("Failed to open app directory");
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(app_path)
+            .spawn()
+            .expect("Failed to open app directory");
+    } else {
+        std::process::Command::new("xdg-open")
+            .arg(app_path)
+            .spawn()
+            .expect("Failed to open app directory");
+    }
+}
+
+#[tauri::command]
+pub fn open_file_explorer(app: AppHandle, path: String) {
+    let path = PathBuf::from(path);
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .expect("Failed to open file explorer");
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .expect("Failed to open file explorer");
+    } else {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .expect("Failed to open file explorer");
+    }
 }
 
 #[tauri::command]
