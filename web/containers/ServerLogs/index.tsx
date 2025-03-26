@@ -103,7 +103,7 @@ const ServerLogs = (props: ServerLogsProps) => {
               <Button
                 theme="ghost"
                 variant="outline"
-                onClick={() => onRevealInFinder('Logs')}
+                onClick={() => onRevealInFinder('logs')}
               >
                 <div className="flex items-center space-x-2">
                   <>

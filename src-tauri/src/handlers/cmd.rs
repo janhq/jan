@@ -177,7 +177,7 @@ pub fn open_app_directory(app: AppHandle) {
 }
 
 #[tauri::command]
-pub fn open_file_explorer(app: AppHandle, path: String) {
+pub fn open_file_explorer(path: String) {
     let path = PathBuf::from(path);
     if cfg!(target_os = "windows") {
         std::process::Command::new("explorer")
