@@ -3,7 +3,6 @@ use core::setup::{self, setup_engine_binaries, setup_sidecar};
 
 use rand::{distributions::Alphanumeric, Rng};
 use tauri::{command, Emitter, State};
-
 struct AppState {
     app_token: Option<String>,
 }
@@ -24,6 +23,7 @@ fn generate_app_token() -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
@@ -44,6 +44,7 @@ pub fn run() {
             core::cmd::relaunch,
             core::cmd::open_app_directory,
             core::cmd::open_file_explorer,
+            core::cmd::install_extensions,
             app_token,
         ])
         .manage(AppState {
@@ -59,7 +60,7 @@ pub fn run() {
             }
 
             // Install extensions
-            if let Err(e) = setup::install_extensions(app.handle().clone()) {
+            if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
                 eprintln!("Failed to install extensions: {}", e);
             }
 

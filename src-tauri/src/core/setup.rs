@@ -1,18 +1,54 @@
 use flate2::read::GzDecoder;
+use std::{
+    fs::{self, File},
+    io::Read,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+use tar::Archive;
 use tauri::{App, Listener, Manager};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
-use std::{fs::{self, File}, io::Read, path::PathBuf, sync::{Arc, Mutex}};
-use tar::Archive;
+use tauri_plugin_store::StoreExt;
 
 use crate::AppState;
 
 use super::cmd::get_jan_extensions_path;
 
-pub fn install_extensions(app: tauri::AppHandle) -> Result<(), String> {
+pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
+    let store = app.store("store.json").expect("Store not initialized");
+    let stored_version = if let Some(version) = store.get("version") {
+        if let Some(version_str) = version.as_str() {
+            version_str.to_string()
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
+
+    let app_version = app
+        .config()
+        .version
+        .clone()
+        .unwrap_or_else(|| "".to_string());
+
+    if !force {
+        if stored_version == app_version {
+            return Ok(());
+        }
+    }
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = PathBuf::from("./../pre-install");
 
+    // Attempt to remove extensions folder
+    if extensions_path.exists() {
+        fs::remove_dir_all(&extensions_path).unwrap_or_else(|_| {
+            println!("Failed to remove existing extensions folder, it may not exist.");
+        });
+    }
+
+    // Attempt to create it again
     if !extensions_path.exists() {
         fs::create_dir_all(&extensions_path).map_err(|e| e.to_string())?;
     }
@@ -105,6 +141,10 @@ pub fn install_extensions(app: tauri::AppHandle) -> Result<(), String> {
         serde_json::to_string_pretty(&extensions_list).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
+
+    // Store the new app version
+    store.set("version", serde_json::json!(app_version));
+    store.save().expect("Failed to save store");
 
     Ok(())
 }
@@ -210,7 +250,6 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
     Ok(())
 }
 
-
 fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {
     fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
     println!("Copying from {:?} to {:?}", src, dst);
@@ -226,15 +265,10 @@ fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
-pub fn setup_engine_binaries(app: &App) -> Result<(), String>  {
+pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
     // Copy engine binaries to app_data
     let app_data_dir = app.handle().path().app_data_dir().unwrap();
-    let binaries_dir = app
-        .handle()
-        .path()
-        .resource_dir()
-        .unwrap()
-        .join("binaries");
+    let binaries_dir = app.handle().path().resource_dir().unwrap().join("binaries");
     let themes_dir = app
         .handle()
         .path()
