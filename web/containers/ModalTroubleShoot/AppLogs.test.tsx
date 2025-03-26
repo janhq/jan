@@ -70,7 +70,7 @@ describe('AppLogs Component', () => {
       const openButton = screen.getByText('Open')
       userEvent.click(openButton)
 
-      expect(mockOnRevealInFinder).toHaveBeenCalledWith('Logs')
+      expect(mockOnRevealInFinder).toHaveBeenCalledWith('logs')
     })
   })
 

@@ -25,7 +25,7 @@ describe('test core apis', () => {
       },
     }
     const result = await joinPath(paths)
-    expect(globalThis.core.api.joinPath).toHaveBeenCalledWith(paths)
+    expect(globalThis.core.api.joinPath).toHaveBeenCalledWith({ args: paths })
     expect(result).toBe('/path/one/path/two')
   })
 
@@ -37,7 +37,7 @@ describe('test core apis', () => {
       },
     }
     const result = await openFileExplorer(path)
-    expect(globalThis.core.api.openFileExplorer).toHaveBeenCalledWith(path)
+    expect(globalThis.core.api.openFileExplorer).toHaveBeenCalledWith({ path })
     expect(result).toBe('opened')
   })
 
