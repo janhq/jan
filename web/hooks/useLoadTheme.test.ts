@@ -40,9 +40,12 @@ describe('useLoadTheme', () => {
   }
 
   it('should load theme and set variables', async () => {
+    const readTheme = jest.fn().mockResolvedValue("{}")
+
     global.window.core = {
       api: {
         getThemes: () => ['joi-light', 'joi-dark'],
+        readTheme,
       },
     }
     // Mock Jotai hooks
@@ -93,10 +96,7 @@ describe('useLoadTheme', () => {
     })
 
     // Assertions
-    expect(fs.readFileSync).toHaveBeenLastCalledWith(
-      `file://themes/joi-light/theme.json`,
-      'utf-8'
-    )
+    expect(readTheme).toHaveBeenLastCalledWith({ theme: 'joi-light' })
   })
 
   it('should set default theme if no selected theme', async () => {

@@ -37,6 +37,7 @@ export const useLoadTheme = () => {
   )
 
   const applyTheme = (theme: Theme) => {
+    if (!theme.variables) return
     const variables = cssVars(theme.variables)
     const headTag = document.getElementsByTagName('head')[0]
     const styleTag = document.createElement('style')
