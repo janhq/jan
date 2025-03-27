@@ -11,9 +11,7 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
 
-use crate::AppState;
-
-use super::cmd::get_jan_extensions_path;
+use super::{cmd::get_jan_extensions_path, state::AppState};
 
 pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
     let store = app.store("store.json").expect("Store not initialized");

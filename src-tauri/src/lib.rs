@@ -1,24 +1,10 @@
 mod core;
-use core::setup::{self, setup_engine_binaries, setup_sidecar};
+use core::{
+    setup::{self, setup_engine_binaries, setup_sidecar},
+    state::{generate_app_token, AppState},
+};
 
-use rand::{distributions::Alphanumeric, Rng};
-use tauri::{command, Emitter, State};
-struct AppState {
-    app_token: Option<String>,
-}
-
-#[command]
-fn app_token(state: State<'_, AppState>) -> Option<String> {
-    state.app_token.clone()
-}
-
-fn generate_app_token() -> String {
-    rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect()
-}
+use tauri::Emitter;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -45,7 +31,10 @@ pub fn run() {
             core::cmd::open_app_directory,
             core::cmd::open_file_explorer,
             core::cmd::install_extensions,
-            app_token,
+            core::cmd::read_theme,
+            core::cmd::app_token,
+            core::cmd::start_server,
+            core::cmd::stop_server,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
