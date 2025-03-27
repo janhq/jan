@@ -1,4 +1,11 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+  Fragment,
+} from 'react'
 
 import Image from 'next/image'
 
@@ -553,10 +560,9 @@ const ModelDropdown = ({
                               (c) => c.id === model.id
                             )
                             return (
-                              <>
+                              <Fragment key={model.id}>
                                 {isDownloaded && (
                                   <li
-                                    key={model.id}
                                     className={twMerge(
                                       'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                       !isConfigured
@@ -634,7 +640,7 @@ const ModelDropdown = ({
                                     </div>
                                   </li>
                                 )}
-                              </>
+                              </Fragment>
                             )
                           })}
                       </ul>

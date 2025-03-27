@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 
 import { ExtensionTypeEnum, HardwareManagementExtension } from '@janhq/core'
 
@@ -60,20 +60,22 @@ export function useGetHardwareInfo(updatePeriodically: boolean = true) {
     }
   )
 
-  const usedMemory =
-    Number(hardware?.ram.total) - Number(hardware?.ram.available)
+  useEffect(() => {
+    const usedMemory =
+      Number(hardware?.ram.total) - Number(hardware?.ram.available)
 
-  if (hardware?.ram?.total && hardware?.ram?.available)
-    setUsedRam(Number(usedMemory))
+    if (hardware?.ram?.total && hardware?.ram?.available)
+      setUsedRam(Number(usedMemory))
 
-  if (hardware?.ram?.total) setTotalRam(hardware.ram.total)
+    if (hardware?.ram?.total) setTotalRam(hardware.ram.total)
 
-  const ramUtilitized =
-    ((Number(usedMemory) ?? 0) / (hardware?.ram.total ?? 1)) * 100
+    const ramUtilitized =
+      ((Number(usedMemory) ?? 0) / (hardware?.ram.total ?? 1)) * 100
 
-  setRamUtilitized(Math.round(ramUtilitized))
+    setRamUtilitized(Math.round(ramUtilitized))
 
-  setCpuUsage(Math.round(hardware?.cpu.usage ?? 0))
+    setCpuUsage(Math.round(hardware?.cpu.usage ?? 0))
+  }, [hardware, setCpuUsage, setRamUtilitized, setTotalRam, setUsedRam])
 
   return { hardware, error, mutate }
 }
