@@ -89,7 +89,7 @@ const LocalServerLeftPanel = () => {
       setIsLoading(true)
       const isStarted = await window.core?.api?.startServer({
         host,
-        port,
+        port: parseInt(port),
         prefix,
         isCorsEnabled,
         isVerboseEnabled,

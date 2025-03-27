@@ -1,11 +1,8 @@
-use std::fs;
-use tauri::AppHandle;
-
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use tauri::Manager;
+use std::{fs, path::PathBuf};
+use tauri::{AppHandle, Manager, State};
 
-use super::setup;
+use super::{server, setup, state::AppState};
 
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
@@ -247,4 +244,31 @@ pub fn get_active_extensions(app: AppHandle) -> Vec<serde_json::Value> {
 #[tauri::command]
 pub fn get_user_home_path(app: AppHandle) -> String {
     return get_app_configurations(app.clone()).data_folder;
+}
+
+#[tauri::command]
+pub fn app_token(state: State<'_, AppState>) -> Option<String> {
+    state.app_token.clone()
+}
+
+#[tauri::command]
+pub async fn start_server(
+    app: AppHandle,
+    host: String,
+    port: u16,
+    prefix: String,
+) -> Result<bool, String> {
+    server::start_server(
+        host,
+        port,
+        prefix,
+        app_token(app.state()).unwrap(),
+    ).await.map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn stop_server() -> Result<(), String> {
+    server::stop_server().await.map_err(|e| e.to_string())?;
+    Ok(())
 }

@@ -29,3 +29,7 @@ tar = "0.4"
 rand = "0.8"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-store = "2"
+hyper = { version = "0.14", features = ["server"] }
+reqwest = { version = "0.11", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1.41"
