@@ -129,6 +129,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
+    await executeOnMain(NODE, 'run')
+
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -140,6 +142,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     console.log('Clean up cortex.cpp services')
     this.shouldReconnect = false
     this.clean()
+    await executeOnMain(NODE, 'dispose')
     super.onUnload()
   }
 

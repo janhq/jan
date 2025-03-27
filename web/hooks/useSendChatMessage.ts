@@ -9,7 +9,6 @@ import {
   Model,
   ConversationalExtension,
   EngineManager,
-  ToolManager,
   ThreadAssistantInfo,
   InferenceEngine,
 } from '@janhq/core'

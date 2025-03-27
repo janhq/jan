@@ -52,7 +52,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    */
   async onLoad() {
     // Symlink Engines Directory
-    // await executeOnMain(NODE, 'symlinkEngines')
+    await executeOnMain(NODE, 'symlinkEngines')
     // Update default local engine
     this.updateDefaultEngine()
 

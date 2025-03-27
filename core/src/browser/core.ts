@@ -13,7 +13,11 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
   extension,
   method,
   ...args
-) => globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
+) => {
+  if ('electronAPI' in window && window.electronAPI)
+    return globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
+  return () => {}
+}
 
 /**
  * Gets Jan's data folder path.

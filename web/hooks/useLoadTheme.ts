@@ -2,8 +2,6 @@ import { useCallback, useEffect } from 'react'
 
 import { useTheme } from 'next-themes'
 
-import { fs, joinPath } from '@janhq/core'
-
 import { useAtom } from 'jotai'
 
 import cssVars from '@/utils/jsonToCssVariables'
@@ -59,13 +57,12 @@ export const useLoadTheme = () => {
     setThemeOptions(themesOptions)
 
     if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
-    const filePath = await joinPath([
-      'file://themes',
-      selectedIdTheme,
-      'theme.json',
-    ])
 
-    const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+    const theme: Theme = JSON.parse(
+      await window.core.api.readTheme({
+        theme: selectedIdTheme,
+      })
+    )
 
     setThemeData(theme)
     setNativeTheme(theme.nativeTheme)
