@@ -6,6 +6,5 @@
   "index": { "title": "Overview", "href": "/integrations", "display": "hidden" },
   "coding": "Coding",
   "function-calling": "Function Calling",
-  "messaging": "Messaging",
-  "workflow-automation": "Workflow Automation"
+  "messaging": "Messaging"
 }
