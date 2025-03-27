@@ -52,6 +52,7 @@ export enum AppRoute {
   systemInformation = 'systemInformation',
   showToast = 'showToast',
   getThemes = 'getThemes',
+  readTheme = 'readTheme'
 }
 
 export enum AppEvent {

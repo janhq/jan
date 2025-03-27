@@ -121,6 +121,20 @@ pub fn get_themes(app_handle: tauri::AppHandle) -> Vec<String> {
 }
 
 #[tauri::command]
+pub fn read_theme(app_handle: tauri::AppHandle, theme_name: String) -> Result<String, String> {
+    let themes_path = get_jan_data_folder_path(app_handle)
+        .join("themes")
+        .join(theme_name.clone())
+        .join("theme.json");
+    if themes_path.exists() {
+        let content = fs::read_to_string(themes_path).map_err(|e| e.to_string())?;
+        Ok(content)
+    } else {
+        Err(format!("Theme {} not found", theme_name.clone()))
+    }
+}
+
+#[tauri::command]
 pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
