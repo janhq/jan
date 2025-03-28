@@ -39,6 +39,10 @@ endif
 dev: check-file-counts
 	yarn dev
 
+dev-tauri: check-file-counts
+	yarn install:cortex
+	yarn dev:tauri
+
 # Linting
 lint: check-file-counts
 	yarn lint
