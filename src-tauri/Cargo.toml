@@ -24,7 +24,7 @@ log = "0.4"
 tauri = { version = "2.1.0", features = [
     "protocol-asset",
     'macos-private-api',
-    "test"
+    "test",
 ] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-shell = "2.2.0"
@@ -43,4 +43,3 @@ rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "mai
     "transport-child-process",
     "tower",
 ] }
-schemars = { version = "0.8.22", features = ["derive"] }

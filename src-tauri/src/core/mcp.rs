@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
+use serde_json::Value;
 use tokio::{process::Command, sync::Mutex};
 
 /// Runs MCP commands by reading configuration from a JSON file and initializing servers
@@ -31,32 +32,19 @@ pub async fn run_mcp_commands(
         Err(e) => return Err(format!("Failed to parse config: {}", e)),
     };
 
-    if let Some(servers) = mcp_servers.get("mcpServers") {
-        println!("MCP Servers: {servers:#?}");
-        if let Some(server_map) = servers.as_object() {
-            for (name, config) in server_map {
-                if let Some(config_obj) = config.as_object() {
-                    if let (Some(command), Some(args)) = (
-                        config_obj.get("command").and_then(|v| v.as_str()),
-                        config_obj.get("args").and_then(|v| v.as_array()),
-                    ) {
-                        let mut cmd = Command::new(command);
-                        for arg in args {
-                            if let Some(arg_str) = arg.as_str() {
-                                cmd.arg(arg_str);
-                            }
-                        }
-
-                        let service =
-                            ().serve(TokioChildProcess::new(&mut cmd).map_err(|e| e.to_string())?)
-                                .await
-                                .map_err(|e| e.to_string())?;
-                        {
-                            let mut servers_map = servers_state.lock().await;
-                            servers_map.insert(name.clone(), service);
-                        }
-                    }
-                }
+    if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
+        println!("MCP Servers: {server_map:#?}");
+    
+        for (name, config) in server_map {
+            if let Some((command, args)) = extract_command_args(config) {
+                let mut cmd = Command::new(command);
+                args.iter().filter_map(Value::as_str).for_each(|arg| { cmd.arg(arg); });
+    
+                let service = ().serve(TokioChildProcess::new(&mut cmd).map_err(|e| e.to_string())?)
+                    .await
+                    .map_err(|e| e.to_string())?;
+    
+                servers_state.lock().await.insert(name.clone(), service);
             }
         }
     }
@@ -69,6 +57,13 @@ pub async fn run_mcp_commands(
         println!("Connected to server: {_server_info:#?}");
     }
     Ok(())
+}
+
+fn extract_command_args(config: &Value) -> Option<(&str, &Vec<Value>)> {
+    let obj = config.as_object()?;
+    let command = obj.get("command")?.as_str()?;
+    let args = obj.get("args")?.as_array()?;
+    Some((command, args))
 }
 
 #[cfg(test)]
