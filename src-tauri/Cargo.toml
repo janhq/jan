@@ -21,7 +21,10 @@ tauri-build = { version = "2.0.2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.1.0", features = [ "protocol-asset",'macos-private-api'] }
+tauri = { version = "2.1.0", features = [
+    "protocol-asset",
+    'macos-private-api',
+] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-shell = "2.2.0"
 flate2 = "1.0"
@@ -33,3 +36,10 @@ hyper = { version = "0.14", features = ["server"] }
 reqwest = { version = "0.11", features = ["json"] }
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.41"
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+    "client",
+    "transport-sse",
+    "transport-child-process",
+    "tower",
+] }
+schemars = { version = "0.8.22", features = ["derive"] }

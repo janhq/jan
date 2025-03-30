@@ -2,12 +2,16 @@ import { CoreRoutes, APIRoutes } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 
 // Define API routes based on different route types
-export const Routes = [...CoreRoutes, ...APIRoutes, 'installExtensions'].map(
-  (r) => ({
-    path: `app`,
-    route: r,
-  })
-)
+export const Routes = [
+  ...CoreRoutes,
+  ...APIRoutes,
+  'installExtensions',
+  'getTools',
+  'callTool',
+].map((r) => ({
+  path: `app`,
+  route: r,
+}))
 
 // Function to open an external URL in a new browser window
 export function openExternalUrl(url: string) {
