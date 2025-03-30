@@ -24,7 +24,9 @@ export const CoreConfigurator = ({ children }: PropsWithChildren) => {
     setTimeout(async () => {
       if (!isCoreExtensionInstalled()) {
         setSettingUp(true)
-        await setupBaseExtensions()
+
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        setupBaseExtensions()
         return
       }
 
