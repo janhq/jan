@@ -22,15 +22,11 @@ pub async fn run_mcp_commands(
         app_path.clone() + "/mcp_config.json"
     );
     // let mut client_list = HashMap::new();
-    let config_content = match std::fs::read_to_string(app_path.clone() + "/mcp_config.json") {
-        Ok(content) => content,
-        Err(e) => return Err(format!("Failed to read config file: {}", e)),
-    };
+    let config_content = std::fs::read_to_string(app_path.clone() + "/mcp_config.json")
+        .map_err(|e| format!("Failed to read config file: {}", e))?;
 
-    let mcp_servers: serde_json::Value = match serde_json::from_str(&config_content) {
-        Ok(v) => v,
-        Err(e) => return Err(format!("Failed to parse config: {}", e)),
-    };
+    let mcp_servers: serde_json::Value = serde_json::from_str(&config_content)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
 
     if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
         println!("MCP Servers: {server_map:#?}");
