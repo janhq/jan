@@ -24,6 +24,7 @@ log = "0.4"
 tauri = { version = "2.1.0", features = [
     "protocol-asset",
     'macos-private-api',
+    "test"
 ] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-shell = "2.2.0"

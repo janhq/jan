@@ -1,11 +1,8 @@
-use rmcp::{
-    model::{CallToolRequestParam, CallToolResult, Tool},
-    object,
-};
+use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{fs, path::PathBuf};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{server, setup, state::AppState};
 
@@ -26,7 +23,7 @@ impl AppConfiguration {
 }
 
 #[tauri::command]
-pub fn get_app_configurations(app_handle: tauri::AppHandle) -> AppConfiguration {
+pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> AppConfiguration {
     let mut app_default_configuration = AppConfiguration::default();
 
     if std::env::var("CI").unwrap_or_default() == "e2e" {
@@ -95,7 +92,7 @@ pub fn update_app_configuration(
 }
 
 #[tauri::command]
-pub fn get_jan_data_folder_path(app_handle: tauri::AppHandle) -> PathBuf {
+pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_configurations = get_app_configurations(app_handle);
     PathBuf::from(app_configurations.data_folder)
 }
@@ -137,7 +134,7 @@ pub fn read_theme(app_handle: tauri::AppHandle, theme_name: String) -> Result<St
 }
 
 #[tauri::command]
-pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
+pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
         eprintln!(
             "Failed to get app data directory: {}. Using home directory instead.",
@@ -158,7 +155,7 @@ pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
 }
 
 #[tauri::command]
-pub fn default_data_folder_path(app_handle: tauri::AppHandle) -> String {
+pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
     return app_handle
         .path()
         .app_data_dir()
