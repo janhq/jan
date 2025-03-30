@@ -277,6 +277,20 @@ pub async fn stop_server() -> Result<(), String> {
     Ok(())
 }
 
+/// Retrieves all available tools from all MCP servers
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+///
+/// # Returns
+/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Iterates through all connected servers
+/// 3. Gets the list of tools from each server
+/// 4. Combines all tools into a single vector
+/// 5. Returns the combined list of all available tools
 #[tauri::command]
 pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
     let servers = state.mcp_servers.lock().await;
@@ -294,6 +308,21 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> 
     Ok(all_tools)
 }
 
+/// Calls a tool on an MCP server by name with optional arguments
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+/// * `tool_name` - Name of the tool to call
+/// * `arguments` - Optional map of argument names to values
+///
+/// # Returns
+/// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Searches through all servers for one containing the named tool
+/// 3. When found, calls the tool on that server with the provided arguments
+/// 4. Returns error if no server has the requested tool
 #[tauri::command]
 pub async fn call_tool(
     state: State<'_, AppState>,
@@ -302,22 +331,20 @@ pub async fn call_tool(
 ) -> Result<CallToolResult, String> {
     let servers = state.mcp_servers.lock().await;
 
+    // Iterate through servers and find the first one that contains the tool
     for (_, service) in servers.iter() {
-        if let Ok(tool) = service.list_all_tools().await {
-            for t in tool {
-                if t.name == tool_name {
-                    let result = service
-                        .call_tool(CallToolRequestParam {
-                            name: tool_name.into(),
-                            arguments,
-                        })
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    return Ok(result);
-                }
+        if let Ok(tools) = service.list_all_tools().await {
+            if tools.iter().any(|t| t.name == tool_name) {
+                return service
+                    .call_tool(CallToolRequestParam {
+                        name: tool_name.into(),
+                        arguments,
+                    })
+                    .await
+                    .map_err(|e| e.to_string());
             }
         }
     }
 
-    return Err(format!("Tool {} not found", tool_name));
+    Err(format!("Tool {} not found", tool_name))
 }
