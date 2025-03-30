@@ -1,4 +1,9 @@
+use rmcp::{
+    model::{CallToolRequestParam, CallToolResult, Tool},
+    object,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, State};
 
@@ -134,6 +139,11 @@ pub fn read_theme(app_handle: tauri::AppHandle, theme_name: String) -> Result<St
 #[tauri::command]
 pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
+        eprintln!(
+            "Failed to get app data directory: {}. Using home directory instead.",
+            err
+        );
+
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"
         } else {
@@ -258,12 +268,9 @@ pub async fn start_server(
     port: u16,
     prefix: String,
 ) -> Result<bool, String> {
-    server::start_server(
-        host,
-        port,
-        prefix,
-        app_token(app.state()).unwrap(),
-    ).await.map_err(|e| e.to_string())?;
+    server::start_server(host, port, prefix, app_token(app.state()).unwrap())
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -271,4 +278,49 @@ pub async fn start_server(
 pub async fn stop_server() -> Result<(), String> {
     server::stop_server().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
+    let servers = state.mcp_servers.lock().await;
+    let mut all_tools: Vec<Tool> = Vec::new();
+
+    for (_, service) in servers.iter() {
+        // List tools
+        let tools = service.list_all_tools().await.map_err(|e| e.to_string())?;
+
+        for tool in tools {
+            all_tools.push(tool);
+        }
+    }
+
+    Ok(all_tools)
+}
+
+#[tauri::command]
+pub async fn call_tool(
+    state: State<'_, AppState>,
+    tool_name: String,
+    arguments: Option<Map<String, Value>>,
+) -> Result<CallToolResult, String> {
+    let servers = state.mcp_servers.lock().await;
+
+    for (_, service) in servers.iter() {
+        if let Ok(tool) = service.list_all_tools().await {
+            for t in tool {
+                if t.name == tool_name {
+                    let result = service
+                        .call_tool(CallToolRequestParam {
+                            name: tool_name.into(),
+                            arguments,
+                        })
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    return Ok(result);
+                }
+            }
+        }
+    }
+
+    return Err(format!("Tool {} not found", tool_name));
 }
