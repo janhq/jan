@@ -1,11 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use rmcp::{
-    model::{CallToolRequestParam, GetPromptRequestParam, ReadResourceRequestParam},
-    service::RunningService,
-    transport::TokioChildProcess,
-    RoleClient, ServiceExt,
-};
+use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use tokio::{process::Command, sync::Mutex};
 
 pub async fn run_mcp_commands(
@@ -70,4 +65,35 @@ pub async fn run_mcp_commands(
         println!("Tools: {_tools:#?}");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_run_mcp_commands() {
+        // Create a mock mcp_config.json file
+        let config_path = "mcp_config.json";
+        let mut file = File::create(config_path).expect("Failed to create config file");
+        file.write_all(b"{\"mcpServers\":{}}")
+            .expect("Failed to write to config file");
+
+        // Call the run_mcp_commands function
+        let app_path = ".".to_string();
+        let servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let result = run_mcp_commands(app_path, servers_state).await;
+
+        // Assert that the function returns Ok(())
+        assert!(result.is_ok());
+
+        // Clean up the mock config file
+        std::fs::remove_file(config_path).expect("Failed to remove config file");
+    }
 }

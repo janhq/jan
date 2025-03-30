@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::{Arc}};
+use std::{collections::HashMap, sync::Arc};
 
 use rand::{distributions::Alphanumeric, Rng};
 use rmcp::{service::RunningService, RoleClient};

@@ -1,9 +1,10 @@
 use crate::core::cmd::get_jan_data_folder_path;
 use std::fs;
 use std::path::PathBuf;
+use tauri::Runtime;
 
 #[tauri::command]
-pub fn rm(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<(), String> {
+pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
     if args.is_empty() || args[0].is_empty() {
         return Err("rm error: Invalid argument".to_string());
     }
@@ -12,7 +13,7 @@ pub fn rm(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<(), String>
     fs::remove_dir_all(&path).map_err(|e| e.to_string())
 }
 #[tauri::command]
-pub fn mkdir(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<(), String> {
+pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
     if args.is_empty() || args[0].is_empty() {
         return Err("mkdir error: Invalid argument".to_string());
     }
@@ -22,7 +23,10 @@ pub fn mkdir(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<(), Stri
 }
 
 #[tauri::command]
-pub fn join_path(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<String, String> {
+pub fn join_path<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    args: Vec<String>,
+) -> Result<String, String> {
     if args.is_empty() {
         return Err("join_path error: Invalid argument".to_string());
     }
@@ -32,7 +36,10 @@ pub fn join_path(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<Stri
     Ok(joined_path.to_string_lossy().to_string())
 }
 #[tauri::command]
-pub fn exists_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<bool, String> {
+pub fn exists_sync<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    args: Vec<String>,
+) -> Result<bool, String> {
     if args.is_empty() || args[0].is_empty() {
         return Err("exist_sync error: Invalid argument".to_string());
     }
@@ -42,7 +49,10 @@ pub fn exists_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<bo
 }
 
 #[tauri::command]
-pub fn read_file_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result<String, String> {
+pub fn read_file_sync<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    args: Vec<String>,
+) -> Result<String, String> {
     if args.is_empty() || args[0].is_empty() {
         return Err("read_file_sync error: Invalid argument".to_string());
     }
@@ -52,8 +62,8 @@ pub fn read_file_sync(app_handle: tauri::AppHandle, args: Vec<String>) -> Result
 }
 
 #[tauri::command]
-pub fn readdir_sync(
-    app_handle: tauri::AppHandle,
+pub fn readdir_sync<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
     args: Vec<String>,
 ) -> Result<Vec<String>, String> {
     if args.is_empty() || args[0].is_empty() {
@@ -74,7 +84,7 @@ fn normalize_file_path(path: &str) -> String {
     path.replace("file:/", "").replace("file:\\", "")
 }
 
-fn resolve_path(app_handle: tauri::AppHandle, path: &str) -> PathBuf {
+fn resolve_path<R: Runtime>(app_handle: tauri::AppHandle<R>, path: &str) -> PathBuf {
     let path = if path.starts_with("file:/") || path.starts_with("file:\\") {
         let normalized = normalize_file_path(path);
         let relative_normalized = normalized.strip_prefix("/").unwrap_or(&normalized);
@@ -87,5 +97,95 @@ fn resolve_path(app_handle: tauri::AppHandle, path: &str) -> PathBuf {
         path
     } else {
         path.canonicalize().unwrap_or(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{self, File};
+    use std::io::Write;
+    use tauri::test::mock_app;
+
+    #[test]
+    fn test_rm() {
+        let app = mock_app();
+        let path = "test_rm_dir";
+        fs::create_dir_all(get_jan_data_folder_path(app.handle().clone()).join(path)).unwrap();
+        let args = vec![format!("file://{}", path).to_string()];
+        let result = rm(app.handle().clone(), args);
+        assert!(result.is_ok());
+        assert!(!get_jan_data_folder_path(app.handle().clone())
+            .join(path)
+            .exists());
+    }
+
+    #[test]
+    fn test_mkdir() {
+        let app = mock_app();
+        let path = "test_mkdir_dir";
+        let args = vec![format!("file://{}", path).to_string()];
+        let result = mkdir(app.handle().clone(), args);
+        assert!(result.is_ok());
+        assert!(get_jan_data_folder_path(app.handle().clone())
+            .join(path)
+            .exists());
+        fs::remove_dir_all(get_jan_data_folder_path(app.handle().clone()).join(path)).unwrap();
+    }
+
+    #[test]
+    fn test_join_path() {
+        let app = mock_app();
+        let path = "file://test_dir";
+        let args = vec![path.to_string(), "test_file".to_string()];
+        let result = join_path(app.handle().clone(), args).unwrap();
+        assert_eq!(
+            result,
+            get_jan_data_folder_path(app.handle().clone())
+                .join("test_dir/test_file")
+                .to_string_lossy()
+                .to_string()
+        );
+    }
+
+    #[test]
+    fn test_exists_sync() {
+        let app = mock_app();
+        let path = "file://test_exists_sync_file";
+        let file_path = get_jan_data_folder_path(app.handle().clone()).join(path);
+        File::create(&file_path).unwrap();
+        let args = vec![path.to_string()];
+        let result = exists_sync(app.handle().clone(), args).unwrap();
+        assert!(result);
+        fs::remove_file(file_path).unwrap();
+    }
+
+    #[test]
+    fn test_read_file_sync() {
+        let app = mock_app();
+        let path = "file://test_read_file_sync_file";
+        let file_path = get_jan_data_folder_path(app.handle().clone()).join(path);
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(b"test content").unwrap();
+        let args = vec![path.to_string()];
+        let result = read_file_sync(app.handle().clone(), args).unwrap();
+        assert_eq!(result, "test content".to_string());
+        fs::remove_file(file_path).unwrap();
+    }
+
+    #[test]
+    fn test_readdir_sync() {
+        let app = mock_app();
+        let path = "file://test_readdir_sync_dir";
+        let dir_path = get_jan_data_folder_path(app.handle().clone()).join(path);
+        fs::create_dir_all(&dir_path).unwrap();
+        File::create(dir_path.join("file1.txt")).unwrap();
+        File::create(dir_path.join("file2.txt")).unwrap();
+
+        let args = vec![path.to_string()];
+        let result = readdir_sync(app.handle().clone(), args).unwrap();
+        assert_eq!(result.len(), 2);
+
+        fs::remove_dir_all(dir_path).unwrap();
     }
 }
