@@ -3,6 +3,15 @@ use std::{collections::HashMap, sync::Arc};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use tokio::{process::Command, sync::Mutex};
 
+/// Runs MCP commands by reading configuration from a JSON file and initializing servers
+///
+/// # Arguments
+/// * `app_path` - Path to the application directory containing mcp_config.json
+/// * `servers_state` - Shared state containing running MCP services
+///
+/// # Returns
+/// * `Ok(())` if servers were initialized successfully
+/// * `Err(String)` if there was an error reading config or starting servers
 pub async fn run_mcp_commands(
     app_path: String,
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
@@ -26,7 +35,6 @@ pub async fn run_mcp_commands(
         println!("MCP Servers: {servers:#?}");
         if let Some(server_map) = servers.as_object() {
             for (name, config) in server_map {
-                println!("Server Name: {}", name);
                 if let Some(config_obj) = config.as_object() {
                     if let (Some(command), Some(args)) = (
                         config_obj.get("command").and_then(|v| v.as_str()),
@@ -59,10 +67,6 @@ pub async fn run_mcp_commands(
         // Initialize
         let _server_info = service.peer_info();
         println!("Connected to server: {_server_info:#?}");
-        // List tools
-        let _tools = service.list_all_tools().await.map_err(|e| e.to_string())?;
-
-        println!("Tools: {_tools:#?}");
     }
     Ok(())
 }
