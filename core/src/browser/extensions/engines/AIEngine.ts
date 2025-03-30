@@ -40,12 +40,13 @@ export abstract class AIEngine extends BaseExtension {
    * Stops the model.
    */
   async unloadModel(model?: Model): Promise<any> {
-    if (model?.engine && model.engine.toString() !== this.provider) return Promise.resolve()
+    if (model?.engine && model.engine.toString() !== this.provider)
+      return Promise.resolve()
     events.emit(ModelEvent.OnModelStopped, model ?? {})
     return Promise.resolve()
   }
 
-  /*
+  /**
    * Inference request
    */
   inference(data: MessageRequest) {}
