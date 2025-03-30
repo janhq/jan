@@ -1,13 +1,11 @@
 mod core;
 use core::{
-    cmd::get_jan_data_folder_path,
-    mcp::run_mcp_commands,
-    setup::{self, setup_engine_binaries, setup_sidecar},
+    setup::{self, setup_engine_binaries, setup_mcp, setup_sidecar},
     state::{generate_app_token, AppState},
 };
 use std::{collections::HashMap, sync::Arc};
 
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -62,16 +60,7 @@ pub fn run() {
                 eprintln!("Failed to install extensions: {}", e);
             }
 
-            let app_path = get_jan_data_folder_path(app.handle().clone());
-
-            let state = app.state::<AppState>().inner();
-            let app_path_str = app_path.to_str().unwrap().to_string();
-            let servers = state.mcp_servers.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = run_mcp_commands(app_path_str, servers).await {
-                    eprintln!("Failed to run mcp commands: {}", e);
-                }
-            });
+            setup_mcp(app);
 
             setup_sidecar(app).expect("Failed to setup sidecar");
 
@@ -80,7 +69,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested {  .. } => {
+            tauri::WindowEvent::CloseRequested { .. } => {
                 window.emit("kill-sidecar", ()).unwrap();
             }
             _ => {}

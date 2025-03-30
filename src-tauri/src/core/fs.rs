@@ -1,3 +1,5 @@
+// WARNING: These APIs will be deprecated soon due to removing FS API access from frontend.
+// It's added to ensure the legacy implementation from frontend still functions before removal.
 use crate::core::cmd::get_jan_data_folder_path;
 use std::fs;
 use std::path::PathBuf;
