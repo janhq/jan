@@ -58,6 +58,7 @@ import {
   updateThreadAtom,
   updateThreadWaitingForResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ModelTool } from '@/types/model'
 
 export const reloadModelAtom = atom(false)
 
@@ -185,7 +186,7 @@ export default function useSendChatMessage() {
       },
       activeThreadRef.current,
       messages ?? currentMessages,
-      (await window.core.api.getTools())?.map((tool) => ({
+      (await window.core.api.getTools())?.map((tool: ModelTool) => ({
         type: 'function' as const,
         function: {
           name: tool.name,
@@ -311,7 +312,7 @@ export default function useSendChatMessage() {
               {
                 type: ContentType.Text,
                 text: {
-                  value: `<think>Executing Tool ${toolCall.function.name} with arguments ${toolCall.function.arguments}</think>`,
+                  value: `<think>Executing Tool ${toolCall.function.name} with arguments ${toolCall.function.arguments}`,
                   annotations: [],
                 },
               },
