@@ -17,7 +17,6 @@ export const restAPI = {
     return {
       ...acc,
       [proxy.route]: (...args: any) => {
-        return Promise.resolve(undefined)
         // For each route, define a function that sends a request to the API
         return fetch(
           `${window.core?.api.baseApiUrl}/v1/${proxy.path}/${proxy.route}`,

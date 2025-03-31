@@ -18,11 +18,7 @@ export const setupCoreServices = () => {
       engineManager: new EngineManager(),
       toolManager: new ToolManager(),
       api: {
-        ...(window.electronAPI
-          ? window.electronAPI
-          : IS_TAURI
-            ? tauriAPI
-            : restAPI),
+        ...(window.electronAPI ?? (IS_TAURI ? tauriAPI : restAPI)),
         ...appService,
       },
     }
