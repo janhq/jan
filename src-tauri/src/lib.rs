@@ -1,10 +1,12 @@
 mod core;
 use core::{
-    setup::{self, setup_engine_binaries, setup_sidecar},
+    setup::{self, setup_engine_binaries, setup_mcp, setup_sidecar},
     state::{generate_app_token, AppState},
 };
+use std::{collections::HashMap, sync::Arc};
 
 use tauri::Emitter;
+use tokio::sync::Mutex;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,6 +15,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
+            // FS commands - Deperecate soon
             core::fs::join_path,
             core::fs::mkdir,
             core::fs::exists_sync,
@@ -35,9 +38,13 @@ pub fn run() {
             core::cmd::app_token,
             core::cmd::start_server,
             core::cmd::stop_server,
+            // MCP commands
+            core::cmd::get_tools,
+            core::cmd::call_tool
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
+            mcp_servers: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -53,6 +60,8 @@ pub fn run() {
                 eprintln!("Failed to install extensions: {}", e);
             }
 
+            setup_mcp(app);
+
             setup_sidecar(app).expect("Failed to setup sidecar");
 
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
@@ -60,7 +69,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
+            tauri::WindowEvent::CloseRequested { .. } => {
                 window.emit("kill-sidecar", ()).unwrap();
             }
             _ => {}

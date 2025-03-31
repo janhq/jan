@@ -1,5 +1,5 @@
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Method, Request, Response, Server, StatusCode};
+use hyper::{Body, Request, Response, Server, StatusCode};
 use reqwest::Client;
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -25,7 +25,7 @@ struct ProxyConfig {
 /// Removes a prefix from a path, ensuring proper formatting
 fn remove_prefix(path: &str, prefix: &str) -> String {
     debug!("Processing path: {}, removing prefix: {}", path, prefix);
-    
+
     if !prefix.is_empty() && path.starts_with(prefix) {
         let result = path[prefix.len()..].to_string();
         if result.is_empty() {
@@ -41,10 +41,13 @@ fn remove_prefix(path: &str, prefix: &str) -> String {
 /// Determines the final destination path based on the original request path
 fn get_destination_path(original_path: &str, prefix: &str) -> String {
     let removed_prefix_path = remove_prefix(original_path, prefix);
-    
+
     println!("Removed prefix path: {}", removed_prefix_path);
     // Special paths don't need the /v1 prefix
-    if !original_path.contains(prefix) || removed_prefix_path.contains("/healthz") || removed_prefix_path.contains("/process") {
+    if !original_path.contains(prefix)
+        || removed_prefix_path.contains("/healthz")
+        || removed_prefix_path.contains("/process")
+    {
         original_path.to_string()
     } else {
         format!("/v1{}", removed_prefix_path)
@@ -55,7 +58,7 @@ fn get_destination_path(original_path: &str, prefix: &str) -> String {
 fn build_upstream_url(upstream: &str, path: &str) -> String {
     let upstream_clean = upstream.trim_end_matches('/');
     let path_clean = path.trim_start_matches('/');
-    
+
     format!("{}/{}", upstream_clean, path_clean)
 }
 
@@ -67,7 +70,7 @@ async fn proxy_request(
 ) -> Result<Response<Body>, hyper::Error> {
     let original_path = req.uri().path();
     let path = get_destination_path(original_path, &config.prefix);
-    
+
     // Block access to /configs endpoint
     if path.contains("/configs") {
         return Ok(Response::builder()
@@ -79,12 +82,13 @@ async fn proxy_request(
     // Build the outbound request
     let upstream_url = build_upstream_url(&config.upstream, &path);
     debug!("Proxying request to: {}", upstream_url);
-    
+
     let mut outbound_req = client.request(req.method().clone(), &upstream_url);
-    
+
     // Copy original headers
     for (name, value) in req.headers() {
-        if name != hyper::header::HOST {  // Skip host header
+        if name != hyper::header::HOST {
+            // Skip host header
             outbound_req = outbound_req.header(name, value);
         }
     }
@@ -97,9 +101,9 @@ async fn proxy_request(
         Ok(response) => {
             let status = response.status();
             debug!("Received response with status: {}", status);
-            
+
             let mut builder = Response::builder().status(status);
-            
+
             // Copy response headers
             for (name, value) in response.headers() {
                 builder = builder.header(name, value);
@@ -151,7 +155,7 @@ pub async fn start_server(
         prefix,
         auth_token,
     };
-    
+
     // Create HTTP client
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -161,7 +165,7 @@ pub async fn start_server(
     let make_svc = make_service_fn(move |_conn| {
         let client = client.clone();
         let config = config.clone();
-        
+
         async move {
             Ok::<_, Infallible>(service_fn(move |req| {
                 proxy_request(req, client.clone(), config.clone())
@@ -189,13 +193,13 @@ pub async fn start_server(
 /// Stops the currently running proxy server
 pub async fn stop_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut handle_guard = SERVER_HANDLE.lock().await;
-    
+
     if let Some(handle) = handle_guard.take() {
         handle.abort();
         info!("Proxy server stopped");
     } else {
         debug!("No server was running");
     }
-    
+
     Ok(())
 }

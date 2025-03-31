@@ -1,6 +1,8 @@
+use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::{fs, path::PathBuf};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{server, setup, state::AppState};
 
@@ -21,7 +23,7 @@ impl AppConfiguration {
 }
 
 #[tauri::command]
-pub fn get_app_configurations(app_handle: tauri::AppHandle) -> AppConfiguration {
+pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> AppConfiguration {
     let mut app_default_configuration = AppConfiguration::default();
 
     if std::env::var("CI").unwrap_or_default() == "e2e" {
@@ -90,7 +92,7 @@ pub fn update_app_configuration(
 }
 
 #[tauri::command]
-pub fn get_jan_data_folder_path(app_handle: tauri::AppHandle) -> PathBuf {
+pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_configurations = get_app_configurations(app_handle);
     PathBuf::from(app_configurations.data_folder)
 }
@@ -132,8 +134,13 @@ pub fn read_theme(app_handle: tauri::AppHandle, theme_name: String) -> Result<St
 }
 
 #[tauri::command]
-pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
+pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
+        eprintln!(
+            "Failed to get app data directory: {}. Using home directory instead.",
+            err
+        );
+
         let home_dir = std::env::var(if cfg!(target_os = "windows") {
             "USERPROFILE"
         } else {
@@ -148,7 +155,7 @@ pub fn get_configuration_file_path(app_handle: tauri::AppHandle) -> PathBuf {
 }
 
 #[tauri::command]
-pub fn default_data_folder_path(app_handle: tauri::AppHandle) -> String {
+pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
     return app_handle
         .path()
         .app_data_dir()
@@ -258,12 +265,9 @@ pub async fn start_server(
     port: u16,
     prefix: String,
 ) -> Result<bool, String> {
-    server::start_server(
-        host,
-        port,
-        prefix,
-        app_token(app.state()).unwrap(),
-    ).await.map_err(|e| e.to_string())?;
+    server::start_server(host, port, prefix, app_token(app.state()).unwrap())
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -271,4 +275,76 @@ pub async fn start_server(
 pub async fn stop_server() -> Result<(), String> {
     server::stop_server().await.map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Retrieves all available tools from all MCP servers
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+///
+/// # Returns
+/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Iterates through all connected servers
+/// 3. Gets the list of tools from each server
+/// 4. Combines all tools into a single vector
+/// 5. Returns the combined list of all available tools
+#[tauri::command]
+pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
+    let servers = state.mcp_servers.lock().await;
+    let mut all_tools: Vec<Tool> = Vec::new();
+
+    for (_, service) in servers.iter() {
+        // List tools
+        let tools = service.list_all_tools().await.map_err(|e| e.to_string())?;
+
+        for tool in tools {
+            all_tools.push(tool);
+        }
+    }
+
+    Ok(all_tools)
+}
+
+/// Calls a tool on an MCP server by name with optional arguments
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+/// * `tool_name` - Name of the tool to call
+/// * `arguments` - Optional map of argument names to values
+///
+/// # Returns
+/// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Searches through all servers for one containing the named tool
+/// 3. When found, calls the tool on that server with the provided arguments
+/// 4. Returns error if no server has the requested tool
+#[tauri::command]
+pub async fn call_tool(
+    state: State<'_, AppState>,
+    tool_name: String,
+    arguments: Option<Map<String, Value>>,
+) -> Result<CallToolResult, String> {
+    let servers = state.mcp_servers.lock().await;
+
+    // Iterate through servers and find the first one that contains the tool
+    for (_, service) in servers.iter() {
+        if let Ok(tools) = service.list_all_tools().await {
+            if tools.iter().any(|t| t.name == tool_name) {
+                return service
+                    .call_tool(CallToolRequestParam {
+                        name: tool_name.into(),
+                        arguments,
+                    })
+                    .await
+                    .map_err(|e| e.to_string());
+            }
+        }
+    }
+
+    Err(format!("Tool {} not found", tool_name))
 }

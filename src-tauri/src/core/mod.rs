@@ -3,3 +3,4 @@ pub mod fs;
 pub mod setup;
 pub mod state;
 pub mod server;
+pub mod mcp;

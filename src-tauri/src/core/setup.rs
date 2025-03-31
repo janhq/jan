@@ -11,19 +11,18 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
 
-use super::{cmd::get_jan_extensions_path, state::AppState};
+use super::{
+    cmd::{get_jan_data_folder_path, get_jan_extensions_path},
+    mcp::run_mcp_commands,
+    state::AppState,
+};
 
 pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
     let store = app.store("store.json").expect("Store not initialized");
-    let stored_version = if let Some(version) = store.get("version") {
-        if let Some(version_str) = version.as_str() {
-            version_str.to_string()
-        } else {
-            "".to_string()
-        }
-    } else {
-        "".to_string()
-    };
+    let stored_version = store
+        .get("version")
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
 
     let app_version = app
         .config()
@@ -31,10 +30,8 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         .clone()
         .unwrap_or_else(|| "".to_string());
 
-    if !force {
-        if stored_version == app_version {
-            return Ok(());
-        }
+    if !force && stored_version == app_version {
+        return Ok(());
     }
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = PathBuf::from("./resources/pre-install");
@@ -45,6 +42,10 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
             println!("Failed to remove existing extensions folder, it may not exist.");
         });
     }
+
+    if !force {
+        return Ok(());
+    };
 
     // Attempt to create it again
     if !extensions_path.exists() {
@@ -175,6 +176,19 @@ fn extract_extension_manifest<R: Read>(
     }
 
     Ok(None)
+}
+
+pub fn setup_mcp(app: &App) {
+    let app_path = get_jan_data_folder_path(app.handle().clone());
+
+    let state = app.state::<AppState>().inner();
+    let app_path_str = app_path.to_str().unwrap().to_string();
+    let servers = state.mcp_servers.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = run_mcp_commands(app_path_str, servers).await {
+            eprintln!("Failed to run mcp commands: {}", e);
+        }
+    });
 }
 
 pub fn setup_sidecar(app: &App) -> Result<(), String> {

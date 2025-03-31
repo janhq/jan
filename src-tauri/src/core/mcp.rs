@@ -1,0 +1,94 @@
+use std::{collections::HashMap, sync::Arc};
+
+use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
+use serde_json::Value;
+use tokio::{process::Command, sync::Mutex};
+
+/// Runs MCP commands by reading configuration from a JSON file and initializing servers
+///
+/// # Arguments
+/// * `app_path` - Path to the application directory containing mcp_config.json
+/// * `servers_state` - Shared state containing running MCP services
+///
+/// # Returns
+/// * `Ok(())` if servers were initialized successfully
+/// * `Err(String)` if there was an error reading config or starting servers
+pub async fn run_mcp_commands(
+    app_path: String,
+    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+) -> Result<(), String> {
+    println!(
+        "Load MCP configs from {}",
+        app_path.clone() + "/mcp_config.json"
+    );
+    // let mut client_list = HashMap::new();
+    let config_content = std::fs::read_to_string(app_path.clone() + "/mcp_config.json")
+        .map_err(|e| format!("Failed to read config file: {}", e))?;
+
+    let mcp_servers: serde_json::Value = serde_json::from_str(&config_content)
+        .map_err(|e| format!("Failed to parse config: {}", e))?;
+
+    if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
+        println!("MCP Servers: {server_map:#?}");
+    
+        for (name, config) in server_map {
+            if let Some((command, args)) = extract_command_args(config) {
+                let mut cmd = Command::new(command);
+                args.iter().filter_map(Value::as_str).for_each(|arg| { cmd.arg(arg); });
+    
+                let service = ().serve(TokioChildProcess::new(&mut cmd).map_err(|e| e.to_string())?)
+                    .await
+                    .map_err(|e| e.to_string())?;
+    
+                servers_state.lock().await.insert(name.clone(), service);
+            }
+        }
+    }
+
+    // Collect servers into a Vec to avoid holding the RwLockReadGuard across await points
+    let servers_map = servers_state.lock().await;
+    for (_, service) in servers_map.iter() {
+        // Initialize
+        let _server_info = service.peer_info();
+        println!("Connected to server: {_server_info:#?}");
+    }
+    Ok(())
+}
+
+fn extract_command_args(config: &Value) -> Option<(&str, &Vec<Value>)> {
+    let obj = config.as_object()?;
+    let command = obj.get("command")?.as_str()?;
+    let args = obj.get("args")?.as_array()?;
+    Some((command, args))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::Write;
+    use std::sync::Arc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_run_mcp_commands() {
+        // Create a mock mcp_config.json file
+        let config_path = "mcp_config.json";
+        let mut file = File::create(config_path).expect("Failed to create config file");
+        file.write_all(b"{\"mcpServers\":{}}")
+            .expect("Failed to write to config file");
+
+        // Call the run_mcp_commands function
+        let app_path = ".".to_string();
+        let servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let result = run_mcp_commands(app_path, servers_state).await;
+
+        // Assert that the function returns Ok(())
+        assert!(result.is_ok());
+
+        // Clean up the mock config file
+        std::fs::remove_file(config_path).expect("Failed to remove config file");
+    }
+}
