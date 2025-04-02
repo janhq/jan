@@ -22,6 +22,7 @@
     "@tanstack/react-virtual": "^3.10.9",
     "@tauri-apps/api": "^2.4.0",
     "@tauri-apps/plugin-http": "^2.4.2",
+    "@tauri-apps/plugin-updater": "~2",
     "@uppy/core": "^4.3.0",
     "@uppy/react": "^4.0.4",
     "@uppy/xhr-upload": "^4.2.3",

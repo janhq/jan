@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 #[derive(Default)]
 pub struct AppState {
     pub app_token: Option<String>,
-    pub mcp_servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>
+    pub mcp_servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
 }
 pub fn generate_app_token() -> String {
     rand::thread_rng()
