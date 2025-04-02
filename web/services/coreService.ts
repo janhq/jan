@@ -1,4 +1,4 @@
-import { EngineManager, ToolManager } from '@janhq/core'
+import { EngineManager } from '@janhq/core'
 
 import { appService } from './appService'
 import { EventEmitter } from './eventsService'
@@ -16,7 +16,6 @@ export const setupCoreServices = () => {
     window.core = {
       events: new EventEmitter(),
       engineManager: new EngineManager(),
-      toolManager: new ToolManager(),
       api: {
         ...(window.electronAPI ?? (IS_TAURI ? tauriAPI : restAPI)),
         ...appService,
