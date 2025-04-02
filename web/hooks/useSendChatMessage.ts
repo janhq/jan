@@ -11,19 +11,18 @@ import {
   events,
   MessageEvent,
   ContentType,
+  EngineManager,
+  InferenceEngine,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { OpenAI } from 'openai'
 
 import {
-  ChatCompletionMessage,
   ChatCompletionMessageParam,
   ChatCompletionRole,
   ChatCompletionTool,
 } from 'openai/resources/chat'
-
-import { Tool } from 'openai/resources/responses/responses'
 
 import { ulid } from 'ulidx'
 
@@ -250,100 +249,41 @@ export default function useSendChatMessage() {
     }
     setIsGeneratingResponse(true)
 
-    let isDone = false
-    const openai = new OpenAI({
-      apiKey: await window.core.api.appToken(),
-      baseURL: `${API_BASE_URL}/v1`,
-      dangerouslyAllowBrowser: true,
-    })
-    while (!isDone) {
-      const data = requestBuilder.build()
-      const response = await openai.chat.completions.create({
-        messages: (data.messages ?? []).map((e) => {
-          return {
-            role: e.role as ChatCompletionRole,
-            content: e.content,
-          }
-        }) as ChatCompletionMessageParam[],
-        model: data.model?.id ?? '',
-        tools: data.tools as ChatCompletionTool[],
-        stream: false,
+    if (requestBuilder.tools && requestBuilder.tools.length) {
+      let isDone = false
+      const openai = new OpenAI({
+        apiKey: await window.core.api.appToken(),
+        baseURL: `${API_BASE_URL}/v1`,
+        dangerouslyAllowBrowser: true,
       })
-      if (response.choices[0]?.message.content) {
-        const newMessage: ThreadMessage = {
-          id: ulid(),
-          object: 'message',
-          thread_id: activeThreadRef.current.id,
-          assistant_id: activeAssistantRef.current.assistant_id,
-          attachments: [],
-          role: response.choices[0].message.role as any,
-          content: [
-            {
-              type: ContentType.Text,
-              text: {
-                value: response.choices[0].message.content
-                  ? (response.choices[0].message.content as any)
-                  : '',
-                annotations: [],
-              },
-            },
-          ],
-          status: 'ready' as any,
-          created_at: Date.now(),
-          completed_at: Date.now(),
-        }
-        requestBuilder.pushAssistantMessage(
-          (response.choices[0].message.content as any) ?? ''
-        )
-        events.emit(MessageEvent.OnMessageUpdate, newMessage)
-      }
-
-      if (response.choices[0]?.message.tool_calls) {
-        for (const toolCall of response.choices[0].message.tool_calls) {
-          const id = ulid()
-          const toolMessage: ThreadMessage = {
-            id: id,
+      while (!isDone) {
+        const data = requestBuilder.build()
+        const response = await openai.chat.completions.create({
+          messages: (data.messages ?? []).map((e) => {
+            return {
+              role: e.role as ChatCompletionRole,
+              content: e.content,
+            }
+          }) as ChatCompletionMessageParam[],
+          model: data.model?.id ?? '',
+          tools: data.tools as ChatCompletionTool[],
+          stream: false,
+        })
+        if (response.choices[0]?.message.content) {
+          const newMessage: ThreadMessage = {
+            id: ulid(),
             object: 'message',
             thread_id: activeThreadRef.current.id,
             assistant_id: activeAssistantRef.current.assistant_id,
             attachments: [],
-            role: 'assistant' as any,
+            role: response.choices[0].message.role as any,
             content: [
               {
                 type: ContentType.Text,
                 text: {
-                  value: `<think>Executing Tool ${toolCall.function.name} with arguments ${toolCall.function.arguments}`,
-                  annotations: [],
-                },
-              },
-            ],
-            status: 'pending' as any,
-            created_at: Date.now(),
-            completed_at: Date.now(),
-          }
-          events.emit(MessageEvent.OnMessageUpdate, toolMessage)
-          const result = await window.core.api.callTool({
-            toolName: toolCall.function.name,
-            arguments: JSON.parse(toolCall.function.arguments),
-          })
-          if (result.error) {
-            console.error(result.error)
-            break
-          }
-          const message: ThreadMessage = {
-            id: id,
-            object: 'message',
-            thread_id: activeThreadRef.current.id,
-            assistant_id: activeAssistantRef.current.assistant_id,
-            attachments: [],
-            role: 'assistant' as any,
-            content: [
-              {
-                type: ContentType.Text,
-                text: {
-                  value:
-                    `<think>Executing Tool ${toolCall.function.name} with arguments ${toolCall.function.arguments}</think>` +
-                    (result.content[0]?.text ?? ''),
+                  value: response.choices[0].message.content
+                    ? (response.choices[0].message.content as any)
+                    : '',
                   annotations: [],
                 },
               },
@@ -352,15 +292,81 @@ export default function useSendChatMessage() {
             created_at: Date.now(),
             completed_at: Date.now(),
           }
-          requestBuilder.pushAssistantMessage(result.content[0]?.text ?? '')
-          requestBuilder.pushMessage('Go for the next step')
-          events.emit(MessageEvent.OnMessageUpdate, message)
+          requestBuilder.pushAssistantMessage(
+            (response.choices[0].message.content as any) ?? ''
+          )
+          events.emit(MessageEvent.OnMessageUpdate, newMessage)
         }
-      }
 
-      isDone =
-        !response.choices[0]?.message.tool_calls ||
-        !response.choices[0]?.message.tool_calls.length
+        if (response.choices[0]?.message.tool_calls) {
+          for (const toolCall of response.choices[0].message.tool_calls) {
+            const id = ulid()
+            const toolMessage: ThreadMessage = {
+              id: id,
+              object: 'message',
+              thread_id: activeThreadRef.current.id,
+              assistant_id: activeAssistantRef.current.assistant_id,
+              attachments: [],
+              role: 'assistant' as any,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value: `<think>Executing Tool ${toolCall.function.name} with arguments ${toolCall.function.arguments}`,
+                    annotations: [],
+                  },
+                },
+              ],
+              status: 'pending' as any,
+              created_at: Date.now(),
+              completed_at: Date.now(),
+            }
+            events.emit(MessageEvent.OnMessageUpdate, toolMessage)
+            const result = await window.core.api.callTool({
+              toolName: toolCall.function.name,
+              arguments: JSON.parse(toolCall.function.arguments),
+            })
+            if (result.error) {
+              console.error(result.error)
+              break
+            }
+            const message: ThreadMessage = {
+              id: id,
+              object: 'message',
+              thread_id: activeThreadRef.current.id,
+              assistant_id: activeAssistantRef.current.assistant_id,
+              attachments: [],
+              role: 'assistant' as any,
+              content: [
+                {
+                  type: ContentType.Text,
+                  text: {
+                    value:
+                      `<think>Executing Tool ${toolCall.function.name} with arguments ${toolCall.function.arguments}</think>` +
+                      (result.content[0]?.text ?? ''),
+                    annotations: [],
+                  },
+                },
+              ],
+              status: 'ready' as any,
+              created_at: Date.now(),
+              completed_at: Date.now(),
+            }
+            requestBuilder.pushAssistantMessage(result.content[0]?.text ?? '')
+            requestBuilder.pushMessage('Go for the next step')
+            events.emit(MessageEvent.OnMessageUpdate, message)
+          }
+        }
+
+        isDone =
+          !response.choices[0]?.message.tool_calls ||
+          !response.choices[0]?.message.tool_calls.length
+      }
+    } else {
+      // Request for inference
+      EngineManager.instance()
+        .get(InferenceEngine.cortex)
+        ?.inference(requestBuilder.build())
     }
 
     // Reset states
