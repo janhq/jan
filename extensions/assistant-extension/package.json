@@ -8,17 +8,10 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "clean:modules": "rimraf node_modules/pdf-parse/test && cd node_modules/pdf-parse/lib/pdf.js && rimraf v1.9.426 v1.10.88 v2.0.550",
-    "build-universal-hnswlib": "[ \"$IS_TEST\" = \"true\" ] && echo \"Skip universal build\" || (cd node_modules/hnswlib-node && arch -x86_64 npx node-gyp rebuild --arch=x64 && mv build/Release/addon.node ./addon-amd64.node && node-gyp rebuild --arch=arm64 && mv build/Release/addon.node ./addon-arm64.node && lipo -create -output build/Release/addon.node ./addon-arm64.node ./addon-amd64.node && rm ./addon-arm64.node && rm ./addon-amd64.node)",
-    "build": "yarn clean:modules && rolldown -c rolldown.config.mjs",
-    "build:publish:linux": "rimraf *.tgz --glob  || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:darwin": "rimraf *.tgz --glob  || true && yarn build-universal-hnswlib && yarn build && ../../.github/scripts/auto-sign.sh && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish:win32": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish": "run-script-os",
-    "build:dev": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
+    "build": "rolldown -c rolldown.config.mjs",
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && npm pack && cpx *.tgz ../../pre-install"
   },
   "devDependencies": {
-    "@types/pdf-parse": "^1.1.4",
     "cpx": "^1.5.0",
     "rimraf": "^3.0.2",
     "rolldown": "1.0.0-beta.1",
@@ -27,11 +20,6 @@
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
-    "@langchain/community": "0.0.13",
-    "hnswlib-node": "^1.4.2",
-    "langchain": "^0.0.214",
-    "node-gyp": "^11.0.0",
-    "pdf-parse": "^1.1.1",
     "ts-loader": "^9.5.0"
   },
   "files": [
@@ -40,8 +28,7 @@
     "README.md"
   ],
   "bundleDependencies": [
-    "@janhq/core",
-    "hnswlib-node"
+    "@janhq/core"
   ],
   "installConfig": {
     "hoistingLimits": "workspaces"

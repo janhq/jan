@@ -29,12 +29,6 @@ export * from './extension'
 export * from './extensions'
 
 /**
- * Export all base tools.
- * @module
- */
-export * from './tools'
-
-/**
  * Export all base models.
  * @module
  */
