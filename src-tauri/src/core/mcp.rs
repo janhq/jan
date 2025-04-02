@@ -30,16 +30,19 @@ pub async fn run_mcp_commands(
 
     if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
         println!("MCP Servers: {server_map:#?}");
-    
+
         for (name, config) in server_map {
             if let Some((command, args)) = extract_command_args(config) {
                 let mut cmd = Command::new(command);
-                args.iter().filter_map(Value::as_str).for_each(|arg| { cmd.arg(arg); });
-    
-                let service = ().serve(TokioChildProcess::new(&mut cmd).map_err(|e| e.to_string())?)
-                    .await
-                    .map_err(|e| e.to_string())?;
-    
+                args.iter().filter_map(Value::as_str).for_each(|arg| {
+                    cmd.arg(arg);
+                });
+
+                let service =
+                    ().serve(TokioChildProcess::new(&mut cmd).map_err(|e| e.to_string())?)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
                 servers_state.lock().await.insert(name.clone(), service);
             }
         }
