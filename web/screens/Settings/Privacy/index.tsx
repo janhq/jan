@@ -1,4 +1,4 @@
-import { fs } from '@janhq/core'
+import { fs, joinPath } from '@janhq/core'
 import { Button, Input, ScrollArea, Switch } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import { FolderOpenIcon } from 'lucide-react'
@@ -22,7 +22,9 @@ const Privacy = () => {
    */
   const clearLogs = async () => {
     try {
-      await fs.rm(`file://logs`)
+      for (const file of await fs.readdirSync(`file://logs`)) {
+        await fs.rm(await joinPath(['file://logs', file]))
+      }
     } catch (err) {
       console.error('Error clearing logs: ', err)
     }

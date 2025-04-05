@@ -2,10 +2,10 @@
 
 # Read CORTEX_VERSION
 CORTEX_VERSION=$(cat ./bin/version.txt)
-ENGINE_VERSION=0.1.49
-CORTEX_RELEASE_URL="https://github.com/janhq/cortex.cpp/releases/download"
-ENGINE_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v${ENGINE_VERSION}/cortex.llamacpp-${ENGINE_VERSION}"
-CUDA_DOWNLOAD_URL="https://github.com/janhq/cortex.llamacpp/releases/download/v${ENGINE_VERSION}"
+ENGINE_VERSION=0.1.55
+CORTEX_RELEASE_URL="https://github.com/menloresearch/cortex.cpp/releases/download"
+ENGINE_DOWNLOAD_URL="https://github.com/menloresearch/cortex.llamacpp/releases/download/v${ENGINE_VERSION}/cortex.llamacpp-${ENGINE_VERSION}"
+CUDA_DOWNLOAD_URL="https://github.com/menloresearch/cortex.llamacpp/releases/download/v${ENGINE_VERSION}"
 BIN_PATH=./bin
 SHARED_PATH="../../electron/shared"
 # Detect platform

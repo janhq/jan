@@ -67,13 +67,18 @@ const LocalEngineSettings = ({ engine }: { engine: InferenceEngine }) => {
     RecommendEngineVariantAtom
   )
 
-  const isEngineUpdated =
-    latestReleasedEngine &&
-    latestReleasedEngine.some((item) =>
-      item.name.includes(
-        defaultEngineVariant?.version.replace(/^v/, '') as string
-      )
+  const isEngineUpdated = useMemo(() => {
+    if (!latestReleasedEngine || !defaultEngineVariant) return false
+    const latestVariant = latestReleasedEngine.find((item) =>
+      item.name.includes(defaultEngineVariant.variant)
     )
+    if (!latestVariant) return false
+    const latestVersion = latestVariant.name
+      .replace(defaultEngineVariant.variant, '')
+      .replaceAll('-', '')
+    const currentVersion = defaultEngineVariant.version.replace(/^v/, '')
+    return latestVersion <= currentVersion
+  }, [latestReleasedEngine, defaultEngineVariant])
 
   const availableVariants = useMemo(
     () =>

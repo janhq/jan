@@ -32,7 +32,7 @@ const getExtension = () =>
 /**
  * @returns A Promise that resolves to an object of list engines.
  */
-export function useGetHardwareInfo() {
+export function useGetHardwareInfo(updatePeriodically: boolean = true) {
   const setCpuUsage = useSetAtom(cpuUsageAtom)
   const setUsedRam = useSetAtom(usedRamAtom)
   const setTotalRam = useSetAtom(totalRamAtom)
@@ -56,24 +56,20 @@ export function useGetHardwareInfo() {
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
-      refreshInterval: 2000,
+      refreshInterval: updatePeriodically ? 2000 : undefined,
+      onSuccess(data) {
+        const usedMemory = data.ram.total - data.ram.available
+        setUsedRam(usedMemory)
+
+        setTotalRam(data.ram.total)
+
+        const ramUtilitized = (usedMemory / data.ram.total) * 100
+        setRamUtilitized(Math.round(ramUtilitized))
+
+        setCpuUsage(Math.round(data.cpu.usage))
+      },
     }
   )
-
-  const usedMemory =
-    Number(hardware?.ram.total) - Number(hardware?.ram.available)
-
-  if (hardware?.ram?.total && hardware?.ram?.available)
-    setUsedRam(Number(usedMemory))
-
-  if (hardware?.ram?.total) setTotalRam(hardware.ram.total)
-
-  const ramUtilitized =
-    ((Number(usedMemory) ?? 0) / (hardware?.ram.total ?? 1)) * 100
-
-  setRamUtilitized(Math.round(ramUtilitized))
-
-  setCpuUsage(Math.round(hardware?.cpu.usage ?? 0))
 
   return { hardware, error, mutate }
 }

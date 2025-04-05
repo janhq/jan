@@ -477,20 +477,23 @@ export const useRefreshModelList = (engine: string) => {
   const [refreshingModels, setRefreshingModels] = useState(false)
   const { mutate: fetchRemoteModels } = useGetRemoteModels(engine)
 
-  const refreshModels = useCallback(() => {
-    setRefreshingModels(true)
-    fetchRemoteModels()
-      .then((remoteModelList) =>
-        Promise.all(
-          remoteModelList?.data?.map((model: { id?: string }) =>
-            model?.id
-              ? addRemoteEngineModel(model.id, engine).catch(() => {})
-              : {}
-          ) ?? []
+  const refreshModels = useCallback(
+    (engine: string) => {
+      setRefreshingModels(true)
+      fetchRemoteModels()
+        .then((remoteModelList) =>
+          Promise.all(
+            remoteModelList?.data?.map((model: { id?: string }) =>
+              model?.id
+                ? addRemoteEngineModel(model.id, engine).catch(() => {})
+                : {}
+            ) ?? []
+          )
         )
-      )
-      .finally(() => setRefreshingModels(false))
-  }, [fetchRemoteModels])
+        .finally(() => setRefreshingModels(false))
+    },
+    [fetchRemoteModels]
+  )
 
   return { refreshingModels, refreshModels }
 }

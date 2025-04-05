@@ -11,9 +11,11 @@ export default defineConfig([
     },
     define: {
       NODE: JSON.stringify(`${pkgJson.name}/${pkgJson.node}`),
-      API_URL: JSON.stringify(`http://127.0.0.1:${process.env.CORTEX_API_PORT ?? "39291"}`),
+      API_URL: JSON.stringify(
+        `http://127.0.0.1:${process.env.CORTEX_API_PORT ?? '39291'}`
+      ),
       PLATFORM: JSON.stringify(process.platform),
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.49'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.55'),
       DEFAULT_REMOTE_ENGINES: JSON.stringify(engines),
       DEFAULT_REMOTE_MODELS: JSON.stringify(models),
       DEFAULT_REQUEST_PAYLOAD_TRANSFORM: JSON.stringify(
@@ -36,7 +38,7 @@ export default defineConfig([
       file: 'dist/node/index.cjs.js',
     },
     define: {
-      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.49'),
+      CORTEX_ENGINE_VERSION: JSON.stringify('v0.1.55'),
     },
   },
 ])

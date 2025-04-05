@@ -5,11 +5,6 @@ import {
   joinPath,
   dirName,
   fs,
-  ModelManager,
-  abortDownload,
-  DownloadState,
-  events,
-  DownloadEvent,
   OptionType,
   ModelSource,
   extractInferenceParams,
@@ -18,7 +13,7 @@ import {
 import { scanModelsFolder } from './legacy/model-json'
 import { deleteModelFiles } from './legacy/delete'
 import PQueue from 'p-queue'
-import ky from 'ky'
+import ky, { KyInstance } from 'ky'
 
 /**
  * cortex.cpp setting keys
@@ -37,9 +32,25 @@ type Data<T> = {
  */
 export default class JanModelExtension extends ModelExtension {
   queue = new PQueue({ concurrency: 1 })
+
+  api?: KyInstance
+  /**
+   * Get the API instance
+   * @returns
+   */
+  async apiInstance(): Promise<KyInstance> {
+    if(this.api) return this.api
+    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
+    this.api = ky.extend({
+      prefixUrl: CORTEX_API_URL,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    return this.api
+  }
   /**
    * Called when the extension is loaded.
-   * @override
    */
   async onLoad() {
     this.queue.add(() => this.healthz())
@@ -54,9 +65,6 @@ export default class JanModelExtension extends ModelExtension {
     if (huggingfaceToken) {
       this.updateCortexConfig({ huggingface_token: huggingfaceToken })
     }
-
-    // Listen to app download events
-    this.handleDesktopEvents()
 
     // Sync with cortexsohub
     this.fetchCortexsoModels()
@@ -90,13 +98,15 @@ export default class JanModelExtension extends ModelExtension {
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */
     return this.queue.add(() =>
-      ky
-        .post(`${API_URL}/v1/models/pull`, { json: { model, id, name } })
-        .json()
-        .catch(async (e) => {
-          throw (await e.response?.json()) ?? e
-        })
-        .then()
+      this.apiInstance().then((api) =>
+        api
+          .post('v1/models/pull', { json: { model, id, name }, timeout: false })
+          .json()
+          .catch(async (e) => {
+            throw (await e.response?.json()) ?? e
+          })
+          .then()
+      )
     )
   }
 
@@ -107,29 +117,16 @@ export default class JanModelExtension extends ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelPull(model: string): Promise<void> {
-    if (model) {
-      const modelDto: Model = ModelManager.instance().get(model)
-      // Clip vision model - should not be handled by cortex.cpp
-      // TensorRT model - should not be handled by cortex.cpp
-      if (
-        modelDto &&
-        (modelDto.engine === InferenceEngine.nitro_tensorrt_llm ||
-          modelDto.settings.vision_model)
-      ) {
-        for (const source of modelDto.sources) {
-          const path = await joinPath(['models', modelDto.id, source.filename])
-          await abortDownload(path)
-        }
-      }
-    }
     /**
      * Sending DELETE to /models/pull/{id} endpoint to cancel a model pull
      */
     return this.queue.add(() =>
-      ky
-        .delete(`${API_URL}/v1/models/pull`, { json: { taskId: model } })
-        .json()
-        .then()
+      this.apiInstance().then((api) =>
+        api
+          .delete('v1/models/pull', { json: { taskId: model } })
+          .json()
+          .then()
+      )
     )
   }
 
@@ -140,7 +137,11 @@ export default class JanModelExtension extends ModelExtension {
    */
   async deleteModel(model: string): Promise<void> {
     return this.queue
-      .add(() => ky.delete(`${API_URL}/v1/models/${model}`).json().then())
+      .add(() =>
+        this.apiInstance().then((api) =>
+          api.delete(`v1/models/${model}`).json().then()
+        )
+      )
       .catch((e) => console.debug(e))
       .finally(async () => {
         // Delete legacy model files
@@ -196,16 +197,16 @@ export default class JanModelExtension extends ModelExtension {
         toImportModels.map(async (model: Model & { file_path: string }) => {
           return this.importModel(
             model.id,
-            model.sources[0].url.startsWith('http') ||
-              !(await fs.existsSync(model.sources[0].url))
+            model.sources?.[0]?.url.startsWith('http') ||
+              !(await fs.existsSync(model.sources?.[0]?.url))
               ? await joinPath([
                   await dirName(model.file_path),
-                  model.sources[0]?.filename ??
+                  model.sources?.[0]?.filename ??
                     model.settings?.llama_model_path ??
-                    model.sources[0]?.url.split('/').pop() ??
+                    model.sources?.[0]?.url.split('/').pop() ??
                     model.id,
                 ]) // Copied models
-              : model.sources[0].url, // Symlink models,
+              : model.sources?.[0]?.url, // Symlink models,
             model.name
           )
             .then((e) => {
@@ -242,10 +243,15 @@ export default class JanModelExtension extends ModelExtension {
   async updateModel(model: Partial<Model>): Promise<Model> {
     return this.queue
       .add(() =>
-        ky
-          .patch(`${API_URL}/v1/models/${model.id}`, { json: { ...model } })
-          .json()
-          .then()
+        this.apiInstance().then((api) =>
+          api
+            .patch(`v1/models/${model.id}`, {
+              json: { ...model },
+              timeout: false,
+            })
+            .json()
+            .then()
+        )
       )
       .then(() => this.getModel(model.id))
   }
@@ -256,10 +262,12 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getModel(model: string): Promise<Model> {
     return this.queue.add(() =>
-      ky
-        .get(`${API_URL}/v1/models/${model}`)
-        .json()
-        .then((e) => this.transformModel(e))
+      this.apiInstance().then((api) =>
+        api
+          .get(`v1/models/${model}`)
+          .json()
+          .then((e) => this.transformModel(e))
+      )
     ) as Promise<Model>
   }
 
@@ -275,13 +283,16 @@ export default class JanModelExtension extends ModelExtension {
     option?: OptionType
   ): Promise<void> {
     return this.queue.add(() =>
-      ky
-        .post(`${API_URL}/v1/models/import`, {
-          json: { model, modelPath, name, option },
-        })
-        .json()
-        .catch((e) => console.debug(e)) // Ignore error
-        .then()
+      this.apiInstance().then((api) =>
+        api
+          .post('v1/models/import', {
+            json: { model, modelPath, name, option },
+            timeout: false,
+          })
+          .json()
+          .catch((e) => console.debug(e)) // Ignore error
+          .then()
+      )
     )
   }
 
@@ -292,7 +303,11 @@ export default class JanModelExtension extends ModelExtension {
    */
   async getSources(): Promise<ModelSource[]> {
     const sources = await this.queue
-      .add(() => ky.get(`${API_URL}/v1/models/sources`).json<Data<ModelSource>>())
+      .add(() =>
+        this.apiInstance().then((api) =>
+          api.get('v1/models/sources').json<Data<ModelSource>>()
+        )
+      )
       .then((e) => (typeof e === 'object' ? (e.data as ModelSource[]) : []))
       .catch(() => [])
     return sources.concat(
@@ -306,11 +321,13 @@ export default class JanModelExtension extends ModelExtension {
    */
   async addSource(source: string): Promise<any> {
     return this.queue.add(() =>
-      ky.post(`${API_URL}/v1/models/sources`, {
-        json: {
-          source,
-        },
-      })
+      this.apiInstance().then((api) =>
+        api.post('v1/models/sources', {
+          json: {
+            source,
+          },
+        })
+      )
     )
   }
 
@@ -320,11 +337,14 @@ export default class JanModelExtension extends ModelExtension {
    */
   async deleteSource(source: string): Promise<any> {
     return this.queue.add(() =>
-      ky.delete(`${API_URL}/v1/models/sources`, {
-        json: {
-          source,
-        },
-      })
+      this.apiInstance().then((api) =>
+        api.delete('v1/models/sources', {
+          json: {
+            source,
+          },
+          timeout: false,
+        })
+      )
     )
   }
   // END - Model Sources
@@ -335,7 +355,9 @@ export default class JanModelExtension extends ModelExtension {
    */
   async isModelLoaded(model: string): Promise<boolean> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/v1/models/status/${model}`))
+      .add(() =>
+        this.apiInstance().then((api) => api.get(`v1/models/status/${model}`))
+      )
       .then((e) => true)
       .catch(() => false)
   }
@@ -347,14 +369,18 @@ export default class JanModelExtension extends ModelExtension {
     return this.updateCortexConfig(options).catch((e) => console.debug(e))
   }
 
-   /**
+  /**
    * Fetches models list from cortex.cpp
    * @param model
    * @returns
    */
-   async fetchModels(): Promise<Model[]> {
+  async fetchModels(): Promise<Model[]> {
     return this.queue
-      .add(() => ky.get(`${API_URL}/v1/models?limit=-1`).json<Data<Model>>())
+      .add(() =>
+        this.apiInstance().then((api) =>
+          api.get('v1/models?limit=-1').json<Data<Model>>()
+        )
+      )
       .then((e) =>
         typeof e === 'object' ? e.data.map((e) => this.transformModel(e)) : []
       )
@@ -362,32 +388,6 @@ export default class JanModelExtension extends ModelExtension {
   // END: - Public API
 
   // BEGIN: - Private API
-  /**
-   * Handle download state from main app
-   */
-  private handleDesktopEvents() {
-    if (window && window.electronAPI) {
-      window.electronAPI.onFileDownloadUpdate(
-        async (_event: string, state: DownloadState | undefined) => {
-          if (!state) return
-          state.downloadState = 'downloading'
-          events.emit(DownloadEvent.onFileDownloadUpdate, state)
-        }
-      )
-      window.electronAPI.onFileDownloadError(
-        async (_event: string, state: DownloadState) => {
-          state.downloadState = 'error'
-          events.emit(DownloadEvent.onFileDownloadError, state)
-        }
-      )
-      window.electronAPI.onFileDownloadSuccess(
-        async (_event: string, state: DownloadState) => {
-          state.downloadState = 'end'
-          events.emit(DownloadEvent.onFileDownloadSuccess, state)
-        }
-      )
-    }
-  }
 
   /**
    * Transform model to the expected format (e.g. parameters, settings, metadata)
@@ -420,7 +420,9 @@ export default class JanModelExtension extends ModelExtension {
   }): Promise<void> {
     return this.queue
       .add(() =>
-        ky.patch(`${API_URL}/v1/configs`, { json: body }).then(() => {})
+        this.apiInstance().then((api) =>
+          api.patch('v1/configs', { json: body }).then(() => {})
+        )
       )
       .catch((e) => console.debug(e))
   }
@@ -430,14 +432,16 @@ export default class JanModelExtension extends ModelExtension {
    * @returns
    */
   private healthz(): Promise<void> {
-    return ky
-      .get(`${API_URL}/healthz`, {
-        retry: {
-          limit: 20,
-          delay: () => 500,
-          methods: ['get'],
-        },
-      })
+    return this.apiInstance()
+      .then((api) =>
+        api.get('healthz', {
+          retry: {
+            limit: 20,
+            delay: () => 500,
+            methods: ['get'],
+          },
+        })
+      )
       .then(() => {
         this.queue.concurrency = Infinity
       })
@@ -450,17 +454,22 @@ export default class JanModelExtension extends ModelExtension {
     const models = await this.fetchModels()
 
     return this.queue.add(() =>
-      ky
-        .get(`${API_URL}/v1/models/hub?author=cortexso&tag=cortex.cpp`)
-        .json<Data<string>>()
-        .then((e) => {
-          e.data?.forEach((model) => {
-            if (
-              !models.some((e) => 'modelSource' in e && e.modelSource === model)
-            )
-              this.addSource(model).catch((e) => console.debug(e))
-          })
-        })
+      this.apiInstance()
+        .then((api) =>
+          api
+            .get('v1/models/hub?author=cortexso&tag=cortex.cpp')
+            .json<Data<string>>()
+            .then((e) => {
+              e.data?.forEach((model) => {
+                if (
+                  !models.some(
+                    (e) => 'modelSource' in e && e.modelSource === model
+                  )
+                )
+                  this.addSource(model).catch((e) => console.debug(e))
+              })
+            })
+        )
         .catch((e) => console.debug(e))
     )
   }

@@ -8,7 +8,7 @@
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",
   "scripts": {
-    "test": "jest",
+    "test": "vitest run",
     "build": "rolldown -c rolldown.config.mjs",
     "downloadcortex:linux:darwin": "./download.sh",
     "downloadcortex:win32": "download.bat",
@@ -35,17 +35,15 @@
     "rolldown": "1.0.0-beta.1",
     "run-script-os": "^1.1.6",
     "ts-jest": "^29.1.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^3.0.8"
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
-    "decompress": "^4.2.1",
     "fetch-retry": "^5.0.6",
     "ky": "^1.7.2",
     "p-queue": "^8.0.1",
     "rxjs": "^7.8.1",
-    "tcp-port-used": "^1.0.2",
-    "terminate": "2.6.1",
     "ulidx": "^2.3.0"
   },
   "engines": {

@@ -1,10 +1,17 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+  Fragment,
+} from 'react'
 
 import Image from 'next/image'
 
 import { EngineConfig, InferenceEngine } from '@janhq/core'
 import {
-  Badge,
+  badgeVariants,
   Button,
   Input,
   ScrollArea,
@@ -15,6 +22,7 @@ import {
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import {
+  CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   DownloadCloudIcon,
@@ -310,11 +318,13 @@ const ModelDropdown = ({
     >
       <div className="flex [&>div]:w-full" ref={setToggle}>
         {chatInputMode ? (
-          <Badge
+          <button
             data-testid="model-selector-badge"
-            theme="secondary"
-            variant={open ? 'solid' : 'outline'}
             className={twMerge(
+              badgeVariants({
+                theme: 'secondary',
+                variant: open ? 'solid' : 'outline',
+              }),
               'inline-block max-w-[200px] cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap',
               open && 'border border-transparent'
             )}
@@ -327,7 +337,7 @@ const ModelDropdown = ({
             >
               {selectedModel?.name || 'Select a model'}
             </span>
-          </Badge>
+          </button>
         ) : (
           <Input
             value={selectedModel?.name || ''}
@@ -552,10 +562,9 @@ const ModelDropdown = ({
                               (c) => c.id === model.id
                             )
                             return (
-                              <>
+                              <Fragment key={model.id}>
                                 {isDownloaded && (
                                   <li
-                                    key={model.id}
                                     className={twMerge(
                                       'flex items-center justify-between gap-4 px-3 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
                                       !isConfigured
@@ -590,6 +599,12 @@ const ModelDropdown = ({
                                       />
                                     </div>
                                     <div className="flex items-center gap-2 text-[hsla(var(--text-tertiary))]">
+                                      {selectedModel?.id === model.id && (
+                                        <CheckIcon
+                                          size={14}
+                                          className="text-[hsla(var(--text-secondary))]"
+                                        />
+                                      )}
                                       {!isDownloaded && (
                                         <span className="font-medium">
                                           {toGigabytes(model.metadata?.size)}
@@ -627,7 +642,7 @@ const ModelDropdown = ({
                                     </div>
                                   </li>
                                 )}
-                              </>
+                              </Fragment>
                             )
                           })}
                       </ul>

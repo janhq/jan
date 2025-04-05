@@ -8,37 +8,38 @@
 
 ```js
 // Web / extension runtime
-import * as core from "@janhq/core";
+import * as core from '@janhq/core'
 
 // Node runtime
-import * as node from "@janhq/core/node";
+import * as node from '@janhq/core/node'
 ```
 
 ## Build an Extension
 
-1. Download an extension template, for example, [https://github.com/janhq/extension-template](https://github.com/janhq/extension-template).
+1. Download an extension template, for example, [https://github.com/menloresearch/extension-template](https://github.com/menloresearch/extension-template).
 
 2. Update the source code:
+
    1. Open `index.ts` in your code editor.
    2. Rename the extension class from `SampleExtension` to your preferred extension name.
    3. Import modules from the core package.
       ```ts
-      import * as core from "@janhq/core";
+      import * as core from '@janhq/core'
       ```
    4. In the `onLoad()` method, add your code:
+
       ```ts
       // Example of listening to app events and providing customized inference logic:
-      import * as core from "@janhq/core";
+      import * as core from '@janhq/core'
 
       export default class MyExtension extends BaseExtension {
         // On extension load
         onLoad() {
-          core.events.on(MessageEvent.OnMessageSent, (data) => MyExtension.inference(data, this));
+          core.events.on(MessageEvent.OnMessageSent, (data) => MyExtension.inference(data, this))
         }
 
         // Customized inference logic
         private static inference(incomingMessage: MessageRequestData) {
-
           // Prepare customized message content
           const content: ThreadContent = {
             type: ContentType.Text,
@@ -46,16 +47,17 @@ import * as node from "@janhq/core/node";
               value: "I'm Jan Assistant!",
               annotations: [],
             },
-          };
+          }
 
           // Modify message and send out
           const outGoingMessage: ThreadMessage = {
             ...incomingMessage,
-            content
-          };
+            content,
+          }
         }
       }
       ```
+
 3. Build the extension:
    1. Navigate to the extension directory.
    2. Install dependencies.

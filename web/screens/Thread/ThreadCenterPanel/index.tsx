@@ -61,7 +61,7 @@ const ThreadCenterPanel = () => {
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const chatWidth = useAtomValue(chatWidthAtom)
   const upload = uploader()
-  const acceptedFormat: Accept = activeAssistant?.model.settings?.vision_model
+  const acceptedFormat: Accept = activeAssistant?.model.settings?.mmproj
     ? {
         'application/pdf': ['.pdf'],
         'image/jpeg': ['.jpeg'],
@@ -83,7 +83,7 @@ const ThreadCenterPanel = () => {
       if (
         e.dataTransfer.items.length === 1 &&
         ((activeAssistant?.tools && activeAssistant?.tools[0]?.enabled) ||
-          activeAssistant?.model.settings?.vision_model)
+          activeAssistant?.model.settings?.mmproj)
       ) {
         setDragOver(true)
       } else if (
@@ -105,7 +105,7 @@ const ThreadCenterPanel = () => {
         rejectFiles.length !== 0 ||
         (activeAssistant?.tools &&
           !activeAssistant?.tools[0]?.enabled &&
-          !activeAssistant?.model.settings?.vision_model)
+          !activeAssistant?.model.settings?.mmproj)
       )
         return
       const imageType = files[0]?.type.includes('image')
@@ -182,7 +182,7 @@ const ThreadCenterPanel = () => {
                   <h6 className="font-bold">
                     {isDragReject
                       ? `Currently, we only support 1 attachment at the same time with ${
-                          activeAssistant?.model.settings?.vision_model
+                          activeAssistant?.model.settings?.mmproj
                             ? 'PDF, JPEG, JPG, PNG'
                             : 'PDF'
                         } format`
@@ -190,7 +190,7 @@ const ThreadCenterPanel = () => {
                   </h6>
                   {!isDragReject && (
                     <p className="mt-2">
-                      {activeAssistant?.model.settings?.vision_model
+                      {activeAssistant?.model.settings?.mmproj
                         ? 'PDF, JPEG, JPG, PNG'
                         : 'PDF'}
                     </p>

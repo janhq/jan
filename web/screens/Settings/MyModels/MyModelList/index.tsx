@@ -53,7 +53,7 @@ const MyModelList = ({ model }: Props) => {
     <div className="border border-b-0 border-[hsla(var(--app-border))] bg-[hsla(var(--tertiary-bg))] p-4 first:rounded-t-lg last:rounded-b-lg last:border-b">
       <div className="flex flex-col items-start justify-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-x-8 lg:w-1/2">
-          <div className="flex h-full w-full flex-col items-start justify-between gap-2 lg:flex-row lg:items-center">
+          <div className="flex h-full w-full flex-col items-start justify-between gap-2 lg:flex-row lg:items-center lg:justify-start">
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',

@@ -6,13 +6,14 @@ import { useState } from 'react'
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd'
 
 import { Progress, ScrollArea, Switch } from '@janhq/joi'
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 
 import { ChevronDownIcon, GripVerticalIcon } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
 
+import { activeModelAtom } from '@/hooks/useActiveModel'
 import {
   useGetHardwareInfo,
   setActiveGpus,
@@ -47,6 +48,7 @@ const Hardware = () => {
   const ramUtilitized = useAtomValue(ramUtilitizedAtom)
   const showScrollBar = useAtomValue(showScrollBarAtom)
   const [gpus, setGpus] = useAtom(gpusAtom)
+  const setActiveModel = useSetAtom(activeModelAtom)
 
   const [orderGpus, setOrderGpus] = useAtom(orderGpusAtom)
 
@@ -70,11 +72,15 @@ const Hardware = () => {
         .filter((gpu: any) => gpu.activated)
         .map((gpu: any) => Number(gpu.id))
       await setActiveGpus({ gpus: activeGpuIds })
+      setActiveModel(undefined)
       mutate()
-      window.location.reload()
     } catch (error) {
       console.error('Failed to update active GPUs:', error)
     }
+    setIsActivatingGpu((prev) => {
+      prev.delete(id)
+      return new Set(prev)
+    })
   }
 
   const handleDragEnd = (result: any) => {

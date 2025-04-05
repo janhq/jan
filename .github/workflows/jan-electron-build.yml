@@ -40,6 +40,8 @@ jobs:
     with:
       ref: ${{ github.ref }}
       public_provider: github
+      beta: false
+      nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
@@ -49,6 +51,8 @@ jobs:
     with:
       ref: ${{ github.ref }}
       public_provider: github
+      beta: false
+      nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
@@ -58,6 +62,8 @@ jobs:
     with:
       ref: ${{ github.ref }}
       public_provider: github
+      beta: false
+      nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   update_release_draft:

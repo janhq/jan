@@ -7,18 +7,14 @@ import {
   ArrowLeftIcon,
   DownloadIcon,
   FileJson,
-  RefreshCwIcon,
   SettingsIcon,
 } from 'lucide-react'
 
-import Spinner from '@/containers/Loader/Spinner'
 import ModelDownloadButton from '@/containers/ModelDownloadButton'
 
 import ModelLabel from '@/containers/ModelLabel'
 
 import { MainViewState } from '@/constants/screens'
-
-import { useRefreshModelList } from '@/hooks/useEngineManagement'
 
 import { MarkdownTextMessage } from '@/screens/Thread/ThreadCenterPanel/TextMessage/MarkdownTextMessage'
 
@@ -51,7 +47,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
     >
       <div className="flex h-full w-full justify-center">
         <div className="flex w-full max-w-[800px] flex-col ">
-          <div className="sticky top-0 flex h-12 items-center bg-[hsla(var(--app-bg))] px-4">
+          <div className="sticky top-0 z-10 flex h-12 items-center bg-[hsla(var(--app-bg))] px-4">
             <div className="flex items-center gap-2">
               <button
                 onClick={onGoBack}
@@ -138,8 +134,8 @@ const ModelPage = ({ model, onGoBack }: Props) => {
             </div>
             {/* Table of versions */}
             <div className="mt-8 flex w-full flex-col items-start justify-between sm:flex-row">
-              <div className="w-full flex-shrink-0 rounded-lg border border-[hsla(var(--app-border))] text-[hsla(var(--text-secondary))]">
-                <table className="w-full p-4">
+              <div className="w-full flex-shrink-0 overflow-x-auto rounded-lg border border-[hsla(var(--app-border))] text-[hsla(var(--text-secondary))]">
+                <table className="w-full table-auto p-4">
                   <thead className="bg-[hsla(var(--tertiary-bg))]">
                     <tr>
                       <th className="flex flex-1 flex-row items-center justify-between px-6 py-3 text-left text-sm font-semibold">
@@ -158,7 +154,7 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       )}
                       <th className="w-[120px]">
                         {model.type === 'cloud' && (
-                          <RemoteModelRefresh id={model.id} />
+                          <RemoteModelRefresh engine={model.id} />
                         )}
                       </th>
                     </tr>

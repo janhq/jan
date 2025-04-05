@@ -33,6 +33,8 @@ export enum NativeRoute {
   stopServer = 'stopServer',
 
   appUpdateDownload = 'appUpdateDownload',
+
+  appToken = 'appToken',
 }
 
 /**
@@ -65,30 +67,13 @@ export enum AppEvent {
   onMainViewStateChange = 'onMainViewStateChange',
 }
 
-export enum DownloadRoute {
-  abortDownload = 'abortDownload',
-  downloadFile = 'downloadFile',
-  pauseDownload = 'pauseDownload',
-  resumeDownload = 'resumeDownload',
-  getDownloadProgress = 'getDownloadProgress',
-}
-
 export enum DownloadEvent {
   onFileDownloadUpdate = 'onFileDownloadUpdate',
   onFileDownloadError = 'onFileDownloadError',
   onFileDownloadSuccess = 'onFileDownloadSuccess',
   onFileDownloadStopped = 'onFileDownloadStopped',
   onFileDownloadStarted = 'onFileDownloadStarted',
-  onFileUnzipSuccess = 'onFileUnzipSuccess',
 }
-
-export enum LocalImportModelEvent {
-  onLocalImportModelUpdate = 'onLocalImportModelUpdate',
-  onLocalImportModelFailed = 'onLocalImportModelFailed',
-  onLocalImportModelSuccess = 'onLocalImportModelSuccess',
-  onLocalImportModelFinished = 'onLocalImportModelFinished',
-}
-
 export enum ExtensionRoute {
   baseExtensions = 'baseExtensions',
   getActiveExtensions = 'getActiveExtensions',
@@ -131,10 +116,6 @@ export type AppEventFunctions = {
   [K in AppEvent]: ApiFunction
 }
 
-export type DownloadRouteFunctions = {
-  [K in DownloadRoute]: ApiFunction
-}
-
 export type DownloadEventFunctions = {
   [K in DownloadEvent]: ApiFunction
 }
@@ -154,7 +135,6 @@ export type FileManagerRouteFunctions = {
 export type APIFunctions = NativeRouteFunctions &
   AppRouteFunctions &
   AppEventFunctions &
-  DownloadRouteFunctions &
   DownloadEventFunctions &
   ExtensionRouteFunctions &
   FileSystemRouteFunctions &
@@ -162,7 +142,6 @@ export type APIFunctions = NativeRouteFunctions &
 
 export const CoreRoutes = [
   ...Object.values(AppRoute),
-  ...Object.values(DownloadRoute),
   ...Object.values(ExtensionRoute),
   ...Object.values(FileSystemRoute),
   ...Object.values(FileManagerRoute),
@@ -172,7 +151,6 @@ export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
 export const APIEvents = [
   ...Object.values(AppEvent),
   ...Object.values(DownloadEvent),
-  ...Object.values(LocalImportModelEvent),
 ]
 export type PayloadType = {
   messages: ChatCompletionMessage[]

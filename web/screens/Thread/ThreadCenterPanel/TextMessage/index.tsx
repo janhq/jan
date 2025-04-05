@@ -111,7 +111,10 @@ const MessageContainer: React.FC<
           className={twMerge(
             'absolute right-0 order-1 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
             isUser
-              ? 'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:flex'
+              ? twMerge(
+                  'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:z-50 group-hover:flex',
+                  image && 'group-hover:-top-2'
+                )
               : 'relative left-0 order-2 flex w-full justify-between opacity-0 group-hover:opacity-100',
             props.isCurrentMessage && 'opacity-100'
           )}
@@ -133,7 +136,7 @@ const MessageContainer: React.FC<
             )}
           </div>
 
-          <MessageToolbar message={props} />
+          {editMessage !== props.id && <MessageToolbar message={props} />}
         </div>
         <div
           className={twMerge(
@@ -169,7 +172,11 @@ const MessageContainer: React.FC<
                     status={props.status}
                   />
                 )}
-                <MarkdownTextMessage text={textSegment} isUser={isUser} />
+                <MarkdownTextMessage
+                  text={textSegment}
+                  isUser={isUser}
+                  renderRaw={false}
+                />
               </div>
             )}
           </>

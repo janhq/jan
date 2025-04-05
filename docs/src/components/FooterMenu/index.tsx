@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import ThemeImage from '@/components/ThemeImage'
 import { AiOutlineGithub } from 'react-icons/ai'
 import { RiTwitterXFill } from 'react-icons/ri'
@@ -7,6 +7,7 @@ import { BiLogoDiscordAlt } from 'react-icons/bi'
 import { useForm } from 'react-hook-form'
 import LogoMark from '@/components/LogoMark'
 import { FaLinkedin } from 'react-icons/fa'
+import posthog from 'posthog-js'
 
 const socials = [
   {
@@ -25,7 +26,7 @@ const socials = [
     icon: (
       <AiOutlineGithub className="text-lg text-black/60 dark:text-white/60" />
     ),
-    href: 'https://github.com/janhq/jan',
+    href: 'https://github.com/menloresearch/jan',
   },
   {
     icon: <FaLinkedin className="text-lg text-black/60 dark:text-white/60" />,
@@ -61,7 +62,7 @@ const menus = [
     child: [
       {
         menu: 'Github',
-        path: 'https://github.com/janhq/jan',
+        path: 'https://github.com/menloresearch/jan',
         external: true,
       },
       {
@@ -94,7 +95,7 @@ const menus = [
       },
       {
         menu: 'Careers',
-        path: 'https://homebrew.bamboohr.com/careers',
+        path: 'https://menlo.bamboohr.com/careers',
         external: true,
       },
     ],
@@ -104,6 +105,19 @@ const menus = [
 const getCurrentYear = new Date().getFullYear()
 
 export default function Footer() {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      posthog.init(process.env.POSTHOG_KEY as string, {
+        api_host: process.env.POSTHOG_HOST,
+        disable_session_recording: true,
+        person_profiles: 'always',
+        persistence: 'localStorage',
+      })
+
+      posthog.capture('web_page_view', { timestamp: new Date() })
+    }
+  }, [])
+
   const { register, handleSubmit, reset } = useForm({
     defaultValues: {
       email: '',
@@ -237,14 +251,14 @@ export default function Footer() {
               )
             })}
           </div>
-          <span>&copy;{getCurrentYear}&nbsp;Homebrew Computer Company</span>
+          <span>&copy;{getCurrentYear}&nbsp;Menlo Research</span>
           <ThemeImage
             source={{
-              light: '/assets/images/general/homebrew-dark.svg',
-              dark: '/assets/images/general/homebrew-white.svg',
+              light: '/assets/images/general/menlo.svg',
+              dark: '/assets/images/general/menlo.svg',
             }}
             alt="App screenshots"
-            width={140}
+            width={80}
             height={200}
           />
         </div>
