@@ -17,7 +17,7 @@ pub async fn run_mcp_commands(
     app_path: String,
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
 ) -> Result<(), String> {
-    println!(
+    log::info!(
         "Load MCP configs from {}",
         app_path.clone() + "/mcp_config.json"
     );
@@ -29,7 +29,7 @@ pub async fn run_mcp_commands(
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
     if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
-        println!("MCP Servers: {server_map:#?}");
+        log::info!("MCP Servers: {server_map:#?}");
 
         for (name, config) in server_map {
             if let Some((command, args)) = extract_command_args(config) {
@@ -53,7 +53,7 @@ pub async fn run_mcp_commands(
     for (_, service) in servers_map.iter() {
         // Initialize
         let _server_info = service.peer_info();
-        println!("Connected to server: {_server_info:#?}");
+        log::info!("Connected to server: {_server_info:#?}");
     }
     Ok(())
 }

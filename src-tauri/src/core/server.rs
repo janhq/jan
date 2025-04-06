@@ -6,7 +6,6 @@ use std::net::SocketAddr;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
 
 /// Server handle type for managing the proxy server lifecycle
 type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
@@ -24,7 +23,7 @@ struct ProxyConfig {
 
 /// Removes a prefix from a path, ensuring proper formatting
 fn remove_prefix(path: &str, prefix: &str) -> String {
-    debug!("Processing path: {}, removing prefix: {}", path, prefix);
+    log::debug!("Processing path: {}, removing prefix: {}", path, prefix);
 
     if !prefix.is_empty() && path.starts_with(prefix) {
         let result = path[prefix.len()..].to_string();
@@ -42,7 +41,6 @@ fn remove_prefix(path: &str, prefix: &str) -> String {
 fn get_destination_path(original_path: &str, prefix: &str) -> String {
     let removed_prefix_path = remove_prefix(original_path, prefix);
 
-    println!("Removed prefix path: {}", removed_prefix_path);
     // Special paths don't need the /v1 prefix
     if !original_path.contains(prefix)
         || removed_prefix_path.contains("/healthz")
@@ -81,7 +79,7 @@ async fn proxy_request(
 
     // Build the outbound request
     let upstream_url = build_upstream_url(&config.upstream, &path);
-    debug!("Proxying request to: {}", upstream_url);
+    log::debug!("Proxying request to: {}", upstream_url);
 
     let mut outbound_req = client.request(req.method().clone(), &upstream_url);
 
@@ -100,7 +98,7 @@ async fn proxy_request(
     match outbound_req.body(req.into_body()).send().await {
         Ok(response) => {
             let status = response.status();
-            debug!("Received response with status: {}", status);
+            log::debug!("Received response with status: {}", status);
 
             let mut builder = Response::builder().status(status);
 
@@ -113,7 +111,7 @@ async fn proxy_request(
             match response.bytes().await {
                 Ok(bytes) => Ok(builder.body(Body::from(bytes)).unwrap()),
                 Err(e) => {
-                    error!("Failed to read response body: {}", e);
+                    log::error!("Failed to read response body: {}", e);
                     Ok(Response::builder()
                         .status(StatusCode::INTERNAL_SERVER_ERROR)
                         .body(Body::from("Error reading upstream response"))
@@ -122,7 +120,7 @@ async fn proxy_request(
             }
         }
         Err(e) => {
-            error!("Proxy request failed: {}", e);
+            log::error!("Proxy request failed: {}", e);
             Ok(Response::builder()
                 .status(StatusCode::BAD_GATEWAY)
                 .body(Body::from(format!("Upstream error: {}", e)))
@@ -175,12 +173,12 @@ pub async fn start_server(
 
     // Create and start the server
     let server = Server::bind(&addr).serve(make_svc);
-    info!("Proxy server started on http://{}", addr);
+    log::info!("Proxy server started on http://{}", addr);
 
     // Spawn server task
     let server_handle = tokio::spawn(async move {
         if let Err(e) = server.await {
-            error!("Server error: {}", e);
+            log::error!("Server error: {}", e);
             return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
         }
         Ok(())
@@ -196,9 +194,9 @@ pub async fn stop_server() -> Result<(), Box<dyn std::error::Error + Send + Sync
 
     if let Some(handle) = handle_guard.take() {
         handle.abort();
-        info!("Proxy server stopped");
+        log::info!("Proxy server stopped");
     } else {
-        debug!("No server was running");
+        log::debug!("No server was running");
     }
 
     Ok(())

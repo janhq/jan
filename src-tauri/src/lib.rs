@@ -1,5 +1,6 @@
 mod core;
 use core::{
+    cmd::get_jan_data_folder_path,
     setup::{self, setup_engine_binaries, setup_mcp, setup_sidecar},
     state::{generate_app_token, AppState},
 };
@@ -11,8 +12,8 @@ use tokio::sync::Mutex;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon
@@ -47,25 +48,26 @@ pub fn run() {
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
         })
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .targets([
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                            path: get_jan_data_folder_path(app.handle().clone()).join("logs"),
+                            file_name: Some("app".to_string()),
+                        }),
+                        if cfg!(debug_assertions) {
+                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
+                        },
+                    ])
+                    .build(),
+            )?;
             // Install extensions
             if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
-                eprintln!("Failed to install extensions: {}", e);
+                log::error!("Failed to install extensions: {}", e);
             }
-
             setup_mcp(app);
-
             setup_sidecar(app).expect("Failed to setup sidecar");
-
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
-
             Ok(())
         })
         .on_window_event(|window, event| match event {

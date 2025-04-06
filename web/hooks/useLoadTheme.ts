@@ -22,7 +22,8 @@ export const useLoadTheme = () => {
 
   const setNativeTheme = useCallback(
     (nativeTheme: NativeThemeProps) => {
-      if (!('setNativeThemeDark' in window.core.api)) return
+      if (!window.electronAPI) return
+
       if (nativeTheme === 'dark') {
         window?.core?.api?.setNativeThemeDark()
         setTheme('dark')
@@ -58,21 +59,20 @@ export const useLoadTheme = () => {
     setThemeOptions(themesOptions)
 
     if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
-
     const theme: Theme = JSON.parse(
       await window.core.api.readTheme({
-        theme: selectedIdTheme,
+        themeName: selectedIdTheme,
       })
     )
 
     setThemeData(theme)
     setNativeTheme(theme.nativeTheme)
     applyTheme(theme)
-  }, [])
+  }, [selectedIdTheme])
 
   const configureTheme = useCallback(async () => {
     if (!themeData || !themeOptions) {
-      await getThemes()
+      getThemes()
     } else {
       applyTheme(themeData)
     }
