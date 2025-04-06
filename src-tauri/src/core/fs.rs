@@ -73,7 +73,7 @@ pub fn readdir_sync<R: Runtime>(
     }
 
     let path = resolve_path(app_handle, &args[0]);
-    println!("Reading directory: {:?}", path);
+    log::error!("Reading directory: {:?}", path);
     let entries = fs::read_dir(&path).map_err(|e| e.to_string())?;
     let paths: Vec<String> = entries
         .filter_map(|entry| entry.ok())

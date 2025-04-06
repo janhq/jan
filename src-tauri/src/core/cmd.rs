@@ -35,7 +35,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
     let default_data_folder = default_data_folder_path(app_handle.clone());
 
     if !configuration_file.exists() {
-        println!(
+        log::info!(
             "App config not found, creating default config at {:?}",
             configuration_file
         );
@@ -46,7 +46,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
             &configuration_file,
             serde_json::to_string(&app_default_configuration).unwrap(),
         ) {
-            eprintln!("Failed to create default config: {}", err);
+            log::error!("Failed to create default config: {}", err);
         }
 
         return app_default_configuration;
@@ -56,7 +56,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
         Ok(content) => match serde_json::from_str::<AppConfiguration>(&content) {
             Ok(app_configurations) => app_configurations,
             Err(err) => {
-                eprintln!(
+                log::error!(
                     "Failed to parse app config, returning default config instead. Error: {}",
                     err
                 );
@@ -64,7 +64,7 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
             }
         },
         Err(err) => {
-            eprintln!(
+            log::error!(
                 "Failed to read app config, returning default config instead. Error: {}",
                 err
             );
@@ -79,7 +79,7 @@ pub fn update_app_configuration(
     configuration: AppConfiguration,
 ) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
-    println!(
+    log::info!(
         "update_app_configuration, configuration_file: {:?}",
         configuration_file
     );
@@ -136,7 +136,7 @@ pub fn read_theme(app_handle: tauri::AppHandle, theme_name: String) -> Result<St
 #[tauri::command]
 pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
     let app_path = app_handle.path().app_data_dir().unwrap_or_else(|err| {
-        eprintln!(
+        log::error!(
             "Failed to get app data directory: {}. Using home directory instead.",
             err
         );
@@ -215,7 +215,7 @@ pub fn open_file_explorer(path: String) {
 #[tauri::command]
 pub fn install_extensions(app: AppHandle) {
     if let Err(err) = setup::install_extensions(app, true) {
-        eprintln!("Failed to install extensions: {}", err);
+        log::error!("Failed to install extensions: {}", err);
     }
 }
 
@@ -223,7 +223,7 @@ pub fn install_extensions(app: AppHandle) {
 pub fn get_active_extensions(app: AppHandle) -> Vec<serde_json::Value> {
     let mut path = get_jan_extensions_path(app);
     path.push("extensions.json");
-    println!("get jan extensions, path: {:?}", path);
+    log::info!("get jan extensions, path: {:?}", path);
 
     let contents = fs::read_to_string(path);
     let contents: Vec<serde_json::Value> = match contents {
