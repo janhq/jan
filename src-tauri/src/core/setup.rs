@@ -11,6 +11,7 @@ use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
 
+// MCP
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
@@ -39,7 +40,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
     // Attempt to remove extensions folder
     if extensions_path.exists() {
         fs::remove_dir_all(&extensions_path).unwrap_or_else(|_| {
-            println!("Failed to remove existing extensions folder, it may not exist.");
+            log::info!("Failed to remove existing extensions folder, it may not exist.");
         });
     }
 
@@ -66,7 +67,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         let path = entry.path();
 
         if path.extension().map_or(false, |ext| ext == "tgz") {
-            println!("Installing extension from {:?}", path);
+            log::info!("Installing extension from {:?}", path);
             let tar_gz = File::open(&path).map_err(|e| e.to_string())?;
             let gz_decoder = GzDecoder::new(tar_gz);
             let mut archive = Archive::new(gz_decoder);
@@ -132,7 +133,7 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
 
             extensions_list.push(new_extension);
 
-            println!("Installed extension to {:?}", extension_dir);
+            log::info!("Installed extension to {:?}", extension_dir);
         }
     }
     fs::write(
@@ -186,7 +187,7 @@ pub fn setup_mcp(app: &App) {
     let servers = state.mcp_servers.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(app_path_str, servers).await {
-            eprintln!("Failed to run mcp commands: {}", e);
+            log::error!("Failed to run mcp commands: {}", e);
         }
     });
 }
@@ -252,7 +253,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         while let Some(event) = rx.recv().await {
             if let CommandEvent::Stdout(line_bytes) = event {
                 let line = String::from_utf8_lossy(&line_bytes);
-                println!("Outputs: {:?}", line)
+                log::info!("Outputs: {:?}", line)
             }
         }
     });
@@ -268,7 +269,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
 
 fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {
     fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
-    println!("Copying from {:?} to {:?}", src, dst);
+    log::info!("Copying from {:?} to {:?}", src, dst);
     for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let ty = entry.file_type().map_err(|e| e.to_string())?;
@@ -293,10 +294,10 @@ pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
         .join("resources");
 
     if let Err(e) = copy_dir_all(binaries_dir, app_data_dir.clone()) {
-        eprintln!("Failed to copy binaries: {}", e);
+        log::error!("Failed to copy binaries: {}", e);
     }
     if let Err(e) = copy_dir_all(themes_dir, app_data_dir.clone()) {
-        eprintln!("Failed to copy themes: {}", e);
+        log::error!("Failed to copy themes: {}", e);
     }
     Ok(())
 }

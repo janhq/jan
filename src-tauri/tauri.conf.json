@@ -1,13 +1,13 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
   "version": "0.1.0",
   "identifier": "jan.ai",
   "build": {
     "frontendDist": "../web/out",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "yarn dev:web:tauri",
-    "beforeBuildCommand": "yarn build:web"
+    "beforeDevCommand": "IS_TAURI=true yarn dev:web",
+    "beforeBuildCommand": "IS_TAURI=true yarn build:web"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -27,9 +27,10 @@
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
         "connect-src": "ipc: http://ipc.localhost",
-        "font-src": ["https://fonts.gstatic.com"],
+        "font-src": ["https://fonts.gstatic.com blob: data:"],
         "img-src": "'self' asset: http://asset.localhost blob: data:",
-        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com"
+        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
+        "script-src": "'self' asset: $APPDATA/**.*"
       },
       "assetProtocol": {
         "enable": true,
@@ -40,9 +41,18 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/menloresearch/jan/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

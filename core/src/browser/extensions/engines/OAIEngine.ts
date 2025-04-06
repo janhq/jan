@@ -76,7 +76,7 @@ export abstract class OAIEngine extends AIEngine {
     const timestamp = Date.now() / 1000
     const message: ThreadMessage = {
       id: ulid(),
-      thread_id: data.threadId,
+      thread_id: data.thread?.id ?? data.threadId,
       type: data.type,
       assistant_id: data.assistantId,
       role: ChatCompletionRole.Assistant,
@@ -104,6 +104,7 @@ export abstract class OAIEngine extends AIEngine {
       messages: data.messages ?? [],
       model: model.id,
       stream: true,
+      tools: data.tools,
       ...model.parameters,
     }
     if (this.transformPayload) {

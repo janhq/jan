@@ -1,12 +1,7 @@
-import { Assistant, AssistantExtension, ToolManager } from '@janhq/core'
-import { RetrievalTool } from './tools/retrieval'
+import { Assistant, AssistantExtension } from '@janhq/core'
 
 export default class JanAssistantExtension extends AssistantExtension {
-
-  async onLoad() {
-    // Register the retrieval tool
-    ToolManager.instance().register(new RetrievalTool())
-  }
+  async onLoad() {}
 
   /**
    * Called when the extension is unloaded.
