@@ -50,15 +50,14 @@ pub fn run() {
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
-                    .targets([
+                    .targets([if cfg!(debug_assertions) {
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
+                    } else {
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
                             path: get_jan_data_folder_path(app.handle().clone()).join("logs"),
                             file_name: Some("app".to_string()),
-                        }),
-                        if cfg!(debug_assertions) {
-                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
-                        },
-                    ])
+                        })
+                    }])
                     .build(),
             )?;
             // Install extensions
