@@ -4,7 +4,6 @@ import { fs, joinPath } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
 import { useLoadTheme } from './useLoadTheme'
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   selectedThemeIdAtom,
   themeDataAtom,
@@ -27,8 +26,6 @@ describe('useLoadTheme', () => {
     jest.clearAllMocks()
   })
 
-  const mockJanDataFolderPath = '/mock/path'
-  const mockThemesPath = '/mock/path/themes'
   const mockSelectedThemeId = 'joi-light'
   const mockThemeData = {
     id: 'joi-light',
@@ -51,8 +48,6 @@ describe('useLoadTheme', () => {
     // Mock Jotai hooks
     ;(useAtomValue as jest.Mock).mockImplementation((atom) => {
       switch (atom) {
-        case janDataFolderPathAtom:
-          return mockJanDataFolderPath
         default:
           return undefined
       }
@@ -80,15 +75,6 @@ describe('useLoadTheme', () => {
     const mockSetTheme = jest.fn()
     ;(useTheme as jest.Mock).mockReturnValue({ setTheme: mockSetTheme })
 
-    // Mock window.electronAPI
-    Object.defineProperty(window, 'electronAPI', {
-      value: {
-        setNativeThemeLight: jest.fn(),
-        setNativeThemeDark: jest.fn(),
-      },
-      writable: true,
-    })
-
     const { result } = renderHook(() => useLoadTheme())
 
     await act(async () => {
@@ -96,12 +82,11 @@ describe('useLoadTheme', () => {
     })
 
     // Assertions
-    expect(readTheme).toHaveBeenLastCalledWith({ theme: 'joi-light' })
+    expect(readTheme).toHaveBeenLastCalledWith({ themeName: 'joi-light' })
   })
 
   it('should set default theme if no selected theme', async () => {
     // Mock Jotai hooks with empty selected theme
-    ;(useAtomValue as jest.Mock).mockReturnValue(mockJanDataFolderPath)
     ;(useSetAtom as jest.Mock).mockReturnValue(jest.fn())
     ;(useAtom as jest.Mock).mockReturnValue(['', jest.fn()])
     ;(useAtom as jest.Mock).mockReturnValue([{}, jest.fn()])

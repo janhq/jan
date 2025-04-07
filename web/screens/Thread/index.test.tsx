@@ -1,3 +1,7 @@
+/**
+ * @jest-environment jsdom
+ */
+import 'openai/shims/node'
 import React from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import ThreadScreen from './index'
