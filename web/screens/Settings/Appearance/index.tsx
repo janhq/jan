@@ -2,7 +2,6 @@ import { useCallback } from 'react'
 
 import { useTheme } from 'next-themes'
 
-import { fs, joinPath } from '@janhq/core'
 import { Button, ScrollArea, Select, Switch } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 
@@ -51,9 +50,11 @@ export default function AppearanceOptions() {
   const handleClickTheme = useCallback(
     async (e: string) => {
       setSelectedIdTheme(e)
-      const janThemesPath = await joinPath([janDataFolderPath, 'themes'])
-      const filePath = await joinPath([`${janThemesPath}/${e}`, `theme.json`])
-      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
+      const theme: Theme = JSON.parse(
+        await window.core.api.readTheme({
+          themeName: e,
+        })
+      )
       setThemeData(theme)
       setTheme(String(theme?.nativeTheme))
     },
