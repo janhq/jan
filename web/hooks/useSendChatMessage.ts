@@ -13,6 +13,8 @@ import {
   ContentType,
   EngineManager,
   InferenceEngine,
+  MessageStatus,
+  ChatCompletionRole,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -20,7 +22,7 @@ import { OpenAI } from 'openai'
 
 import {
   ChatCompletionMessageParam,
-  ChatCompletionRole,
+  ChatCompletionRole as OpenAIChatCompletionRole,
   ChatCompletionTool,
 } from 'openai/resources/chat'
 
@@ -261,7 +263,7 @@ export default function useSendChatMessage() {
         const response = await openai.chat.completions.create({
           messages: (data.messages ?? []).map((e) => {
             return {
-              role: e.role as ChatCompletionRole,
+              role: e.role as OpenAIChatCompletionRole,
               content: e.content,
             }
           }) as ChatCompletionMessageParam[],
@@ -276,24 +278,24 @@ export default function useSendChatMessage() {
             thread_id: activeThreadRef.current.id,
             assistant_id: activeAssistantRef.current.assistant_id,
             attachments: [],
-            role: response.choices[0].message.role as any,
+            role: response.choices[0].message.role as ChatCompletionRole,
             content: [
               {
                 type: ContentType.Text,
                 text: {
                   value: response.choices[0].message.content
-                    ? (response.choices[0].message.content as any)
+                    ? response.choices[0].message.content
                     : '',
                   annotations: [],
                 },
               },
             ],
-            status: 'ready' as any,
+            status: MessageStatus.Ready,
             created_at: Date.now(),
             completed_at: Date.now(),
           }
           requestBuilder.pushAssistantMessage(
-            (response.choices[0].message.content as any) ?? ''
+            response.choices[0].message.content ?? ''
           )
           events.emit(MessageEvent.OnMessageUpdate, newMessage)
         }
@@ -307,7 +309,7 @@ export default function useSendChatMessage() {
               thread_id: activeThreadRef.current.id,
               assistant_id: activeAssistantRef.current.assistant_id,
               attachments: [],
-              role: 'assistant' as any,
+              role: ChatCompletionRole.Assistant,
               content: [
                 {
                   type: ContentType.Text,
@@ -317,7 +319,7 @@ export default function useSendChatMessage() {
                   },
                 },
               ],
-              status: 'pending' as any,
+              status: MessageStatus.Pending,
               created_at: Date.now(),
               completed_at: Date.now(),
             }
@@ -336,7 +338,7 @@ export default function useSendChatMessage() {
               thread_id: activeThreadRef.current.id,
               assistant_id: activeAssistantRef.current.assistant_id,
               attachments: [],
-              role: 'assistant' as any,
+              role: ChatCompletionRole.Assistant,
               content: [
                 {
                   type: ContentType.Text,
@@ -348,7 +350,7 @@ export default function useSendChatMessage() {
                   },
                 },
               ],
-              status: 'ready' as any,
+              status: MessageStatus.Ready,
               created_at: Date.now(),
               completed_at: Date.now(),
             }
