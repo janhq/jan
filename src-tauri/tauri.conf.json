@@ -14,8 +14,8 @@
     "windows": [
       {
         "title": "Jan",
-        "width": 1000,
-        "height": 700,
+        "width": 1024,
+        "height": 768,
         "resizable": true,
         "fullscreen": false,
         "hiddenTitle": true,

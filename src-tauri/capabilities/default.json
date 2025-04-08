@@ -8,6 +8,7 @@
   },
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "shell:allow-spawn",
     "shell:allow-open",
     "log:default",
