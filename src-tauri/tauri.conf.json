@@ -20,7 +20,11 @@
         "fullscreen": false,
         "hiddenTitle": true,
         "transparent": true,
-        "titleBarStyle": "Overlay"
+        "titleBarStyle": "Overlay",
+        "windowEffects": {
+          "effects": ["fullScreenUI", "mica", "blur", "acrylic"],
+          "state": "active"
+        }
       }
     ],
     "security": {
