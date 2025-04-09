@@ -32,10 +32,15 @@ pub async fn run_mcp_commands(
         log::info!("MCP Servers: {server_map:#?}");
 
         for (name, config) in server_map {
-            if let Some((command, args)) = extract_command_args(config) {
+            if let Some((command, args, envs)) = extract_command_args(config) {
                 let mut cmd = Command::new(command);
                 args.iter().filter_map(Value::as_str).for_each(|arg| {
                     cmd.arg(arg);
+                });
+                envs.iter().for_each(|(k, v)| {
+                    if let Some(v_str) = v.as_str() {
+                        cmd.env(k, v_str);
+                    }
                 });
 
                 let service =
@@ -58,11 +63,18 @@ pub async fn run_mcp_commands(
     Ok(())
 }
 
-fn extract_command_args(config: &Value) -> Option<(&str, &Vec<Value>)> {
+fn extract_command_args(
+    config: &Value,
+) -> Option<(String, Vec<Value>, serde_json::Map<String, Value>)> {
     let obj = config.as_object()?;
-    let command = obj.get("command")?.as_str()?;
-    let args = obj.get("args")?.as_array()?;
-    Some((command, args))
+    let command = obj.get("command")?.as_str()?.to_string();
+    let args = obj.get("args")?.as_array()?.clone();
+    let envs = obj
+        .get("env")
+        .unwrap_or(&Value::Object(serde_json::Map::new()))
+        .as_object()?
+        .clone();
+    Some((command, args, envs))
 }
 
 #[cfg(test)]
