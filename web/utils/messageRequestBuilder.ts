@@ -11,6 +11,7 @@ import {
   Thread,
   ThreadMessage,
 } from '@janhq/core'
+import { ChatCompletionMessage as OAIChatCompletionMessage } from 'openai/resources/chat'
 import { ulid } from 'ulidx'
 
 import { Stack } from '@/utils/Stack'
@@ -45,12 +46,26 @@ export class MessageRequestBuilder {
     this.tools = tools
   }
 
-  pushAssistantMessage(message: string) {
+  pushAssistantMessage(message: OAIChatCompletionMessage) {
+    const { content, refusal, ...rest } = message
+    const normalizedMessage = {
+      ...rest,
+      ...(content ? { content } : {}),
+      ...(refusal ? { refusal } : {}),
+    }
+    this.messages = [
+      ...this.messages,
+      normalizedMessage as ChatCompletionMessage,
+    ]
+  }
+
+  pushToolMessage(message: string, toolCallId: string) {
     this.messages = [
       ...this.messages,
       {
-        role: ChatCompletionRole.Assistant,
+        role: ChatCompletionRole.Tool,
         content: message,
+        tool_call_id: toolCallId,
       },
     ]
   }
@@ -140,40 +155,13 @@ export class MessageRequestBuilder {
     return this
   }
 
-  normalizeMessages = (
-    messages: ChatCompletionMessage[]
-  ): ChatCompletionMessage[] => {
-    const stack = new Stack<ChatCompletionMessage>()
-    for (const message of messages) {
-      if (stack.isEmpty()) {
-        stack.push(message)
-        continue
-      }
-      const topMessage = stack.peek()
-
-      if (message.role === topMessage.role) {
-        // add an empty message
-        stack.push({
-          role:
-            topMessage.role === ChatCompletionRole.User
-              ? ChatCompletionRole.Assistant
-              : ChatCompletionRole.User,
-          content: '.', // some model requires not empty message
-        })
-      }
-      stack.push(message)
-    }
-
-    return stack.reverseOutput()
-  }
-
   build(): MessageRequest {
     return {
       id: this.msgId,
       type: this.type,
       attachments: [],
       threadId: this.thread.id,
-      messages: this.normalizeMessages(this.messages),
+      messages: this.messages,
       model: this.model,
       thread: this.thread,
       tools: this.tools,

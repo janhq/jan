@@ -18,6 +18,8 @@ import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 import ThinkingBlock from './ThinkingBlock'
 
+import ToolCallBlock from './ToolCallBlock'
+
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   editMessageAtom,
@@ -65,7 +67,10 @@ const MessageContainer: React.FC<
     [props.content]
   )
 
-  const attachedFile = useMemo(() => 'attachments' in props, [props])
+  const attachedFile = useMemo(
+    () => 'attachments' in props && props.attachments?.length,
+    [props]
+  )
 
   return (
     <div
@@ -110,12 +115,11 @@ const MessageContainer: React.FC<
         <div
           className={twMerge(
             'absolute right-0 order-1 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
-            isUser
-              ? twMerge(
-                  'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:z-50 group-hover:flex',
-                  image && 'group-hover:-top-2'
-                )
-              : 'relative left-0 order-2 flex w-full justify-between opacity-0 group-hover:opacity-100',
+            twMerge(
+              'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:z-50 group-hover:flex',
+              image && 'group-hover:-top-2'
+            ),
+
             props.isCurrentMessage && 'opacity-100'
           )}
         >
@@ -179,6 +183,21 @@ const MessageContainer: React.FC<
                 />
               </div>
             )}
+            {props.metadata &&
+              'tool_calls' in props.metadata &&
+              Array.isArray(props.metadata.tool_calls) &&
+              props.metadata.tool_calls.length && (
+                <>
+                  {props.metadata.tool_calls.map((toolCall) => (
+                    <ToolCallBlock
+                      id={toolCall.tool?.id}
+                      name={toolCall.tool?.function?.name ?? ''}
+                      key={toolCall.tool?.id}
+                      result={JSON.stringify(toolCall.response)}
+                    />
+                  ))}
+                </>
+              )}
           </>
         </div>
       </div>
