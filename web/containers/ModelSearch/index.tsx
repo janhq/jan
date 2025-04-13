@@ -83,7 +83,7 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
       value={searchText}
       clearable={searchText.length > 0}
       onClear={onClear}
-      className="border-0 bg-[hsla(var(--app-bg))]"
+      className="bg-[hsla(var(--app-bg))]"
       onClick={() => {
         onSearchLocal?.(inputRef.current?.value ?? '')
       }}
