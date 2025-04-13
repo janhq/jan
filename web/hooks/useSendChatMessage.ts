@@ -259,8 +259,13 @@ export default function useSendChatMessage() {
         baseURL: `${API_BASE_URL}/v1`,
         dangerouslyAllowBrowser: true,
       })
+      let parentMessageId: string | undefined
       while (!isDone) {
-        const messageId = ulid()
+        let messageId = ulid()
+        if (!parentMessageId) {
+          parentMessageId = ulid()
+          messageId = parentMessageId
+        }
         const data = requestBuilder.build()
         const message: ThreadMessage = {
           id: messageId,
@@ -269,7 +274,11 @@ export default function useSendChatMessage() {
           assistant_id: activeAssistantRef.current.assistant_id,
           role: ChatCompletionRole.Assistant,
           content: [],
-          metadata: {},
+          metadata: {
+            ...(messageId !== parentMessageId
+              ? { parent_id: parentMessageId }
+              : {}),
+          },
           status: MessageStatus.Pending,
           created_at: Date.now() / 1000,
           completed_at: Date.now() / 1000,
@@ -298,7 +307,7 @@ export default function useSendChatMessage() {
           isDone = await processStreamingResponse(
             response as Stream<OpenAI.Chat.Completions.ChatCompletionChunk>,
             requestBuilder,
-            message
+            message,
           )
         else {
           isDone = await processNonStreamingResponse(

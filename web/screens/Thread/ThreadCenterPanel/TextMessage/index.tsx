@@ -75,41 +75,44 @@ const MessageContainer: React.FC<
   return (
     <div
       className={twMerge(
-        'group relative mx-auto px-4 py-2',
+        'group relative mx-auto px-4',
+        !(props.metadata && 'parent_id' in props.metadata) && 'py-2',
         chatWidth === 'compact' && 'max-w-[700px]',
         isUser && 'pb-4 pt-0'
       )}
     >
-      <div
-        className={twMerge(
-          'mb-2 flex items-center justify-start',
-          !isUser && 'mt-2 gap-x-2'
-        )}
-      >
-        {!isUser && !isSystem && <LogoMark width={28} />}
-
+      {!(props.metadata && 'parent_id' in props.metadata) && (
         <div
           className={twMerge(
-            'font-extrabold capitalize',
-            isUser && 'text-gray-500'
+            'mb-2 flex items-center justify-start',
+            !isUser && 'mt-2 gap-x-2'
           )}
         >
-          {!isUser && (
-            <>
-              {props.metadata && 'model' in props.metadata
-                ? (props.metadata?.model as string)
-                : props.isCurrentMessage
-                  ? selectedModel?.name
-                  : (activeAssistant?.assistant_name ?? props.role)}
-            </>
-          )}
-        </div>
+          {!isUser && !isSystem && <LogoMark width={28} />}
 
-        <p className="text-xs font-medium text-gray-400">
-          {props.created_at &&
-            displayDate(props.created_at ?? Date.now() / 1000)}
-        </p>
-      </div>
+          <div
+            className={twMerge(
+              'font-extrabold capitalize',
+              isUser && 'text-gray-500'
+            )}
+          >
+            {!isUser && (
+              <>
+                {props.metadata && 'model' in props.metadata
+                  ? (props.metadata?.model as string)
+                  : props.isCurrentMessage
+                    ? selectedModel?.name
+                    : (activeAssistant?.assistant_name ?? props.role)}
+              </>
+            )}
+          </div>
+
+          <p className="text-xs font-medium text-gray-400">
+            {props.created_at &&
+              displayDate(props.created_at ?? Date.now() / 1000)}
+          </p>
+        </div>
+      )}
 
       <div className="flex w-full flex-col ">
         <div
