@@ -60,16 +60,15 @@ For more model installation methods, please visit [Model Management](/docs/model
 
 ### Step 3: Turn on GPU Acceleration (Optional)
 While the model downloads, let's optimize your hardware setup. If you're on **Windows** or **Linux** and have a compatible graphics card, you can significantly boost model performance by enabling GPU acceleration.
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings** 
-2. At **GPU Acceleration**, toggle on and select your preferred GPU(s)
-3. App reload is required after the selection
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
+2. At **llama-cpp Backend**, select backend. For example `windows-amd64-vulkan` if you have and AMD gaphic card. For more info, see [our guide](/docs/local-engines/llama-cpp).
 
 <Callout type="info">
 Ensure you have installed all required dependencies and drivers before enabling GPU acceleration. See **GPU Setup Guide** on [Windows](/docs/desktop/windows#gpu-acceleration) & [Linux](/docs/desktop/linux#gpu-acceleration) for detailed instructions.
 </Callout>
 <br/>
 
-![Turn on GPU acceleration](./_assets/trouble-shooting-01.png)
+![Turn on GPU acceleration](./_assets/trouble-shooting-03.png)
 
 ### Step 4: Customize Assistant Instructions
 Once your model has been downloaded and you're ready to start your first conversation, you can customize how it responds by setting specific instructions:
