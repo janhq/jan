@@ -13,6 +13,7 @@ import {
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
+  WrenchIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -45,6 +46,7 @@ import {
   isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
+import { ModelTool } from '@/types/model'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -69,6 +71,7 @@ const ChatInput = () => {
   const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
+  const [tools, setTools] = useState<any>([])
 
   const upload = uploader()
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
@@ -91,6 +94,12 @@ const ChatInput = () => {
       setActiveSettingInputBox(true)
     }
   }, [activeSettingInputBox, selectedModel, setActiveSettingInputBox])
+
+  useEffect(() => {
+    window.core?.api?.getTools().then((data: ModelTool[]) => {
+      setTools(data)
+    })
+  }, [])
 
   const onStopInferenceClick = async () => {
     stopInference()
@@ -385,6 +394,25 @@ const ChatInput = () => {
                 className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
               />
             </Badge>
+            {tools && tools.length > 0 && (
+              <Badge
+                theme="secondary"
+                className={twMerge(
+                  'flex cursor-pointer items-center gap-x-1',
+                  activeTabThreadRightPanel === 'model' &&
+                    'border border-transparent'
+                )}
+                variant={
+                  activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
+                }
+              >
+                <WrenchIcon
+                  size={16}
+                  className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
+                />
+                <span className='text-xs'>{tools.length}</span>
+              </Badge>
+            )}
           </div>
           {selectedModel && (
             <Button
