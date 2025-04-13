@@ -410,7 +410,7 @@ const ChatInput = () => {
                   size={16}
                   className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                 />
-                <span className='text-xs'>{tools.length}</span>
+                <span className="text-xs">{tools.length}</span>
               </Badge>
             )}
           </div>

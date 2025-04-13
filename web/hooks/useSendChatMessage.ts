@@ -307,7 +307,7 @@ export default function useSendChatMessage() {
           isDone = await processStreamingResponse(
             response as Stream<OpenAI.Chat.Completions.ChatCompletionChunk>,
             requestBuilder,
-            message,
+            message
           )
         else {
           isDone = await processNonStreamingResponse(

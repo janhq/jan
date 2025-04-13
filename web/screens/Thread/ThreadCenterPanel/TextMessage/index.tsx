@@ -114,12 +114,12 @@ const MessageContainer: React.FC<
         </div>
       )}
 
-      <div className="flex w-full flex-col ">
+      <div className="flex w-full flex-col">
         <div
           className={twMerge(
             'absolute right-0 order-1 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
             twMerge(
-              'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:z-50 group-hover:flex',
+              'hidden group-hover:absolute group-hover:-bottom-4 group-hover:right-4 group-hover:z-50 group-hover:flex',
               image && 'group-hover:-top-2'
             ),
 
