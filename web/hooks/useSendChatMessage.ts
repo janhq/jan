@@ -454,6 +454,28 @@ export default function useSendChatMessage() {
     // Handle completed tool calls
     if (toolCalls.length > 0) {
       for (const toolCall of toolCalls) {
+        const toolId = ulid()
+        const toolCallsMetadata =
+          message.metadata?.tool_calls &&
+          Array.isArray(message.metadata?.tool_calls)
+            ? message.metadata?.tool_calls
+            : []
+        message.metadata = {
+          ...(message.metadata ?? {}),
+          tool_calls: [
+            ...toolCallsMetadata,
+            {
+              tool: {
+                ...toolCall,
+                id: toolId,
+              },
+              response: undefined,
+              state: 'pending',
+            },
+          ],
+        }
+        events.emit(MessageEvent.OnMessageUpdate, message)
+
         const result = await window.core.api.callTool({
           toolName: toolCall.function.name,
           arguments: JSON.parse(toolCall.function.arguments),
@@ -463,16 +485,14 @@ export default function useSendChatMessage() {
         message.metadata = {
           ...(message.metadata ?? {}),
           tool_calls: [
-            ...(message.metadata?.tool_calls &&
-            Array.isArray(message.metadata?.tool_calls)
-              ? message.metadata?.tool_calls
-              : []),
+            ...toolCallsMetadata,
             {
               tool: {
                 ...toolCall,
-                id: ulid(),
+                id: toolId,
               },
               response: result,
+              state: 'ready',
             },
           ],
         }

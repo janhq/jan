@@ -197,6 +197,7 @@ const MessageContainer: React.FC<
                       name={toolCall.tool?.function?.name ?? ''}
                       key={toolCall.tool?.id}
                       result={JSON.stringify(toolCall.response)}
+                      loading={toolCall.state === 'pending'}
                     />
                   ))}
                 </>
