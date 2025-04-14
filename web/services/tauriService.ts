@@ -19,6 +19,8 @@ export const Routes = [
   'getThreadAssistant',
   'createThreadAssistant',
   'modifyThreadAssistant',
+  'saveMcpConfigs',
+  'getMcpConfigs',
 ].map((r) => ({
   path: `app`,
   route: r,
