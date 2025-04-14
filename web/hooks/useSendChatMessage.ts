@@ -335,7 +335,8 @@ export default function useSendChatMessage() {
     message: ThreadMessage
   ): Promise<boolean> => {
     // Handle tool calls in the response
-    const toolCalls = response.choices[0]?.message?.tool_calls
+    const toolCalls: ChatCompletionMessageToolCall[] =
+      response.choices[0]?.message?.tool_calls ?? []
     const content = response.choices[0].message?.content
     message.content = [
       {
@@ -367,7 +368,7 @@ export default function useSendChatMessage() {
       function: { name: string; arguments: string }
     } | null = null
     let accumulatedContent = ''
-    const toolCalls = []
+    const toolCalls: ChatCompletionMessageToolCall[] = []
     // Process the streaming chunks
     for await (const chunk of response) {
       // Handle tool calls in the chunk
@@ -389,6 +390,7 @@ export default function useSendChatMessage() {
                 name: deltaToolCalls[0]?.function?.name || '',
                 arguments: deltaToolCalls[0]?.function?.arguments || '',
               },
+              type: 'function',
             }
             currentToolCall = toolCalls[index]
           } else {
@@ -436,7 +438,7 @@ export default function useSendChatMessage() {
   }
 
   const postMessageProcessing = async (
-    toolCalls: any[],
+    toolCalls: ChatCompletionMessageToolCall[],
     requestBuilder: MessageRequestBuilder,
     message: ThreadMessage,
     content: string
@@ -445,10 +447,7 @@ export default function useSendChatMessage() {
       content,
       role: 'assistant',
       refusal: null,
-      tool_calls: toolCalls.map((e) => ({
-        ...e,
-        type: 'function',
-      })),
+      tool_calls: toolCalls,
     })
 
     // Handle completed tool calls
