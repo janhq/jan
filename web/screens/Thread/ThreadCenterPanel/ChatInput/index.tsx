@@ -397,14 +397,8 @@ const ChatInput = () => {
             {tools && tools.length > 0 && (
               <Badge
                 theme="secondary"
-                className={twMerge(
-                  'flex cursor-pointer items-center gap-x-1',
-                  activeTabThreadRightPanel === 'model' &&
-                    'border border-transparent'
-                )}
-                variant={
-                  activeTabThreadRightPanel === 'model' ? 'solid' : 'outline'
-                }
+                className={twMerge('flex cursor-pointer items-center gap-x-1')}
+                variant={'outline'}
               >
                 <WrenchIcon
                   size={16}
