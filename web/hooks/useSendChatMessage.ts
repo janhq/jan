@@ -24,6 +24,7 @@ import {
   ChatCompletionMessageParam,
   ChatCompletionRole as OpenAIChatCompletionRole,
   ChatCompletionTool,
+  ChatCompletionMessageToolCall,
 } from 'openai/resources/chat'
 
 import { Stream } from 'openai/streaming'
