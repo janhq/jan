@@ -427,10 +427,10 @@ const ChatInput = () => {
                   onOpenChange={setShowToolsModal}
                   title="Available MCP Tools"
                   content={
-                    <div className="">
+                    <div className="overflow-y-auto">
                       <div className="mb-2 py-2 text-sm text-[hsla(var(--text-secondary))]">
-                        Jan can can use tools provided by specialized servers
-                        using Model Context Protocol.{' '}
+                        Jan can use tools provided by specialized servers using
+                        Model Context Protocol.{' '}
                         <a
                           href="https://modelcontextprotocol.io/introduction"
                           target="_blank"
