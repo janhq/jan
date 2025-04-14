@@ -17,31 +17,9 @@ const MCP = () => {
 
   const readConfigFile = useCallback(async () => {
     try {
-      const configPath = await joinPath([janDataFolderPath, 'mcp_config.json'])
-
-      // Check if the file exists
-      const fileExists = await fs.existsSync(configPath)
-
-      if (fileExists) {
-        // Read the file
-        const content = await fs.readFileSync(configPath, 'utf-8')
-        setConfigContent(content)
-      } else {
-        // Create a default config if it doesn't exist
-        const defaultConfig = JSON.stringify(
-          {
-            servers: [],
-            settings: {
-              enabled: true,
-            },
-          },
-          null,
-          2
-        )
-
-        await fs.writeFileSync(configPath, defaultConfig)
-        setConfigContent(defaultConfig)
-      }
+      // Read the file
+      const content = await window.core?.api.getMcpConfigs()
+      setConfigContent(content)
 
       setError('')
     } catch (err) {
@@ -70,11 +48,7 @@ const MCP = () => {
         setIsSaving(false)
         return
       }
-
-      const configPath = await joinPath([janDataFolderPath, 'mcp_config.json'])
-
-      // Write to the file
-      await fs.writeFileSync(configPath, configContent)
+      await window.core?.api?.saveMcpConfigs({ configs: configContent })
 
       setSuccess('Config saved successfully')
       setIsSaving(false)

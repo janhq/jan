@@ -39,6 +39,8 @@ pub fn run() {
             core::cmd::app_token,
             core::cmd::start_server,
             core::cmd::stop_server,
+            core::cmd::save_mcp_configs,
+            core::cmd::get_mcp_configs,
             // MCP commands
             core::cmd::get_tools,
             core::cmd::call_tool,
