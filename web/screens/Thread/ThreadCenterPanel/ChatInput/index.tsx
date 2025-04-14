@@ -9,6 +9,9 @@ import {
   Tooltip,
   useClickOutside,
   badgeVariants,
+  Badge,
+  Modal,
+  ModalClose,
 } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
@@ -19,6 +22,7 @@ import {
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
+  WrenchIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -51,6 +55,7 @@ import {
   isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
+import { ModelTool } from '@/types/model'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -75,6 +80,8 @@ const ChatInput = () => {
   const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
+  const [tools, setTools] = useState<any>([])
+  const [showToolsModal, setShowToolsModal] = useState(false)
 
   const upload = uploader()
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
@@ -97,6 +104,12 @@ const ChatInput = () => {
       setActiveSettingInputBox(true)
     }
   }, [activeSettingInputBox, selectedModel, setActiveSettingInputBox])
+
+  useEffect(() => {
+    window.core?.api?.getTools().then((data: ModelTool[]) => {
+      setTools(data)
+    })
+  }, [])
 
   const onStopInferenceClick = async () => {
     stopInference()
@@ -141,6 +154,8 @@ const ChatInput = () => {
       }
     }
   }
+
+  console.log(tools)
 
   return (
     <div className="relative p-4 pb-2">
@@ -392,6 +407,62 @@ const ChatInput = () => {
                 className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
               />
             </button>
+            {tools && tools.length > 0 && (
+              <>
+                <Badge
+                  theme="secondary"
+                  className={twMerge(
+                    'flex cursor-pointer items-center gap-x-1'
+                  )}
+                  variant={'outline'}
+                  onClick={() => setShowToolsModal(true)}
+                >
+                  <WrenchIcon
+                    size={16}
+                    className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
+                  />
+                  <span className="text-xs">{tools.length}</span>
+                </Badge>
+
+                <Modal
+                  open={showToolsModal}
+                  onOpenChange={setShowToolsModal}
+                  title="Available MCP Tools"
+                  content={
+                    <div className="overflow-y-auto">
+                      <div className="mb-2 py-2 text-sm text-[hsla(var(--text-secondary))]">
+                        Jan can use tools provided by specialized servers using
+                        Model Context Protocol.{' '}
+                        <a
+                          href="https://modelcontextprotocol.io/introduction"
+                          target="_blank"
+                          className="text-[hsla(var(--app-link))]"
+                        >
+                          Learn more about MCP
+                        </a>
+                      </div>
+                      {tools.map((tool: any) => (
+                        <div
+                          key={tool.name}
+                          className="flex items-center gap-x-3 px-4 py-3 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                        >
+                          <WrenchIcon
+                            size={16}
+                            className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
+                          />
+                          <div>
+                            <div className="font-medium">{tool.name}</div>
+                            <div className="text-sm text-[hsla(var(--text-secondary))]">
+                              {tool.description}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                />
+              </>
+            )}
           </div>
           {selectedModel && (
             <Button
