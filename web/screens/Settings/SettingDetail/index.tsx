@@ -15,6 +15,7 @@ import RemoteEngineSettings from '@/screens/Settings/Engines/RemoteEngineSetting
 import ExtensionSetting from '@/screens/Settings/ExtensionSetting'
 import Hardware from '@/screens/Settings/Hardware'
 import Hotkeys from '@/screens/Settings/Hotkeys'
+import MCP from '@/screens/Settings/MCP'
 import MyModels from '@/screens/Settings/MyModels'
 import Privacy from '@/screens/Settings/Privacy'
 
@@ -30,6 +31,9 @@ const SettingDetail = () => {
   switch (selectedSetting) {
     case 'Engines':
       return <Engines />
+
+    case 'MCP Servers':
+      return <MCP />
 
     case 'Extensions':
       return <ExtensionCatalog />
