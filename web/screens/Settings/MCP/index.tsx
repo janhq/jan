@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 
 import { ScrollArea, Tabs } from '@janhq/joi'
-import MCPSearch from './search'
-import MCPConfiguration from './configuration'
+
 import { useAtomValue } from 'jotai'
+
+import MCPConfiguration from './configuration'
+import MCPSearch from './search'
+
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
 
 const MCP = () => {
