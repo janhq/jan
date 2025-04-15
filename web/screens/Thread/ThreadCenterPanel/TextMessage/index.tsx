@@ -81,7 +81,7 @@ const MessageContainer: React.FC<
         'group relative mx-auto px-4',
         !(props.metadata && 'parent_id' in props.metadata) && 'py-2',
         chatWidth === 'compact' && 'max-w-[700px]',
-        isUser && 'pb-4 pt-0'
+        !isUser && 'pb-4 pt-0'
       )}
     >
       {!(props.metadata && 'parent_id' in props.metadata) && (
@@ -92,7 +92,6 @@ const MessageContainer: React.FC<
           )}
         >
           {!isUser && !isSystem && <LogoMark width={28} />}
-
           <div
             className={twMerge(
               'font-extrabold capitalize',
