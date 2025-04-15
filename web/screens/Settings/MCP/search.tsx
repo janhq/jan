@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
 
-import { npxFinder, NPMPackage } from 'npx-scope-finder'
-
 import { Button, Input } from '@janhq/joi'
 import { PlusIcon } from 'lucide-react'
+import { npxFinder, NPMPackage } from 'npx-scope-finder'
+
 import { toaster } from '@/containers/Toast'
 
 interface MCPConfig {
