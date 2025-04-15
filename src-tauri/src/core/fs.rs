@@ -107,6 +107,7 @@ mod tests {
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;
+    use serde_json::to_string;
     use tauri::test::mock_app;
 
     #[test]
@@ -154,9 +155,11 @@ mod tests {
     fn test_exists_sync() {
         let app = mock_app();
         let path = "file://test_exists_sync_file";
-        let file_path = get_jan_data_folder_path(app.handle().clone()).join(path);
+        let dir_path = get_jan_data_folder_path(app.handle().clone());
+        fs::create_dir_all(&dir_path).unwrap();
+        let file_path = dir_path.join("test_exists_sync_file");
         File::create(&file_path).unwrap();
-        let args = vec![path.to_string()];
+        let args: Vec<String> = vec![path.to_string()];
         let result = exists_sync(app.handle().clone(), args).unwrap();
         assert!(result);
         fs::remove_file(file_path).unwrap();
@@ -166,7 +169,9 @@ mod tests {
     fn test_read_file_sync() {
         let app = mock_app();
         let path = "file://test_read_file_sync_file";
-        let file_path = get_jan_data_folder_path(app.handle().clone()).join(path);
+        let dir_path = get_jan_data_folder_path(app.handle().clone());
+        fs::create_dir_all(&dir_path).unwrap();
+        let file_path = dir_path.join("test_read_file_sync_file");
         let mut file = File::create(&file_path).unwrap();
         file.write_all(b"test content").unwrap();
         let args = vec![path.to_string()];
@@ -184,7 +189,7 @@ mod tests {
         File::create(dir_path.join("file1.txt")).unwrap();
         File::create(dir_path.join("file2.txt")).unwrap();
 
-        let args = vec![path.to_string()];
+        let args = vec![dir_path.to_string_lossy().to_string()];
         let result = readdir_sync(app.handle().clone(), args).unwrap();
         assert_eq!(result.len(), 2);
 

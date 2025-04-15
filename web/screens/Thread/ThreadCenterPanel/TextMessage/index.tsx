@@ -68,7 +68,10 @@ const MessageContainer: React.FC<
   )
 
   const attachedFile = useMemo(
-    () => 'attachments' in props && props.attachments?.length,
+    () =>
+      'attachments' in props &&
+      !!props.attachments?.length &&
+      props.attachments?.length > 0,
     [props]
   )
 
