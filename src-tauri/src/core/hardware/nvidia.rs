@@ -1,4 +1,3 @@
-#[derive(serde::Deserialize)]
 pub struct NvidiaInfo {
     index: u64,
     total_vram: u64,
@@ -27,30 +26,6 @@ impl From<NvidiaInfo> for super::Gpu {
     }
 }
 
-#[derive(serde::Deserialize)]
-struct NvidiaInfoFallback {
-    index: u64,
-    total_vram: u64,
-    free_vram: u64,
-    name: String,
-    driver_version: String,
-    uuid: String,
-}
-
-impl From<NvidiaInfoFallback> for NvidiaInfo {
-    fn from(val: NvidiaInfoFallback) -> Self {
-        NvidiaInfo {
-            index: val.index,
-            total_vram: val.total_vram,
-            free_vram: val.free_vram,
-            name: val.name,
-            compute_cap: "unknown".to_string(),
-            driver_version: val.driver_version,
-            uuid: val.uuid,
-        }
-    }
-}
-
 pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
     let has_nvidia_smi = match std::process::Command::new("nvidia-smi").output() {
         Ok(output) => output.status.success(),
@@ -69,12 +44,24 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
             .arg("--query-gpu=index,memory.total,memory.free,name,compute_cap,driver_version,uuid")
             .arg("--format=csv,noheader,nounits")
             .output()?;
+        if !output.status.success() {
+            return Err("nvidia-smi fails".into());
+        }
 
-        let mut rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader((&output.stdout) as &[u8]);
-        for result in rdr.deserialize() {
-            let info: NvidiaInfo = result?;
+        for line in std::str::from_utf8(&output.stdout)?.lines() {
+            let parts: Vec<&str> = line.split(", ").collect();
+            if parts.len() != 7 {
+                return Err(format!("Unable to parse line: {}", line).into());
+            }
+            let info = NvidiaInfo {
+                index: parts[0].parse()?,
+                total_vram: parts[1].parse()?,
+                free_vram: parts[2].parse()?,
+                name: parts[3].parse()?,
+                compute_cap: parts[4].parse()?,
+                driver_version: parts[5].parse()?,
+                uuid: parts[6].parse()?,
+            };
             results.push(info);
         }
 
@@ -94,13 +81,24 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
             .arg("--query-gpu=index,memory.total,memory.free,name,driver_version,uuid")
             .arg("--format=csv,noheader,nounits")
             .output()?;
+        if !output.status.success() {
+            return Err("nvidia-smi fails".into());
+        }
 
-        let mut rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader((&output.stdout) as &[u8]);
-        for result in rdr.deserialize() {
-            let info_fallback: NvidiaInfoFallback = result?;
-            let info: NvidiaInfo = info_fallback.into();
+        for line in std::str::from_utf8(&output.stdout)?.lines() {
+            let parts: Vec<&str> = line.split(", ").collect();
+            if parts.len() != 6 {
+                return Err(format!("Unable to parse line: {}", line).into());
+            }
+            let info = NvidiaInfo {
+                index: parts[0].parse()?,
+                total_vram: parts[1].parse()?,
+                free_vram: parts[2].parse()?,
+                name: parts[3].parse()?,
+                compute_cap: "unknown".to_string(),
+                driver_version: parts[4].parse()?,
+                uuid: parts[5].parse()?,
+            };
             results.push(info);
         }
 
