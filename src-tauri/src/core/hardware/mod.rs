@@ -3,8 +3,7 @@ pub mod nvidia;
 use sysinfo::{MemoryRefreshKind, System};
 
 // NOTE: some these can be enum
-// TODO: for numbers, check int or float
-// TODO: some values can be init once e.g. CPU info (except CPU usage)
+// TODO: separate static info and dynamic info (e.g. CPU cores vs CPU usage)
 #[derive(serde::Serialize)]
 pub struct Cpu {
     arch: String,
@@ -38,9 +37,19 @@ impl Cpu {
             usage = 0.0;
         }
 
+        // cortex only returns amd64, arm64, or Unsupported
+        // TODO: find how Jan uses this value, if we can use
+        // std::env::consts::ARCH directly
+        let arch = match std::env::consts::ARCH {
+            "x86" => "amd64",
+            "x86_64" => "amd64",
+            "arm" => "arm64",
+            "aarch64" => "arm64",
+            _ => "Unsupported",
+        };
+
         Cpu {
-            // NOTE: cortex returns either amd64 or arm64
-            arch: std::env::consts::ARCH.to_string(),
+            arch: arch.to_string(),
             cores: System::physical_core_count().unwrap_or(0),
             instructions: Cpu::get_supported_cpu_extensions(),
             model: model.to_string(),
