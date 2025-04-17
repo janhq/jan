@@ -232,26 +232,6 @@ const ModelDropdown = ({
       stopModel()
 
       if (activeThread) {
-        // Change assistand tools based on model support RAG
-        updateThreadMetadata({
-          ...activeThread,
-          assistants: [
-            {
-              ...activeAssistant,
-              tools: [
-                {
-                  type: 'retrieval',
-                  enabled: model?.engine === InferenceEngine.cortex,
-                  settings: {
-                    ...(activeAssistant.tools &&
-                      activeAssistant.tools[0]?.settings),
-                  },
-                },
-              ],
-            },
-          ],
-        })
-
         const contextLength = model?.settings.ctx_len
           ? Math.min(8192, model?.settings.ctx_len ?? 8192)
           : undefined
@@ -273,11 +253,25 @@ const ModelDropdown = ({
 
         // Update model parameter to the thread file
         if (model)
-          updateModelParameter(activeThread, {
-            params: modelParams,
-            modelId: model.id,
-            engine: model.engine,
-          })
+          updateModelParameter(
+            activeThread,
+            {
+              params: modelParams,
+              modelId: model.id,
+              engine: model.engine,
+            },
+            // Update tools
+            [
+              {
+                type: 'retrieval',
+                enabled: model?.engine === InferenceEngine.cortex,
+                settings: {
+                  ...(activeAssistant.tools &&
+                    activeAssistant.tools[0]?.settings),
+                },
+              },
+            ]
+          )
       }
     },
     [

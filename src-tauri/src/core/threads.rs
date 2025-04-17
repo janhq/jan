@@ -465,7 +465,7 @@ pub async fn modify_thread_assistant<R: Runtime>(
     {
         if let Some(index) = assistants
             .iter()
-            .position(|a| a.get("id").and_then(|v| v.as_str()) == Some(assistant_id))
+            .position(|a| a.get("assistant_id").and_then(|v| v.as_str()) == Some(assistant_id))
         {
             assistants[index] = assistant.clone();
             let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;
