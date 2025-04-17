@@ -154,8 +154,6 @@ const ChatInput = () => {
     }
   }
 
-  console.log(tools)
-
   return (
     <div className="relative p-4 pb-2">
       {renderPreview(fileUpload)}

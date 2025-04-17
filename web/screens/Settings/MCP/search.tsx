@@ -188,6 +188,7 @@ const MCPSearch = () => {
       await window.core?.api?.saveMcpConfigs({
         configs: JSON.stringify(config, null, 2),
       })
+      await window.core?.api?.restartMcpServers()
 
       toaster({
         title: `Add ${serverName} success`,
