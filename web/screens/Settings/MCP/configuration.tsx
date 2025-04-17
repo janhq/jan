@@ -46,6 +46,7 @@ const MCPConfiguration = () => {
         return
       }
       await window.core?.api?.saveMcpConfigs({ configs: configContent })
+      await window.core?.api?.restartMcpServers()
 
       setSuccess('Config saved successfully')
       setIsSaving(false)
