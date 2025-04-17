@@ -135,12 +135,16 @@ export default function useSendChatMessage() {
   ) => {
     if (!message || message.trim().length === 0) return
 
-    if (!activeThreadRef.current || !activeAssistantRef.current) {
+    const activeThread = activeThreadRef.current
+    const activeAssistant = activeAssistantRef.current
+    const activeModel = selectedModelRef.current
+
+    if (!activeThread || !activeAssistant) {
       console.error('No active thread or assistant')
       return
     }
 
-    if (selectedModelRef.current?.id === undefined) {
+    if (!activeModel?.id) {
       setModelDropdownState(true)
       return
     }
@@ -153,7 +157,7 @@ export default function useSendChatMessage() {
 
     const prompt = message.trim()
 
-    updateThreadWaiting(activeThreadRef.current.id, true)
+    updateThreadWaiting(activeThread.id, true)
     setCurrentPrompt('')
     setEditPrompt('')
 
@@ -164,15 +168,14 @@ export default function useSendChatMessage() {
       base64Blob = await compressImage(base64Blob, 512)
     }
 
-    const modelRequest =
-      selectedModelRef?.current ?? activeAssistantRef.current?.model
+    const modelRequest = selectedModel ?? activeAssistant.model
 
     // Fallback support for previous broken threads
-    if (activeAssistantRef.current?.model?.id === '*') {
-      activeAssistantRef.current.model = {
-        id: modelRequest.id,
-        settings: modelRequest.settings,
-        parameters: modelRequest.parameters,
+    if (activeAssistant.model?.id === '*') {
+      activeAssistant.model = {
+        id: activeModel.id,
+        settings: activeModel.settings,
+        parameters: activeModel.parameters,
       }
     }
     if (runtimeParams.stream == null) {
@@ -187,7 +190,7 @@ export default function useSendChatMessage() {
         settings: settingParams,
         parameters: runtimeParams,
       },
-      activeThreadRef.current,
+      activeThread,
       messages ?? currentMessages,
       (await window.core.api.getTools())?.map((tool: ModelTool) => ({
         type: 'function' as const,
@@ -198,7 +201,7 @@ export default function useSendChatMessage() {
           strict: false,
         },
       }))
-    ).addSystemMessage(activeAssistantRef.current?.instructions)
+    ).addSystemMessage(activeAssistant.instructions)
 
     requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
 
@@ -211,10 +214,10 @@ export default function useSendChatMessage() {
 
     // Update thread state
     const updatedThread: Thread = {
-      ...activeThreadRef.current,
+      ...activeThread,
       updated: newMessage.created_at,
       metadata: {
-        ...activeThreadRef.current.metadata,
+        ...activeThread.metadata,
         lastMessage: prompt,
       },
     }
@@ -237,17 +240,16 @@ export default function useSendChatMessage() {
     }
 
     // Start Model if not started
-    const modelId =
-      selectedModelRef.current?.id ?? activeAssistantRef.current?.model.id
+    const modelId = selectedModel?.id ?? activeAssistantRef.current?.model.id
 
     if (base64Blob) {
       setFileUpload(undefined)
     }
 
-    if (modelRef.current?.id !== modelId && modelId) {
+    if (activeModel?.id !== modelId && modelId) {
       const error = await startModel(modelId).catch((error: Error) => error)
       if (error) {
-        updateThreadWaiting(activeThreadRef.current.id, false)
+        updateThreadWaiting(activeThread.id, false)
         return
       }
     }
@@ -271,8 +273,8 @@ export default function useSendChatMessage() {
         const message: ThreadMessage = {
           id: messageId,
           object: 'message',
-          thread_id: activeThreadRef.current.id,
-          assistant_id: activeAssistantRef.current.assistant_id,
+          thread_id: activeThread.id,
+          assistant_id: activeAssistant.assistant_id,
           role: ChatCompletionRole.Assistant,
           content: [],
           metadata: {
@@ -317,6 +319,8 @@ export default function useSendChatMessage() {
             message
           )
         }
+        message.status = MessageStatus.Ready
+        events.emit(MessageEvent.OnMessageUpdate, message)
       }
     } else {
       // Request for inference
@@ -504,8 +508,6 @@ export default function useSendChatMessage() {
         events.emit(MessageEvent.OnMessageUpdate, message)
       }
     }
-    message.status = MessageStatus.Ready
-    events.emit(MessageEvent.OnMessageUpdate, message)
   }
 
   return {
