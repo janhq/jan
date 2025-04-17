@@ -18,6 +18,8 @@ import ImageMessage from './ImageMessage'
 import { MarkdownTextMessage } from './MarkdownTextMessage'
 import ThinkingBlock from './ThinkingBlock'
 
+import ToolCallBlock from './ToolCallBlock'
+
 import { activeAssistantAtom } from '@/helpers/atoms/Assistant.atom'
 import {
   editMessageAtom,
@@ -65,57 +67,64 @@ const MessageContainer: React.FC<
     [props.content]
   )
 
-  const attachedFile = useMemo(() => 'attachments' in props, [props])
+  const attachedFile = useMemo(
+    () =>
+      'attachments' in props &&
+      !!props.attachments?.length &&
+      props.attachments?.length > 0,
+    [props]
+  )
 
   return (
     <div
       className={twMerge(
-        'group relative mx-auto px-4 py-2',
+        'group relative mx-auto px-4',
+        !(props.metadata && 'parent_id' in props.metadata) && 'py-2',
         chatWidth === 'compact' && 'max-w-[700px]',
-        isUser && 'pb-4 pt-0'
+        !isUser && 'pb-4 pt-0'
       )}
     >
-      <div
-        className={twMerge(
-          'mb-2 flex items-center justify-start',
-          !isUser && 'mt-2 gap-x-2'
-        )}
-      >
-        {!isUser && !isSystem && <LogoMark width={28} />}
-
+      {!(props.metadata && 'parent_id' in props.metadata) && (
         <div
           className={twMerge(
-            'font-extrabold capitalize',
-            isUser && 'text-gray-500'
+            'mb-2 flex items-center justify-start',
+            !isUser && 'mt-2 gap-x-2'
           )}
         >
-          {!isUser && (
-            <>
-              {props.metadata && 'model' in props.metadata
-                ? (props.metadata?.model as string)
-                : props.isCurrentMessage
-                  ? selectedModel?.name
-                  : (activeAssistant?.assistant_name ?? props.role)}
-            </>
-          )}
+          {!isUser && !isSystem && <LogoMark width={28} />}
+          <div
+            className={twMerge(
+              'font-extrabold capitalize',
+              isUser && 'text-gray-500'
+            )}
+          >
+            {!isUser && (
+              <>
+                {props.metadata && 'model' in props.metadata
+                  ? (props.metadata?.model as string)
+                  : props.isCurrentMessage
+                    ? selectedModel?.name
+                    : (activeAssistant?.assistant_name ?? props.role)}
+              </>
+            )}
+          </div>
+
+          <p className="text-xs font-medium text-gray-400">
+            {props.created_at &&
+              displayDate(props.created_at ?? Date.now() / 1000)}
+          </p>
         </div>
+      )}
 
-        <p className="text-xs font-medium text-gray-400">
-          {props.created_at &&
-            displayDate(props.created_at ?? Date.now() / 1000)}
-        </p>
-      </div>
-
-      <div className="flex w-full flex-col ">
+      <div className="flex w-full flex-col">
         <div
           className={twMerge(
             'absolute right-0 order-1 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
-            isUser
-              ? twMerge(
-                  'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:z-50 group-hover:flex',
-                  image && 'group-hover:-top-2'
-                )
-              : 'relative left-0 order-2 flex w-full justify-between opacity-0 group-hover:opacity-100',
+            twMerge(
+              'hidden group-hover:absolute group-hover:-bottom-4 group-hover:right-4 group-hover:z-50 group-hover:flex',
+              image && 'group-hover:-top-2'
+            ),
+
             props.isCurrentMessage && 'opacity-100'
           )}
         >
@@ -179,6 +188,22 @@ const MessageContainer: React.FC<
                 />
               </div>
             )}
+            {props.metadata &&
+              'tool_calls' in props.metadata &&
+              Array.isArray(props.metadata.tool_calls) &&
+              props.metadata.tool_calls.length && (
+                <>
+                  {props.metadata.tool_calls.map((toolCall) => (
+                    <ToolCallBlock
+                      id={toolCall.tool?.id}
+                      name={toolCall.tool?.function?.name ?? ''}
+                      key={toolCall.tool?.id}
+                      result={JSON.stringify(toolCall.response)}
+                      loading={toolCall.state === 'pending'}
+                    />
+                  ))}
+                </>
+              )}
           </>
         </div>
       </div>

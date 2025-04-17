@@ -165,6 +165,7 @@ export const updateMessageAtom = atom(
     id: string,
     conversationId: string,
     text: ThreadContent[],
+    metadata: Record<string, unknown> | undefined,
     status: MessageStatus
   ) => {
     const messages = get(chatMessages)[conversationId] ?? []
@@ -172,6 +173,7 @@ export const updateMessageAtom = atom(
     if (message) {
       message.content = text
       message.status = status
+      message.metadata = metadata
       const updatedMessages = [...messages]
 
       const newData: Record<string, ThreadMessage[]> = {
@@ -192,6 +194,7 @@ export const updateMessageAtom = atom(
         created_at: Date.now() / 1000,
         completed_at: Date.now() / 1000,
         object: 'thread.message',
+        metadata: metadata,
       })
     }
   }

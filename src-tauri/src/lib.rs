@@ -39,9 +39,24 @@ pub fn run() {
             core::cmd::app_token,
             core::cmd::start_server,
             core::cmd::stop_server,
+            core::cmd::save_mcp_configs,
+            core::cmd::get_mcp_configs,
             // MCP commands
             core::cmd::get_tools,
-            core::cmd::call_tool
+            core::cmd::call_tool,
+            core::mcp::restart_mcp_servers,
+            // Threads
+            core::threads::list_threads,
+            core::threads::create_thread,
+            core::threads::modify_thread,
+            core::threads::delete_thread,
+            core::threads::list_messages,
+            core::threads::create_message,
+            core::threads::modify_message,
+            core::threads::delete_message,
+            core::threads::get_thread_assistant,
+            core::threads::create_thread_assistant,
+            core::threads::modify_thread_assistant
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),

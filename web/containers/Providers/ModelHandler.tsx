@@ -114,7 +114,7 @@ export default function ModelHandler() {
 
   const onNewMessageResponse = useCallback(
     async (message: ThreadMessage) => {
-      if (message.type === MessageRequestType.Thread) {
+      if (message.type !== MessageRequestType.Summary) {
         addNewMessage(message)
       }
     },
@@ -129,35 +129,20 @@ export default function ModelHandler() {
   const updateThreadTitle = useCallback(
     (message: ThreadMessage) => {
       // Update only when it's finished
-      if (message.status !== MessageStatus.Ready) {
-        return
-      }
+      if (message.status !== MessageStatus.Ready) return
 
       const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
-      if (!thread) {
-        console.warn(
-          `Failed to update title for thread ${message.thread_id}: Thread not found!`
-        )
-        return
-      }
-
       let messageContent = message.content[0]?.text?.value
-      if (!messageContent) {
-        console.warn(
-          `Failed to update title for thread ${message.thread_id}: Responded content is null!`
-        )
-        return
-      }
+      if (!thread || !messageContent) return
 
       // No new line character is presented in the title
       // And non-alphanumeric characters should be removed
-      if (messageContent.includes('\n')) {
+      if (messageContent.includes('\n'))
         messageContent = messageContent.replace(/\n/g, ' ')
-      }
+
       const match = messageContent.match(/<\/think>(.*)$/)
-      if (match) {
-        messageContent = match[1]
-      }
+      if (match) messageContent = match[1]
+
       // Remove non-alphanumeric characters
       const cleanedMessageContent = messageContent
         .replace(/[^\p{L}\s]+/gu, '')
@@ -193,18 +178,13 @@ export default function ModelHandler() {
 
   const updateThreadMessage = useCallback(
     (message: ThreadMessage) => {
-      if (
-        messageGenerationSubscriber.current &&
-        message.thread_id === activeThreadRef.current?.id &&
-        !messageGenerationSubscriber.current!.thread_id
-      ) {
-        updateMessage(
-          message.id,
-          message.thread_id,
-          message.content,
-          message.status
-        )
-      }
+      updateMessage(
+        message.id,
+        message.thread_id,
+        message.content,
+        message.metadata,
+        message.status
+      )
 
       if (message.status === MessageStatus.Pending) {
         if (message.content.length) {
@@ -236,82 +216,66 @@ export default function ModelHandler() {
             model: activeModelRef.current?.name,
           }
         })
-        return
-      } else if (
-        message.status === MessageStatus.Error &&
-        activeModelRef.current?.engine &&
-        engines &&
-        isLocalEngine(engines, activeModelRef.current.engine)
-      ) {
-        ;(async () => {
-          if (
-            !(await extensionManager
-              .get<ModelExtension>(ExtensionTypeEnum.Model)
-              ?.isModelLoaded(activeModelRef.current?.id as string))
-          ) {
-            setActiveModel(undefined)
-            setStateModel({ state: 'start', loading: false, model: undefined })
-          }
-        })()
-      }
-      // Mark the thread as not waiting for response
-      updateThreadWaiting(message.thread_id, false)
+      } else {
+        // Mark the thread as not waiting for response
+        updateThreadWaiting(message.thread_id, false)
 
-      setIsGeneratingResponse(false)
+        setIsGeneratingResponse(false)
 
-      const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
-      if (!thread) return
+        const thread = threadsRef.current?.find(
+          (e) => e.id == message.thread_id
+        )
+        if (!thread) return
 
-      const messageContent = message.content[0]?.text?.value
+        const messageContent = message.content[0]?.text?.value
 
-      const metadata = {
-        ...thread.metadata,
-        ...(messageContent && { lastMessage: messageContent }),
-        updated_at: Date.now(),
-      }
+        const metadata = {
+          ...thread.metadata,
+          ...(messageContent && { lastMessage: messageContent }),
+          updated_at: Date.now(),
+        }
 
-      updateThread({
-        ...thread,
-        metadata,
-      })
-
-      extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.modifyThread({
+        updateThread({
           ...thread,
           metadata,
         })
 
-      // Update message's metadata with token usage
-      message.metadata = {
-        ...message.metadata,
-        token_speed: tokenSpeedRef.current?.tokenSpeed,
-        model: activeModelRef.current?.name,
-      }
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.modifyThread({
+            ...thread,
+            metadata,
+          })
 
-      if (message.status === MessageStatus.Error) {
+        // Update message's metadata with token usage
         message.metadata = {
           ...message.metadata,
-          error: message.content[0]?.text?.value,
-          error_code: message.error_code,
+          token_speed: tokenSpeedRef.current?.tokenSpeed,
+          model: activeModelRef.current?.name,
         }
-      }
-      ;(async () => {
-        const updatedMessage = await extensionManager
+
+        if (message.status === MessageStatus.Error) {
+          message.metadata = {
+            ...message.metadata,
+            error: message.content[0]?.text?.value,
+            error_code: message.error_code,
+          }
+          // Unassign active model if any
+          setActiveModel(undefined)
+          setStateModel({
+            state: 'start',
+            loading: false,
+            model: undefined,
+          })
+        }
+
+        extensionManager
           .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
           ?.createMessage(message)
-          .catch(() => undefined)
-        if (updatedMessage) {
-          deleteMessage(message.id)
-          addNewMessage(updatedMessage)
-          setTokenSpeed((prev) =>
-            prev ? { ...prev, message: updatedMessage.id } : undefined
-          )
-        }
-      })()
 
-      // Attempt to generate the title of the Thread when needed
-      generateThreadTitle(message, thread)
+        // Attempt to generate the title of the Thread when needed
+        generateThreadTitle(message, thread)
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
@@ -319,24 +283,20 @@ export default function ModelHandler() {
 
   const onMessageResponseUpdate = useCallback(
     (message: ThreadMessage) => {
-      switch (message.type) {
-        case MessageRequestType.Summary:
-          updateThreadTitle(message)
-          break
-        default:
-          updateThreadMessage(message)
-          break
-      }
+      if (message.type === MessageRequestType.Summary)
+        updateThreadTitle(message)
+      else updateThreadMessage(message)
     },
     [updateThreadMessage, updateThreadTitle]
   )
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if ((thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle)
+    if (
+      !activeModelRef.current ||
+      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
+    )
       return
-
-    if (!activeModelRef.current) return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (

@@ -36,6 +36,8 @@ export type ThreadMessage = {
   type?: string
   /** The error code which explain what error type. Used in conjunction with MessageStatus.Error */
   error_code?: ErrorCode
+
+  tool_call_id?: string
 }
 
 /**

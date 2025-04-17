@@ -7,6 +7,9 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use super::{server, setup, state::AppState};
 
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
+const DEFAULT_MCP_CONFIG: &str = r#"{
+    "mcpServers": {}
+}"#;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppConfiguration {
@@ -93,6 +96,10 @@ pub fn update_app_configuration(
 
 #[tauri::command]
 pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> PathBuf {
+    if cfg!(test) {
+        return PathBuf::from("./data");
+    }
+
     let app_configurations = get_app_configurations(app_handle);
     PathBuf::from(app_configurations.data_folder)
 }
@@ -347,4 +354,30 @@ pub async fn call_tool(
     }
 
     Err(format!("Tool {} not found", tool_name))
+}
+
+#[tauri::command]
+pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
+    let mut path = get_jan_data_folder_path(app);
+    path.push("mcp_config.json");
+    log::info!("read mcp configs, path: {:?}", path);
+
+    // Create default empty config if file doesn't exist
+    if !path.exists() {
+        log::info!("mcp_config.json not found, creating default empty config");
+        fs::write(&path, DEFAULT_MCP_CONFIG)
+            .map_err(|e| format!("Failed to create default MCP config: {}", e))?;
+    }
+
+    let contents = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    return Ok(contents);
+}
+
+#[tauri::command]
+pub async fn save_mcp_configs(app: AppHandle, configs: String) -> Result<(), String> {
+    let mut path = get_jan_data_folder_path(app);
+    path.push("mcp_config.json");
+    log::info!("save mcp configs, path: {:?}", path);
+
+    fs::write(path, configs).map_err(|e| e.to_string())
 }
