@@ -57,54 +57,60 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
         Err(_) => false,
     };
     if !has_nvidia_smi {
+        log::info!("nvidia-smi is not available");
         return vec![];
     }
 
     // get_gpus1 will return None if there is any error within the logic
-    let get_gpus = || -> Option<Vec<NvidiaInfo>> {
+    let get_gpus = || -> Result<Vec<NvidiaInfo>, Box<dyn std::error::Error>> {
         let mut results = vec![];
 
         let output = std::process::Command::new("nvidia-smi")
             .arg("--query-gpu=index,memory.total,memory.free,name,compute_cap,driver_version,uuid")
             .arg("--format=csv,noheader,nounits")
-            .output()
-            .ok()?;
+            .output()?;
 
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader((&output.stdout) as &[u8]);
         for result in rdr.deserialize() {
-            results.push(result.ok()?);
+            let info: NvidiaInfo = result?;
+            results.push(info);
         }
 
-        Some(results)
+        Ok(results)
     };
-    if let Some(gpus) = get_gpus() {
-        return gpus;
+    match get_gpus() {
+        Ok(gpus) => return gpus,
+        Err(e) => {
+            log::error!("Failed to get NVIDIA GPUs: {}. Attempting fallback", e);
+        }
     }
 
-    let get_gpus_fallback = || -> Option<Vec<NvidiaInfo>> {
+    let get_gpus_fallback = || -> Result<Vec<NvidiaInfo>, Box<dyn std::error::Error>> {
         let mut results = vec![];
 
         let output = std::process::Command::new("nvidia-smi")
             .arg("--query-gpu=index,memory.total,memory.free,name,driver_version,uuid")
             .arg("--format=csv,noheader,nounits")
-            .output()
-            .ok()?;
+            .output()?;
 
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader((&output.stdout) as &[u8]);
         for result in rdr.deserialize() {
-            let info_fallback: NvidiaInfoFallback = result.ok()?;
+            let info_fallback: NvidiaInfoFallback = result?;
             let info: NvidiaInfo = info_fallback.into();
             results.push(info);
         }
 
-        Some(results)
+        Ok(results)
     };
-    if let Some(gpus) = get_gpus_fallback() {
-        return gpus;
+    match get_gpus_fallback() {
+        Ok(gpus) => return gpus,
+        Err(e) => {
+            log::error!("Failed to get NVIDIA GPUs: {}", e);
+        }
     }
 
     vec![]
