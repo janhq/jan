@@ -1,4 +1,4 @@
-use sysinfo::System;
+use sysinfo::{MemoryRefreshKind, System};
 
 // NOTE: some these can be enum
 // TODO: for numbers, check int or float
@@ -189,52 +189,23 @@ impl Os {
 }
 
 #[derive(serde::Serialize)]
-pub struct Power {
-    battery_life: f64,
-    charging_status: String,
-    is_power_saving: bool,
-}
-
-impl Power {
-    pub fn new() -> Power {
-        Power {
-            battery_life: 0.0,
-            charging_status: "".to_string(),
-            is_power_saving: false,
-        }
-    }
-}
-
-#[derive(serde::Serialize)]
 pub struct Ram {
-    available: f64,
-    total: f64,
-    type_: String,
+    available: u64,
+    total: u64,
 }
 
 impl Ram {
     pub fn new() -> Ram {
+        let mut system = System::new();
+        system.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
+
+        // system.free_memory() and .available_memory() is a bit strange on macOS
+        // TODO: check on Windows and Ubuntu
+        let total_mem = system.total_memory();
+        let avail_mem = total_mem - system.used_memory();
         Ram {
-            available: 0.0,
-            total: 0.0,
-            type_: "".to_string(),
-        }
-    }
-}
-
-#[derive(serde::Serialize)]
-pub struct Storage {
-    available: f64,
-    total: f64,
-    type_: String,
-}
-
-impl Storage {
-    pub fn new() -> Storage {
-        Storage {
-            available: 0.0,
-            total: 0.0,
-            type_: "".to_string(),
+            available: avail_mem / 1024 / 1024, // bytes to MiB
+            total: total_mem / 1024 / 1024,     // bytes to MiB
         }
     }
 }
@@ -244,9 +215,7 @@ pub struct HardwareInfo {
     cpu: Cpu,
     gpus: Vec<Gpu>,
     os: Os,
-    power: Power,
     ram: Ram,
-    storage: Storage,
 }
 
 #[tauri::command]
@@ -255,8 +224,6 @@ pub fn get_hardware_info() -> HardwareInfo {
         cpu: Cpu::new(),
         gpus: vec![],
         os: Os::new(),
-        power: Power::new(),
         ram: Ram::new(),
-        storage: Storage::new(),
     }
 }
