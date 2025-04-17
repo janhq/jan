@@ -74,6 +74,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
         }
     }
 
+    // old driver versions might not have compute_cap field
     let get_gpus_fallback = || -> Result<Vec<NvidiaInfo>, Box<dyn std::error::Error>> {
         let mut results = vec![];
 
