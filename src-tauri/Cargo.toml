@@ -1,14 +1,12 @@
 [package]
-name = "app"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+name = "jan-nightly"
+version = "0.5.16-1310"
+description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
+authors = ["Jan <service@jan.ai>"]
+license = "MIT"
+repository = "https://github.com/menloresearch/jan"
 edition = "2021"
 rust-version = "1.77.2"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 name = "app_lib"

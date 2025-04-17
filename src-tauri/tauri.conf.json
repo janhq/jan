@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Jan",
-  "version": "0.1.0",
-  "identifier": "jan.ai",
+  "productName": "Jan-nightly",
+  "version": "0.5.16-1310",
+  "identifier": "jan-nightly.ai.app",
   "build": {
     "frontendDist": "../web/out",
     "devUrl": "http://localhost:3000",
