@@ -216,76 +216,66 @@ export default function ModelHandler() {
             model: activeModelRef.current?.name,
           }
         })
-        return
-      } else if (
-        message.status === MessageStatus.Error &&
-        activeModelRef.current?.engine &&
-        engines &&
-        isLocalEngine(engines, activeModelRef.current.engine)
-      ) {
-        extensionManager
-          .get<ModelExtension>(ExtensionTypeEnum.Model)
-          ?.isModelLoaded(activeModelRef.current?.id as string)
-          .then((isLoaded) => {
-            if (!isLoaded) {
-              setActiveModel(undefined)
-              setStateModel({
-                state: 'start',
-                loading: false,
-                model: undefined,
-              })
-            }
-          })
-      }
-      // Mark the thread as not waiting for response
-      updateThreadWaiting(message.thread_id, false)
+      } else {
+        // Mark the thread as not waiting for response
+        updateThreadWaiting(message.thread_id, false)
 
-      setIsGeneratingResponse(false)
+        setIsGeneratingResponse(false)
 
-      const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
-      if (!thread) return
+        const thread = threadsRef.current?.find(
+          (e) => e.id == message.thread_id
+        )
+        if (!thread) return
 
-      const messageContent = message.content[0]?.text?.value
+        const messageContent = message.content[0]?.text?.value
 
-      const metadata = {
-        ...thread.metadata,
-        ...(messageContent && { lastMessage: messageContent }),
-        updated_at: Date.now(),
-      }
+        const metadata = {
+          ...thread.metadata,
+          ...(messageContent && { lastMessage: messageContent }),
+          updated_at: Date.now(),
+        }
 
-      updateThread({
-        ...thread,
-        metadata,
-      })
-
-      extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.modifyThread({
+        updateThread({
           ...thread,
           metadata,
         })
 
-      // Update message's metadata with token usage
-      message.metadata = {
-        ...message.metadata,
-        token_speed: tokenSpeedRef.current?.tokenSpeed,
-        model: activeModelRef.current?.name,
-      }
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.modifyThread({
+            ...thread,
+            metadata,
+          })
 
-      if (message.status === MessageStatus.Error) {
+        // Update message's metadata with token usage
         message.metadata = {
           ...message.metadata,
-          error: message.content[0]?.text?.value,
-          error_code: message.error_code,
+          token_speed: tokenSpeedRef.current?.tokenSpeed,
+          model: activeModelRef.current?.name,
         }
+
+        if (message.status === MessageStatus.Error) {
+          message.metadata = {
+            ...message.metadata,
+            error: message.content[0]?.text?.value,
+            error_code: message.error_code,
+          }
+          // Unassign active model if any
+          setActiveModel(undefined)
+          setStateModel({
+            state: 'start',
+            loading: false,
+            model: undefined,
+          })
+        }
+
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.createMessage(message)
+
+        // Attempt to generate the title of the Thread when needed
+        generateThreadTitle(message, thread)
       }
-
-      extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.createMessage(message)
-
-      // Attempt to generate the title of the Thread when needed
-      generateThreadTitle(message, thread)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
