@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 
 import {
+  AssistantTool,
   ConversationalExtension,
   ExtensionTypeEnum,
   InferenceEngine,
@@ -51,7 +52,11 @@ export default function useUpdateModelParameters() {
   )
 
   const updateModelParameter = useCallback(
-    async (thread: Thread, settings: UpdateModelParameter) => {
+    async (
+      thread: Thread,
+      settings: UpdateModelParameter,
+      tools?: AssistantTool[]
+    ) => {
       if (!activeAssistant) return
 
       const toUpdateSettings = processStopWords(settings.params ?? {})
@@ -70,6 +75,7 @@ export default function useUpdateModelParameters() {
       const settingParams = extractModelLoadParams(updatedModelParams)
       const assistantInfo = {
         ...activeAssistant,
+        tools: tools ?? activeAssistant.tools,
         model: {
           ...activeAssistant?.model,
           parameters: runtimeParams,
