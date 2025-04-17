@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { HardwareManagementExtension, HardwareInformation } from '@janhq/core'
 import ky, { KyInstance } from 'ky'
 
@@ -40,6 +41,8 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
    * @returns A Promise that resolves to an object of hardware.
    */
   async getHardware(): Promise<HardwareInformation> {
+    // replace this with rust
+    return invoke("get_hardware_info") as Promise<HardwareInformation>
     return this.apiInstance().then((api) =>
       api
         .get('v1/hardware')
@@ -55,6 +58,7 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
     message: string
     activated_gpus: number[]
   }> {
+    // move this to model provider
     return this.apiInstance().then((api) =>
       api.post('v1/hardware/activate', { json: data }).then((e) => e)
     ) as Promise<{
