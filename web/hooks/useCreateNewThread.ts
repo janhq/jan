@@ -180,7 +180,7 @@ export const useCreateNewThread = () => {
       updateThreadCallback(thread)
       if (thread.assistants && thread.assistants?.length > 0) {
         setActiveAssistant(thread.assistants[0])
-        updateAssistantCallback(thread.id, thread.assistants[0])
+        return updateAssistantCallback(thread.id, thread.assistants[0])
       }
     },
     [
