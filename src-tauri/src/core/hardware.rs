@@ -21,14 +21,18 @@ impl Cpu {
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
         system.refresh_cpu_all();
 
-        // TODO: check model and arch returned string
         let model;
         let usage;
-        if let Some(cpu) = system.cpus().first() {
-            model = cpu.brand().to_string();
-            usage = cpu.cpu_usage();
+        let cpus = system.cpus();
+        if cpus.len() > 0 {
+            let mut total_usage = 0.0;
+            for cpu in cpus {
+                total_usage += cpu.cpu_usage();
+            }
+            model = cpus[0].brand();
+            usage = total_usage / (cpus.len() as f32);
         } else {
-            model = "unknown".to_string();
+            model = "unknown";
             usage = 0.0;
         }
 
@@ -37,7 +41,7 @@ impl Cpu {
             arch: std::env::consts::ARCH.to_string(),
             cores: System::physical_core_count().unwrap_or(0),
             instructions: Cpu::get_supported_cpu_extensions(),
-            model,
+            model: model.to_string(),
             usage,
         }
     }
@@ -175,14 +179,14 @@ pub struct Os {
 impl Os {
     pub fn new() -> Os {
         // Cortex uses https://github.com/lfreist/hwinfo
-        // this does not seem to match functionality
-        let mut name = std::env::consts::OS;
-        // cortex compatibility
-        if name == "macos" {
-            name = "macOS";
+        let name;
+        if cfg!(target_os = "macos") {
+            name = "macOS".to_string();
+        } else {
+            name = System::long_os_version().unwrap_or("unknown".to_string());
         }
         Os {
-            name: name.to_string(),
+            name,
             version: System::os_version().unwrap_or("unknown".to_string()),
         }
     }
