@@ -1,3 +1,5 @@
+pub mod nvidia;
+
 use sysinfo::{MemoryRefreshKind, System};
 
 // NOTE: some these can be enum
@@ -24,7 +26,7 @@ impl Cpu {
         let model;
         let usage;
         let cpus = system.cpus();
-        if cpus.len() > 0 {
+        if !cpus.is_empty() {
             let mut total_usage = 0.0;
             for cpu in cpus {
                 total_usage += cpu.cpu_usage();
@@ -146,27 +148,29 @@ impl Cpu {
 }
 
 #[derive(serde::Serialize)]
+pub struct GpuAdditionalInfo {
+    compute_cap: String,
+    driver_version: String,
+}
+
+#[derive(serde::Serialize)]
 pub struct Gpu {
     activated: bool,
-    free_vram: f64,
+    additional_information: Option<GpuAdditionalInfo>,
+    free_vram: u64,
     id: String,
     name: String,
-    total_vram: f64,
+    total_vram: u64,
     uuid: String,
     version: String,
 }
 
 impl Gpu {
-    pub fn new() -> Gpu {
-        Gpu {
-            activated: true,
-            free_vram: 0.0,
-            id: "".to_string(),
-            name: "".to_string(),
-            total_vram: 0.0,
-            uuid: "".to_string(),
-            version: "".to_string(),
-        }
+    pub fn get_gpus() -> Vec<Gpu> {
+        nvidia::get_nvidia_gpus()
+            .into_iter()
+            .map(|gpu| gpu.into())
+            .collect()
     }
 }
 
@@ -226,7 +230,7 @@ pub struct HardwareInfo {
 pub fn get_hardware_info() -> HardwareInfo {
     HardwareInfo {
         cpu: Cpu::new(),
-        gpus: vec![],
+        gpus: Gpu::get_gpus(),
         os: Os::new(),
         ram: Ram::new(),
     }
