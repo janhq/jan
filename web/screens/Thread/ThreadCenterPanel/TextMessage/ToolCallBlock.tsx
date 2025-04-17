@@ -46,7 +46,7 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
 
         {isExpanded && (
           <div className="mt-2 overflow-x-hidden pl-6 text-[hsla(var(--text-secondary))]">
-            <span>{result.trim()} </span>
+            <span>{result ?? ''} </span>
           </div>
         )}
       </div>
