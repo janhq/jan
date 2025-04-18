@@ -233,7 +233,7 @@ This will build the app MacOS m1/m2 for production (with code signing already do
 
 Jan builds on top of other open-source projects:
 
-- [llama.cpp](https://github.com/ggerganov/llama.cpp)
+- [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - [LangChain](https://github.com/langchain-ai)
 - [TensorRT](https://github.com/NVIDIA/TensorRT)
 - [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
