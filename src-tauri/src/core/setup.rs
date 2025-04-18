@@ -35,7 +35,12 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         return Ok(());
     }
     let extensions_path = get_jan_extensions_path(app.clone());
-    let pre_install_path = PathBuf::from("./resources/pre-install");
+    let pre_install_path = app
+        .path()
+        .resource_dir()
+        .unwrap()
+        .join("resources")
+        .join("pre-install");
 
     // Attempt to remove extensions folder
     if extensions_path.exists() {
