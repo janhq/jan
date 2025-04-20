@@ -16,16 +16,11 @@ import {
   EngineManager,
   InferenceEngine,
   extractInferenceParams,
-  ModelExtension,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
-
-import { useGetEngines } from '@/hooks/useEngineManagement'
-
-import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 import {
@@ -33,7 +28,6 @@ import {
   addNewMessageAtom,
   updateMessageAtom,
   tokenSpeedAtom,
-  deleteMessageAtom,
   subscribedGeneratingMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -54,7 +48,6 @@ export default function ModelHandler() {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const deleteMessage = useSetAtom(deleteMessageAtom)
   const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
@@ -77,7 +70,6 @@ export default function ModelHandler() {
   const activeModelParamsRef = useRef(activeModelParams)
 
   const [tokenSpeed, setTokenSpeed] = useAtom(tokenSpeedAtom)
-  const { engines } = useGetEngines()
   const tokenSpeedRef = useRef(tokenSpeed)
 
   useEffect(() => {
@@ -292,16 +284,14 @@ export default function ModelHandler() {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (
-      !activeModelRef.current ||
-      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
-    )
+    if ((thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle)
       return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (
-      activeModelRef.current?.engine !== InferenceEngine.cortex &&
-      activeModelRef.current?.engine !== InferenceEngine.cortex_llamacpp
+      !activeModelRef.current ||
+      (activeModelRef.current?.engine !== InferenceEngine.cortex &&
+        activeModelRef.current?.engine !== InferenceEngine.cortex_llamacpp)
     ) {
       const updatedThread: Thread = {
         ...thread,
