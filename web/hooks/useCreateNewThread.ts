@@ -59,21 +59,6 @@ export const useCreateNewThread = () => {
   ) => {
     const defaultModel = model || selectedModel || recommendedModel
 
-    if (!model) {
-      // if we have model, which means user wants to create new thread from Model hub. Allow them.
-
-      // check last thread message, if there empty last message use can not create thread
-      const lastMessage = threads[0]?.metadata?.lastMessage
-
-      if (!lastMessage && threads.length) {
-        return toaster({
-          title: 'No new thread created.',
-          description: `To avoid piling up empty threads, please reuse previous one before creating new.`,
-          type: 'warning',
-        })
-      }
-    }
-
     // modify assistant tools when experimental on, retieval toggle enabled in default
     const assistantTools: AssistantTool = {
       type: 'retrieval',
@@ -146,7 +131,7 @@ export const useCreateNewThread = () => {
     } catch (ex) {
       return toaster({
         title: 'Thread created failed.',
-        description: `To avoid piling up empty threads, please reuse previous one before creating new.`,
+        description: `Could not create a new thread. Please try again.`,
         type: 'error',
       })
     }

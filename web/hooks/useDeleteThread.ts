@@ -44,7 +44,7 @@ export default function useDeleteThread() {
             ?.deleteMessage(threadId, message.id)
             .catch(console.error)
         }
-       
+
         const thread = threads.find((e) => e.id === threadId)
         if (thread) {
           const updatedThread = {
