@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 
 import { Button, TextArea } from '@janhq/joi'
 import { useAtomValue } from 'jotai'
@@ -11,6 +11,8 @@ const MCPConfiguration = () => {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  const textAreaRef = useRef<HTMLTextAreaElement>(null)
 
   const readConfigFile = useCallback(async () => {
     try {
@@ -76,14 +78,37 @@ const MCPConfiguration = () => {
           Configuration File (JSON)
         </label>
         <TextArea
-          // className="h-80 w-full rounded border border-gray-800 p-2 font-mono text-sm"
+          ref={textAreaRef}
           className="font-mono text-xs"
           value={configContent}
           rows={20}
           onChange={(e) => {
-            setConfigContent(e.target.value)
+            const input = e.target
+            const start = input.selectionStart
+            const end = input.selectionEnd
+
+            // Sanitize quotes
+            const originalValue = input.value
+            const sanitizedValue = originalValue
+              .replace(/[“”]/g, '"')
+              .replace(/[‘’]/g, "'")
+
+            // Update content
+            setConfigContent(sanitizedValue)
             setSuccess('')
+
+            // Restore cursor after DOM updates
+            requestAnimationFrame(() => {
+              if (textAreaRef.current) {
+                const offset = sanitizedValue.length - originalValue.length
+                textAreaRef.current.selectionStart = start + offset
+                textAreaRef.current.selectionEnd = end + offset
+              }
+            })
           }}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
         />
       </div>
 
