@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 
@@ -10,7 +10,6 @@ import {
   useClickOutside,
   Badge,
   Modal,
-  ModalClose,
 } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
@@ -55,6 +54,7 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 import { ModelTool } from '@/types/model'
+import { ChatContext } from '../../ThreadCenterPanel'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -65,7 +65,8 @@ const ChatInput = () => {
   const [activeSettingInputBox, setActiveSettingInputBox] = useAtom(
     activeSettingInputBoxAtom
   )
-  const { sendChatMessage } = useSendChatMessage()
+  const { showApprovalModal } = useContext(ChatContext)
+  const { sendChatMessage } = useSendChatMessage(showApprovalModal)
   const selectedModel = useAtomValue(selectedModelAtom)
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
