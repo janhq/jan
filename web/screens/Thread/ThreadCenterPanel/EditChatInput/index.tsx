@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 
 import {
   ConversationalExtension,
@@ -31,6 +31,7 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ChatContext } from '../../ThreadCenterPanel'
 
 type Props = {
   message: ThreadMessage
@@ -42,7 +43,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [editPrompt, setEditPrompt] = useAtom(editPromptAtom)
-  const { sendChatMessage } = useSendChatMessage()
+  const { showApprovalModal } = useContext(ChatContext)
+  const { sendChatMessage } = useSendChatMessage(showApprovalModal)
   const setMessages = useSetAtom(setConvoMessagesAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const spellCheck = useAtomValue(spellCheckAtom)

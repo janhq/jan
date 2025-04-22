@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useMemo, useRef, ClipboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, ClipboardEvent, useContext } from 'react'
 
 import { MessageStatus } from '@janhq/core'
 import { useAtom, useAtomValue } from 'jotai'
@@ -28,6 +28,7 @@ import {
   getActiveThreadIdAtom,
   activeSettingInputBoxAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ChatContext } from '../../ThreadCenterPanel'
 
 type CustomElement = {
   type: 'paragraph' | 'code' | null
@@ -77,7 +78,8 @@ const RichTextEditor = ({
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const activeSettingInputBox = useAtomValue(activeSettingInputBoxAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const { sendChatMessage } = useSendChatMessage()
+  const { showApprovalModal } = useContext(ChatContext)
+  const { sendChatMessage } = useSendChatMessage(showApprovalModal)
   const { stopInference } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const largeContentThreshold = 1000

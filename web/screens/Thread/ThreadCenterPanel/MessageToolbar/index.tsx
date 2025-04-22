@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useContext } from 'react'
 
 import {
   MessageStatus,
@@ -34,13 +34,15 @@ import {
   updateThreadAtom,
   updateThreadStateLastMessageAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { ChatContext } from '../../ThreadCenterPanel'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditMessage = useSetAtom(editMessageAtom)
   const thread = useAtomValue(activeThreadAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const { resendChatMessage } = useSendChatMessage()
+  const { showApprovalModal } = useContext(ChatContext)
+  const { resendChatMessage } = useSendChatMessage(showApprovalModal)
   const clipboard = useClipboard({ timeout: 1000 })
   const updateThreadLastMessage = useSetAtom(updateThreadStateLastMessageAtom)
   const updateThread = useSetAtom(updateThreadAtom)

@@ -55,6 +55,7 @@ import {
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
+  approvedThreadToolsAtom,
   engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
   isGeneratingResponseAtom,
@@ -65,7 +66,9 @@ import { ModelTool } from '@/types/model'
 
 export const reloadModelAtom = atom(false)
 
-export default function useSendChatMessage() {
+export default function useSendChatMessage(
+  showModal?: (toolName: string, threadId: string) => Promise<unknown>
+) {
   const activeThread = useAtomValue(activeThreadAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const addNewMessage = useSetAtom(addNewMessageAtom)
@@ -74,6 +77,7 @@ export default function useSendChatMessage() {
   const setCurrentPrompt = useSetAtom(currentPromptAtom)
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditPrompt = useSetAtom(editPromptAtom)
+  const approvedTools = useAtomValue(approvedThreadToolsAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
@@ -480,10 +484,25 @@ export default function useSendChatMessage() {
         }
         events.emit(MessageEvent.OnMessageUpdate, message)
 
-        const result = await window.core.api.callTool({
-          toolName: toolCall.function.name,
-          arguments: JSON.parse(toolCall.function.arguments),
-        })
+        const approved =
+          approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
+          (showModal
+            ? await showModal(toolCall.function.name, message.thread_id)
+            : true)
+
+        const result = approved
+          ? await window.core.api.callTool({
+              toolName: toolCall.function.name,
+              arguments: JSON.parse(toolCall.function.arguments),
+            })
+          : {
+              content: [
+                {
+                  type: 'text',
+                  text: 'The user has chosen to disallow the tool call.',
+                },
+              ],
+            }
         if (result.error) break
 
         message.metadata = {
