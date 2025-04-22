@@ -36,6 +36,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import { uploader } from '@/utils/file'
 import { isLocalEngine } from '@/utils/modelEngine'
 
+import { ChatContext } from '../../ThreadCenterPanel'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
@@ -54,7 +55,6 @@ import {
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
 import { ModelTool } from '@/types/model'
-import { ChatContext } from '../../ThreadCenterPanel'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)

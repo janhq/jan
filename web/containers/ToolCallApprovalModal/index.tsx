@@ -2,6 +2,7 @@ import { memo, useCallback, useState } from 'react'
 
 import { Button, Modal, ModalClose } from '@janhq/joi'
 import { useSetAtom } from 'jotai'
+
 import { approvedThreadToolsAtom } from '@/helpers/atoms/Thread.atom'
 
 export function useTollCallPromiseModal() {
@@ -50,8 +51,7 @@ export function useTollCallPromiseModal() {
         open={isOpen}
         onOpenChange={(open) => {
           setIsOpen(!isOpen)
-          if(!open)
-            handleCancel()
+          if (!open) handleCancel()
         }}
         content={
           <div>
@@ -63,7 +63,7 @@ export function useTollCallPromiseModal() {
             <div className="mt-4 flex justify-end gap-x-2">
               <ModalClose asChild>
                 <Button
-                  theme="primary"
+                  theme="ghost" variant="outline"
                   onClick={() => {
                     setApprovedToolsAtom((prev) => {
                       const newState = { ...prev }
@@ -87,12 +87,12 @@ export function useTollCallPromiseModal() {
                 </Button>
               </ModalClose>
               <ModalClose asChild>
-                <Button theme="primary" onClick={handleConfirm} autoFocus>
+                <Button theme="ghost" variant="outline" onClick={handleConfirm} autoFocus>
                   Allow once
                 </Button>
               </ModalClose>
               <ModalClose asChild onClick={handleCancel}>
-                <Button theme="ghost">Deny</Button>
+                <Button theme="destructive">Deny</Button>
               </ModalClose>
             </div>
           </div>

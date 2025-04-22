@@ -17,6 +17,8 @@ import ModelStart from '@/containers/Loader/ModelStart'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { snackbar } from '@/containers/Toast'
 
+import { useTollCallPromiseModal } from '@/containers/ToolCallApprovalModal'
+
 import { activeModelAtom } from '@/hooks/useActiveModel'
 import { reloadModelAtom } from '@/hooks/useSendChatMessage'
 
@@ -36,7 +38,6 @@ import {
   engineParamsUpdateAtom,
   isGeneratingResponseAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { useTollCallPromiseModal } from '@/containers/ToolCallApprovalModal'
 
 const renderError = (code: string) => {
   switch (code) {
