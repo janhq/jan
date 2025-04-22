@@ -19,6 +19,8 @@ import { useActiveModel } from '@/hooks/useActiveModel'
 
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
+import { ChatContext } from '../../ThreadCenterPanel'
+
 import { extensionManager } from '@/extension'
 
 import {
@@ -31,7 +33,6 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { ChatContext } from '../../ThreadCenterPanel'
 
 type Props = {
   message: ThreadMessage

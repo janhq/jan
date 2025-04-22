@@ -1,5 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useMemo, useRef, ClipboardEvent, useContext } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  ClipboardEvent,
+  useContext,
+} from 'react'
 
 import { MessageStatus } from '@janhq/core'
 import { useAtom, useAtomValue } from 'jotai'
@@ -21,6 +28,8 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 import { useActiveModel } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
+import { ChatContext } from '../../ThreadCenterPanel'
+
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
@@ -28,7 +37,6 @@ import {
   getActiveThreadIdAtom,
   activeSettingInputBoxAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { ChatContext } from '../../ThreadCenterPanel'
 
 type CustomElement = {
   type: 'paragraph' | 'code' | null

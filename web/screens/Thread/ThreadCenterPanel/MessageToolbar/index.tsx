@@ -22,6 +22,8 @@ import {
 import { useClipboard } from '@/hooks/useClipboard'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
 
+import { ChatContext } from '../../ThreadCenterPanel'
+
 import { extensionManager } from '@/extension'
 import {
   deleteMessageAtom,
@@ -34,7 +36,6 @@ import {
   updateThreadAtom,
   updateThreadStateLastMessageAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { ChatContext } from '../../ThreadCenterPanel'
 
 const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   const deleteMessage = useSetAtom(deleteMessageAtom)
