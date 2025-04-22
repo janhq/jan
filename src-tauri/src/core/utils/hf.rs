@@ -1,44 +1,6 @@
-use std::fs::File;
-use std::io::Write;
 use std::path::Path;
-use std::time::Duration;
 
-pub async fn download_file(url: &str, save_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::Client::builder()
-        .http2_keep_alive_timeout(Duration::from_secs(15))
-        .build()?;
-
-    let mut resp = client
-        .get(url)
-        .header("User-Agent", "rust-reqwest/huggingface-downloader")
-        .send()
-        .await?;
-
-    // Check if request was successful
-    if !resp.status().is_success() {
-        return Err(format!(
-            "Failed to download: HTTP status {}, {}",
-            resp.status(),
-            resp.text().await?
-        )
-        .into());
-    }
-    // Create parent directories if they don't exist
-    if let Some(parent) = save_path.parent() {
-        if !parent.exists() {
-            std::fs::create_dir_all(parent)?;
-        }
-    }
-    let mut file = File::create(save_path)?;
-
-    while let Some(chunk) = resp.chunk().await? {
-        file.write_all(&chunk)?;
-    }
-
-    Ok(())
-}
-
-pub async fn download_hf_file(
+pub async fn download_file(
     repo_id: &str,
     branch: &str,
     file_path: &str,
@@ -48,10 +10,10 @@ pub async fn download_hf_file(
         "https://huggingface.co/{}/resolve/{}/{}",
         repo_id, branch, file_path
     );
-    download_file(&url, save_path).await
+    super::download::download(&url, save_path).await
 }
 
-pub async fn list_hf_files(
+pub async fn list_files(
     repo_id: &str,
     branch: &str,
 ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
@@ -98,7 +60,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_download_hf_file() {
+    async fn test_download_file() {
         let repo_id = "openai-community/gpt2";
         let branch = "main";
         let file_path = "config.json";
@@ -110,7 +72,7 @@ mod tests {
             }
         }
 
-        let result = download_hf_file(repo_id, branch, file_path, &save_path).await;
+        let result = download_file(repo_id, branch, file_path, &save_path).await;
         assert!(result.is_ok(), "{}", result.unwrap_err());
         assert!(save_path.exists());
 
@@ -137,11 +99,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_hf_files() {
+    async fn test_list_files() {
         let repo_id = "openai-community/gpt2";
         let branch = "main";
 
-        let result = list_hf_files(repo_id, branch).await;
+        let result = list_files(repo_id, branch).await;
         assert!(result.is_ok(), "{}", result.unwrap_err());
         let files = result.unwrap();
         assert!(
