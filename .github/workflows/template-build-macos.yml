@@ -174,6 +174,20 @@ jobs:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
+      - name: Inject Tauri Signing Public Key
+        run: |
+          if [ -f "src-tauri/tauri.conf.json" ]; then
+            echo "Injecting Tauri public key into configuration..."
+            # Use jq to update the pubkey field in the tauri.conf.json file
+            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+            echo "Tauri configuration updated successfully"
+          else
+            echo "tauri.conf.json not found"
+          fi
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+      
       - name: Build and publish app to aws s3 r2 or github artifactory
         if: inputs.public_provider != 'github'
         run: |
@@ -205,6 +219,9 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
           APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
           APPLE_API_KEY_PATH: /tmp/notary-key.p8
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
@@ -226,6 +243,9 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
           APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
           APPLE_API_KEY_PATH: /tmp/notary-key.p8
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
