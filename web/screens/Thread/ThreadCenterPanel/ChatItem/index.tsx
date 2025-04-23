@@ -22,6 +22,8 @@ type Props = {
   loadModelError?: string
   isCurrentMessage?: boolean
   index: number
+  isLast: boolean
+  onExpand: (props: { [id: number]: boolean }) => void
 } & ThreadMessage
 
 const ChatItem = forwardRef<Ref, Props>((message, ref) => {
@@ -81,6 +83,7 @@ const ChatItem = forwardRef<Ref, Props>((message, ref) => {
               status={status}
               index={message.index}
               isCurrentMessage={message.isCurrentMessage ?? false}
+              onExpand={message.onExpand}
             />
           </div>
         )}
