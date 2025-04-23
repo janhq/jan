@@ -1,0 +1,52 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@/styles/font.css';
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-btn-primary: var(--btn-primary);
+  --color-btn-primary-foreground: var(--btn-primary-foreground);
+  --color-destructive: var(--destructive);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-editorialnew: 'PPEditorialNew', serif;
+  --color-app: var(--app-bg);
+  --color-left-panel: var(--app-left-panel-text-color);
+
+  /* Font scale based on --font-size-base */
+  --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
+  --text-base: var(--font-size-base); /* ~16px */
+  --text-lg: calc(var(--font-size-base) * 1.125); /* ~18px */
+  --text-xl: calc(var(--font-size-base) * 1.25); /* ~20px */
+  --text-2xl: calc(var(--font-size-base) * 1.5); /* ~24px */
+  --text-3xl: calc(var(--font-size-base) * 1.875); /* ~30px */
+  --text-4xl: calc(var(--font-size-base) * 2.25); /* ~36px */
+  --text-5xl: calc(var(--font-size-base) * 3); /* ~48px */
+  --text-6xl: calc(var(--font-size-base) * 3.75); /* ~60px */
+  --text-7xl: calc(var(--font-size-base) * 4.5); /* ~72px */
+  --text-8xl: calc(var(--font-size-base) * 6); /* ~96px */
+  --text-9xl: calc(var(--font-size-base) * 8); /* ~128px */
+}
+
+:root {
+  /* Button */
+  --btn-primary: oklch(54.6% 0.245 262.881);
+  --btn-primary-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --radius: 0.625rem;
+  --font-size-base: 15px;
+  --app-bg: '';
+  --app-left-panel-text-color: '';
+  --app-primary: '';
+}
+
+@layer base {
+  body {
+    @apply overflow-hidden;
+  }
+  svg {
+    stroke-width: 1.5;
+  }
+}

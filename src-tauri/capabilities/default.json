@@ -9,8 +9,11 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
     "shell:allow-spawn",
     "shell:allow-open",
+    "core:app:allow-set-app-theme",
+    "os:default",
     "log:default",
     {
       "identifier": "http:default",

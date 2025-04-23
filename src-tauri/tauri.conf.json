@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "jan.ai",
   "build": {
-    "frontendDist": "../web/out",
-    "devUrl": "http://localhost:3000",
+    "frontendDist": "../web-app/dist",
+    "devUrl": "http://localhost:1420",
     "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
@@ -20,10 +20,16 @@
         "fullscreen": false,
         "hiddenTitle": true,
         "transparent": true,
+        "trafficLightPosition": {
+          "x": 12,
+          "y": 20
+        },
+        "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
           "effects": ["fullScreenUI", "mica", "blur", "acrylic"],
-          "state": "active"
+          "state": "active",
+          "radius": 8
         }
       }
     ],
@@ -46,6 +52,10 @@
     }
   },
   "plugins": {
+    "os": {
+      "version": "latest",
+      "resolve": true
+    },
     "updater": {
       "pubkey": "",
       "endpoints": [

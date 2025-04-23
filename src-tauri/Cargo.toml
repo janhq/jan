@@ -21,11 +21,12 @@ tauri-build = { version = "2.0.2", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.1.0", features = [ "protocol-asset", "macos-private-api",
+tauri = { version = "2.4.0", features = [ "protocol-asset", "macos-private-api",
     "test",
 ] }
 tauri-plugin-log = "2.0.0-rc"
 tauri-plugin-shell = "2.2.0"
+tauri-plugin-os = "2.2.1"
 flate2 = "1.0"
 tar = "0.4"
 rand = "0.8"
