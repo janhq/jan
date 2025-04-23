@@ -1,14 +1,61 @@
 use crate::core::state::AppState;
 use crate::core::utils::download::{download, DownloadEvent, DownloadEventType};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 use tokio_util::sync::CancellationToken;
+
+// https://github.com/huggingface/huggingface_hub/blob/v0.30.2/src/huggingface_hub/constants.py
+fn get_hf_home() -> Option<PathBuf> {
+    if let Ok(hf_home) = std::env::var("HF_HOME") {
+        return Some(PathBuf::from(hf_home));
+    }
+
+    let mut cache_dir = None;
+    if let Ok(xdg_cache_home) = std::env::var("XDG_CACHE_HOME") {
+        cache_dir = Some(PathBuf::from(xdg_cache_home));
+    } else if let Some(home_dir) = dirs::home_dir() {
+        cache_dir = Some(home_dir.join(".cache"));
+    }
+
+    cache_dir.map(|p| p.join("huggingface"))
+}
+
+// https://github.com/huggingface/huggingface_hub/blob/v0.30.2/src/huggingface_hub/utils/_headers.py#L143-L172
+// https://github.com/huggingface/huggingface_hub/blob/v0.30.2/src/huggingface_hub/utils/_auth.py
+fn get_hf_token(token: Option<&str>) -> Option<String> {
+    let mut token_ = None;
+
+    if let Some(token) = token {
+        token_ = Some(token.to_string());
+    } else if let Ok(token) = std::env::var("HF_TOKEN") {
+        token_ = Some(token);
+    } else if let Some(hf_home) = get_hf_home() {
+        let token_path = hf_home.join("token");
+        if let Ok(token) = std::fs::read_to_string(token_path) {
+            token_ = Some(token);
+        }
+    }
+
+    token_.map(|t| t.trim().to_string())
+}
+
+fn build_hf_headers(token: Option<&str>) -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    if let Some(token) = get_hf_token(token) {
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            format!("Bearer {}", token).parse().unwrap(), // TODO: handle unwrap
+        );
+    }
+    headers
+}
 
 // task_id is only for compatibility with current Jan+Cortex we can remove it later
 // should we disallow custom save_dir? i.e. all HF models will be downloaded to
 // <app_dir>/models/<repo_id>/<branch>?
 // (only cortexso uses branch. normally people don't use it)
+// TODO: HF token
 #[tauri::command]
 pub async fn download_hf_repo(
     app: AppHandle,
@@ -66,6 +113,7 @@ pub async fn download_hf_repo(
             .insert(task_id.to_string(), cancel_token.clone());
     }
 
+    let headers = build_hf_headers(None);
     let download_result = async {
         // NOTE: currently we are downloading sequentially. we can spawn tokio tasks
         // to download files in parallel.
@@ -88,9 +136,15 @@ pub async fn download_hf_repo(
                     app.emit("download", info.clone()).unwrap();
                 }
             };
-            download(&url, &full_path, Some(cancel_token.clone()), Some(callback))
-                .await
-                .map_err(|e| format!("Failed to download file {}: {}", info.path, e))?;
+            download(
+                &url,
+                &full_path,
+                &headers,
+                Some(cancel_token.clone()),
+                Some(callback),
+            )
+            .await
+            .map_err(|e| format!("Failed to download file {}: {}", info.path, e))?;
         }
         Ok(())
     }
@@ -141,6 +195,7 @@ async fn list_files(
 ) -> Result<Vec<FileInfo>, Box<dyn std::error::Error>> {
     let mut files = vec![];
     let client = reqwest::Client::new();
+    let headers = build_hf_headers(None);
 
     // DFS with a stack (similar to recursion)
     let mut stack = vec!["".to_string()];
@@ -149,7 +204,7 @@ async fn list_files(
             "https://huggingface.co/api/models/{}/tree/{}/{}",
             repo_id, branch, directory
         );
-        let resp = client.get(&url).send().await?;
+        let resp = client.get(&url).headers(headers.clone()).send().await?;
 
         if !resp.status().is_success() {
             return Err(format!(

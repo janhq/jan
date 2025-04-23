@@ -36,6 +36,7 @@ pub struct DownloadEvent {
 pub async fn download<F>(
     url: &str,
     save_path: &Path,
+    headers: &reqwest::header::HeaderMap,
     cancel_token: Option<CancellationToken>,
     mut callback: Option<F>,
 ) -> Result<(), Box<dyn std::error::Error>>
@@ -47,7 +48,7 @@ where
         .build()?;
 
     // NOTE: might want to add User-Agent header
-    let resp = client.get(url).send().await?;
+    let resp = client.get(url).headers(headers.clone()).send().await?;
     if !resp.status().is_success() {
         return Err(format!(
             "Failed to download: HTTP status {}, {}",

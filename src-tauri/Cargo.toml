@@ -43,6 +43,7 @@ uuid = { version = "1.7", features = ["v4"] }
 env = "1.0.1"
 futures-util = "0.3.31"
 tokio-util = "0.7.14"
+dirs = "6.0.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
