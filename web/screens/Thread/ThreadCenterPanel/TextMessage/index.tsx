@@ -103,15 +103,7 @@ const MessageContainer: React.FC<
               isUser && 'text-gray-500'
             )}
           >
-            {!isUser && (
-              <>
-                {props.metadata && 'model' in props.metadata
-                  ? (props.metadata?.model as string)
-                  : props.isCurrentMessage
-                    ? selectedModel?.name
-                    : (activeAssistant?.assistant_name ?? props.role)}
-              </>
-            )}
+            {!isUser && <>{props.role}</>}
           </div>
 
           <p className="text-xs font-medium text-gray-400">
