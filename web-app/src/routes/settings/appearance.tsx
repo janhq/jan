@@ -13,6 +13,8 @@ import {
 import { cn } from '@/lib/utils'
 import { useAppearance, fontSizeOptions, FontSize } from '@/hooks/useAppearance'
 import { useTheme } from '@/hooks/useTheme'
+import { ColorPickerAppMainView } from '@/containers/ColorPickerAppMainView'
+import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -97,75 +99,41 @@ function Appareances() {
         <h1 className="font-medium">Settings</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
-        <div className="flex h-full w-48 shrink-0 px-1.5 pt-3 border-r border-neutral-800">
-          <SettingsMenu />
-        </div>
-        <div className="p-4 w-full overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 w-full">
-            {/* Data folder */}
-            <div className="bg-neutral-800/40 p-4 rounded-lg text-neutral-300 w-full">
-              <h1 className="font-medium text-base mb-4">Appearance</h1>
-              <div className="flex justify-between items-center mt-2 border-b border-neutral-800 pb-3 last:border-none last:pb-0 gap-8">
-                <div className="space-y-1">
-                  <h1 className="font-medium">Theme</h1>
-                  <p className="text-neutral-400 leading-normal">
-                    Native appearance for consistent theming across OS UI
-                    elements
-                  </p>
-                </div>
-                <div className="shrink-0">
-                  <ThemeSwitcher />
-                </div>
-              </div>
-              <div className="flex justify-between items-center mt-2 border-b border-neutral-800 pb-3 last:border-none last:pb-0 gap-8">
-                <div className="space-y-1">
-                  <h1 className="font-medium">Font Size</h1>
-                  <p className="text-neutral-400 leading-normal">
-                    Scaling the size of text in the app
-                  </p>
-                </div>
-                <div className="shrink-0">
-                  <FontSizeSelector />
-                </div>
-              </div>
-            </div>
+        <SettingsMenu />
 
-            <div className="bg-neutral-800/40 p-4 rounded-lg text-neutral-300 w-full">
-              <h1 className="font-medium text-base mb-4">Custom color</h1>
-              <div className="flex justify-between items-center mt-2 border-b border-neutral-800 pb-3 last:border-none last:pb-0 gap-8">
-                <div className="space-y-1">
-                  <h1 className="font-medium">Window Background</h1>
-                  <p className="text-neutral-400 leading-normal">
-                    Choose the App window color
-                  </p>
-                </div>
-                <div className="shrink-0">
-                  <ColorPickerAppBgColor />
-                </div>
-              </div>
-              <div className="flex justify-between items-center mt-2 border-b border-neutral-800 pb-3 last:border-none last:pb-0 gap-8">
-                <div className="space-y-1">
-                  <h1 className="font-medium">App Main View</h1>
-                  <p className="text-neutral-400 leading-normal">
-                    Sets the background color for the main content area
-                  </p>
-                </div>
-                {/* <div className="shrink-0">
-                  <ColorPicker />
-                </div> */}
-              </div>
-              <div className="flex justify-between items-center mt-2 border-b border-neutral-800 pb-3 last:border-none last:pb-0 gap-8">
-                <div className="space-y-1">
-                  <h1 className="font-medium">Primary</h1>
-                  <p className="text-neutral-400 leading-normal">
-                    Controls the primary color used for components
-                  </p>
-                </div>
-                {/* <div className="shrink-0">
-                  <ColorPicker />
-                </div> */}
-              </div>
-            </div>
+        <div className="p-4 w-full overflow-y-auto">
+          <div className="flex flex-col justify-between gap-4 gap-y-2 w-full">
+            {/* Appearance */}
+            <CardSetting title="Appearance">
+              <CardSettingItem
+                title="Theme"
+                description="Native appearance for consistent theming across OS UI elements"
+                actions={<ThemeSwitcher />}
+              />
+              <CardSettingItem
+                title="Font Size"
+                actions={<FontSizeSelector />}
+              />
+            </CardSetting>
+
+            {/* Custom color */}
+            <CardSetting title="Custom color">
+              <CardSettingItem
+                title="Window Background"
+                description="Choose the App window color"
+                actions={<ColorPickerAppBgColor />}
+              />
+              <CardSettingItem
+                title="App Main View"
+                description="Sets the background color for the main content area"
+                actions={<ColorPickerAppMainView />}
+              />
+              <CardSettingItem
+                title="Primary"
+                description="Controls the primary color used for components"
+                actions={<></>}
+              />
+            </CardSetting>
           </div>
         </div>
       </div>

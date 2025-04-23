@@ -20,8 +20,8 @@ export const Route = createRootRoute({
           <LeftPanel />
 
           {/* Main content panel */}
-          <div className="h-full flex w-full p-1.5">
-            <div className="bg-neutral-900 border border-neutral-900 w-full rounded-lg overflow-hidden">
+          <div className="h-full flex w-full p-1">
+            <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
               <Outlet />
             </div>
           </div>

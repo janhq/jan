@@ -26,18 +26,20 @@ const menuSettings = [
 
 const SettingsMenu = () => {
   return (
-    <div className="flex flex-col gap-1 w-full text-white">
-      {menuSettings.map((menu) => {
-        return (
-          <Link
-            key={menu.title}
-            to={menu.route}
-            className="block px-2 items-center gap-1.5 cursor-pointer hover:bg-neutral-800/50 py-1 w-full rounded [&.active]:bg-neutral-800/50"
-          >
-            <span>{menu.title}</span>
-          </Link>
-        )
-      })}
+    <div className="flex h-full w-48 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5">
+      <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium">
+        {menuSettings.map((menu) => {
+          return (
+            <Link
+              key={menu.title}
+              to={menu.route}
+              className="block px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5"
+            >
+              <span>{menu.title}</span>
+            </Link>
+          )
+        })}
+      </div>
     </div>
   )
 }

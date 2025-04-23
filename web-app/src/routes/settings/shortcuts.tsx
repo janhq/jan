@@ -15,9 +15,8 @@ function Shortcuts() {
         <h1 className="font-medium">Settings</h1>
       </HeaderPage>
       <div className="flex h-full">
-        <div className="flex h-full w-48 shrink-0 px-1.5 pt-3 border-r border-neutral-800">
-          <SettingsMenu />
-        </div>
+        <SettingsMenu />
+
         <div className="p-4">
           <h1>Shortcuts</h1>
         </div>

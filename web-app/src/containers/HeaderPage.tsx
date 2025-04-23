@@ -14,14 +14,17 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
   return (
     <div
       className={cn(
-        'p-2 pt-1.5 border-b border-neutral-800 pl-18',
+        'p-2 h-10 border-b border-main-view-fg/5 pl-18 text-main-view-fg flex items-center',
         platformName === 'macos' && !open ? 'pl-18' : 'pl-4'
       )}
     >
       <div className="flex items-center gap-2">
         {!open && (
-          <button onClick={() => setLeftPanel(!open)}>
-            <IconLayoutSidebar size={18} className="text-neutral-200" />
+          <button
+            className="size-5 flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10"
+            onClick={() => setLeftPanel(!open)}
+          >
+            <IconLayoutSidebar size={18} className="text-main-view-fg" />
           </button>
         )}
         {children}
