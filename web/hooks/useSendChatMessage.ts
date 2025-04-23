@@ -56,6 +56,7 @@ import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import {
   activeThreadAtom,
   approvedThreadToolsAtom,
+  disabledThreadToolsAtom,
   engineParamsUpdateAtom,
   getActiveThreadModelParamsAtom,
   isGeneratingResponseAtom,
@@ -78,6 +79,7 @@ export default function useSendChatMessage(
   const deleteMessage = useSetAtom(deleteMessageAtom)
   const setEditPrompt = useSetAtom(editPromptAtom)
   const approvedTools = useAtomValue(approvedThreadToolsAtom)
+  const disabledTools = useAtomValue(disabledThreadToolsAtom)
 
   const currentMessages = useAtomValue(getCurrentChatMessagesAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
@@ -196,15 +198,17 @@ export default function useSendChatMessage(
       },
       activeThread,
       messages ?? currentMessages,
-      (await window.core.api.getTools())?.map((tool: ModelTool) => ({
-        type: 'function' as const,
-        function: {
-          name: tool.name,
-          description: tool.description?.slice(0, 1024),
-          parameters: tool.inputSchema,
-          strict: false,
-        },
-      }))
+      (await window.core.api.getTools())
+        ?.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
+        .map((tool: ModelTool) => ({
+          type: 'function' as const,
+          function: {
+            name: tool.name,
+            description: tool.description?.slice(0, 1024),
+            parameters: tool.inputSchema,
+            strict: false,
+          },
+        }))
     ).addSystemMessage(activeAssistant.instructions)
 
     requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
