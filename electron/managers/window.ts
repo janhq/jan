@@ -9,7 +9,7 @@ import { getBounds, saveBounds } from '../utils/setup'
  */
 // TODO: refactor this
 let isAppQuitting = false
-
+// make some changes here!!
 class WindowManager {
   public mainWindow?: BrowserWindow
   private _quickAskWindow: BrowserWindow | undefined = undefined
