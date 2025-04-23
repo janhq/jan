@@ -63,7 +63,8 @@ export function useTollCallPromiseModal() {
             <div className="mt-4 flex justify-end gap-x-2">
               <ModalClose asChild>
                 <Button
-                  theme="ghost" variant="outline"
+                  theme="ghost"
+                  variant="outline"
                   onClick={() => {
                     setApprovedToolsAtom((prev) => {
                       const newState = { ...prev }
@@ -87,7 +88,12 @@ export function useTollCallPromiseModal() {
                 </Button>
               </ModalClose>
               <ModalClose asChild>
-                <Button theme="ghost" variant="outline" onClick={handleConfirm} autoFocus>
+                <Button
+                  theme="ghost"
+                  variant="outline"
+                  onClick={handleConfirm}
+                  autoFocus
+                >
                   Allow once
                 </Button>
               </ModalClose>
