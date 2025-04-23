@@ -22,6 +22,7 @@ type Props = {
   loadModelError?: string
   isCurrentMessage?: boolean
   index: number
+  isLast: boolean
   onExpand: (props: { [id: number]: boolean }) => void
 } & ThreadMessage
 

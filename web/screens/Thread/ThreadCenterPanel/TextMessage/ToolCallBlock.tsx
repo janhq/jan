@@ -24,7 +24,6 @@ const ToolCallBlock = ({ id, name, result, loading, onExpand }: Props) => {
   const isExpanded = collapseState[id] ?? false
   const handleClick = () => {
     onExpand({ [id]: !isExpanded })
-    // setCollapseState((prev) => ({ ...prev, [id]: !isExpanded }))
   }
   return (
     <div className="mx-auto w-full">

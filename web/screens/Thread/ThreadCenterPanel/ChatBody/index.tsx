@@ -202,6 +202,7 @@ const ChatBody = memo(
                       isCurrentMessage={
                         virtualRow.index === messages?.length - 1
                       }
+                      isLast={virtualRow.index === messages?.length - 1}
                       onExpand={(props) =>
                         preserveScrollOnExpand(() => {
                           setToolCallExpanded((prev) => ({
