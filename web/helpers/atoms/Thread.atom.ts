@@ -72,6 +72,11 @@ export const threadDataReadyAtom = atomWithStorage<boolean>(
  */
 export const threadModelParamsAtom = atom<Record<string, ModelParams>>({})
 
+/**
+ * Store the tool call approval thread id
+ */
+export const approvedThreadToolsAtom = atom<Record<string, string[]>>({})
+
 //// End Thread Atom
 
 /// Active Thread Atom

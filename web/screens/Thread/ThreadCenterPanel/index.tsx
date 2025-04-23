@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 
-import { memo, useEffect, useState } from 'react'
+import { createContext, memo, useEffect, useState } from 'react'
 
 import { Accept, useDropzone } from 'react-dropzone'
 
@@ -16,6 +16,8 @@ import ModelReload from '@/containers/Loader/ModelReload'
 import ModelStart from '@/containers/Loader/ModelStart'
 import { fileUploadAtom } from '@/containers/Providers/Jotai'
 import { snackbar } from '@/containers/Toast'
+
+import { useTollCallPromiseModal } from '@/containers/ToolCallApprovalModal'
 
 import { activeModelAtom } from '@/hooks/useActiveModel'
 import { reloadModelAtom } from '@/hooks/useSendChatMessage'
@@ -53,6 +55,16 @@ const renderError = (code: string) => {
   }
 }
 
+interface ChatContextType {
+  showApprovalModal:
+    | ((toolName: string, threadId: string) => Promise<unknown>)
+    | undefined
+}
+
+export const ChatContext = createContext<ChatContextType>({
+  showApprovalModal: undefined,
+})
+
 const ThreadCenterPanel = () => {
   const [dragRejected, setDragRejected] = useState({ code: '' })
   const setFileUpload = useSetAtom(fileUploadAtom)
@@ -71,6 +83,7 @@ const ThreadCenterPanel = () => {
     : {
         'application/pdf': ['.pdf'],
       }
+  const { showModal, PromiseModal } = useTollCallPromiseModal()
 
   const { getRootProps, isDragReject } = useDropzone({
     noClick: true,
@@ -158,73 +171,82 @@ const ThreadCenterPanel = () => {
   const isGeneratingResponse = useAtomValue(isGeneratingResponseAtom)
 
   return (
-    <CenterPanelContainer>
-      <div
-        className="relative flex h-full w-full flex-col outline-none"
-        {...getRootProps()}
-      >
-        {dragOver && (
-          <div className="absolute z-50 mx-auto h-full w-full p-8 backdrop-blur-lg">
-            <div
-              className={twMerge(
-                'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[hsla(var(--primary-bg))]',
-                isDragReject && 'border-[hsla(var(--destructive-bg))]'
-              )}
-            >
-              <div className="mx-auto w-1/2 text-center">
-                <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
-                  <UploadCloudIcon
-                    size={24}
-                    className="text-[hsla(var(--primary-bg))]"
-                  />
-                </div>
-                <div className="mt-4 text-[hsla(var(--primary-bg))]">
-                  <h6 className="font-bold">
-                    {isDragReject
-                      ? `Currently, we only support 1 attachment at the same time with ${
-                          activeAssistant?.model.settings?.mmproj
-                            ? 'PDF, JPEG, JPG, PNG'
-                            : 'PDF'
-                        } format`
-                      : 'Drop file here'}
-                  </h6>
-                  {!isDragReject && (
-                    <p className="mt-2">
-                      {activeAssistant?.model.settings?.mmproj
-                        ? 'PDF, JPEG, JPG, PNG'
-                        : 'PDF'}
-                    </p>
-                  )}
+    <ChatContext.Provider
+      value={{
+        showApprovalModal: showModal,
+      }}
+    >
+      <CenterPanelContainer>
+        <div
+          className="relative flex h-full w-full flex-col outline-none"
+          {...getRootProps()}
+        >
+          {dragOver && (
+            <div className="absolute z-50 mx-auto h-full w-full p-8 backdrop-blur-lg">
+              <div
+                className={twMerge(
+                  'flex h-full w-full items-center justify-center rounded-lg border border-dashed border-[hsla(var(--primary-bg))]',
+                  isDragReject && 'border-[hsla(var(--destructive-bg))]'
+                )}
+              >
+                <div className="mx-auto w-1/2 text-center">
+                  <div className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full">
+                    <UploadCloudIcon
+                      size={24}
+                      className="text-[hsla(var(--primary-bg))]"
+                    />
+                  </div>
+                  <div className="mt-4 text-[hsla(var(--primary-bg))]">
+                    <h6 className="font-bold">
+                      {isDragReject
+                        ? `Currently, we only support 1 attachment at the same time with ${
+                            activeAssistant?.model.settings?.mmproj
+                              ? 'PDF, JPEG, JPG, PNG'
+                              : 'PDF'
+                          } format`
+                        : 'Drop file here'}
+                    </h6>
+                    {!isDragReject && (
+                      <p className="mt-2">
+                        {activeAssistant?.model.settings?.mmproj
+                          ? 'PDF, JPEG, JPG, PNG'
+                          : 'PDF'}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-        <div className={twMerge('flex h-full w-full flex-col justify-between')}>
-          {activeThread ? (
-            <div className="flex h-full w-full overflow-x-hidden">
-              <ChatBody />
-            </div>
-          ) : (
-            <RequestDownloadModel />
           )}
-
-          {!engineParamsUpdate && <ModelStart />}
-
-          {reloadModel && <ModelReload />}
-
-          {activeModel && isGeneratingResponse && <GenerateResponse />}
           <div
-            className={twMerge(
-              'mx-auto w-full',
-              chatWidth === 'compact' && 'max-w-[700px]'
-            )}
+            className={twMerge('flex h-full w-full flex-col justify-between')}
           >
-            <ChatInput />
+            {activeThread ? (
+              <div className="flex h-full w-full overflow-x-hidden">
+                <ChatBody />
+              </div>
+            ) : (
+              <RequestDownloadModel />
+            )}
+
+            {!engineParamsUpdate && <ModelStart />}
+
+            {reloadModel && <ModelReload />}
+
+            {activeModel && isGeneratingResponse && <GenerateResponse />}
+            <div
+              className={twMerge(
+                'mx-auto w-full',
+                chatWidth === 'compact' && 'max-w-[700px]'
+              )}
+            >
+              <ChatInput />
+            </div>
           </div>
         </div>
-      </div>
-    </CenterPanelContainer>
+      </CenterPanelContainer>
+      <PromiseModal />
+    </ChatContext.Provider>
   )
 }
 
