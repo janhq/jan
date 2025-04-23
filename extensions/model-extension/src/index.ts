@@ -126,16 +126,37 @@ export default class JanModelExtension extends ModelExtension {
    */
   async pullModel(model: string, id?: string, name?: string): Promise<void> {
     if (id == null && name == null) {
-      let [modelName, branch] = model.split(":")
-      return invoke<void>("get_jan_data_folder_path").then((path) => {
-        // cortexso format
-        return invoke<void>("download_hf_repo", {
+      let parts = model.split(":")
+      let author, repo, branch, files, subdir;
+
+      // Cortex format
+      if (parts.length == 2) {
+        author = "cortexso"
+        repo = parts[0]
+        branch = parts[1]
+        files = null
+        subdir = `cortex.so/${repo}/${branch}`
+      } else if (parts.length == 3) {
+        // TODO: we need to generate <filename>.yml for cortex
+        author = parts[0]
+        repo = parts[1]
+        files = [parts[2]]
+        branch = "main"
+        subdir = `huggingface.co/${author}/${repo}`
+      }
+
+      // TODO: insert a model entry to cortex.db
+      const f = async function() {
+        let path = await invoke("get_jan_data_folder_path")
+        await invoke("download_hf_repo", {
           taskId: model,
-          repoId: `cortexso/${modelName}`,
+          repoId: `${author}/${repo}`,
           branch: branch,
-          saveDir: `${path}/models/cortex.so/${modelName}/${branch}`
+          files: files,
+          saveDir: `${path}/models/${subdir}`,
         })
-      }).catch(console.error)
+      }
+      return f().catch(console.log)
     }
 
     /**

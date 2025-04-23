@@ -68,6 +68,7 @@ where
     // write chunk to file, and call callback if needed (e.g. download progress)
     let mut stream = resp.bytes_stream();
     let mut is_cancelled = false;
+    let mut download_delta = 0u64;
     while let Some(chunk) = stream.next().await {
         if let Some(token) = cancel_token.as_ref() {
             if token.is_cancelled() {
@@ -79,10 +80,19 @@ where
 
         let chunk = chunk?;
         file.write_all(&chunk).await?;
+        download_delta += chunk.len() as u64;
 
-        // NOTE: might want to reduce frequency of callback e.g. every 1MB
+        // only update every 1MB
         if let Some(cb) = callback.as_mut() {
-            cb(chunk.len() as u64);
+            if download_delta >= 1024 * 1024 {
+                cb(download_delta);
+                download_delta = 0u64;
+            }
+        }
+    }
+    if let Some(cb) = callback.as_mut() {
+        if download_delta > 0 {
+            cb(download_delta);
         }
     }
 

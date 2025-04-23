@@ -16,11 +16,12 @@ pub async fn download_hf_repo(
     task_id: &str,
     repo_id: &str,
     branch: &str,
+    files: Option<Vec<String>>,
     save_dir: &Path,
 ) -> Result<(), String> {
-    // TODO: check if it has been/is being downloaded
+    // TODO: check if it has been downloaded
 
-    // check if task_id already exists
+    // check if task_id already exists i.e. being downloaded
     {
         let download_manager = state.download_manager.lock().await;
         if download_manager.cancel_tokens.contains_key(task_id) {
@@ -28,14 +29,25 @@ pub async fn download_hf_repo(
         }
     }
 
-    let files = list_files(repo_id, branch)
+    let mut file_infos = list_files(repo_id, branch)
         .await
         .map_err(|e| format!("Failed to list files {}", e))?;
+
+    if let Some(files) = files {
+        // validate files
+        for file in &files {
+            if !file_infos.iter().any(|info| info.path == *file) {
+                return Err(format!("File {} does not exist", file));
+            }
+        }
+
+        file_infos.retain(|info| files.contains(&info.path));
+    }
 
     // obtain total download size. emit download started event
     let info = DownloadEvent {
         task_id: task_id.to_string(),
-        total_size: files.iter().map(|f| f.size).sum(),
+        total_size: file_infos.iter().map(|f| f.size).sum(),
         downloaded_size: 0,
         download_type: "Model".to_string(),
         event_type: DownloadEventType::Started,
@@ -57,12 +69,12 @@ pub async fn download_hf_repo(
     let download_result = async {
         // NOTE: currently we are downloading sequentially. we can spawn tokio tasks
         // to download files in parallel.
-        for file in files {
+        for info in file_infos {
             let url = format!(
                 "https://huggingface.co/{}/resolve/{}/{}",
-                repo_id, branch, file.path
+                repo_id, branch, info.path
             );
-            let full_path = save_dir.join(&file.path);
+            let full_path = save_dir.join(&info.path);
 
             // update download progress. clone app handle and info_arc
             // to move them into the closure
@@ -78,7 +90,7 @@ pub async fn download_hf_repo(
             };
             download(&url, &full_path, Some(cancel_token.clone()), Some(callback))
                 .await
-                .map_err(|e| format!("Failed to download file {}: {}", file.path, e))?;
+                .map_err(|e| format!("Failed to download file {}: {}", info.path, e))?;
         }
         Ok(())
     }
