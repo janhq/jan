@@ -55,24 +55,24 @@ function SortableItem({ thread }: { thread: Thread }) {
       {...attributes}
       {...listeners}
       className={cn(
-        'mb-1 rounded hover:bg-left-panel/10 flex items-center justify-between gap-2 px-1.5 group/thread-list',
+        'mb-1 rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/thread-list',
         isDragging ? 'cursor-move' : 'cursor-pointer'
       )}
     >
       <div className="py-1 pr-2 truncate">
-        <span className="text-left-panel/90">{thread.title}</span>
+        <span className="text-left-panel-fg/90">{thread.title}</span>
       </div>
       <div className="flex items-center">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <IconDots
               size={14}
-              className="text-left-panel/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
+              className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
               onClick={(e) => e.stopPropagation()}
             />
           </DropdownMenuTrigger>
           <DropdownMenuContent
-            className="w-24 bg-neutral-950 text-left-panel border border-neutral-800"
+            className="w-24 bg-neutral-950 text-left-panel-fg border border-neutral-800"
             side="right"
             align="start"
           >
