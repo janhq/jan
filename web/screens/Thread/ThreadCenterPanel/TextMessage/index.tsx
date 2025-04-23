@@ -30,7 +30,11 @@ import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 
 const MessageContainer: React.FC<
-  ThreadMessage & { isCurrentMessage: boolean; index: number }
+  ThreadMessage & {
+    isCurrentMessage: boolean
+    index: number
+    onExpand: (props: { [id: number]: boolean }) => void
+  }
 > = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
@@ -195,6 +199,7 @@ const MessageContainer: React.FC<
                 <>
                   {props.metadata.tool_calls.map((toolCall) => (
                     <ToolCallBlock
+                      onExpand={props.onExpand}
                       id={toolCall.tool?.id}
                       name={toolCall.tool?.function?.name ?? ''}
                       key={toolCall.tool?.id}
