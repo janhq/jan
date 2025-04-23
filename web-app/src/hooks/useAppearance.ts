@@ -178,7 +178,7 @@ export const useAppearance = create<AppearanceState>()(
           }
 
           document.documentElement.style.setProperty(
-            '--app-left-panel-text-color',
+            '--app-left-panel-fg',
             textColor
           )
 

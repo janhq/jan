@@ -41,7 +41,7 @@ export function AppearanceProvider() {
 
     // Apply text color based on background brightness
     document.documentElement.style.setProperty(
-      '--app-left-panel-text-color',
+      '--app-left-panel-fg',
       appLeftPanelTextColor
     )
   }, [fontSize, appBgColor, appLeftPanelTextColor, isDark])
@@ -62,7 +62,7 @@ export function AppearanceProvider() {
         : appLeftPanelTextColor
 
       document.documentElement.style.setProperty(
-        '--app-left-panel-text-color',
+        '--app-left-panel-fg',
         textColor
       )
     }
