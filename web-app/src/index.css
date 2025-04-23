@@ -13,7 +13,9 @@
   --radius-xl: calc(var(--radius) + 4px);
   --font-editorialnew: 'PPEditorialNew', serif;
   --color-app: var(--app-bg);
-  --color-left-panel: var(--app-left-panel-text-color);
+  --color-left-panel-fg: var(--app-left-panel-fg);
+  --color-main-view: var(--app-main-view);
+  --color-main-view-fg: var(--app-main-view-fg);
 
   /* Font scale based on --font-size-base */
   --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
@@ -38,8 +40,10 @@
   --radius: 0.625rem;
   --font-size-base: 15px;
   --app-bg: '';
-  --app-left-panel-text-color: '';
+  --app-left-panel-fg: '';
   --app-primary: '';
+  --app-main-view: '';
+  --app-main-view-fg: '';
 }
 
 @layer base {

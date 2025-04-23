@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
-// import { RgbaColorPicker } from 'react-colorful'
 import { ColorPickerAppBgColor } from '@/containers/ColorPickerAppBgColor'
 
 import {
@@ -110,8 +109,8 @@ function Appareances() {
                 <div className="space-y-1">
                   <h1 className="font-medium">Theme</h1>
                   <p className="text-neutral-400 leading-normal">
-                    Native system theme for a consistent look, similar to OS
-                    file dialogs, menus, and alerts
+                    Native appearance for consistent theming across OS UI
+                    elements
                   </p>
                 </div>
                 <div className="shrink-0">
@@ -148,7 +147,7 @@ function Appareances() {
                 <div className="space-y-1">
                   <h1 className="font-medium">App Main View</h1>
                   <p className="text-neutral-400 leading-normal">
-                    Controls the primary color used for components
+                    Sets the background color for the main content area
                   </p>
                 </div>
                 {/* <div className="shrink-0">
