@@ -100,6 +100,7 @@ pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> 
     let mut download_manager = state.download_manager.lock().await;
     if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
         token.cancel();
+        log::info!("Cancelled download task: {}", task_id);
         Ok(())
     } else {
         Err(format!("No download task with id {}", task_id))

@@ -88,29 +88,27 @@ pub async fn download_hf_repo(
     {
         let mut download_manager = state.download_manager.lock().await;
         download_manager.cancel_tokens.remove(task_id);
-
-        if cancel_token.is_cancelled() && save_dir.exists() {
-            // NOTE: we don't check error here
-            let _ = std::fs::remove_dir_all(save_dir);
-        }
+    }
+    if (cancel_token.is_cancelled() || download_result.is_err()) && save_dir.exists() {
+        // NOTE: we don't check error here
+        let _ = std::fs::remove_dir_all(save_dir);
     }
 
     // report results
-    // TODO: what if it is cancelled? do we still emit success?
     match download_result {
         Ok(_) => {
             let mut info = info_arc.lock().unwrap();
-            info.event_type = DownloadEventType::Success;
-            log::info!("Finished download repo_id: {} branch: {}", repo_id, branch);
+            if cancel_token.is_cancelled() {
+                info.event_type = DownloadEventType::Stopped;
+                log::info!("Cancelled download repo_id: {} branch: {}", repo_id, branch);
+            } else {
+                info.event_type = DownloadEventType::Success;
+                log::info!("Finished download repo_id: {} branch: {}", repo_id, branch);
+            }
             app.emit("download", info.clone()).unwrap();
             Ok(())
         }
         Err(e) => {
-            // on failure, remove the directory to restore the original state
-            if save_dir.exists() {
-                // NOTE: we don't check error here
-                let _ = std::fs::remove_dir_all(save_dir);
-            }
             log::info!("Failed to download repo_id: {} branch: {}", repo_id, branch);
             // TODO: check what cortex and Jan does on download error
             // app.emit("download", info.clone()).unwrap();
