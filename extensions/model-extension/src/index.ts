@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   ModelExtension,
   Model,
@@ -8,6 +10,7 @@ import {
   ModelSource,
   extractInferenceParams,
   extractModelLoadParams,
+  events,
 } from '@janhq/core'
 import { scanModelsFolder } from './legacy/model-json'
 import { deleteModelFiles } from './legacy/delete'
@@ -23,6 +26,14 @@ export enum Settings {
 /** Data List Response Type */
 type Data<T> = {
   data: T[]
+}
+
+type DownloadInfo = {
+  task_id: string
+  total_size: number
+  downloaded_size: number
+  download_type: string
+  event_type: string
 }
 
 /**
@@ -63,6 +74,29 @@ export default class JanModelExtension extends ModelExtension {
       this.updateCortexConfig({ huggingface_token: huggingfaceToken })
     }
 
+    // listen to tauri events
+    // TODO: move this to core? i.e. forward tauri events to core events
+    listen<DownloadInfo>('download', (event) => {
+      let payload = event.payload
+      let eventName = {
+        Updated: 'onFileDownloadUpdate',
+        Error: 'onFileDownloadError',
+        Success: 'onFileDownloadSuccess',
+        Stopped: 'onFileDownloadStopped',
+        Started: 'onFileDownloadStarted',
+      }[payload.event_type]
+
+      events.emit(eventName, {
+        modelId: payload.task_id,
+        percent: payload.downloaded_size / payload.total_size,
+        size: {
+          transferred: payload.downloaded_size,
+          total: payload.total_size,
+        },
+        downloadType: payload.download_type,
+      })
+    })
+
     // Sync with cortexsohub
     this.fetchModelsHub()
   }
@@ -91,6 +125,19 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async pullModel(model: string, id?: string, name?: string): Promise<void> {
+    if (id == null && name == null) {
+      let [modelName, branch] = model.split(":")
+      return invoke<void>("get_jan_data_folder_path").then((path) => {
+        // cortexso format
+        return invoke<void>("download_hf_repo", {
+          taskId: model,
+          repoId: `cortexso/${modelName}`,
+          branch: branch,
+          saveDir: `${path}/models/cortex.so/${modelName}/${branch}`
+        })
+      }).catch(console.error)
+    }
+
     /**
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */

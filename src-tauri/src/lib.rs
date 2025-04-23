@@ -60,7 +60,9 @@ pub fn run() {
             core::threads::delete_message,
             core::threads::get_thread_assistant,
             core::threads::create_thread_assistant,
-            core::threads::modify_thread_assistant
+            core::threads::modify_thread_assistant,
+            // Download
+            core::utils::hf::download_hf_repo,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
