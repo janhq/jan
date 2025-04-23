@@ -1,7 +1,9 @@
+use crate::core::state::AppState;
 use crate::core::utils::download::{download, DownloadEvent, DownloadEventType};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
+use tokio_util::sync::CancellationToken;
 
 // task_id is only for compatibility with current Jan+Cortex we can remove it later
 // should we disallow custom save_dir? i.e. all HF models will be downloaded to
@@ -10,12 +12,22 @@ use tauri::{AppHandle, Emitter};
 #[tauri::command]
 pub async fn download_hf_repo(
     app: AppHandle,
+    state: State<'_, AppState>,
     task_id: &str,
     repo_id: &str,
     branch: &str,
     save_dir: &Path,
 ) -> Result<(), String> {
-    // TODO: check if it has been downloaded
+    // TODO: check if it has been/is being downloaded
+
+    // check if task_id already exists
+    {
+        let download_manager = state.download_manager.lock().await;
+        if download_manager.cancel_tokens.contains_key(task_id) {
+            return Err(format!("Task ID {} already exists", task_id));
+        }
+    }
+
     let files = list_files(repo_id, branch)
         .await
         .map_err(|e| format!("Failed to list files {}", e))?;
@@ -32,6 +44,15 @@ pub async fn download_hf_repo(
     log::info!("Start download repo_id: {} branch: {}", repo_id, branch);
     app.emit("download", info_arc.lock().unwrap().clone())
         .unwrap();
+
+    // insert cancel tokens
+    let cancel_token = CancellationToken::new();
+    {
+        let mut download_manager = state.download_manager.lock().await;
+        download_manager
+            .cancel_tokens
+            .insert(task_id.to_string(), cancel_token.clone());
+    }
 
     let download_result = async {
         // NOTE: currently we are downloading sequentially. we can spawn tokio tasks
@@ -55,13 +76,27 @@ pub async fn download_hf_repo(
                     app.emit("download", info.clone()).unwrap();
                 }
             };
-            download(&url, &full_path, Some(callback))
+            download(&url, &full_path, Some(cancel_token.clone()), Some(callback))
                 .await
                 .map_err(|e| format!("Failed to download file {}: {}", file.path, e))?;
         }
         Ok(())
     }
     .await;
+
+    // cleanup
+    {
+        let mut download_manager = state.download_manager.lock().await;
+        download_manager.cancel_tokens.remove(task_id);
+
+        if cancel_token.is_cancelled() && save_dir.exists() {
+            // NOTE: we don't check error here
+            let _ = std::fs::remove_dir_all(save_dir);
+        }
+    }
+
+    // report results
+    // TODO: what if it is cancelled? do we still emit success?
     match download_result {
         Ok(_) => {
             let mut info = info_arc.lock().unwrap();

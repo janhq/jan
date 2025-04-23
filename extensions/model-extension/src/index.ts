@@ -159,6 +159,7 @@ export default class JanModelExtension extends ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelPull(model: string): Promise<void> {
+    return invoke<void>("cancel_download_task", {taskId: model}).catch(console.error)
     /**
      * Sending DELETE to /models/pull/{id} endpoint to cancel a model pull
      */

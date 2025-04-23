@@ -1,8 +1,17 @@
+use crate::core::state::AppState;
 use futures_util::StreamExt;
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
+use tauri::State;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
+use tokio_util::sync::CancellationToken;
+
+#[derive(Default)]
+pub struct DownloadManagerState {
+    pub cancel_tokens: HashMap<String, CancellationToken>,
+}
 
 // this is to emulate the current way of downloading files by Cortex + Jan
 // we can change this later
@@ -27,10 +36,10 @@ pub struct DownloadEvent {
 pub async fn download<F>(
     url: &str,
     save_path: &Path,
+    cancel_token: Option<CancellationToken>,
     mut callback: Option<F>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
-    // F: FnMut(u64) + Send + 'static,
     F: FnMut(u64),
 {
     let client = reqwest::Client::builder()
@@ -58,7 +67,16 @@ where
 
     // write chunk to file, and call callback if needed (e.g. download progress)
     let mut stream = resp.bytes_stream();
+    let mut is_cancelled = false;
     while let Some(chunk) = stream.next().await {
+        if let Some(token) = cancel_token.as_ref() {
+            if token.is_cancelled() {
+                log::info!("Download cancelled: {}", url);
+                is_cancelled = true;
+                break;
+            }
+        }
+
         let chunk = chunk?;
         file.write_all(&chunk).await?;
 
@@ -67,6 +85,23 @@ where
             cb(chunk.len() as u64);
         }
     }
+
+    // cleanup
     file.flush().await?;
+    if is_cancelled {
+        // NOTE: we don't check error here
+        let _ = std::fs::remove_file(save_path);
+    }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> Result<(), String> {
+    let mut download_manager = state.download_manager.lock().await;
+    if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
+        token.cancel();
+        Ok(())
+    } else {
+        Err(format!("No download task with id {}", task_id))
+    }
 }

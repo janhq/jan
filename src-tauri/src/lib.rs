@@ -3,6 +3,7 @@ use core::{
     cmd::get_jan_data_folder_path,
     setup::{self, setup_engine_binaries, setup_mcp, setup_sidecar},
     state::{generate_app_token, AppState},
+    utils::download::DownloadManagerState,
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -63,10 +64,12 @@ pub fn run() {
             core::threads::modify_thread_assistant,
             // Download
             core::utils::hf::download_hf_repo,
+            core::utils::download::cancel_download_task,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
+            download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
         })
         .setup(|app| {
             app.handle().plugin(
