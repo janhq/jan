@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useContext, useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 
@@ -11,6 +11,7 @@ import {
   badgeVariants,
   Badge,
   Modal,
+  Switch,
 } from '@janhq/joi'
 import { useAtom, useAtomValue } from 'jotai'
 import {
@@ -51,6 +52,7 @@ import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeSettingInputBoxAtom,
   activeThreadAtom,
+  disabledThreadToolsAtom,
   getActiveThreadIdAtom,
   isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
@@ -69,6 +71,7 @@ const ChatInput = () => {
   const { showApprovalModal } = useContext(ChatContext)
   const { sendChatMessage } = useSendChatMessage(showApprovalModal)
   const selectedModel = useAtomValue(selectedModelAtom)
+  const [disabledTools, setDisableTools] = useAtom(disabledThreadToolsAtom)
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
@@ -88,6 +91,10 @@ const ChatInput = () => {
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
+
+  const availableTools = useMemo(() => {
+    return tools.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
+  }, [tools, disabledTools])
 
   const refAttachmentMenus = useClickOutside(() =>
     setShowAttachmentMenus(false)
@@ -420,7 +427,7 @@ const ChatInput = () => {
                     size={16}
                     className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
                   />
-                  <span className="text-xs">{tools.length}</span>
+                  <span className="text-xs">{availableTools.length}</span>
                 </Badge>
 
                 <Modal
@@ -449,11 +456,26 @@ const ChatInput = () => {
                             size={16}
                             className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
                           />
-                          <div>
-                            <div className="font-medium">{tool.name}</div>
-                            <div className="text-sm text-[hsla(var(--text-secondary))]">
-                              {tool.description}
+                          <div className="flex w-full flex-1 flex-row justify-between">
+                            <div>
+                              <div className="font-medium">{tool.name}</div>
+                              <div className="text-sm text-[hsla(var(--text-secondary))]">
+                                {tool.description}
+                              </div>
                             </div>
+                            <Switch
+                              checked={!disabledTools.includes(tool.name)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setDisableTools((prev) =>
+                                    prev.filter((t) => t !== tool.name)
+                                  )
+                                } else {
+                                  setDisableTools([...disabledTools, tool.name])
+                                }
+                              }}
+                              className="flex-shrink-0"
+                            />
                           </div>
                         </div>
                       ))}
