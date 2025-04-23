@@ -7,6 +7,7 @@
       "core",
       "electron",
       "web",
+      "web-app",
       "server"
     ]
   },
@@ -20,9 +21,9 @@
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"themes/**\" \"src-tauri/resources/themes\"",
     "dev:electron": "yarn copy:assets && yarn workspace jan dev",
     "dev:web:standalone": "concurrently \"yarn workspace @janhq/web dev\" \"wait-on http://localhost:3000 && rsync -av --prune-empty-dirs --include '*/' --include 'dist/***' --include 'package.json' --include 'tsconfig.json' --exclude '*' ./extensions/ web/.next/static/extensions/\"",
-    "dev:web": "yarn workspace @janhq/web dev",
+    "dev:web": "yarn workspace @janhq/web-app dev",
     "dev:server": "yarn workspace @janhq/server dev",
-    "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web\" \"yarn dev:electron\"",
+    "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web-app\" \"yarn dev:electron\"",
     "install:cortex:linux:darwin": "cd src-tauri/binaries && ./download.sh",
     "install:cortex:win32": "cd src-tauri/binaries && download.bat",
     "install:cortex": "run-script-os",
@@ -34,7 +35,7 @@
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:server": "cd server && yarn build",
     "build:core": "cd core && yarn build && yarn pack",
-    "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
+    "build:web": "yarn workspace @janhq/web-app build",
     "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish",
