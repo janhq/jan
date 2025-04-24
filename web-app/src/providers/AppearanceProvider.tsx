@@ -127,5 +127,5 @@ export function AppearanceProvider() {
     }
   }, [isDark, appLeftPanelTextColor, appMainViewTextColor])
 
-  return <></>
+  return null
 }

@@ -79,8 +79,17 @@ const ChatInput = ({
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && prompt) {
-            e.preventDefault()
+          if (e.key === 'Enter') {
+            if (!e.shiftKey && prompt) {
+              e.preventDefault()
+              // Submit the message when Enter is pressed without Shift
+              if (handleSubmit) {
+                handleSubmit(
+                  e as unknown as React.MouseEvent<HTMLButtonElement>
+                )
+              }
+            }
+            // When Shift+Enter is pressed, a new line is added (default behavior)
           }
         }}
         placeholder={t('common.placeholder.chatInput')}
