@@ -9,6 +9,7 @@ import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
 import { useTranslation } from 'react-i18next'
 import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
+import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryColor'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -56,7 +57,7 @@ function Appareances() {
               <CardSettingItem
                 title="Primary"
                 description="Controls the primary color used for components"
-                actions={<></>}
+                actions={<ColorPickerAppPrimaryColor />}
               />
             </CardSetting>
           </div>
