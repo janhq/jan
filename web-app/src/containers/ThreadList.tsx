@@ -30,6 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTranslation } from 'react-i18next'
 
 function SortableItem({ thread }: { thread: Thread }) {
   const {
@@ -47,6 +48,7 @@ function SortableItem({ thread }: { thread: Thread }) {
     opacity: isDragging ? 0.5 : 1,
   }
   const { toggleFavorite, deleteThread } = useThreads()
+  const { t } = useTranslation()
 
   return (
     <div
@@ -71,26 +73,26 @@ function SortableItem({ thread }: { thread: Thread }) {
               onClick={(e) => e.stopPropagation()}
             />
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-24 " side="bottom" align="end">
+          <DropdownMenuContent side="bottom" align="end">
             {thread.isFavorite ? (
               <DropdownMenuItem onClick={() => toggleFavorite(thread.id)}>
                 <IconStarFilled />
-                <span>Unstar</span>
+                <span>{t('common.unstar')}</span>
               </DropdownMenuItem>
             ) : (
               <DropdownMenuItem onClick={() => toggleFavorite(thread.id)}>
                 <IconStar />
-                <span>Star</span>
+                <span>{t('common.star')}</span>
               </DropdownMenuItem>
             )}
             <DropdownMenuItem>
               <IconEdit />
-              <span>Rename</span>
+              <span>{t('common.rename')}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => deleteThread(thread.id)}>
               <IconTrash />
-              <span>Delete</span>
+              <span>{t('common.delete')}</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
