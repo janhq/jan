@@ -4,8 +4,6 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-btn-primary: var(--btn-primary);
-  --color-btn-primary-foreground: var(--btn-primary-foreground);
   --color-destructive: var(--destructive);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -16,6 +14,8 @@
   --color-left-panel-fg: var(--app-left-panel-fg);
   --color-main-view: var(--app-main-view);
   --color-main-view-fg: var(--app-main-view-fg);
+  --color-primary: var(--app-primary);
+  --color-primary-fg: var(--app-primary-fg);
 
   /* Font scale based on --font-size-base */
   --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
@@ -34,16 +34,15 @@
 
 :root {
   /* Button */
-  --btn-primary: oklch(54.6% 0.245 262.881);
-  --btn-primary-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --radius: 0.625rem;
   --font-size-base: 15px;
   --app-bg: '';
   --app-left-panel-fg: '';
-  --app-primary: '';
   --app-main-view: '';
   --app-main-view-fg: '';
+  --app-primary: '';
+  --app-primary-fg: '';
 }
 
 @layer base {

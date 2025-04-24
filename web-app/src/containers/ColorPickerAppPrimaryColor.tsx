@@ -8,57 +8,44 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export function ColorPickerAppBgColor() {
-  const { appBgColor, setAppBgColor } = useAppearance()
+export function ColorPickerAppPrimaryColor() {
+  const { appPrimaryBgColor, setAppPrimaryBgColor } = useAppearance()
 
-  const predefineAppBgColor: RgbaColor[] = [
+  const predefineappPrimaryBgColor: RgbaColor[] = [
     {
-      r: 20,
-      g: 20,
-      b: 20,
-      a: 0.4,
+      r: 219,
+      g: 88,
+      b: 44,
+      a: 1,
     },
     {
-      r: 250,
-      g: 250,
-      b: 250,
-      a: 0.4,
+      r: 120,
+      g: 44,
+      b: 220,
+      a: 1,
     },
     {
-      r: 70,
-      g: 79,
-      b: 229,
-      a: 0.5,
+      r: 219,
+      g: 167,
+      b: 44,
+      a: 1,
     },
     {
-      r: 238,
-      g: 130,
-      b: 238,
-      a: 0.5,
-    },
-
-    {
-      r: 255,
-      g: 99,
-      b: 71,
-      a: 0.5,
-    },
-    {
-      r: 255,
-      g: 165,
-      b: 0,
-      a: 0.5,
+      r: 46,
+      g: 158,
+      b: 57,
+      a: 1,
     },
   ]
 
   return (
     <div className="flex items-center gap-1.5">
-      {predefineAppBgColor.map((item, i) => {
+      {predefineappPrimaryBgColor.map((item, i) => {
         const isSelected =
-          item.r === appBgColor.r &&
-          item.g === appBgColor.g &&
-          item.b === appBgColor.b &&
-          item.a === appBgColor.a
+          item.r === appPrimaryBgColor.r &&
+          item.g === appPrimaryBgColor.g &&
+          item.b === appPrimaryBgColor.b &&
+          item.a === appPrimaryBgColor.a
         return (
           <div
             key={i}
@@ -67,7 +54,7 @@ export function ColorPickerAppBgColor() {
               isSelected && 'ring-2 ring-blue-500 border-none'
             )}
             onClick={() => {
-              setAppBgColor(item)
+              setAppPrimaryBgColor(item)
             }}
             style={{
               backgroundColor: `rgba(${item.r}, ${item.g}, ${item.b}, ${item.a})`,
@@ -89,8 +76,8 @@ export function ColorPickerAppBgColor() {
             align="start"
           >
             <RgbaColorPicker
-              color={appBgColor}
-              onChange={(color) => setAppBgColor(color)}
+              color={appPrimaryBgColor}
+              onChange={(color) => setAppPrimaryBgColor(color)}
             />
           </DropdownMenuContent>
         </DropdownMenu>
