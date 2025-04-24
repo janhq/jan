@@ -40,5 +40,5 @@ export function ThemeProvider() {
     }
   }, [activeTheme, setIsDark, setTheme])
 
-  return <></>
+  return null
 }
