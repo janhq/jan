@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tar::Archive;
-use tauri::{App, Listener, Manager};
+use tauri::{App, Emitter, Listener, Manager};
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
@@ -185,10 +185,12 @@ pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>().inner();
     let app_path_str = app_path.to_str().unwrap().to_string();
     let servers = state.mcp_servers.clone();
+    let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(app_path_str, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
         }
+        app_handle.emit("mcp-update", "MCP servers updated").unwrap();
     });
 }
 

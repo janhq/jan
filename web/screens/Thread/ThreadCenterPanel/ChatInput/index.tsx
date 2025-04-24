@@ -13,6 +13,7 @@ import {
   Modal,
   Switch,
 } from '@janhq/joi'
+import { listen } from '@tauri-apps/api/event'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   FileTextIcon,
@@ -116,6 +117,12 @@ const ChatInput = () => {
   useEffect(() => {
     window.core?.api?.getTools().then((data: ModelTool[]) => {
       setTools(data)
+    })
+
+    listen('mcp-update', (event) => {
+      window.core?.api?.getTools().then((data: ModelTool[]) => {
+        setTools(data)
+      })
     })
   }, [])
 
