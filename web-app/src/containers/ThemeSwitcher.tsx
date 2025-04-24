@@ -11,7 +11,7 @@ export function ThemeSwitcher() {
   const themeOptions = [
     { value: 'dark', label: 'Dark' },
     { value: 'light', label: 'Light' },
-    { value: 'auto', label: 'Auto' },
+    { value: 'auto', label: 'System' },
   ]
 
   const { setTheme, activeTheme } = useTheme()
