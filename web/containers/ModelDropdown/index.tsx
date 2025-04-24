@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import Image from 'next/image'
 
-import { EngineConfig, InferenceEngine } from '@janhq/core'
+import { EngineConfig, EngineManager, InferenceEngine } from '@janhq/core'
 import {
   Badge,
   Button,
@@ -93,6 +93,7 @@ const ModelDropdown = ({
     null
   )
   const { sources: featuredModels } = useGetFeaturedSources()
+  const [engineExt, setEngineExt] = useState([])
 
   const { engines } = useGetEngines()
 
@@ -107,13 +108,33 @@ const ModelDropdown = ({
 
   const engineList = useMemo(
     () =>
-      Object.entries(engines ?? {}).flatMap((e) => ({
-        name: e[0],
-        type: e[1][0]?.type === 'remote' ? 'remote' : 'local',
-        engine: e[1][0],
-      })),
-    [engines]
+      Object.entries(engines ?? {})
+        .flatMap((e) => ({
+          name: e[0],
+          type: e[1][0]?.type === 'remote' ? 'remote' : 'local',
+          engine: e[1][0],
+        }))
+        .concat(engineExt),
+    [engines, engineExt]
   )
+
+  useEffect(() => {
+    EngineManager.instance()
+      .engines.entries()
+      .forEach((e) => {
+        // @ts-ignore
+        setEngineExt((prev) => {
+          return [
+            ...prev,
+            {
+              name: e[0],
+              type: 'local',
+              engine: e[0],
+            },
+          ]
+        })
+      })
+  }, [])
 
   useClickOutside(() => handleChangeStateOpen(false), null, [
     dropdownOptions,
@@ -132,44 +153,45 @@ const ModelDropdown = ({
     [setModelDropdownState]
   )
 
-  const filteredDownloadedModels = useMemo(
-    () =>
-      configuredModels
-        .concat(
-          downloadedModels.filter(
-            (e) => !configuredModels.some((x) => x.id === e.id)
-          )
-        )
-        .filter((e) =>
-          e.name.toLowerCase().includes(searchText.toLowerCase().trim())
-        )
-        .filter((e) => {
-          if (searchFilter === 'local') {
-            return (
-              engineList.find((t) => t.engine?.engine === e.engine)?.type ===
-              'local'
-            )
-          }
-          return true
-        })
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .sort((a, b) => {
-          const aInDownloadedModels = downloadedModels.some(
-            (item) => item.id === a.id
-          )
-          const bInDownloadedModels = downloadedModels.some(
-            (item) => item.id === b.id
-          )
-          if (aInDownloadedModels && !bInDownloadedModels) {
-            return -1
-          } else if (!aInDownloadedModels && bInDownloadedModels) {
-            return 1
-          } else {
-            return 0
-          }
-        }),
-    [configuredModels, searchText, searchFilter, downloadedModels, engineList]
-  )
+  // const filteredDownloadedModels = useMemo(
+  //   () =>
+  //     configuredModels
+  //       .concat(
+  //         downloadedModels.filter(
+  //           (e) => !configuredModels.some((x) => x.id === e.id)
+  //         )
+  //       )
+  //       .filter((e) =>
+  //         e.name.toLowerCase().includes(searchText.toLowerCase().trim())
+  //       )
+  //       .filter((e) => {
+  //         if (searchFilter === 'local') {
+  //           return (
+  //             engineList.find((t) => t.engine?.engine === e.engine)?.type ===
+  //             'local'
+  //           )
+  //         }
+  //         return true
+  //       })
+  //       .sort((a, b) => a.name.localeCompare(b.name))
+  //       .sort((a, b) => {
+  //         const aInDownloadedModels = downloadedModels.some(
+  //           (item) => item.id === a.id
+  //         )
+  //         const bInDownloadedModels = downloadedModels.some(
+  //           (item) => item.id === b.id
+  //         )
+  //         if (aInDownloadedModels && !bInDownloadedModels) {
+  //           return -1
+  //         } else if (!aInDownloadedModels && bInDownloadedModels) {
+  //           return 1
+  //         } else {
+  //           return 0
+  //         }
+  //       }),
+  //   [configuredModels, searchText, searchFilter, downloadedModels, engineList]
+  // )
+  // console.log(filteredDownloadedModels)
 
   useEffect(() => {
     if (modelDropdownState && chatInputMode) {
@@ -388,7 +410,7 @@ const ModelDropdown = ({
                 (e) =>
                   e.type === 'remote' ||
                   e.name === InferenceEngine.cortex_llamacpp ||
-                  filteredDownloadedModels.some((e) => e.engine === e.name)
+                  configuredModels.some((e) => e.engine === e.name)
               )
               .map((engine, i) => {
                 const isConfigured =
@@ -457,7 +479,7 @@ const ModelDropdown = ({
                       </div>
 
                       {engine.type === 'local' &&
-                        !isDownloadALocalModel &&
+                        // !isDownloadALocalModel &&
                         showModel &&
                         !searchText.length && (
                           <ul className="pb-2">
@@ -524,15 +546,9 @@ const ModelDropdown = ({
                         )}
 
                       <ul className="pb-2">
-                        {filteredDownloadedModels
-                          .filter(
-                            (x) =>
-                              x.engine === engine.name ||
-                              (x.engine === InferenceEngine.nitro &&
-                                engine.name === InferenceEngine.cortex_llamacpp)
-                          )
+                        {configuredModels
                           .filter((y) => {
-                            if (isLocalEngine(y.engine) && !searchText.length) {
+                            if (!searchText.length) {
                               return downloadedModels.find((c) => c.id === y.id)
                             } else {
                               return y
