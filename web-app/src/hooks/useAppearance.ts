@@ -11,11 +11,14 @@ interface AppearanceState {
   fontSize: FontSize
   appBgColor: RgbaColor
   appMainViewBgColor: RgbaColor
+  appPrimaryBgColor: RgbaColor
   appMainViewTextColor: string
+  appPrimaryTextColor: string
   appLeftPanelTextColor: string
   setFontSize: (size: FontSize) => void
   setAppBgColor: (color: RgbaColor) => void
   setAppMainViewBgColor: (color: RgbaColor) => void
+  setAppPrimaryBgColor: (color: RgbaColor) => void
 }
 
 const getBrightness = ({ r, g, b }: RgbaColor) =>
@@ -39,6 +42,8 @@ const defaultLightAppMainViewBgColor: RgbaColor = {
   b: 250,
   a: 1,
 }
+const defaultAppPrimaryBgColor: RgbaColor = { r: 45, g: 80, b: 220, a: 1 }
+const defaultLightAppPrimaryBgColor: RgbaColor = { r: 45, g: 80, b: 220, a: 1 }
 const defaultDarkLeftPanelTextColor: string = '#FFF'
 const defaultLightLeftPanelTextColor: string = '#000'
 
@@ -67,6 +72,13 @@ export const isDefaultColorMainView = (color: RgbaColor): boolean => {
   )
 }
 
+export const isDefaultColorPrimary = (color: RgbaColor): boolean => {
+  return (
+    isColorEqual(color, defaultAppPrimaryBgColor) ||
+    isColorEqual(color, defaultLightAppPrimaryBgColor)
+  )
+}
+
 // Helper function to get default text color based on theme
 export const getDefaultTextColor = (isDark: boolean): string => {
   return isDark ? defaultDarkLeftPanelTextColor : defaultLightLeftPanelTextColor
@@ -79,8 +91,10 @@ export const useAppearance = create<AppearanceState>()(
         fontSize: defaultFontSize,
         appBgColor: defaultAppBgColor,
         appMainViewBgColor: defaultAppMainViewBgColor,
+        appPrimaryBgColor: defaultAppPrimaryBgColor,
         appLeftPanelTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appMainViewTextColor: getDefaultTextColor(useTheme.getState().isDark),
+        appPrimaryTextColor: getDefaultTextColor(useTheme.getState().isDark),
 
         setFontSize: (size: FontSize) => {
           // Update CSS variable
@@ -179,7 +193,7 @@ export const useAppearance = create<AppearanceState>()(
 
           // Update CSS variable for text color
           document.documentElement.style.setProperty(
-            '--text-main-view-color',
+            '--app-main-view-fg',
             textColor
           )
 
@@ -187,6 +201,60 @@ export const useAppearance = create<AppearanceState>()(
           set({
             appMainViewBgColor: finalColorMainView,
             appMainViewTextColor: textColor,
+          })
+        },
+
+        setAppPrimaryBgColor: (color: RgbaColor) => {
+          // Get the current theme state
+          const { isDark } = useTheme.getState()
+
+          // If color is being set to default, use theme-appropriate default
+          let finalColorPrimary = color
+          if (isDefaultColorPrimary(color)) {
+            finalColorPrimary = isDark
+              ? defaultAppPrimaryBgColor
+              : defaultLightAppPrimaryBgColor
+          }
+
+          // Convert RGBA to a format culori can work with
+          const culoriRgb = rgb({
+            mode: 'rgb',
+            r: finalColorPrimary.r / 255,
+            g: finalColorPrimary.g / 255,
+            b: finalColorPrimary.b / 255,
+            alpha: finalColorPrimary.a,
+          })
+
+          // Convert to OKLCH for CSS variable
+          const oklchColor = oklch(culoriRgb)
+
+          // Update CSS variable with OKLCH
+          document.documentElement.style.setProperty(
+            '--app-primary',
+            formatCss(oklchColor)
+          )
+
+          // Calculate text color based on background brightness or use default based on theme
+          let textColor: string
+
+          if (isDefaultColorPrimary(color)) {
+            // If using default background, use default text color based on theme
+            textColor = '#FFF'
+          } else {
+            // Otherwise calculate based on brightness
+            textColor = getBrightness(finalColorPrimary) > 128 ? '#000' : '#FFF'
+          }
+
+          // Update CSS variable for text color
+          document.documentElement.style.setProperty(
+            '--app-primary-fg',
+            textColor
+          )
+
+          // Store the original RGBA and calculated text color in state
+          set({
+            appPrimaryBgColor: finalColorPrimary,
+            appPrimaryTextColor: textColor,
           })
         },
       }
@@ -212,11 +280,18 @@ export const useAppearance = create<AppearanceState>()(
             finalColor = isDark ? defaultAppBgColor : defaultLightAppBgColor
           }
 
-          let finalColorMainView = state.appBgColor
+          let finalColorMainView = state.appMainViewBgColor
           if (isDefaultColorMainView(state.appMainViewBgColor)) {
             finalColorMainView = isDark
               ? defaultAppMainViewBgColor
               : defaultLightAppMainViewBgColor
+          }
+
+          let finalColorPrimary = state.appPrimaryBgColor
+          if (isDefaultColorPrimary(state.appPrimaryBgColor)) {
+            finalColorPrimary = isDark
+              ? defaultAppPrimaryBgColor
+              : defaultLightAppPrimaryBgColor
           }
 
           // Apply app background color from storage
@@ -237,8 +312,18 @@ export const useAppearance = create<AppearanceState>()(
             alpha: finalColorMainView.a,
           })
 
+          const culoriRgbPrimaryColor = rgb({
+            mode: 'rgb',
+            r: finalColorPrimary.r / 255,
+            g: finalColorPrimary.g / 255,
+            b: finalColorPrimary.b / 255,
+            alpha: finalColorPrimary.a,
+          })
+
           // Convert to OKLCH for CSS variable
           const oklchColor = oklch(culoriRgb)
+          const oklchMainViewColor = oklch(culoriRgbMainViewColor)
+          const oklchPrimaryColor = oklch(culoriRgbPrimaryColor)
 
           document.documentElement.style.setProperty(
             '--app-bg',
@@ -247,7 +332,12 @@ export const useAppearance = create<AppearanceState>()(
 
           document.documentElement.style.setProperty(
             '--app-main-view',
-            formatCss(culoriRgbMainViewColor)
+            formatCss(oklchMainViewColor)
+          )
+
+          document.documentElement.style.setProperty(
+            '--app-primary',
+            formatCss(oklchPrimaryColor)
           )
 
           // Calculate and apply text color
@@ -266,7 +356,7 @@ export const useAppearance = create<AppearanceState>()(
             textColor
           )
 
-          // Calculate and apply text color
+          // Calculate and apply text color for main view
           let textColorMainView: string
 
           if (isDefaultColorMainView(state.appMainViewBgColor)) {
@@ -275,12 +365,29 @@ export const useAppearance = create<AppearanceState>()(
           } else {
             // Otherwise calculate based on brightness
             textColorMainView =
-              getBrightness(finalColor) > 128 ? '#000' : '#FFF'
+              getBrightness(finalColorMainView) > 128 ? '#000' : '#FFF'
           }
 
           document.documentElement.style.setProperty(
             '--app-main-view-fg',
             textColorMainView
+          )
+
+          // Calculate and apply text color for primary
+          let textColorPrimary: string
+
+          if (isDefaultColorPrimary(state.appPrimaryBgColor)) {
+            // If using default background, use default text color based on theme
+            textColorPrimary = getDefaultTextColor(isDark)
+          } else {
+            // Otherwise calculate based on brightness
+            textColorPrimary =
+              getBrightness(finalColorPrimary) > 128 ? '#000' : '#FFF'
+          }
+
+          document.documentElement.style.setProperty(
+            '--app-primary-fg',
+            textColorPrimary
           )
 
           // We don't need to update the state here as it will be handled by the store

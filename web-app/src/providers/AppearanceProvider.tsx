@@ -5,6 +5,7 @@ import {
   isDefaultColor,
   getDefaultTextColor,
   isDefaultColorMainView,
+  isDefaultColorPrimary,
 } from '@/hooks/useAppearance'
 
 /**
@@ -18,6 +19,8 @@ export function AppearanceProvider() {
     appLeftPanelTextColor,
     appMainViewBgColor,
     appMainViewTextColor,
+    appPrimaryBgColor,
+    appPrimaryTextColor,
   } = useAppearance()
   const { isDark } = useTheme()
 
@@ -46,9 +49,18 @@ export function AppearanceProvider() {
         alpha: appMainViewBgColor.a,
       })
 
+      const culoriRgbPrimary = rgb({
+        mode: 'rgb',
+        r: appPrimaryBgColor.r / 255,
+        g: appPrimaryBgColor.g / 255,
+        b: appPrimaryBgColor.b / 255,
+        alpha: appPrimaryBgColor.a,
+      })
+
       // Convert to OKLCH for CSS variable
       const oklchColor = oklch(culoriRgb)
       const oklchColormainViewApp = oklch(culoriRgbMainView)
+      const oklchColorPrimary = oklch(culoriRgbPrimary)
 
       if (oklchColor) {
         document.documentElement.style.setProperty(
@@ -60,6 +72,12 @@ export function AppearanceProvider() {
         document.documentElement.style.setProperty(
           '--app-main-view',
           formatCss(oklchColormainViewApp)
+        )
+      }
+      if (oklchColorPrimary) {
+        document.documentElement.style.setProperty(
+          '--app-primary',
+          formatCss(oklchColorPrimary)
         )
       }
     })
@@ -75,6 +93,12 @@ export function AppearanceProvider() {
       '--app-main-view-fg',
       appMainViewTextColor
     )
+
+    // Apply text color based on background brightness for primary
+    document.documentElement.style.setProperty(
+      '--app-primary-fg',
+      appPrimaryTextColor
+    )
   }, [
     fontSize,
     appBgColor,
@@ -82,6 +106,8 @@ export function AppearanceProvider() {
     isDark,
     appMainViewBgColor,
     appMainViewTextColor,
+    appPrimaryBgColor,
+    appPrimaryTextColor,
   ])
 
   // Update appearance when theme changes
@@ -90,8 +116,10 @@ export function AppearanceProvider() {
     const {
       appBgColor,
       appMainViewBgColor,
+      appPrimaryBgColor,
       setAppBgColor,
       setAppMainViewBgColor,
+      setAppPrimaryBgColor,
     } = useAppearance.getState()
 
     // If using default background color, update it when theme changes
@@ -125,7 +153,23 @@ export function AppearanceProvider() {
         textColorMainView
       )
     }
-  }, [isDark, appLeftPanelTextColor, appMainViewTextColor])
+
+    // If using default primary color, update it when theme changes
+    if (isDefaultColorPrimary(appPrimaryBgColor)) {
+      // This will trigger the appropriate updates for both background and text color
+      setAppPrimaryBgColor(appPrimaryBgColor)
+    } else {
+      // If using custom background, just update the text color if needed
+      const textColorPrimary = isDefaultColorPrimary(appPrimaryBgColor)
+        ? getDefaultTextColor(isDark)
+        : appPrimaryTextColor
+
+      document.documentElement.style.setProperty(
+        '--app-primary-fg',
+        textColorPrimary
+      )
+    }
+  }, [isDark, appLeftPanelTextColor, appMainViewTextColor, appPrimaryTextColor])
 
   return null
 }
