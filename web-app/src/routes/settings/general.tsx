@@ -25,8 +25,7 @@ function General() {
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
-
-        <div className="p-4 w-full overflow-y-auto">
+        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-2 w-full">
             {/* General */}
             <CardSetting title={t('common.general')}>
@@ -42,11 +41,11 @@ function General() {
                 })}
                 actions={<Switch />}
               />
+              <CardSettingItem
+                title={t('common.language')}
+                actions={<LanguageSwitcher />}
+              />
             </CardSetting>
-            <CardSettingItem
-              title={t('common.language')}
-              actions={<LanguageSwitcher />}
-            />
 
             {/* Data folder */}
             <CardSetting title={t('common.dataFolder')}>
