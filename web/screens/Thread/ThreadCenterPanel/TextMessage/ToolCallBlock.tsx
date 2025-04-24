@@ -49,11 +49,11 @@ const ToolCallBlock = ({ id, name, result, loading, onExpand }: Props) => {
 
         <ScrollArea
           className={twMerge(
-            'w-full overflow-hidden transition-all duration-300',
-            isExpanded ? 'max-h-96' : 'max-h-0'
+            'h-fit w-full overflow-auto transition-all duration-300',
+            isExpanded ? 'max-h-44' : 'max-h-0 overflow-hidden'
           )}
         >
-          <div className="mt-2 overflow-x-hidden pl-6 text-[hsla(var(--text-secondary))]">
+          <div className="mt-2 inline-block overflow-x-hidden pl-6 text-[hsla(var(--text-secondary))]">
             <span>{result ?? ''} </span>
           </div>
         </ScrollArea>
