@@ -1,0 +1,19 @@
+{
+  "common": {
+    "general": "General",
+    "settings": "Settings",
+    "modelProviders": "Model Providers",
+    "appearance": "Appearance",
+    "privacy": "Privacy",
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "newChat": "New Chat",
+    "favorites": "Favorites",
+    "recents": "Recents",
+    "miniApps": "Mini Apps",
+    "helpSupport": "Help & Support",
+
+    "placeholder": {
+      "chatInput": "Ask me anything..."
+    }
+  }
+}

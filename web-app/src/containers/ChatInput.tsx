@@ -12,6 +12,8 @@ import {
   IconAtom,
   IconMicrophone,
 } from '@tabler/icons-react'
+import { useTranslation } from 'react-i18next'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 
 type ChatInputProps = {
   className?: string
@@ -29,6 +31,8 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const { prompt, setPrompt } = usePrompt()
+  const { t } = useTranslation()
+  const { spellCheckChatInput } = useGeneralSetting()
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -79,10 +83,12 @@ const ChatInput = ({
             e.preventDefault()
           }
         }}
-        placeholder="Ask me anything..."
+        placeholder={t('common.placeholder.chatInput')}
         autoFocus
-        spellCheck={false}
-        data-gramm={false}
+        spellCheck={spellCheckChatInput}
+        data-gramm={spellCheckChatInput}
+        data-gramm_editor={spellCheckChatInput}
+        data-gramm_grammarly={spellCheckChatInput}
         className={cn(
           'bg-transparent w-full flex-shrink-0 border-none resize-none outline-0 px-4',
           className

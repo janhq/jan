@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
+import { useTranslation } from 'react-i18next'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.home as any)({
@@ -9,6 +10,8 @@ export const Route = createFileRoute(route.home as any)({
 })
 
 function Index() {
+  const { t } = useTranslation()
+
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
@@ -18,12 +21,13 @@ function Index() {
         <div className="w-4/6 mx-auto">
           <div className="mb-8 text-center">
             <h1 className="font-editorialnew text-main-view-fg text-4xl">
-              Hi, how are you?
+              {t('chat.welcome', { ns: 'chat' })}
             </h1>
             <p className="text-main-view-fg/70 text-lg mt-2">
-              How can I help you today?
+              {t('chat.description', { ns: 'chat' })}
             </p>
           </div>
+
           <div className="flex-1 shrink-0">
             <ChatInput />
           </div>

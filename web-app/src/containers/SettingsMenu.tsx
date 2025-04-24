@@ -1,30 +1,32 @@
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useTranslation } from 'react-i18next'
 
 const menuSettings = [
   {
-    title: 'Model Providers',
+    title: 'common.modelProviders',
     route: route.settings.modelProviders,
   },
   {
-    title: 'General',
+    title: 'common.general',
     route: route.settings.general,
   },
   {
-    title: 'Appearance',
+    title: 'common.appearance',
     route: route.settings.appearance,
   },
   {
-    title: 'Privacy',
+    title: 'common.privacy',
     route: route.settings.privacy,
   },
   {
-    title: 'Keyboard Shortcuts',
+    title: 'common.keyboardShortcuts',
     route: route.settings.shortcuts,
   },
 ]
 
 const SettingsMenu = () => {
+  const { t } = useTranslation()
   return (
     <div className="flex h-full w-48 shrink-0 px-1.5 pt-3 border-r border-main-view-fg/5">
       <div className="flex flex-col gap-1 w-full text-main-view-fg/90 font-medium">
@@ -35,7 +37,7 @@ const SettingsMenu = () => {
               to={menu.route}
               className="block px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5"
             >
-              <span>{menu.title}</span>
+              <span>{t(menu.title)}</span>
             </Link>
           )
         })}
