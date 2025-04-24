@@ -173,7 +173,7 @@ const MCPSearch = () => {
       // Check if this server already exists
       if (config.mcpServers[serverName]) {
         toaster({
-          title: `Add ${serverName} success`,
+          title: `Add ${serverName}`,
           description: `Server ${serverName} already exists in configuration`,
           type: 'error',
         })
@@ -194,7 +194,7 @@ const MCPSearch = () => {
       await window.core?.api?.restartMcpServers()
 
       toaster({
-        title: `Add ${serverName} success`,
+        title: `Add ${serverName}`,
         description: `Added ${serverName} to MCP configuration`,
         type: 'success',
       })
