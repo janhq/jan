@@ -1,0 +1,19 @@
+{
+  "common": {
+    "general": "Umum",
+    "settings": "Pengaturan",
+    "modelProviders": "Penyedia Model",
+    "appearance": "Tampilan",
+    "privacy": "Privasi",
+    "keyboardShortcuts": "Pintasan Keyboard",
+    "newChat": "Obrolan Baru",
+    "favorites": "Favorit",
+    "recents": "Terbaru",
+    "miniApps": "Aplikasi Mini",
+    "helpSupport": "Bantuan & Dukungan",
+
+    "placeholder": {
+      "chatInput": "Tanya apa saja..."
+    }
+  }
+}
