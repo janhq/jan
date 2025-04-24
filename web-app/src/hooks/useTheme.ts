@@ -27,8 +27,8 @@ export const useTheme = create<ThemeState>()(
         isDark: checkOSDarkMode(),
         setTheme: async (activeTheme: AppTheme) => {
           if (activeTheme === 'auto') {
-            await getCurrentWindow().setTheme(null)
             const isDarkMode = checkOSDarkMode()
+            await getCurrentWindow().setTheme(null)
             set(() => ({ activeTheme, isDark: isDarkMode }))
           } else {
             await getCurrentWindow().setTheme(activeTheme as Theme)

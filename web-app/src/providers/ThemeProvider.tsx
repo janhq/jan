@@ -25,7 +25,6 @@ export function ThemeProvider() {
       // Only update if theme is set to auto
       if (activeTheme === 'auto') {
         setIsDark(e.matches)
-        setTheme('auto')
       } else {
         setTheme(e.matches ? 'dark' : 'light')
       }
