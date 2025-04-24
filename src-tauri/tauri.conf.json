@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../web/out",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "IS_TAURI=true yarn dev:web",
-    "beforeBuildCommand": "IS_TAURI=true yarn build:web"
+    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {
     "macOSPrivateApi": true,

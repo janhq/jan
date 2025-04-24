@@ -4,3 +4,4 @@
 /gen/schemas
 binaries
 !binaries/download.sh
+!binaries/download.bat
