@@ -11,6 +11,16 @@
     "recents": "Recents",
     "miniApps": "Mini Apps",
     "helpSupport": "Help & Support",
+    "unstarAll": "Unstar All",
+    "unstar": "Unstar",
+    "deleteAll": "Delete All",
+    "star": "Star",
+    "rename": "Rename",
+    "delete": "Delete",
+    "dataFolder": "Data Folder",
+    "others": "Other",
+    "language": "Language",
+    "reset": "Reset",
 
     "placeholder": {
       "chatInput": "Ask me anything..."

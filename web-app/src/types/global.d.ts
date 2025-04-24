@@ -1,1 +1,1 @@
-type Language = 'en' | 'id'
+type Language = 'en' | 'id' | 'vn'

@@ -116,14 +116,10 @@ const LeftPanel = () => {
                             />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          className="w-24"
-                          side="bottom"
-                          align="end"
-                        >
+                        <DropdownMenuContent side="bottom" align="end">
                           <DropdownMenuItem onClick={unstarAllThreads}>
                             <IconStar size={16} className="mr-1" />
-                            <span>Unstar All</span>
+                            <span>{t('common.unstarAll')}</span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -154,14 +150,10 @@ const LeftPanel = () => {
                             />
                           </button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                          className="w-24"
-                          side="bottom"
-                          align="end"
-                        >
+                        <DropdownMenuContent side="bottom" align="end">
                           <DropdownMenuItem onClick={deleteAllThreads}>
                             <IconTrash size={16} className="mr-1" />
-                            <span>Delete All</span>
+                            <span>{t('common.deleteAll')}</span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

@@ -31,38 +31,54 @@ function General() {
             {/* General */}
             <CardSetting title={t('common.general')}>
               <CardSettingItem
-                title="Start Automatically on boot"
+                title={t('settings.general.autoStart', {
+                  ns: 'settings',
+                })}
                 actions={<Switch />}
               />
               <CardSettingItem
-                title="Language"
-                actions={<LanguageSwitcher />}
-              />
-              <CardSettingItem
-                title="Automatic download new updates"
+                title={t('settings.general.autoDownload', {
+                  ns: 'settings',
+                })}
                 actions={<Switch />}
               />
             </CardSetting>
+            <CardSettingItem
+              title={t('common.language')}
+              actions={<LanguageSwitcher />}
+            />
 
             {/* Data folder */}
-            <CardSetting title="Data Folder">
+            <CardSetting title={t('common.dataFolder')}>
               <CardSettingItem
-                title="App Data"
-                description="Default location for messages and other user data."
+                title={t('settings.dataFolder.appData', {
+                  ns: 'settings',
+                })}
+                description={t('settings.dataFolder.appDataDesc', {
+                  ns: 'settings',
+                })}
                 actions={<></>}
               />
               <CardSettingItem
-                title="App Logs"
-                description="Default location App Logs"
+                title={t('settings.dataFolder.appLogs', {
+                  ns: 'settings',
+                })}
+                description={t('settings.dataFolder.appLogsDesc', {
+                  ns: 'settings',
+                })}
                 actions={<></>}
               />
             </CardSetting>
 
             {/* Other */}
-            <CardSetting title="Others">
+            <CardSetting title={t('common.others')}>
               <CardSettingItem
-                title="Spell Check"
-                description="Turn on to enable spell check chat input."
+                title={t('settings.others.spellCheck', {
+                  ns: 'settings',
+                })}
+                description={t('settings.others.spellCheckDesc', {
+                  ns: 'settings',
+                })}
                 actions={
                   <Switch
                     checked={spellCheckChatInput}
@@ -71,11 +87,15 @@ function General() {
                 }
               />
               <CardSettingItem
-                title="Reset To Factory Settings"
-                description="Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted."
+                title={t('settings.others.resetFactory', {
+                  ns: 'settings',
+                })}
+                description={t('settings.others.resetFactoryDesc', {
+                  ns: 'settings',
+                })}
                 actions={
                   <Button variant="destructive" size="sm">
-                    Reset
+                    {t('common.reset')}
                   </Button>
                 }
               />

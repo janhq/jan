@@ -11,6 +11,16 @@
     "recents": "Terbaru",
     "miniApps": "Aplikasi Mini",
     "helpSupport": "Bantuan & Dukungan",
+    "unstarAll": "Hapus Bintang",
+    "unstar": "Hapus Bintang",
+    "deleteAll": "Hapus Semua",
+    "star": "Bintang",
+    "rename": "Ganti Nama",
+    "delete": "Hapus",
+    "dataFolder": "Folder Data",
+    "others": "Lainnya",
+    "language": "Bahasa",
+    "reset": "Atur Ulang",
 
     "placeholder": {
       "chatInput": "Tanya apa saja..."
