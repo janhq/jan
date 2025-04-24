@@ -5,12 +5,14 @@ import LeftPanel from '@/containers/LeftPanel'
 import { Fragment } from 'react/jsx-runtime'
 import { AppearanceProvider } from '@/providers/AppearanceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
+import { KeyboardShortcuts } from '@/providers/KeyboardShortcuts'
 
 export const Route = createRootRoute({
   component: () => (
     <Fragment>
       <ThemeProvider />
       <AppearanceProvider />
+      <KeyboardShortcuts />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-2 z-50" data-tauri-drag-region />
