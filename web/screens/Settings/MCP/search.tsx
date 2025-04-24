@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 
 import { Button, Input } from '@janhq/joi'
+import { useAtom } from 'jotai'
+import { atomWithStorage } from 'jotai/utils'
 import { PlusIcon } from 'lucide-react'
 import { npxFinder, NPMPackage } from 'npx-scope-finder'
 
@@ -16,12 +18,13 @@ interface MCPConfig {
   }
 }
 
+const mcpPackagesAtom = atomWithStorage<NPMPackage[]>('mcpPackages', [])
 const MCPSearch = () => {
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [toastType, setToastType] = useState<'success' | 'error'>('success')
   const [orgName, setOrgName] = useState('@modelcontextprotocol')
-  const [packages, setPackages] = useState<NPMPackage[]>([])
+  const [packages, setPackages] = useAtom(mcpPackagesAtom)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -170,7 +173,7 @@ const MCPSearch = () => {
       // Check if this server already exists
       if (config.mcpServers[serverName]) {
         toaster({
-          title: `Add ${serverName} success`,
+          title: `Add ${serverName}`,
           description: `Server ${serverName} already exists in configuration`,
           type: 'error',
         })
@@ -191,7 +194,7 @@ const MCPSearch = () => {
       await window.core?.api?.restartMcpServers()
 
       toaster({
-        title: `Add ${serverName} success`,
+        title: `Add ${serverName}`,
         description: `Added ${serverName} to MCP configuration`,
         type: 'success',
       })
