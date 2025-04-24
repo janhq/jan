@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::Value;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tokio::{process::Command, sync::Mutex};
 
 use super::{cmd::get_jan_data_folder_path, state::AppState};
@@ -24,7 +24,6 @@ pub async fn run_mcp_commands(
         "Load MCP configs from {}",
         app_path.clone() + "/mcp_config.json"
     );
-    // let mut client_list = HashMap::new();
     let config_content = std::fs::read_to_string(app_path.clone() + "/mcp_config.json")
         .map_err(|e| format!("Failed to read config file: {}", e))?;
 
@@ -81,10 +80,7 @@ fn extract_command_args(
 }
 
 #[tauri::command]
-pub async fn restart_mcp_servers(
-    app: AppHandle,
-    state: State<'_, AppState>, 
-) -> Result<(), String> {
+pub async fn restart_mcp_servers(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
     let app_path_str = app_path.to_str().unwrap().to_string();
     let servers = state.mcp_servers.clone();
@@ -92,7 +88,10 @@ pub async fn restart_mcp_servers(
     stop_mcp_servers(state.mcp_servers.clone()).await?;
 
     // Restart the servers
-    run_mcp_commands(app_path_str, servers).await
+    run_mcp_commands(app_path_str, servers).await?;
+
+    app.emit("mcp-update", "MCP servers updated")
+        .map_err(|e| format!("Failed to emit event: {}", e))
 }
 
 pub async fn stop_mcp_servers(
