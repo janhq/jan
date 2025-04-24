@@ -1,1 +1,1 @@
-declare const IS_TAURI: boolean
+type Language = 'en' | 'id'

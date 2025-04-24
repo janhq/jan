@@ -71,37 +71,24 @@ function SortableItem({ thread }: { thread: Thread }) {
               onClick={(e) => e.stopPropagation()}
             />
           </DropdownMenuTrigger>
-          <DropdownMenuContent
-            className="w-24 bg-neutral-950 text-left-panel-fg border border-neutral-800"
-            side="right"
-            align="start"
-          >
+          <DropdownMenuContent className="w-24 " side="bottom" align="end">
             {thread.isFavorite ? (
-              <DropdownMenuItem
-                className="hover:bg-neutral-900"
-                onClick={() => toggleFavorite(thread.id)}
-              >
+              <DropdownMenuItem onClick={() => toggleFavorite(thread.id)}>
                 <IconStarFilled />
                 <span>Unstar</span>
               </DropdownMenuItem>
             ) : (
-              <DropdownMenuItem
-                className="hover:bg-neutral-900"
-                onClick={() => toggleFavorite(thread.id)}
-              >
+              <DropdownMenuItem onClick={() => toggleFavorite(thread.id)}>
                 <IconStar />
                 <span>Star</span>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem className="hover:bg-neutral-900">
+            <DropdownMenuItem>
               <IconEdit />
               <span>Rename</span>
             </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-neutral-900" />
-            <DropdownMenuItem
-              className="hover:bg-neutral-900"
-              onClick={() => deleteThread(thread.id)}
-            >
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => deleteThread(thread.id)}>
               <IconTrash />
               <span>Delete</span>
             </DropdownMenuItem>

@@ -31,7 +31,9 @@ export function CardSettingItem({
       <div className="space-y-1.5">
         <h1 className="font-medium">{title}</h1>
         {description && (
-          <p className="text-main-view-fg/70 leading-normal">{description}</p>
+          <span className="text-main-view-fg/70 leading-normal">
+            {description}
+          </span>
         )}
       </div>
       <div className="shrink-0">{actions}</div>

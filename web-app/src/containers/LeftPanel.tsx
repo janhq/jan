@@ -23,15 +23,16 @@ import {
 import { useThreads } from '@/hooks/useThreads'
 
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const mainMenus = [
   {
-    title: 'New Chat',
+    title: 'common.newChat',
     icon: IconCirclePlusFilled,
     route: route.home,
   },
   {
-    title: 'Mini Apps',
+    title: 'common.miniApps',
     icon: IconAppsFilled,
     route: route.miniApps,
   },
@@ -39,12 +40,12 @@ const mainMenus = [
 
 const secondaryMenus = [
   {
-    title: 'Help & Support',
+    title: 'common.helpSupport',
     icon: IconLifebuoyFilled,
     route: route.help,
   },
   {
-    title: 'Settings',
+    title: 'common.settings',
     icon: IconSettingsFilled,
     route: route.settings.modelProviders,
   },
@@ -52,6 +53,7 @@ const secondaryMenus = [
 
 const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
+  const { t } = useTranslation()
   const { threads, fetchThreads, deleteAllThreads, unstarAllThreads } =
     useThreads()
 
@@ -72,7 +74,7 @@ const LeftPanel = () => {
           className="absolute top-1/2 right-0 -translate-y-1/2"
           onClick={() => setLeftPanel(!open)}
         >
-          <div className="size-6 flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out">
+          <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out">
             <IconLayoutSidebar size={18} className="text-left-panel-fg" />
           </div>
         </button>
@@ -90,7 +92,7 @@ const LeftPanel = () => {
                 >
                   <menu.icon size={18} className="text-left-panel-fg/70" />
                   <span className="font-medium text-left-panel-fg/90">
-                    {menu.title}
+                    {t(menu.title)}
                   </span>
                 </Link>
               )
@@ -102,12 +104,12 @@ const LeftPanel = () => {
                 <>
                   <div className="flex items-center justify-between mb-2">
                     <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold sticky top-0">
-                      Favorites
+                      {t('common.favorites')}
                     </span>
                     <div className="relative">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="size-6 flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                          <button className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
                             <IconDots
                               size={18}
                               className="text-left-panel-fg/60"
@@ -115,14 +117,11 @@ const LeftPanel = () => {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
-                          className="w-24 bg-neutral-950 text-left-panel-fg border border-neutral-800"
-                          side="right"
-                          align="start"
+                          className="w-24"
+                          side="bottom"
+                          align="end"
                         >
-                          <DropdownMenuItem
-                            className="hover:bg-left-panel-fg"
-                            onClick={unstarAllThreads}
-                          >
+                          <DropdownMenuItem onClick={unstarAllThreads}>
                             <IconStar size={16} className="mr-1" />
                             <span>Unstar All</span>
                           </DropdownMenuItem>
@@ -143,12 +142,12 @@ const LeftPanel = () => {
                 <>
                   <div className="flex items-center justify-between mb-2">
                     <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                      Recents
+                      {t('common.recents')}
                     </span>
                     <div className="relative">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button className="size-6 flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                          <button className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
                             <IconDots
                               size={18}
                               className="text-left-panel-fg/60"
@@ -156,14 +155,11 @@ const LeftPanel = () => {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
-                          className="w-24 bg-neutral-950 text-left-panel-fg border border-neutral-800"
-                          side="right"
-                          align="start"
+                          className="w-24"
+                          side="bottom"
+                          align="end"
                         >
-                          <DropdownMenuItem
-                            className="hover:bg-left-panel-fg"
-                            onClick={deleteAllThreads}
-                          >
+                          <DropdownMenuItem onClick={deleteAllThreads}>
                             <IconTrash size={16} className="mr-1" />
                             <span>Delete All</span>
                           </DropdownMenuItem>
@@ -193,7 +189,7 @@ const LeftPanel = () => {
                 >
                   <menu.icon size={18} className="text-left-panel-fg/70" />
                   <span className="font-medium text-left-panel-fg/90">
-                    {menu.title}
+                    {t(menu.title)}
                   </span>
                 </Link>
               )

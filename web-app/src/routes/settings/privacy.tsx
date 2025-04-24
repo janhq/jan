@@ -4,6 +4,7 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
 import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { useTranslation } from 'react-i18next'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.privacy as any)({
@@ -11,10 +12,12 @@ export const Route = createFileRoute(route.settings.privacy as any)({
 })
 
 function Privacy() {
+  const { t } = useTranslation()
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">Settings</h1>
+        <h1 className="font-medium">{t('common.settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
