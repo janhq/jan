@@ -24,6 +24,7 @@ enum ThreadStorageAtomKeys {
   ThreadStates = 'threadStates',
   ThreadList = 'threadList',
   ThreadListReady = 'threadListReady',
+  DisabledTools = 'disabledTools',
 }
 
 //// Threads Atom
@@ -71,6 +72,19 @@ export const threadDataReadyAtom = atomWithStorage<boolean>(
  * Store model params at thread level settings
  */
 export const threadModelParamsAtom = atom<Record<string, ModelParams>>({})
+
+/**
+ * Store the tool call approval for thread id
+ */
+export const approvedThreadToolsAtom = atom<Record<string, string[]>>({})
+
+/**
+ * Store the tool call disabled for thread id
+ */
+export const disabledThreadToolsAtom = atomWithStorage<string[]>(
+  ThreadStorageAtomKeys.DisabledTools,
+  []
+)
 
 //// End Thread Atom
 

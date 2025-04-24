@@ -2,7 +2,10 @@ use std::{collections::HashMap, sync::Arc};
 
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::Value;
+use tauri::{AppHandle, State};
 use tokio::{process::Command, sync::Mutex};
+
+use super::{cmd::get_jan_data_folder_path, state::AppState};
 
 /// Runs MCP commands by reading configuration from a JSON file and initializing servers
 ///
@@ -75,6 +78,35 @@ fn extract_command_args(
         .as_object()?
         .clone();
     Some((command, args, envs))
+}
+
+#[tauri::command]
+pub async fn restart_mcp_servers(
+    app: AppHandle,
+    state: State<'_, AppState>, 
+) -> Result<(), String> {
+    let app_path = get_jan_data_folder_path(app.clone());
+    let app_path_str = app_path.to_str().unwrap().to_string();
+    let servers = state.mcp_servers.clone();
+    // Stop the servers
+    stop_mcp_servers(state.mcp_servers.clone()).await?;
+
+    // Restart the servers
+    run_mcp_commands(app_path_str, servers).await
+}
+
+pub async fn stop_mcp_servers(
+    servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+) -> Result<(), String> {
+    let mut servers_map = servers_state.lock().await;
+    let keys: Vec<String> = servers_map.keys().cloned().collect();
+    for key in keys {
+        if let Some(service) = servers_map.remove(&key) {
+            service.cancel().await.map_err(|e| e.to_string())?;
+        }
+    }
+    drop(servers_map); // Release the lock after stopping
+    Ok(())
 }
 
 #[cfg(test)]

@@ -16,16 +16,11 @@ import {
   EngineManager,
   InferenceEngine,
   extractInferenceParams,
-  ModelExtension,
 } from '@janhq/core'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ulid } from 'ulidx'
 
 import { activeModelAtom, stateModelAtom } from '@/hooks/useActiveModel'
-
-import { useGetEngines } from '@/hooks/useEngineManagement'
-
-import { isLocalEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension'
 import {
@@ -33,7 +28,6 @@ import {
   addNewMessageAtom,
   updateMessageAtom,
   tokenSpeedAtom,
-  deleteMessageAtom,
   subscribedGeneratingMessageAtom,
 } from '@/helpers/atoms/ChatMessage.atom'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
@@ -54,7 +48,6 @@ export default function ModelHandler() {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const deleteMessage = useSetAtom(deleteMessageAtom)
   const activeModel = useAtomValue(activeModelAtom)
   const setActiveModel = useSetAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
@@ -77,7 +70,6 @@ export default function ModelHandler() {
   const activeModelParamsRef = useRef(activeModelParams)
 
   const [tokenSpeed, setTokenSpeed] = useAtom(tokenSpeedAtom)
-  const { engines } = useGetEngines()
   const tokenSpeedRef = useRef(tokenSpeed)
 
   useEffect(() => {
@@ -216,76 +208,66 @@ export default function ModelHandler() {
             model: activeModelRef.current?.name,
           }
         })
-        return
-      } else if (
-        message.status === MessageStatus.Error &&
-        activeModelRef.current?.engine &&
-        engines &&
-        isLocalEngine(engines, activeModelRef.current.engine)
-      ) {
-        extensionManager
-          .get<ModelExtension>(ExtensionTypeEnum.Model)
-          ?.isModelLoaded(activeModelRef.current?.id as string)
-          .then((isLoaded) => {
-            if (!isLoaded) {
-              setActiveModel(undefined)
-              setStateModel({
-                state: 'start',
-                loading: false,
-                model: undefined,
-              })
-            }
-          })
-      }
-      // Mark the thread as not waiting for response
-      updateThreadWaiting(message.thread_id, false)
+      } else {
+        // Mark the thread as not waiting for response
+        updateThreadWaiting(message.thread_id, false)
 
-      setIsGeneratingResponse(false)
+        setIsGeneratingResponse(false)
 
-      const thread = threadsRef.current?.find((e) => e.id == message.thread_id)
-      if (!thread) return
+        const thread = threadsRef.current?.find(
+          (e) => e.id == message.thread_id
+        )
+        if (!thread) return
 
-      const messageContent = message.content[0]?.text?.value
+        const messageContent = message.content[0]?.text?.value
 
-      const metadata = {
-        ...thread.metadata,
-        ...(messageContent && { lastMessage: messageContent }),
-        updated_at: Date.now(),
-      }
+        const metadata = {
+          ...thread.metadata,
+          ...(messageContent && { lastMessage: messageContent }),
+          updated_at: Date.now(),
+        }
 
-      updateThread({
-        ...thread,
-        metadata,
-      })
-
-      extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.modifyThread({
+        updateThread({
           ...thread,
           metadata,
         })
 
-      // Update message's metadata with token usage
-      message.metadata = {
-        ...message.metadata,
-        token_speed: tokenSpeedRef.current?.tokenSpeed,
-        model: activeModelRef.current?.name,
-      }
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.modifyThread({
+            ...thread,
+            metadata,
+          })
 
-      if (message.status === MessageStatus.Error) {
+        // Update message's metadata with token usage
         message.metadata = {
           ...message.metadata,
-          error: message.content[0]?.text?.value,
-          error_code: message.error_code,
+          token_speed: tokenSpeedRef.current?.tokenSpeed,
+          model: activeModelRef.current?.name,
         }
+
+        if (message.status === MessageStatus.Error) {
+          message.metadata = {
+            ...message.metadata,
+            error: message.content[0]?.text?.value,
+            error_code: message.error_code,
+          }
+          // Unassign active model if any
+          setActiveModel(undefined)
+          setStateModel({
+            state: 'start',
+            loading: false,
+            model: undefined,
+          })
+        }
+
+        extensionManager
+          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+          ?.createMessage(message)
+
+        // Attempt to generate the title of the Thread when needed
+        generateThreadTitle(message, thread)
       }
-
-      extensionManager
-        .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-        ?.createMessage(message)
-
-      // Attempt to generate the title of the Thread when needed
-      generateThreadTitle(message, thread)
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [setIsGeneratingResponse, updateMessage, updateThread, updateThreadWaiting]
@@ -302,16 +284,14 @@ export default function ModelHandler() {
 
   const generateThreadTitle = (message: ThreadMessage, thread: Thread) => {
     // If this is the first ever prompt in the thread
-    if (
-      !activeModelRef.current ||
-      (thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle
-    )
+    if ((thread.title ?? thread.metadata?.title)?.trim() !== defaultThreadTitle)
       return
 
     // Check model engine; we don't want to generate a title when it's not a local engine. remote model using first promp
     if (
-      activeModelRef.current?.engine !== InferenceEngine.cortex &&
-      activeModelRef.current?.engine !== InferenceEngine.cortex_llamacpp
+      !activeModelRef.current ||
+      (activeModelRef.current?.engine !== InferenceEngine.cortex &&
+        activeModelRef.current?.engine !== InferenceEngine.cortex_llamacpp)
     ) {
       const updatedThread: Thread = {
         ...thread,

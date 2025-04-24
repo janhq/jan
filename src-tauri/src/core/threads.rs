@@ -278,8 +278,10 @@ pub async fn create_message<R: Runtime>(
     ensure_thread_dir_exists(app_handle.clone(), &thread_id)?;
     let path = get_messages_path(app_handle.clone(), &thread_id);
 
-    let uuid = Uuid::new_v4().to_string();
-    message["id"] = serde_json::Value::String(uuid);
+    if message.get("id").is_none() {
+        let uuid = Uuid::new_v4().to_string();
+        message["id"] = serde_json::Value::String(uuid);
+    }
 
     // Acquire per-thread lock before writing
     {
@@ -292,7 +294,7 @@ pub async fn create_message<R: Runtime>(
 
         let _guard = lock.lock().await;
 
-        let mut file = fs::OpenOptions::new()
+        let mut file: File = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
@@ -354,21 +356,34 @@ pub async fn modify_message<R: Runtime>(
 
 /// Deletes a message from a thread's messages.jsonl file by message ID.
 /// Rewrites the entire messages.jsonl file for the thread.
+/// Uses a per-thread async lock to prevent race conditions and ensure file consistency.
 #[command]
 pub async fn delete_message<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     thread_id: String,
     message_id: String,
 ) -> Result<(), String> {
-    let mut messages = list_messages(app_handle.clone(), thread_id.clone()).await?;
-    messages.retain(|m| m.get("id").and_then(|v| v.as_str()) != Some(message_id.as_str()));
+    // Acquire per-thread lock before modifying
+    {
+        let mut locks = MESSAGE_LOCKS.lock().await;
+        let lock = locks
+            .entry(thread_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        drop(locks); // Release the map lock before awaiting the file lock
 
-    // Rewrite remaining messages
-    let path = get_messages_path(app_handle.clone(), &thread_id);
-    let mut file = File::create(path).map_err(|e| e.to_string())?;
-    for msg in messages {
-        let data = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
-        writeln!(file, "{}", data).map_err(|e| e.to_string())?;
+        let _guard = lock.lock().await;
+
+        let mut messages = list_messages(app_handle.clone(), thread_id.clone()).await?;
+        messages.retain(|m| m.get("id").and_then(|v| v.as_str()) != Some(message_id.as_str()));
+
+        // Rewrite remaining messages
+        let path = get_messages_path(app_handle.clone(), &thread_id);
+        let mut file = File::create(path).map_err(|e| e.to_string())?;
+        for msg in messages {
+            let data = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+            writeln!(file, "{}", data).map_err(|e| e.to_string())?;
+        }
     }
 
     Ok(())
@@ -441,7 +456,7 @@ pub async fn modify_thread_assistant<R: Runtime>(
         serde_json::from_str(&data).map_err(|e| e.to_string())?
     };
     let assistant_id = assistant
-        .get("id")
+        .get("assistant_id")
         .and_then(|v| v.as_str())
         .ok_or("Missing assistant_id")?;
     if let Some(assistants) = thread
@@ -450,7 +465,7 @@ pub async fn modify_thread_assistant<R: Runtime>(
     {
         if let Some(index) = assistants
             .iter()
-            .position(|a| a.get("id").and_then(|v| v.as_str()) == Some(assistant_id))
+            .position(|a| a.get("assistant_id").and_then(|v| v.as_str()) == Some(assistant_id))
         {
             assistants[index] = assistant.clone();
             let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;

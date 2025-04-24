@@ -38,12 +38,13 @@ export default function useDeleteThread() {
         ?.listMessages(threadId)
         .catch(console.error)
       if (messages) {
-        messages.forEach((message) => {
-          extensionManager
+        for (const message of messages) {
+          await extensionManager
             .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
             ?.deleteMessage(threadId, message.id)
             .catch(console.error)
-        })
+        }
+
         const thread = threads.find((e) => e.id === threadId)
         if (thread) {
           const updatedThread = {
