@@ -23,17 +23,23 @@ function Privacy() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-2 w-full">
-            <CardSetting>
+            <CardSetting title="Analytics">
               <CardSettingItem
-                title="Analytics"
+                title="Help us improve"
                 description={
-                  <>
+                  <p>
+                    By opting in, you help us make Jan better by sharing
+                    anonymous data, like feature usage and user counts. Your
+                    chats and personal information are never collected.
+                  </p>
+                }
+                align="start"
+                actions={<Switch />}
+              />
+              <CardSettingItem
+                description={
+                  <div className="text-main-view-fg/90">
                     <p>
-                      By opting in, you help us make Jan better by sharing
-                      anonymous data, like feature usage and user counts. Your
-                      chats and personal information are never collected.
-                    </p>
-                    <p className="mt-2">
                       We prioritize your control over your data. Learn more
                       about our Privacy Policy.
                     </p>
@@ -47,18 +53,22 @@ function Privacy() {
                       privacy promises:
                     </p>
                     <ul className="list-disc pl-4 space-y-1 mt-4">
-                      <li>Your chats are never read</li>
-                      <li>No personal information is collected</li>
-                      <li>No accounts or logins required</li>
-                      <li>We don’t access your files</li>
-                      <li>
+                      <li className="font-medium">Your chats are never read</li>
+                      <li className="font-medium">
+                        No personal information is collected
+                      </li>
+                      <li className="font-medium">
+                        No accounts or logins required
+                      </li>
+                      <li className="font-medium">
+                        We don’t access your files
+                      </li>
+                      <li className="font-medium">
                         Your chat history and settings stay on your device
                       </li>
                     </ul>
-                  </>
+                  </div>
                 }
-                align="start"
-                actions={<Switch />}
               />
             </CardSetting>
           </div>
