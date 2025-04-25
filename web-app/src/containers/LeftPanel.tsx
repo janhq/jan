@@ -1,4 +1,4 @@
-import { Link, useRouter } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import {
@@ -54,7 +54,11 @@ const secondaryMenus = [
 const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
   const { t } = useTranslation()
-  const router = useRouter()
+
+  const currentPath = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
   const { threads, fetchThreads, deleteAllThreads, unstarAllThreads } =
     useThreads()
 
@@ -174,14 +178,18 @@ const LeftPanel = () => {
 
           <div className="space-y-1 py-1 mt-2">
             {secondaryMenus.map((menu) => {
+              const isActive =
+                currentPath.includes(route.settings.index) &&
+                menu.route.includes(route.settings.index)
               return (
                 <Link
                   key={menu.title}
                   to={menu.route}
                   className={cn(
-                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded [&.active]:bg-left-panel-fg/10',
-                    router.state.location.pathname.includes(menu.route) &&
-                      'bg-left-panel-fg/10'
+                    'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
+                    isActive
+                      ? 'bg-left-panel-fg/10'
+                      : '[&.active]:bg-left-panel-fg/10'
                   )}
                 >
                   <menu.icon size={18} className="text-left-panel-fg/70" />

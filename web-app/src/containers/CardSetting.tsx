@@ -7,10 +7,10 @@ type CardSettingProps = {
 }
 
 type CardSettingItemProps = {
-  title: string
+  title?: string
   description?: string | ReactNode
   align?: 'start' | 'center' | 'end'
-  actions: ReactNode
+  actions?: ReactNode
 }
 
 export function CardSettingItem({
