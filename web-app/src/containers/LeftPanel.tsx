@@ -47,7 +47,7 @@ const secondaryMenus = [
   {
     title: 'common.settings',
     icon: IconSettingsFilled,
-    route: route.settings.modelProviders,
+    route: route.settings.general,
   },
 ]
 
