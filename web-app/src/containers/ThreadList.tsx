@@ -107,7 +107,11 @@ function SortableItem({ thread }: { thread: Thread }) {
               <span>{t('common.rename')}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <Dialog>
+            <Dialog
+              onOpenChange={(open) => {
+                if (!open) setOpenDropdown(false)
+              }}
+            >
               <DialogTrigger asChild>
                 <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
                   <IconTrash />
@@ -127,7 +131,6 @@ function SortableItem({ thread }: { thread: Thread }) {
                         variant="link"
                         size="sm"
                         className="hover:no-underline"
-                        onClick={() => setOpenDropdown(false)}
                       >
                         Cancel
                       </Button>
