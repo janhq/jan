@@ -19,7 +19,7 @@ function ModelProviders() {
       <div className="flex h-full w-full">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-2 w-full">
+          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <p>Model Providers</p>
           </div>
         </div>
