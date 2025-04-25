@@ -1,6 +1,6 @@
 ---
 title: Jan Data Folder
-description: Discover the Structure of Jan Data.
+description: A guide to Jan's data structure.
 sidebar_position: 2
 keywords:
   [
@@ -25,19 +25,17 @@ import { Settings, FolderOpen } from 'lucide-react'
 
 
 # Jan Data Folder
-Jan stores your data locally in your own filesystem in a universal file format (JSON). We build for privacy by default and do not collect or sell your data.
-
-This guide helps you understand where and how this data is stored.
+Jan stores your data locally in JSON format. Your data is yours alone.
 
 ## Open Jan Data Folder
 
-To open from Jan's interface:
-1. In Jan, navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Advanced Settings**
-2. Click <FolderOpen width={16} height={16} style={{display:"inline"}}/> icon to open Jan Data Folder
+Via Jan:
+1. Settings (<Settings width={16} height={16} style={{display:"inline"}}/>) > Advanced Settings
+2. Click <FolderOpen width={16} height={16} style={{display:"inline"}}/>
 <br/>
 ![Open Jan Data Folder](./_assets/settings-11.png)
 <br/>
-To open through Terminal:
+Via Terminal:
 
 ```bash
 # Windows
@@ -47,22 +45,16 @@ cd %APPDATA%/Jan/data
 cd ~/Library/Application\ Support/Jan/data
 
 # Linux
-## Custom installation directory
-cd $XDG_CONFIG_HOME/Jan/data
-
-# or
-
-## Default installation directory
-cd ~/.config/Jan/data
-
+cd $XDG_CONFIG_HOME/Jan/data  # Custom install
+cd ~/.config/Jan/data         # Default install
 ```
 
-## Folder Structure
-Jan app data folder should have the following folder structure:
+## Directory Structure
+
 <Callout type="info">
-Jan is stored in the root `~/jan` by default.
+Root directory: `~/jan`
 </Callout>
-```yaml
+```sh
 /assistants
   /jan
     assistant.json
@@ -93,15 +85,9 @@ Jan is stored in the root `~/jan` by default.
    thread.json
   messages.jsonl
 ```
-### `jan/` (The Root Directory)
-
-This is the primary directory where all files related to Jan are stored. It typically resides in the user's home directory.
 
 ### `assistants/`
-
-Stores configuration files for various AI assistants. Each assistant within this directory can have different settings.
-
-- **Default Assistant**: Located in `/assistants/jan/`, it includes an `assistant.json` configuring the default settings and capabilities. The default sample of `assistan.json` is as follows:
+Where AI personalities live. The default one (`/assistants/jan/`):
 
 ```json
 {
@@ -114,132 +100,127 @@ Stores configuration files for various AI assistants. Each assistant within this
   "model": "*",
   "instructions": ""
 }
-
 ```
 
-Each parameter in the file is defined as follows:
+Parameters:
 
-| Parameter               | Description                                                                                   | Type    | Default Value                                      |
-|-------------------------|-----------------------------------------------------------------------------------------------|---------|----------------------------------------------------|
-| id                      | Identifier for the assistant, defaults to "jan".  | string  | jan                                                |
-| avatar                  | The avatar image for the assistant.                       | string  | None                                                |
-| object                  | Specifies the assistant type in OpenAI-compatible API responses.  | string  | None                                                |
-| created_at              | Timestamp indicating when the assistant was created.     | string  | None                                                |
-| name                    | Display name for the assistant.          | string  | Jan                                                 |
-| description             | A description of the assistant's role.              | string  | A default assistant that can use all downloaded models. |
-| model                   | Defines which models the assistant can use, with * indicating all models are available.       | string  | *                                                   |
-| instructions            | Default instructions provided to new threads.            | string  | None                                                |
-| file_ids                | Field for referencing file IDs in OpenAI-compatible responses.        | string  | None                                                |
-| tools                   | List of tools available for the assistant, with only the "retrieval" tool supported so far.   | array   | retrieval                                           |
-| type                    | Specifies the type of tool, default is "retrieval".    | string  | retrieval                                           |
-| enabled                 | Indicates whether the tool is enabled by default.| boolean | true                                                |
-| useTimeWeightedRetriever | Controls if the time-weighted retrieval feature is enabled. | boolean | false                                               |
-| settings                | Configuration settings for the tool (retrieval tool in this case).                            | object  | None                                                |
-| top_k                   | Number of top results to return in retrieval, with a default of 2.                            | number  | 2                                                   |
-| chunk_size              | Defines the size of text chunks to process for the retrieval tool.                            | number  | 1024                                                |
-| chunk_overlap           | Determines the amount of overlap between text chunks in the retrieval process.                | number  | 64                                                  |
-| retrieval_template      | Template for formatting the retrieval tool's responses to queries.                            | string  | None |
-
+| Parameter               | Description                                                  | Type    | Default |
+|------------------------|--------------------------------------------------------------|---------|---------|
+| id                     | Assistant identifier                                         | string  | jan     |
+| avatar                 | Assistant image                                              | string  | None    |
+| object                 | OpenAI API compatibility marker                              | string  | None    |
+| created_at             | Creation timestamp                                          | string  | None    |
+| name                   | Display name                                                | string  | Jan     |
+| description            | Role description                                            | string  | Default |
+| model                  | Allowed models (* = all)                                    | string  | *       |
+| instructions           | Default thread instructions                                 | string  | None    |
+| file_ids              | OpenAI compatibility field                                  | string  | None    |
+| tools                  | Available tools (retrieval only currently)                  | array   | retrieval|
+| type                   | Tool type                                                   | string  | retrieval|
+| enabled               | Tool status                                                 | boolean | true    |
+| useTimeWeightedRetriever| Time-weighted retrieval toggle                            | boolean | false   |
+| settings              | Tool configuration                                          | object  | None    |
+| top_k                 | Max retrieval results                                       | number  | 2       |
+| chunk_size            | Text chunk size                                             | number  | 1024    |
+| chunk_overlap         | Chunk overlap amount                                        | number  | 64      |
+| retrieval_template    | Response format template                                    | string  | None    |
 
 ### `extensions/`
-
-Extensions enhance Jan's functionality by adding new capabilities or integrating external services.
-
-- **@janhq**: The root folder for all extensions by the author. Extensions with organization-level names (e.g., `@janhq/monitoring-extension`) are stored here. If there is no organization, the folder holds the extension directly (e.g., `example-extension`).
-
-- **extensions.json**: A file that lists all installed extensions and their metadata, taken from each extension’s `package.json`. It helps avoid scanning all extension folders, improving performance.
+Add-on central. Organization extensions live in `@janhq/`, solo ones in root.
 
 ### `logs/`
-
-Logs from the application are stored here. This is useful for troubleshooting and monitoring the application's behavior over time. The file `/logs/app.txt` uses prefixes to indicate the source of the logs:
-- **[APP]**: App logs
-- **[SERVER]**: API server logs
-- **[SPECS]**: Hardware information logs
+Debugging headquarters (`/logs/app.txt`):
+- **[APP]**: Core logs
+- **[SERVER]**: API drama
+- **[SPECS]**: Hardware confessions
 
 ### `models/`
-
-Stores the AI models that the assistants use to process requests and generate responses.
-
-- **Model Configurations**: Each model directory, such as `/models/modelA/`, contains a `model.json` with settings specific to that model.
+The silicon brain collection. Each model has its own `model.json`.
 
 <Callout type="info">
-To see the full list of `model.json` parameters, please see [here](/docs/models/model-parameters).
+Full parameters: [here](/docs/models/model-parameters)
 </Callout>
 
 ### `settings/`
+Control panel. Extension settings in `/settings/@janhq/`:
 
-General settings for the application are stored here, separate from individual assistant or engine configurations.
+| Parameter       | Description                                        |
+|----------------|----------------------------------------------------|
+| key            | Setting identifier                                 |
+| title          | Display name                                      |
+| description    | Setting explanation                               |
+| controllerType | UI component type                                 |
+| controllerProps| Component properties                              |
+| extensionName  | Parent extension link                             |
 
-- **Extension-specific Settings**: Additional settings for extensions are stored in respective subdirectories under `/settings/@janhq/`. Each parameter in the file is defined as follows:
+GPU settings (`settings.json`):
 
-| Parameter       | Description                                                          |
-|-----------------|----------------------------------------------------------------------|
-| `key`           | The setting key.                                                     |
-| `title`         | The setting title.                                                   |
-| `description`   | The setting description.                                             |
-| `controllerType`| The type of setting component (checkbox, input, slider, etc.).        |
-| `controllerProps`| Properties of the controller (e.g., value, placeholder, textAlign).  |
-| `extensionName` | The extension ID, used to map with the parent extension.             |
-
-- **General Settings**: The `settings.json` in the `/settings/` directory holds application settings related to the GPU acceleration. Each parameter in the file is defined as follows:
-
-| Parameter            | Description                                                                                 |
-|----------------------|---------------------------------------------------------------------------------------------|
-| `notify`             | Whether notifications are enabled (true/false).                                             |
-| `run_mode`           | The mode the application is running in (e.g., "cpu").                                        |
-| `nvidia_driver.exist`| Whether the NVIDIA driver is present (true/false).                                           |
-| `nvidia_driver.version`| The version of the installed NVIDIA driver.                                                |
-| `cuda.exist`         | Whether CUDA is available (true/false).                                                      |
-| `cuda.version`       | The version of CUDA installed.                                                               |
-| `gpus[0].id`         | The ID of the GPU (e.g., "0").                                                               |
-| `gpus[0].vram`       | The amount of VRAM for the GPU (in MB).                                                      |
-| `gpus[0].name`       | The name of the GPU (e.g., "NVIDIA GeForce RTX 3050 Laptop GPU").                            |
-| `gpus[0].arch`       | The architecture of the GPU (e.g., "ampere").                                                |
-| `gpu_highest_vram`   | The ID of the GPU with the highest VRAM.                                                     |
-| `gpus_in_use`        | The list of GPU IDs currently in use (e.g., "0").                                            |
-| `is_initial`         | Indicates whether it's the initial run (true/false).                                         |
-| `vulkan`             | Whether Vulkan support is available (true/false).                                            |
-
-
-
+| Parameter             | Description                                |
+|----------------------|--------------------------------------------|
+| notify               | Notification status                        |
+| run_mode             | Operating mode                             |
+| nvidia_driver.exist  | NVIDIA driver presence                     |
+| nvidia_driver.version| Driver version                             |
+| cuda.exist          | CUDA availability                          |
+| cuda.version        | CUDA version                               |
+| gpus[0].id          | GPU identifier                             |
+| gpus[0].vram        | GPU memory (MB)                            |
+| gpus[0].name        | GPU model                                  |
+| gpus[0].arch        | GPU architecture                           |
+| gpu_highest_vram    | Most capable GPU                           |
+| gpus_in_use         | Active GPUs                                |
+| is_initial          | First run flag                             |
+| vulkan              | Vulkan support                             |
 
 ### `themes/`
+Visual wardrobe. Each theme's `theme.json`:
 
-The `themes` directory contains different visual themes for the application, allowing customization of the user interface. Each of theme directory contains the `theme.json` that has the following parameters:
-
-| Parameter            | Description                                                                      |
-|----------------------|----------------------------------------------------------------------------------|
-| `id`                 | The theme's ID.                                                                  |
-| `displayName`        | Theme display name, as seen in theme settings.                                    |
-| `reduceTransparent`  | Setting to reduce transparency of the window/background.                          |
-| `nativeTheme`        | Indicates whether the theme depends on the OS's light/dark settings.              |
-| `variables`          | Contains all possible component configurations.                                   |
+| Parameter         | Description                               |
+|------------------|-------------------------------------------|
+| id               | Theme identifier                          |
+| displayName      | UI name                                   |
+| reduceTransparent| Transparency control                      |
+| nativeTheme      | OS theme sync                             |
+| variables        | Component settings                        |
 
 ### `threads/`
+Chat archive. Each thread (`/threads/jan_unixstamp/`) contains:
 
-Threads history is kept in this directory. Each session or thread is stored in a way that makes it easy to review past interactions. Each thread is stored in its subdirectory, such as `/threads/jan_unixstamp/`, with files like `messages.jsonl` and `thread.json` that contains the following parameters:
-
-- `messages.jsonl`: Array of OpenAI compatible message objects belong to the thread. For example:
-
-```jsonl
-    {"id":"01J6Y6FH8PFTHQB5PNJTHEN27C","thread_id":"jan_1725437954","type":"Thread","role":"assistant","content": 
-    [{"type":"text","text":{"value":"Hello! Is there something I can help you with or would you like to chat?","annotations": 
-    []}}],"status":"ready","created":1725442802966,"updated":1725442802966,"object":"thread.message"}
+- `messages.jsonl`:
+```json
+    {
+      "id":"01J6Y6FH8PFTHQB5PNJTHEN27C",
+      "thread_id":"jan_1725437954",
+      "type":"Thread",
+      "role":"assistant",
+      "content":
+      [
+        {
+          "type": "text",
+          "text": {
+            "value": "Hello! Is there something I can help you with or would you like to chat?",
+            "annotations": []
+          }
+        }
+      ],
+      "status": "ready",
+      "created": 1725442802966,
+      "updated": 1725442802966,
+      "object": "thread.message"
+    }
 ```
 
-- `thread.json`: The thread's metadata that contains the following parameters:
+- `thread.json`:
 
-| Parameter      | Description                                                                                                                                 |
-|----------------|---------------------------------------------------------------------------------------------------------------------------------------------|
-| `id`           | Thread's ID (can be generated by the folder name).                                                                                          |
-| `object`       | "thread" (OpenAI-compatible field).                                                                                                         |
-| `title`        | Thread's title (editable in the GUI from the Thread List on the left panel).                                                                |
-| `assistants`   | Contains cloned assistant metadata and specialized settings for the thread. Includes all assistant settings mentioned under the Jan assistant section. |
-| `model`        | The selected model and its settings/parameters for the thread. Changes made by users to thread settings are written here, rather than in model.json. Also contains the ID and engine of the selected model for quick querying by extensions. |
-| `metadata`     | Additional thread data, such as `lastMessage`, which provides GUI information but does not use OpenAI-compatible fields.                     |
+| Parameter   | Description                                    |
+|------------|------------------------------------------------|
+| id         | Thread identifier                              |
+| object     | OpenAI compatibility marker                    |
+| title      | Thread name                                    |
+| assistants | Assistant configuration clone                  |
+| model      | Active model settings                          |
+| metadata   | Additional thread data                         |
 
-
-## Delete Jan Data Folder
-
-If you have uninstalled Jan, you may also want to delete the Jan data folder. 
-See detail instructions on [Mac](/docs/desktop/mac#step-2-clean-up-data-optional), [Window](/docs/desktop/windows#step-2-handle-jan-data), [Linux](docs/desktop/linux#uninstall-jan).
+## Delete Jan Data
+Uninstall guides: [Mac](/docs/desktop/mac#step-2-clean-up-data-optional),
+[Windows](/docs/desktop/windows#step-2-handle-jan-data), or [Linux](docs/desktop/linux#uninstall-jan).
