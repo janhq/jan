@@ -31,6 +31,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTranslation } from 'react-i18next'
+import { DialogClose, DialogFooter, DialogHeader } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { useState } from 'react'
 
 function SortableItem({ thread }: { thread: Thread }) {
   const {
@@ -49,6 +59,7 @@ function SortableItem({ thread }: { thread: Thread }) {
   }
   const { toggleFavorite, deleteThread } = useThreads()
   const { t } = useTranslation()
+  const [openDropdown, setOpenDropdown] = useState(false)
 
   return (
     <div
@@ -65,12 +76,18 @@ function SortableItem({ thread }: { thread: Thread }) {
         <span className="text-left-panel-fg/90">{thread.title}</span>
       </div>
       <div className="flex items-center">
-        <DropdownMenu>
+        <DropdownMenu
+          open={openDropdown}
+          onOpenChange={(open) => setOpenDropdown(open)}
+        >
           <DropdownMenuTrigger asChild>
             <IconDots
               size={14}
               className="text-left-panel-fg/60 shrink-0 cursor-pointer px-0.5 -mr-1 data-[state=open]:bg-left-panel-fg/10 rounded group-hover/thread-list:data-[state=closed]:size-5 size-5 data-[state=closed]:size-0"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
             />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
@@ -90,10 +107,42 @@ function SortableItem({ thread }: { thread: Thread }) {
               <span>{t('common.rename')}</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => deleteThread(thread.id)}>
-              <IconTrash />
-              <span>{t('common.delete')}</span>
-            </DropdownMenuItem>
+            <Dialog>
+              <DialogTrigger asChild>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  <IconTrash />
+                  <span>{t('common.delete')}</span>
+                </DropdownMenuItem>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete Thread</DialogTitle>
+                  <DialogDescription>
+                    Are you sure you want to delete this thread? This action
+                    cannot be undone.
+                  </DialogDescription>
+                  <DialogFooter className="mt-2">
+                    <DialogClose asChild>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="hover:no-underline"
+                        onClick={() => setOpenDropdown(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => deleteThread(thread.id)}
+                    >
+                      Delete
+                    </Button>
+                  </DialogFooter>
+                </DialogHeader>
+              </DialogContent>
+            </Dialog>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

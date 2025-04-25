@@ -52,12 +52,6 @@
 @layer base {
   body {
     @apply overflow-hidden;
-  }
-  svg {
-    stroke-width: 1.5;
-  }
-
-  body {
     ::-webkit-scrollbar {
       width: 6px;
       height: 6px;
@@ -68,5 +62,8 @@
       margin-left: 2px;
       @apply bg-main-view-fg/10;
     }
+  }
+  svg {
+    stroke-width: 1.5;
   }
 }
