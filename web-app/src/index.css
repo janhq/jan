@@ -16,6 +16,10 @@
   --color-main-view-fg: var(--app-main-view-fg);
   --color-primary: var(--app-primary);
   --color-primary-fg: var(--app-primary-fg);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+  --color-scrollbar-thumb-right: rgba(255, 255, 255, 0.18);
+  --color-scrollbar-thumb-right-hover: rgba(255, 255, 255, 0.25);
 
   /* Font scale based on --font-size-base */
   --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
@@ -51,5 +55,18 @@
   }
   svg {
     stroke-width: 1.5;
+  }
+
+  body {
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      border-radius: 10px;
+      margin-left: 2px;
+      @apply bg-main-view-fg/10;
+    }
   }
 }
