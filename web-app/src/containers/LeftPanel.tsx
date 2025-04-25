@@ -104,7 +104,7 @@ const LeftPanel = () => {
             })}
           </div>
           <div className="flex flex-col w-full h-full overflow-hidden">
-            <div className="h-full overflow-y-scroll">
+            <div className="h-full overflow-y-auto overflow-x-hidden">
               {threads.filter((t) => t.isFavorite === true).length > 0 && (
                 <>
                   <div className="flex items-center justify-between mb-2">
