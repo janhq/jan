@@ -4,10 +4,6 @@ import { useTranslation } from 'react-i18next'
 
 const menuSettings = [
   {
-    title: 'common.modelProviders',
-    route: route.settings.modelProviders,
-  },
-  {
     title: 'common.general',
     route: route.settings.general,
   },
@@ -22,6 +18,10 @@ const menuSettings = [
   {
     title: 'common.keyboardShortcuts',
     route: route.settings.shortcuts,
+  },
+  {
+    title: 'common.modelProviders',
+    route: route.settings.modelProviders,
   },
 ]
 
