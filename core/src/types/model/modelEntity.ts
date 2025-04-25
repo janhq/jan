@@ -29,6 +29,7 @@ export enum InferenceEngine {
   cortex_llamacpp = 'llama-cpp',
   cortex_onnx = 'onnxruntime',
   cortex_tensorrtllm = 'tensorrt-llm',
+  ollama = 'ollama',
 }
 
 // Represents an artifact of a model, including its filename and URL
