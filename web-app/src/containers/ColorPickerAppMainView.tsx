@@ -55,7 +55,7 @@ export function ColorPickerAppMainView() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10">
-              <IconColorPicker size={18} className="text-neutral-300/60" />
+              <IconColorPicker size={18} className="text-main-view-fg/50" />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent

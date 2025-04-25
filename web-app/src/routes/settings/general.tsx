@@ -26,7 +26,7 @@ function General() {
       <div className="flex h-full w-full">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-2 w-full">
+          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
             <CardSetting title={t('common.general')}>
               <CardSettingItem

@@ -19,6 +19,7 @@ interface AppearanceState {
   setAppBgColor: (color: RgbaColor) => void
   setAppMainViewBgColor: (color: RgbaColor) => void
   setAppPrimaryBgColor: (color: RgbaColor) => void
+  resetAppearance: () => void
 }
 
 const getBrightness = ({ r, g, b }: RgbaColor) =>
@@ -95,6 +96,92 @@ export const useAppearance = create<AppearanceState>()(
         appLeftPanelTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appMainViewTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appPrimaryTextColor: getDefaultTextColor(useTheme.getState().isDark),
+
+        resetAppearance: () => {
+          const { isDark } = useTheme.getState()
+
+          // Reset font size
+          document.documentElement.style.setProperty(
+            '--font-size-base',
+            defaultFontSize
+          )
+
+          // Reset app background color
+          const defaultBg = isDark ? defaultAppBgColor : defaultLightAppBgColor
+          const culoriRgbBg = rgb({
+            mode: 'rgb',
+            r: defaultBg.r / 255,
+            g: defaultBg.g / 255,
+            b: defaultBg.b / 255,
+            alpha: defaultBg.a,
+          })
+          const oklchBgColor = oklch(culoriRgbBg)
+          document.documentElement.style.setProperty(
+            '--app-bg',
+            formatCss(oklchBgColor)
+          )
+
+          // Reset main view background color
+          const defaultMainView = isDark
+            ? defaultAppMainViewBgColor
+            : defaultLightAppMainViewBgColor
+          const culoriRgbMainView = rgb({
+            mode: 'rgb',
+            r: defaultMainView.r / 255,
+            g: defaultMainView.g / 255,
+            b: defaultMainView.b / 255,
+            alpha: defaultMainView.a,
+          })
+          const oklchMainViewColor = oklch(culoriRgbMainView)
+          document.documentElement.style.setProperty(
+            '--app-main-view',
+            formatCss(oklchMainViewColor)
+          )
+
+          // Reset primary color
+          const defaultPrimary = isDark
+            ? defaultAppPrimaryBgColor
+            : defaultLightAppPrimaryBgColor
+          const culoriRgbPrimary = rgb({
+            mode: 'rgb',
+            r: defaultPrimary.r / 255,
+            g: defaultPrimary.g / 255,
+            b: defaultPrimary.b / 255,
+            alpha: defaultPrimary.a,
+          })
+          const oklchPrimaryColor = oklch(culoriRgbPrimary)
+          document.documentElement.style.setProperty(
+            '--app-primary',
+            formatCss(oklchPrimaryColor)
+          )
+
+          // Reset text colors
+          const defaultTextColor = getDefaultTextColor(isDark)
+          document.documentElement.style.setProperty(
+            '--text-color',
+            defaultTextColor
+          )
+          document.documentElement.style.setProperty(
+            '--app-left-panel-fg',
+            defaultTextColor
+          )
+          document.documentElement.style.setProperty(
+            '--app-main-view-fg',
+            defaultTextColor
+          )
+          document.documentElement.style.setProperty('--app-primary-fg', '#FFF')
+
+          // Update state
+          set({
+            fontSize: defaultFontSize,
+            appBgColor: defaultBg,
+            appMainViewBgColor: defaultMainView,
+            appPrimaryBgColor: defaultPrimary,
+            appLeftPanelTextColor: defaultTextColor,
+            appMainViewTextColor: defaultTextColor,
+            appPrimaryTextColor: '#FFF',
+          })
+        },
 
         setFontSize: (size: FontSize) => {
           // Update CSS variable
