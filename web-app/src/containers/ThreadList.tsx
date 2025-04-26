@@ -22,6 +22,7 @@ import {
 } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
 import { cn } from '@/lib/utils'
+import { route } from '@/constants/routes'
 
 import {
   DropdownMenu,
@@ -41,6 +42,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
+import { useNavigate, useMatches } from '@tanstack/react-router'
 
 function SortableItem({ thread }: { thread: Thread }) {
   const {
@@ -60,6 +62,21 @@ function SortableItem({ thread }: { thread: Thread }) {
   const { toggleFavorite, deleteThread } = useThreads()
   const { t } = useTranslation()
   const [openDropdown, setOpenDropdown] = useState(false)
+  const navigate = useNavigate()
+  // Check if current route matches this thread's detail page
+  const matches = useMatches()
+  const isActive = matches.some(
+    (match) =>
+      match.routeId === '/threads/$threadId' &&
+      'threadId' in match.params &&
+      match.params.threadId === thread.id
+  )
+
+  const handleClick = () => {
+    if (!isDragging) {
+      navigate({ to: route.threadsDetail, params: { threadId: thread.id } })
+    }
+  }
 
   return (
     <div
@@ -67,9 +84,11 @@ function SortableItem({ thread }: { thread: Thread }) {
       style={style}
       {...attributes}
       {...listeners}
+      onClick={handleClick}
       className={cn(
-        'mb-1 rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/thread-list',
-        isDragging ? 'cursor-move' : 'cursor-pointer'
+        'mb-1 rounded hover:bg-left-panel-fg/10 flex items-center justify-between gap-2 px-1.5 group/thread-list transition-all',
+        isDragging ? 'cursor-move' : 'cursor-pointer',
+        isActive && 'bg-left-panel-fg/10'
       )}
     >
       <div className="py-1 pr-2 truncate">

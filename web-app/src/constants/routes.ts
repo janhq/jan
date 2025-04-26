@@ -11,4 +11,5 @@ export const route = {
   },
   miniApps: '/mini-apps',
   help: '/help',
+  threadsDetail: '/threads/$threadId',
 }
