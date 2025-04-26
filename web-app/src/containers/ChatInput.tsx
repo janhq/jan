@@ -30,9 +30,11 @@ const ChatInput = ({
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
+  const [rows, setRows] = useState(1)
   const { prompt, setPrompt } = usePrompt()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
+  const maxRows = 10
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -77,7 +79,12 @@ const ChatInput = ({
         rows={1}
         maxRows={10}
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        onChange={(e) => {
+          setPrompt(e.target.value)
+          // Count the number of newlines to estimate rows
+          const newRows = (e.target.value.match(/\n/g) || []).length + 1
+          setRows(Math.min(newRows, maxRows))
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             if (!e.shiftKey && prompt) {
@@ -100,6 +107,7 @@ const ChatInput = ({
         data-gramm_grammarly={spellCheckChatInput}
         className={cn(
           'bg-transparent w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+          rows < maxRows && 'scrollbar-hide',
           className
         )}
       />

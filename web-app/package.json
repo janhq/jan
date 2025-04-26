@@ -33,6 +33,7 @@
     "react-colorful": "^5.6.1",
     "react-dom": "^19.0.0",
     "react-i18next": "^15.5.1",
+    "react-markdown": "^10.1.0",
     "react-textarea-autosize": "^8.5.9",
     "tailwindcss": "^4.1.4",
     "tw-animate-css": "^1.2.7",

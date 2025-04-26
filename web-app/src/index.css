@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import '@/styles/font.css';
+@import '@/styles/markdown.css';
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -16,10 +17,6 @@
   --color-main-view-fg: var(--app-main-view-fg);
   --color-primary: var(--app-primary);
   --color-primary-fg: var(--app-primary-fg);
-  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
-  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
-  --color-scrollbar-thumb-right: rgba(255, 255, 255, 0.18);
-  --color-scrollbar-thumb-right-hover: rgba(255, 255, 255, 0.25);
 
   /* Font scale based on --font-size-base */
   --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
@@ -63,7 +60,21 @@
       @apply bg-main-view-fg/10;
     }
   }
+
   svg {
     stroke-width: 1.5;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .scrollbar-hide {
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
   }
 }
