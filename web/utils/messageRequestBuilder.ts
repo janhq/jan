@@ -164,7 +164,7 @@ export class MessageRequestBuilder {
       messages: this.messages,
       model: this.model,
       thread: this.thread,
-      tools: this.tools,
+      tools: this.tools?.length ? this.tools : undefined,  // convert empty list to undefined
     }
   }
 }
