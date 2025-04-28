@@ -48,7 +48,7 @@ jobs:
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-macos:
-    uses: ./.github/workflows/template-build-macos.yml
+    uses: ./.github/workflows/template-tauri-build-macos.yml
     needs: [get-update-version, set-public-provider]
     secrets: inherit
     with:
@@ -60,7 +60,7 @@ jobs:
       cortex_api_port: "39261"
 
   build-windows-x64:
-    uses: ./.github/workflows/template-build-windows-x64.yml
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -71,7 +71,7 @@ jobs:
       beta: false
       cortex_api_port: "39261"
   build-linux-x64:
-    uses: ./.github/workflows/template-build-linux-x64.yml
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
