@@ -34,7 +34,7 @@ const engines = [
 ]
 const models = [
   ...anthropicModels,
-  ...openaiModels,
+  // ...openaiModels,
   ...cohereModels,
   ...openrouterModels,
   ...groqModels,
