@@ -1,0 +1,86 @@
+name: Tauri Builder - Beta Build
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+-beta"]
+
+jobs:
+  # Job create Update app version based on latest release tag with build number and save to output
+  get-update-version:
+    uses: ./.github/workflows/template-get-update-version.yml
+
+  build-macos:
+    uses: ./.github/workflows/template-tauri-build-macos.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+      nightly: false
+      cortex_api_port: "39271"
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+      nightly: false
+      cortex_api_port: "39271"
+
+  build-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      beta: true
+      nightly: false
+      cortex_api_port: "39271"
+
+  sync-temp-to-latest:
+    needs: [build-macos, build-windows-x64, build-linux-x64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+      - name: Sync temp to latest
+        run: |
+          # sync temp-beta to beta by copy files that are different or new
+          aws s3 sync "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/" "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/beta/"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+
+  noti-discord-and-update-url-readme:
+    needs: [build-macos, get-update-version, build-windows-x64, build-linux-x64, sync-temp-to-latest]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set version to environment variable
+        run: |
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          VERSION="${VERSION#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        with:
+          args: |
+            Jan-beta App version {{ VERSION }}, has been released, use the following links to download the app with faster speed or visit the Github release page for more information:
+            - Windows: https://delta.jan.ai/beta/jan-beta-win-x64-{{ VERSION }}.exe
+            - macOS Universal: https://delta.jan.ai/beta/jan-beta-mac-universal-{{ VERSION }}.dmg
+            - Linux Deb: https://delta.jan.ai/beta/jan-beta-linux-amd64-{{ VERSION }}.deb
+            - Linux AppImage: https://delta.jan.ai/beta/jan-beta-linux-x86_64-{{ VERSION }}.AppImage
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_JAN_BETA }}

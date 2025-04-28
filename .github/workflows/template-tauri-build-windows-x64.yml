@@ -1,0 +1,302 @@
+name: tauri-build-windows-x64
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: "refs/heads/main"
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: "none: build only, github: build and publish to github, aws s3: build and publish to aws s3"
+      new_version:
+        required: true
+        type: string
+        default: ""
+      aws_s3_prefix:
+        required: false
+        type: string
+        default: "/latest/"
+      beta:
+        required: false
+        type: boolean
+        default: false
+      nightly:
+        required: false
+        type: boolean
+        default: false
+      cortex_api_port:
+        required: false
+        type: string
+        default: null
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      TAURI_SIGNING_PUBLIC_KEY:
+        required: false
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+
+      # - name: Replace Icons for Beta Build
+      #   if: inputs.beta == true && inputs.nightly != true
+      #   shell: bash
+      #   run: |
+      #     rm -rf electron/icons/*
+
+      #     cp electron/icons_dev/jan-beta-512x512.png electron/icons/512x512.png
+      #     cp electron/icons_dev/jan-beta.ico electron/icons/icon.ico
+      #     cp electron/icons_dev/jan-beta.png electron/icons/icon.png
+      #     cp electron/icons_dev/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
+      #     cp electron/icons_dev/jan-beta-tray.png electron/icons/icon-tray.png
+
+      # - name: Replace Icons for Nightly Build
+      #   if: inputs.nightly == true && inputs.beta != true
+      #   shell: bash
+      #   run: |
+      #     rm -rf electron/icons/*
+
+      #     cp electron/icons_dev/jan-nightly-512x512.png electron/icons/512x512.png
+      #     cp electron/icons_dev/jan-nightly.ico electron/icons/icon.ico
+      #     cp electron/icons_dev/jan-nightly.png electron/icons/icon.png
+      #     cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
+      #     cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install ctoml
+        run: |
+          cargo install ctoml
+
+      - name: Update app version base on tag
+        if: inputs.public_provider != 'github'
+        id: version_update
+        shell: bash
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" --arg template tauri.bundle.windows.nsis.template '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = $template' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+
+          chmod +x .github/scripts/rename-tauri-app.sh
+          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
+          echo ./src-tauri/tauri.conf.json
+
+          # Update Cargo.toml
+          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "------------------"
+          cat ./src-tauri/Cargo.toml
+
+          # Update template
+          get_latest_tag() {
+            local retries=0
+            local max_retries=3
+            local tag
+            while [ $retries -lt $max_retries ]; do
+              tag=$(curl -s https://api.github.com/repos/menloresearch/jan/releases/latest | jq -r .tag_name)
+              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
+                echo $tag
+                return
+              else
+                let retries++
+                echo "Retrying... ($retries/$max_retries)"
+                sleep 2
+              fi
+            done
+            echo "Failed to fetch latest tag after $max_retries attempts."
+            exit 1
+          }
+
+          LATEST_TAG=$(get_latest_tag)
+          jan_tag="${LATEST_TAG#v}.0"
+          echo $jan_tag
+          sed -i "s/jan_productname/Jan-nightly/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_version/${{ inputs.new_version }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_build/$jan_tag/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_mainbinaryname/jan-nightly/g" ./src-tauri/tauri.bundle.windows.nsis.template   
+          echo "------------------"
+          cat ./src-tauri/tauri.bundle.windows.nsis.template       
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json nightly
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh nightly
+          echo "------------------------"
+          cat ./package.json
+          echo "------------------------"
+
+      - name: Change App Name for beta version
+        if: inputs.beta == true
+        shell: bash
+        run: |
+          chmod +x .github/scripts/rename-tauri-app.sh
+          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json beta
+          cat ./src-tauri/tauri.conf.json
+          echo "------------------" 
+          ctoml ./src-tauri/Cargo.toml package.name "Jan-beta"          
+          cat ./src-tauri/Cargo.toml
+          echo "------------------"
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json beta
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh beta
+          echo "------------------------"
+          cat ./package.json
+          echo "------------------------"
+          cat ./electron/scripts/uninstaller.nsh
+
+      - name: Update app version base on tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        shell: bash
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
+          jq --arg version "${VERSION_TAG#v}" --arg template tauri.bundle.windows.nsis.template '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = $template' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+
+          ctoml ./src-tauri/Cargo.toml package.version "${VERSION_TAG#v}"
+
+          jan_tag="${VERSION_TAG#v}.0"
+          sed -i "s/jan_productname/Jan-beta/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_version/${VERSION_TAG#v}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_build/$jan_tag/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_mainbinaryname/jan-beta/g" ./src-tauri/tauri.bundle.windows.nsis.template   
+          echo "------------------"
+          cat ./src-tauri/tauri.bundle.windows.nsis.template       
+
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+        env:
+          VERSION_TAG: ${{ inputs.new_version }}
+
+      - name: Install AzureSignTool
+        run: |
+          dotnet tool install --global --version 6.0.0 AzureSignTool
+
+      - name: Inject Tauri Signing Public Key
+        shell: bash
+        run: |
+          if [ -f "src-tauri/tauri.conf.json" ]; then
+            echo "Injecting Tauri public key into configuration..."
+            # Use jq to update the pubkey field in the tauri.conf.json file
+            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+            echo "Tauri configuration updated successfully"
+          else
+            echo "tauri.conf.json not found"
+          fi
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+
+      - name: Build and publish app to aws s3 r2 or github artifactory
+        shell: bash
+        if: inputs.public_provider != 'github'
+        run: |
+          # check public_provider is true or not
+          echo "public_provider is ${{ inputs.public_provider }}"
+          if [ "${{ inputs.public_provider }}" == "none" ]; then
+            make build-tauri
+          else
+            make build-and-publish
+          fi
+        env:
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_MAX_ATTEMPTS: "5"
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+
+      - name: Build app and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+
+      - name: Build app and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_MAX_ATTEMPTS: "5"
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+
+      - name: Upload Signed Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-tauri-windows-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/bundle/nsis/*.exe

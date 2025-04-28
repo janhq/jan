@@ -1,0 +1,261 @@
+name: tauri-build-macos
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      aws_s3_prefix:
+        required: false
+        type: string
+        default: '/latest/'
+      beta:
+        required: false
+        type: boolean
+        default: false
+      nightly:
+        required: false
+        type: boolean
+        default: false
+      cortex_api_port:
+        required: false
+        type: string
+        default: null
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      CODE_SIGN_P12_BASE64:
+        required: false
+      CODE_SIGN_P12_PASSWORD:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_APP_SPECIFIC_PASSWORD:
+        required: false
+      DEVELOPER_ID:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      TAURI_SIGNING_PUBLIC_KEY:
+        required: false
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    environment: production
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+      
+      # - name: Replace Icons for Beta Build
+      #   if: inputs.beta == true && inputs.nightly != true
+      #   shell: bash
+      #   run: |
+      #     rm -rf electron/icons/*
+
+      #     cp electron/icons_dev/jan-beta-512x512.png electron/icons/512x512.png
+      #     cp electron/icons_dev/jan-beta.ico electron/icons/icon.ico
+      #     cp electron/icons_dev/jan-beta.png electron/icons/icon.png
+      #     cp electron/icons_dev/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
+      #     cp electron/icons_dev/jan-beta-tray.png electron/icons/icon-tray.png
+
+      # - name: Replace Icons for Nightly Build
+      #   if: inputs.nightly == true && inputs.beta != true
+      #   shell: bash
+      #   run: |
+      #     rm -rf electron/icons/*
+
+      #     cp electron/icons_dev/jan-nightly-512x512.png electron/icons/512x512.png
+      #     cp electron/icons_dev/jan-nightly.ico electron/icons/icon.ico
+      #     cp electron/icons_dev/jan-nightly.png electron/icons/icon.png
+      #     cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
+      #     cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
+
+      - name: Installing node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+
+      - name: Install ctoml
+        run: |
+          cargo install ctoml
+
+      - name: Update app version based on latest release tag with build number
+        if: inputs.public_provider != 'github'
+        run: |
+          echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+
+          chmod +x .github/scripts/rename-tauri-app.sh
+          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
+          echo ./src-tauri/tauri.conf.json
+
+          # Update Cargo.toml
+          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "------------------"
+          cat ./src-tauri/Cargo.toml
+
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
+
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json nightly
+          cat ./package.json
+
+      - name: Change App Name for beta version
+        if: inputs.beta == true
+        shell: bash
+        run: |
+          chmod +x .github/scripts/rename-tauri-app.sh
+          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json beta
+          cat ./src-tauri/tauri.conf.json
+          echo "------------------" 
+          ctoml ./src-tauri/Cargo.toml package.name "Jan-beta"          
+          cat ./src-tauri/Cargo.toml
+          echo "------------------"
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json beta
+          cat ./package.json
+
+      - name: Update app version base on tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        run: |
+          jq --arg version "${VERSION_TAG#v}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          ctoml ./src-tauri/Cargo.toml package.version "${VERSION_TAG#v}"
+          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json          
+        env:
+          VERSION_TAG: ${{ inputs.new_version }}
+
+      - name: Get key for notarize
+        run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
+        shell: bash
+        env:
+          NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
+
+      - uses: apple-actions/import-codesign-certs@v2
+        continue-on-error: true
+        with:
+          p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+
+      - name: Inject Tauri Signing Public Key
+        run: |
+          if [ -f "src-tauri/tauri.conf.json" ]; then
+            echo "Injecting Tauri public key into configuration..."
+            # Use jq to update the pubkey field in the tauri.conf.json file
+            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
+            echo "Tauri configuration updated successfully"
+          else
+            echo "tauri.conf.json not found"
+          fi
+        env:
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+      
+      - name: Build and publish app to aws s3 r2 or github artifactory
+        if: inputs.public_provider != 'github'
+        run: |
+          # check public_provider is true or not
+          echo "public_provider is ${{ inputs.public_provider }}"
+          if [ "${{ inputs.public_provider }}" == "none" ]; then
+            make build-tauri
+          else
+            make build-and-publish
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PATH: '.'
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
+          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
+          APPLE_API_KEY_PATH: /tmp/notary-key.p8
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+
+      - name: Build and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PATH: '.'
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
+          APPLE_API_KEY_PATH: /tmp/notary-key.p8
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+
+      - name: Build and publish app to github
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
+        run: |
+          make build-and-publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_PATH: '.'
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
+          APPLE_API_KEY_PATH: /tmp/notary-key.p8
+
+      - name: Upload Artifact
+        if: inputs.public_provider != 'github'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-mac-universal-${{ inputs.new_version }}
+          path: |
+            ./src-tauri/target/release/bundle/dmg/*.dmg
+
+      - name: zip Jan-nightly.app file
+        if: inputs.public_provider != 'github'
+        run: |
+          cd ./src-tauri/target/release/bundle/macos
+          zip -r jan-nightly.zip Jan-nightly.app
+
+      - name: Upload Artifact
+        if: inputs.public_provider != 'github'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-mac-universal-${{ inputs.new_version }}-tar-gz
+          path: |
+            ./src-tauri/target/release/bundle/macos/jan-nightly.zip

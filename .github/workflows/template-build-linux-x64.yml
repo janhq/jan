@@ -38,16 +38,10 @@ on:
         required: false
       DELTA_AWS_SECRET_ACCESS_KEY:
         required: false
-      TAURI_SIGNING_PRIVATE_KEY:
-        required: false
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-        required: false
-      TAURI_SIGNING_PUBLIC_KEY:
-        required: false
 
 jobs:
   build-linux-x64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     environment: production
     permissions:
       contents: write
@@ -56,20 +50,6 @@ jobs:
         uses: actions/checkout@v3
         with:
           ref: ${{ inputs.ref }}
-
-      - name: Free Disk Space Before Build
-        run: |
-          echo "Disk space before cleanup:"
-          df -h
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo apt-get clean
-          echo "Disk space after cleanup:"
-          df -h
 
       - name: Replace Icons for Beta Build
         if: inputs.beta == true && inputs.nightly != true
@@ -104,49 +84,25 @@ jobs:
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
-      - name: Install ctoml
-        run: |
-          cargo install ctoml
-
-      - name: Install Tauri dependecies
-        run: |
-          sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
-
       - name: Update app version base public_provider
         if: inputs.public_provider != 'github'
         run: |
           echo "Version: ${{ inputs.new_version }}"
-          # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-
-          chmod +x .github/scripts/rename-tauri-app.sh
-          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
-
-          echo ./src-tauri/tauri.conf.json
-          
-          # Update Cargo.toml
-          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "------------------"
-          cat ./src-tauri/Cargo.toml
-
-          # # Update the version in electron/package.json
-          # jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
-          # mv /tmp/package.json electron/package.json
+          # Update the version in electron/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
-          # jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
-          # mv /tmp/package.json electron/package.json
-          # cat electron/package.json
-          # chmod +x .github/scripts/rename-app.sh
-          # .github/scripts/rename-app.sh ./electron/package.json nightly
-          # chmod +x .github/scripts/rename-workspace.sh
-          # .github/scripts/rename-workspace.sh ./package.json nightly
-          # echo "------------------------"
-          # cat ./electron/package.json
-          # echo "------------------------"
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
+          cat electron/package.json
+          chmod +x .github/scripts/rename-app.sh
+          .github/scripts/rename-app.sh ./electron/package.json nightly
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json nightly
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
 
       - name: Change App Name for beta version
         if: inputs.beta == true
@@ -174,20 +130,6 @@ jobs:
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
-      - name: Inject Tauri Signing Public Key
-        run: |
-          if [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Injecting Tauri public key into configuration..."
-            # Use jq to update the pubkey field in the tauri.conf.json file
-            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
-            echo "Tauri configuration updated successfully"
-          else
-            echo "tauri.conf.json not found"
-          fi
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-
       - name: Build and publish app to aws s3 r2 or github artifactory
         if: inputs.public_provider != 'github'
         run: |
@@ -206,10 +148,7 @@ jobs:
           AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
@@ -219,9 +158,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
@@ -235,20 +171,17 @@ jobs:
           AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Upload Artifact .deb file
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
           name: jan-linux-amd64-${{ inputs.new_version }}-deb
-          path: ./src-tauri/target/release/bundle/deb/*.deb
+          path: ./electron/dist/*.deb
 
       - name: Upload Artifact .AppImage file
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
           name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
-          path: ./src-tauri/target/release/bundle/appimage/*.AppImage
+          path: ./electron/dist/*.AppImage

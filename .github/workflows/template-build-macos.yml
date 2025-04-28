@@ -48,12 +48,6 @@ on:
         required: false
       DEVELOPER_ID:
         required: false
-      TAURI_SIGNING_PRIVATE_KEY:
-        required: false
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
-        required: false
-      TAURI_SIGNING_PUBLIC_KEY:
-        required: false
 
 jobs:
   build-macos:
@@ -99,50 +93,31 @@ jobs:
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
-      - name: Install ctoml
-        run: |
-          cargo install ctoml
-
       - name: Update app version based on latest release tag with build number
         if: inputs.public_provider != 'github'
         run: |
           echo "Version: ${{ inputs.new_version }}"
-          # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-
-          chmod +x .github/scripts/rename-tauri-app.sh
-          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
-
-          echo ./src-tauri/tauri.conf.json
-
-          # Update Cargo.toml
-          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "------------------"
-          cat ./src-tauri/Cargo.toml
-
           # Update the version in electron/package.json
-          # jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
-          # mv /tmp/package.json electron/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
 
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          # jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
-          # mv /tmp/package.json electron/package.json
+          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
 
-          # jq --arg teamid "${{ secrets.APPLE_TEAM_ID }}" '.build.mac.notarize.teamId = $teamid' electron/package.json > /tmp/package.json
-          # mv /tmp/package.json electron/package.json
+          jq --arg teamid "${{ secrets.APPLE_TEAM_ID }}" '.build.mac.notarize.teamId = $teamid' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
 
           # cat electron/package.json
-          # chmod +x .github/scripts/rename-app.sh
-          # .github/scripts/rename-app.sh ./electron/package.json nightly
-          # chmod +x .github/scripts/rename-workspace.sh
-          # .github/scripts/rename-workspace.sh ./package.json nightly
-          # echo "------------------------"
-          # cat ./electron/package.json
-          # echo "------------------------"
+          chmod +x .github/scripts/rename-app.sh
+          .github/scripts/rename-app.sh ./electron/package.json nightly
+          chmod +x .github/scripts/rename-workspace.sh
+          .github/scripts/rename-workspace.sh ./package.json nightly
+          echo "------------------------"
+          cat ./electron/package.json
+          echo "------------------------"
 
       - name: Change App Name for beta version
         if: inputs.beta == true
@@ -173,19 +148,11 @@ jobs:
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
-      # - name: Get Cer for code signing
-      #   run: |
-      #     echo "$CODE_SIGN_P12_BASE64" > /tmp/certificate-base64.txt
-      #     openssl base64 -in /tmp/codesign.p12 -out /tmp/certificate-base64.txt
-      #   shell: bash
-      #   env:
-      #     CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-
-      - name: Get key for notarize
-        run: base64 -d <<< "$NOTARIZE_P8_BASE64" > /tmp/notary-key.p8
+      - name: Get Cer for code signing
+        run: base64 -d <<< "$CODE_SIGN_P12_BASE64" > /tmp/codesign.p12
         shell: bash
         env:
-          NOTARIZE_P8_BASE64: ${{ secrets.NOTARIZE_P8_BASE64 }}
+          CODE_SIGN_P12_BASE64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
 
       - uses: apple-actions/import-codesign-certs@v2
         continue-on-error: true
@@ -193,20 +160,6 @@ jobs:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
 
-      - name: Inject Tauri Signing Public Key
-        run: |
-          if [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Injecting Tauri public key into configuration..."
-            # Use jq to update the pubkey field in the tauri.conf.json file
-            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
-            echo "Tauri configuration updated successfully"
-          else
-            echo "tauri.conf.json not found"
-          fi
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-      
       - name: Build and publish app to aws s3 r2 or github artifactory
         if: inputs.public_provider != 'github'
         run: |
@@ -219,28 +172,21 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CSC_LINK: '/tmp/codesign.p12'
-          # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          # CSC_IDENTITY_AUTO_DISCOVERY: 'true'
-
+          CSC_LINK: '/tmp/codesign.p12'
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: '.'
-          # DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
-          # AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
-          # AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-          # AWS_DEFAULT_REGION: auto
-          # AWS_EC2_METADATA_DISABLED: 'true'
-          # AWS_MAX_ATTEMPTS: '5'
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
-          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
-          APPLE_API_KEY_PATH: /tmp/notary-key.p8
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
@@ -248,23 +194,15 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CSC_LINK: '/tmp/codesign.p12'
-          # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          # CSC_IDENTITY_AUTO_DISCOVERY: 'true'
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          CSC_LINK: '/tmp/codesign.p12'
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: '.'
-          # DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
-          APPLE_API_KEY_PATH: /tmp/notary-key.p8
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Build and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
@@ -272,44 +210,24 @@ jobs:
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # CSC_LINK: '/tmp/codesign.p12'
-          # CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          # CSC_IDENTITY_AUTO_DISCOVERY: 'true'
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          CSC_LINK: '/tmp/codesign.p12'
+          CSC_KEY_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APP_PATH: '.'
-          # DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
-          # AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
-          # AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-          # AWS_DEFAULT_REGION: auto
-          # AWS_EC2_METADATA_DISABLED: 'true'
-          # AWS_MAX_ATTEMPTS: '5'
+          DEVELOPER_ID: ${{ secrets.DEVELOPER_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
-          APPLE_API_KEY_PATH: /tmp/notary-key.p8
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
           name: jan-mac-universal-${{ inputs.new_version }}
-          path: |
-            ./src-tauri/target/release/bundle/dmg/*.dmg
-
-      - name: zip Jan-nightly.app file
-        if: inputs.public_provider != 'github'
-        run: |
-          cd ./src-tauri/target/release/bundle/macos
-          zip -r jan-nightly.zip Jan-nightly.app
-
-      - name: Upload Artifact
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
-        with:
-          name: jan-mac-universal-${{ inputs.new_version }}-tar-gz
-          path: |
-            ./src-tauri/target/release/bundle/macos/jan-nightly.zip
+          path: ./electron/dist/*.dmg
