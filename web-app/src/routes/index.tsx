@@ -3,6 +3,7 @@ import { route } from '@/constants/routes'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from 'react-i18next'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.home as any)({
@@ -15,7 +16,7 @@ function Index() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <h1 className="font-medium">Default Model</h1>
+        <DropdownModelProvider />
       </HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center">
         <div className="w-4/6 mx-auto">
