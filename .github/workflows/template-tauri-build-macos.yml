@@ -180,16 +180,9 @@ jobs:
         env:
           TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
       
-      - name: Build and publish app to aws s3 r2 or github artifactory
-        if: inputs.public_provider != 'github'
+      - name: Build app
         run: |
-          # check public_provider is true or not
-          echo "public_provider is ${{ inputs.public_provider }}"
-          if [ "${{ inputs.public_provider }}" == "none" ]; then
-            make build-tauri
-          else
-            make build-and-publish
-          fi
+          make build-tauri
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_PATH: '.'
@@ -205,44 +198,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
-      - name: Build and publish app to github
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
-        run: |
-          make build-and-publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP_PATH: '.'
-          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
-          APPLE_API_KEY_PATH: /tmp/notary-key.p8
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-
-      - name: Build and publish app to github
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
-        run: |
-          make build-and-publish
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP_PATH: '.'
-          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-          APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.NOTARY_KEY_ID }}
-          APPLE_API_KEY_PATH: /tmp/notary-key.p8
-
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-mac-universal-${{ inputs.new_version }}
+          name: jan-mac-universal-${{ inputs.new_version }}.dmg
           path: |
             ./src-tauri/target/release/bundle/dmg/*.dmg
 
@@ -253,3 +213,11 @@ jobs:
           name: jan-mac-universal-${{ inputs.new_version }}.app.tar.gz
           path: |
             ./src-tauri/target/release/bundle/macos/Jan-nightly.app.tar.gz
+
+      - name: Upload Artifact
+        if: inputs.public_provider != 'github'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jan-mac-universal-${{ inputs.new_version }}.app.tar.gz.sig
+          path: |
+            ./src-tauri/target/release/bundle/macos/Jan-nightly.app.tar.gz.sig
