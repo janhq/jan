@@ -37,6 +37,13 @@ export type ModelArtifact = {
   url: string
 }
 
+export enum ModelCapability {
+  completion = 'completion',
+  tools = 'tools',
+  vision = 'vision',
+  embedding = 'embedding',
+}
+
 /**
  * Model type defines the shape of a model object.
  * @stored
@@ -106,6 +113,8 @@ export type Model = {
    * The model engine.
    */
   engine: string | InferenceEngine;
+
+  capabilities: ModelCapability[]
 }
 
 // Represents metadata associated with a model

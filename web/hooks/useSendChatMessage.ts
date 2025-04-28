@@ -15,6 +15,8 @@ import {
   InferenceEngine,
   MessageStatus,
   ChatCompletionRole,
+  ModelManager,
+  ModelCapability,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -188,17 +190,13 @@ export default function useSendChatMessage(
       runtimeParams.stream = true
     }
 
-    // Build Message Request
-    const requestBuilder = new MessageRequestBuilder(
-      MessageRequestType.Thread,
-      {
-        ...modelRequest,
-        settings: settingParams,
-        parameters: runtimeParams,
-      },
-      activeThread,
-      messages ?? currentMessages,
-      (await window.core.api.getTools())
+    // add tools to request if model supports tools
+    const model = ModelManager.instance().get(modelRequest.id)
+    const isToolsSupported = model?.capabilities.includes(ModelCapability.tools)
+
+    let tools = undefined
+    if (isToolsSupported) {
+      tools = (await window.core.api.getTools())
         ?.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
         .map((tool: ModelTool) => ({
           type: 'function' as const,
@@ -209,6 +207,24 @@ export default function useSendChatMessage(
             strict: false,
           },
         }))
+        // if no tools are selected, send null in request
+        if (tools.length == 0) {
+          tools = undefined
+        }
+    }
+
+    // Build Message Request
+    console.log("modelRequest", modelRequest)
+    const requestBuilder = new MessageRequestBuilder(
+      MessageRequestType.Thread,
+      {
+        ...modelRequest,
+        settings: settingParams,
+        parameters: runtimeParams,
+      },
+      activeThread,
+      messages ?? currentMessages,
+      tools,
     ).addSystemMessage(activeAssistant.instructions)
 
     requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
@@ -265,6 +281,7 @@ export default function useSendChatMessage(
 
     if (requestBuilder.tools && requestBuilder.tools.length) {
       let isDone = false
+      // TODO: get OpenAI client object from Provider?
       const openai = new OpenAI({
         apiKey: await window.core.api.appToken(),
         baseURL: `${API_BASE_URL}/v1`,
@@ -332,7 +349,6 @@ export default function useSendChatMessage(
       }
     } else {
       // Request for inference
-      // TODO: will refactor this
       const engine = requestBuilder.model.engine ?? InferenceEngine.cortex
       EngineManager.instance().get(engine)?.inference(requestBuilder.build())
     }
