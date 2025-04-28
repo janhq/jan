@@ -7,7 +7,6 @@
  */
 
 import {
-  InferenceEngine,
   ModelRuntimeParams,
   PayloadType,
   RemoteOAIEngine,
@@ -34,28 +33,28 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
 
     // Register Settings
     this.registerSettings(SETTINGS)
-    // /models
-    this.registerModels([
-      {
+
+    // register models
+    const models = DEFAULT_MODELS.map((model) => ({
         sources: [],
-        id: 'gpt-4-turbo',
-        model: 'gpt-4-turbo',
         object: 'model',
-        name: 'OpenAI GPT 4 Turbo',
-        version: '1.2',
-        description: 'OpenAI GPT 4 Turbo model is extremely good',
-        format: 'api',
+        version: model.version,
+        format: 'api',  // check
+        id: model.model,
+        name: model.name,
+        created: 0,
+        description: model.description,
         settings: {},
         parameters: {},
-        created: 1,
         metadata: {
-          author: 'openai',
+          author: '',
           tags: [],
           size: 0,
         },
-        engine: InferenceEngine.openai,
-      },
-    ])
+        engine: this.provider,
+        capabilities: model.capabilities,
+    }))
+    this.registerModels(models)
 
     this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
     this.inferenceUrl = await this.getSetting<string>(
