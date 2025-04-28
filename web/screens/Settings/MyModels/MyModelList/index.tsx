@@ -57,13 +57,13 @@ const MyModelList = ({ model }: Props) => {
             <h6
               className={twMerge(
                 'font-medium lg:line-clamp-1 lg:min-w-[280px] lg:max-w-[280px]',
-                !isLocalEngine(engines, model.engine) && 'max-w-none'
+                !isLocalEngine(model.engine) && 'max-w-none'
               )}
               title={model.name}
             >
               {model.name}
             </h6>
-            {isLocalEngine(engines, model.engine) && (
+            {isLocalEngine(model.engine) && (
               <div className="flex gap-x-8">
                 <p
                   className="line-clamp-1 text-[hsla(var(--text-secondary))] lg:min-w-[160px] lg:max-w-[160px] xl:max-w-none"
@@ -76,7 +76,7 @@ const MyModelList = ({ model }: Props) => {
           </div>
         </div>
 
-        {isLocalEngine(engines, model.engine) && (
+        {isLocalEngine(model.engine) && (
           <div className="flex gap-x-4">
             <div className="md:min-w-[90px] md:max-w-[90px]">
               <Badge theme="secondary" className="sm:mr-8">

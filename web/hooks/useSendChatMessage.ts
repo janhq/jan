@@ -332,9 +332,9 @@ export default function useSendChatMessage(
       }
     } else {
       // Request for inference
-      EngineManager.instance()
-        .get(requestBuilder.model.engine ?? InferenceEngine.cortex)
-        ?.inference(requestBuilder.build())
+      // TODO: will refactor this
+      const engine = requestBuilder.model.engine ?? InferenceEngine.cortex
+      EngineManager.instance().get(engine)?.inference(requestBuilder.build())
     }
 
     // Reset states

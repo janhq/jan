@@ -64,14 +64,14 @@ const SettingDetail = () => {
     default:
       if (
         !selectedSetting.includes('@janhq') &&
-        isLocalEngine(engines, selectedSetting as InferenceEngine)
+        isLocalEngine(selectedSetting as InferenceEngine)
       ) {
         return (
           <LocalEngineSettings engine={selectedSetting as InferenceEngine} />
         )
       } else if (
         !selectedSetting.includes('@janhq') &&
-        !isLocalEngine(engines, selectedSetting as InferenceEngine)
+        !isLocalEngine(selectedSetting as InferenceEngine)
       ) {
         return (
           <RemoteEngineSettings engine={selectedSetting as InferenceEngine} />

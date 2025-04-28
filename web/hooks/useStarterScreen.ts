@@ -20,12 +20,11 @@ export function useStarterScreen() {
   const remoteEngines =
     engines &&
     Object.entries(engines)
-      .filter(([key]) => !isLocalEngine(engines, key as InferenceEngine))
+      .filter(([key]) => !isLocalEngine(key as InferenceEngine))
       .flatMap(([_, engineArray]) => engineArray as EngineConfig)
 
   const isDownloadALocalModel = useMemo(
-    () =>
-      downloadedModels.some((x) => engines && isLocalEngine(engines, x.engine)),
+    () => downloadedModels.some((x) => engines && isLocalEngine(x.engine)),
     [engines, downloadedModels]
   )
 

@@ -32,7 +32,7 @@ const Engines = () => {
           {engines &&
             Object.entries(engines).map(([key]) => {
               if (
-                !isLocalEngine(engines, key as InferenceEngine) ||
+                !isLocalEngine(key as InferenceEngine) ||
                 !engines[key as InferenceEngine].length
               )
                 return
@@ -52,11 +52,7 @@ const Engines = () => {
         </div>
         {engines &&
           Object.entries(engines).map(([key, values]) => {
-            if (
-              isLocalEngine(engines, key as InferenceEngine) ||
-              !values.length
-            )
-              return
+            if (isLocalEngine(key as InferenceEngine) || !values.length) return
             return (
               <RemoteEngineItems
                 engine={key as InferenceEngine}

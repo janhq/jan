@@ -68,7 +68,7 @@ const ThreadRightPanel = () => {
 
   const isModelSupportRagAndTools =
     selectedModel?.engine === InferenceEngine.openai ||
-    isLocalEngine(engines, selectedModel?.engine as InferenceEngine)
+    isLocalEngine(selectedModel?.engine as InferenceEngine)
 
   const setEngineParamsUpdate = useSetAtom(engineParamsUpdateAtom)
   const { stopModel } = useActiveModel()

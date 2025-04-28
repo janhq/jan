@@ -2,7 +2,12 @@ import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 
 import Image from 'next/image'
 
-import { EngineConfig, EngineManager, InferenceEngine } from '@janhq/core'
+import {
+  EngineConfig,
+  EngineManager,
+  EngineVariant,
+  InferenceEngine,
+} from '@janhq/core'
 import {
   Badge,
   Button,
@@ -93,7 +98,9 @@ const ModelDropdown = ({
     null
   )
   const { sources: featuredModels } = useGetFeaturedSources()
-  const [engineExt, setEngineExt] = useState([])
+  const [engineExt, setEngineExt] = useState<
+    { name: string; type: string; engine: EngineVariant & EngineConfig }[]
+  >([])
 
   const { engines } = useGetEngines()
 
@@ -119,21 +126,28 @@ const ModelDropdown = ({
   )
 
   useEffect(() => {
-    EngineManager.instance()
-      .engines
-      .forEach((e) => {
-        // @ts-ignore
-        setEngineExt((prev) => {
-          return [
-            ...prev,
-            {
-              name: e[0],
-              type: 'local',
-              engine: e[0],
-            },
-          ]
-        })
+    EngineManager.instance().engines.forEach((e) => {
+      // @ts-ignore
+      setEngineExt((prev) => {
+        return [
+          ...prev,
+          ...(!prev.some((x) => x.name === e.provider)
+            ? [
+                {
+                  name: e.provider,
+                  type: 'remote',
+                  engine: {
+                    engine: e.provider,
+                    version: e.version,
+                    name: e.provider,
+                    api_key: 'apiKey' in e ? e.apiKey : '',
+                  },
+                },
+              ]
+            : []),
+        ]
       })
+    })
   }, [])
 
   useClickOutside(() => handleChangeStateOpen(false), null, [
@@ -153,45 +167,44 @@ const ModelDropdown = ({
     [setModelDropdownState]
   )
 
-  // const filteredDownloadedModels = useMemo(
-  //   () =>
-  //     configuredModels
-  //       .concat(
-  //         downloadedModels.filter(
-  //           (e) => !configuredModels.some((x) => x.id === e.id)
-  //         )
-  //       )
-  //       .filter((e) =>
-  //         e.name.toLowerCase().includes(searchText.toLowerCase().trim())
-  //       )
-  //       .filter((e) => {
-  //         if (searchFilter === 'local') {
-  //           return (
-  //             engineList.find((t) => t.engine?.engine === e.engine)?.type ===
-  //             'local'
-  //           )
-  //         }
-  //         return true
-  //       })
-  //       .sort((a, b) => a.name.localeCompare(b.name))
-  //       .sort((a, b) => {
-  //         const aInDownloadedModels = downloadedModels.some(
-  //           (item) => item.id === a.id
-  //         )
-  //         const bInDownloadedModels = downloadedModels.some(
-  //           (item) => item.id === b.id
-  //         )
-  //         if (aInDownloadedModels && !bInDownloadedModels) {
-  //           return -1
-  //         } else if (!aInDownloadedModels && bInDownloadedModels) {
-  //           return 1
-  //         } else {
-  //           return 0
-  //         }
-  //       }),
-  //   [configuredModels, searchText, searchFilter, downloadedModels, engineList]
-  // )
-  // console.log(filteredDownloadedModels)
+  const filteredDownloadedModels = useMemo(
+    () =>
+      configuredModels
+        .concat(
+          downloadedModels.filter(
+            (e) => !configuredModels.some((x) => x.id === e.id)
+          )
+        )
+        .filter((e) =>
+          e.name.toLowerCase().includes(searchText.toLowerCase().trim())
+        )
+        .filter((e) => {
+          if (searchFilter === 'local') {
+            return (
+              engineList.find((t) => t.engine?.engine === e.engine)?.type ===
+              'local'
+            )
+          }
+          return true
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .sort((a, b) => {
+          const aInDownloadedModels = downloadedModels.some(
+            (item) => item.id === a.id
+          )
+          const bInDownloadedModels = downloadedModels.some(
+            (item) => item.id === b.id
+          )
+          if (aInDownloadedModels && !bInDownloadedModels) {
+            return -1
+          } else if (!aInDownloadedModels && bInDownloadedModels) {
+            return 1
+          } else {
+            return 0
+          }
+        }),
+    [configuredModels, searchText, searchFilter, downloadedModels, engineList]
+  )
 
   useEffect(() => {
     if (modelDropdownState && chatInputMode) {
@@ -406,12 +419,6 @@ const ModelDropdown = ({
           >
             {engineList
               .filter((e) => e.type === searchFilter)
-              .filter(
-                (e) =>
-                  e.type === 'remote' ||
-                  e.name === InferenceEngine.cortex_llamacpp ||
-                  configuredModels.some((e) => e.engine === e.name)
-              )
               .map((engine, i) => {
                 const isConfigured =
                   engine.type === 'local' ||
@@ -479,7 +486,7 @@ const ModelDropdown = ({
                       </div>
 
                       {engine.type === 'local' &&
-                        // !isDownloadALocalModel &&
+                        !isDownloadALocalModel &&
                         showModel &&
                         !searchText.length && (
                           <ul className="pb-2">
@@ -546,9 +553,15 @@ const ModelDropdown = ({
                         )}
 
                       <ul className="pb-2">
-                        {configuredModels
+                        {filteredDownloadedModels
+                          .filter(
+                            (x) =>
+                              x.engine === engine.name ||
+                              (x.engine === InferenceEngine.nitro &&
+                                engine.name === InferenceEngine.cortex_llamacpp)
+                          )
                           .filter((y) => {
-                            if (!searchText.length) {
+                            if (isLocalEngine(y.engine) && !searchText.length) {
                               return downloadedModels.find((c) => c.id === y.id)
                             } else {
                               return y

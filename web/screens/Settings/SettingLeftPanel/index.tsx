@@ -76,7 +76,7 @@ const SettingLeftPanel = () => {
         {engines &&
           Object.entries(engines).filter(
             ([key]) =>
-              isLocalEngine(engines, key as InferenceEngine) &&
+              isLocalEngine(key as InferenceEngine) &&
               !showSettingActiveLocalEngine.includes(key)
           ).length > 0 && (
             <>
@@ -94,7 +94,7 @@ const SettingLeftPanel = () => {
                       engines[key as InferenceEngine].length > 0
                   )
                   .map(([key]) => {
-                    if (!isLocalEngine(engines, key as InferenceEngine)) return
+                    if (!isLocalEngine(key as InferenceEngine)) return
                     return (
                       <SettingItem
                         key={key}
@@ -109,7 +109,7 @@ const SettingLeftPanel = () => {
         {engines &&
           Object.entries(engines).filter(
             ([key]) =>
-              !isLocalEngine(engines, key as InferenceEngine) &&
+              !isLocalEngine(key as InferenceEngine) &&
               !showSettingActiveRemoteEngine.includes(key)
           ).length > 0 && (
             <>
@@ -127,7 +127,7 @@ const SettingLeftPanel = () => {
                       engines[key as InferenceEngine].length > 0
                   )
                   .map(([key]) => {
-                    if (isLocalEngine(engines, key as InferenceEngine)) return
+                    if (isLocalEngine(key as InferenceEngine)) return
                     return (
                       <SettingItem
                         key={key}
