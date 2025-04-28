@@ -1,5 +1,5 @@
 [package]
-name = "jan-nightly"
+name = "Jan-nightly"
 version = "0.5.16-1320"
 description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
 authors = ["Jan <service@jan.ai>"]

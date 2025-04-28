@@ -99,31 +99,50 @@ jobs:
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
+      - name: Install ctoml
+        run: |
+          cargo install ctoml
+
       - name: Update app version based on latest release tag with build number
         if: inputs.public_provider != 'github'
         run: |
           echo "Version: ${{ inputs.new_version }}"
+          # Update tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+
+          chmod +x .github/scripts/rename-tauri-app.sh
+          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
+
+          echo ./src-tauri/tauri.conf.json
+
+          # Update Cargo.toml
+          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "------------------"
+          cat ./src-tauri/Cargo.toml
+
           # Update the version in electron/package.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
+          # jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
+          # mv /tmp/package.json electron/package.json
 
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
+          # jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
+          # mv /tmp/package.json electron/package.json
 
-          jq --arg teamid "${{ secrets.APPLE_TEAM_ID }}" '.build.mac.notarize.teamId = $teamid' electron/package.json > /tmp/package.json
-          mv /tmp/package.json electron/package.json
+          # jq --arg teamid "${{ secrets.APPLE_TEAM_ID }}" '.build.mac.notarize.teamId = $teamid' electron/package.json > /tmp/package.json
+          # mv /tmp/package.json electron/package.json
 
           # cat electron/package.json
-          chmod +x .github/scripts/rename-app.sh
-          .github/scripts/rename-app.sh ./electron/package.json nightly
-          chmod +x .github/scripts/rename-workspace.sh
-          .github/scripts/rename-workspace.sh ./package.json nightly
-          echo "------------------------"
-          cat ./electron/package.json
-          echo "------------------------"
+          # chmod +x .github/scripts/rename-app.sh
+          # .github/scripts/rename-app.sh ./electron/package.json nightly
+          # chmod +x .github/scripts/rename-workspace.sh
+          # .github/scripts/rename-workspace.sh ./package.json nightly
+          # echo "------------------------"
+          # cat ./electron/package.json
+          # echo "------------------------"
 
       - name: Change App Name for beta version
         if: inputs.beta == true
@@ -213,7 +232,7 @@ jobs:
           # AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
-          CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
+          # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
           APPLE_CERTIFICATE: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
           APPLE_API_ISSUER: ${{ secrets.NOTARY_ISSUER }}

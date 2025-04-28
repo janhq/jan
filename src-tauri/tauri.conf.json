@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../web/out",
     "devUrl": "http://localhost:3000",
-    "beforeDevCommand": "IS_TAURI=true yarn dev:web",
-    "beforeBuildCommand": "IS_TAURI=true yarn build:web"
+    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -30,11 +30,11 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://registry.npmjs.org",
         "font-src": ["https://fonts.gstatic.com blob: data:"],
         "img-src": "'self' asset: http://asset.localhost blob: data:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
-        "script-src": "'self' asset: $APPDATA/**.*"
+        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost"
       },
       "assetProtocol": {
         "enable": true,
@@ -50,13 +50,16 @@
       "pubkey": "",
       "endpoints": [
         "https://github.com/menloresearch/jan/releases/latest/download/latest.json"
-      ]
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
-    "createUpdaterArtifacts": true,
+    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
+    "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -69,6 +72,9 @@
       "resources/themes/**/*",
       "resources/pre-install/**/*"
     ],
-    "externalBin": ["binaries/cortex-server"]
+    "externalBin": ["binaries/cortex-server"],
+    "windows": {
+      "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
+    }
   }
 }
