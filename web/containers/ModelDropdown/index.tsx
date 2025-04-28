@@ -120,7 +120,7 @@ const ModelDropdown = ({
 
   useEffect(() => {
     EngineManager.instance()
-      .engines.entries()
+      .engines
       .forEach((e) => {
         // @ts-ignore
         setEngineExt((prev) => {
