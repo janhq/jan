@@ -14,7 +14,7 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
   return (
     <div
       className={cn(
-        'p-2 h-10 border-b border-main-view-fg/5 pl-18 text-main-view-fg flex items-center',
+        'h-10 border-b border-main-view-fg/5 pl-18 text-main-view-fg flex items-center shrink-0',
         platformName === 'macos' && !open ? 'pl-18' : 'pl-4'
       )}
     >
