@@ -35,7 +35,7 @@ ${StrLoc}
 !define HOMEPAGE ""
 !define INSTALLMODE "currentUser"
 !define LICENSE ""
-!define INSTALLERICON ""
+!define INSTALLERICON "D:\a\jan\jan\src-tauri\icons\icon.ico"
 !define SIDEBARIMAGE ""
 !define HEADERIMAGE ""
 !define MAINBINARYNAME "jan_mainbinaryname"
@@ -68,6 +68,9 @@ Var OldMainBinaryName
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
 OutFile "${OUTFILE}"
+
+ShowInstDetails nevershow
+ShowUninstDetails nevershow
 
 ; We don't actually use this value as default install path,
 ; it's just for nsis to append the product name folder in the directory selector
@@ -607,6 +610,7 @@ Section WebView2
 SectionEnd
 
 Section Install
+  SetDetailsPrint none
   SetOutPath $INSTDIR
 
   !ifmacrodef NSIS_HOOK_PREINSTALL
@@ -776,7 +780,8 @@ Function un.onInit
 FunctionEnd
 
 Section Uninstall
-
+  SetDetailsPrint none
+  
   !ifmacrodef NSIS_HOOK_PREUNINSTALL
     !insertmacro NSIS_HOOK_PREUNINSTALL
   !endif

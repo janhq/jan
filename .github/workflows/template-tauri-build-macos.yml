@@ -246,16 +246,10 @@ jobs:
           path: |
             ./src-tauri/target/release/bundle/dmg/*.dmg
 
-      - name: zip Jan-nightly.app file
-        if: inputs.public_provider != 'github'
-        run: |
-          cd ./src-tauri/target/release/bundle/macos
-          zip -r jan-nightly.zip Jan-nightly.app
-
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-mac-universal-${{ inputs.new_version }}-tar-gz
+          name: jan-mac-universal-${{ inputs.new_version }}.app.tar.gz
           path: |
-            ./src-tauri/target/release/bundle/macos/jan-nightly.zip
+            ./src-tauri/target/release/bundle/macos/Jan-nightly.app.tar.gz
