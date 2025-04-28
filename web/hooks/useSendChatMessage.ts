@@ -333,7 +333,7 @@ export default function useSendChatMessage(
     } else {
       // Request for inference
       EngineManager.instance()
-        .get(InferenceEngine.cortex)
+        .get(requestBuilder.model.engine ?? InferenceEngine.cortex)
         ?.inference(requestBuilder.build())
     }
 

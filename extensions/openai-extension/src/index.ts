@@ -110,6 +110,7 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
         max_completion_tokens: max_tokens,
       }
     }
+    delete payload.engine  // won't be needed once we remove cortex
     // Pass through for non-preview models
     return payload
   }
