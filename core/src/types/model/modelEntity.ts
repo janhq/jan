@@ -6,7 +6,7 @@ export type ModelInfo = {
   id: string
   settings?: ModelSettingParams
   parameters?: ModelRuntimeParams
-  engine?: InferenceEngine
+  engine?: string | InferenceEngine
 }
 
 /**
@@ -105,7 +105,7 @@ export type Model = {
   /**
    * The model engine.
    */
-  engine: InferenceEngine
+  engine: string | InferenceEngine;
 }
 
 // Represents metadata associated with a model

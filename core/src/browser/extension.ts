@@ -118,7 +118,7 @@ export abstract class BaseExtension implements ExtensionType {
       setting.extensionName = this.name
     })
     try {
-      const oldSettings = localStorage.getItem(this.name)
+      const oldSettings = JSON.parse(localStorage.getItem(this.name) ?? '[]')
       // Persists new settings
       if (oldSettings) {
         settings.forEach((setting) => {
@@ -169,13 +169,13 @@ export abstract class BaseExtension implements ExtensionType {
     if (!this.name) return []
 
     try {
-      const settingsString = localStorage.getItem(this.name);
-      if (!settingsString) return [];
-      const settings: SettingComponentProps[] = JSON.parse(settingsString);
-      return settings;
+      const settingsString = localStorage.getItem(this.name)
+      if (!settingsString) return []
+      const settings: SettingComponentProps[] = JSON.parse(settingsString)
+      return settings
     } catch (err) {
-      console.warn(err);
-      return [];
+      console.warn(err)
+      return []
     }
   }
 
@@ -201,8 +201,8 @@ export abstract class BaseExtension implements ExtensionType {
 
     if (!updatedSettings.length) updatedSettings = componentProps as SettingComponentProps[]
 
-    localStorage.setItem(this.name, JSON.stringify(updatedSettings));
-    
+    localStorage.setItem(this.name, JSON.stringify(updatedSettings))
+
     updatedSettings.forEach((setting) => {
       this.onSettingUpdate<typeof setting.controllerProps.value>(
         setting.key,

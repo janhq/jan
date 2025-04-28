@@ -1,4 +1,12 @@
-import { Engines, InferenceEngine } from '@janhq/core'
+import {
+  AIEngine,
+  EngineManager,
+  Engines,
+  InferenceEngine,
+  LocalOAIEngine,
+  OAIEngine,
+  RemoteOAIEngine,
+} from '@janhq/core'
 
 export const getLogoEngine = (engine: InferenceEngine | string) => {
   switch (engine) {
@@ -43,10 +51,28 @@ export const getLogoEngine = (engine: InferenceEngine | string) => {
  * @param engine
  * @returns
  */
-export const isLocalEngine = (engines?: Engines, engine?: string) => {
-  if (!engines || !engine) return false
+export const isLocalEngine = (engine?: string) => {
+  if (!engine) return false
 
-  return engines[engine as InferenceEngine]?.[0]?.type === 'local'
+  const engineObj = EngineManager.instance().get(engine)
+  if (!engineObj) return false
+  return (
+    Object.getPrototypeOf(engineObj).constructor.__proto__.name ===
+    LocalOAIEngine.name
+  )
+}
+
+export const isModelProvider = (engine?: string) => {
+  if (!engine) return false
+
+  const engineObj = EngineManager.instance().get(engine)
+  if (!engineObj) return false
+  return [
+    LocalOAIEngine.name,
+    AIEngine.name,
+    OAIEngine.name,
+    RemoteOAIEngine.name,
+  ].includes(Object.getPrototypeOf(engineObj).constructor.__proto__.name)
 }
 
 export const getTitleByEngine = (engine: InferenceEngine | string) => {
@@ -67,7 +93,7 @@ export const getTitleByEngine = (engine: InferenceEngine | string) => {
     case 'google_gemini':
       return 'Google'
     default:
-      return engine.charAt(0).toUpperCase() + engine.slice(1)
+      return engine?.charAt(0).toUpperCase() + engine?.slice(1)
   }
 }
 

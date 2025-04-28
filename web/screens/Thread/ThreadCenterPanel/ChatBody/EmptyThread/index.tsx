@@ -19,10 +19,7 @@ const EmptyThread = () => {
   const setMainViewState = useSetAtom(mainViewStateAtom)
   const { engines } = useGetEngines()
   const showOnboardingStep = useMemo(
-    () =>
-      !downloadedModels.some(
-        (e) => isLocalEngine(engines, e.engine) || e.engine
-      ),
+    () => !downloadedModels.some((e) => isLocalEngine(e.engine) || e.engine),
     [downloadedModels, engines]
   )
   return (

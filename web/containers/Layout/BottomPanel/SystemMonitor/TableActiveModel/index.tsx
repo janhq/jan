@@ -22,7 +22,7 @@ const TableActiveModel = () => {
     <div className="w-1/2">
       <div className="overflow-hidden border-b border-[hsla(var(--app-border))]">
         <table className="w-full px-8">
-          {activeModel && isLocalEngine(engines, activeModel.engine) ? (
+          {activeModel && isLocalEngine(activeModel.engine) ? (
             <tbody>
               <tr>
                 <td
