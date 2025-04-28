@@ -5,69 +5,65 @@ enum ContentType {
 
 export const mockModelProvider = [
   {
-    openai: {
-      name: '@janhq/inference-openai-extension',
-      productName: 'OpenAI Inference Engine',
+    llamacpp: {
       active: null,
-      description: 'This extension enables OpenAI chat completion API calls',
-      version: '1.0.5',
+      apiKey: '',
+      inferenceUrl: 'http://localhost:8080/v1/chat/completions',
+      provider: 'llamacpp',
+      models: [
+        {
+          'qwen2.5:0.5b': {
+            setting: {},
+          },
+        },
+        {
+          'deepseek-r1:1.5b': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+      ],
+    },
+  },
+  {
+    openai: {
+      active: null,
       apiKey: '',
       inferenceUrl: 'https://api.openai.com/v1/chat/completions',
       provider: 'openai',
       models: [
         {
           'gpt-4o': {
-            setting: {
-              contextLength: 128000,
-              temperature: 0.7,
-              topP: 1.0,
-            },
-            copabilities: ['vision', 'tools'],
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'gpt-4-turbo': {
-            setting: {
-              contextLength: 128000,
-              temperature: 0.7,
-              topP: 1.0,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'gpt-4': {
-            setting: {
-              contextLength: 8192,
-              temperature: 0.7,
-              topP: 1.0,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'gpt-3.5-turbo': {
-            setting: {
-              contextLength: 16385,
-              temperature: 0.7,
-              topP: 1.0,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'o1-mini': {
-            setting: {
-              contextLength: 128000,
-              temperature: 0.7,
-              topP: 1.0,
-            },
+            copabilities: ['reasoning'],
           },
         },
         {
           'o1-preview': {
-            setting: {
-              contextLength: 128000,
-              temperature: 0.7,
-              topP: 1.0,
-            },
+            copabilities: ['reasoning'],
           },
         },
       ],
@@ -75,50 +71,33 @@ export const mockModelProvider = [
   },
   {
     anthropic: {
-      name: '@janhq/inference-anthropic-extension',
-      productName: 'Anthropic Inference Engine',
       active: null,
-      description: 'This extension enables Anthropic chat completion API calls',
-      version: '1.0.0',
-
       apiKey: '',
       inferenceUrl: 'https://api.anthropic.com/v1/messages',
       provider: 'anthropic',
       models: [
         {
           'claude-3-opus': {
-            setting: {
-              contextLength: 200000,
-              temperature: 0.7,
-              topP: 0.9,
-            },
+            setting: {},
+            copabilities: ['reasoning', 'vision', 'tool'],
           },
         },
         {
           'claude-3-sonnet': {
-            setting: {
-              contextLength: 200000,
-              temperature: 0.7,
-              topP: 0.9,
-            },
+            setting: {},
+            copabilities: ['reasoning'],
           },
         },
         {
           'claude-3-haiku': {
-            setting: {
-              contextLength: 200000,
-              temperature: 0.7,
-              topP: 0.9,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'claude-2.1': {
-            setting: {
-              contextLength: 100000,
-              temperature: 0.7,
-              topP: 0.9,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
       ],
@@ -126,41 +105,27 @@ export const mockModelProvider = [
   },
   {
     google: {
-      name: '@janhq/inference-google-extension',
-      productName: 'Google Gemini Inference Engine',
       active: null,
-      description: 'This extension enables Google Gemini API calls',
-      version: '1.0.0',
-
       apiKey: '',
       inferenceUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
       provider: 'google',
       models: [
         {
           'gemini-1.5-pro': {
-            setting: {
-              contextLength: 1000000,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'gemini-1.5-flash': {
-            setting: {
-              contextLength: 1000000,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'gemini-1.0-pro': {
-            setting: {
-              contextLength: 32768,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
       ],
@@ -168,58 +133,39 @@ export const mockModelProvider = [
   },
   {
     meta: {
-      name: '@janhq/inference-meta-extension',
-      productName: 'Meta Llama Inference Engine',
       active: null,
-      description: 'This extension enables Meta Llama API calls',
-      version: '1.0.0',
       apiKey: '',
       inferenceUrl: 'https://api.meta.ai/v1/chat/completions',
       provider: 'meta',
       models: [
         {
           'llama-3-70b': {
-            setting: {
-              contextLength: 8192,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'llama-3-8b': {
-            setting: {
-              contextLength: 8192,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'llama-2-70b': {
-            setting: {
-              contextLength: 4096,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool', 'reasoning'],
           },
         },
         {
           'llama-2-13b': {
-            setting: {
-              contextLength: 4096,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'llama-2-7b': {
-            setting: {
-              contextLength: 4096,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
       ],
@@ -227,87 +173,33 @@ export const mockModelProvider = [
   },
   {
     mistral: {
-      name: '@janhq/inference-mistral-extension',
-      productName: 'Mistral AI Inference Engine',
       active: null,
-      description: 'This extension enables Mistral AI API calls',
-      version: '1.0.0',
-
       apiKey: '',
       inferenceUrl: 'https://api.mistral.ai/v1/chat/completions',
       provider: 'mistral',
       models: [
         {
           'mistral-large': {
-            setting: {
-              contextLength: 32768,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision'],
           },
         },
         {
           'mistral-medium': {
-            setting: {
-              contextLength: 32768,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision'],
           },
         },
         {
           'mistral-small': {
-            setting: {
-              contextLength: 32768,
-              temperature: 0.7,
-              topP: 0.95,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
         {
           'open-mistral-7b': {
-            setting: {
-              contextLength: 8192,
-              temperature: 0.7,
-              topP: 0.95,
-            },
-          },
-        },
-      ],
-    },
-  },
-  {
-    llamacpp: {
-      name: '@janhq/inference-llamacpp-extension',
-      productName: 'Llama.cpp Local Inference Engine',
-      active: null,
-      description: 'This extension enables local inference using llama.cpp',
-      version: '1.0.0',
-
-      apiKey: '',
-      inferenceUrl: 'http://localhost:8080/v1/chat/completions',
-      provider: 'llamacpp',
-      models: [
-        {
-          'local-model-1': {
-            setting: {
-              contextLength: 4096,
-              temperature: 0.7,
-              topP: 0.95,
-              threads: 4,
-              batchSize: 512,
-            },
-          },
-        },
-        {
-          'local-model-2': {
-            setting: {
-              contextLength: 8192,
-              temperature: 0.7,
-              topP: 0.95,
-              threads: 8,
-              batchSize: 1024,
-            },
+            setting: {},
+            copabilities: ['vision', 'tool'],
           },
         },
       ],

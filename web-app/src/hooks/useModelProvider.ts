@@ -4,17 +4,19 @@ import { localStoregeKey } from '@/constants/localStorage'
 import type { ModelProvider } from '@/types/modelProviders'
 import { mockModelProvider } from '@/mock/data'
 
+type ProviderUpdateData = {
+  apiKey?: string
+  inferenceUrl?: string
+  active?: boolean | null
+  // Add other properties that might need updating in the future
+}
+
 type ModelProviderState = {
   providers: ModelProvider[]
   setProviders: (providers: ModelProvider[]) => void
   fetchModelProvider: () => Promise<void>
   getProviderByName: (providerName: string) => ModelProvider | undefined
-  updateProviderApiKey: (providerName: string, apiKey: string) => void
-  updateProviderInferenceUrl: (
-    providerName: string,
-    inferenceUrl: string
-  ) => void
-  toggleProviderActive: (providerName: string) => void
+  updateProvider: (providerName: string, data: ProviderUpdateData) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -22,7 +24,7 @@ export const useModelProvider = create<ModelProviderState>()(
     (set, get) => ({
       providers: [],
       setProviders: (providers) => set({ providers }),
-      toggleProviderActive: (providerName) => {
+      updateProvider: (providerName, data) => {
         set((state) => ({
           providers: state.providers.map((provider) => {
             const key = Object.keys(provider)[0]
@@ -30,42 +32,7 @@ export const useModelProvider = create<ModelProviderState>()(
               return {
                 [key]: {
                   ...provider[key],
-                  active:
-                    provider[key].active === null
-                      ? true
-                      : !provider[key].active,
-                },
-              }
-            }
-            return provider
-          }),
-        }))
-      },
-      updateProviderApiKey: (providerName, apiKey) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
-            const key = Object.keys(provider)[0]
-            if (key === providerName) {
-              return {
-                [key]: {
-                  ...provider[key],
-                  apiKey,
-                },
-              }
-            }
-            return provider
-          }),
-        }))
-      },
-      updateProviderInferenceUrl: (providerName, inferenceUrl) => {
-        set((state) => ({
-          providers: state.providers.map((provider) => {
-            const key = Object.keys(provider)[0]
-            if (key === providerName) {
-              return {
-                [key]: {
-                  ...provider[key],
-                  inferenceUrl,
+                  ...data,
                 },
               }
             }

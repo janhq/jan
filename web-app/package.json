@@ -18,6 +18,7 @@
     "@radix-ui/react-dropdown-menu": "^2.1.11",
     "@radix-ui/react-slot": "^1.2.0",
     "@radix-ui/react-switch": "^1.2.2",
+    "@radix-ui/react-tooltip": "^1.2.4",
     "@tabler/icons-react": "^3.31.0",
     "@tailwindcss/vite": "^4.1.4",
     "@tanstack/react-router": "^1.116.0",
