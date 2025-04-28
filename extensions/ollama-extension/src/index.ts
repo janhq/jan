@@ -13,6 +13,7 @@ export default class OllamaExtension extends RemoteOAIEngine {
   // ollama client
   // NOTE: do we need Ollama client? we can just call the endpoints ourselves
   ollama: Ollama
+  models_info: Map<string, any> = new Map()
 
   async onLoad() {
     super.onLoad()
@@ -25,9 +26,16 @@ export default class OllamaExtension extends RemoteOAIEngine {
     // providers provide the same model? but when sending the request,
     // we should strip the prefix
     // TODO: handle when server is not available
-    let models_resp = await this.ollama.list()
-    this.registerModels(models_resp.models.map(obj => {
-      return {
+    let models_to_register = []
+    for (const obj of (await this.ollama.list()).models) {
+      const model_info = await this.ollama.show({ model: obj.model })
+      const ctx_key = Object.keys(model_info.model_info).find(k => k.endsWith(".context_length"))
+      this.models_info.set(obj.model, {
+        tools: model_info.capabilities.includes("tools"),
+        max_ctx: model_info.model_info[ctx_key],
+      })
+
+      models_to_register.push({
         sources: [],
         id: obj.model,
         model: obj.model,
@@ -45,8 +53,10 @@ export default class OllamaExtension extends RemoteOAIEngine {
           size: 0,
         },
         engine: InferenceEngine.ollama,
-      }
-    }))
+      })
+    }
+    console.log("Ollama models", this.models_info)
+    this.registerModels(models_to_register)
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
