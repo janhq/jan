@@ -3,7 +3,7 @@
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  * @version 1.0.0
- * @module inference-openai-extension/src/index
+ * @module openai-extension/src/index
  */
 
 import {
@@ -13,7 +13,7 @@ import {
 } from '@janhq/core'
 
 export enum Settings {
-  apiKey = 'openai-api-key',
+  apiKey = 'api-key',
   baseUrl = 'base-url',
 }
 type OpenAIPayloadType = PayloadType &
