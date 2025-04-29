@@ -26,7 +26,7 @@ type OpenAIPayloadType = PayloadType &
 export default class OpenAIProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
   baseURL: string = ''
-  provider: string = 'openai'
+  provider: string = ENGINE
   previewModels = ['o1-mini', 'o1-preview']
 
   override async onLoad(): Promise<void> {

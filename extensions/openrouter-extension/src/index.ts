@@ -21,7 +21,7 @@ export enum Settings {
 export default class OpenRouterProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
   baseURL: string = ''
-  provider: string = 'openrouter'
+  provider: string = ENGINE
 
   override async onLoad(): Promise<void> {
     super.onLoad()
