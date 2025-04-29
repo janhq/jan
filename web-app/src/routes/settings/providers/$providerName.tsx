@@ -16,7 +16,7 @@ export const Route = createFileRoute('/settings/providers/$providerName')({
 
 function ProviderDetail() {
   const { providerName } = useParams({ from: Route.id })
-  const { getProviderByName } = useModelProvider()
+  const { getProviderByName, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
 
   return (
@@ -35,7 +35,14 @@ function ProviderDetail() {
               <h1 className="font-medium text-base">
                 {getProviderTitle(providerName)}
               </h1>
-              <Switch checked={provider?.active} />
+              <Switch
+                checked={provider?.active}
+                onCheckedChange={(e) => {
+                  if (provider) {
+                    updateProvider(providerName, { ...provider, active: e })
+                  }
+                }}
+              />
             </div>
             {/* Models */}
             <CardSetting title="Models">
