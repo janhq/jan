@@ -22,7 +22,7 @@ export abstract class RemoteOAIEngine extends OAIEngine {
     return {
       ...(this.apiKey && {
         'Authorization': `Bearer ${this.apiKey}`,
-        'api-key': `${this.apiKey}`,
+        // 'api-key': `${this.apiKey}`,  // only Anthropic uses this header?
       }),
     }
   }

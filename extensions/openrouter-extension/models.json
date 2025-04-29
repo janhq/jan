@@ -1,0 +1,16 @@
+[
+    {
+      "model": "deepseek/deepseek-r1:free",
+      "name": "DeepSeek-R1 (free)",
+      "version": "1.0",
+      "description": "",
+      "capabilities": ["completion"]
+    },
+    {
+      "model": "qwen/qwen3-30b-a3b:free",
+      "name": "Qwen3 30B A3B (free)",
+      "version": "1.0",
+      "description": "",
+      "capabilities": ["completion"]
+    }
+]
