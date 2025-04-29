@@ -15,22 +15,19 @@ on:
         required: true
         type: string
         default: ''
-      aws_s3_prefix:
-        required: false
-        type: string
-        default: '/latest/'
-      beta:
-        required: false
-        type: boolean
-        default: false
-      nightly:
-        required: false
-        type: boolean
-        default: false
       cortex_api_port:
         required: false
         type: string
-        default: null
+        default: ""
+      upload_url:
+        required: false
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -44,10 +41,20 @@ on:
         required: false
       TAURI_SIGNING_PUBLIC_KEY:
         required: false
-
+    outputs:
+      DEB_SIG:
+        value: ${{ jobs.build-linux-x64.outputs.DEB_SIG }}
+      APPIMAGE_SIG:
+        value: ${{ jobs.build-linux-x64.outputs.APPIMAGE_SIG }}
+      APPIMAGE_FILE_NAME:
+        value: ${{ jobs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}
 jobs:
   build-linux-x64:
     runs-on: ubuntu-22.04
+    outputs:
+      DEB_SIG: ${{ steps.packageinfo.outputs.DEB_SIG }}
+      APPIMAGE_SIG: ${{ steps.packageinfo.outputs.APPIMAGE_SIG }}
+      APPIMAGE_FILE_NAME: ${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}
     environment: production
     permissions:
       contents: write
@@ -71,30 +78,11 @@ jobs:
           echo "Disk space after cleanup:"
           df -h
 
-      # - name: Replace Icons for Beta Build
-      #   if: inputs.beta == true && inputs.nightly != true
-      #   shell: bash
-      #   run: |
-      #     rm -rf electron/icons/*
-
-      #     cp electron/icons_dev/jan-beta-512x512.png electron/icons/512x512.png
-      #     cp electron/icons_dev/jan-beta.ico electron/icons/icon.ico
-      #     cp electron/icons_dev/jan-beta.png electron/icons/icon.png
-      #     cp electron/icons_dev/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
-      #     cp electron/icons_dev/jan-beta-tray.png electron/icons/icon-tray.png
-
-      # - name: Replace Icons for Nightly Build
-      #   if: inputs.nightly == true && inputs.beta != true
-      #   shell: bash
-      #   run: |
-      #     rm -rf electron/icons/*
-
-      #     cp electron/icons_dev/jan-nightly-512x512.png electron/icons/512x512.png
-      #     cp electron/icons_dev/jan-nightly.ico electron/icons/icon.ico
-      #     cp electron/icons_dev/jan-nightly.png electron/icons/icon.png
-      #     cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
-      #     cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
-
+      - name: Replace Icons for Beta Build
+        if: inputs.channel != 'stable'
+        shell: bash
+        run: |
+          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
 
       - name: Installing node
         uses: actions/setup-node@v1
@@ -114,76 +102,41 @@ jobs:
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: Update app version base public_provider
-        if: inputs.public_provider != 'github'
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
+          mv /tmp/package.json web/package.json
 
-          chmod +x .github/scripts/rename-tauri-app.sh
-          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
-
-          echo ./src-tauri/tauri.conf.json
-          
-          # Update Cargo.toml
-          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "------------------"
           cat ./src-tauri/Cargo.toml
 
-          chmod +x .github/scripts/rename-workspace.sh
-          .github/scripts/rename-workspace.sh ./package.json nightly
-         
-      - name: Change App Name for beta version
-        if: inputs.beta == true
-        shell: bash
-        run: |
-          chmod +x .github/scripts/rename-tauri-app.sh
-          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json beta
-          cat ./src-tauri/tauri.conf.json
-          echo "------------------" 
-          ctoml ./src-tauri/Cargo.toml package.name "Jan-beta"          
-          cat ./src-tauri/Cargo.toml
-          echo "------------------"
-          chmod +x .github/scripts/rename-workspace.sh
-          .github/scripts/rename-workspace.sh ./package.json beta
-          cat ./package.json
+          # Change app name for beta and nightly builds
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
 
-      - name: Update app version base on tag
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
-        run: |
-          jq --arg version "${VERSION_TAG#v}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          ctoml ./src-tauri/Cargo.toml package.version "${VERSION_TAG#v}"
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json      
-        env:
-          VERSION_TAG: ${{ inputs.new_version }}
+            chmod +x .github/scripts/rename-tauri-app.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
 
-      - name: Inject Tauri Signing Public Key
-        run: |
-          if [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Injecting Tauri public key into configuration..."
-            # Use jq to update the pubkey field in the tauri.conf.json file
-            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
-            echo "Tauri configuration updated successfully"
-          else
-            echo "tauri.conf.json not found"
+            cat ./src-tauri/tauri.conf.json
+            
+            # Update Cargo.toml
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            echo "------------------"
+            cat ./src-tauri/Cargo.toml
+
+            chmod +x .github/scripts/rename-workspace.sh
+            .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
+            cat ./package.json
           fi
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
-
       - name: Build app
         run: |
           make build-tauri
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-          AWS_EC2_METADATA_DISABLED: 'true'
-          AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
@@ -191,19 +144,15 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
+      # Publish app
+
+      ## Artifacts, for dev and test
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
           name: jan-linux-amd64-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
-      
-      - name: Upload Artifact
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
-        with:
-          name: jan-linux-amd64-${{ inputs.new_version }}.deb.sig
-          path: ./src-tauri/target/release/bundle/deb/*.deb.sig
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
@@ -212,9 +161,106 @@ jobs:
           name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
 
-      - name: Upload Artifact
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
+      ## create zip file and latest-linux.yml for linux electron auto updater
+      - name: Create zip file and latest-linux.yml for linux electron auto updater
+        id: packageinfo
+        run: |
+          cd ./src-tauri/target/release/bundle
+
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
+            APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
+            DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
+            APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
+          else
+            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
+            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
+            DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
+            APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
+          fi
+
+          DEB_FILE_SIZE=$(stat -c%s deb/$DEB_FILE_NAME)
+          APPIMAGE_FILE_SIZE=$(stat -c%s appimage/$APPIMAGE_FILE_NAME)
+          echo "deb file size: $DEB_FILE_SIZE"
+          echo "appimage file size: $APPIMAGE_FILE_SIZE"
+
+          DEB_SH512_CHECKSUM=$(python3 ../../../../.github/scripts/electron-checksum.py deb/$DEB_FILE_NAME)
+          APPIMAGE_SH512_CHECKSUM=$(python3 ../../../../.github/scripts/electron-checksum.py appimage/$APPIMAGE_FILE_NAME)
+          echo "deb sh512 checksum: $DEB_SH512_CHECKSUM"
+          echo "appimage sh512 checksum: $APPIMAGE_SH512_CHECKSUM"
+
+          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          echo "releaseDate: $CURRENT_TIME"
+
+          # Create latest-linux.yml file
+          echo "version: ${{ inputs.new_version }}" > latest-linux.yml
+          echo "files:" >> latest-linux.yml
+          echo "  - url: $DEB_FILE_NAME" >> latest-linux.yml
+          echo "    sha512: $DEB_SH512_CHECKSUM" >> latest-linux.yml
+          echo "    size: $DEB_FILE_SIZE" >> latest-linux.yml
+          echo "  - url: $APPIMAGE_FILE_NAME" >> latest-linux.yml
+          echo "    sha512: $APPIMAGE_SH512_CHECKSUM" >> latest-linux.yml
+          echo "    size: $APPIMAGE_FILE_SIZE" >> latest-linux.yml
+          echo "path: $APPIMAGE_FILE_NAME" >> latest-linux.yml
+          echo "sha512: $APPIMAGE_SH512_CHECKSUM" >> latest-linux.yml
+          echo "releaseDate: $CURRENT_TIME" >> latest-linux.yml
+
+          cat latest-linux.yml
+          cp latest-linux.yml beta-linux.yml
+
+          echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_SIG=$APPIMAGE_SIG" >> $GITHUB_OUTPUT
+          echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_FILE_NAME=$APPIMAGE_FILE_NAME" >> $GITHUB_OUTPUT
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          cd ./src-tauri/target/release/bundle
+
+          # Upload for electron updater
+          aws s3 cp ./latest-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-linux.yml
+          aws s3 cp ./beta-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-linux.yml
+
+          # Upload for tauri updater
+          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
+          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+
+      ## Upload to github release for stable release
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
         with:
-          name: jan-linux-amd64-${{ inputs.new_version }}.AppImage.sig
-          path: ./src-tauri/target/release/bundle/appimage/*.AppImage.sig
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/latest-linux.yml
+          asset_name: latest-linux.yml
+          asset_content_type: text/yaml
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/appimage/${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}
+          asset_name: ${{ steps.packageinfo.outputs.APPIMAGE_FILE_NAME }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/deb/${{ steps.packageinfo.outputs.DEB_FILE_NAME }}
+          asset_name: ${{ steps.packageinfo.outputs.DEB_FILE_NAME }}
+          asset_content_type: application/octet-stream

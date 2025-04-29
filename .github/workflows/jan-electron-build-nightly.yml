@@ -55,8 +55,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
+      channel: nightly
       cortex_api_port: "39261"
 
   build-windows-x64:
@@ -67,8 +66,7 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
+      channel: nightly
       cortex_api_port: "39261"
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
@@ -78,17 +76,55 @@ jobs:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
+      channel: nightly
       cortex_api_port: "39261"
 
   sync-temp-to-latest:
-    needs: [set-public-provider, build-windows-x64, build-linux-x64, build-macos]
+    needs: [get-update-version, set-public-provider, build-windows-x64, build-linux-x64, build-macos]
     runs-on: ubuntu-latest
     steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+      - name: create latest.json file
+        run: |
+
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
+          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
+          DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+
+          jq --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg linux_signature "$LINUX_SIGNATURE" \
+            --arg linux_url "$LINUX_URL" \
+            --arg windows_signature "$WINDOWS_SIGNATURE" \
+            --arg windows_url "$WINDOWS_URL" \
+            --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_arm_url "$DARWIN_URL" \
+            --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_amd_url "$DARWIN_URL" \
+            '.version = $version
+              | .pub_date = $pub_date
+              | .platforms["linux-x86_64"].signature = $linux_signature
+              | .platforms["linux-x86_64"].url = $linux_url
+              | .platforms["windows-x86_64"].signature = $windows_signature
+              | .platforms["windows-x86_64"].url = $windows_url
+              | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
+              | .platforms["darwin-aarch64"].url = $darwin_arm_url
+              | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
+              | .platforms["darwin-x86_64"].url = $darwin_amd_url' \
+            src-tauri/latest.json.template > latest.json
+            cat latest.json
       - name: Sync temp to latest
         if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
         run: |
+          aws s3 cp ./latest.json s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/latest.json
           aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/nightly/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}

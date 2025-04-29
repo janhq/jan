@@ -40,8 +40,7 @@ jobs:
     with:
       ref: ${{ github.ref }}
       public_provider: github
-      beta: false
-      nightly: false
+      channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-windows-x64:
@@ -51,8 +50,7 @@ jobs:
     with:
       ref: ${{ github.ref }}
       public_provider: github
-      beta: false
-      nightly: false
+      channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   build-linux-x64:
@@ -62,9 +60,62 @@ jobs:
     with:
       ref: ${{ github.ref }}
       public_provider: github
-      beta: false
-      nightly: false
+      channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+
+  sync-temp-to-latest:
+    needs: [get-update-version, build-macos, build-windows-x64, build-linux-x64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+
+      - name: create latest.json file
+        run: |
+
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
+          LINUX_URL="https://github.com/menloresearch/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
+          WINDOWS_URL="https://github.com/menloresearch/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
+          DARWIN_URL="https://github.com/menloresearch/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-macos.outputs.TAR_NAME }}"
+
+          jq --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg linux_signature "$LINUX_SIGNATURE" \
+            --arg linux_url "$LINUX_URL" \
+            --arg windows_signature "$WINDOWS_SIGNATURE" \
+            --arg windows_url "$WINDOWS_URL" \
+            --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_arm_url "$DARWIN_URL" \
+            --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_amd_url "$DARWIN_URL" \
+            '.version = $version
+              | .pub_date = $pub_date
+              | .platforms["linux-x86_64"].signature = $linux_signature
+              | .platforms["linux-x86_64"].url = $linux_url
+              | .platforms["windows-x86_64"].signature = $windows_signature
+              | .platforms["windows-x86_64"].url = $windows_url
+              | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
+              | .platforms["darwin-aarch64"].url = $darwin_arm_url
+              | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
+              | .platforms["darwin-x86_64"].url = $darwin_amd_url' \
+            src-tauri/latest.json.template > latest.json
+            cat latest.json
+      - name: Sync temp to latest
+        run: |
+          # sync temp-beta to beta by copy files that are different or new
+          aws s3 cp ./latest.json s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/latest.json
+          aws s3 sync "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-beta/" "s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/beta/"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
 
   update_release_draft:
     needs: [build-macos, build-windows-x64, build-linux-x64]

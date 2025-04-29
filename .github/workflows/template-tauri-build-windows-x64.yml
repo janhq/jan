@@ -14,23 +14,20 @@ on:
       new_version:
         required: true
         type: string
-        default: ""
-      aws_s3_prefix:
-        required: false
-        type: string
-        default: "/latest/"
-      beta:
-        required: false
-        type: boolean
-        default: false
-      nightly:
-        required: false
-        type: boolean
-        default: false
+        default: ''
       cortex_api_port:
         required: false
         type: string
-        default: null
+        default: ""
+      upload_url:
+        required: false
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
@@ -54,10 +51,18 @@ on:
         required: false
       TAURI_SIGNING_PUBLIC_KEY:
         required: false
+    outputs:
+      WIN_SIG:
+        value: ${{ jobs.build-windows-x64.outputs.WIN_SIG }}
+      FILE_NAME:
+        value: ${{ jobs.build-windows-x64.outputs.FILE_NAME }}
 
 jobs:
   build-windows-x64:
     runs-on: windows-latest
+    outputs:
+      WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
+      FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
     permissions:
       contents: write
     steps:
@@ -66,29 +71,11 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      # - name: Replace Icons for Beta Build
-      #   if: inputs.beta == true && inputs.nightly != true
-      #   shell: bash
-      #   run: |
-      #     rm -rf electron/icons/*
-
-      #     cp electron/icons_dev/jan-beta-512x512.png electron/icons/512x512.png
-      #     cp electron/icons_dev/jan-beta.ico electron/icons/icon.ico
-      #     cp electron/icons_dev/jan-beta.png electron/icons/icon.png
-      #     cp electron/icons_dev/jan-beta-tray@2x.png electron/icons/icon-tray@2x.png
-      #     cp electron/icons_dev/jan-beta-tray.png electron/icons/icon-tray.png
-
-      # - name: Replace Icons for Nightly Build
-      #   if: inputs.nightly == true && inputs.beta != true
-      #   shell: bash
-      #   run: |
-      #     rm -rf electron/icons/*
-
-      #     cp electron/icons_dev/jan-nightly-512x512.png electron/icons/512x512.png
-      #     cp electron/icons_dev/jan-nightly.ico electron/icons/icon.ico
-      #     cp electron/icons_dev/jan-nightly.png electron/icons/icon.png
-      #     cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
-      #     cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
+      - name: Replace Icons for Beta Build
+        if: inputs.channel != 'stable'
+        shell: bash
+        run: |
+          cp .github/scripts/icon-${{ inputs.channel }}.png src-tauri/icons/icon.png
 
       - name: Installing node
         uses: actions/setup-node@v1
@@ -109,122 +96,75 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" --arg template tauri.bundle.windows.nsis.template '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = $template' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-
-          chmod +x .github/scripts/rename-tauri-app.sh
-          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json nightly
-          echo ./src-tauri/tauri.conf.json
-
-          # Update Cargo.toml
-          ctoml ./src-tauri/Cargo.toml package.name "Jan-nightly"
-          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
-          echo "------------------"
-          cat ./src-tauri/Cargo.toml
-
-          # Update template
-          get_latest_tag() {
-            local retries=0
-            local max_retries=3
-            local tag
-            while [ $retries -lt $max_retries ]; do
-              tag=$(curl -s https://api.github.com/repos/menloresearch/jan/releases/latest | jq -r .tag_name)
-              if [ -n "$tag" ] && [ "$tag" != "null" ]; then
-                echo $tag
-                return
-              else
-                let retries++
-                echo "Retrying... ($retries/$max_retries)"
-                sleep 2
-              fi
-            done
-            echo "Failed to fetch latest tag after $max_retries attempts."
-            exit 1
-          }
-
-          LATEST_TAG=$(get_latest_tag)
-          jan_tag="${LATEST_TAG#v}.0"
-          echo $jan_tag
-          sed -i "s/jan_productname/Jan-nightly/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_version/${{ inputs.new_version }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_build/$jan_tag/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_mainbinaryname/jan-nightly/g" ./src-tauri/tauri.bundle.windows.nsis.template   
-          echo "------------------"
-          cat ./src-tauri/tauri.bundle.windows.nsis.template       
-
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
-          chmod +x .github/scripts/rename-workspace.sh
-          .github/scripts/rename-workspace.sh ./package.json nightly
-          chmod +x .github/scripts/rename-uninstaller.sh
-          .github/scripts/rename-uninstaller.sh nightly
-          echo "------------------------"
-          cat ./package.json
-          echo "------------------------"
-
-      - name: Change App Name for beta version
-        if: inputs.beta == true
-        shell: bash
-        run: |
-          chmod +x .github/scripts/rename-tauri-app.sh
-          .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json beta
-          cat ./src-tauri/tauri.conf.json
-          echo "------------------" 
-          ctoml ./src-tauri/Cargo.toml package.name "Jan-beta"          
+          ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           cat ./src-tauri/Cargo.toml
+
+          generate_build_version() {
+              ### Examble
+              ### input 0.5.6 output will be 0.5.6 and 0.5.6.0
+              ### input 0.5.6-rc2-beta output will be 0.5.6 and 0.5.6.2
+              ### input 0.5.6-1213 output will be 0.5.6 and and 0.5.6.1213
+              local new_version="$1"
+              local base_version
+              local t_value
+
+              # Check if it has a "-"
+              if [[ "$new_version" == *-* ]]; then
+                  base_version="${new_version%%-*}" # part before -
+                  suffix="${new_version#*-}"         # part after -
+
+                  # Check if it is rcX-beta
+                  if [[ "$suffix" =~ ^rc([0-9]+)-beta$ ]]; then
+                      t_value="${BASH_REMATCH[1]}"
+                  else
+                      t_value="$suffix"
+                  fi
+              else
+                  base_version="$new_version"
+                  t_value="0"
+              fi
+
+              # Export two values
+              new_base_version="$base_version"
+              new_build_version="${base_version}.${t_value}"
+          }
+          generate_build_version ${{ inputs.new_version }}
+          sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           echo "------------------"
-          chmod +x .github/scripts/rename-workspace.sh
-          .github/scripts/rename-workspace.sh ./package.json beta
-          chmod +x .github/scripts/rename-uninstaller.sh
-          .github/scripts/rename-uninstaller.sh beta
-          echo "------------------------"
-          cat ./package.json
-          echo "------------------------"
-          cat ./electron/scripts/uninstaller.nsh
+          cat ./src-tauri/tauri.bundle.windows.nsis.template
 
-      - name: Update app version base on tag
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
-        shell: bash
-        run: |
-          echo "Version: ${{ inputs.new_version }}"
-          # Update tauri.conf.json
-          jq --arg version "${VERSION_TAG#v}" --arg template tauri.bundle.windows.nsis.template '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = $template' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
+          # Change app name for beta and nightly builds
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+            mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
 
-          ctoml ./src-tauri/Cargo.toml package.version "${VERSION_TAG#v}"
+            chmod +x .github/scripts/rename-tauri-app.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
 
-          jan_tag="${VERSION_TAG#v}.0"
-          sed -i "s/jan_productname/Jan-beta/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_version/${VERSION_TAG#v}/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_build/$jan_tag/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_mainbinaryname/jan-beta/g" ./src-tauri/tauri.bundle.windows.nsis.template   
-          echo "------------------"
-          cat ./src-tauri/tauri.bundle.windows.nsis.template       
+            cat ./src-tauri/tauri.conf.json
 
-          jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
-        env:
-          VERSION_TAG: ${{ inputs.new_version }}
+            # Update Cargo.toml
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            echo "------------------"
+            cat ./src-tauri/Cargo.toml
+
+            chmod +x .github/scripts/rename-workspace.sh
+            .github/scripts/rename-workspace.sh ./package.json ${{ inputs.channel }}
+            cat ./package.json
+            
+            sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+            sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
+          fi
 
       - name: Install AzureSignTool
         run: |
           dotnet tool install --global --version 6.0.0 AzureSignTool
-
-      - name: Inject Tauri Signing Public Key
-        shell: bash
-        run: |
-          if [ -f "src-tauri/tauri.conf.json" ]; then
-            echo "Injecting Tauri public key into configuration..."
-            # Use jq to update the pubkey field in the tauri.conf.json file
-            jq --arg pubkey "$TAURI_SIGNING_PUBLIC_KEY" '.plugins.updater.pubkey = $pubkey' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-            mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
-            echo "Tauri configuration updated successfully"
-          else
-            echo "tauri.conf.json not found"
-          fi
-        env:
-          TAURI_SIGNING_PUBLIC_KEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
 
       - name: Build app
         shell: bash
@@ -255,10 +195,83 @@ jobs:
           name: jan-windows-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/nsis/*.exe
-      
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+
+      ## create zip file and latest.yml for windows electron auto updater
+      - name: create zip file and latest.yml for windows electron auto updater
+        shell: bash
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
+            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
+          else
+            FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
+            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
+          fi
+
+          FILE_SIZE=$(stat -c %s $FILE_NAME)
+          echo "size: $FILE_SIZE"
+
+          SH512_CHECKSUM=$(python3 ../../../../../.github/scripts/electron-checksum.py $FILE_NAME)
+          echo "sha512: $SH512_CHECKSUM"
+          CURRENT_TIME=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          echo "releaseDate: $CURRENT_TIME"
+
+          # Create latest.yml file
+          echo "version: ${{ inputs.new_version }}" > latest.yml
+          echo "files:" >> latest.yml
+          echo "  - url: $FILE_NAME" >> latest.yml
+          echo "    sha512: $SH512_CHECKSUM" >> latest.yml
+          echo "    size: $FILE_NAME" >> latest.yml
+          echo "path: $FILE_NAME" >> latest.yml
+          echo "sha512: $SH512_CHECKSUM" >> latest.yml
+          echo "releaseDate: $CURRENT_TIME" >> latest.yml
+
+          cat latest.yml
+          cp latest.yml beta.yml
+
+          echo "::set-output name=WIN_SIG::$WIN_SIG"
+          echo "::set-output name=FILE_NAME::$FILE_NAME"
+        id: metadata
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        shell: bash
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+
+          # Upload for electron updater
+          aws s3 cp ./latest.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest.yml
+          aws s3 cp ./beta.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta.yml
+
+          # Upload for tauri updater
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+
+      ## Upload to github release for stable release
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
         with:
-          name: jan-windows-${{ inputs.new_version }}.exe.sig
-          path: |
-            ./src-tauri/target/release/bundle/nsis/*.exe.sig
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/latest.yml
+          asset_name: latest.yml
+          asset_content_type: text/yaml
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
+          asset_content_type: application/octet-stream
