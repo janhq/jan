@@ -6,7 +6,7 @@ enum ContentType {
 export const mockModelProvider = [
   {
     llamacpp: {
-      active: null,
+      active: true,
       apiKey: '',
       inferenceUrl: 'http://localhost:8080/v1/chat/completions',
       provider: 'llamacpp',
@@ -27,7 +27,7 @@ export const mockModelProvider = [
   },
   {
     openai: {
-      active: null,
+      active: true,
       apiKey: '',
       inferenceUrl: 'https://api.openai.com/v1/chat/completions',
       provider: 'openai',
@@ -71,7 +71,7 @@ export const mockModelProvider = [
   },
   {
     anthropic: {
-      active: null,
+      active: true,
       apiKey: '',
       inferenceUrl: 'https://api.anthropic.com/v1/messages',
       provider: 'anthropic',
@@ -105,7 +105,7 @@ export const mockModelProvider = [
   },
   {
     google: {
-      active: null,
+      active: true,
       apiKey: '',
       inferenceUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
       provider: 'google',
@@ -133,7 +133,7 @@ export const mockModelProvider = [
   },
   {
     meta: {
-      active: null,
+      active: true,
       apiKey: '',
       inferenceUrl: 'https://api.meta.ai/v1/chat/completions',
       provider: 'meta',
@@ -173,7 +173,7 @@ export const mockModelProvider = [
   },
   {
     mistral: {
-      active: null,
+      active: true,
       apiKey: '',
       inferenceUrl: 'https://api.mistral.ai/v1/chat/completions',
       provider: 'mistral',
@@ -205,6 +205,156 @@ export const mockModelProvider = [
       ],
     },
   },
+  {
+    deepseek: {
+      active: true,
+      apiKey: '',
+      inferenceUrl: 'https://api.deepseek.com/v1/chat/completions',
+      provider: 'deepseek',
+      models: [
+        {
+          'deepseek-coder': {
+            setting: {},
+            copabilities: ['reasoning', 'tool'],
+          },
+        },
+        {
+          'deepseek-chat': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+        {
+          'deepseek-llm': {
+            setting: {},
+            copabilities: ['vision'],
+          },
+        },
+      ],
+    },
+  },
+  {
+    martian: {
+      active: true,
+      apiKey: '',
+      inferenceUrl: 'https://api.martian.ai/v1/chat/completions',
+      provider: 'martian',
+      models: [
+        {
+          'martian-7b': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+        {
+          'martian-14b': {
+            setting: {},
+            copabilities: ['reasoning', 'vision'],
+          },
+        },
+      ],
+    },
+  },
+  {
+    openrouter: {
+      active: true,
+      apiKey: '',
+      inferenceUrl: 'https://openrouter.ai/api/v1/chat/completions',
+      provider: 'openrouter',
+      models: [
+        {
+          'openrouter-mixtral': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+        {
+          'openrouter-llama': {
+            setting: {},
+            copabilities: ['vision'],
+          },
+        },
+      ],
+    },
+  },
+  {
+    groq: {
+      active: true,
+      apiKey: '',
+      inferenceUrl: 'https://api.groq.com/v1/chat/completions',
+      provider: 'groq',
+      models: [
+        {
+          'llama3-70b-8192': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+        {
+          'mixtral-8x7b-32768': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+        {
+          'gemma-7b-it': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+      ],
+    },
+  },
+  {
+    cohere: {
+      active: true,
+      apiKey: '',
+      inferenceUrl: 'https://api.cohere.ai/v1/chat',
+      provider: 'cohere',
+      models: [
+        {
+          command: {
+            setting: {},
+            copabilities: ['reasoning', 'tool'],
+          },
+        },
+        {
+          'command-light': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+        {
+          'command-r': {
+            setting: {},
+            copabilities: ['reasoning', 'vision'],
+          },
+        },
+      ],
+    },
+  },
+  {
+    nvidia: {
+      active: true,
+      apiKey: '',
+      inferenceUrl: 'https://api.nvidia.com/v1/chat/completions',
+      provider: 'nvidia',
+      models: [
+        {
+          'nemotron-4-340b': {
+            setting: {},
+            copabilities: ['reasoning', 'vision'],
+          },
+        },
+        {
+          'nemotron-4-8b': {
+            setting: {},
+            copabilities: ['reasoning'],
+          },
+        },
+      ],
+    },
+  },
 ]
 
 export const mockTheads = [
@@ -229,6 +379,10 @@ export const mockTheads = [
         },
       },
     ],
+    model: {
+      id: 'gpt-4o',
+      provider: 'openai',
+    },
   },
   {
     id: '2',
@@ -244,5 +398,9 @@ export const mockTheads = [
         },
       },
     ],
+    model: {
+      id: 'deepseek-r1:1.5b',
+      provider: 'llamacpp',
+    },
   },
 ]

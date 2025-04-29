@@ -3,7 +3,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
-export function KeyboardShortcuts() {
+export function KeyboardShortcutsProvider() {
   const { open, setLeftPanel } = useLeftPanel()
   const router = useRouter()
 
