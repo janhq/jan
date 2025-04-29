@@ -111,12 +111,22 @@ function SortableItem({ thread }: { thread: Thread }) {
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
             {thread.isFavorite ? (
-              <DropdownMenuItem onClick={() => toggleFavorite(thread.id)}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleFavorite(thread.id)
+                }}
+              >
                 <IconStarFilled />
                 <span>{t('common.unstar')}</span>
               </DropdownMenuItem>
             ) : (
-              <DropdownMenuItem onClick={() => toggleFavorite(thread.id)}>
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleFavorite(thread.id)
+                }}
+              >
                 <IconStar />
                 <span>{t('common.star')}</span>
               </DropdownMenuItem>

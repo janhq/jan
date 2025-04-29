@@ -1,9 +1,10 @@
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import HeaderPage from '@/containers/HeaderPage'
-import { useTranslation } from 'react-i18next'
+
 import { useThreads } from '@/hooks/useThreads'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import ChatInput from '@/containers/ChatInput'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -11,7 +12,6 @@ export const Route = createFileRoute('/threads/$threadId')({
 })
 
 function ThreadDetail() {
-  const { t } = useTranslation('common', {})
   const { threadId } = useParams({ from: Route.id })
   const { getThreadById } = useThreads()
 
@@ -22,9 +22,7 @@ function ThreadDetail() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">
-          {thread.title || t('common.thread_not_found')}
-        </h1>
+        <DropdownModelProvider threadData={thread} />
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-32px)] ">
         <div className="flex flex-col h-full w-full p-4 overflow-auto">

@@ -35,4 +35,8 @@ type Thread = {
   title: string
   isFavorite?: boolean
   content: ThreadContent[]
+  model?: {
+    id: string
+    provider: string
+  }
 }

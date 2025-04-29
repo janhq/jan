@@ -22,7 +22,6 @@ import {
 
 import { useThreads } from '@/hooks/useThreads'
 
-import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const mainMenus = [
@@ -59,13 +58,7 @@ const LeftPanel = () => {
     select: (state) => state.location.pathname,
   })
 
-  const { threads, fetchThreads, deleteAllThreads, unstarAllThreads } =
-    useThreads()
-
-  useEffect(() => {
-    fetchThreads()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const { threads, deleteAllThreads, unstarAllThreads } = useThreads()
 
   return (
     <aside

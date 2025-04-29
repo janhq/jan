@@ -17,9 +17,9 @@ import { Route as IndexImport } from './routes/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
-import { Route as SettingsModelProvidersImport } from './routes/settings/model-providers'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
+import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
 // Create/Update Routes
 
@@ -59,12 +59,6 @@ const SettingsPrivacyRoute = SettingsPrivacyImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const SettingsModelProvidersRoute = SettingsModelProvidersImport.update({
-  id: '/settings/model-providers',
-  path: '/settings/model-providers',
-  getParentRoute: () => rootRoute,
-} as any)
-
 const SettingsGeneralRoute = SettingsGeneralImport.update({
   id: '/settings/general',
   path: '/settings/general',
@@ -76,6 +70,13 @@ const SettingsAppearanceRoute = SettingsAppearanceImport.update({
   path: '/settings/appearance',
   getParentRoute: () => rootRoute,
 } as any)
+
+const SettingsProvidersProviderNameRoute =
+  SettingsProvidersProviderNameImport.update({
+    id: '/settings/providers/$providerName',
+    path: '/settings/providers/$providerName',
+    getParentRoute: () => rootRoute,
+  } as any)
 
 // Populate the FileRoutesByPath interface
 
@@ -116,13 +117,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralImport
       parentRoute: typeof rootRoute
     }
-    '/settings/model-providers': {
-      id: '/settings/model-providers'
-      path: '/settings/model-providers'
-      fullPath: '/settings/model-providers'
-      preLoaderRoute: typeof SettingsModelProvidersImport
-      parentRoute: typeof rootRoute
-    }
     '/settings/privacy': {
       id: '/settings/privacy'
       path: '/settings/privacy'
@@ -144,6 +138,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ThreadsThreadIdImport
       parentRoute: typeof rootRoute
     }
+    '/settings/providers/$providerName': {
+      id: '/settings/providers/$providerName'
+      path: '/settings/providers/$providerName'
+      fullPath: '/settings/providers/$providerName'
+      preLoaderRoute: typeof SettingsProvidersProviderNameImport
+      parentRoute: typeof rootRoute
+    }
   }
 }
 
@@ -155,10 +156,10 @@ export interface FileRoutesByFullPath {
   '/mini-apps': typeof MiniAppsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/settings/model-providers': typeof SettingsModelProvidersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
 }
 
 export interface FileRoutesByTo {
@@ -167,10 +168,10 @@ export interface FileRoutesByTo {
   '/mini-apps': typeof MiniAppsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/settings/model-providers': typeof SettingsModelProvidersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
 }
 
 export interface FileRoutesById {
@@ -180,10 +181,10 @@ export interface FileRoutesById {
   '/mini-apps': typeof MiniAppsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/settings/model-providers': typeof SettingsModelProvidersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
 }
 
 export interface FileRouteTypes {
@@ -194,10 +195,10 @@ export interface FileRouteTypes {
     | '/mini-apps'
     | '/settings/appearance'
     | '/settings/general'
-    | '/settings/model-providers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
+    | '/settings/providers/$providerName'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -205,10 +206,10 @@ export interface FileRouteTypes {
     | '/mini-apps'
     | '/settings/appearance'
     | '/settings/general'
-    | '/settings/model-providers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
+    | '/settings/providers/$providerName'
   id:
     | '__root__'
     | '/'
@@ -216,10 +217,10 @@ export interface FileRouteTypes {
     | '/mini-apps'
     | '/settings/appearance'
     | '/settings/general'
-    | '/settings/model-providers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
+    | '/settings/providers/$providerName'
   fileRoutesById: FileRoutesById
 }
 
@@ -229,10 +230,10 @@ export interface RootRouteChildren {
   MiniAppsRoute: typeof MiniAppsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
-  SettingsModelProvidersRoute: typeof SettingsModelProvidersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
@@ -241,10 +242,10 @@ const rootRouteChildren: RootRouteChildren = {
   MiniAppsRoute: MiniAppsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
-  SettingsModelProvidersRoute: SettingsModelProvidersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
 }
 
 export const routeTree = rootRoute
@@ -262,10 +263,10 @@ export const routeTree = rootRoute
         "/mini-apps",
         "/settings/appearance",
         "/settings/general",
-        "/settings/model-providers",
         "/settings/privacy",
         "/settings/shortcuts",
-        "/threads/$threadId"
+        "/threads/$threadId",
+        "/settings/providers/$providerName"
       ]
     },
     "/": {
@@ -283,9 +284,6 @@ export const routeTree = rootRoute
     "/settings/general": {
       "filePath": "settings/general.tsx"
     },
-    "/settings/model-providers": {
-      "filePath": "settings/model-providers.tsx"
-    },
     "/settings/privacy": {
       "filePath": "settings/privacy.tsx"
     },
@@ -294,6 +292,9 @@ export const routeTree = rootRoute
     },
     "/threads/$threadId": {
       "filePath": "threads/$threadId.tsx"
+    },
+    "/settings/providers/$providerName": {
+      "filePath": "settings/providers/$providerName.tsx"
     }
   }
 }
