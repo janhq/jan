@@ -21,7 +21,7 @@ export function requestInference(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        // 'Access-Control-Allow-Origin': '*',
         'Accept': model.parameters?.stream
           ? 'text/event-stream'
           : 'application/json',
