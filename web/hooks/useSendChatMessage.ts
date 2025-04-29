@@ -214,7 +214,6 @@ export default function useSendChatMessage(
     }
 
     // Build Message Request
-    console.log("modelRequest", modelRequest)
     const requestBuilder = new MessageRequestBuilder(
       MessageRequestType.Thread,
       {
@@ -279,14 +278,18 @@ export default function useSendChatMessage(
     }
     setIsGeneratingResponse(true)
 
+    const engine_name = requestBuilder.model.engine ?? InferenceEngine.cortex
+    const engine = EngineManager.instance().get(engine_name)
+
     if (requestBuilder.tools && requestBuilder.tools.length) {
       let isDone = false
       // TODO: get OpenAI client object from Provider?
-      const openai = new OpenAI({
-        apiKey: await window.core.api.appToken(),
-        baseURL: `${API_BASE_URL}/v1`,
-        dangerouslyAllowBrowser: true,
-      })
+      // const openai = new OpenAI({
+      //   apiKey: await window.core.api.appToken(),
+      //   baseURL: `${API_BASE_URL}/v1`,
+      //   dangerouslyAllowBrowser: true,
+      // })
+      const openai = engine?.getOpenAIClient()
       let parentMessageId: string | undefined
       while (!isDone) {
         let messageId = ulid()
@@ -349,8 +352,7 @@ export default function useSendChatMessage(
       }
     } else {
       // Request for inference
-      const engine = requestBuilder.model.engine ?? InferenceEngine.cortex
-      EngineManager.instance().get(engine)?.inference(requestBuilder.build())
+      engine?.inference(requestBuilder.build())
     }
 
     // Reset states
