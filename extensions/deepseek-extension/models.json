@@ -1,0 +1,16 @@
+[
+  {
+    "model": "deepseek-chat",
+    "name": "DeepSeek-V3",
+    "version": "1.0",
+    "description": "The deepseek-chat model has been upgraded to DeepSeek-V3. deepseek-reasoner points to the new model DeepSeek-R1",
+    "capabilities": ["completion"]
+  },
+  {
+    "model": "deepseek-reasoner",
+    "name": "DeepSeek-R1",
+    "version": "1.0",
+    "description": "CoT (Chain of Thought) is the reasoning content deepseek-reasoner gives before output the final answer. For details, please refer to Reasoning Model.",
+    "capabilities": ["completion"]
+  }
+]
