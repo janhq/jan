@@ -14,7 +14,7 @@ import {
 
 export enum Settings {
   apiKey = 'openai-api-key',
-  chatCompletionsEndPoint = 'chat-completions-endpoint',
+  baseUrl = 'base-url',
 }
 type OpenAIPayloadType = PayloadType &
   ModelRuntimeParams & { max_completion_tokens: number }
@@ -23,8 +23,9 @@ type OpenAIPayloadType = PayloadType &
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
+export default class OpenAIProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
+  baseURL: string = ''
   provider: string = 'openai'
   previewModels = ['o1-mini', 'o1-preview']
 
@@ -57,35 +58,32 @@ export default class JanInferenceOpenAIExtension extends RemoteOAIEngine {
     this.registerModels(models)
 
     this.apiKey = await this.getSetting<string>(Settings.apiKey, '')
-    this.inferenceUrl = await this.getSetting<string>(
-      Settings.chatCompletionsEndPoint,
-      ''
-    )
-    if (this.inferenceUrl.length === 0) {
-      SETTINGS.forEach((setting) => {
-        if (setting.key === Settings.chatCompletionsEndPoint) {
-          this.inferenceUrl = setting.controllerProps.value as string
-        }
-      })
-    }
+    const baseUrl = await this.getSetting<string>(Settings.baseUrl, '')
+    this.updateBaseUrl(baseUrl)
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
     if (key === Settings.apiKey) {
       this.apiKey = value as string
-    } else if (key === Settings.chatCompletionsEndPoint) {
+    } else if (key === Settings.baseUrl) {
       if (typeof value !== 'string') return
-
-      if (value.trim().length === 0) {
-        SETTINGS.forEach((setting) => {
-          if (setting.key === Settings.chatCompletionsEndPoint) {
-            this.inferenceUrl = setting.controllerProps.value as string
-          }
-        })
-      } else {
-        this.inferenceUrl = value
-      }
+      this.updateBaseUrl(value)
     }
+  }
+
+  updateBaseUrl(value: string): void {
+    if (value.trim().length == 0) {
+      // set to default value
+      SETTINGS.forEach((setting) => {
+        if (setting.key === Settings.baseUrl) {
+          this.baseURL = setting.controllerProps.value as string
+        }
+      })
+    } else {
+      this.baseURL = value
+    }
+
+    this.inferenceUrl = `${this.baseURL}/chat/completions`
   }
 
   /**

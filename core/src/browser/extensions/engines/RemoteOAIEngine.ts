@@ -6,7 +6,7 @@ import { OpenAI } from 'openai'
  * Added the implementation of loading and unloading model (applicable to local inference providers)
  */
 export abstract class RemoteOAIEngine extends OAIEngine {
-  abstract baseURL: string
+  baseURL?: string
   apiKey?: string
   /**
    * On extension load, subscribe to events.
