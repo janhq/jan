@@ -120,13 +120,13 @@ export abstract class BaseExtension implements ExtensionType {
     try {
       const oldSettings = JSON.parse(localStorage.getItem(this.name) ?? '[]')
       // Persists new settings
-      if (oldSettings) {
+      if (oldSettings && Array.isArray(oldSettings)) {
         settings.forEach((setting) => {
           // Keep setting value
-          if (setting.controllerProps && Array.isArray(oldSettings))
+          if (setting.controllerProps)
             setting.controllerProps.value = oldSettings.find(
               (e: any) => e.key === setting.key
-            )?.controllerProps?.value
+            )?.controllerProps?.value ?? setting.controllerProps.value
         })
       }
       localStorage.setItem(this.name, JSON.stringify(settings))
