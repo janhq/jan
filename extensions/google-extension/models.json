@@ -1,0 +1,58 @@
+[
+  {
+    "model": "gemini-2.5-pro-preview-03-25",
+    "name": "Gemini 2.5 Pro Preview 03-25",
+    "version": "1.0",
+    "description": "",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "gemini-2.5-pro-exp-03-25",
+    "name": "Gemini 2.5 Pro Experimental 03-25",
+    "version": "1.0",
+    "description": "",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "gemini-2.5-flash-preview-04-17",
+    "name": "Gemini 2.5 Flash Preview 04-17",
+    "version": "1.0",
+    "description": "",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "gemini-2.0-flash",
+    "name": "Gemini 2.0 Flash",
+    "version": "1.0",
+    "description": "A Gemini 2.0 Flash model optimized for cost efficiency and low latency.",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "gemini-2.0-flash-lite",
+    "name": "Gemini 2.0 Flash-Lite",
+    "version": "1.0",
+    "description": "A Gemini 2.0 Flash model optimized for cost efficiency and low latency.",
+    "capabilities": ["completion"]
+  },
+  {
+    "model": "gemini-1.5-pro",
+    "name": "Gemini 1.5 Pro",
+    "version": "1.0",
+    "description": "Gemini 1.5 Pro is a mid-size multimodal model that is optimized for a wide-range of reasoning tasks. 1.5 Pro can process large amounts of data at once, including 2 hours of video, 19 hours of audio, codebases with 60,000 lines of code, or 2,000 pages of text. ",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "gemini-1.5-flash",
+    "name": "Gemini 1.5 Flash",
+    "version": "1.0",
+    "description": "Gemini 1.5 Flash is a fast and versatile multimodal model for scaling across diverse tasks.",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "gemini-1.5-flash-8b",
+    "name": "Gemini 1.5 Flash-8B",
+    "version": "1.0",
+    "description": "Gemini 1.5 Flash-8B is a small model designed for lower intelligence tasks.",
+    "capabilities": ["completion", "tools"]
+  }
+]

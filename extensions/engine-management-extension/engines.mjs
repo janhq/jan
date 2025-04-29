@@ -30,7 +30,7 @@ const engines = [
   martian,
   nvidia,
   deepseek,
-  googleGemini,
+  // googleGemini,
 ]
 const models = [
   ...anthropicModels,
@@ -42,6 +42,6 @@ const models = [
   ...martianModels,
   ...nvidiaModels,
   ...deepseekModels,
-  ...googleGeminiModels,
+  // ...googleGeminiModels,
 ]
 export { engines, models }
