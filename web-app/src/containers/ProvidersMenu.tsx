@@ -1,6 +1,6 @@
 import { route } from '@/constants/routes'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderLogo } from '@/lib/utils'
+import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 
 const ProvidersMenu = () => {
@@ -13,6 +13,7 @@ const ProvidersMenu = () => {
       {providers.map((provider, index) => {
         const providerKey = Object.keys(provider)[0]
         const data = provider[providerKey]
+
         const isActive = matches.some(
           (match) =>
             match.routeId === '/settings/providers/$providerName' &&
@@ -40,7 +41,7 @@ const ProvidersMenu = () => {
                 className="size-4"
               />
               <span className="capitalize">
-                {data.provider === 'llamacpp' ? 'Llama.cpp' : data.provider}
+                {getProviderTitle(data.provider)}
               </span>
             </div>
           </div>

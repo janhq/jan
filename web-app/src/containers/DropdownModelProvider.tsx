@@ -67,6 +67,9 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
             const providerKey = Object.keys(provider)[0]
             const data = provider[providerKey]
 
+            // Only show active providers
+            if (!data.active) return null
+
             return (
               <div
                 className="bg-main-view-fg/4 my-1.5 first:mt-0 rounded-sm pb-1"
