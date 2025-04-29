@@ -1,28 +1,26 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
-import type { ModelProvider } from '@/types/modelProviders'
-import { mockModelProvider } from '@/mock/data'
 
-type ProviderUpdateData = {
-  apiKey?: string
-  inferenceUrl?: string
-  active?: boolean | null
-  // Add other properties that might need updating in the future
-}
+import { mockModelProvider } from '@/mock/data'
 
 type ModelProviderState = {
   providers: ModelProvider[]
+  selectedProvider: string
+  selectedModel: string
   setProviders: (providers: ModelProvider[]) => void
   fetchModelProvider: () => Promise<void>
-  getProviderByName: (providerName: string) => ModelProvider | undefined
-  updateProvider: (providerName: string, data: ProviderUpdateData) => void
+  getProviderByName: (providerName: string) => ProviderObject | undefined
+  updateProvider: (providerName: string, data: ProviderObject) => void
+  selectModelProvider: (providerName: string, modelName: string) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
+      selectedProvider: 'llamacpp',
+      selectedModel: 'qwen2.5:0.5b',
       setProviders: (providers) => set({ providers }),
       updateProvider: (providerName, data) => {
         set((state) => ({
@@ -41,9 +39,26 @@ export const useModelProvider = create<ModelProviderState>()(
         }))
       },
       getProviderByName: (providerName: string) => {
-        return get().providers.find((provider) => {
+        const provider = get().providers.find((provider) => {
           const key = Object.keys(provider)[0]
           return key === providerName
+        })
+
+        if (provider) {
+          const key = Object.keys(provider)[0]
+          // Ensure active is always a boolean, not null
+          const providerData = provider[key]
+          return {
+            ...providerData,
+          }
+        }
+
+        return undefined
+      },
+      selectModelProvider: (providerName: string, modelName: string) => {
+        set({
+          selectedProvider: providerName,
+          selectedModel: modelName,
         })
       },
       fetchModelProvider: async () => {

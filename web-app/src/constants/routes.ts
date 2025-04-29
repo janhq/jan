@@ -4,6 +4,7 @@ export const route = {
   settings: {
     index: '/settings',
     modelProviders: '/settings/model-providers',
+    providers: '/settings/providers/$providerName',
     general: '/settings/general',
     appearance: '/settings/appearance',
     privacy: '/settings/privacy',
