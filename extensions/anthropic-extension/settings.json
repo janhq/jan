@@ -1,0 +1,24 @@
+[
+  {
+    "key": "api-key",
+    "title": "API Key",
+    "description": "The Anthropic API uses API keys for authentication. Visit your [API Keys](https://console.anthropic.com/settings/keys) page to retrieve the API key you'll use in your requests.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Insert API Key",
+      "value": "",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
+    }
+  },
+  {
+    "key": "base-url",
+    "title": "Base URL",
+    "description": "The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "https://api.anthropic.com/v1",
+      "value": "https://api.anthropic.com/v1"
+    }
+  }
+]

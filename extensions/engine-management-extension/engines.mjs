@@ -21,26 +21,26 @@ import deepseekModels from './models/deepseek.json' with { type: 'json' }
 import googleGeminiModels from './models/google_gemini.json' with { type: 'json' }
 
 const engines = [
-  anthropic,
+  // anthropic,
   openai,
-  cohere,
+  // cohere,
   // openrouter,
-  groq,
+  // groq,
   // mistral,
-  martian,
-  nvidia,
+  // martian,
+  // nvidia,
   // deepseek,
   // googleGemini,
 ]
 const models = [
-  ...anthropicModels,
+  // ...anthropicModels,
   // ...openaiModels,
-  ...cohereModels,
+  // ...cohereModels,
   // ...openrouterModels,
-  ...groqModels,
+  // ...groqModels,
   // ...mistralModels,
-  ...martianModels,
-  ...nvidiaModels,
+  // ...martianModels,
+  // ...nvidiaModels,
   // ...deepseekModels,
   // ...googleGeminiModels,
 ]

@@ -1,0 +1,16 @@
+[
+  {
+    "model": "command-r-plus",
+    "name": "Command R+",
+    "version": "1.0",
+    "description": "Command R+ is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It is best suited for complex RAG workflows and multi-step tool use.",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "command-r",
+    "name": "Command R",
+    "version": "1.0",
+    "description": "Command R is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It can be used for complex workflows like code generation, retrieval augmented generation (RAG), tool use, and agents.",
+    "capabilities": ["completion", "tools"]
+  }
+]

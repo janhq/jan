@@ -1,0 +1,24 @@
+[
+  {
+    "key": "api-key",
+    "title": "API Key",
+    "description": "The Martian API uses API keys for authentication. Visit your [API Keys](https://withmartian.com/dashboard) page to retrieve the API key you'll use in your requests.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Insert API Key",
+      "value": "",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
+    }
+  },
+  {
+    "key": "base-url",
+    "title": "Base URL",
+    "description": "The base OpenAI-compatible endpoint to use. See the [Groq documentation](https://withmartian.github.io/llm-adapters/) for more information.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "https://withmartian.com/api/openai/v1",
+      "value": "https://withmartian.com/api/openai/v1"
+    }
+  }
+]
