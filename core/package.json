@@ -61,6 +61,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
+    "openai": "^4.96.0",
     "rxjs": "^7.8.1",
     "ulidx": "^2.3.0"
   },
