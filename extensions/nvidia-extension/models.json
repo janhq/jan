@@ -1,0 +1,9 @@
+[
+  {
+    "model": "mistralai/mistral-7b-instruct-v0.3",
+    "name": "Mistral 7B Instruct v0.3",
+    "version": "1.1",
+    "description": "Mistral 7B with NVIDIA",
+    "capabilities": ["completion"]
+  }
+]

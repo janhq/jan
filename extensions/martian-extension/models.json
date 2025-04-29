@@ -1,0 +1,9 @@
+[
+  {
+    "model": "router",
+    "name": "Martian Model Router",
+    "version": "1.0",
+    "description": "Martian Model Router dynamically routes requests to the best LLM in real-time",
+    "capabilities": ["completion"]
+  }
+]
