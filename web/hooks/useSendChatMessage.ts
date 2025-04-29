@@ -254,13 +254,18 @@ export default function useSendChatMessage(
       setFileUpload(undefined)
     }
 
-    if (activeModel?.id !== modelId && modelId) {
-      const error = await startModel(modelId).catch((error: Error) => error)
-      if (error) {
-        updateThreadWaiting(activeThread.id, false)
-        return
+    if (modelId) {
+      const engine = selectedModel?.engine ?? activeAssistantRef.current?.model.engine;
+      if ((engine === InferenceEngine.cortex_llamacpp && modelRef.current?.id !== modelId)
+        || activeModel?.id !== modelId) {
+        const error = await startModel(modelId).catch((error: Error) => error)
+        if (error) {
+          updateThreadWaiting(activeThread.id, false)
+          return
+        }
       }
     }
+
     setIsGeneratingResponse(true)
 
     if (requestBuilder.tools && requestBuilder.tools.length) {
@@ -469,7 +474,7 @@ export default function useSendChatMessage(
         const toolId = ulid()
         const toolCallsMetadata =
           message.metadata?.tool_calls &&
-          Array.isArray(message.metadata?.tool_calls)
+            Array.isArray(message.metadata?.tool_calls)
             ? message.metadata?.tool_calls
             : []
         message.metadata = {
@@ -496,17 +501,17 @@ export default function useSendChatMessage(
 
         const result = approved
           ? await window.core.api.callTool({
-              toolName: toolCall.function.name,
-              arguments: JSON.parse(toolCall.function.arguments),
-            })
+            toolName: toolCall.function.name,
+            arguments: JSON.parse(toolCall.function.arguments),
+          })
           : {
-              content: [
-                {
-                  type: 'text',
-                  text: 'The user has chosen to disallow the tool call.',
-                },
-              ],
-            }
+            content: [
+              {
+                type: 'text',
+                text: 'The user has chosen to disallow the tool call.',
+              },
+            ],
+          }
         if (result.error) break
 
         message.metadata = {

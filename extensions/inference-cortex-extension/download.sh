@@ -4,8 +4,8 @@
 CORTEX_VERSION=$(cat ./bin/version.txt)
 ENGINE_VERSION=b5058
 CORTEX_RELEASE_URL="https://github.com/menloresearch/cortex.cpp/releases/download"
-ENGINE_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin
-CUDA_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%
+ENGINE_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/${ENGINE_VERSION}/llama-${ENGINE_VERSION}-bin
+CUDA_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/${ENGINE_VERSION}
 BIN_PATH=./bin
 SHARED_PATH="../../electron/shared"
 # Detect platform
@@ -41,8 +41,8 @@ elif [ "$OS_TYPE" == "Darwin" ]; then
     chmod +x "./bin/cortex-server"
 
     # Download engines for macOS
-    download "${ENGINE_DOWNLOAD_URL}-macos-arm64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/macos-arm64/v${ENGINE_VERSION}"
-    download "${ENGINE_DOWNLOAD_URL}-macos-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/macos-x64/v${ENGINE_VERSION}"
+    download "${ENGINE_DOWNLOAD_URL}-macos-arm64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/macos-arm64/${ENGINE_VERSION}"
+    download "${ENGINE_DOWNLOAD_URL}-macos-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/macos-x64/${ENGINE_VERSION}"
 
 else
     echo "Unsupported operating system: $OS_TYPE"
