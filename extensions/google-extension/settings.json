@@ -1,0 +1,24 @@
+[
+  {
+    "key": "api-key",
+    "title": "API Key",
+    "description": "The OpenRouter API uses API keys for authentication. Visit your [API Keys](https://aistudio.google.com/apikey) page to retrieve the API key you'll use in your requests.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Insert API Key",
+      "value": "",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
+    }
+  },
+  {
+    "key": "base-url",
+    "title": "Base URL",
+    "description": "The base OpenAI-compatible endpoint to use. See the [Gemini documentation](https://ai.google.dev/gemini-api/docs/openai) for more information.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "value": "https://generativelanguage.googleapis.com/v1beta/openai"
+    }
+  }
+]
