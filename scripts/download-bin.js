@@ -1,8 +1,6 @@
-console.log('Script is running')
-// scripts/download.js
 import https from 'https'
-import fs, { mkdirSync } from 'fs'
-import os from 'os'
+import fs, { existsSync, mkdirSync } from 'fs'
+import os, { platform } from 'os'
 import path from 'path'
 import unzipper from 'unzipper'
 import tar from 'tar'
@@ -89,10 +87,8 @@ async function main() {
   const tempBinDir = 'scripts/dist'
   const bunPath = `${tempBinDir}/bun-${bunPlatform}.zip`
   const uvPath = `${tempBinDir}/uv-${uvPlatform}.tar.gz`
-  try {
-    mkdirSync('scripts/dist')
-  } catch (err) {
-    // Expect EEXIST error if the directory already exists
+  if (!existsSync(tempBinDir)) {
+    mkdirSync(tempBinDir)
   }
 
   // Adjust these URLs based on latest releases
@@ -105,42 +101,29 @@ async function main() {
   console.log(`Downloading Bun for ${bunPlatform}...`)
   await download(bunUrl, path.join(tempBinDir, `bun-${bunPlatform}.zip`))
   await decompress(bunPath, tempBinDir)
-  try {
+  if (platform() !== 'win32') {
     copySync(
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun'),
       path.join(binDir)
     )
-  } catch (err) {
-    // Expect EEXIST error
-  }
-  try {
+  } else {
     copySync(
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun.exe'),
       path.join(binDir)
     )
-  } catch (err) {
-    // Expect EEXIST error
   }
   console.log('Bun downloaded.')
 
   console.log(`Downloading UV for ${uvPlatform}...`)
   await download(uvUrl, path.join(tempBinDir, `uv-${uvPlatform}.tar.gz`))
   await decompress(uvPath, tempBinDir)
-  try {
-    copySync(
-      path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'),
-      path.join(binDir)
-    )
-  } catch (err) {
-    // Expect EEXIST error
-  }
-  try {
+  if (platform() !== 'win32') {
+    copySync(path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'), path.join(binDir))
+  } else {
     copySync(
       path.join(tempBinDir, `uv-${uvPlatform}`, 'uv.exe'),
       path.join(binDir)
     )
-  } catch (err) {
-    // Expect EEXIST error
   }
   console.log('UV downloaded.')
 
