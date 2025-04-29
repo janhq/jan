@@ -1,0 +1,23 @@
+[
+  {
+    "model": "mistral-small-latest",
+    "name": "Mistral Small",
+    "version": "1.1",
+    "description": "Mistral Small is the ideal choice for simple tasks (Classification, Customer Support, or Text Generation) at an affordable price.",
+    "capabilities": ["completion"]
+  },
+  {
+    "model": "mistral-large-latest",
+    "name": "Mistral Large",
+    "version": "1.1",
+    "description": "Mistral Large is ideal for complex tasks (Synthetic Text Generation, Code Generation, RAG, or Agents).",
+    "capabilities": ["completion"]
+  },
+  {
+    "model": "open-mixtral-8x22b",
+    "name": "Mixtral 8x22B",
+    "version": "1.1",
+    "description": "Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.",
+    "capabilities": ["completion"]
+  }
+]

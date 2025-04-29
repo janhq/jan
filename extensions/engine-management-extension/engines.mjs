@@ -26,10 +26,10 @@ const engines = [
   cohere,
   // openrouter,
   groq,
-  mistral,
+  // mistral,
   martian,
   nvidia,
-  deepseek,
+  // deepseek,
   // googleGemini,
 ]
 const models = [
@@ -38,10 +38,10 @@ const models = [
   ...cohereModels,
   // ...openrouterModels,
   ...groqModels,
-  ...mistralModels,
+  // ...mistralModels,
   ...martianModels,
   ...nvidiaModels,
-  ...deepseekModels,
+  // ...deepseekModels,
   // ...googleGeminiModels,
 ]
 export { engines, models }

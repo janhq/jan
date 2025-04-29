@@ -1,0 +1,24 @@
+[
+  {
+    "key": "api-key",
+    "title": "API Key",
+    "description": "The DeepSeek API uses API keys for authentication. Visit your [API Keys](https://platform.deepseek.com/api_keys) page to retrieve the API key you'll use in your requests.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "Insert API Key",
+      "value": "",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
+    }
+  },
+  {
+    "key": "base-url",
+    "title": "Base URL",
+    "description": "The base endpoint to use. See the [DeepSeek documentation](https://api-docs.deepseek.com/) for more information.",
+    "controllerType": "input",
+    "controllerProps": {
+      "placeholder": "https://api.deepseek.com",
+      "value": "https://api.deepseek.com"
+    }
+  }
+]
