@@ -21,7 +21,7 @@ export enum Settings {
 export default class GoogleProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
   baseURL: string = ''
-  provider: string = 'google'
+  provider: string = ENGINE
 
   override async onLoad(): Promise<void> {
     super.onLoad()

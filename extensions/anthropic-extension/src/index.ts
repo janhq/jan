@@ -3,7 +3,7 @@
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  * @version 1.0.0
- * @module mistral-extension/src/index
+ * @module anthropic-extension/src/index
  */
 
 import { RemoteOAIEngine } from '@janhq/core'
@@ -18,7 +18,7 @@ export enum Settings {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class MistralProvider extends RemoteOAIEngine {
+export default class AnthropicProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
   baseURL: string = ''
   provider: string = ENGINE
@@ -30,8 +30,7 @@ export default class MistralProvider extends RemoteOAIEngine {
     this.registerSettings(SETTINGS)
 
     // register models
-    const models = DEFAULT_MODELS.map((model) => {
-      return {
+    const models = DEFAULT_MODELS.map((model) => ({
         sources: [],
         object: 'model',
         version: model.version,
@@ -49,8 +48,7 @@ export default class MistralProvider extends RemoteOAIEngine {
         },
         engine: this.provider,
         capabilities: model.capabilities,
-      }
-    })
+    }))
     this.registerModels(models)
 
     this.apiKey = await this.getSetting<string>(Settings.apiKey, '')

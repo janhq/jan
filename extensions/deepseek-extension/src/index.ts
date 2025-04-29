@@ -21,7 +21,7 @@ export enum Settings {
 export default class DeepSeekProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
   baseURL: string = ''
-  provider: string = 'deepseek'
+  provider: string = ENGINE
 
   override async onLoad(): Promise<void> {
     super.onLoad()
