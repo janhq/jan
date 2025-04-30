@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { getProviderLogo, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useEffect, useState } from 'react'
 import Capabilities from './Capabilities'
 
@@ -69,10 +69,12 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
 
             return (
               <div
-                className="bg-main-view-fg/4 my-1.5 first:mt-0 rounded-sm pb-1"
+                className={cn(
+                  'bg-main-view-fg/4 first:mt-0 rounded-sm pb-1 my-1.5 first:mb-0'
+                )}
                 key={`provider-${index}`}
               >
-                <DropdownMenuLabel className="flex items-center gap-1">
+                <DropdownMenuLabel className="flex items-center gap-1.5">
                   <img
                     src={getProviderLogo(provider.provider)}
                     alt={`${provider.provider} - Logo`}
