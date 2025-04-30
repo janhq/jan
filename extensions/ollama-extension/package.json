@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
-  "node": "dist/node/index.cjs.js",
+  "engine": "ollama",
   "author": "Jan <service@jan.ai>",
   "license": "",
   "scripts": {

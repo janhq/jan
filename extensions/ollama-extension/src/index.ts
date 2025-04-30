@@ -1,26 +1,25 @@
-import {
-  InferenceEngine,
-  RemoteOAIEngine,
-  PayloadType,
-} from '@janhq/core'
+import { RemoteOAIEngine } from '@janhq/core'
 import { Ollama } from 'ollama/browser'
 
-export default class OllamaExtension extends RemoteOAIEngine {
-  nodeModule: string = 'node'
+export enum Settings {
+  baseUrl = 'base-url',
+}
+
+export default class OllamaProvider extends RemoteOAIEngine {
   inferenceUrl: string = ''
-  provider: string = 'ollama'
+  baseURL: string = ''
+  provider: string = ENGINE
 
   // ollama client
   // NOTE: do we need Ollama client? we can just call the endpoints ourselves
   ollama: Ollama
-  models_info: Map<string, any> = new Map()
 
   async onLoad() {
     super.onLoad()
     this.registerSettings(SETTINGS)
 
-    let port = await this.getSetting<number>('port', DEFAULT_PORT)
-    this.updatePort(port)
+    let baseUrl = await this.getSetting<string>(Settings.baseUrl, '')
+    this.updateBaseUrl(baseUrl)
 
     // TODO: should we have a prefix for model name, in case different
     // providers provide the same model? but when sending the request,
@@ -29,11 +28,7 @@ export default class OllamaExtension extends RemoteOAIEngine {
     let models_to_register = []
     for (const obj of (await this.ollama.list()).models) {
       const model_info = await this.ollama.show({ model: obj.model })
-      const ctx_key = Object.keys(model_info.model_info).find(k => k.endsWith(".context_length"))
-      this.models_info.set(obj.model, {
-        tools: model_info.capabilities.includes("tools"),
-        max_ctx: model_info.model_info[ctx_key],
-      })
+      // const ctx_key = Object.keys(model_info.model_info).find(k => k.endsWith(".context_length"))
 
       models_to_register.push({
         sources: [],
@@ -46,29 +41,39 @@ export default class OllamaExtension extends RemoteOAIEngine {
         format: 'api',
         settings: {},
         parameters: {},
-        created: 1,
+        created: 0,
         metadata: {
           author: '',
           tags: [],
           size: 0,
         },
-        engine: InferenceEngine.ollama,
+        engine: this.provider,
+        capabilities: model_info.capabilities,
       })
     }
-    console.log("Ollama models", this.models_info)
     this.registerModels(models_to_register)
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    if (key == 'port' && typeof value == 'string')
-      this.updatePort(Number(value) ?? DEFAULT_PORT)
+    if (key == Settings.baseUrl && typeof value == 'string')
+      this.updateBaseUrl(value)
   }
 
-  private updatePort(port: number) {
+  private updateBaseUrl(value: string) {
+    if (value.trim().length == 0) {
+      // set to default value
+      SETTINGS.forEach((setting: any) => {
+        if (setting.key === Settings.baseUrl) {
+          value = setting.controllerProps.value as string
+        }
+      })
+    }
+
     // should we just use ollama client for making requests?
     // this.inferenceUrl = `http://127.0.0.1:${port}/v1/chat/completions`
-    this.inferenceUrl = `http://127.0.0.1:${port}/api/chat`
-    this.ollama = new Ollama({ host: `http://127.0.0.1:${port}` })
+    this.baseURL = value
+    this.inferenceUrl = `http://${value}/api/chat`
+    this.ollama = new Ollama({ host: `http://${value}` })
   }
 
   // // transform OpenAI payload to Ollama payload

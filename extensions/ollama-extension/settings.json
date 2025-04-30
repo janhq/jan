@@ -1,0 +1,14 @@
+[
+    {
+        "key": "base-url",
+        "title": "Ollama base URL",
+        "description": "Base URL of Ollama server",
+        "controllerType": "input",
+        "controllerProps": {
+            "value": "127.0.0.1:11434",
+            "placeholder": "127.0.0.1:11434",
+            "type": "text",
+            "textAlign": "right"
+        }
+    }
+]

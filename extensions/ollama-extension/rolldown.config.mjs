@@ -1,5 +1,6 @@
 import { defineConfig } from 'rolldown'
-import defaultSettingJson from './resources/default_settings.json' with { type: 'json' }
+import pkgJson from './package.json' with { type: 'json' }
+import settingJson from './settings.json' with { type: 'json' }
 
 export default defineConfig([
   {
@@ -10,8 +11,8 @@ export default defineConfig([
     },
     platform: 'browser',
     define: {
-      SETTINGS: JSON.stringify(defaultSettingJson),
-      DEFAULT_PORT: '11434'
+      SETTINGS: JSON.stringify(settingJson),
+      ENGINE: JSON.stringify(pkgJson.engine),
     },
   }
 ])
