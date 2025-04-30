@@ -32,6 +32,20 @@ export abstract class RemoteOAIEngine extends OAIEngine {
       apiKey: this.apiKey ?? '',
       baseURL: this.baseURL,
       dangerouslyAllowBrowser: true,
+      defaultHeaders: {
+          'User-Agent': navigator.userAgent,
+          // set these to null so OpenAI SDK doesn't set these headers.
+          // Google Gemini and Mistral servers will give errors if these
+          // headers are set.
+          'x-stainless-arch': null,
+          'x-stainless-lang': null,
+          'x-stainless-os': null,
+          'x-stainless-package-version': null,
+          'x-stainless-retry-count': null,
+          'x-stainless-runtime': null,
+          'x-stainless-runtime-version': null,
+          'x-stainless-timeout': null,
+      },
     })
   }
 }

@@ -6,8 +6,7 @@
  * @module google-extension/src/index
  */
 
-import { ModelCapability, RemoteOAIEngine } from '@janhq/core'
-import { OpenAI } from 'openai'
+import { RemoteOAIEngine } from '@janhq/core'
 
 export enum Settings {
   apiKey = 'api-key',
@@ -49,10 +48,7 @@ export default class GoogleProvider extends RemoteOAIEngine {
           size: 0,
         },
         engine: this.provider,
-        // NOTE: currently OpenAI SDK in browser doesn't work with Gemini
-        // https://discuss.ai.google.dev/t/gemini-api-cors-error-with-openai-compatability/58619
         capabilities: model.capabilities,
-        // capabilities: [ModelCapability.completion],
       }
     })
     this.registerModels(models)
@@ -84,29 +80,5 @@ export default class GoogleProvider extends RemoteOAIEngine {
     }
 
     this.inferenceUrl = `${this.baseURL}/chat/completions`
-  }
-
-  getOpenAIClient(): OpenAI {
-    return new OpenAI({
-      apiKey: this.apiKey ?? '',
-      baseURL: this.baseURL,
-      dangerouslyAllowBrowser: true,
-      defaultHeaders: {
-        'User-Agent': navigator.userAgent,
-        'Accept': 'text/event-stream',
-        // set these to null so OpenAI SDK doesn't set these headers.
-        // if these headers are set, Google server will not respond
-        // with Access-Control-Allow-Origin: http://localhost:3000
-        // to the preflight request
-        'x-stainless-arch': null,
-        'x-stainless-lang': null,
-        'x-stainless-os': null,
-        'x-stainless-package-version': null,
-        'x-stainless-retry-count': null,
-        'x-stainless-runtime': null,
-        'x-stainless-runtime-version': null,
-        'x-stainless-timeout': null,
-      }
-    })
   }
 }
