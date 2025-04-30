@@ -320,7 +320,9 @@ export default function useSendChatMessage(
           model: data.model?.id ?? '',
           tools: data.tools as ChatCompletionTool[],
           stream: data.model?.parameters?.stream ?? false,
-          tool_choice: 'auto',
+          // cohere doesn't support this argument.
+          // by default tool_choice='auto' when tools is set.
+          // tool_choice: 'auto',
         })
         // Variables to track and accumulate streaming content
         if (!message.content.length) {
