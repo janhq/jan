@@ -93,7 +93,7 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
                       className="h-8 mx-1"
                       key={`model-${modelIndex}`}
                       onClick={() =>
-                        selectModelProvider(provider.provider, model.model)
+                        selectModelProvider(provider.provider, model.id)
                       }
                     >
                       <div className="flex items-center justify-between w-full">
