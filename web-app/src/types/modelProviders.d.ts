@@ -1,36 +1,52 @@
-type ProviderObject = {
-  name: string
-  productName: string
-  active: boolean
+/**
+ * The controller props for settings
+ */
+type ControllerProps = {
+  value?: string | boolean
+  placeholder?: string
+  type?: string
+  options?: Array<{ value: string; name: string }>
+  input_actions?: string[]
+}
+
+/**
+ * The setting item for a provider
+ */
+type ProviderSetting = {
+  key: string
+  title: string
   description: string
-  version: string
-  apiKey: string
-  inferenceUrl: string
+  controller_type: 'input' | 'checkbox' | 'dropdown'
+  controller_props: ControllerProps
+}
+
+/**
+ * The model object structure
+ */
+type Model = {
+  id: string
+  model: string
+  name: string
+  version?: number | string
+  description?: string
+  format?: string
+  capabilities?: string[]
+  settings?: Record<string, unknown>
+}
+
+/**
+ * The provider object structure
+ */
+type ProviderObject = {
+  active: boolean
   provider: string
+  api_key?: string
+  base_url?: string
+  settings: ProviderSetting[]
   models: Model[]
 }
 
 /**
- * The `ModelSetting` type defines the shape of a model setting object
- * @data_transfer_object
+ * The model provider type
  */
-type ModelSetting = Record<string, unknown>
-
-/**
- * The `Model` type defines the shape of a model object
- * @data_transfer_object
- */
-type Model = {
-  [modelName: string]: {
-    setting: ModelSetting
-    copabilities?: string[]
-  }
-}
-
-/**
- * The `ModelProvider` type defines the shape of a model provider object
- * @data_transfer_object
- */
-type ModelProvider = {
-  [providerName: string]: ProviderObject
-}
+type ModelProvider = ProviderObject
