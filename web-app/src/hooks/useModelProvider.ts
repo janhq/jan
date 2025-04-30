@@ -138,13 +138,18 @@ export const useModelProvider = create<ModelProviderState>()(
               }
             }
 
-            // Preserve user-modified api_key and base_url
+            // Preserve user-modified api_key, base_url, and active state
             if (existingProvider.api_key) {
               updatedProvider.api_key = existingProvider.api_key
             }
 
             if (existingProvider.base_url) {
               updatedProvider.base_url = existingProvider.base_url
+            }
+
+            // Preserve the active state
+            if (existingProvider.active !== undefined) {
+              updatedProvider.active = existingProvider.active
             }
 
             // Apply merged settings
