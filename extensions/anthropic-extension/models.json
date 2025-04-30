@@ -4,27 +4,27 @@
       "name": "Claude 3 Opus Latest",
       "version": "1.0",
       "description": "Claude 3 Opus is a powerful model suitables for highly complex task.",
-      "capabilities": ["completion"]
+      "capabilities": ["completion", "tools"]
     },
     {
       "model": "claude-3-5-haiku-latest",
       "name": "Claude 3.5 Haiku Latest",
       "version": "1.0",
       "description": "Claude 3.5 Haiku is the fastest model provides near-instant responsiveness.",
-      "capabilities": ["completion"]
+      "capabilities": ["completion", "tools"]
     },
     {
       "model": "claude-3-5-sonnet-latest",
       "name": "Claude 3.5 Sonnet Latest",
       "version": "1.0",
       "description": "Claude 3.5 Sonnet raises the industry bar for intelligence, outperforming competitor models and Claude 3 Opus on a wide range of evaluations, with the speed and cost of our mid-tier model, Claude 3 Sonnet.",
-      "capabilities": ["completion"]
+      "capabilities": ["completion", "tools"]
     },
     {
       "model": "claude-3-7-sonnet-latest",
       "name": "Claude 3.7 Sonnet Latest",
       "version": "1.0",
       "description": "Claude 3.7 Sonnet is the first hybrid reasoning model on the market. It is the most intelligent model yet. It is faster, more cost effective, and more capable than any other model in its class.",
-      "capabilities": ["completion"]
+      "capabilities": ["completion", "tools"]
     }
 ]

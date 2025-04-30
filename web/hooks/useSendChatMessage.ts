@@ -402,6 +402,12 @@ export default function useSendChatMessage(
     const toolCalls: ChatCompletionMessageToolCall[] = []
     // Process the streaming chunks
     for await (const chunk of response) {
+      // console.log("chunk", chunk)
+      // anthropic
+      if (chunk.type == 'ping') {
+        continue
+      }
+
       // Handle tool calls in the chunk
       if (chunk.choices[0]?.delta?.tool_calls) {
         const deltaToolCalls = chunk.choices[0].delta.tool_calls
