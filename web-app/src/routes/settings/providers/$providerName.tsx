@@ -8,6 +8,8 @@ import { Switch } from '@/components/ui/switch'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import { t } from 'i18next'
 import Capabilities from '@/containers/Capabilities'
+import { DynamicControllerSetting } from '@/containers/DynamicControllerSetting'
+import { RenderMarkdown } from '@/containers/RenderMarkdown'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -44,17 +46,78 @@ function ProviderDetail() {
                 }}
               />
             </div>
+            {/* Settings */}
+            <CardSetting>
+              {provider?.settings.map((setting, settingIndex) => {
+                // Use the DynamicController component
+                const actionComponent = (
+                  <DynamicControllerSetting
+                    controllerType={setting.controller_type}
+                    controllerProps={setting.controller_props}
+                    onChange={(newValue) => {
+                      if (provider) {
+                        const newSettings = [...provider.settings]
+                        newSettings[settingIndex].controller_props.value =
+                          newValue
+
+                        // Create update object with updated settings
+                        const updateObj: Partial<ModelProvider> = {
+                          settings: newSettings,
+                        }
+
+                        // Check if this is an API key or base URL setting and update the corresponding top-level field
+                        const settingKey = setting.key
+                        if (
+                          settingKey === 'api-key' &&
+                          typeof newValue === 'string'
+                        ) {
+                          updateObj.api_key = newValue
+                        } else if (
+                          settingKey === 'base-url' &&
+                          typeof newValue === 'string'
+                        ) {
+                          updateObj.base_url = newValue
+                        }
+
+                        updateProvider(providerName, {
+                          ...provider,
+                          ...updateObj,
+                        })
+                      }
+                    }}
+                  />
+                )
+
+                return (
+                  <CardSettingItem
+                    key={settingIndex}
+                    title={setting.title}
+                    column={
+                      setting.controller_type === 'input' &&
+                      setting.controller_props.type !== 'number'
+                        ? true
+                        : false
+                    }
+                    description={
+                      <RenderMarkdown
+                        className="![>p]:text-main-view-fg/70"
+                        content={setting.description}
+                      />
+                    }
+                    actions={actionComponent}
+                  />
+                )
+              })}
+            </CardSetting>
             {/* Models */}
             <CardSetting title="Models">
               {provider?.models.map((model, modelIndex) => {
-                const modelKey = Object.keys(model)[0]
-                const modelData = model[modelKey]
-                const capabilities = modelData.copabilities || []
+                const capabilities = model.capabilities || []
 
                 return (
                   <CardSettingItem
                     key={modelIndex}
-                    title={modelKey}
+                    title={model.id}
                     actions={<Capabilities capabilities={capabilities} />}
                   />
                 )

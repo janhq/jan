@@ -9,7 +9,16 @@ interface MarkdownProps {
 export function RenderMarkdown({ content, className }: MarkdownProps) {
   return (
     <div className={cn('markdown', className)}>
-      <ReactMarkdown>{content}</ReactMarkdown>
+      <ReactMarkdown
+        components={{
+          // Make links open in a new tab
+          a: ({ ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+        }}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }

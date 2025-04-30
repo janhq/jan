@@ -9,16 +9,13 @@ const ProvidersMenu = () => {
   const matches = useMatches()
 
   return (
-    <div className="w-50 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
+    <div className="w-40 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
       {providers.map((provider, index) => {
-        const providerKey = Object.keys(provider)[0]
-        const data = provider[providerKey]
-
         const isActive = matches.some(
           (match) =>
             match.routeId === '/settings/providers/$providerName' &&
             'providerName' in match.params &&
-            match.params.providerName === data.provider
+            match.params.providerName === provider.provider
         )
 
         return (
@@ -31,17 +28,17 @@ const ProvidersMenu = () => {
               onClick={() =>
                 navigate({
                   to: route.settings.providers,
-                  params: { providerName: data.provider },
+                  params: { providerName: provider.provider },
                 })
               }
             >
               <img
-                src={getProviderLogo(data.provider)}
-                alt={`${data.provider} - Logo`}
+                src={getProviderLogo(provider.provider)}
+                alt={`${provider.provider} - Logo`}
                 className="size-4"
               />
               <span className="capitalize">
-                {getProviderTitle(data.provider)}
+                {getProviderTitle(provider.provider)}
               </span>
             </div>
           </div>
