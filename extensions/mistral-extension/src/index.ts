@@ -7,6 +7,7 @@
  */
 
 import { RemoteOAIEngine } from '@janhq/core'
+import { OpenAI } from 'openai'
 
 export enum Settings {
   apiKey = 'api-key',
@@ -80,5 +81,26 @@ export default class MistralProvider extends RemoteOAIEngine {
     }
 
     this.inferenceUrl = `${this.baseURL}/chat/completions`
+  }
+
+
+  getOpenAIClient(): OpenAI {
+    return new OpenAI({
+      apiKey: this.apiKey ?? '',
+      baseURL: this.baseURL,
+      dangerouslyAllowBrowser: true,
+      defaultHeaders: {
+        // set these to null so OpenAI SDK doesn't set these headers.
+        // Mistral server doesn't allow these headers.
+        'x-stainless-arch': null,
+        'x-stainless-lang': null,
+        'x-stainless-os': null,
+        'x-stainless-package-version': null,
+        'x-stainless-retry-count': null,
+        'x-stainless-runtime': null,
+        'x-stainless-runtime-version': null,
+        'x-stainless-timeout': null,
+      }
+    })
   }
 }
