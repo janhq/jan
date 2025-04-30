@@ -22,6 +22,7 @@
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
     "fetch-retry": "^5.0.6",
+    "openai": "^4.96.2",
     "ulidx": "^2.3.0"
   },
   "engines": {

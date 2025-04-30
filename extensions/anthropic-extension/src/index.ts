@@ -7,6 +7,7 @@
  */
 
 import { RemoteOAIEngine } from '@janhq/core'
+import { OpenAI } from 'openai'
 
 export enum Settings {
   apiKey = 'api-key',
@@ -78,5 +79,26 @@ export default class AnthropicProvider extends RemoteOAIEngine {
     }
 
     this.inferenceUrl = `${this.baseURL}/chat/completions`
+  }
+
+  // https://simonwillison.net/2024/Aug/23/anthropic-dangerous-direct-browser-access/
+  async headers(): Promise<HeadersInit> {
+    return {
+      ...(this.apiKey && {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'anthropic-dangerous-direct-browser-access': true,
+      }),
+    }
+  }
+
+  getOpenAIClient(): OpenAI {
+    return new OpenAI({
+      apiKey: this.apiKey ?? '',
+      baseURL: this.baseURL,
+      dangerouslyAllowBrowser: true,
+      defaultHeaders: {
+        'anthropic-dangerous-direct-browser-access': true,
+      }
+    })
   }
 }
