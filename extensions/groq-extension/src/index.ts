@@ -81,4 +81,9 @@ export default class GroqProvider extends RemoteOAIEngine {
 
     this.inferenceUrl = `${this.baseURL}/chat/completions`
   }
+
+  transformPayload = (payload: any): any => {
+    delete payload.engine  // won't be needed once we remove cortex
+    return payload
+  }
 }

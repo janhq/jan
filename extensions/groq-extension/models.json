@@ -1,65 +1,30 @@
 [
   {
-    "model": "llama3-70b-8192",
-    "name": "Groq Llama 3 70b",
+    "model": "llama-3.3-70b-versatile",
+    "name": "Groq Llama-3.3-70B-Versatile",
     "version": "1.1",
     "description": "Groq Llama 3 70b with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "llama3-8b-8192",
-    "name": "Groq Llama 3 8b",
-    "version": "1.1",
-    "description": "Groq Llama 3 8b with supercharged speed!",
-    "capabilities": ["completion"]
+    "capabilities": ["completion", "tools"]
   },
   {
     "model": "llama-3.1-8b-instant",
     "name": "Groq Llama 3.1 8b Instant",
     "version": "1.1",
     "description": "Groq Llama 3.1 8b with supercharged speed!",
+    "capabilities": ["completion", "tools"]
+  },
+  {
+    "model": "llama3-70b-8192",
+    "name": "Groq Llama3-70B-8192",
+    "version": "1.1",
+    "description": "Groq Llama 3 70b with supercharged speed!",
     "capabilities": ["completion"]
   },
   {
-    "model": "llama-3.2-11b-text-preview",
-    "name": "Groq Llama 3.2 11b Text Preview",
+    "model": "llama3-8b-8192",
+    "name": "Groq Llama3-70B-8192",
     "version": "1.1",
-    "description": "Groq Llama 3.2 11b Text Preview with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "llama-3.2-11b-vision-preview",
-    "name": "Groq Llama 3.2 11b Vision Preview",
-    "version": "1.1",
-    "description": "Groq Llama 3.2 11b Vision Preview with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "llama-3.2-1b-preview",
-    "name": "Groq Llama 3.2 1b Preview",
-    "version": "1.1",
-    "description": "Groq Llama 3.2 1b Preview with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "llama-3.2-3b-preview",
-    "name": "Groq Llama 3.2 3b Preview",
-    "version": "1.1",
-    "description": "Groq Llama 3.2 3b Preview with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "llama-3.2-90b-text-preview",
-    "name": "Groq Llama 3.2 90b Text Preview",
-    "version": "1.1",
-    "description": "Groq Llama 3.2 90b Text Preview with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "llama-3.2-90b-vision-preview",
-    "name": "Groq Llama 3.2 90b Vision Preview",
-    "version": "1.1",
-    "description": "Groq Llama 3.2 90b Vision Preview with supercharged speed!",
+    "description": "Groq Llama 3 8b with supercharged speed!",
     "capabilities": ["completion"]
   },
   {
@@ -67,13 +32,6 @@
     "name": "Groq Gemma 9B Instruct",
     "version": "1.2",
     "description": "Groq Gemma 9b Instruct with supercharged speed!",
-    "capabilities": ["completion"]
-  },
-  {
-    "model": "mixtral-8x7b-32768",
-    "name": "Groq Mixtral 8x7B Instruct",
-    "version": "1.2",
-    "description": "Groq Mixtral 8x7B Instruct is Mixtral with supercharged speed!",
-    "capabilities": ["completion"]
+    "capabilities": ["completion", "tools"]
   }
 ]
