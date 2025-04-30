@@ -412,37 +412,32 @@ export default function useSendChatMessage(
       if (chunk.choices[0]?.delta?.tool_calls) {
         const deltaToolCalls = chunk.choices[0].delta.tool_calls
 
-        // Handle the beginning of a new tool call
-        if (
-          deltaToolCalls[0]?.index !== undefined &&
-          deltaToolCalls[0]?.function
-        ) {
-          const index = deltaToolCalls[0].index
+        // Google Gemini response doesn't have index. default to 0
+        const index = deltaToolCalls[0].index ?? 0
 
-          // Create new tool call if this is the first chunk for it
-          if (!toolCalls[index]) {
-            toolCalls[index] = {
-              id: deltaToolCalls[0]?.id || '',
-              function: {
-                name: deltaToolCalls[0]?.function?.name || '',
-                arguments: deltaToolCalls[0]?.function?.arguments || '',
-              },
-              type: 'function',
-            }
-            currentToolCall = toolCalls[index]
-          } else {
-            // Continuation of existing tool call
-            currentToolCall = toolCalls[index]
+        // Create new tool call if this is the first chunk for it
+        if (!toolCalls[index]) {
+          toolCalls[index] = {
+            id: deltaToolCalls[0]?.id || '',
+            function: {
+              name: deltaToolCalls[0]?.function?.name || '',
+              arguments: deltaToolCalls[0]?.function?.arguments || '',
+            },
+            type: 'function',
+          }
+          currentToolCall = toolCalls[index]
+        } else {
+          // Continuation of existing tool call
+          currentToolCall = toolCalls[index]
 
-            // Append to function name or arguments if they exist in this chunk
-            if (deltaToolCalls[0]?.function?.name) {
-              currentToolCall!.function.name += deltaToolCalls[0].function.name
-            }
+          // Append to function name or arguments if they exist in this chunk
+          if (deltaToolCalls[0]?.function?.name) {
+            currentToolCall!.function.name += deltaToolCalls[0].function.name
+          }
 
-            if (deltaToolCalls[0]?.function?.arguments) {
-              currentToolCall!.function.arguments +=
-                deltaToolCalls[0].function.arguments
-            }
+          if (deltaToolCalls[0]?.function?.arguments) {
+            currentToolCall!.function.arguments +=
+              deltaToolCalls[0].function.arguments
           }
         }
       }
