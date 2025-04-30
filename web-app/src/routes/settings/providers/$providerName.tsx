@@ -46,6 +46,7 @@ function ProviderDetail() {
                 }}
               />
             </div>
+
             {/* Settings */}
             <CardSetting>
               {provider?.settings.map((setting, settingIndex) => {
@@ -59,12 +60,10 @@ function ProviderDetail() {
                         const newSettings = [...provider.settings]
                         newSettings[settingIndex].controller_props.value =
                           newValue
-
                         // Create update object with updated settings
                         const updateObj: Partial<ModelProvider> = {
                           settings: newSettings,
                         }
-
                         // Check if this is an API key or base URL setting and update the corresponding top-level field
                         const settingKey = setting.key
                         if (
@@ -78,7 +77,6 @@ function ProviderDetail() {
                         ) {
                           updateObj.base_url = newValue
                         }
-
                         updateProvider(providerName, {
                           ...provider,
                           ...updateObj,
@@ -102,6 +100,16 @@ function ProviderDetail() {
                       <RenderMarkdown
                         className="![>p]:text-main-view-fg/70"
                         content={setting.description}
+                        components={{
+                          // Make links open in a new tab
+                          a: ({ ...props }) => (
+                            <a
+                              {...props}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            />
+                          ),
+                        }}
                       />
                     }
                     actions={actionComponent}
@@ -109,6 +117,7 @@ function ProviderDetail() {
                 )
               })}
             </CardSetting>
+
             {/* Models */}
             <CardSetting title="Models">
               {provider?.models.map((model, modelIndex) => {
