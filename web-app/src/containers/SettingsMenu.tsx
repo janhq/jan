@@ -25,7 +25,8 @@ const menuSettings = [
 const SettingsMenu = () => {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
-  const firstItemProvider = providers[0][Object.keys(providers[0])[0]].provider
+  const firstItemProvider =
+    providers.length > 0 ? providers[0].provider : 'llama.cpp'
   const matches = useMatches()
   const isActive = matches.some(
     (match) =>

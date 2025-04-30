@@ -5,355 +5,758 @@ enum ContentType {
 
 export const mockModelProvider = [
   {
-    llamacpp: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'http://localhost:8080/v1/chat/completions',
-      provider: 'llamacpp',
-      models: [
-        {
-          'qwen2.5:0.5b': {
-            setting: {},
-          },
+    active: true,
+    provider: 'llama.cpp',
+    settings: [
+      {
+        key: 'cont_batching',
+        title: 'Continuous Batching',
+        description:
+          'Allows processing prompts in parallel with text generation, which usually improves performance.',
+        controller_type: 'checkbox',
+        controller_props: {
+          value: true,
         },
-        {
-          'deepseek-r1:1.5b': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+      },
+      {
+        key: 'n_parallel',
+        title: 'Parallel Operations',
+        description:
+          'Number of prompts that can be processed simultaneously by the model.',
+        controller_type: 'input',
+        controller_props: {
+          value: '4',
+          placeholder: '4',
+          type: 'number',
         },
-      ],
-    },
+      },
+      {
+        key: 'cpu_threads',
+        title: 'CPU Threads',
+        description:
+          'Number of CPU cores used for model processing when running without GPU.',
+        controller_type: 'input',
+        controller_props: {
+          value: '1',
+          placeholder: '1',
+          type: 'number',
+        },
+      },
+      {
+        key: 'flash_attn',
+        title: 'Flash Attention',
+        description:
+          'Optimizes memory usage and speeds up model inference using an efficient attention implementation.',
+        controller_type: 'checkbox',
+        controller_props: {
+          value: true,
+        },
+      },
+
+      {
+        key: 'caching_enabled',
+        title: 'Caching',
+        description:
+          'Stores recent prompts and responses to improve speed when similar questions are asked.',
+        controller_type: 'checkbox',
+        controller_props: {
+          value: true,
+        },
+      },
+      {
+        key: 'cache_type',
+        title: 'KV Cache Type',
+        description: 'Controls memory usage and precision trade-off.',
+        controller_type: 'dropdown',
+        controller_props: {
+          value: 'f16',
+          options: [
+            {
+              value: 'q4_0',
+              name: 'q4_0',
+            },
+            {
+              value: 'q8_0',
+              name: 'q8_0',
+            },
+            {
+              value: 'f16',
+              name: 'f16',
+            },
+          ],
+        },
+      },
+      {
+        key: 'use_mmap',
+        title: 'mmap',
+        description:
+          'Loads model files more efficiently by mapping them to memory, reducing RAM usage.',
+        controller_type: 'checkbox',
+        controller_props: {
+          value: true,
+        },
+      },
+    ],
+    models: [
+      {
+        id: 'llama3.2:3b',
+        model: 'llama3.2:3b',
+        name: 'llama3.2:3b',
+        version: 2,
+        settings: {
+          prompt_template:
+            '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n',
+          ctx_len: 4096,
+          n_parallel: 1,
+          cpu_threads: 1,
+          ngl: 29,
+        },
+      },
+      {
+        id: 'deepseek-r1.2:3b',
+        model: 'deepseek-r1.2:3b',
+        name: 'deepseek-r1.2:3b',
+        version: 2,
+        settings: {
+          prompt_template:
+            '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n',
+          ctx_len: 4096,
+          n_parallel: 1,
+          cpu_threads: 1,
+          ngl: 29,
+        },
+      },
+    ],
   },
   {
-    openai: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.openai.com/v1/chat/completions',
-      provider: 'openai',
-      models: [
-        {
-          'gpt-4o': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://api.openai.com/v1',
+    provider: 'openai',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The OpenAI API uses API keys for authentication. Visit your [API Keys](https://platform.openai.com/account/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'gpt-4-turbo': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [OpenAI API documentation](https://platform.openai.com/docs/api-reference/chat/create) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.openai.com/v1',
+          value: 'https://api.openai.com/v1',
         },
-        {
-          'gpt-4': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-        {
-          'gpt-3.5-turbo': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-        {
-          'o1-mini': {
-            copabilities: ['reasoning'],
-          },
-        },
-        {
-          'o1-preview': {
-            copabilities: ['reasoning'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'gpt-4.5-preview',
+        name: 'OpenAI GPT-4.5 Preview',
+        version: '1.2',
+        description:
+          'OpenAI GPT 4.5 Preview is a research preview of GPT-4.5, our largest and most capable GPT model yet',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gpt-4-turbo',
+        name: 'OpenAI GPT-4 Turbo',
+        version: '1.2',
+        description: 'OpenAI GPT 4 Turbo model is extremely good',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gpt-3.5-turbo',
+        name: 'OpenAI GPT-3.5 Turbo',
+        version: '1.1',
+        description: 'OpenAI GPT 3.5 Turbo model is extremely fast',
+        format: 'api',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'gpt-4o',
+        name: 'OpenAI GPT-4o',
+        version: '1.1',
+        description:
+          'OpenAI GPT 4o is a new flagship model with fast speed and high quality',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gpt-4o-mini',
+        name: 'OpenAI GPT-4o mini',
+        version: '1.1',
+        description:
+          'GPT-4o mini (“o” for “omni”) is a fast, affordable small model for focused tasks.',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'o1',
+        name: 'OpenAI o1',
+        version: '1.0',
+        description: 'OpenAI o1 is a new model with complex reasoning',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'o1-preview',
+        name: 'OpenAI o1-preview',
+        version: '1.0',
+        description: 'OpenAI o1-preview is a new model with complex reasoning',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'o1-mini',
+        name: 'OpenAI o1-mini',
+        version: '1.0',
+        description: 'OpenAI o1-mini is a lightweight reasoning model',
+        format: 'api',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'o3-mini',
+        name: 'OpenAI o3-mini',
+        version: '1.0',
+        description:
+          'OpenAI most recent reasoning model, providing high intelligence at the same cost and latency targets of o1-mini.',
+        format: 'api',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
   {
-    anthropic: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.anthropic.com/v1/messages',
-      provider: 'anthropic',
-      models: [
-        {
-          'claude-3-opus': {
-            setting: {},
-            copabilities: ['reasoning', 'vision', 'tool'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://api.anthropic.com/v1',
+    provider: 'anthropic',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Anthropic API uses API keys for authentication. Visit your [API Keys](https://console.anthropic.com/settings/keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'claude-3-sonnet': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.anthropic.com/v1',
+          value: 'https://api.anthropic.com/v1',
         },
-        {
-          'claude-3-haiku': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-        {
-          'claude-2.1': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'claude-3-opus-latest',
+        name: 'Claude 3 Opus Latest',
+        version: '1.0',
+        description:
+          'Claude 3 Opus is a powerful model suitables for highly complex task.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'claude-3-5-haiku-latest',
+        name: 'Claude 3.5 Haiku Latest',
+        version: '1.0',
+        description:
+          'Claude 3.5 Haiku is the fastest model provides near-instant responsiveness.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'claude-3-5-sonnet-latest',
+        name: 'Claude 3.5 Sonnet Latest',
+        version: '1.0',
+        description:
+          'Claude 3.5 Sonnet raises the industry bar for intelligence, outperforming competitor models and Claude 3 Opus on a wide range of evaluations, with the speed and cost of our mid-tier model, Claude 3 Sonnet.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'claude-3-7-sonnet-latest',
+        name: 'Claude 3.7 Sonnet Latest',
+        version: '1.0',
+        description:
+          'Claude 3.7 Sonnet is the first hybrid reasoning model on the market. It is the most intelligent model yet. It is faster, more cost effective, and more capable than any other model in its class.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
   {
-    google: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://generativelanguage.googleapis.com/v1beta/models',
-      provider: 'google',
-      models: [
-        {
-          'gemini-1.5-pro': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://api.cohere.ai/compatibility/v1',
+    provider: 'cohere',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Cohere API uses API keys for authentication. Visit your [API Keys](https://dashboard.cohere.com/api-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'gemini-1.5-flash': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Cohere documentation](https://docs.cohere.com/docs/compatibility-api) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.cohere.ai/compatibility/v1',
+          value: 'https://api.cohere.ai/compatibility/v1',
         },
-        {
-          'gemini-1.0-pro': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'command-r-plus',
+        name: 'Command R+',
+        version: '1.0',
+        description:
+          'Command R+ is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It is best suited for complex RAG workflows and multi-step tool use.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'command-r',
+        name: 'Command R',
+        version: '1.0',
+        description:
+          'Command R is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It can be used for complex workflows like code generation, retrieval augmented generation (RAG), tool use, and agents.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
   {
-    meta: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.meta.ai/v1/chat/completions',
-      provider: 'meta',
-      models: [
-        {
-          'llama-3-70b': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://openrouter.ai/api/v1',
+    provider: 'openrouter',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The OpenRouter API uses API keys for authentication. Visit your [API Keys](https://openrouter.ai/settings/keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'llama-3-8b': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [OpenRouter API documentation](https://openrouter.ai/docs/api-reference/overview) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://openrouter.ai/api/v1',
+          value: 'https://openrouter.ai/api/v1',
         },
-        {
-          'llama-2-70b': {
-            setting: {},
-            copabilities: ['vision', 'tool', 'reasoning'],
-          },
-        },
-        {
-          'llama-2-13b': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-        {
-          'llama-2-7b': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek/deepseek-r1:free',
+        name: 'DeepSeek-R1 (free)',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'qwen/qwen3-30b-a3b:free',
+        name: 'Qwen3 30B A3B (free)',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion'],
+      },
+    ],
   },
   {
-    mistral: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.mistral.ai/v1/chat/completions',
-      provider: 'mistral',
-      models: [
-        {
-          'mistral-large': {
-            setting: {},
-            copabilities: ['vision'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://integrate.api.nvidia.com/v1',
+    provider: 'nvidia',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The NVIDIA API uses API keys for authentication. Visit your [API Keys](https://org.ngc.nvidia.com/setup/personal-keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'mistral-medium': {
-            setting: {},
-            copabilities: ['vision'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [NVIDIA NIM documentation](https://docs.api.nvidia.com/nim/reference/llm-apis) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://integrate.api.nvidia.com/v1',
+          value: 'https://integrate.api.nvidia.com/v1',
         },
-        {
-          'mistral-small': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-        {
-          'open-mistral-7b': {
-            setting: {},
-            copabilities: ['vision', 'tool'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'mistralai/mistral-7b-instruct-v0.3',
+        name: 'Mistral 7B Instruct v0.3',
+        version: '1.1',
+        description: 'Mistral 7B with NVIDIA',
+        capabilities: ['completion'],
+      },
+    ],
   },
   {
-    deepseek: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.deepseek.com/v1/chat/completions',
-      provider: 'deepseek',
-      models: [
-        {
-          'deepseek-coder': {
-            setting: {},
-            copabilities: ['reasoning', 'tool'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://api.mistral.ai/v1',
+    provider: 'mistral',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Mistral API uses API keys for authentication. Visit your [API Keys](https://console.mistral.ai/api-keys/) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'deepseek-chat': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [Mistral documentation](https://docs.mistral.ai/getting-started/models/models_overview/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.mistral.ai/v1',
+          value: 'https://api.mistral.ai/v1',
         },
-        {
-          'deepseek-llm': {
-            setting: {},
-            copabilities: ['vision'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'mistral-small-latest',
+        name: 'Mistral Small',
+        version: '1.1',
+        description:
+          'Mistral Small is the ideal choice for simple tasks (Classification, Customer Support, or Text Generation) at an affordable price.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'mistral-large-latest',
+        name: 'Mistral Large',
+        version: '1.1',
+        description:
+          'Mistral Large is ideal for complex tasks (Synthetic Text Generation, Code Generation, RAG, or Agents).',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'open-mixtral-8x22b',
+        name: 'Mixtral 8x22B',
+        version: '1.1',
+        description:
+          'Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.',
+        capabilities: ['completion'],
+      },
+    ],
   },
   {
-    martian: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.martian.ai/v1/chat/completions',
-      provider: 'martian',
-      models: [
-        {
-          'martian-7b': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://withmartian.com/api/openai/v1',
+    provider: 'martian',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Martian API uses API keys for authentication. Visit your [API Keys](https://withmartian.com/dashboard) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'martian-14b': {
-            setting: {},
-            copabilities: ['reasoning', 'vision'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Groq documentation](https://withmartian.github.io/llm-adapters/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://withmartian.com/api/openai/v1',
+          value: 'https://withmartian.com/api/openai/v1',
         },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'router',
+        name: 'Martian Model Router',
+        version: '1.0',
+        description:
+          'Martian Model Router dynamically routes requests to the best LLM in real-time',
+        capabilities: ['completion'],
+      },
+    ],
   },
   {
-    openrouter: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://openrouter.ai/api/v1/chat/completions',
-      provider: 'openrouter',
-      models: [
-        {
-          'openrouter-mixtral': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://api.groq.com/openai/v1',
+    provider: 'groq',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Groq API uses API keys for authentication. Visit your [API Keys](https://console.groq.com/keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'openrouter-llama': {
-            setting: {},
-            copabilities: ['vision'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Groq documentation](https://console.groq.com/docs) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.groq.com/openai/v1',
+          value: 'https://api.groq.com/openai/v1',
         },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'llama-3.3-70b-versatile',
+        name: 'Groq Llama-3.3-70B-Versatile',
+        version: '1.1',
+        description: 'Groq Llama 3 70b with supercharged speed!',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'llama-3.1-8b-instant',
+        name: 'Groq Llama 3.1 8b Instant',
+        version: '1.1',
+        description: 'Groq Llama 3.1 8b with supercharged speed!',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'llama3-70b-8192',
+        name: 'Groq Llama3-70B-8192',
+        version: '1.1',
+        description: 'Groq Llama 3 70b with supercharged speed!',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'llama3-8b-8192',
+        name: 'Groq Llama3-70B-8192',
+        version: '1.1',
+        description: 'Groq Llama 3 8b with supercharged speed!',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'gemma2-9b-it',
+        name: 'Groq Gemma 9B Instruct',
+        version: '1.2',
+        description: 'Groq Gemma 9b Instruct with supercharged speed!',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
   {
-    groq: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.groq.com/v1/chat/completions',
-      provider: 'groq',
-      models: [
-        {
-          'llama3-70b-8192': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    provider: 'google',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The Google API uses API keys for authentication. Visit your [API Keys](https://aistudio.google.com/apikey) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'mixtral-8x7b-32768': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base OpenAI-compatible endpoint to use. See the [Gemini documentation](https://ai.google.dev/gemini-api/docs/openai) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder:
+            'https://generativelanguage.googleapis.com/v1beta/openai',
+          value: 'https://generativelanguage.googleapis.com/v1beta/openai',
         },
-        {
-          'gemma-7b-it': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'gemini-2.5-pro-preview-03-25',
+        name: 'Gemini 2.5 Pro Preview 03-25',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gemini-2.5-pro-exp-03-25',
+        name: 'Gemini 2.5 Pro Experimental 03-25',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gemini-2.5-flash-preview-04-17',
+        name: 'Gemini 2.5 Flash Preview 04-17',
+        version: '1.0',
+        description: '',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gemini-2.0-flash',
+        name: 'Gemini 2.0 Flash',
+        version: '1.0',
+        description:
+          'A Gemini 2.0 Flash model optimized for cost efficiency and low latency.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gemini-2.0-flash-lite',
+        name: 'Gemini 2.0 Flash-Lite',
+        version: '1.0',
+        description:
+          'A Gemini 2.0 Flash model optimized for cost efficiency and low latency.',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'gemini-1.5-pro',
+        name: 'Gemini 1.5 Pro',
+        version: '1.0',
+        description:
+          'Gemini 1.5 Pro is a mid-size multimodal model that is optimized for a wide-range of reasoning tasks. 1.5 Pro can process large amounts of data at once, including 2 hours of video, 19 hours of audio, codebases with 60,000 lines of code, or 2,000 pages of text. ',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gemini-1.5-flash',
+        name: 'Gemini 1.5 Flash',
+        version: '1.0',
+        description:
+          'Gemini 1.5 Flash is a fast and versatile multimodal model for scaling across diverse tasks.',
+        capabilities: ['completion', 'tools'],
+      },
+      {
+        id: 'gemini-1.5-flash-8b',
+        name: 'Gemini 1.5 Flash-8B',
+        version: '1.0',
+        description:
+          'Gemini 1.5 Flash-8B is a small model designed for lower intelligence tasks.',
+        capabilities: ['completion', 'tools'],
+      },
+    ],
   },
   {
-    cohere: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.cohere.ai/v1/chat',
-      provider: 'cohere',
-      models: [
-        {
-          command: {
-            setting: {},
-            copabilities: ['reasoning', 'tool'],
-          },
+    active: false,
+    api_key: '',
+    base_url: 'https://api.deepseek.com',
+    provider: 'deepseek',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The DeepSeek API uses API keys for authentication. Visit your [API Keys](https://platform.deepseek.com/api_keys) page to retrieve the API key you'll use in your requests.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
         },
-        {
-          'command-light': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
+      },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. See the [DeepSeek documentation](https://api-docs.deepseek.com/) for more information.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://api.deepseek.com',
+          value: 'https://api.deepseek.com',
         },
-        {
-          'command-r': {
-            setting: {},
-            copabilities: ['reasoning', 'vision'],
-          },
-        },
-      ],
-    },
-  },
-  {
-    nvidia: {
-      active: true,
-      apiKey: '',
-      inferenceUrl: 'https://api.nvidia.com/v1/chat/completions',
-      provider: 'nvidia',
-      models: [
-        {
-          'nemotron-4-340b': {
-            setting: {},
-            copabilities: ['reasoning', 'vision'],
-          },
-        },
-        {
-          'nemotron-4-8b': {
-            setting: {},
-            copabilities: ['reasoning'],
-          },
-        },
-      ],
-    },
+      },
+    ],
+    models: [
+      {
+        id: 'deepseek-chat',
+        name: 'DeepSeek-V3',
+        version: '1.0',
+        description:
+          'The deepseek-chat model has been upgraded to DeepSeek-V3. deepseek-reasoner points to the new model DeepSeek-R1',
+        capabilities: ['completion'],
+      },
+      {
+        id: 'deepseek-reasoner',
+        name: 'DeepSeek-R1',
+        version: '1.0',
+        description:
+          'CoT (Chain of Thought) is the reasoning content deepseek-reasoner gives before output the final answer. For details, please refer to Reasoning Model.',
+        capabilities: ['completion'],
+      },
+    ],
   },
 ]
 
@@ -400,7 +803,7 @@ export const mockTheads = [
     ],
     model: {
       id: 'deepseek-r1:1.5b',
-      provider: 'llamacpp',
+      provider: 'llama.cpp',
     },
   },
 ]

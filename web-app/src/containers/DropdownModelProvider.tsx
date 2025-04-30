@@ -30,7 +30,7 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
       )
     } else {
       // default model, we should add from setting
-      selectModelProvider('llamacpp', 'qwen2.5:0.5b')
+      selectModelProvider('llama.cpp', 'llama3.2:3b')
     }
   }, [threadData, selectModelProvider]) // Only run when threadData changes
 
@@ -64,11 +64,8 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
       >
         <DropdownMenuGroup>
           {providers.map((provider, index) => {
-            const providerKey = Object.keys(provider)[0]
-            const data = provider[providerKey]
-
             // Only show active providers
-            if (!data.active) return null
+            if (!provider.active) return null
 
             return (
               <div
@@ -77,27 +74,28 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
               >
                 <DropdownMenuLabel className="flex items-center gap-1">
                   <img
-                    src={getProviderLogo(data.provider)}
-                    alt={`${data.provider} - Logo`}
+                    src={getProviderLogo(provider.provider)}
+                    alt={`${provider.provider} - Logo`}
                     className="size-4"
                   />
                   <span className="capitalize">
-                    {getProviderTitle(data.provider)}
+                    {getProviderTitle(provider.provider)}
                   </span>
                 </DropdownMenuLabel>
-                {data.models.map((model, modelIndex) => {
-                  const modelKey = Object.keys(model)[0]
-                  const modelData = model[modelKey]
-                  const capabilities = modelData.copabilities || []
+
+                {provider.models.map((model, modelIndex) => {
+                  const capabilities = model.capabilities || []
 
                   return (
                     <DropdownMenuItem
                       className="h-8 mx-1"
                       key={`model-${modelIndex}`}
-                      onClick={() => selectModelProvider(providerKey, modelKey)}
+                      onClick={() =>
+                        selectModelProvider(provider.provider, model.model)
+                      }
                     >
                       <div className="flex items-center justify-between w-full">
-                        <span className="text-main-view-fg/70">{modelKey}</span>
+                        <span className="text-main-view-fg/70">{model.id}</span>
                         <div className="-mr-1.5">
                           <Capabilities capabilities={capabilities} />
                         </div>

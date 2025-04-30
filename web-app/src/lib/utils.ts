@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getProviderLogo(provider: string) {
   switch (provider) {
-    case 'llamacpp':
+    case 'llama.cpp':
       return '/images/model-provider/llamacpp.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
@@ -38,13 +38,13 @@ export function getProviderLogo(provider: string) {
 
 export const getProviderTitle = (provider: string) => {
   switch (provider) {
-    case 'llamacpp':
+    case 'llama.cpp':
       return 'Llama.cpp'
     case 'openai':
       return 'OpenAI'
     case 'openrouter':
       return 'OpenRouter'
-    case 'google_gemini':
+    case 'google':
       return 'Google'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)

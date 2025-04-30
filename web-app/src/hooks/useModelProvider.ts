@@ -10,8 +10,8 @@ type ModelProviderState = {
   selectedModel: string
   setProviders: (providers: ModelProvider[]) => void
   fetchModelProvider: () => Promise<void>
-  getProviderByName: (providerName: string) => ProviderObject | undefined
-  updateProvider: (providerName: string, data: ProviderObject) => void
+  getProviderByName: (providerName: string) => ModelProvider | undefined
+  updateProvider: (providerName: string, data: Partial<ModelProvider>) => void
   selectModelProvider: (providerName: string, modelName: string) => void
 }
 
@@ -19,19 +19,16 @@ export const useModelProvider = create<ModelProviderState>()(
   persist(
     (set, get) => ({
       providers: [],
-      selectedProvider: 'llamacpp',
-      selectedModel: 'qwen2.5:0.5b',
+      selectedProvider: 'llama.cpp',
+      selectedModel: 'llama3.2:3b',
       setProviders: (providers) => set({ providers }),
       updateProvider: (providerName, data) => {
         set((state) => ({
           providers: state.providers.map((provider) => {
-            const key = Object.keys(provider)[0]
-            if (key === providerName) {
+            if (provider.provider === providerName) {
               return {
-                [key]: {
-                  ...provider[key],
-                  ...data,
-                },
+                ...provider,
+                ...data,
               }
             }
             return provider
@@ -39,18 +36,12 @@ export const useModelProvider = create<ModelProviderState>()(
         }))
       },
       getProviderByName: (providerName: string) => {
-        const provider = get().providers.find((provider) => {
-          const key = Object.keys(provider)[0]
-          return key === providerName
-        })
+        const provider = get().providers.find(
+          (provider) => provider.provider === providerName
+        )
 
         if (provider) {
-          const key = Object.keys(provider)[0]
-          // Ensure active is always a boolean, not null
-          const providerData = provider[key]
-          return {
-            ...providerData,
-          }
+          return provider
         }
 
         return undefined
@@ -62,7 +53,10 @@ export const useModelProvider = create<ModelProviderState>()(
         })
       },
       fetchModelProvider: async () => {
-        // Use 'unknown' as an intermediate type to avoid direct type errors
+        // Check if we already have providers in the store
+        const currentProviders = get().providers
+
+        // Always fetch mock data to check for updates
         const mockData = await new Promise<unknown>((resolve) =>
           setTimeout(() => resolve(mockModelProvider), 0)
         )
@@ -70,7 +64,123 @@ export const useModelProvider = create<ModelProviderState>()(
         // Then cast it to the expected type
         const response = mockData as ModelProvider[]
 
-        set({ providers: response })
+        // If providers array is empty, simply set it with the mock data
+        if (currentProviders.length === 0) {
+          set({ providers: response })
+          return
+        }
+
+        // Check if there are new providers or updates to existing providers
+        const updatedProviders = [...currentProviders]
+        let hasChanges = false
+
+        // Check for new providers or updates to existing ones
+        response.forEach((mockProvider) => {
+          const existingProviderIndex = updatedProviders.findIndex(
+            (provider) => provider.provider === mockProvider.provider
+          )
+
+          if (existingProviderIndex === -1) {
+            // This is a new provider, add it
+            console.log(`Adding new provider: ${mockProvider.provider}`)
+            updatedProviders.push(mockProvider)
+            hasChanges = true
+          } else {
+            const existingProvider = updatedProviders[existingProviderIndex]
+
+            // Preserve user-modified settings
+            const userSettings = existingProvider.settings || []
+            const mockSettings = mockProvider.settings || []
+
+            // Create a map of user settings by key for easy lookup
+            const userSettingsMap = new Map()
+            userSettings.forEach((setting) => {
+              if (
+                setting.key &&
+                setting.controller_props &&
+                setting.controller_props.value !== undefined
+              ) {
+                userSettingsMap.set(setting.key, setting.controller_props.value)
+              }
+            })
+
+            // Apply user settings to mock settings
+            const mergedSettings = mockSettings.map((mockSetting) => {
+              if (mockSetting.key && userSettingsMap.has(mockSetting.key)) {
+                return {
+                  ...mockSetting,
+                  controller_props: {
+                    ...mockSetting.controller_props,
+                    value: userSettingsMap.get(mockSetting.key),
+                  },
+                }
+              }
+              return mockSetting
+            })
+
+            // Check if there are new models in this provider
+            const updatedProvider = { ...mockProvider }
+            let needsUpdate = false
+
+            if (mockProvider.models && existingProvider.models) {
+              const existingModelIds = existingProvider.models.map(
+                (model) => model.id
+              )
+              const hasNewModels = mockProvider.models.some(
+                (model) => !existingModelIds.includes(model.id)
+              )
+
+              if (hasNewModels) {
+                console.log(
+                  `Found new models in provider: ${mockProvider.provider}`
+                )
+                needsUpdate = true
+              }
+            }
+
+            // Preserve user-modified api_key and base_url
+            if (existingProvider.api_key) {
+              updatedProvider.api_key = existingProvider.api_key
+            }
+
+            if (existingProvider.base_url) {
+              updatedProvider.base_url = existingProvider.base_url
+            }
+
+            // Apply merged settings
+            updatedProvider.settings = mergedSettings
+
+            // Check if there are other structural changes (new fields, etc.)
+            const existingProviderWithoutSettings = {
+              ...existingProvider,
+              settings: [],
+            }
+            const mockProviderWithoutSettings = {
+              ...mockProvider,
+              settings: [],
+            }
+
+            const existingJSON = JSON.stringify(existingProviderWithoutSettings)
+            const mockJSON = JSON.stringify(mockProviderWithoutSettings)
+
+            if (existingJSON !== mockJSON) {
+              console.log(
+                `Found structural changes in provider: ${mockProvider.provider}`
+              )
+              needsUpdate = true
+            }
+
+            if (needsUpdate) {
+              updatedProviders[existingProviderIndex] = updatedProvider
+              hasChanges = true
+            }
+          }
+        })
+
+        // Update the store if there were changes
+        if (hasChanges) {
+          set({ providers: updatedProviders })
+        }
       },
     }),
     {
