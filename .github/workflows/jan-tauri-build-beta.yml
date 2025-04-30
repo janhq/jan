@@ -8,42 +8,69 @@ jobs:
   # Job create Update app version based on latest release tag with build number and save to output
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
+  create-draft-release:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      version: ${{ steps.get_version.outputs.version }}
+    permissions:
+      contents: write
+    steps:
+      - name: Extract tag name without v prefix
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV && echo "::set-output name=version::${GITHUB_REF#refs/tags/v}"
+        env:
+          GITHUB_REF: ${{ github.ref }}
+      - name: Create Draft Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          name: "${{ env.VERSION }}"
+          draft: true
+          prerelease: false
+          generate_release_notes: true
 
   build-macos:
     uses: ./.github/workflows/template-tauri-build-macos.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, create-draft-release]
     with:
       ref: ${{ github.ref }}
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: beta
       cortex_api_port: "39271"
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
   build-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, create-draft-release]
     with:
       ref: ${{ github.ref }}
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: beta
       cortex_api_port: "39271"
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
-    needs: [get-update-version]
+    needs: [get-update-version, create-draft-release]
     with:
       ref: ${{ github.ref }}
       public_provider: github
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: beta
       cortex_api_port: "39271"
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
   sync-temp-to-latest:
-    needs: [get-update-version, build-macos, build-windows-x64, build-linux-x64]
+    needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -95,6 +122,16 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
+
+      - name: Upload release assert if public provider is github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+          asset_path: ./latest.json
+          asset_name: latest.json
+          asset_content_type: text/json
 
   noti-discord-and-update-url-readme:
     needs: [build-macos, get-update-version, build-windows-x64, build-linux-x64, sync-temp-to-latest]

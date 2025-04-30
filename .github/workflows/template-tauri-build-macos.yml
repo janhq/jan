@@ -170,14 +170,14 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
             FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-            DMG_NAME=Jan--${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
             MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
-            DMG_NAME=Jan--${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+            DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
             TAR_NAME=Jan.app.tar.gz
           fi
 
@@ -230,14 +230,25 @@ jobs:
 
       ## Upload to github release for stable release
       - name: Upload release assert if public provider is github
-        if: inputs.public_provider == 'github'
+        if: inputs.channel == 'stable'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/universal-apple-darwin/release/macos/latest-mac.yml
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/latest-mac.yml
           asset_name: latest-mac.yml
+          asset_content_type: text/yaml
+
+      - name: Upload release assert if public provider is github
+        if: inputs.channel == 'beta'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/beta-mac.yml
+          asset_name: beta-mac.yml
           asset_content_type: text/yaml
 
       - name: Upload release assert if public provider is github
@@ -247,7 +258,7 @@ jobs:
         uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/universal-apple-darwin/release/macos/${{ steps.metadata.outputs.FILE_NAME }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.FILE_NAME }}
           asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
           asset_content_type: application/gzip
 
@@ -258,7 +269,7 @@ jobs:
         uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/universal-apple-darwin/release/dmg/${{ steps.metadata.outputs.DMG_NAME }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/${{ steps.metadata.outputs.DMG_NAME }}
           asset_name: ${{ steps.metadata.outputs.DMG_NAME }}
           asset_content_type: application/octet-stream
 
@@ -269,6 +280,6 @@ jobs:
         uses: actions/upload-release-asset@v1.0.1
         with:
           upload_url: ${{ inputs.upload_url }}
-          asset_path: ./src-tauri/target/universal-apple-darwin/release/macos/${{ steps.metadata.outputs.TAR_NAME }}
+          asset_path: ./src-tauri/target/universal-apple-darwin/release/bundle/macos/${{ steps.metadata.outputs.TAR_NAME }}
           asset_name: ${{ steps.metadata.outputs.TAR_NAME }}
           asset_content_type: application/gzip

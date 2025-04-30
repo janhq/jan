@@ -90,7 +90,6 @@ jobs:
           cargo install ctoml
 
       - name: Update app version base on tag
-        if: inputs.public_provider != 'github'
         id: version_update
         shell: bash
         run: |
@@ -168,7 +167,6 @@ jobs:
 
       - name: Build app
         shell: bash
-        if: inputs.public_provider != 'github'
         run: |
           make build-tauri
         env:
@@ -255,7 +253,7 @@ jobs:
 
       ## Upload to github release for stable release
       - name: Upload release assert if public provider is github
-        if: inputs.public_provider == 'github'
+        if: inputs.channel == 'stable'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/upload-release-asset@v1.0.1
@@ -263,6 +261,17 @@ jobs:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/nsis/latest.yml
           asset_name: latest.yml
+          asset_content_type: text/yaml
+
+      - name: Upload release assert if public provider is github
+        if: inputs.channel == 'beta'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/beta.yml
+          asset_name: beta.yml
           asset_content_type: text/yaml
 
       - name: Upload release assert if public provider is github

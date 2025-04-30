@@ -234,7 +234,7 @@ jobs:
 
       ## Upload to github release for stable release
       - name: Upload release assert if public provider is github
-        if: inputs.public_provider == 'github'
+        if: inputs.channel == 'stable'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         uses: actions/upload-release-asset@v1.0.1
@@ -242,6 +242,17 @@ jobs:
           upload_url: ${{ inputs.upload_url }}
           asset_path: ./src-tauri/target/release/bundle/latest-linux.yml
           asset_name: latest-linux.yml
+          asset_content_type: text/yaml
+
+      - name: Upload release assert if public provider is github
+        if: inputs.channel == 'beta'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/beta-linux.yml
+          asset_name: beta-linux.yml
           asset_content_type: text/yaml
       - name: Upload release assert if public provider is github
         if: inputs.public_provider == 'github'
