@@ -67,6 +67,7 @@ import {
   activeThreadAtom,
   setThreadModelParamsAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { showSettingActiveRemoteEngineAtom } from '@/helpers/atoms/Extension.atom'
 
 type Props = {
   chatInputMode?: boolean
@@ -102,7 +103,7 @@ const ModelDropdown = ({
   const { sources: featuredModels } = useGetFeaturedSources()
 
   const { engines } = useGetEngines()
-
+  const disabledRemoteEngines = useAtomValue(showSettingActiveRemoteEngineAtom)
   const downloadStates = useAtomValue(modelDownloadStateAtom)
   const setThreadModelParams = useSetAtom(setThreadModelParamsAtom)
   const { updateModelParameter } = useUpdateModelParameters()
@@ -147,9 +148,11 @@ const ModelDropdown = ({
             (e) => !configuredModels.some((x) => x.id === e.id)
           )
         )
-        .filter((e) =>
-          e.name.toLowerCase().includes(searchText.toLowerCase().trim())
-        )
+        .filter((e) => {
+          const lowerCaseModelName = e.name.toLowerCase();
+          const searchTerms = searchText.toLowerCase().trim().split(/\s+/);
+          return searchTerms.every(term => lowerCaseModelName.includes(term));
+        })
         .filter((e) => {
           if (searchFilter === 'local') {
             return (
@@ -399,6 +402,7 @@ const ModelDropdown = ({
           >
             {engineList
               .filter((e) => e.type === searchFilter)
+              .filter((e) => e.type !== 'remote' || !disabledRemoteEngines.includes(e.name))
               .filter(
                 (e) =>
                   e.type === 'remote' ||
