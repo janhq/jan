@@ -1,7 +1,8 @@
 import { route } from '@/constants/routes'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
-import { useNavigate, useMatches } from '@tanstack/react-router'
+import { useNavigate, useMatches, Link } from '@tanstack/react-router'
+import { IconArrowLeft } from '@tabler/icons-react'
 
 const ProvidersMenu = () => {
   const { providers } = useModelProvider()
@@ -9,7 +10,13 @@ const ProvidersMenu = () => {
   const matches = useMatches()
 
   return (
-    <div className="w-40 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
+    <div className="w-44 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
+      <Link to={route.settings.general}>
+        <div className="flex items-center gap-0.5 ml-3 mb-4 mt-1">
+          <IconArrowLeft size={16} className="text-main-view-fg/70" />
+          <span>Back</span>
+        </div>
+      </Link>
       {providers.map((provider, index) => {
         const isActive = matches.some(
           (match) =>

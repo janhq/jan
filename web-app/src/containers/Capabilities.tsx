@@ -4,7 +4,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { IconEye, IconTool, IconAtom } from '@tabler/icons-react'
+import {
+  IconEye,
+  IconTool,
+  IconAtom,
+  IconWorld,
+  IconCodeCircle2,
+} from '@tabler/icons-react'
 import { Fragment } from 'react/jsx-runtime'
 
 interface CapabilitiesProps {
@@ -25,6 +31,10 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
           icon = <IconTool className="size-3.5" />
         } else if (capability === 'reasoning') {
           icon = <IconAtom className="size-3.5" />
+        } else if (capability === 'embeddings') {
+          icon = <IconCodeCircle2 className="size-3.5" />
+        } else if (capability === 'web_search') {
+          icon = <IconWorld className="size-3.5" />
         } else {
           icon = null
         }
@@ -36,14 +46,16 @@ const Capabilities = ({ capabilities }: CapabilitiesProps) => {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
-                      className="flex items-center gap-1 size-5 bg-main-view-fg/5 rounded text-main-view-fg/40 justify-center last:mr-1 hover:text-main-view-fg transition-all"
+                      className="flex items-center gap-1 size-5 bg-main-view-fg/5 rounded text-main-view-fg/50 justify-center last:mr-1 hover:text-main-view-fg transition-all"
                       title={capability}
                     >
                       {icon}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{capability}</p>
+                    <p>
+                      {capability === 'web_search' ? 'Web Search' : capability}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

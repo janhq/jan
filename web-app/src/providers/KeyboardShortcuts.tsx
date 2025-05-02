@@ -31,7 +31,7 @@ export function KeyboardShortcutsProvider() {
     key: ',',
     usePlatformMetaKey: true,
     callback: () => {
-      router.navigate({ to: route.settings.modelProviders })
+      router.navigate({ to: route.settings.general })
     },
   })
 
