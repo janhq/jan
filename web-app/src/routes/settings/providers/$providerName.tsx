@@ -1,7 +1,7 @@
 import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
 import HeaderPage from '@/containers/HeaderPage'
 import ProvidersMenu from '@/containers/ProvidersMenu'
-import SettingsMenu from '@/containers/SettingsMenu'
+
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
@@ -10,6 +10,8 @@ import { t } from 'i18next'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/DynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
+import { IconPlus } from '@tabler/icons-react'
+import { DialogEditModelCapabilities } from '@/containers/dialogs/EditModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -28,7 +30,6 @@ function ProviderDetail() {
       </HeaderPage>
       <div className="flex h-full w-full">
         <div className="flex">
-          <SettingsMenu />
           <ProvidersMenu />
         </div>
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
@@ -119,15 +120,39 @@ function ProviderDetail() {
             </CardSetting>
 
             {/* Models */}
-            <CardSetting title="Models">
+            <CardSetting
+              header={
+                <div className="flex items-center justify-between mb-4">
+                  <h1 className="text-main-view-fg font-medium text-base">
+                    Models
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                      <IconPlus size={18} className="text-main-view-fg/50" />
+                    </div>
+                  </div>
+                </div>
+              }
+            >
               {provider?.models.map((model, modelIndex) => {
                 const capabilities = model.capabilities || []
-
                 return (
                   <CardSettingItem
                     key={modelIndex}
-                    title={model.id}
-                    actions={<Capabilities capabilities={capabilities} />}
+                    title={
+                      <div className="flex items-center gap-2">
+                        <h1 className="font-medium">{model.id}</h1>
+                        <Capabilities capabilities={capabilities} />
+                      </div>
+                    }
+                    actions={
+                      <div className="flex items-center gap-2">
+                        <DialogEditModelCapabilities
+                          provider={provider}
+                          modelId={model.id}
+                        />
+                      </div>
+                    }
                   />
                 )
               })}

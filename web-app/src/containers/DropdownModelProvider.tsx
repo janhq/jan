@@ -10,6 +10,9 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useEffect, useState } from 'react'
 import Capabilities from './Capabilities'
+import { IconSettings } from '@tabler/icons-react'
+import { useNavigate } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 
 type DropdownModelProviderProps = {
   threadData?: Thread
@@ -19,6 +22,7 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
   const { providers, selectModelProvider, selectedProvider, selectedModel } =
     useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
+  const navigate = useNavigate()
 
   // Initialize model provider only once
   useEffect(() => {
@@ -70,20 +74,33 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
             return (
               <div
                 className={cn(
-                  'bg-main-view-fg/4 first:mt-0 rounded-sm pb-1 my-1.5 first:mb-0'
+                  'bg-main-view-fg/4 first:mt-0 rounded-sm pb-1 my-1.5 first:mb-0 '
                 )}
                 key={`provider-${index}`}
               >
-                <DropdownMenuLabel className="flex items-center gap-1.5">
-                  <img
-                    src={getProviderLogo(provider.provider)}
-                    alt={`${provider.provider} - Logo`}
-                    className="size-4"
-                  />
-                  <span className="capitalize">
-                    {getProviderTitle(provider.provider)}
-                  </span>
-                </DropdownMenuLabel>
+                <div className="flex items-center justify-between">
+                  <DropdownMenuLabel className="flex items-center gap-1.5">
+                    <img
+                      src={getProviderLogo(provider.provider)}
+                      alt={`${provider.provider} - Logo`}
+                      className="size-4"
+                    />
+                    <span className="capitalize">
+                      {getProviderTitle(provider.provider)}
+                    </span>
+                  </DropdownMenuLabel>
+                  <div
+                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out mr-2"
+                    onClick={() =>
+                      navigate({
+                        to: route.settings.providers,
+                        params: { providerName: provider.provider },
+                      })
+                    }
+                  >
+                    <IconSettings size={18} className="text-main-view-fg/50" />
+                  </div>
+                </div>
 
                 {provider.models.map((model, modelIndex) => {
                   const capabilities = model.capabilities || []

@@ -4,10 +4,11 @@ import { ReactNode } from 'react'
 type CardSettingProps = {
   title?: string
   children?: ReactNode
+  header?: ReactNode
 }
 
 type CardSettingItemProps = {
-  title?: string
+  title?: string | ReactNode
   description?: string | ReactNode
   align?: 'start' | 'center' | 'end'
   actions?: ReactNode
@@ -44,7 +45,7 @@ export function CardSettingItem({
   )
 }
 
-export function CardSetting({ title, children }: CardSettingProps) {
+export function CardSetting({ title, children, header }: CardSettingProps) {
   return (
     <div className="bg-main-view-fg/4 p-4 rounded-lg text-main-view-fg/90 w-full">
       {title && (
@@ -52,6 +53,7 @@ export function CardSetting({ title, children }: CardSettingProps) {
           {title}
         </h1>
       )}
+      {header && header}
       {children}
     </div>
   )
