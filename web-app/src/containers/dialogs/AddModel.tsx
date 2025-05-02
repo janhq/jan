@@ -55,10 +55,9 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <Button variant="default" size="sm">
-            <IconPlus size={16} />
-            Add Model
-          </Button>
+          <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+            <IconPlus size={18} className="text-main-view-fg/50" />
+          </div>
         )}
       </DialogTrigger>
       <DialogContent>

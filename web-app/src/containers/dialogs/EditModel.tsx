@@ -9,7 +9,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
-  IconPencilCog,
+  IconPencil,
   IconEye,
   IconTool,
   IconWorld,
@@ -19,15 +19,15 @@ import {
 import { useState, useEffect } from 'react'
 
 // No need to define our own interface, we'll use the existing Model type
-type DialogEditModelCapabilitiesProps = {
+type DialogEditModelProps = {
   provider: ModelProvider
   modelId?: string // Optional model ID to edit
 }
 
-export const DialogEditModelCapabilities = ({
+export const DialogEditModel = ({
   provider,
   modelId,
-}: DialogEditModelCapabilitiesProps) => {
+}: DialogEditModelProps) => {
   const { updateProvider } = useModelProvider()
   const [selectedModelId, setSelectedModelId] = useState<string>('')
   const [capabilities, setCapabilities] = useState<Record<string, boolean>>({
@@ -129,7 +129,7 @@ export const DialogEditModelCapabilities = ({
     <Dialog>
       <DialogTrigger asChild>
         <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-          <IconPencilCog size={18} className="text-main-view-fg/50" />
+          <IconPencil size={18} className="text-main-view-fg/50" />
         </div>
       </DialogTrigger>
       <DialogContent>
