@@ -102,7 +102,7 @@ export function DropdownControl({
       <DropdownMenuTrigger className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 rounded font-medium cursor-pointer">
         {options.find((option) => option.value === value)?.name || value}
       </DropdownMenuTrigger>
-      <DropdownMenuContent>
+      <DropdownMenuContent align="end">
         {options.map((option, optionIndex) => (
           <DropdownMenuItem
             key={optionIndex}
