@@ -283,12 +283,6 @@ export default function useSendChatMessage(
 
     if (requestBuilder.tools && requestBuilder.tools.length) {
       let isDone = false
-      // TODO: get OpenAI client object from Provider?
-      // const openai = new OpenAI({
-      //   apiKey: await window.core.api.appToken(),
-      //   baseURL: `${API_BASE_URL}/v1`,
-      //   dangerouslyAllowBrowser: true,
-      // })
       const openai = engine?.getOpenAIClient()
       let parentMessageId: string | undefined
       while (!isDone) {
