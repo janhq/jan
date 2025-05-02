@@ -10,8 +10,8 @@ import { t } from 'i18next'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/DynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { IconPlus } from '@tabler/icons-react'
 import { DialogEditModelCapabilities } from '@/containers/dialogs/EditModel'
+import { DialogAddModel } from '@/containers/dialogs/AddModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -127,9 +127,7 @@ function ProviderDetail() {
                     Models
                   </h1>
                   <div className="flex items-center gap-2">
-                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-                      <IconPlus size={18} className="text-main-view-fg/50" />
-                    </div>
+                    {provider && <DialogAddModel provider={provider} />}
                   </div>
                 </div>
               }

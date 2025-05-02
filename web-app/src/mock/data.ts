@@ -134,6 +134,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://api.openai.com/v1',
+    explore_models_url: 'https://platform.openai.com/docs/models',
     provider: 'openai',
     settings: [
       {
@@ -245,6 +246,8 @@ export const mockModelProvider = [
     api_key: '',
     base_url: 'https://api.anthropic.com/v1',
     provider: 'anthropic',
+    explore_models_url:
+      'https://docs.anthropic.com/en/docs/about-claude/models',
     settings: [
       {
         key: 'api-key',
@@ -310,6 +313,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://api.cohere.ai/compatibility/v1',
+    explore_models_url: 'https://docs.cohere.com/v2/docs/models',
     provider: 'cohere',
     settings: [
       {
@@ -360,6 +364,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://openrouter.ai/api/v1',
+    explore_models_url: 'https://openrouter.ai/models',
     provider: 'openrouter',
     settings: [
       {
@@ -408,6 +413,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://integrate.api.nvidia.com/v1',
+    explore_models_url: 'https://build.nvidia.com/models',
     provider: 'nvidia',
     settings: [
       {
@@ -449,6 +455,8 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://api.mistral.ai/v1',
+    explore_models_url:
+      'https://docs.mistral.ai/getting-started/models/models_overview/',
     provider: 'mistral',
     settings: [
       {
@@ -507,6 +515,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://withmartian.com/api/openai/v1',
+    explore_models_url: 'https://withmartian.github.io/llm-adapters/',
     provider: 'martian',
     settings: [
       {
@@ -549,6 +558,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://api.groq.com/openai/v1',
+    explore_models_url: 'https://console.groq.com/docs/models',
     provider: 'groq',
     settings: [
       {
@@ -618,6 +628,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    explore_models_url: 'https://ai.google.dev/gemini-api/docs/models/gemini',
     provider: 'google',
     settings: [
       {
@@ -714,6 +725,8 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://api.deepseek.com',
+    explore_models_url:
+      'httpshttps://api-docs.deepseek.com/quick_start/pricing',
     provider: 'deepseek',
     settings: [
       {
