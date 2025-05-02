@@ -14,10 +14,11 @@
     "windows": [
       {
         "title": "Jan",
-        "width": 1024,
-        "height": 768,
+        "width": 1200,
+        "height": 960,
         "resizable": true,
         "fullscreen": false,
+        "center": true,
         "hiddenTitle": true,
         "transparent": true,
         "trafficLightPosition": {

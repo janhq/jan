@@ -102,6 +102,7 @@ export const mockModelProvider = [
         id: 'llama3.2:3b',
         model: 'llama3.2:3b',
         name: 'llama3.2:3b',
+        capabilities: ['completion', 'tools'],
         version: 2,
         settings: {
           prompt_template:
@@ -116,6 +117,7 @@ export const mockModelProvider = [
         id: 'deepseek-r1.2:3b',
         model: 'deepseek-r1.2:3b',
         name: 'deepseek-r1.2:3b',
+        capabilities: ['completion', 'tools'],
         version: 2,
         settings: {
           prompt_template:

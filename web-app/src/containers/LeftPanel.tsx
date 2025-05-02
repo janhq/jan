@@ -63,7 +63,7 @@ const LeftPanel = () => {
   return (
     <aside
       className={cn(
-        'w-44 shrink-0 rounded-lg m-1.5 mr-0 text-left-panel-fg',
+        'w-48 shrink-0 rounded-lg m-1.5 mr-0 text-left-panel-fg',
         open ? 'block' : 'hidden'
       )}
     >

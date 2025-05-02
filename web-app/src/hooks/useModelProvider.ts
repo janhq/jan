@@ -123,6 +123,26 @@ export const useModelProvider = create<ModelProviderState>()(
             let needsUpdate = false
 
             if (mockProvider.models && existingProvider.models) {
+              // Create a map of existing models by ID for easy lookup
+              const existingModelsMap = new Map()
+              existingProvider.models.forEach((model) => {
+                existingModelsMap.set(model.id, model)
+              })
+
+              // Preserve user-modified model capabilities
+              updatedProvider.models = mockProvider.models.map((mockModel) => {
+                const existingModel = existingModelsMap.get(mockModel.id)
+                if (existingModel && existingModel.capabilities) {
+                  // Preserve user-modified capabilities
+                  return {
+                    ...mockModel,
+                    capabilities: existingModel.capabilities,
+                  }
+                }
+                return mockModel
+              })
+
+              // Check for new models
               const existingModelIds = existingProvider.models.map(
                 (model) => model.id
               )

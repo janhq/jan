@@ -8,7 +8,8 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
-  component: ThreadDetail,
+  component: ThreadDetail
+  
 })
 
 function ThreadDetail() {
@@ -22,7 +23,9 @@ function ThreadDetail() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <DropdownModelProvider threadData={thread} />
+        <div className="-ml-2">
+          <DropdownModelProvider threadData={thread} />
+        </div>
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-32px)] ">
         <div className="flex flex-col h-full w-full p-4 overflow-auto">
