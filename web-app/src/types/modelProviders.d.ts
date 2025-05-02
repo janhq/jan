@@ -40,6 +40,7 @@ type Model = {
 type ProviderObject = {
   active: boolean
   provider: string
+  explore_models_url?: string
   api_key?: string
   base_url?: string
   settings: ProviderSetting[]

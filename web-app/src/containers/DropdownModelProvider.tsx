@@ -113,7 +113,7 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
                         selectModelProvider(provider.provider, model.id)
                       }
                     >
-                      <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-1.5 w-full">
                         <span className="text-main-view-fg/70">{model.id}</span>
                         <div className="-mr-1.5">
                           <Capabilities capabilities={capabilities} />
