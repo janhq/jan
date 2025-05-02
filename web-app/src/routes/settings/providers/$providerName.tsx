@@ -10,8 +10,10 @@ import { t } from 'i18next'
 import Capabilities from '@/containers/Capabilities'
 import { DynamicControllerSetting } from '@/containers/DynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { DialogEditModelCapabilities } from '@/containers/dialogs/EditModel'
+import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
+
+import { ModelSetting } from '@/containers/ModelSetting'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -145,10 +147,11 @@ function ProviderDetail() {
                     }
                     actions={
                       <div className="flex items-center gap-2">
-                        <DialogEditModelCapabilities
+                        <DialogEditModel
                           provider={provider}
                           modelId={model.id}
                         />
+                        {model.settings && <ModelSetting model={model} />}
                       </div>
                     }
                   />

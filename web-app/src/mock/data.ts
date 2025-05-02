@@ -725,8 +725,7 @@ export const mockModelProvider = [
     active: false,
     api_key: '',
     base_url: 'https://api.deepseek.com',
-    explore_models_url:
-      'httpshttps://api-docs.deepseek.com/quick_start/pricing',
+    explore_models_url: 'https://api-docs.deepseek.com/quick_start/pricing',
     provider: 'deepseek',
     settings: [
       {
