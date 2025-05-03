@@ -129,15 +129,24 @@ export const useModelProvider = create<ModelProviderState>()(
                 existingModelsMap.set(model.id, model)
               })
 
-              // Preserve user-modified model capabilities
+              // Preserve user-modified model capabilities and settings
               updatedProvider.models = mockProvider.models.map((mockModel) => {
                 const existingModel = existingModelsMap.get(mockModel.id)
-                if (existingModel && existingModel.capabilities) {
-                  // Preserve user-modified capabilities
-                  return {
-                    ...mockModel,
-                    capabilities: existingModel.capabilities,
+                if (existingModel) {
+                  // Create a merged model that preserves user modifications
+                  const mergedModel = { ...mockModel }
+
+                  // Preserve capabilities if they exist
+                  if (existingModel.capabilities) {
+                    mergedModel.capabilities = existingModel.capabilities
                   }
+
+                  // Preserve settings if they exist
+                  if (existingModel.settings) {
+                    mergedModel.settings = existingModel.settings
+                  }
+
+                  return mergedModel
                 }
                 return mockModel
               })
