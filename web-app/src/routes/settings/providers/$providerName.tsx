@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import { t } from 'i18next'
 import Capabilities from '@/containers/Capabilities'
-import { DynamicControllerSetting } from '@/containers/DynamicControllerSetting'
+import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
@@ -61,8 +61,16 @@ function ProviderDetail() {
                     onChange={(newValue) => {
                       if (provider) {
                         const newSettings = [...provider.settings]
-                        newSettings[settingIndex].controller_props.value =
-                          newValue
+                        // Handle different value types by forcing the type
+                        // Use type assertion to bypass type checking
+                        // Disable eslint for this line as we need to use type assertion
+
+                        ;(
+                          newSettings[settingIndex].controller_props as {
+                            value: string | boolean | number
+                          }
+                        ).value = newValue
+
                         // Create update object with updated settings
                         const updateObj: Partial<ModelProvider> = {
                           settings: newSettings,
@@ -151,7 +159,9 @@ function ProviderDetail() {
                           provider={provider}
                           modelId={model.id}
                         />
-                        {model.settings && <ModelSetting model={model} />}
+                        {model.settings && (
+                          <ModelSetting provider={provider} model={model} />
+                        )}
                       </div>
                     }
                   />
