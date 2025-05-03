@@ -8,12 +8,56 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet'
+import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { presetConfiguration } from '@/lib/predefined'
+
+// import {
+//   HoverCard,
+//   HoverCardContent,
+//   HoverCardTrigger,
+// } from '@/components/ui/hover-card'
 
 type ModelSettingProps = {
+  provider: ProviderObject
   model: Model
 }
 
-export function ModelSetting({ model }: ModelSettingProps) {
+export function ModelSetting({ model, provider }: ModelSettingProps) {
+  const { updateProvider } = useModelProvider()
+
+  const handleSettingChange = (
+    key: string,
+    value: string | boolean | number
+  ) => {
+    if (!provider) return
+
+    // Create a copy of the model with updated settings
+    const updatedModel = {
+      ...model,
+      settings: {
+        ...model.settings,
+        [key]: value,
+      },
+    }
+
+    // Find the model index in the provider's models array
+    const modelIndex = provider.models.findIndex((m) => m.id === model.id)
+
+    if (modelIndex !== -1) {
+      // Create a copy of the provider's models array
+      const updatedModels = [...provider.models]
+
+      // Update the specific model in the array
+      updatedModels[modelIndex] = updatedModel
+
+      // Update the provider with the new models array
+      updateProvider(provider.provider, {
+        models: updatedModels,
+      })
+    }
+  }
+
   return (
     <Sheet>
       <SheetTrigger asChild>
@@ -25,16 +69,69 @@ export function ModelSetting({ model }: ModelSettingProps) {
         <SheetHeader>
           <SheetTitle>Model Setting {model.id}</SheetTitle>
           <SheetDescription>
-            Make changes to your profile here. Click save when you're done.
+            Configure model settings to optimize performance and behavior.
           </SheetDescription>
         </SheetHeader>
-        <div className="px-4">
-          <p>
-            Lorem, ipsum dolor sit amet consectetur adipisicing elit.
-            Consequatur excepturi reprehenderit, nihil cupiditate aperiam
-            impedit! Ducimus veniam animi vel cumque minima ut mollitia, vero
-            vitae sunt odio ratione nisi officiis?
-          </p>
+        <div className="px-4 space-y-6">
+          {Object.entries(model.settings || {}).map(([key, value]) => {
+            const config = presetConfiguration[key]
+            if (!config) return null
+            return (
+              <div key={key} className="space-y-2">
+                <div className="flex flex-col">
+                  <div className="space-y-1 mb-2">
+                    <h3 className="font-medium">{config.title}</h3>
+                    <p className="text-main-view-fg/60 text-xs">
+                      {config.description}
+                    </p>
+                  </div>
+                  <DynamicControllerSetting
+                    key={config.key}
+                    title={config.title}
+                    description={config.description}
+                    controllerType={config.controller_type}
+                    controllerProps={{
+                      ...config.controller_props,
+                      value: value,
+                    }}
+                    onChange={(newValue) => handleSettingChange(key, newValue)}
+                  />
+                  {/* <div className="mt-2">
+                    <HoverCard openDelay={200}>
+                      <HoverCardTrigger asChild>
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <label htmlFor={config.key}>{config.title}</label>
+                          </div>
+                          <DynamicControllerSetting
+                            key={config.key}
+                            title={config.title}
+                            description={config.description}
+                            controllerType={config.controller_type}
+                            controllerProps={{
+                              ...config.controller_props,
+                              value: value,
+                            }}
+                            onChange={(newValue) =>
+                              handleSettingChange(key, newValue)
+                            }
+                          />
+                        </div>
+                      </HoverCardTrigger>
+                      <HoverCardContent
+                        align="start"
+                        className="w-[260px] text-sm"
+                        side="left"
+                        sideOffset={24}
+                      >
+                        {config.description}
+                      </HoverCardContent>
+                    </HoverCard>
+                  </div> */}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </SheetContent>
     </Sheet>

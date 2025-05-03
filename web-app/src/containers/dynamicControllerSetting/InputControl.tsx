@@ -1,0 +1,66 @@
+import { useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { Copy, Eye, EyeOff } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+type InputControl = {
+  type?: string
+  placeholder?: string
+  value: string
+  onChange: (value: string) => void
+  inputActions?: string[]
+}
+
+export function InputControl({
+  type = 'text',
+  placeholder = '',
+  value = '',
+  onChange,
+  inputActions = [],
+}: InputControl) {
+  const [showPassword, setShowPassword] = useState(false)
+  const hasInputActions = inputActions && inputActions.length > 0
+
+  const copyToClipboard = () => {
+    if (value) {
+      navigator.clipboard.writeText(value)
+    }
+  }
+
+  const inputType = type === 'password' && showPassword ? 'text' : type
+
+  return (
+    <div className={cn('relative', type === 'number' ? 'w-16' : 'w-full')}>
+      <Input
+        type={inputType}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(
+          type === 'number' ? 'w-16' : 'w-full',
+          hasInputActions && 'pr-16'
+        )}
+      />
+      <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
+        {hasInputActions &&
+          inputActions.includes('unobscure') &&
+          type === 'password' && (
+            <button
+              onClick={() => setShowPassword(!showPassword)}
+              className="p-1 rounded hover:bg-main-view-fg/5 text-main-view-fg/70"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          )}
+        {hasInputActions && inputActions.includes('copy') && (
+          <button
+            onClick={copyToClipboard}
+            className="p-1 rounded hover:bg-main-view-fg/5 text-main-view-fg/70"
+          >
+            <Copy size={16} />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
