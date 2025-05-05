@@ -111,36 +111,44 @@
   pre {
     font-family: monospace;
     @apply bg-main-view-fg/10 text-main-view-fg;
-    padding: 1em;
-    border-radius: 5px;
     overflow-x: auto;
-    margin-bottom: 1em;
+    /* padding: 16px; */
+    border-radius: 8px;
+    /* margin-bottom: 1em; */
   }
 
   pre code {
     background-color: transparent;
     padding: 0;
+    @apply !text-sm;
   }
 
   /* Tables */
   table {
-    width: 100%;
+    width: max-content;
     border-collapse: collapse;
     margin-bottom: 1em;
+    border-spacing: 0;
+    display: block;
+    max-width: max-content;
+    overflow-x: auto;
+    font-variant: tabular-nums;
   }
 
   th {
     font-weight: 600;
     text-align: left;
-    padding: 0.5em;
-    border-bottom: 2px solid var(--color-main-view-fg);
-    opacity: 0.2;
+    padding: 0.75em 1em;
+    @apply border border-main-view-fg/20;
   }
 
   td {
-    padding: 0.5em;
-    border-bottom: 1px solid var(--color-main-view-fg);
-    opacity: 0.1;
+    padding: 0.75em 1em;
+    @apply border border-main-view-fg/20;
+  }
+
+  tr:nth-child(even) {
+    @apply bg-main-view-fg/5;
   }
 
   /* Links */

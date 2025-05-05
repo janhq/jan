@@ -8,8 +8,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
-  component: ThreadDetail
-  
+  component: ThreadDetail,
 })
 
 function ThreadDetail() {
@@ -44,9 +43,7 @@ function ThreadDetail() {
                         className="max-w-full rounded-md"
                       />
                       {item.image_url.detail && (
-                        <p className="text-sm text-gray-500 mt-1">
-                          {item.image_url.detail}
-                        </p>
+                        <p className="text-sm mt-1">{item.image_url.detail}</p>
                       )}
                     </div>
                   )}
