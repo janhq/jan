@@ -161,6 +161,11 @@
     text-decoration: underline;
   }
 
+  ul.contains-task-list {
+    list-style: none;
+    padding-left: 0;
+  }
+
   /* Images */
   img {
     max-width: 100%;

@@ -89,8 +89,8 @@ export function RenderMarkdown({
       const shouldVirtualize = code.split('\n').length > 300
 
       return !isInline ? (
-        <div className="relative overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2 bg-main-view-fg/10">
+        <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
+          <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
             <span className="font-medium text-xs font-sans">
               {getReadableLanguageName(language)}
             </span>
