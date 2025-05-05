@@ -12,7 +12,7 @@ interface CodeBlockState {
   resetCodeBlockStyle: () => void
 }
 
-const defaultCodeBlockStyle: CodeBlockStyle = 'duotone-dark'
+const defaultCodeBlockStyle: CodeBlockStyle = 'dracula'
 const defaultShowLineNumbers: boolean = true
 
 export const useCodeblock = create<CodeBlockState>()(
