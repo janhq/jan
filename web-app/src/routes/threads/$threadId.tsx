@@ -33,7 +33,18 @@ function ThreadDetail() {
               thread.content.map((item, index) => (
                 <div key={index} className="mb-4">
                   {item.type === 'text' && item.text && (
-                    <RenderMarkdown content={item.text.value} />
+                    <RenderMarkdown
+                      content={item.text.value}
+                      components={{
+                        a: ({ ...props }) => (
+                          <a
+                            {...props}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          />
+                        ),
+                      }}
+                    />
                   )}
                   {item.type === 'image_url' && item.image_url && (
                     <div>
