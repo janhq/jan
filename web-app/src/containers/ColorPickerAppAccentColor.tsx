@@ -8,44 +8,39 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export function ColorPickerAppPrimaryColor() {
-  const { appPrimaryBgColor, setAppPrimaryBgColor } = useAppearance()
+export function ColorPickerAppAccentColor() {
+  const { appAccentBgColor, setAppAccentBgColor } = useAppearance()
 
-  const predefineappPrimaryBgColor: RgbaColor[] = [
+  const predefineAppAccentBgColor: RgbaColor[] = [
     {
-      r: 219,
-      g: 88,
-      b: 44,
-      a: 1,
-    },
-    {
-      r: 120,
-      g: 44,
+      r: 45,
+      g: 120,
       b: 220,
       a: 1,
     },
     {
-      r: 219,
-      g: 167,
-      b: 44,
+      r: 220,
+      g: 45,
+      b: 120,
       a: 1,
     },
+
     {
-      r: 46,
-      g: 158,
-      b: 57,
+      r: 180,
+      g: 120,
+      b: 45,
       a: 1,
     },
   ]
 
   return (
     <div className="flex items-center gap-1.5">
-      {predefineappPrimaryBgColor.map((item, i) => {
+      {predefineAppAccentBgColor.map((item, i) => {
         const isSelected =
-          item.r === appPrimaryBgColor.r &&
-          item.g === appPrimaryBgColor.g &&
-          item.b === appPrimaryBgColor.b &&
-          item.a === appPrimaryBgColor.a
+          item.r === appAccentBgColor.r &&
+          item.g === appAccentBgColor.g &&
+          item.b === appAccentBgColor.b &&
+          item.a === appAccentBgColor.a
         return (
           <div
             key={i}
@@ -54,7 +49,7 @@ export function ColorPickerAppPrimaryColor() {
               isSelected && 'ring-2 ring-blue-500 border-none'
             )}
             onClick={() => {
-              setAppPrimaryBgColor(item)
+              setAppAccentBgColor(item)
             }}
             style={{
               backgroundColor: `rgba(${item.r}, ${item.g}, ${item.b}, ${item.a})`,
@@ -78,9 +73,9 @@ export function ColorPickerAppPrimaryColor() {
           >
             <div>
               <RgbaColorPicker
-                color={appPrimaryBgColor}
+                color={appAccentBgColor}
                 onChange={(color) => {
-                  setAppPrimaryBgColor(color)
+                  setAppAccentBgColor(color)
                 }}
               />
             </div>

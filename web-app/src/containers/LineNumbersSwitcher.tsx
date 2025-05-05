@@ -9,10 +9,6 @@ export function LineNumbersSwitcher() {
   }
 
   return (
-    <Switch
-      checked={showLineNumbers}
-      onCheckedChange={toggleLineNumbers}
-      className="data-[state=checked]:bg-primary"
-    />
+    <Switch checked={showLineNumbers} onCheckedChange={toggleLineNumbers} />
   )
 }
