@@ -44,7 +44,7 @@ const SettingsMenu = () => {
               to={menu.route}
               className="block px-2 gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5"
             >
-              <span>{t(menu.title)}</span>
+              <span className="text-main-view-fg/80">{t(menu.title)}</span>
             </Link>
           )
         })}
@@ -61,7 +61,9 @@ const SettingsMenu = () => {
             params={{ providerName: firstItemProvider }}
             className="block px-2 gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded"
           >
-            <span>{t('common.modelProviders')}</span>
+            <span className="text-main-view-fg/80">
+              {t('common.modelProviders')}
+            </span>
           </Link>
         )}
       </div>

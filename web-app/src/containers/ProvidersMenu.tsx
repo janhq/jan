@@ -14,7 +14,7 @@ const ProvidersMenu = () => {
       <Link to={route.settings.general}>
         <div className="flex items-center gap-0.5 ml-3 mb-4 mt-1">
           <IconArrowLeft size={16} className="text-main-view-fg/70" />
-          <span>Back</span>
+          <span className="text-main-view-fg/80">Back</span>
         </div>
       </Link>
       {providers.map((provider, index) => {
@@ -29,7 +29,7 @@ const ProvidersMenu = () => {
           <div key={index} className="flex flex-col px-2 my-1.5 ">
             <div
               className={cn(
-                'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5',
+                'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
                 isActive && 'bg-main-view-fg/5'
               )}
               onClick={() =>

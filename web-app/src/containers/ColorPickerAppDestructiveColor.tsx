@@ -8,44 +8,44 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export function ColorPickerAppPrimaryColor() {
-  const { appPrimaryBgColor, setAppPrimaryBgColor } = useAppearance()
+export function ColorPickerAppDestructiveColor() {
+  const { appDestructiveBgColor, setAppDestructiveBgColor } = useAppearance()
 
-  const predefineappPrimaryBgColor: RgbaColor[] = [
+  const predefineAppDestructiveBgColor: RgbaColor[] = [
     {
-      r: 219,
-      g: 88,
-      b: 44,
+      r: 220,
+      g: 45,
+      b: 45,
       a: 1,
     },
     {
-      r: 120,
-      g: 44,
-      b: 220,
+      r: 220,
+      g: 100,
+      b: 45,
       a: 1,
     },
     {
-      r: 219,
-      g: 167,
-      b: 44,
+      r: 180,
+      g: 45,
+      b: 120,
       a: 1,
     },
     {
-      r: 46,
-      g: 158,
-      b: 57,
+      r: 150,
+      g: 45,
+      b: 180,
       a: 1,
     },
   ]
 
   return (
     <div className="flex items-center gap-1.5">
-      {predefineappPrimaryBgColor.map((item, i) => {
+      {predefineAppDestructiveBgColor.map((item, i) => {
         const isSelected =
-          item.r === appPrimaryBgColor.r &&
-          item.g === appPrimaryBgColor.g &&
-          item.b === appPrimaryBgColor.b &&
-          item.a === appPrimaryBgColor.a
+          item.r === appDestructiveBgColor.r &&
+          item.g === appDestructiveBgColor.g &&
+          item.b === appDestructiveBgColor.b &&
+          item.a === appDestructiveBgColor.a
         return (
           <div
             key={i}
@@ -54,7 +54,7 @@ export function ColorPickerAppPrimaryColor() {
               isSelected && 'ring-2 ring-blue-500 border-none'
             )}
             onClick={() => {
-              setAppPrimaryBgColor(item)
+              setAppDestructiveBgColor(item)
             }}
             style={{
               backgroundColor: `rgba(${item.r}, ${item.g}, ${item.b}, ${item.a})`,
@@ -78,9 +78,9 @@ export function ColorPickerAppPrimaryColor() {
           >
             <div>
               <RgbaColorPicker
-                color={appPrimaryBgColor}
+                color={appDestructiveBgColor}
                 onChange={(color) => {
-                  setAppPrimaryBgColor(color)
+                  setAppDestructiveBgColor(color)
                 }}
               />
             </div>

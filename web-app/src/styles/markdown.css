@@ -92,7 +92,7 @@
   /* Blockquotes */
   blockquote {
     line-height: 1.6;
-    border-left: 4px solid var(--color-main-view-fg);
+    border-left: 4px solid var(--color-accent);
     padding-left: 1em;
     margin-left: 0;
     margin-right: 0;

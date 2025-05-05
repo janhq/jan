@@ -12,13 +12,19 @@ interface AppearanceState {
   appBgColor: RgbaColor
   appMainViewBgColor: RgbaColor
   appPrimaryBgColor: RgbaColor
+  appAccentBgColor: RgbaColor
+  appDestructiveBgColor: RgbaColor
   appMainViewTextColor: string
   appPrimaryTextColor: string
+  appAccentTextColor: string
+  appDestructiveTextColor: string
   appLeftPanelTextColor: string
   setFontSize: (size: FontSize) => void
   setAppBgColor: (color: RgbaColor) => void
   setAppMainViewBgColor: (color: RgbaColor) => void
   setAppPrimaryBgColor: (color: RgbaColor) => void
+  setAppAccentBgColor: (color: RgbaColor) => void
+  setAppDestructiveBgColor: (color: RgbaColor) => void
   resetAppearance: () => void
 }
 
@@ -45,6 +51,15 @@ const defaultLightAppMainViewBgColor: RgbaColor = {
 }
 const defaultAppPrimaryBgColor: RgbaColor = { r: 45, g: 80, b: 220, a: 1 }
 const defaultLightAppPrimaryBgColor: RgbaColor = { r: 45, g: 80, b: 220, a: 1 }
+const defaultAppAccentBgColor: RgbaColor = { r: 45, g: 120, b: 220, a: 1 }
+const defaultLightAppAccentBgColor: RgbaColor = { r: 45, g: 120, b: 220, a: 1 }
+const defaultAppDestructiveBgColor: RgbaColor = { r: 220, g: 45, b: 45, a: 1 }
+const defaultLightAppDestructiveBgColor: RgbaColor = {
+  r: 220,
+  g: 45,
+  b: 45,
+  a: 1,
+}
 const defaultDarkLeftPanelTextColor: string = '#FFF'
 const defaultLightLeftPanelTextColor: string = '#000'
 
@@ -80,6 +95,20 @@ export const isDefaultColorPrimary = (color: RgbaColor): boolean => {
   )
 }
 
+export const isDefaultColorAccent = (color: RgbaColor): boolean => {
+  return (
+    isColorEqual(color, defaultAppAccentBgColor) ||
+    isColorEqual(color, defaultLightAppAccentBgColor)
+  )
+}
+
+export const isDefaultColorDestructive = (color: RgbaColor): boolean => {
+  return (
+    isColorEqual(color, defaultAppDestructiveBgColor) ||
+    isColorEqual(color, defaultLightAppDestructiveBgColor)
+  )
+}
+
 // Helper function to get default text color based on theme
 export const getDefaultTextColor = (isDark: boolean): string => {
   return isDark ? defaultDarkLeftPanelTextColor : defaultLightLeftPanelTextColor
@@ -93,9 +122,13 @@ export const useAppearance = create<AppearanceState>()(
         appBgColor: defaultAppBgColor,
         appMainViewBgColor: defaultAppMainViewBgColor,
         appPrimaryBgColor: defaultAppPrimaryBgColor,
+        appAccentBgColor: defaultAppAccentBgColor,
+        appDestructiveBgColor: defaultAppDestructiveBgColor,
         appLeftPanelTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appMainViewTextColor: getDefaultTextColor(useTheme.getState().isDark),
         appPrimaryTextColor: getDefaultTextColor(useTheme.getState().isDark),
+        appAccentTextColor: getDefaultTextColor(useTheme.getState().isDark),
+        appDestructiveTextColor: '#FFF',
 
         resetAppearance: () => {
           const { isDark } = useTheme.getState()
@@ -155,6 +188,40 @@ export const useAppearance = create<AppearanceState>()(
             formatCss(oklchPrimaryColor)
           )
 
+          // Reset accent color
+          const defaultAccent = isDark
+            ? defaultAppAccentBgColor
+            : defaultLightAppAccentBgColor
+          const culoriRgbAccent = rgb({
+            mode: 'rgb',
+            r: defaultAccent.r / 255,
+            g: defaultAccent.g / 255,
+            b: defaultAccent.b / 255,
+            alpha: defaultAccent.a,
+          })
+          const oklchAccentColor = oklch(culoriRgbAccent)
+          document.documentElement.style.setProperty(
+            '--app-accent',
+            formatCss(oklchAccentColor)
+          )
+
+          // Reset destructive color
+          const defaultDestructive = isDark
+            ? defaultAppDestructiveBgColor
+            : defaultLightAppDestructiveBgColor
+          const culoriRgbDestructive = rgb({
+            mode: 'rgb',
+            r: defaultDestructive.r / 255,
+            g: defaultDestructive.g / 255,
+            b: defaultDestructive.b / 255,
+            alpha: defaultDestructive.a,
+          })
+          const oklchDestructiveColor = oklch(culoriRgbDestructive)
+          document.documentElement.style.setProperty(
+            '--app-destructive',
+            formatCss(oklchDestructiveColor)
+          )
+
           // Reset text colors
           const defaultTextColor = getDefaultTextColor(isDark)
           document.documentElement.style.setProperty(
@@ -170,6 +237,11 @@ export const useAppearance = create<AppearanceState>()(
             defaultTextColor
           )
           document.documentElement.style.setProperty('--app-primary-fg', '#FFF')
+          document.documentElement.style.setProperty('--app-accent-fg', '#FFF')
+          document.documentElement.style.setProperty(
+            '--app-destructive-fg',
+            '#FFF'
+          )
 
           // Update state
           set({
@@ -177,9 +249,13 @@ export const useAppearance = create<AppearanceState>()(
             appBgColor: defaultBg,
             appMainViewBgColor: defaultMainView,
             appPrimaryBgColor: defaultPrimary,
+            appAccentBgColor: defaultAccent,
             appLeftPanelTextColor: defaultTextColor,
             appMainViewTextColor: defaultTextColor,
             appPrimaryTextColor: '#FFF',
+            appAccentTextColor: '#FFF',
+            appDestructiveBgColor: defaultDestructive,
+            appDestructiveTextColor: '#FFF',
           })
         },
 
@@ -344,6 +420,115 @@ export const useAppearance = create<AppearanceState>()(
             appPrimaryTextColor: textColor,
           })
         },
+
+        setAppAccentBgColor: (color: RgbaColor) => {
+          // Get the current theme state
+          const { isDark } = useTheme.getState()
+
+          // If color is being set to default, use theme-appropriate default
+          let finalColorAccent = color
+          if (isDefaultColorAccent(color)) {
+            finalColorAccent = isDark
+              ? defaultAppAccentBgColor
+              : defaultLightAppAccentBgColor
+          }
+
+          // Convert RGBA to a format culori can work with
+          const culoriRgb = rgb({
+            mode: 'rgb',
+            r: finalColorAccent.r / 255,
+            g: finalColorAccent.g / 255,
+            b: finalColorAccent.b / 255,
+            alpha: finalColorAccent.a,
+          })
+
+          // Convert to OKLCH for CSS variable
+          const oklchColor = oklch(culoriRgb)
+
+          // Update CSS variable with OKLCH
+          document.documentElement.style.setProperty(
+            '--app-accent',
+            formatCss(oklchColor)
+          )
+
+          // Calculate text color based on background brightness or use default based on theme
+          let textColor: string
+
+          if (isDefaultColorAccent(color)) {
+            // If using default background, use default text color based on theme
+            textColor = '#FFF'
+          } else {
+            // Otherwise calculate based on brightness
+            textColor = getBrightness(finalColorAccent) > 128 ? '#000' : '#FFF'
+          }
+
+          // Update CSS variable for text color
+          document.documentElement.style.setProperty(
+            '--app-accent-fg',
+            textColor
+          )
+
+          // Store the original RGBA and calculated text color in state
+          set({
+            appAccentBgColor: finalColorAccent,
+            appAccentTextColor: textColor,
+          })
+        },
+
+        setAppDestructiveBgColor: (color: RgbaColor) => {
+          // Get the current theme state
+          const { isDark } = useTheme.getState()
+
+          // If color is being set to default, use theme-appropriate default
+          let finalColorDestructive = color
+          if (isDefaultColorDestructive(color)) {
+            finalColorDestructive = isDark
+              ? defaultAppDestructiveBgColor
+              : defaultLightAppDestructiveBgColor
+          }
+
+          // Convert RGBA to a format culori can work with
+          const culoriRgb = rgb({
+            mode: 'rgb',
+            r: finalColorDestructive.r / 255,
+            g: finalColorDestructive.g / 255,
+            b: finalColorDestructive.b / 255,
+            alpha: finalColorDestructive.a,
+          })
+
+          // Convert to OKLCH for CSS variable
+          const oklchColor = oklch(culoriRgb)
+
+          // Update CSS variable with OKLCH
+          document.documentElement.style.setProperty(
+            '--app-destructive',
+            formatCss(oklchColor)
+          )
+
+          // Calculate text color based on background brightness or use default based on theme
+          let textColor: string
+
+          if (isDefaultColorDestructive(color)) {
+            // If using default background, use default text color based on theme
+            textColor = '#FFF'
+          } else {
+            // Otherwise calculate based on brightness
+            textColor =
+              getBrightness(finalColorDestructive) > 128 ? '#000' : '#FFF'
+          }
+
+          // Update CSS variable for text color
+          document.documentElement.style.setProperty(
+            '--app-destructive-fg',
+            textColor
+          )
+
+          // Store the original RGBA and calculated text color in state
+          set({
+            appDestructiveBgColor: finalColorDestructive,
+            appDestructiveTextColor: textColor,
+          })
+        },
       }
     },
     {
@@ -381,6 +566,20 @@ export const useAppearance = create<AppearanceState>()(
               : defaultLightAppPrimaryBgColor
           }
 
+          let finalColorAccent = state.appAccentBgColor
+          if (isDefaultColorAccent(state.appAccentBgColor)) {
+            finalColorAccent = isDark
+              ? defaultAppAccentBgColor
+              : defaultLightAppAccentBgColor
+          }
+
+          let finalColorDestructive = state.appDestructiveBgColor
+          if (isDefaultColorDestructive(state.appDestructiveBgColor)) {
+            finalColorDestructive = isDark
+              ? defaultAppDestructiveBgColor
+              : defaultLightAppDestructiveBgColor
+          }
+
           // Apply app background color from storage
           // Convert RGBA to a format culori can work with
           const culoriRgb = rgb({
@@ -407,10 +606,28 @@ export const useAppearance = create<AppearanceState>()(
             alpha: finalColorPrimary.a,
           })
 
+          const culoriRgbAccentColor = rgb({
+            mode: 'rgb',
+            r: finalColorAccent.r / 255,
+            g: finalColorAccent.g / 255,
+            b: finalColorAccent.b / 255,
+            alpha: finalColorAccent.a,
+          })
+
+          const culoriRgbDestructiveColor = rgb({
+            mode: 'rgb',
+            r: finalColorDestructive.r / 255,
+            g: finalColorDestructive.g / 255,
+            b: finalColorDestructive.b / 255,
+            alpha: finalColorDestructive.a,
+          })
+
           // Convert to OKLCH for CSS variable
           const oklchColor = oklch(culoriRgb)
           const oklchMainViewColor = oklch(culoriRgbMainViewColor)
           const oklchPrimaryColor = oklch(culoriRgbPrimaryColor)
+          const oklchAccentColor = oklch(culoriRgbAccentColor)
+          const oklchDestructiveColor = oklch(culoriRgbDestructiveColor)
 
           document.documentElement.style.setProperty(
             '--app-bg',
@@ -425,6 +642,16 @@ export const useAppearance = create<AppearanceState>()(
           document.documentElement.style.setProperty(
             '--app-primary',
             formatCss(oklchPrimaryColor)
+          )
+
+          document.documentElement.style.setProperty(
+            '--app-accent',
+            formatCss(oklchAccentColor)
+          )
+
+          document.documentElement.style.setProperty(
+            '--app-destructive',
+            formatCss(oklchDestructiveColor)
           )
 
           // Calculate and apply text color
@@ -475,6 +702,23 @@ export const useAppearance = create<AppearanceState>()(
           document.documentElement.style.setProperty(
             '--app-primary-fg',
             textColorPrimary
+          )
+
+          // Calculate and apply text color for accent
+          let textColorAccent: string
+
+          if (isDefaultColorAccent(state.appAccentBgColor)) {
+            // If using default background, use default text color based on theme
+            textColorAccent = getDefaultTextColor(isDark)
+          } else {
+            // Otherwise calculate based on brightness
+            textColorAccent =
+              getBrightness(finalColorAccent) > 128 ? '#000' : '#FFF'
+          }
+
+          document.documentElement.style.setProperty(
+            '--app-accent-fg',
+            textColorAccent
           )
 
           // We don't need to update the state here as it will be handled by the store
