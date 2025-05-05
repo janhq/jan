@@ -143,14 +143,14 @@ export default function useSendChatMessage(
 
     const activeThread = activeThreadRef.current
     const activeAssistant = activeAssistantRef.current
-    const activeModel = selectedModelRef.current
+    const currentModel = selectedModelRef.current
 
     if (!activeThread || !activeAssistant) {
       console.error('No active thread or assistant')
       return
     }
 
-    if (!activeModel?.id) {
+    if (!currentModel?.id) {
       setModelDropdownState(true)
       return
     }
@@ -179,9 +179,9 @@ export default function useSendChatMessage(
     // Fallback support for previous broken threads
     if (activeAssistant.model?.id === '*') {
       activeAssistant.model = {
-        id: activeModel.id,
-        settings: activeModel.settings,
-        parameters: activeModel.parameters,
+        id: currentModel.id,
+        settings: currentModel.settings,
+        parameters: currentModel.parameters,
       }
     }
     if (runtimeParams.stream == null) {
@@ -254,7 +254,7 @@ export default function useSendChatMessage(
       setFileUpload(undefined)
     }
 
-    if (activeModel?.id !== modelId && modelId) {
+    if (modelRef.current?.id !== modelId && modelId) {
       const error = await startModel(modelId).catch((error: Error) => error)
       if (error) {
         updateThreadWaiting(activeThread.id, false)
