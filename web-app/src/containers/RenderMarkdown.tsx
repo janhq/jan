@@ -7,56 +7,16 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useState } from 'react'
 import virtualizedRenderer from 'react-syntax-highlighter-virtualized-renderer'
-
-// Import KaTeX CSS
-import 'katex/dist/katex.min.css'
-
+import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
+import 'katex/dist/katex.min.css'
+import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
 
 interface MarkdownProps {
   content: string
   className?: string
   components?: Components
-}
-
-// Helper function to get a more readable language name
-function getReadableLanguageName(language: string): string {
-  const languageMap: Record<string, string> = {
-    js: 'JavaScript',
-    jsx: 'React JSX',
-    ts: 'TypeScript',
-    tsx: 'React TSX',
-    html: 'HTML',
-    css: 'CSS',
-    scss: 'SCSS',
-    json: 'JSON',
-    md: 'Markdown',
-    py: 'Python',
-    rb: 'Ruby',
-    java: 'Java',
-    c: 'C',
-    cpp: 'C++',
-    cs: 'C#',
-    go: 'Go',
-    rust: 'Rust',
-    php: 'PHP',
-    swift: 'Swift',
-    kotlin: 'Kotlin',
-    sql: 'SQL',
-    sh: 'Shell',
-    bash: 'Bash',
-    ps1: 'PowerShell',
-    yaml: 'YAML',
-    yml: 'YAML',
-    xml: 'XML',
-    // Add more languages as needed
-  }
-
-  return (
-    languageMap[language] ||
-    language.charAt(0).toUpperCase() + language.slice(1)
-  )
 }
 
 export function RenderMarkdown({
@@ -65,6 +25,7 @@ export function RenderMarkdown({
   components,
 }: MarkdownProps) {
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
+
   // State for tracking which code block has been copied
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
@@ -72,7 +33,22 @@ export function RenderMarkdown({
   const handleCopy = (code: string, id: string) => {
     navigator.clipboard.writeText(code)
     setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 2000)
+
+    // Reset copied state after 2 seconds
+    setTimeout(() => {
+      setCopiedId(null)
+    }, 2000)
+  }
+
+  // Simple hash function for strings
+  const hashString = (str: string): string => {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i)
+      hash = (hash << 5) - hash + char
+      hash = hash & hash // Convert to 32bit integer
+    }
+    return Math.abs(hash).toString(36)
   }
 
   // Default components for syntax highlighting and emoji rendering
@@ -82,9 +58,10 @@ export function RenderMarkdown({
       const language = match ? match[1] : ''
       const isInline = !match || !language
 
-      // Generate a unique ID for this code block
-      const codeId = `code-${Math.random().toString(36).substr(2, 9)}`
       const code = String(children).replace(/\n$/, '')
+
+      // Generate a stable ID based on code content and language
+      const codeId = `code-${hashString(code.substring(0, 40) + language)}`
 
       const shouldVirtualize = code.split('\n').length > 300
 
@@ -96,42 +73,16 @@ export function RenderMarkdown({
             </span>
             <button
               onClick={() => handleCopy(code, codeId)}
-              className="copy-button flex items-center gap-1 text-xs font-medium hover:text-slate-300 transition-colors"
+              className="flex items-center gap-1 text-xs font-sans transition-colors"
             >
               {copiedId === codeId ? (
                 <>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-green-400"
-                  >
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
+                  <IconCopyCheck size={16} className="text-primary" />
                   <span>Copied!</span>
                 </>
               ) : (
                 <>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-                  </svg>
+                  <IconCopy size={16} />
                   <span>Copy</span>
                 </>
               )}
