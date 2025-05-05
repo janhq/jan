@@ -3,7 +3,6 @@ import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { ColorPickerAppBgColor } from '@/containers/ColorPickerAppBgColor'
-
 import { ColorPickerAppMainView } from '@/containers/ColorPickerAppMainView'
 import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
 import { useTranslation } from 'react-i18next'
@@ -11,7 +10,11 @@ import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
 import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryColor'
 import { useAppearance } from '@/hooks/useAppearance'
+import { useCodeblock } from '@/hooks/useCodeblock'
 import { Button } from '@/components/ui/button'
+import CodeBlockStyleSwitcher from '@/containers/CodeBlockStyleSwitcher'
+import { LineNumbersSwitcher } from '@/containers/LineNumbersSwitcher'
+import { CodeBlockExample } from '@/containers/CodeBlockExample'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -21,6 +24,7 @@ export const Route = createFileRoute(route.settings.appearance as any)({
 function Appareances() {
   const { t } = useTranslation()
   const { resetAppearance } = useAppearance()
+  const { resetCodeBlockStyle } = useCodeblock()
 
   return (
     <div className="flex flex-col h-full">
@@ -70,6 +74,34 @@ function Appareances() {
                     variant="destructive"
                     size="sm"
                     onClick={() => resetAppearance()}
+                  >
+                    {t('common.reset')}
+                  </Button>
+                }
+              />
+            </CardSetting>
+
+            {/* Message */}
+            <CardSetting title="Chat Message">
+              <CardSettingItem
+                title="Code Block Style"
+                description="Choose the style for code block syntax highlighting"
+                actions={<CodeBlockStyleSwitcher />}
+              />
+              <CodeBlockExample />
+              <CardSettingItem
+                title="Show Line Numbers"
+                description="Toggle line numbers in code blocks"
+                actions={<LineNumbersSwitcher />}
+              />
+              <CardSettingItem
+                title="Reset Code Block Style"
+                description="Reset code block style to default"
+                actions={
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => resetCodeBlockStyle()}
                   >
                     {t('common.reset')}
                   </Button>
