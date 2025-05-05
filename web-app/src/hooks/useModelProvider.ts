@@ -7,12 +7,15 @@ import { mockModelProvider } from '@/mock/data'
 type ModelProviderState = {
   providers: ModelProvider[]
   selectedProvider: string
-  selectedModel: string
+  selectedModel: Model | null
   setProviders: (providers: ModelProvider[]) => void
   fetchModelProvider: () => Promise<void>
   getProviderByName: (providerName: string) => ModelProvider | undefined
   updateProvider: (providerName: string, data: Partial<ModelProvider>) => void
-  selectModelProvider: (providerName: string, modelName: string) => void
+  selectModelProvider: (
+    providerName: string,
+    modelName: string
+  ) => Model | undefined
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -20,7 +23,7 @@ export const useModelProvider = create<ModelProviderState>()(
     (set, get) => ({
       providers: [],
       selectedProvider: 'llama.cpp',
-      selectedModel: 'llama3.2:3b',
+      selectedModel: null,
       setProviders: (providers) => set({ providers }),
       updateProvider: (providerName, data) => {
         set((state) => ({
@@ -47,10 +50,24 @@ export const useModelProvider = create<ModelProviderState>()(
         return undefined
       },
       selectModelProvider: (providerName: string, modelName: string) => {
+        // Find the model object
+        const provider = get().providers.find(
+          (provider) => provider.provider === providerName
+        )
+
+        let modelObject: Model | undefined = undefined
+
+        if (provider && provider.models) {
+          modelObject = provider.models.find((model) => model.id === modelName)
+        }
+
+        // Update state with provider name and model object
         set({
           selectedProvider: providerName,
-          selectedModel: modelName,
+          selectedModel: modelObject || null,
         })
+
+        return modelObject
       },
       fetchModelProvider: async () => {
         // Check if we already have providers in the store

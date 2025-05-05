@@ -49,8 +49,9 @@ const defaultLightAppMainViewBgColor: RgbaColor = {
   b: 250,
   a: 1,
 }
-const defaultAppPrimaryBgColor: RgbaColor = { r: 45, g: 80, b: 220, a: 1 }
-const defaultLightAppPrimaryBgColor: RgbaColor = { r: 45, g: 80, b: 220, a: 1 }
+
+const defaultAppPrimaryBgColor: RgbaColor = { r: 219, g: 88, b: 44, a: 1 }
+const defaultLightAppPrimaryBgColor: RgbaColor = { r: 219, g: 88, b: 44, a: 1 }
 const defaultAppAccentBgColor: RgbaColor = { r: 45, g: 120, b: 220, a: 1 }
 const defaultLightAppAccentBgColor: RgbaColor = { r: 45, g: 120, b: 220, a: 1 }
 const defaultAppDestructiveBgColor: RgbaColor = { r: 220, g: 45, b: 45, a: 1 }

@@ -41,7 +41,7 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
   // Update display model when selection changes
   useEffect(() => {
     if (selectedProvider && selectedModel) {
-      setDisplayModel(selectedModel)
+      setDisplayModel(selectedModel.id)
     } else {
       setDisplayModel('Select a model')
     }

@@ -25,8 +25,8 @@ type ProviderSetting = {
  */
 type Model = {
   id: string
-  model: string
-  name: string
+  model?: string
+  name?: string
   version?: number | string
   description?: string
   format?: string
