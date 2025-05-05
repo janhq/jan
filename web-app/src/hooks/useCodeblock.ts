@@ -12,7 +12,7 @@ interface CodeBlockState {
   resetCodeBlockStyle: () => void
 }
 
-const defaultCodeBlockStyle: CodeBlockStyle = 'dracula'
+const defaultCodeBlockStyle: CodeBlockStyle = 'vsc-dark-plus'
 const defaultShowLineNumbers: boolean = true
 
 export const useCodeblock = create<CodeBlockState>()(
@@ -23,17 +23,14 @@ export const useCodeblock = create<CodeBlockState>()(
         showLineNumbers: defaultShowLineNumbers,
 
         setCodeBlockStyle: (style: CodeBlockStyle) => {
-          // Update state
           set({ codeBlockStyle: style })
         },
 
         setShowLineNumbers: (show: boolean) => {
-          // Update state
           set({ showLineNumbers: show })
         },
 
         resetCodeBlockStyle: () => {
-          // Update state
           set({
             codeBlockStyle: defaultCodeBlockStyle,
             showLineNumbers: defaultShowLineNumbers,
