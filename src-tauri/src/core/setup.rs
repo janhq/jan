@@ -215,8 +215,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         "--cors",
         "ON",
         "--allowed_origins",
-        // TODO(sang) '*' is only for testing purpose, will remove it later
-        "http://localhost:3000,tauri://localhost,*",
+        "http://localhost:3000,tauri://localhost",
         "config",
         "--api_keys",
         app_state.inner().app_token.as_deref().unwrap_or(""),
