@@ -1,5 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useCallback, useEffect, useMemo, useRef, ClipboardEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  ClipboardEvent,
+  useContext,
+} from 'react'
 
 import { MessageStatus } from '@janhq/core'
 import { useAtom, useAtomValue } from 'jotai'
@@ -20,6 +27,8 @@ import { currentPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import useSendChatMessage from '@/hooks/useSendChatMessage'
+
+import { ChatContext } from '../../ThreadCenterPanel'
 
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
@@ -77,7 +86,8 @@ const RichTextEditor = ({
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const activeSettingInputBox = useAtomValue(activeSettingInputBoxAtom)
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const { sendChatMessage } = useSendChatMessage()
+  const { showApprovalModal } = useContext(ChatContext)
+  const { sendChatMessage } = useSendChatMessage(showApprovalModal)
   const { stopInference } = useActiveModel()
   const selectedModel = useAtomValue(selectedModelAtom)
   const largeContentThreshold = 1000

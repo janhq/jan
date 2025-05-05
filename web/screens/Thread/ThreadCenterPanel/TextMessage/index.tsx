@@ -30,7 +30,12 @@ import { selectedModelAtom } from '@/helpers/atoms/Model.atom'
 import { chatWidthAtom } from '@/helpers/atoms/Setting.atom'
 
 const MessageContainer: React.FC<
-  ThreadMessage & { isCurrentMessage: boolean; index: number }
+  ThreadMessage & {
+    isCurrentMessage: boolean
+    index: number
+    isLast: boolean
+    onExpand: (props: { [id: number]: boolean }) => void
+  }
 > = (props) => {
   const isUser = props.role === ChatCompletionRole.User
   const isSystem = props.role === ChatCompletionRole.System
@@ -98,15 +103,7 @@ const MessageContainer: React.FC<
               isUser && 'text-gray-500'
             )}
           >
-            {!isUser && (
-              <>
-                {props.metadata && 'model' in props.metadata
-                  ? (props.metadata?.model as string)
-                  : props.isCurrentMessage
-                    ? selectedModel?.name
-                    : (activeAssistant?.assistant_name ?? props.role)}
-              </>
-            )}
+            {!isUser && <>{props.role}</>}
           </div>
 
           <p className="text-xs font-medium text-gray-400">
@@ -120,10 +117,12 @@ const MessageContainer: React.FC<
         <div
           className={twMerge(
             'absolute right-0 order-1 flex cursor-pointer items-center justify-start gap-x-2 transition-all',
-            twMerge(
-              'hidden group-hover:absolute group-hover:-bottom-4 group-hover:right-4 group-hover:z-50 group-hover:flex',
-              image && 'group-hover:-top-2'
-            ),
+            !props.isLast
+              ? twMerge(
+                  'hidden group-hover:absolute group-hover:right-4 group-hover:top-4 group-hover:z-50 group-hover:flex',
+                  image && 'group-hover:-top-2'
+                )
+              : 'relative left-0 order-2 flex w-full justify-between opacity-0 group-hover:opacity-100',
 
             props.isCurrentMessage && 'opacity-100'
           )}
@@ -195,6 +194,7 @@ const MessageContainer: React.FC<
                 <>
                   {props.metadata.tool_calls.map((toolCall) => (
                     <ToolCallBlock
+                      onExpand={props.onExpand}
                       id={toolCall.tool?.id}
                       name={toolCall.tool?.function?.name ?? ''}
                       key={toolCall.tool?.id}
