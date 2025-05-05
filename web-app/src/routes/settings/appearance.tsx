@@ -47,10 +47,6 @@ function Appareances() {
                 description="Adjust the size of text across the app"
                 actions={<FontSizeSwitcher />}
               />
-            </CardSetting>
-
-            {/* Custom color */}
-            <CardSetting title="Custom color">
               <CardSettingItem
                 title="Window Background"
                 description="Choose the App window color"
