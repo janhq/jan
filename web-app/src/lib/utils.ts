@@ -50,3 +50,41 @@ export const getProviderTitle = (provider: string) => {
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
 }
+
+export function getReadableLanguageName(language: string): string {
+  const languageMap: Record<string, string> = {
+    js: 'JavaScript',
+    jsx: 'React JSX',
+    ts: 'TypeScript',
+    tsx: 'React TSX',
+    html: 'HTML',
+    css: 'CSS',
+    scss: 'SCSS',
+    json: 'JSON',
+    md: 'Markdown',
+    py: 'Python',
+    rb: 'Ruby',
+    java: 'Java',
+    c: 'C',
+    cpp: 'C++',
+    cs: 'C#',
+    go: 'Go',
+    rust: 'Rust',
+    php: 'PHP',
+    swift: 'Swift',
+    kotlin: 'Kotlin',
+    sql: 'SQL',
+    sh: 'Shell',
+    bash: 'Bash',
+    ps1: 'PowerShell',
+    yaml: 'YAML',
+    yml: 'YAML',
+    xml: 'XML',
+    // Add more languages as needed
+  }
+
+  return (
+    languageMap[language] ||
+    language.charAt(0).toUpperCase() + language.slice(1)
+  )
+}
