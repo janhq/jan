@@ -1,5 +1,6 @@
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkEmoji from 'remark-emoji'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useState } from 'react'
@@ -69,7 +70,7 @@ export function RenderMarkdown({
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  // Default components for syntax highlighting
+  // Default components for syntax highlighting and emoji rendering
   const defaultComponents: Components = {
     code: ({ className, children, ...props }) => {
       const match = /language-(\w+)/.exec(className || '')
@@ -176,7 +177,10 @@ export function RenderMarkdown({
   return (
     <div className={cn('markdown', className)}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[
+          remarkGfm,
+          [remarkEmoji, { padSpaceAfter: true, emoticon: false }],
+        ]}
         rehypePlugins={[]}
         components={mergedComponents}
       >
