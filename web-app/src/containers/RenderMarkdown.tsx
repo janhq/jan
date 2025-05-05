@@ -1,10 +1,15 @@
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
 import { useState } from 'react'
 import virtualizedRenderer from 'react-syntax-highlighter-virtualized-renderer'
+
+// Import KaTeX CSS
+import 'katex/dist/katex.min.css'
 
 import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
@@ -180,8 +185,9 @@ export function RenderMarkdown({
         remarkPlugins={[
           remarkGfm,
           [remarkEmoji, { padSpaceAfter: true, emoticon: false }],
+          remarkMath,
         ]}
-        rehypePlugins={[]}
+        rehypePlugins={[rehypeKatex]}
         components={mergedComponents}
       >
         {content}
