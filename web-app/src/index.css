@@ -5,7 +5,6 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-destructive: var(--destructive);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -17,6 +16,10 @@
   --color-main-view-fg: var(--app-main-view-fg);
   --color-primary: var(--app-primary);
   --color-primary-fg: var(--app-primary-fg);
+  --color-accent: var(--app-accent);
+  --color-accent-fg: var(--app-accent-fg);
+  --color-destructive: var(--app-destructive);
+  --color-destructive-fg: var(--app-destructive-fg);
 
   /* Font scale based on --font-size-base */
   --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
@@ -35,7 +38,6 @@
 
 :root {
   /* Button */
-  --destructive: oklch(0.577 0.245 27.325);
   --radius: 0.625rem;
   --font-size-base: 15px;
   --app-bg: '';
@@ -44,6 +46,10 @@
   --app-main-view-fg: '';
   --app-primary: '';
   --app-primary-fg: '';
+  --app-accent: '';
+  --app-accent-fg: '';
+  --app-destructive: '';
+  --app-destructive-fg: '';
 }
 
 @layer base {
@@ -63,6 +69,10 @@
 
   svg {
     stroke-width: 1.5;
+  }
+
+  a {
+    @apply !text-accent;
   }
 }
 

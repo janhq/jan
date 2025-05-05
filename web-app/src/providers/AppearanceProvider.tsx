@@ -6,6 +6,8 @@ import {
   getDefaultTextColor,
   isDefaultColorMainView,
   isDefaultColorPrimary,
+  isDefaultColorAccent,
+  isDefaultColorDestructive,
 } from '@/hooks/useAppearance'
 
 /**
@@ -21,6 +23,10 @@ export function AppearanceProvider() {
     appMainViewTextColor,
     appPrimaryBgColor,
     appPrimaryTextColor,
+    appAccentBgColor,
+    appAccentTextColor,
+    appDestructiveBgColor,
+    appDestructiveTextColor,
   } = useAppearance()
   const { isDark } = useTheme()
 
@@ -57,10 +63,28 @@ export function AppearanceProvider() {
         alpha: appPrimaryBgColor.a,
       })
 
+      const culoriRgbAccent = rgb({
+        mode: 'rgb',
+        r: appAccentBgColor.r / 255,
+        g: appAccentBgColor.g / 255,
+        b: appAccentBgColor.b / 255,
+        alpha: appAccentBgColor.a,
+      })
+
+      const culoriRgbDestructive = rgb({
+        mode: 'rgb',
+        r: appDestructiveBgColor.r / 255,
+        g: appDestructiveBgColor.g / 255,
+        b: appDestructiveBgColor.b / 255,
+        alpha: appDestructiveBgColor.a,
+      })
+
       // Convert to OKLCH for CSS variable
       const oklchColor = oklch(culoriRgb)
       const oklchColormainViewApp = oklch(culoriRgbMainView)
       const oklchColorPrimary = oklch(culoriRgbPrimary)
+      const oklchColorAccent = oklch(culoriRgbAccent)
+      const oklchColorDestructive = oklch(culoriRgbDestructive)
 
       if (oklchColor) {
         document.documentElement.style.setProperty(
@@ -78,6 +102,18 @@ export function AppearanceProvider() {
         document.documentElement.style.setProperty(
           '--app-primary',
           formatCss(oklchColorPrimary)
+        )
+      }
+      if (oklchColorAccent) {
+        document.documentElement.style.setProperty(
+          '--app-accent',
+          formatCss(oklchColorAccent)
+        )
+      }
+      if (oklchColorDestructive) {
+        document.documentElement.style.setProperty(
+          '--app-destructive',
+          formatCss(oklchColorDestructive)
         )
       }
     })
@@ -99,6 +135,18 @@ export function AppearanceProvider() {
       '--app-primary-fg',
       appPrimaryTextColor
     )
+
+    // Apply text color based on background brightness for accent
+    document.documentElement.style.setProperty(
+      '--app-accent-fg',
+      appAccentTextColor
+    )
+
+    // Apply text color based on background brightness for destructive
+    document.documentElement.style.setProperty(
+      '--app-destructive-fg',
+      appDestructiveTextColor
+    )
   }, [
     fontSize,
     appBgColor,
@@ -108,6 +156,10 @@ export function AppearanceProvider() {
     appMainViewTextColor,
     appPrimaryBgColor,
     appPrimaryTextColor,
+    appAccentBgColor,
+    appAccentTextColor,
+    appDestructiveBgColor,
+    appDestructiveTextColor,
   ])
 
   // Update appearance when theme changes
@@ -117,9 +169,13 @@ export function AppearanceProvider() {
       appBgColor,
       appMainViewBgColor,
       appPrimaryBgColor,
+      appAccentBgColor,
+      appDestructiveBgColor,
       setAppBgColor,
       setAppMainViewBgColor,
       setAppPrimaryBgColor,
+      setAppAccentBgColor,
+      setAppDestructiveBgColor,
     } = useAppearance.getState()
 
     // If using default background color, update it when theme changes
@@ -169,7 +225,48 @@ export function AppearanceProvider() {
         textColorPrimary
       )
     }
-  }, [isDark, appLeftPanelTextColor, appMainViewTextColor, appPrimaryTextColor])
+
+    // If using default accent color, update it when theme changes
+    if (isDefaultColorAccent(appAccentBgColor)) {
+      // This will trigger the appropriate updates for both background and text color
+      setAppAccentBgColor(appAccentBgColor)
+    } else {
+      // If using custom background, just update the text color if needed
+      const textColorAccent = isDefaultColorAccent(appAccentBgColor)
+        ? getDefaultTextColor(isDark)
+        : appAccentTextColor
+
+      document.documentElement.style.setProperty(
+        '--app-accent-fg',
+        textColorAccent
+      )
+    }
+
+    // If using default destructive color, update it when theme changes
+    if (isDefaultColorDestructive(appDestructiveBgColor)) {
+      // This will trigger the appropriate updates for both background and text color
+      setAppDestructiveBgColor(appDestructiveBgColor)
+    } else {
+      // If using custom background, just update the text color if needed
+      const textColorDestructive = isDefaultColorDestructive(
+        appDestructiveBgColor
+      )
+        ? getDefaultTextColor(isDark)
+        : appDestructiveTextColor
+
+      document.documentElement.style.setProperty(
+        '--app-destructive-fg',
+        textColorDestructive
+      )
+    }
+  }, [
+    isDark,
+    appLeftPanelTextColor,
+    appMainViewTextColor,
+    appPrimaryTextColor,
+    appAccentTextColor,
+    appDestructiveTextColor,
+  ])
 
   return null
 }

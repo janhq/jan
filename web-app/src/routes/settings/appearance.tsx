@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next'
 import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
 import { ColorPickerAppPrimaryColor } from '@/containers/ColorPickerAppPrimaryColor'
+import { ColorPickerAppAccentColor } from '@/containers/ColorPickerAppAccentColor'
+import { ColorPickerAppDestructiveColor } from '@/containers/ColorPickerAppDestructiveColor'
 import { useAppearance } from '@/hooks/useAppearance'
 import { useCodeblock } from '@/hooks/useCodeblock'
 import { Button } from '@/components/ui/button'
@@ -61,6 +63,16 @@ function Appareances() {
                 title="Primary"
                 description="Controls the primary color used for components"
                 actions={<ColorPickerAppPrimaryColor />}
+              />
+              <CardSettingItem
+                title="Accent"
+                description="Controls the accent color used for highlights"
+                actions={<ColorPickerAppAccentColor />}
+              />
+              <CardSettingItem
+                title="Destructive"
+                description="Controls the color used for destructive actions"
+                actions={<ColorPickerAppDestructiveColor />}
               />
               <CardSettingItem
                 title="Reset to Default"
