@@ -28,12 +28,21 @@ type ThreadContent = {
   type: ContentType
   text?: ContentValue
   image_url?: ImageContentValue
+  role: ChatCompletionRole
+}
+
+enum ChatCompletionRole {
+  System = 'system',
+  Assistant = 'assistant',
+  User = 'user',
+  Tool = 'tool',
 }
 
 type Thread = {
   id: string
   title: string
   isFavorite?: boolean
+
   content: ThreadContent[]
   model?: {
     id: string

@@ -11,9 +11,13 @@ import {
   IconWorld,
   IconAtom,
   IconMicrophone,
+  IconEye,
+  IconTool,
+  IconCodeCircle2,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 type ChatInputProps = {
   className?: string
@@ -35,6 +39,8 @@ const ChatInput = ({
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
   const maxRows = 10
+
+  const { selectedModel } = useModelProvider()
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -114,22 +120,45 @@ const ChatInput = ({
       <div className="absolute bg-transparent bottom-0 w-full p-2 ">
         <div className="flex justify-between items-center w-full">
           <div className="px-1 flex items-center gap-1">
+            {/* File attachment - always available */}
             <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
               <IconPaperclip size={18} className="text-main-view-fg/50" />
-              {/* <span className="text-xs text-neutral-300">Add File</span> */}
             </div>
+
+            {/* Microphone - always available */}
             <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
               <IconMicrophone size={18} className="text-main-view-fg/50" />
-              {/* <span className="text-xs text-neutral-300">Microphone</span> */}
             </div>
-            <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-              <IconWorld size={18} className="text-main-view-fg/50" />
-              {/* <span className="text-xs text-neutral-300">Web Search</span> */}
-            </div>
-            <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-              <IconAtom size={18} className="text-main-view-fg/50" />
-              {/* <span className="text-xs text-neutral-300">Thinking</span> */}
-            </div>
+
+            {selectedModel?.capabilities?.includes('vision') && (
+              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                <IconEye size={18} className="text-main-view-fg/50" />
+              </div>
+            )}
+
+            {selectedModel?.capabilities?.includes('embeddings') && (
+              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                <IconCodeCircle2 size={18} className="text-main-view-fg/50" />
+              </div>
+            )}
+
+            {selectedModel?.capabilities?.includes('tools') && (
+              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                <IconTool size={18} className="text-main-view-fg/50" />
+              </div>
+            )}
+
+            {selectedModel?.capabilities?.includes('web_search') && (
+              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                <IconWorld size={18} className="text-main-view-fg/50" />
+              </div>
+            )}
+
+            {selectedModel?.capabilities?.includes('reasoning') && (
+              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                <IconAtom size={18} className="text-main-view-fg/50" />
+              </div>
+            )}
           </div>
           <Button
             variant={!prompt ? null : 'default'}
