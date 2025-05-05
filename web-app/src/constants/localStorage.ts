@@ -5,4 +5,5 @@ export const localStoregeKey = {
   settingGeneral: 'setting-general',
   theme: 'theme',
   modelProvider: 'model-provider',
+  settingCodeBlock: 'setting-code-block',
 }
