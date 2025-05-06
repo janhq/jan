@@ -13,8 +13,10 @@
     "shell:allow-spawn",
     "shell:allow-open",
     "core:app:allow-set-app-theme",
+    "core:window:allow-set-focus",
     "os:default",
     "log:default",
+    "core:webview:allow-create-webview-window",
     {
       "identifier": "http:default",
       "allow": [

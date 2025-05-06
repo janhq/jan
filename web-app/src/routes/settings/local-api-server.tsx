@@ -10,6 +10,7 @@ import { ServerHostSwitcher } from '@/containers/ServerHostSwitcher'
 import { PortInput } from '@/containers/PortInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -27,9 +28,41 @@ function LocalAPIServer() {
     setVerboseLogs,
   } = useLocalApiServer()
 
-  const handleOpenLogs = () => {
-    // This would be implemented to open the logs
-    console.log('Open logs clicked')
+  const handleOpenLogs = async () => {
+    try {
+      // Check if logs window already exists
+      const existingWindow = await WebviewWindow.getByLabel(
+        'logs-window-local-api-server'
+      )
+
+      if (existingWindow) {
+        // If window exists, focus it
+        await existingWindow.setFocus()
+        console.log('Focused existing logs window')
+      } else {
+        // Create a new logs window using Tauri v2 WebviewWindow API
+        const logsWindow = new WebviewWindow('logs-window-local-api-server', {
+          url: '/local-api-server/logs',
+          title: 'Local API server Logs - Jan',
+          width: 800,
+          height: 600,
+          resizable: true,
+          center: true,
+        })
+
+        // Listen for window creation
+        logsWindow.once('tauri://created', () => {
+          console.log('Logs window created')
+        })
+
+        // Listen for window errors
+        logsWindow.once('tauri://error', (e) => {
+          console.error('Error creating logs window:', e)
+        })
+      }
+    } catch (error) {
+      console.error('Failed to open logs window:', error)
+    }
   }
 
   return (

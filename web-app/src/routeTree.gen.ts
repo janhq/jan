@@ -22,6 +22,7 @@ import { Route as SettingsLocalApiServerImport } from './routes/settings/local-a
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
+import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
 // Create/Update Routes
@@ -92,6 +93,12 @@ const SettingsAppearanceRoute = SettingsAppearanceImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const LocalApiServerLogsRoute = LocalApiServerLogsImport.update({
+  id: '/local-api-server/logs',
+  path: '/local-api-server/logs',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsProvidersProviderNameRoute =
   SettingsProvidersProviderNameImport.update({
     id: '/settings/providers/$providerName',
@@ -122,6 +129,13 @@ declare module '@tanstack/react-router' {
       path: '/mini-apps'
       fullPath: '/mini-apps'
       preLoaderRoute: typeof MiniAppsImport
+      parentRoute: typeof rootRoute
+    }
+    '/local-api-server/logs': {
+      id: '/local-api-server/logs'
+      path: '/local-api-server/logs'
+      fullPath: '/local-api-server/logs'
+      preLoaderRoute: typeof LocalApiServerLogsImport
       parentRoute: typeof rootRoute
     }
     '/settings/appearance': {
@@ -196,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/help': typeof HelpRoute
   '/mini-apps': typeof MiniAppsRoute
+  '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -211,6 +226,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/help': typeof HelpRoute
   '/mini-apps': typeof MiniAppsRoute
+  '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -227,6 +243,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/help': typeof HelpRoute
   '/mini-apps': typeof MiniAppsRoute
+  '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -244,6 +261,7 @@ export interface FileRouteTypes {
     | '/'
     | '/help'
     | '/mini-apps'
+    | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
@@ -258,6 +276,7 @@ export interface FileRouteTypes {
     | '/'
     | '/help'
     | '/mini-apps'
+    | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
@@ -272,6 +291,7 @@ export interface FileRouteTypes {
     | '/'
     | '/help'
     | '/mini-apps'
+    | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
@@ -288,6 +308,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HelpRoute: typeof HelpRoute
   MiniAppsRoute: typeof MiniAppsRoute
+  LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -303,6 +324,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HelpRoute: HelpRoute,
   MiniAppsRoute: MiniAppsRoute,
+  LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
@@ -327,6 +349,7 @@ export const routeTree = rootRoute
         "/",
         "/help",
         "/mini-apps",
+        "/local-api-server/logs",
         "/settings/appearance",
         "/settings/extensions",
         "/settings/general",
@@ -346,6 +369,9 @@ export const routeTree = rootRoute
     },
     "/mini-apps": {
       "filePath": "mini-apps.tsx"
+    },
+    "/local-api-server/logs": {
+      "filePath": "local-api-server/logs.tsx"
     },
     "/settings/appearance": {
       "filePath": "settings/appearance.tsx"

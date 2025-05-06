@@ -13,6 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Jan",
         "width": 1024,
         "height": 800,
