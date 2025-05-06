@@ -87,6 +87,9 @@ pub fn run() {
             // hardware
             core::hardware::get_system_info,
             core::hardware::get_system_usage,
+            // llama-cpp extension
+            core::utils::extensions::inference_llamacpp_extension::load, 
+            core::utils::extensions::inference_llamacpp_extension::unload
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
