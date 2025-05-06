@@ -55,46 +55,48 @@ function ProviderDetail() {
               {provider?.settings.map((setting, settingIndex) => {
                 // Use the DynamicController component
                 const actionComponent = (
-                  <DynamicControllerSetting
-                    controllerType={setting.controller_type}
-                    controllerProps={setting.controller_props}
-                    onChange={(newValue) => {
-                      if (provider) {
-                        const newSettings = [...provider.settings]
-                        // Handle different value types by forcing the type
-                        // Use type assertion to bypass type checking
-                        // Disable eslint for this line as we need to use type assertion
+                  <div className="mt-2">
+                    <DynamicControllerSetting
+                      controllerType={setting.controller_type}
+                      controllerProps={setting.controller_props}
+                      onChange={(newValue) => {
+                        if (provider) {
+                          const newSettings = [...provider.settings]
+                          // Handle different value types by forcing the type
+                          // Use type assertion to bypass type checking
+                          // Disable eslint for this line as we need to use type assertion
 
-                        ;(
-                          newSettings[settingIndex].controller_props as {
-                            value: string | boolean | number
+                          ;(
+                            newSettings[settingIndex].controller_props as {
+                              value: string | boolean | number
+                            }
+                          ).value = newValue
+
+                          // Create update object with updated settings
+                          const updateObj: Partial<ModelProvider> = {
+                            settings: newSettings,
                           }
-                        ).value = newValue
-
-                        // Create update object with updated settings
-                        const updateObj: Partial<ModelProvider> = {
-                          settings: newSettings,
+                          // Check if this is an API key or base URL setting and update the corresponding top-level field
+                          const settingKey = setting.key
+                          if (
+                            settingKey === 'api-key' &&
+                            typeof newValue === 'string'
+                          ) {
+                            updateObj.api_key = newValue
+                          } else if (
+                            settingKey === 'base-url' &&
+                            typeof newValue === 'string'
+                          ) {
+                            updateObj.base_url = newValue
+                          }
+                          updateProvider(providerName, {
+                            ...provider,
+                            ...updateObj,
+                          })
                         }
-                        // Check if this is an API key or base URL setting and update the corresponding top-level field
-                        const settingKey = setting.key
-                        if (
-                          settingKey === 'api-key' &&
-                          typeof newValue === 'string'
-                        ) {
-                          updateObj.api_key = newValue
-                        } else if (
-                          settingKey === 'base-url' &&
-                          typeof newValue === 'string'
-                        ) {
-                          updateObj.base_url = newValue
-                        }
-                        updateProvider(providerName, {
-                          ...provider,
-                          ...updateObj,
-                        })
-                      }
-                    }}
-                  />
+                      }}
+                    />
+                  </div>
                 )
 
                 return (
@@ -119,6 +121,9 @@ function ProviderDetail() {
                               target="_blank"
                               rel="noopener noreferrer"
                             />
+                          ),
+                          p: ({ ...props }) => (
+                            <p {...props} className="!mb-0" />
                           ),
                         }}
                       />
