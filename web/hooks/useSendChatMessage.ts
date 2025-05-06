@@ -400,9 +400,7 @@ export default function useSendChatMessage(
     for await (const chunk of response) {
       // console.log("chunk", chunk)
       // anthropic
-      if (chunk.type == 'ping') {
-        continue
-      }
+      if (chunk.type == 'ping') continue
 
       // Handle tool calls in the chunk
       if (chunk.choices[0]?.delta?.tool_calls) {
