@@ -23,7 +23,18 @@ function Privacy() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <CardSetting title="Analytics">
+            <CardSetting
+              header={
+                <div className="flex items-center justify-between mb-4">
+                  <h1 className="text-main-view-fg font-medium text-base">
+                    Analytics
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <Switch />
+                  </div>
+                </div>
+              }
+            >
               <CardSettingItem
                 title="Help us improve"
                 description={
@@ -34,7 +45,6 @@ function Privacy() {
                   </p>
                 }
                 align="start"
-                actions={<Switch />}
               />
               <CardSettingItem
                 description={
