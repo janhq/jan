@@ -25,10 +25,6 @@ const menuSettings = [
     route: route.settings.mcp_servers,
   },
   {
-    title: 'Hardware',
-    route: route.settings.hardware,
-  },
-  {
     title: 'Local API Server',
     route: route.settings.local_api_server,
   },

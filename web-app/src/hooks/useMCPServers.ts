@@ -18,6 +18,7 @@ type MCPServerStoreState = {
   open: boolean
   mcpServers: MCPServers
   loading: boolean
+  deletedServerKeys: string[]
   setLeftPanel: (value: boolean) => void
   addServer: (key: string, config: MCPServerConfig) => void
   editServer: (key: string, config: MCPServerConfig) => void
@@ -45,6 +46,7 @@ export const useMCPServers = create<MCPServerStoreState>()(
       open: true,
       mcpServers: {}, // Start with empty object
       loading: false,
+      deletedServerKeys: [],
       setLeftPanel: (value) => set({ open: value }),
 
       // Add a new MCP server or update if the key already exists
@@ -81,34 +83,42 @@ export const useMCPServers = create<MCPServerStoreState>()(
             delete updatedServers[key]
           }
 
-          return { mcpServers: updatedServers }
+          return {
+            mcpServers: updatedServers,
+            deletedServerKeys: [...state.deletedServerKeys, key],
+          }
         }),
 
-      // Fetch MCP servers (simulated API call)
+      // Fetch MCP servers
       fetchMCPServers: async () => {
         set({ loading: true })
 
         // Simulate API call with mock data
         const response = await new Promise<MCPServers>((resolve) =>
-          setTimeout(() => resolve(mockMCPServers), 500)
+          setTimeout(() => resolve(mockMCPServers), 0)
         )
 
         set((state) => {
-          // Check if the response is different from current state
-          const currentKeys = Object.keys(state.mcpServers)
-          const responseKeys = Object.keys(response)
+          // Filter out deleted servers from the response
+          const filteredResponse = { ...response }
+          state.deletedServerKeys.forEach((key) => {
+            delete filteredResponse[key]
+          })
 
-          // Check if keys are the same
+          const localKeys = Object.keys(state.mcpServers)
+          const responseKeys = Object.keys(filteredResponse)
+
+          // Check if the keys are the same
           const hasSameKeys =
-            currentKeys.length === responseKeys.length &&
-            currentKeys.every((key) => responseKeys.includes(key))
+            localKeys.length === responseKeys.length &&
+            localKeys.every((key) => responseKeys.includes(key))
 
           // Check if values are the same for each key
           const hasSameValues =
             hasSameKeys &&
-            currentKeys.every((key) => {
+            localKeys.every((key) => {
               const current = state.mcpServers[key]
-              const resp = response[key]
+              const resp = filteredResponse[key]
 
               return (
                 current.command === resp.command &&
@@ -122,10 +132,18 @@ export const useMCPServers = create<MCPServerStoreState>()(
             return { loading: false }
           }
 
-          // Merge the response with existing servers
-          // (In a real app, you might want to handle conflicts differently)
+          // Add only new servers, preserving existing ones
+          const existingKeys = new Set(localKeys)
+          const newServers: MCPServers = {}
+
+          responseKeys.forEach((key) => {
+            if (!existingKeys.has(key)) {
+              newServers[key] = filteredResponse[key]
+            }
+          })
+
           return {
-            mcpServers: { ...response, ...state.mcpServers },
+            mcpServers: { ...newServers, ...state.mcpServers },
             loading: false,
           }
         })

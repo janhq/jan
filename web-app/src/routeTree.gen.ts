@@ -19,7 +19,6 @@ import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
-import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
@@ -72,12 +71,6 @@ const SettingsMcpServersRoute = SettingsMcpServersImport.update({
 const SettingsLocalApiServerRoute = SettingsLocalApiServerImport.update({
   id: '/settings/local-api-server',
   path: '/settings/local-api-server',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const SettingsHardwareRoute = SettingsHardwareImport.update({
-  id: '/settings/hardware',
-  path: '/settings/hardware',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -152,13 +145,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralImport
       parentRoute: typeof rootRoute
     }
-    '/settings/hardware': {
-      id: '/settings/hardware'
-      path: '/settings/hardware'
-      fullPath: '/settings/hardware'
-      preLoaderRoute: typeof SettingsHardwareImport
-      parentRoute: typeof rootRoute
-    }
     '/settings/local-api-server': {
       id: '/settings/local-api-server'
       path: '/settings/local-api-server'
@@ -213,7 +199,6 @@ export interface FileRoutesByFullPath {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -229,7 +214,6 @@ export interface FileRoutesByTo {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -246,7 +230,6 @@ export interface FileRoutesById {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
-  '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
@@ -264,7 +247,6 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
-    | '/settings/hardware'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
@@ -279,7 +261,6 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
-    | '/settings/hardware'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
@@ -294,7 +275,6 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
-    | '/settings/hardware'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
@@ -311,7 +291,6 @@ export interface RootRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
-  SettingsHardwareRoute: typeof SettingsHardwareRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
@@ -327,7 +306,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
-  SettingsHardwareRoute: SettingsHardwareRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
@@ -352,7 +330,6 @@ export const routeTree = rootRoute
         "/settings/appearance",
         "/settings/extensions",
         "/settings/general",
-        "/settings/hardware",
         "/settings/local-api-server",
         "/settings/mcp-servers",
         "/settings/privacy",
@@ -378,9 +355,6 @@ export const routeTree = rootRoute
     },
     "/settings/general": {
       "filePath": "settings/general.tsx"
-    },
-    "/settings/hardware": {
-      "filePath": "settings/hardware.tsx"
     },
     "/settings/local-api-server": {
       "filePath": "settings/local-api-server.tsx"

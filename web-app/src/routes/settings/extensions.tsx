@@ -75,9 +75,7 @@ function Extensions() {
                     key={i}
                     title={
                       <div className="flex items-center gap-x-2">
-                        <h1 className="text-main-view-fg font-medium text-base">
-                          {item.name}
-                        </h1>
+                        <h1 className="text-main-view-fg">{item.name}</h1>
                         <div className="bg-main-view-fg/10 px-1 py-0.5 rounded text-main-view-fg/70 text-xs">
                           v{item.version}
                         </div>
