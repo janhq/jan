@@ -137,12 +137,12 @@ function MCPServers() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <CardSetting
               header={
-                <div className="flex flex-col mb-4">
+                <div className="flex flex-col">
                   <div className="flex items-center justify-between">
                     <h1 className="text-main-view-fg font-medium text-base">
                       MCP Servers
                     </h1>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-0.5">
                       <div
                         className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                         onClick={() => handleOpenJsonEditor()}
@@ -175,18 +175,19 @@ function MCPServers() {
                   </p>
                 </div>
               }
-            >
-              {Object.keys(mcpServers).length === 0 ? (
-                <div className="py-4 text-center font-medium text-main-view-fg/50">
-                  No MCP servers found
-                </div>
-              ) : (
-                Object.entries(mcpServers).map(([key, config]) => (
+            />
+            {Object.keys(mcpServers).length === 0 ? (
+              <div className="py-4 text-center font-medium text-main-view-fg/50">
+                No MCP servers found
+              </div>
+            ) : (
+              Object.entries(mcpServers).map(([key, config]) => (
+                <CardSetting>
                   <CardSettingItem
                     key={key}
                     title={
                       <div className="flex items-center gap-x-2">
-                        <h1 className="text-main-view-fg ">{key}</h1>
+                        <h1 className="text-main-view-fg text-base">{key}</h1>
                       </div>
                     }
                     description={
@@ -240,9 +241,9 @@ function MCPServers() {
                       </div>
                     }
                   />
-                ))
-              )}
-            </CardSetting>
+                </CardSetting>
+              ))
+            )}
           </div>
         </div>
       </div>
