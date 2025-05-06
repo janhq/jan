@@ -17,7 +17,11 @@ import { Route as IndexImport } from './routes/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
+import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
+import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
+import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
+import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
@@ -59,9 +63,33 @@ const SettingsPrivacyRoute = SettingsPrivacyImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
+const SettingsMcpServersRoute = SettingsMcpServersImport.update({
+  id: '/settings/mcp-servers',
+  path: '/settings/mcp-servers',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsLocalApiServerRoute = SettingsLocalApiServerImport.update({
+  id: '/settings/local-api-server',
+  path: '/settings/local-api-server',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsHardwareRoute = SettingsHardwareImport.update({
+  id: '/settings/hardware',
+  path: '/settings/hardware',
+  getParentRoute: () => rootRoute,
+} as any)
+
 const SettingsGeneralRoute = SettingsGeneralImport.update({
   id: '/settings/general',
   path: '/settings/general',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsExtensionsRoute = SettingsExtensionsImport.update({
+  id: '/settings/extensions',
+  path: '/settings/extensions',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -110,11 +138,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceImport
       parentRoute: typeof rootRoute
     }
+    '/settings/extensions': {
+      id: '/settings/extensions'
+      path: '/settings/extensions'
+      fullPath: '/settings/extensions'
+      preLoaderRoute: typeof SettingsExtensionsImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/general': {
       id: '/settings/general'
       path: '/settings/general'
       fullPath: '/settings/general'
       preLoaderRoute: typeof SettingsGeneralImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/hardware': {
+      id: '/settings/hardware'
+      path: '/settings/hardware'
+      fullPath: '/settings/hardware'
+      preLoaderRoute: typeof SettingsHardwareImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/local-api-server': {
+      id: '/settings/local-api-server'
+      path: '/settings/local-api-server'
+      fullPath: '/settings/local-api-server'
+      preLoaderRoute: typeof SettingsLocalApiServerImport
+      parentRoute: typeof rootRoute
+    }
+    '/settings/mcp-servers': {
+      id: '/settings/mcp-servers'
+      path: '/settings/mcp-servers'
+      fullPath: '/settings/mcp-servers'
+      preLoaderRoute: typeof SettingsMcpServersImport
       parentRoute: typeof rootRoute
     }
     '/settings/privacy': {
@@ -155,7 +211,11 @@ export interface FileRoutesByFullPath {
   '/help': typeof HelpRoute
   '/mini-apps': typeof MiniAppsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/hardware': typeof SettingsHardwareRoute
+  '/settings/local-api-server': typeof SettingsLocalApiServerRoute
+  '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
@@ -167,7 +227,11 @@ export interface FileRoutesByTo {
   '/help': typeof HelpRoute
   '/mini-apps': typeof MiniAppsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/hardware': typeof SettingsHardwareRoute
+  '/settings/local-api-server': typeof SettingsLocalApiServerRoute
+  '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
@@ -180,7 +244,11 @@ export interface FileRoutesById {
   '/help': typeof HelpRoute
   '/mini-apps': typeof MiniAppsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/hardware': typeof SettingsHardwareRoute
+  '/settings/local-api-server': typeof SettingsLocalApiServerRoute
+  '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
@@ -194,7 +262,11 @@ export interface FileRouteTypes {
     | '/help'
     | '/mini-apps'
     | '/settings/appearance'
+    | '/settings/extensions'
     | '/settings/general'
+    | '/settings/hardware'
+    | '/settings/local-api-server'
+    | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
@@ -205,7 +277,11 @@ export interface FileRouteTypes {
     | '/help'
     | '/mini-apps'
     | '/settings/appearance'
+    | '/settings/extensions'
     | '/settings/general'
+    | '/settings/hardware'
+    | '/settings/local-api-server'
+    | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
@@ -216,7 +292,11 @@ export interface FileRouteTypes {
     | '/help'
     | '/mini-apps'
     | '/settings/appearance'
+    | '/settings/extensions'
     | '/settings/general'
+    | '/settings/hardware'
+    | '/settings/local-api-server'
+    | '/settings/mcp-servers'
     | '/settings/privacy'
     | '/settings/shortcuts'
     | '/threads/$threadId'
@@ -229,7 +309,11 @@ export interface RootRouteChildren {
   HelpRoute: typeof HelpRoute
   MiniAppsRoute: typeof MiniAppsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsHardwareRoute: typeof SettingsHardwareRoute
+  SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
+  SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
@@ -241,7 +325,11 @@ const rootRouteChildren: RootRouteChildren = {
   HelpRoute: HelpRoute,
   MiniAppsRoute: MiniAppsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsHardwareRoute: SettingsHardwareRoute,
+  SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
+  SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
@@ -262,7 +350,11 @@ export const routeTree = rootRoute
         "/help",
         "/mini-apps",
         "/settings/appearance",
+        "/settings/extensions",
         "/settings/general",
+        "/settings/hardware",
+        "/settings/local-api-server",
+        "/settings/mcp-servers",
         "/settings/privacy",
         "/settings/shortcuts",
         "/threads/$threadId",
@@ -281,8 +373,20 @@ export const routeTree = rootRoute
     "/settings/appearance": {
       "filePath": "settings/appearance.tsx"
     },
+    "/settings/extensions": {
+      "filePath": "settings/extensions.tsx"
+    },
     "/settings/general": {
       "filePath": "settings/general.tsx"
+    },
+    "/settings/hardware": {
+      "filePath": "settings/hardware.tsx"
+    },
+    "/settings/local-api-server": {
+      "filePath": "settings/local-api-server.tsx"
+    },
+    "/settings/mcp-servers": {
+      "filePath": "settings/mcp-servers.tsx"
     },
     "/settings/privacy": {
       "filePath": "settings/privacy.tsx"
