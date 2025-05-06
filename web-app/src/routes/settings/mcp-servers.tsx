@@ -4,18 +4,17 @@ import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { t } from 'i18next'
 import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
-import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react'
+import {
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  IconCodeCircle,
+} from '@tabler/icons-react'
 import { useMCPServers, MCPServerConfig } from '@/hooks/useMCPServers'
 import { useEffect, useState } from 'react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
+import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
+import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
@@ -32,129 +31,99 @@ function MCPServers() {
 
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
-  const [serverName, setServerName] = useState('')
-  const [command, setCommand] = useState('')
-  const [args, setArgs] = useState<string[]>([''])
-  const [envKeys, setEnvKeys] = useState<string[]>([''])
-  const [envValues, setEnvValues] = useState<string[]>([''])
+  const [currentConfig, setCurrentConfig] = useState<
+    MCPServerConfig | undefined
+  >(undefined)
 
-  const resetForm = () => {
-    setServerName('')
-    setCommand('')
-    setArgs([''])
-    setEnvKeys([''])
-    setEnvValues([''])
-    setEditingKey(null)
-  }
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [serverToDelete, setServerToDelete] = useState<string | null>(null)
+
+  // JSON editor dialog state
+  const [jsonEditorOpen, setJsonEditorOpen] = useState(false)
+  const [jsonServerName, setJsonServerName] = useState<string | null>(null)
+  const [jsonEditorData, setJsonEditorData] = useState<
+    MCPServerConfig | Record<string, MCPServerConfig> | undefined
+  >(undefined)
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
       // Edit mode
-      const config = mcpServers[serverKey]
-      setServerName(serverKey)
-      setCommand(config.command)
-      setArgs(config.args.length > 0 ? config.args : [''])
-
-      // Convert env object to arrays of keys and values
-      const keys = Object.keys(config.env)
-      const values = keys.map((key) => config.env[key])
-
-      setEnvKeys(keys.length > 0 ? keys : [''])
-      setEnvValues(values.length > 0 ? values : [''])
+      setCurrentConfig(mcpServers[serverKey])
       setEditingKey(serverKey)
     } else {
       // Add mode
-      resetForm()
+      setCurrentConfig(undefined)
+      setEditingKey(null)
     }
     setOpen(true)
   }
 
-  const handleAddArg = () => {
-    setArgs([...args, ''])
-  }
-
-  const handleRemoveArg = (index: number) => {
-    const newArgs = [...args]
-    newArgs.splice(index, 1)
-    setArgs(newArgs.length > 0 ? newArgs : [''])
-  }
-
-  const handleArgChange = (index: number, value: string) => {
-    const newArgs = [...args]
-    newArgs[index] = value
-    setArgs(newArgs)
-  }
-
-  const handleAddEnv = () => {
-    setEnvKeys([...envKeys, ''])
-    setEnvValues([...envValues, ''])
-  }
-
-  const handleRemoveEnv = (index: number) => {
-    const newKeys = [...envKeys]
-    const newValues = [...envValues]
-    newKeys.splice(index, 1)
-    newValues.splice(index, 1)
-    setEnvKeys(newKeys.length > 0 ? newKeys : [''])
-    setEnvValues(newValues.length > 0 ? newValues : [''])
-  }
-
-  const handleEnvKeyChange = (index: number, value: string) => {
-    const newKeys = [...envKeys]
-    newKeys[index] = value
-    setEnvKeys(newKeys)
-  }
-
-  const handleEnvValueChange = (index: number, value: string) => {
-    const newValues = [...envValues]
-    newValues[index] = value
-    setEnvValues(newValues)
-  }
-
-  const handleSave = () => {
-    // Convert env arrays to object
-    const envObj: Record<string, string> = {}
-    envKeys.forEach((key, index) => {
-      if (key.trim() !== '') {
-        envObj[key] = envValues[index] || ''
-      }
-    })
-
-    // Filter out empty args
-    const filteredArgs = args.filter((arg) => arg.trim() !== '')
-
-    const config: MCPServerConfig = {
-      command,
-      args: filteredArgs,
-      env: envObj,
-    }
-
+  const handleSaveServer = (name: string, config: MCPServerConfig) => {
     if (editingKey) {
       // Edit existing server
       editServer(editingKey, config)
 
       // If server name changed, delete old one and add new one
-      if (editingKey !== serverName && serverName.trim() !== '') {
+      if (editingKey !== name) {
         deleteServer(editingKey)
-        addServer(serverName, config)
+        addServer(name, config)
       }
     } else {
       // Add new server
-      if (serverName.trim() !== '') {
-        addServer(serverName, config)
-      }
+      addServer(name, config)
     }
-
-    setOpen(false)
-    resetForm()
   }
 
   const handleEdit = (serverKey: string) => {
     handleOpenDialog(serverKey)
   }
 
-  const handleDelete = (serverKey: string) => {
-    deleteServer(serverKey)
+  const handleDeleteClick = (serverKey: string) => {
+    setServerToDelete(serverKey)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (serverToDelete) {
+      deleteServer(serverToDelete)
+      setServerToDelete(null)
+    }
+  }
+
+  const handleOpenJsonEditor = (serverKey?: string) => {
+    if (serverKey) {
+      // Edit single server JSON
+      setJsonServerName(serverKey)
+      setJsonEditorData(mcpServers[serverKey])
+    } else {
+      // Edit all servers JSON
+      setJsonServerName(null)
+      setJsonEditorData(mcpServers)
+    }
+    setJsonEditorOpen(true)
+  }
+
+  const handleSaveJson = (
+    data: MCPServerConfig | Record<string, MCPServerConfig>
+  ) => {
+    if (jsonServerName) {
+      // Save single server
+      editServer(jsonServerName, data as MCPServerConfig)
+    } else {
+      // Save all servers
+      // Clear existing servers first
+      Object.keys(mcpServers).forEach((key) => {
+        deleteServer(key)
+      })
+
+      // Add all servers from the JSON
+      Object.entries(data as Record<string, MCPServerConfig>).forEach(
+        ([key, config]) => {
+          addServer(key, config)
+        }
+      )
+    }
   }
 
   return (
@@ -168,18 +137,42 @@ function MCPServers() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <CardSetting
               header={
-                <div className="flex items-center justify-between mb-4">
-                  <h1 className="text-main-view-fg font-medium text-base">
-                    MCP Servers
-                  </h1>
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                      onClick={() => handleOpenDialog()}
-                    >
-                      <IconPlus size={18} className="text-main-view-fg/50" />
+                <div className="flex flex-col mb-4">
+                  <div className="flex items-center justify-between">
+                    <h1 className="text-main-view-fg font-medium text-base">
+                      MCP Servers
+                    </h1>
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                        onClick={() => handleOpenJsonEditor()}
+                        title="Edit All Servers JSON"
+                      >
+                        <IconCodeCircle
+                          size={18}
+                          className="text-main-view-fg/50"
+                        />
+                      </div>
+                      <div
+                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                        onClick={() => handleOpenDialog()}
+                        title="Add Server"
+                      >
+                        <IconPlus size={18} className="text-main-view-fg/50" />
+                      </div>
                     </div>
                   </div>
+                  <p className="text-sm text-main-view-fg/70 mt-1">
+                    Find more MCP servers at{' '}
+                    <a
+                      href="https://mcp.so/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      mcp.so
+                    </a>
+                  </p>
                 </div>
               }
             >
@@ -193,9 +186,7 @@ function MCPServers() {
                     key={key}
                     title={
                       <div className="flex items-center gap-x-2">
-                        <h1 className="text-main-view-fg font-medium text-base">
-                          {key}
-                        </h1>
+                        <h1 className="text-main-view-fg ">{key}</h1>
                       </div>
                     }
                     description={
@@ -215,10 +206,21 @@ function MCPServers() {
                       </div>
                     }
                     actions={
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0.5">
+                        <div
+                          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                          onClick={() => handleOpenJsonEditor(key)}
+                          title="Edit JSON"
+                        >
+                          <IconCodeCircle
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={() => handleEdit(key)}
+                          title="Edit Server"
                         >
                           <IconPencil
                             size={18}
@@ -227,7 +229,8 @@ function MCPServers() {
                         </div>
                         <div
                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                          onClick={() => handleDelete(key)}
+                          onClick={() => handleDeleteClick(key)}
+                          title="Delete Server"
                         >
                           <IconTrash
                             size={18}
@@ -243,108 +246,34 @@ function MCPServers() {
           </div>
         </div>
       </div>
-      {/* Dialog for adding/editing MCP servers */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {editingKey ? 'Edit MCP Server' : 'Add MCP Server'}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm mb-2 inline-block">Server Name</label>
-              <Input
-                value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
-                placeholder="Enter server name"
-              />
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm mb-2 inline-block">Command</label>
-              <Input
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                placeholder="Enter command (uvx or npx)"
-              />
-            </div>
+      {/* Use the AddEditMCPServer component */}
+      <AddEditMCPServer
+        open={open}
+        onOpenChange={setOpen}
+        editingKey={editingKey}
+        initialData={currentConfig}
+        onSave={handleSaveServer}
+      />
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm">Arguments</label>
-                <div
-                  className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                  onClick={handleAddArg}
-                >
-                  <IconPlus size={18} className="text-main-view-fg/60" />
-                </div>
-              </div>
+      {/* Delete confirmation dialog */}
+      <DeleteMCPServerConfirm
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        serverName={serverToDelete || ''}
+        onConfirm={handleConfirmDelete}
+      />
 
-              {args.map((arg, index) => (
-                <div key={`arg-${index}`} className="flex items-center gap-2">
-                  <Input
-                    value={arg}
-                    onChange={(e) => handleArgChange(index, e.target.value)}
-                    placeholder={`Argument ${index + 1}`}
-                  />
-                  {args.length > 1 && (
-                    <div
-                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                      onClick={() => handleRemoveArg(index)}
-                    >
-                      <IconTrash size={18} className="text-destructive" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm">Environment Variables</label>
-                <div
-                  className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                  onClick={handleAddEnv}
-                >
-                  <IconPlus size={18} className="text-main-view-fg/60" />
-                </div>
-              </div>
-
-              {envKeys.map((key, index) => (
-                <div key={`env-${index}`} className="flex items-center gap-2">
-                  <Input
-                    value={key}
-                    onChange={(e) => handleEnvKeyChange(index, e.target.value)}
-                    placeholder="Key"
-                    className="flex-1"
-                  />
-                  <Input
-                    value={envValues[index] || ''}
-                    onChange={(e) =>
-                      handleEnvValueChange(index, e.target.value)
-                    }
-                    placeholder="Value"
-                    className="flex-1"
-                  />
-                  {envKeys.length > 1 && (
-                    <div
-                      className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                      onClick={() => handleRemoveEnv(index)}
-                    >
-                      <IconTrash size={18} className="text-destructive" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button onClick={handleSave}>Save</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* JSON editor dialog */}
+      <EditJsonMCPserver
+        open={jsonEditorOpen}
+        onOpenChange={setJsonEditorOpen}
+        serverName={jsonServerName}
+        initialData={
+          jsonEditorData as MCPServerConfig | Record<string, MCPServerConfig>
+        }
+        onSave={handleSaveJson}
+      />
     </div>
   )
 }
