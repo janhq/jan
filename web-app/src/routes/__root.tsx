@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import LeftPanel from '@/containers/LeftPanel'
@@ -7,20 +7,23 @@ import { AppearanceProvider } from '@/providers/AppearanceProvider'
 import { ThemeProvider } from '@/providers/ThemeProvider'
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
+import { route } from '@/constants/routes'
 
 export const Route = createRootRoute({
-  component: () => (
+  component: RootLayout,
+})
+
+const AppLayout = () => {
+  return (
     <Fragment>
       <DataProvider />
-      <ThemeProvider />
-      <AppearanceProvider />
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
         <div className="absolute w-full h-2 z-50" data-tauri-drag-region />
 
         <div className="flex h-full">
-          {/* left content panel */}
+          {/* left content panel - only show if not logs route */}
           <LeftPanel />
 
           {/* Main content panel */}
@@ -31,7 +34,38 @@ export const Route = createRootRoute({
           </div>
         </div>
       </main>
+    </Fragment>
+  )
+}
+
+const LogsLayout = () => {
+  return (
+    <Fragment>
+      <main className="relative h-svh text-sm antialiased select-text bg-app">
+        <div className="flex h-full">
+          {/* Main content panel */}
+          <div className="h-full flex w-full">
+            <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full overflow-hidden">
+              <Outlet />
+            </div>
+          </div>
+        </div>
+      </main>
+    </Fragment>
+  )
+}
+
+function RootLayout() {
+  const router = useRouterState()
+  const isLocalAPIServerLogsRoute =
+    router.location.pathname === route.localApiServerlogs
+
+  return (
+    <Fragment>
+      <ThemeProvider />
+      <AppearanceProvider />
+      {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
       {/* <TanStackRouterDevtools position="bottom-right" /> */}
     </Fragment>
-  ),
-})
+  )
+}

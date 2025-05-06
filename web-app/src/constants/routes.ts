@@ -14,5 +14,6 @@ export const route = {
   },
   miniApps: '/mini-apps',
   help: '/help',
+  localApiServerlogs: '/local-api-server/logs',
   threadsDetail: '/threads/$threadId',
 }
