@@ -26,7 +26,7 @@ function ThreadDetail() {
           <DropdownModelProvider threadData={thread} />
         </div>
       </HeaderPage>
-      <div className="flex flex-col h-[calc(100%-32px)] ">
+      <div className="flex flex-col h-[calc(100%-40px)] ">
         <div className="flex flex-col h-full w-full p-4 overflow-auto">
           <div className="max-w-none w-4/6 mx-auto">
             {thread.content &&
@@ -77,7 +77,7 @@ function ThreadDetail() {
               })}
           </div>
         </div>
-        <div className="w-4/6 mx-auto pt-2 pb-4">
+        <div className="w-4/6 mx-auto py-2 shrink-0">
           <ChatInput />
         </div>
       </div>
