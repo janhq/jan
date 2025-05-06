@@ -50,7 +50,7 @@ export function ColorPickerAppDestructiveColor() {
           <div
             key={i}
             className={cn(
-              'size-5 rounded-full border border-main-view-fg/20',
+              'size-4 rounded-full border border-main-view-fg/20',
               isSelected && 'ring-2 ring-blue-500 border-none'
             )}
             onClick={() => {
