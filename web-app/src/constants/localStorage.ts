@@ -6,4 +6,5 @@ export const localStoregeKey = {
   theme: 'theme',
   modelProvider: 'model-provider',
   settingCodeBlock: 'setting-code-block',
+  settingMCPSevers: 'setting-mcp-servers',
 }

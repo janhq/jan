@@ -73,7 +73,7 @@ export function RenderMarkdown({
             </span>
             <button
               onClick={() => handleCopy(code, codeId)}
-              className="flex items-center gap-1 text-xs font-sans transition-colors"
+              className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
             >
               {copiedId === codeId ? (
                 <>
