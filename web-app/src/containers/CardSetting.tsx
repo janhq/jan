@@ -47,7 +47,7 @@ export function CardSettingItem({
 
 export function CardSetting({ title, children, header }: CardSettingProps) {
   return (
-    <div className="bg-main-view-fg/4 p-4 rounded-lg text-main-view-fg/90 w-full">
+    <div className="bg-main-view-fg/3 p-4 rounded-lg text-main-view-fg/90 w-full">
       {title && (
         <h1 className="text-main-view-fg font-medium text-base mb-4">
           {title}

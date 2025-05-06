@@ -831,4 +831,58 @@ export const mockTheads = [
       provider: 'llama.cpp',
     },
   },
+  {
+    id: '3',
+    title: 'Modern JavaScript: A Comprehensive Guide',
+    isFavorite: false,
+    content: [
+      {
+        completed_at: 1746419535.019,
+        role: 'user',
+        text: {
+          annotations: [],
+          value: 'Ask question from user',
+        },
+        type: 'text',
+        created_at: 1746419535.019,
+        id: '01JTFBEK5BBZ9Y63275WDKRF6D',
+        metadata: {},
+      },
+      {
+        completed_at: 1746419535.019,
+        role: 'assistant',
+        text: {
+          annotations: [],
+          value: "I'll read the README.md file using the `read_file` function.",
+        },
+        type: 'text',
+        created_at: 1746419535.019,
+        id: '01JTFBEK5BBZ9Y63275WDKRF6D',
+        metadata: {
+          token_speed: 3.5555555555555554,
+          tool_calls: [
+            {
+              response: {
+                content: [{ text: '# Jan - Local AI Assistant', type: 'text' }],
+              },
+              state: 'ready',
+              tool: {
+                function: {
+                  arguments:
+                    '{"path": "/Users/louis/Repositories/jan/README.md"}',
+                  name: 'read_file',
+                },
+                id: '01JTFBEN8ZXNM9KB2CM9AY9ZBM',
+                type: 'function',
+              },
+            },
+          ],
+        },
+      },
+    ],
+    model: {
+      id: 'llama3.2:3b',
+      provider: 'llama.cpp',
+    },
+  },
 ]

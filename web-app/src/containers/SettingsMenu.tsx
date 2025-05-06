@@ -67,12 +67,12 @@ const SettingsMenu = () => {
 
           if (index === 2) {
             return (
-              <>
-                {menuItem}
+              <div key={menu.title}>
+                <span className="mb-1 block">{menuItem}</span>
 
                 {/* Model Providers Link with default parameter */}
                 {isActive ? (
-                  <div className="block px-2 gap-1.5 py-1 w-full rounded bg-main-view-fg/5 cursor-pointer">
+                  <div className="block px-2 mt-1 gap-1.5 py-1 w-full rounded bg-main-view-fg/5 cursor-pointer">
                     <span>{t('common.modelProviders')}</span>
                   </div>
                 ) : (
@@ -87,7 +87,7 @@ const SettingsMenu = () => {
                     </span>
                   </Link>
                 )}
-              </>
+              </div>
             )
           }
 
