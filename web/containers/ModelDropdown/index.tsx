@@ -127,7 +127,6 @@ const ModelDropdown = ({
 
   useEffect(() => {
     EngineManager.instance().engines.forEach((e) => {
-      // @ts-ignore
       setEngineExt((prev) => {
         return [
           ...prev,
@@ -137,11 +136,11 @@ const ModelDropdown = ({
                   name: e.provider,
                   type: 'remote',
                   engine: {
-                    engine: e.provider,
+                    engine: e.provider as InferenceEngine,
                     version: e.version,
                     name: e.provider,
-                    api_key: 'apiKey' in e ? e.apiKey : '',
-                  },
+                    api_key: 'apiKey' in e ? (e.apiKey as string) : '',
+                  } as EngineVariant & EngineConfig,
                 },
               ]
             : []),

@@ -192,7 +192,9 @@ export default function useSendChatMessage(
 
     // add tools to request if model supports tools
     const model = ModelManager.instance().get(modelRequest.id)
-    const isToolsSupported = model?.capabilities.includes(ModelCapability.tools)
+    const isToolsSupported = model?.capabilities?.includes(
+      ModelCapability.tools
+    )
 
     let tools = undefined
     if (isToolsSupported) {
@@ -207,10 +209,10 @@ export default function useSendChatMessage(
             strict: false,
           },
         }))
-        // if no tools are selected, send null in request
-        if (tools.length == 0) {
-          tools = undefined
-        }
+      // if no tools are selected, send null in request
+      if (tools.length == 0) {
+        tools = undefined
+      }
     }
 
     // Build Message Request
@@ -223,7 +225,7 @@ export default function useSendChatMessage(
       },
       activeThread,
       messages ?? currentMessages,
-      tools,
+      tools
     ).addSystemMessage(activeAssistant.instructions)
 
     requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
@@ -278,10 +280,16 @@ export default function useSendChatMessage(
     }
     setIsGeneratingResponse(true)
 
-    const engine_name = requestBuilder.model.engine ?? InferenceEngine.cortex
-    const engine = EngineManager.instance().get(engine_name)
+    const engineName = requestBuilder.model.engine ?? InferenceEngine.cortex
+    const engine = EngineManager.instance().get(engineName)
 
-    if (requestBuilder.tools && requestBuilder.tools.length) {
+    if (
+      requestBuilder.tools &&
+      requestBuilder.tools.length &&
+      engine &&
+      'getOpenAIClient' in engine &&
+      typeof engine.getOpenAIClient === 'function'
+    ) {
       let isDone = false
       const openai = engine?.getOpenAIClient()
       let parentMessageId: string | undefined
@@ -400,7 +408,7 @@ export default function useSendChatMessage(
     for await (const chunk of response) {
       // console.log("chunk", chunk)
       // anthropic
-      if (chunk.type == 'ping') continue
+      if ('type' in chunk && chunk.type == 'ping') continue
 
       // Handle tool calls in the chunk
       if (chunk.choices[0]?.delta?.tool_calls) {
