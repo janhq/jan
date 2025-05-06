@@ -48,8 +48,7 @@ export default function ModelHandler() {
   const addNewMessage = useSetAtom(addNewMessageAtom)
   const updateMessage = useSetAtom(updateMessageAtom)
   const downloadedModels = useAtomValue(downloadedModelsAtom)
-  const activeModel = useAtomValue(activeModelAtom)
-  const setActiveModel = useSetAtom(activeModelAtom)
+  const [activeModel, setActiveModel] = useAtom(activeModelAtom)
   const setStateModel = useSetAtom(stateModelAtom)
   const subscribedGeneratingMessage = useAtomValue(
     subscribedGeneratingMessageAtom
