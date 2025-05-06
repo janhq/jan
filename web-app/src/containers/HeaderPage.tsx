@@ -8,8 +8,8 @@ type HeaderPageProps = {
   children: ReactNode
 }
 const HeaderPage = ({ children }: HeaderPageProps) => {
-  // const platformName = platform()
-  const platformName = 'macos'
+  const platformName = platform()
+
   const { open, setLeftPanel } = useLeftPanel()
 
   return (
