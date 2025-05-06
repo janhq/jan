@@ -9,7 +9,6 @@ type HeaderPageProps = {
 }
 const HeaderPage = ({ children }: HeaderPageProps) => {
   const platformName = platform()
-
   const { open, setLeftPanel } = useLeftPanel()
 
   return (
