@@ -1,8 +1,7 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State}; // Import Manager trait
-use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::process::Command;
 
 use crate::core::state::AppState;
 
@@ -23,6 +22,16 @@ pub enum ServerError {
     Tauri(#[from] tauri::Error),
 }
 
+// impl serialization for tauri
+impl serde::Serialize for ServerError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.to_string().as_ref())
+    }
+}
+
 type ServerResult<T> = Result<T, ServerError>;
 
 // --- Helper function to find the server binary ---
@@ -38,26 +47,26 @@ fn get_server_path(app_handle: &AppHandle) -> ServerResult<PathBuf> {
 
     app_handle
         .path()
-        .resolve_resource(relative_path)
-        .map_err(|e| ServerError::ResourcePathError(e.to_string()))?
-        .ok_or_else(|| {
-            ServerError::BinaryNotFound(format!(
-                "Could not resolve resource path for '{}'",
-                if cfg!(windows) {
-                    "engines/llama-server.exe"
-                } else {
-                    "engines/llama-server"
-                } // TODO: ADJUST THIS PATH
-            ))
-        })
+        .resolve(relative_path, BaseDirectory::Resource)
+        .map_err(|e| ServerError::ResourcePathError(e.to_string()))
+    // .ok_or_else(|| {
+    //     ServerError::BinaryNotFound(format!(
+    //         "Could not resolve resource path for '{}'",
+    //         if cfg!(windows) {
+    //             "engines/llama-server.exe"
+    //         } else {
+    //             "engines/llama-server"
+    //         } // TODO: ADJUST THIS PATH
+    //     ))
+    // })
 }
 
 // --- Load Command ---
 #[tauri::command]
 pub async fn load(
-    app_handle: AppHandle,            // Get the AppHandle
-    state: State<'_, AppState>,       // Access the shared state
-    args: Vec<String>,                // Arguments from the frontend
+    app_handle: AppHandle,      // Get the AppHandle
+    state: State<'_, AppState>, // Access the shared state
+    args: Vec<String>,          // Arguments from the frontend
 ) -> ServerResult<()> {
     let mut process_lock = state.llama_server_process.lock().await;
 
@@ -71,8 +80,14 @@ pub async fn load(
     log::info!("Using arguments: {:?}", args);
 
     if !server_path.exists() {
-         log::error!("Server binary not found at expected path: {:?}", server_path);
-         return Err(ServerError::BinaryNotFound(format!("Binary not found at {:?}", server_path)));
+        log::error!(
+            "Server binary not found at expected path: {:?}",
+            server_path
+        );
+        return Err(ServerError::BinaryNotFound(format!(
+            "Binary not found at {:?}",
+            server_path
+        )));
     }
 
     // Configure the command to run the server
