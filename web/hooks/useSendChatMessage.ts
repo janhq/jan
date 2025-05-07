@@ -266,12 +266,14 @@ export default function useSendChatMessage(
 
     // Start Model if not started
     const modelId = selectedModel?.id ?? activeAssistantRef.current?.model.id
+    const engineName = requestBuilder.model.engine ?? InferenceEngine.cortex
+    const engine = EngineManager.instance().get(engineName)
 
     if (base64Blob) {
       setFileUpload(undefined)
     }
 
-    if (modelRef.current?.id !== modelId && modelId) {
+    if (modelRef.current?.id !== modelId && modelId && engineName == InferenceEngine.cortex) {
       const error = await startModel(modelId).catch((error: Error) => error)
       if (error) {
         updateThreadWaiting(activeThread.id, false)
@@ -279,9 +281,6 @@ export default function useSendChatMessage(
       }
     }
     setIsGeneratingResponse(true)
-
-    const engineName = requestBuilder.model.engine ?? InferenceEngine.cortex
-    const engine = EngineManager.instance().get(engineName)
 
     if (
       requestBuilder.tools &&
