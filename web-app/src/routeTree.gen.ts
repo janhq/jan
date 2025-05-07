@@ -12,7 +12,6 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as HubImport } from './routes/hub'
-import { Route as HelpImport } from './routes/help'
 import { Route as IndexImport } from './routes/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
@@ -30,12 +29,6 @@ import { Route as SettingsProvidersProviderNameImport } from './routes/settings/
 const HubRoute = HubImport.update({
   id: '/hub',
   path: '/hub',
-  getParentRoute: () => rootRoute,
-} as any)
-
-const HelpRoute = HelpImport.update({
-  id: '/help',
-  path: '/help',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -115,13 +108,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
-    }
-    '/help': {
-      id: '/help'
-      path: '/help'
-      fullPath: '/help'
-      preLoaderRoute: typeof HelpImport
       parentRoute: typeof rootRoute
     }
     '/hub': {
@@ -208,7 +194,6 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/help': typeof HelpRoute
   '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -224,7 +209,6 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/help': typeof HelpRoute
   '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -241,7 +225,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
-  '/help': typeof HelpRoute
   '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -259,7 +242,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/help'
     | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -274,7 +256,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/help'
     | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -289,7 +270,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/help'
     | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -306,7 +286,6 @@ export interface FileRouteTypes {
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  HelpRoute: typeof HelpRoute
   HubRoute: typeof HubRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -322,7 +301,6 @@ export interface RootRouteChildren {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  HelpRoute: HelpRoute,
   HubRoute: HubRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
@@ -347,7 +325,6 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
-        "/help",
         "/hub",
         "/local-api-server/logs",
         "/settings/appearance",
@@ -363,9 +340,6 @@ export const routeTree = rootRoute
     },
     "/": {
       "filePath": "index.tsx"
-    },
-    "/help": {
-      "filePath": "help.tsx"
     },
     "/hub": {
       "filePath": "hub.tsx"
