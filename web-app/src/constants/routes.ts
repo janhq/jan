@@ -12,7 +12,7 @@ export const route = {
     local_api_server: '/settings/local-api-server',
     mcp_servers: '/settings/mcp-servers',
   },
-  miniApps: '/mini-apps',
+  hub: '/hub',
   help: '/help',
   localApiServerlogs: '/local-api-server/logs',
   threadsDetail: '/threads/$threadId',
