@@ -4,7 +4,7 @@ use tauri::{AppHandle, Manager, State}; // Import Manager trait
 use tokio::process::{Child, Command};
 use tokio::sync::Mutex;
 
-use super::state::AppState;
+use crate::core::state::AppState;
 
 // Error type for server commands
 #[derive(Debug, thiserror::Error)]
