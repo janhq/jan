@@ -76,14 +76,14 @@ pub fn run() {
             core::hardware::get_system_info,
             core::hardware::get_system_usage,
             // llama-cpp extension
-            core::utils::extensions::inference_llamacpp_extension::load, 
-            core::utils::extensions::inference_llamacpp_extension::unload
+            core::utils::extensions::inference_llamacpp_extension::server::load,
+            core::utils::extensions::inference_llamacpp_extension::server::unload,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
-            cortex_restart_count: Arc::new(Mutex::new(0)),
+            llama_server_process: Arc::new(Mutex::new(None)),
         })
         .setup(|app| {
             app.handle().plugin(
