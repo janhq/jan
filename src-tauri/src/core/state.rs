@@ -8,18 +8,18 @@ use tokio::task::JoinHandle;
 
 /// Server handle type for managing the proxy server lifecycle
 pub type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
+use tokio::{process::Child, sync::Mutex};
 
 #[derive(Default)]
 pub struct AppState {
     pub app_token: Option<String>,
     pub mcp_servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
-    pub cortex_restart_count: Arc<Mutex<u32>>,
-    pub cortex_killed_intentionally: Arc<Mutex<bool>>,
     pub mcp_restart_counts: Arc<Mutex<HashMap<String, u32>>>,
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub mcp_successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
+    pub llama_server_process: Arc<Mutex<Option<Child>>>,
 }
 pub fn generate_app_token() -> String {
     rand::thread_rng()
