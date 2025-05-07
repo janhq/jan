@@ -22,9 +22,7 @@ function ThreadDetail() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <div className="-ml-2">
-          <DropdownModelProvider threadData={thread} />
-        </div>
+        <DropdownModelProvider threadData={thread} />
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
         <div className="flex flex-col h-full w-full p-4 overflow-auto">

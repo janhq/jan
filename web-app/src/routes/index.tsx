@@ -16,9 +16,7 @@ function Index() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <div className="-ml-2">
-          <DropdownModelProvider />
-        </div>
+        <DropdownModelProvider />
       </HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center">
         <div className="w-4/6 mx-auto">
