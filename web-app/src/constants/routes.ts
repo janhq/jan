@@ -13,7 +13,6 @@ export const route = {
     mcp_servers: '/settings/mcp-servers',
   },
   hub: '/hub',
-  help: '/help',
   localApiServerlogs: '/local-api-server/logs',
   threadsDetail: '/threads/$threadId',
 }

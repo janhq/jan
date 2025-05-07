@@ -6,7 +6,6 @@ import {
   IconDots,
   IconCirclePlusFilled,
   IconSettingsFilled,
-  IconLifebuoyFilled,
   IconTrash,
   IconStar,
   IconAppsFilled,
@@ -38,11 +37,6 @@ const mainMenus = [
 ]
 
 const secondaryMenus = [
-  {
-    title: 'common.helpSupport',
-    icon: IconLifebuoyFilled,
-    route: route.help,
-  },
   {
     title: 'common.settings',
     icon: IconSettingsFilled,

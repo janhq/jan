@@ -164,7 +164,7 @@ export default function AddEditMCPServer({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        delay: 200,
+        delay: 100,
         tolerance: 5,
       },
     }),
