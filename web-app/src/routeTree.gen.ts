@@ -11,7 +11,7 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
-import { Route as MiniAppsImport } from './routes/mini-apps'
+import { Route as HubImport } from './routes/hub'
 import { Route as HelpImport } from './routes/help'
 import { Route as IndexImport } from './routes/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
@@ -27,9 +27,9 @@ import { Route as SettingsProvidersProviderNameImport } from './routes/settings/
 
 // Create/Update Routes
 
-const MiniAppsRoute = MiniAppsImport.update({
-  id: '/mini-apps',
-  path: '/mini-apps',
+const HubRoute = HubImport.update({
+  id: '/hub',
+  path: '/hub',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -124,11 +124,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HelpImport
       parentRoute: typeof rootRoute
     }
-    '/mini-apps': {
-      id: '/mini-apps'
-      path: '/mini-apps'
-      fullPath: '/mini-apps'
-      preLoaderRoute: typeof MiniAppsImport
+    '/hub': {
+      id: '/hub'
+      path: '/hub'
+      fullPath: '/hub'
+      preLoaderRoute: typeof HubImport
       parentRoute: typeof rootRoute
     }
     '/local-api-server/logs': {
@@ -209,7 +209,7 @@ declare module '@tanstack/react-router' {
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/help': typeof HelpRoute
-  '/mini-apps': typeof MiniAppsRoute
+  '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -225,7 +225,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/help': typeof HelpRoute
-  '/mini-apps': typeof MiniAppsRoute
+  '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -242,7 +242,7 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/help': typeof HelpRoute
-  '/mini-apps': typeof MiniAppsRoute
+  '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -260,7 +260,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/help'
-    | '/mini-apps'
+    | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -275,7 +275,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/help'
-    | '/mini-apps'
+    | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -290,7 +290,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/help'
-    | '/mini-apps'
+    | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -307,7 +307,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   HelpRoute: typeof HelpRoute
-  MiniAppsRoute: typeof MiniAppsRoute
+  HubRoute: typeof HubRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
@@ -323,7 +323,7 @@ export interface RootRouteChildren {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   HelpRoute: HelpRoute,
-  MiniAppsRoute: MiniAppsRoute,
+  HubRoute: HubRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
@@ -348,7 +348,7 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/help",
-        "/mini-apps",
+        "/hub",
         "/local-api-server/logs",
         "/settings/appearance",
         "/settings/extensions",
@@ -367,8 +367,8 @@ export const routeTree = rootRoute
     "/help": {
       "filePath": "help.tsx"
     },
-    "/mini-apps": {
-      "filePath": "mini-apps.tsx"
+    "/hub": {
+      "filePath": "hub.tsx"
     },
     "/local-api-server/logs": {
       "filePath": "local-api-server/logs.tsx"

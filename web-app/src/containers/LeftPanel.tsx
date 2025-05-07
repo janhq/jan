@@ -31,9 +31,9 @@ const mainMenus = [
     route: route.home,
   },
   {
-    title: 'common.miniApps',
+    title: 'common.hub',
     icon: IconAppsFilled,
-    route: route.miniApps,
+    route: route.hub,
   },
 ]
 
