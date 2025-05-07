@@ -833,7 +833,7 @@ export const mockTheads = [
   },
   {
     id: '3',
-    title: 'Modern JavaScript: A Comprehensive Guide',
+    title: 'Reasoning and Tools',
     isFavorite: false,
     content: [
       {
