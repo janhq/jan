@@ -41,13 +41,16 @@ export const builtInEngines = [
 ]
 
 export const convertBuiltInEngine = (engine?: string): LLMProvider => {
+  const engineName = normalizeBuiltInEngineName(engine) ?? ''
   return (
-    engine === ('google_gemini' as InferenceEngine)
-      ? 'gemini'
-      : engine && builtInEngines.includes(engine)
-        ? engine
-        : 'openai-compatible'
+    builtInEngines.includes(engineName) ? engine : 'openai-compatible'
   ) as LLMProvider
+}
+
+export const normalizeBuiltInEngineName = (
+  engine?: string
+): string | undefined => {
+  return engine === ('google_gemini' as InferenceEngine) ? 'gemini' : engine
 }
 
 export const extendBuiltInEngineModels = (

@@ -32,6 +32,8 @@ import { twMerge } from 'tailwind-merge'
 import Spinner from '@/containers/Loader/Spinner'
 
 import {
+  builtInEngines,
+  normalizeBuiltInEngineName,
   updateEngine,
   useGetEngines,
   useRefreshModelList,
@@ -366,105 +368,111 @@ const RemoteEngineSettings = ({
               </div>
             </div>
           </div>
-          <div className="block w-full px-4">
-            <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
-              <div className="flex w-full flex-col items-start justify-between sm:flex-row">
-                <div className="w-full flex-shrink-0 space-y-1.5">
-                  <div className="flex items-start justify-between gap-x-2">
-                    <div className="w-full sm:w-3/4">
-                      <h6 className="line-clamp-1 font-semibold">
-                        Request Headers Template
-                      </h6>
-                      <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        HTTP headers template required for API authentication
-                        and version specification.
-                      </p>
-                    </div>
-                    <div className="w-full">
-                      <TextArea
-                        placeholder="Enter headers template"
-                        value={data?.metadata?.header_template}
-                        onChange={(e) =>
-                          handleChange(
-                            'metadata.header_template',
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="block w-full px-4">
-            <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
-              <div className="flex w-full flex-col items-start justify-between sm:flex-row">
-                <div className="w-full flex-shrink-0 space-y-1.5">
-                  <div className="flex items-start justify-between gap-x-2">
-                    <div className="w-full sm:w-3/4">
-                      <h6 className="line-clamp-1 font-semibold">
-                        Request Format Conversion
-                      </h6>
-                      <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template to transform OpenAI-compatible requests into
-                        provider-specific format.
-                      </p>
-                    </div>
-                    <div className="w-full">
-                      <TextArea
-                        placeholder="Enter conversion function"
-                        value={
-                          data?.metadata?.transform_req?.chat_completions
-                            ?.template
-                        }
-                        onChange={(e) =>
-                          handleChange(
-                            'metadata.transform_req.chat_completions.template',
-                            e.target.value
-                          )
-                        }
-                      />
+          {!builtInEngines.includes(
+            normalizeBuiltInEngineName(engineName) ?? ''
+          ) && (
+            <>
+              <div className="block w-full px-4">
+                <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
+                  <div className="flex w-full flex-col items-start justify-between sm:flex-row">
+                    <div className="w-full flex-shrink-0 space-y-1.5">
+                      <div className="flex items-start justify-between gap-x-2">
+                        <div className="w-full sm:w-3/4">
+                          <h6 className="line-clamp-1 font-semibold">
+                            Request Headers Template
+                          </h6>
+                          <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                            HTTP headers template required for API
+                            authentication and version specification.
+                          </p>
+                        </div>
+                        <div className="w-full">
+                          <TextArea
+                            placeholder="Enter headers template"
+                            value={data?.metadata?.header_template}
+                            onChange={(e) =>
+                              handleChange(
+                                'metadata.header_template',
+                                e.target.value
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div className="block w-full px-4">
-            <div className="mb-3 mt-4 pb-4">
-              <div className="flex w-full flex-col items-start justify-between sm:flex-row">
-                <div className="w-full flex-shrink-0 space-y-1.5">
-                  <div className="flex items-start justify-between gap-x-2">
-                    <div className="w-full sm:w-3/4">
-                      <h6 className="line-clamp-1 font-semibold">
-                        Response Format Conversion
-                      </h6>
-                      <p className="mt-1 text-[hsla(var(--text-secondary))]">
-                        Template to transform provider responses into
-                        OpenAI-compatible format.
-                      </p>
-                    </div>
-                    <div className="w-full">
-                      <TextArea
-                        placeholder="Enter conversion function"
-                        value={
-                          data?.metadata?.transform_resp?.chat_completions
-                            ?.template
-                        }
-                        onChange={(e) =>
-                          handleChange(
-                            'metadata.transform_resp.chat_completions.template',
-                            e.target.value
-                          )
-                        }
-                      />
+              <div className="block w-full px-4">
+                <div className="mb-3 mt-4 border-b border-[hsla(var(--app-border))] pb-4">
+                  <div className="flex w-full flex-col items-start justify-between sm:flex-row">
+                    <div className="w-full flex-shrink-0 space-y-1.5">
+                      <div className="flex items-start justify-between gap-x-2">
+                        <div className="w-full sm:w-3/4">
+                          <h6 className="line-clamp-1 font-semibold">
+                            Request Format Conversion
+                          </h6>
+                          <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                            Template to transform OpenAI-compatible requests
+                            into provider-specific format.
+                          </p>
+                        </div>
+                        <div className="w-full">
+                          <TextArea
+                            placeholder="Enter conversion function"
+                            value={
+                              data?.metadata?.transform_req?.chat_completions
+                                ?.template
+                            }
+                            onChange={(e) =>
+                              handleChange(
+                                'metadata.transform_req.chat_completions.template',
+                                e.target.value
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
+              <div className="block w-full px-4">
+                <div className="mb-3 mt-4 pb-4">
+                  <div className="flex w-full flex-col items-start justify-between sm:flex-row">
+                    <div className="w-full flex-shrink-0 space-y-1.5">
+                      <div className="flex items-start justify-between gap-x-2">
+                        <div className="w-full sm:w-3/4">
+                          <h6 className="line-clamp-1 font-semibold">
+                            Response Format Conversion
+                          </h6>
+                          <p className="mt-1 text-[hsla(var(--text-secondary))]">
+                            Template to transform provider responses into
+                            OpenAI-compatible format.
+                          </p>
+                        </div>
+                        <div className="w-full">
+                          <TextArea
+                            placeholder="Enter conversion function"
+                            value={
+                              data?.metadata?.transform_resp?.chat_completions
+                                ?.template
+                            }
+                            onChange={(e) =>
+                              handleChange(
+                                'metadata.transform_resp.chat_completions.template',
+                                e.target.value
+                              )
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </ScrollArea>
