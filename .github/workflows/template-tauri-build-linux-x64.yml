@@ -151,14 +151,14 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-${{ inputs.new_version }}-deb
+          name: jan-linux-amd64-preview-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
+          name: jan-linux-amd64-preview-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
 
       ## create zip file and latest-linux.yml for linux electron auto updater
@@ -174,13 +174,11 @@ jobs:
             APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
 
             mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
-            mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig deb/$DEB_FILE_NAME.sig
             mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
-            mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig appimage/$APPIMAGE_FILE_NAME.sig
 
           else
-            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
-            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
+            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64-preview.deb
+            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64-preview.AppImage
             DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
             APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
           fi

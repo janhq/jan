@@ -158,7 +158,7 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
+          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.dmg
           path: |
             ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
@@ -171,18 +171,17 @@ jobs:
             zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip Jan-${{ inputs.channel }}.app
             FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip
             DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
-            MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}-preview.app.tar.gz.sig)
+            MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}-preview.app.tar.gz
 
             mv ../../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg ../../dmg/$DMG_NAME
-            mv ../../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg.sig ../../dmg/$DMG_NAME.sig
             
           else
-            zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
-            FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
+            zip -r jan-mac-universal-${{ inputs.new_version }}-preview.zip Jan.app
+            FILE_NAME=jan-mac-universal-${{ inputs.new_version }}-preview.zip
             MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
-            DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
-            TAR_NAME=Jan.app.tar.gz
+            DMG_NAME=Jan_${{ inputs.new_version }}_universal-preview.dmg
+            TAR_NAME=Jan-preview.app.tar.gz
           fi
 
           FILE_SIZE=$(stat -f%z $FILE_NAME)
