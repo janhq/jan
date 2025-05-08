@@ -19,14 +19,8 @@ export const Route = createFileRoute(route.settings.local_api_server as any)({
 
 function LocalAPIServer() {
   const { t } = useTranslation()
-  const {
-    runOnStartup,
-    setRunOnStartup,
-    corsEnabled,
-    setCorsEnabled,
-    verboseLogs,
-    setVerboseLogs,
-  } = useLocalApiServer()
+  const { corsEnabled, setCorsEnabled, verboseLogs, setVerboseLogs } =
+    useLocalApiServer()
 
   const handleOpenLogs = async () => {
     try {
@@ -77,30 +71,22 @@ function LocalAPIServer() {
             {/* General Settings */}
             <CardSetting
               header={
-                <div className="mb-4 space-y-2">
-                  <h1 className="text-base font-medium">Local API Server</h1>
-                  <p className="text-main-view-fg/70 mb-2">
-                    Configure the local API server settings to integrate with
-                    external applications.
-                  </p>
+                <div className="mb-3 flex w-full items-center border-b border-main-view-fg/4 pb-2">
+                  <div className="w-full space-y-2">
+                    <h1 className="text-base font-medium">Local API Server</h1>
+                    <p className="text-main-view-fg/70 mb-2">
+                      Start an OpenAI-compatible local HTTP server.
+                    </p>
+                  </div>
+                  <Button>Start Server</Button>
                 </div>
               }
             >
               <CardSettingItem
-                title="Run on Startup"
-                description="Automatically start the local API server when the application opens"
-                actions={
-                  <Switch
-                    checked={runOnStartup}
-                    onCheckedChange={setRunOnStartup}
-                  />
-                }
-              />
-              <CardSettingItem
                 title="Server Logs"
                 description="View detailed logs of the local API server"
                 actions={
-                  <Button size="sm" onClick={handleOpenLogs}>
+                  <Button variant="link" size="sm" onClick={handleOpenLogs}>
                     Open Logs
                   </Button>
                 }
