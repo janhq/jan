@@ -174,18 +174,6 @@ jobs:
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}-preview.app.tar.gz
 
-            echo "🧩 Listing files BEFORE rename:"
-            ls -lh ../../dmg
-
-            echo "🔁 Renaming DMG file to $DMG_NAME..."
-            # mv ../../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg ../../dmg/$DMG_NAME
-
-            echo "✅ Listing files AFTER rename:"
-            ls -lh ../../dmg
-
-            echo "🧪 Matching *.dmg files:"
-            ls -lh ../../dmg/*.dmg
-
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}-preview.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}-preview.zip
@@ -221,7 +209,7 @@ jobs:
           echo "::set-output name=TAR_NAME::$TAR_NAME"
         id: metadata
       - name: Debug + Upload to S3 (macOS)
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'nightly'
         run: |
           echo "🧩 Checking ./dmg contents:"
           ls -lh ./dmg

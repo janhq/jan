@@ -242,7 +242,7 @@ jobs:
           echo "APPIMAGE_FILE_NAME=$APPIMAGE_FILE_NAME" >> $GITHUB_OUTPUT
 
       - name: Debug + Upload to S3 (Linux)
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'nightly'
         run: |
           echo "🧩 Checking ./deb contents:"
           ls -lh ./deb

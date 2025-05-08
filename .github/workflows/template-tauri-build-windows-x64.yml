@@ -251,7 +251,7 @@ jobs:
         id: metadata
       - name: Debug + Upload to S3 (Windows)
         shell: bash
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'nightly'
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
