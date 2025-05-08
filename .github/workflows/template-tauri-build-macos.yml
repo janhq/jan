@@ -221,10 +221,10 @@ jobs:
           aws s3 cp ./macos/latest-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-mac.yml
           aws s3 cp ./macos/beta-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-mac.yml
           aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-
+          
           # Upload for tauri updater
-          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
-          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}.app.tar.gz
+          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}-preview.app.tar.gz
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
