@@ -405,7 +405,7 @@ export default function useSendChatMessage(
           },
         ],
       }
-      events.emit(MessageEvent.OnMessageUpdate, errorMessage)
+      events.emit(MessageEvent.OnMessageResponse, errorMessage)
 
       errorMessage.status = MessageStatus.Error
       events.emit(MessageEvent.OnMessageUpdate, errorMessage)
