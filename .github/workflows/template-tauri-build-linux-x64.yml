@@ -173,8 +173,32 @@ jobs:
             DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
             APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
 
+            # mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
+            # mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
+
+            echo "🧩 BEFORE rename in ./deb:"
+            ls -lh deb
+
+            echo "🧩 BEFORE rename in ./appimage:"
+            ls -lh appimage
+
+            echo "🔁 Renaming DEB file to $DEB_FILE_NAME"
             mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
+
+            echo "🔁 Renaming AppImage file to $APPIMAGE_FILE_NAME"
             mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
+
+            echo "✅ AFTER rename in ./deb:"
+            ls -lh deb
+
+            echo "✅ AFTER rename in ./appimage:"
+            ls -lh appimage
+
+            echo "🧪 Matching *.deb:"
+            find deb -type f -name "*.deb"
+
+            echo "🧪 Matching *.AppImage:"
+            find appimage -type f -name "*.AppImage"
 
           else
             DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64-preview.deb
@@ -216,6 +240,27 @@ jobs:
           echo "APPIMAGE_SIG=$APPIMAGE_SIG" >> $GITHUB_OUTPUT
           echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
           echo "APPIMAGE_FILE_NAME=$APPIMAGE_FILE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Debug + Upload to S3 (Linux)
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          echo "🧩 Checking ./deb contents:"
+          ls -lh ./deb
+          echo "🧩 Checking ./appimage contents:"
+          ls -lh ./appimage
+
+          echo "📤 Upload .deb:"
+          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb
+
+          echo "📤 Upload .AppImage:"
+          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage
+        working-directory: ./src-tauri/target/release/bundle
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
+
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws

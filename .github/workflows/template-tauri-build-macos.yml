@@ -174,8 +174,18 @@ jobs:
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}-preview.app.tar.gz
 
-            # mv ../../dmg/Jan-${{ inputs.channel }}_*_universal.dmg ../../dmg/$DMG_NAME
-            
+            echo "🧩 Listing files BEFORE rename:"
+            ls -lh ../../dmg
+
+            echo "🔁 Renaming DMG file to $DMG_NAME..."
+            # mv ../../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg ../../dmg/$DMG_NAME
+
+            echo "✅ Listing files AFTER rename:"
+            ls -lh ../../dmg
+
+            echo "🧪 Matching *.dmg files:"
+            ls -lh ../../dmg/*.dmg
+
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}-preview.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}-preview.zip
@@ -210,6 +220,26 @@ jobs:
           echo "::set-output name=DMG_NAME::$DMG_NAME"
           echo "::set-output name=TAR_NAME::$TAR_NAME"
         id: metadata
+      - name: Debug + Upload to S3 (macOS)
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          echo "🧩 Checking ./dmg contents:"
+          ls -lh ./dmg
+          echo "🧩 Checking ./macos contents:"
+          ls -lh ./macos
+
+          echo "📤 Upload DMG:"
+          echo "aws s3 cp ./dmg/${{ steps.metadata.outputs.DMG_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.DMG_NAME }}"
+          aws s3 cp ./dmg/${{ steps.metadata.outputs.DMG_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.DMG_NAME }}
+
+          echo "📤 Upload TARGZ:"
+          aws s3 cp ./macos/${{ steps.metadata.outputs.TAR_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.TAR_NAME }}
+        working-directory: ./src-tauri/target/universal-apple-darwin/release/bundle
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: "true"
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
