@@ -216,11 +216,26 @@ jobs:
           echo "🧩 Checking ./macos contents:"
           ls -lh ./macos
 
-          echo "📤 Upload DMG:"
-          echo "aws s3 cp ./dmg/${{ steps.metadata.outputs.DMG_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.DMG_NAME }}"
-          aws s3 cp ./dmg/${{ steps.metadata.outputs.DMG_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.DMG_NAME }}
+          ORIGINAL_DMG="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg"
+          RENAMED_DMG="${{ steps.metadata.outputs.DMG_NAME }}"
 
-          echo "📤 Upload TARGZ:"
+          if [ "$RENAMED_DMG" != "$ORIGINAL_DMG" ]; then
+            echo "🔁 Renaming $ORIGINAL_DMG → $RENAMED_DMG"
+            if [ -f "./dmg/$ORIGINAL_DMG" ]; then
+              mv ./dmg/$ORIGINAL_DMG ./dmg/$RENAMED_DMG
+            else
+              echo "❌ File ./dmg/$ORIGINAL_DMG does not exist. Rename skipped!"
+            fi
+          else
+            echo "✅ No rename needed for DMG"
+          fi
+
+          echo "📤 Uploading DMG:"
+          ls -lh ./dmg/$RENAMED_DMG
+          aws s3 cp ./dmg/$RENAMED_DMG s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/$RENAMED_DMG
+
+          echo "📤 Uploading TAR.GZ:"
+          ls -lh ./macos/${{ steps.metadata.outputs.TAR_NAME }}
           aws s3 cp ./macos/${{ steps.metadata.outputs.TAR_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.TAR_NAME }}
         working-directory: ./src-tauri/target/universal-apple-darwin/release/bundle
         env:
@@ -228,6 +243,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: "true"
+
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
