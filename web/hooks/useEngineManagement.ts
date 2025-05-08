@@ -63,11 +63,15 @@ export const extendBuiltInEngineModels = (
       return
     }
 
-    // @ts-expect-error Unknown extendModelList provider type
-    tokenJS.extendModelList(provider, model, {
-      streaming: true,
-      toolCalls: true,
-    })
+    try {
+      // @ts-expect-error Unknown extendModelList provider type
+      tokenJS.extendModelList(provider, model, {
+        streaming: true,
+        toolCalls: true,
+      })
+    } catch (error) {
+      console.error('Failed to extend model list:', error)
+    }
   }
 }
 
