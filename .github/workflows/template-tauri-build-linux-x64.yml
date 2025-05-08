@@ -173,11 +173,11 @@ jobs:
             DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
             APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
 
-            mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
-            mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig deb/$DEB_FILE_NAME.sig
-            mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
-            mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig appimage/$APPIMAGE_FILE_NAME.sig
-            
+            # mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
+            # mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig deb/$DEB_FILE_NAME.sig
+            # mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
+            # mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig appimage/$APPIMAGE_FILE_NAME.sig
+
           else
             DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
             APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage

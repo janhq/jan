@@ -202,8 +202,8 @@ jobs:
           if [ "${{ inputs.channel }}" != "stable" ]; then
             FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe
             WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe.sig)
-            mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe $FILE_NAME
-            mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig $FILE_NAME.sig
+            # mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe $FILE_NAME
+            # mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig $FILE_NAME.sig
           else
             FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup-preview.exe
             WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup-preview.exe.sig)
