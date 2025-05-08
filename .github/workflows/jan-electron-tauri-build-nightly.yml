@@ -14,6 +14,9 @@ on:
         default: none
   pull_request_review:
     types: [submitted]
+  pull_request:
+    branches:
+      - chore/tauri-cicd
 
 jobs:
   set-public-provider:
@@ -137,7 +140,7 @@ jobs:
           echo "Linux AppImage: ${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           echo "Windows: ${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
           echo "macOS: ${{ needs.build-tauri-macos.outputs.TAR_NAME }}"
-          
+
           jq --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
             --arg linux_signature "$LINUX_SIGNATURE" \
