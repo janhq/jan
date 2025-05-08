@@ -168,11 +168,15 @@ jobs:
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
-            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+            zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip Jan-${{ inputs.channel }}.app
+            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip
+            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
+
+            mv ../../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg ../../dmg/$DMG_NAME
+            mv ../../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg.sig ../../dmg/$DMG_NAME.sig
+            
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip

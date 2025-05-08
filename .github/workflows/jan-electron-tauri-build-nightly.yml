@@ -47,6 +47,30 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
+  build-tauri-macos:
+    uses: ./.github/workflows/template-tauri-build-macos.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+  
+  build-tauri-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+  
+  build-tauri-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+
   build-electron-macos:
     uses: ./.github/workflows/template-electron-build-macos.yml
     needs: [get-update-version, set-public-provider]
@@ -81,30 +105,6 @@ jobs:
       nightly: true
       beta: false
       cortex_api_port: "39261"
-  
-  build-tauri-macos:
-    uses: ./.github/workflows/template-tauri-build-macos.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-  
-  build-tauri-windows-x64:
-    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-  
-  build-tauri-linux-x64:
-    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
 
   sync-temp-to-latest:
     runs-on: ubuntu-latest
@@ -127,11 +127,16 @@ jobs:
           VERSION=${{ needs.get-update-version.outputs.new_version }}
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
           LINUX_SIGNATURE="${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_SIG }}"
-          LINUX_URL="https://delta.jan.ai/nightly/Jan-preview-${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-tauri-windows-x64.outputs.WIN_SIG }}"
-          WINDOWS_URL="https://delta.jan.ai/nightly/Jan-preview-${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
+          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
           DARWIN_SIGNATURE="${{ needs.build-tauri-macos.outputs.MAC_UNIVERSAL_SIG }}"
-          DARWIN_URL="https://delta.jan.ai/nightly/Jan-preview-${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+          DARWIN_URL="https://delta.jan.ai/nightly/${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+          
+          # Log filenames for debugging
+          echo "Linux AppImage: ${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          echo "Windows: ${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
+          echo "macOS: ${{ needs.build-tauri-macos.outputs.TAR_NAME }}"
           
           jq --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
