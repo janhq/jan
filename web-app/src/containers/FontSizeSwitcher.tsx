@@ -13,7 +13,10 @@ export function FontSizeSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <span className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium">
+        <span
+          title="Adjust Font Size"
+          className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
+        >
           {fontSizeOptions.find(
             (item: { value: string; label: string }) => item.value === fontSize
           )?.label || 'Medium'}
