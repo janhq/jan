@@ -281,7 +281,7 @@ export default function useSendChatMessage(
         let isDone = false
 
         const engine =
-          engines?.[requestBuilder.model.engine as InferenceEngine][0]
+          engines?.[requestBuilder.model.engine as InferenceEngine]?.[0]
         const apiKey = engine?.api_key
         const provider = convertBuiltInEngine(engine?.engine)
 
@@ -290,7 +290,7 @@ export default function useSendChatMessage(
           baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
         })
 
-        extendBuiltInEngineModels(provider, modelId)
+        extendBuiltInEngineModels(tokenJS, provider, modelId)
 
         let parentMessageId: string | undefined
         while (!isDone) {
@@ -319,7 +319,11 @@ export default function useSendChatMessage(
           events.emit(MessageEvent.OnMessageResponse, message)
           // Variables to track and accumulate streaming content
 
-          if (data.model?.parameters?.stream) {
+          if (
+            data.model?.parameters?.stream &&
+            data.model?.engine !== InferenceEngine.cortex &&
+            data.model?.engine !== InferenceEngine.cortex_llamacpp
+          ) {
             const response = await tokenJS.chat.completions.create({
               stream: true,
               provider,

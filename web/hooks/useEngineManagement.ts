@@ -18,7 +18,7 @@ import { useAtom, useAtomValue } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import useSWR from 'swr'
 
-import { models } from 'token.js'
+import { models, TokenJS } from 'token.js'
 import { LLMProvider } from 'token.js/dist/chat'
 
 import { getDescriptionByEngine, getTitleByEngine } from '@/utils/modelEngine'
@@ -51,16 +51,20 @@ export const convertBuiltInEngine = (engine?: string): LLMProvider => {
 }
 
 export const extendBuiltInEngineModels = (
+  tokenJS: TokenJS,
   provider: LLMProvider,
   model?: string
 ) => {
-  if (
-    provider !== 'openrouter' &&
-    model &&
-    !(models[provider].models as unknown as string[]).includes(model)
-  ) {
+  if (provider !== 'openrouter' && provider !== 'openai-compatible' && model) {
+    if (
+      provider in Object.keys(models) &&
+      (models[provider].models as unknown as string[]).includes(model)
+    ) {
+      return
+    }
+
     // @ts-expect-error Unknown extendModelList provider type
-    tokenJS.extendModelList(engineName, modelId, {
+    tokenJS.extendModelList(provider, model, {
       streaming: true,
       toolCalls: true,
     })
