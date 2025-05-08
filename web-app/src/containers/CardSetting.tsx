@@ -13,11 +13,13 @@ type CardSettingItemProps = {
   align?: 'start' | 'center' | 'end'
   actions?: ReactNode
   column?: boolean
+  className?: string
 }
 
 export function CardSettingItem({
   title,
   description,
+  className,
   align = 'center',
   column,
   actions,
@@ -26,6 +28,7 @@ export function CardSettingItem({
     <div
       className={cn(
         'flex justify-between mt-2 first:mt-0 border-b border-main-view-fg/5 pb-3 last:border-none last:pb-0 gap-8',
+        className,
         align === 'start' && 'items-start',
         align === 'center' && 'items-center',
         align === 'end' && 'items-end',
@@ -40,7 +43,9 @@ export function CardSettingItem({
           </span>
         )}
       </div>
-      <div className={cn('shrink-0', column && 'w-full')}>{actions}</div>
+      {actions && (
+        <div className={cn('shrink-0', column && 'w-full')}>{actions}</div>
+      )}
     </div>
   )
 }
