@@ -29,6 +29,10 @@ const menuSettings = [
     route: route.settings.local_api_server,
   },
   {
+    title: 'HTTPS Proxy',
+    route: route.settings.https_proxy,
+  },
+  {
     title: 'Extensions',
     route: route.settings.extensions,
   },
