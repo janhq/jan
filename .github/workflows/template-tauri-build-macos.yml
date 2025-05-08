@@ -174,6 +174,9 @@ jobs:
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
             TAR_NAME=Jan-${{ inputs.channel }}-preview.app.tar.gz
 
+            mv Jan-${{ inputs.channel }}.app.tar.gz $TAR_NAME
+            mv ../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg ../dmg/$DMG_NAME
+
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}-preview.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}-preview.zip
