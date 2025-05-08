@@ -57,6 +57,9 @@ jobs:
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
   
   build-tauri-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
@@ -65,6 +68,9 @@ jobs:
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
   
   build-tauri-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
@@ -73,6 +79,9 @@ jobs:
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
 
   build-electron-macos:
     uses: ./.github/workflows/template-electron-build-macos.yml
