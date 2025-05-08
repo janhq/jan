@@ -43,6 +43,11 @@ import {
 } from '@/containers/Providers/Jotai'
 
 import { compressImage, getBase64 } from '@/utils/base64'
+import {
+  createMessage,
+  createMessageContent,
+  emptyMessageContent,
+} from '@/utils/createMessage'
 import { MessageRequestBuilder } from '@/utils/messageRequestBuilder'
 
 import { ThreadMessageBuilder } from '@/utils/threadMessageBuilder'
@@ -300,22 +305,16 @@ export default function useSendChatMessage(
             messageId = parentMessageId
           }
           const data = requestBuilder.build()
-          const message: ThreadMessage = {
+          const message: ThreadMessage = createMessage({
             id: messageId,
-            object: 'message',
             thread_id: activeThread.id,
             assistant_id: activeAssistant.assistant_id,
-            role: ChatCompletionRole.Assistant,
-            content: [],
             metadata: {
               ...(messageId !== parentMessageId
                 ? { parent_id: parentMessageId }
                 : {}),
             },
-            status: MessageStatus.Pending,
-            created_at: Date.now() / 1000,
-            completed_at: Date.now() / 1000,
-          }
+          })
           events.emit(MessageEvent.OnMessageResponse, message)
           // Variables to track and accumulate streaming content
 
@@ -334,15 +333,7 @@ export default function useSendChatMessage(
             })
 
             if (!message.content.length) {
-              message.content = [
-                {
-                  type: ContentType.Text,
-                  text: {
-                    value: '',
-                    annotations: [],
-                  },
-                },
-              ]
+              message.content = emptyMessageContent
             }
 
             isDone = await processStreamingResponse(
@@ -361,15 +352,7 @@ export default function useSendChatMessage(
             })
             // Variables to track and accumulate streaming content
             if (!message.content.length) {
-              message.content = [
-                {
-                  type: ContentType.Text,
-                  text: {
-                    value: '',
-                    annotations: [],
-                  },
-                },
-              ]
+              message.content = emptyMessageContent
             }
             isDone = await processNonStreamingResponse(
               response,
@@ -389,26 +372,11 @@ export default function useSendChatMessage(
     } catch (error: unknown) {
       setIsGeneratingResponse(false)
       updateThreadWaiting(activeThread.id, false)
-      const errorMessage: ThreadMessage = {
-        id: ulid(),
-        status: MessageStatus.Pending,
+      const errorMessage: ThreadMessage = createMessage({
         thread_id: activeThread.id,
-        type: 'thread',
         assistant_id: activeAssistant.assistant_id,
-        role: ChatCompletionRole.Assistant,
-        created_at: new Date().getTime() / 1000,
-        completed_at: new Date().getTime() / 1000,
-        object: 'thread.message',
-        content: [
-          {
-            type: ContentType.Text,
-            text: {
-              value: JSON.stringify(error),
-              annotations: [],
-            },
-          },
-        ],
-      }
+        content: createMessageContent(JSON.stringify(error)),
+      })
       events.emit(MessageEvent.OnMessageResponse, errorMessage)
 
       errorMessage.status = MessageStatus.Error
@@ -429,15 +397,7 @@ export default function useSendChatMessage(
     const toolCalls: ChatCompletionMessageToolCall[] =
       response.choices[0]?.message?.tool_calls ?? []
     const content = response.choices[0].message?.content
-    message.content = [
-      {
-        type: ContentType.Text,
-        text: {
-          value: content ?? '',
-          annotations: [],
-        },
-      },
-    ]
+    message.content = createMessageContent(content ?? '')
     events.emit(MessageEvent.OnMessageUpdate, message)
     await postMessageProcessing(
       toolCalls ?? [],
@@ -506,15 +466,7 @@ export default function useSendChatMessage(
         const content = chunk.choices[0].delta.content
         accumulatedContent += content
 
-        message.content = [
-          {
-            type: ContentType.Text,
-            text: {
-              value: accumulatedContent,
-              annotations: [],
-            },
-          },
-        ]
+        message.content = createMessageContent(accumulatedContent)
         events.emit(MessageEvent.OnMessageUpdate, message)
       }
     }
