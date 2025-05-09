@@ -1,6 +1,19 @@
 import { RenderMarkdown } from './RenderMarkdown'
+import { useMemo } from 'react'
 
+// Remove the memo wrapper from the ThreadContent component to allow re-renders
+// when streaming content changes
 export const ThreadContent = (item: ThreadContent) => {
+  // Use useMemo to stabilize the components prop
+  const linkComponents = useMemo(
+    () => ({
+      a: ({ ...props }) => (
+        <a {...props} target="_blank" rel="noopener noreferrer" />
+      ),
+    }),
+    []
+  )
+
   return (
     <div className="mb-4">
       {item.type === 'text' && item.text && item.role === 'user' && (
@@ -11,14 +24,7 @@ export const ThreadContent = (item: ThreadContent) => {
         </div>
       )}
       {item.type === 'text' && item.text && item.role !== 'user' && (
-        <RenderMarkdown
-          content={item.text.value}
-          components={{
-            a: ({ ...props }) => (
-              <a {...props} target="_blank" rel="noopener noreferrer" />
-            ),
-          }}
-        />
+        <RenderMarkdown content={item.text.value} components={linkComponents} />
       )}
       {item.type === 'image_url' && item.image_url && (
         <div>

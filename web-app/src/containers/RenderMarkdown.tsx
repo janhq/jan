@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkEmoji from 'remark-emoji'
@@ -5,7 +6,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { memo, useState } from 'react'
+import { memo, useState, useMemo } from 'react'
 import virtualizedRenderer from 'react-syntax-highlighter-virtualized-renderer'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -24,7 +25,6 @@ function RenderMarkdownComponent({
   className,
   components,
 }: MarkdownProps) {
-
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
 
   // State for tracking which code block has been copied
@@ -53,93 +53,108 @@ function RenderMarkdownComponent({
   }
 
   // Default components for syntax highlighting and emoji rendering
-  const defaultComponents: Components = {
-    code: ({ className, children, ...props }) => {
-      const match = /language-(\w+)/.exec(className || '')
-      const language = match ? match[1] : ''
-      const isInline = !match || !language
+  const defaultComponents: Components = useMemo(
+    () => ({
+      code: ({ className, children, ...props }) => {
+        const match = /language-(\w+)/.exec(className || '')
+        const language = match ? match[1] : ''
+        const isInline = !match || !language
 
-      const code = String(children).replace(/\n$/, '')
+        const code = String(children).replace(/\n$/, '')
 
-      // Generate a stable ID based on code content and language
-      const codeId = `code-${hashString(code.substring(0, 40) + language)}`
+        // Generate a stable ID based on code content and language
+        const codeId = `code-${hashString(code.substring(0, 40) + language)}`
 
-      const shouldVirtualize = code.split('\n').length > 300
+        const shouldVirtualize = code.split('\n').length > 300
 
-      return !isInline ? (
-        <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
-          <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
-            <span className="font-medium text-xs font-sans">
-              {getReadableLanguageName(language)}
-            </span>
-            <button
-              onClick={() => handleCopy(code, codeId)}
-              className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
+        return !isInline ? (
+          <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
+            <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
+              <span className="font-medium text-xs font-sans">
+                {getReadableLanguageName(language)}
+              </span>
+              <button
+                onClick={() => handleCopy(code, codeId)}
+                className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
+              >
+                {copiedId === codeId ? (
+                  <>
+                    <IconCopyCheck size={16} className="text-primary" />
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <IconCopy size={16} />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <SyntaxHighlighter
+              // @ts-expect-error - Type issues with style prop in react-syntax-highlighter
+              style={
+                prismStyles[
+                  codeBlockStyle
+                    .split('-')
+                    .map((part: string, index: number) =>
+                      index === 0
+                        ? part
+                        : part.charAt(0).toUpperCase() + part.slice(1)
+                    )
+                    .join('') as keyof typeof prismStyles
+                ] || prismStyles.oneLight
+              }
+              language={language}
+              showLineNumbers={showLineNumbers}
+              customStyle={{
+                margin: 0,
+                padding: '8px',
+                borderRadius: '0 0 4px 4px',
+                overflow: 'auto',
+                border: 'none',
+              }}
+              renderer={shouldVirtualize ? virtualizedRenderer() : undefined}
+              PreTag="div"
+              CodeTag={'code'}
+              {...props}
             >
-              {copiedId === codeId ? (
-                <>
-                  <IconCopyCheck size={16} className="text-primary" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <IconCopy size={16} />
-                  <span>Copy</span>
-                </>
-              )}
-            </button>
+              {String(children).replace(/\n$/, '')}
+            </SyntaxHighlighter>
           </div>
-          <SyntaxHighlighter
-            // @ts-expect-error - Type issues with style prop in react-syntax-highlighter
-            style={
-              prismStyles[
-                codeBlockStyle
-                  .split('-')
-                  .map((part: string, index: number) =>
-                    index === 0
-                      ? part
-                      : part.charAt(0).toUpperCase() + part.slice(1)
-                  )
-                  .join('') as keyof typeof prismStyles
-              ] || prismStyles.oneLight
-            }
-            language={language}
-            showLineNumbers={showLineNumbers}
-            customStyle={{
-              margin: 0,
-              padding: '8px',
-              borderRadius: '0 0 4px 4px',
-              overflow: 'auto',
-              border: 'none',
-            }}
-            renderer={shouldVirtualize ? virtualizedRenderer() : undefined}
-            PreTag="div"
-            CodeTag={'code'}
-            {...props}
-          >
-            {String(children).replace(/\n$/, '')}
-          </SyntaxHighlighter>
-        </div>
-      ) : (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      )
-    },
-  }
+        ) : (
+          <code className={className} {...props}>
+            {children}
+          </code>
+        )
+      },
+    }),
+    [codeBlockStyle, showLineNumbers, copiedId, handleCopy, hashString]
+  )
+
+  // Memoize the remarkPlugins to prevent unnecessary re-renders
+  const remarkPlugins = useMemo(() => {
+    // Using a simpler configuration to avoid TypeScript errors
+    return [remarkGfm, remarkMath, remarkEmoji]
+  }, [])
+
+  // Memoize the rehypePlugins to prevent unnecessary re-renders
+  const rehypePlugins = useMemo(() => [rehypeKatex], [])
 
   // Merge custom components with default components
-  const mergedComponents = { ...defaultComponents, ...components }
+  const mergedComponents = useMemo(
+    () => ({
+      ...defaultComponents,
+      ...components,
+    }),
+    [defaultComponents, components]
+  )
 
+  // Render the markdown content
   return (
     <div className={cn('markdown', className)}>
       <ReactMarkdown
-        remarkPlugins={[
-          remarkGfm,
-          [remarkEmoji, { padSpaceAfter: true, emoticon: false }],
-          remarkMath,
-        ]}
-        rehypePlugins={[rehypeKatex]}
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={rehypePlugins}
         components={mergedComponents}
       >
         {content}
@@ -148,4 +163,6 @@ function RenderMarkdownComponent({
   )
 }
 
+// Use a simple memo without custom comparison to allow re-renders when content changes
+// This is important for streaming content to render incrementally
 export const RenderMarkdown = memo(RenderMarkdownComponent)
