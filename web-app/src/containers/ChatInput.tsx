@@ -3,7 +3,7 @@
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import {
@@ -18,20 +18,20 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import {
+  newAssistantThreadContent,
+  newUserThreadContent,
+  sendCompletion,
+} from '@/helpers/threads'
+import { useThreads } from '@/hooks/useThreads'
 
 type ChatInputProps = {
   className?: string
   disabled?: boolean
   isLoading?: boolean
-  handleSubmit?: (e: React.MouseEvent<HTMLButtonElement>) => void
 }
 
-const ChatInput = ({
-  className,
-  disabled,
-  handleSubmit,
-  isLoading,
-}: ChatInputProps) => {
+const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -40,7 +40,24 @@ const ChatInput = ({
   const { spellCheckChatInput } = useGeneralSetting()
   const maxRows = 10
 
-  const { selectedModel } = useModelProvider()
+  const { getProviderByName, selectedModel, selectedProvider } =
+    useModelProvider()
+
+  const {
+    currentThreadId,
+    getThreadById,
+    addThreadContent,
+    updateStreamingContent,
+  } = useThreads()
+
+  const provider = useMemo(() => {
+    return getProviderByName(selectedProvider)
+  }, [selectedProvider, getProviderByName])
+
+  const thread = useMemo(
+    () => currentThreadId && getThreadById(currentThreadId),
+    [currentThreadId, getThreadById]
+  )
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -70,6 +87,31 @@ const ChatInput = ({
     }
   }, [disabled])
 
+  const sendMessage = useCallback(async () => {
+    if (!thread || !provider || !currentThreadId) return
+    addThreadContent(currentThreadId, newUserThreadContent(prompt))
+    setPrompt('')
+    const completion = await sendCompletion(thread, provider, prompt)
+
+    if (completion) {
+      const currentContent = newAssistantThreadContent('')
+      for await (const part of completion) {
+        currentContent.text!.value += part.choices[0]?.delta?.content || ''
+        updateStreamingContent(currentContent)
+      }
+      addThreadContent(currentThreadId, currentContent)
+      updateStreamingContent(undefined)
+    }
+  }, [
+    thread,
+    provider,
+    currentThreadId,
+    prompt,
+    addThreadContent,
+    setPrompt,
+    updateStreamingContent,
+  ])
+
   return (
     <div
       className={cn(
@@ -96,11 +138,7 @@ const ChatInput = ({
             if (!e.shiftKey && prompt) {
               e.preventDefault()
               // Submit the message when Enter is pressed without Shift
-              if (handleSubmit) {
-                handleSubmit(
-                  e as unknown as React.MouseEvent<HTMLButtonElement>
-                )
-              }
+              sendMessage()
             }
             // When Shift+Enter is pressed, a new line is added (default behavior)
           }
@@ -164,7 +202,7 @@ const ChatInput = ({
             variant={!prompt ? null : 'default'}
             size="icon"
             disabled={!prompt}
-            onClick={handleSubmit}
+            onClick={sendMessage}
           >
             {isLoading ? (
               <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
