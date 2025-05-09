@@ -369,13 +369,17 @@ export default function useSendChatMessage(
           .get(InferenceEngine.cortex)
           ?.inference(requestBuilder.build())
       }
-    } catch (error: unknown) {
+    } catch (error) {
       setIsGeneratingResponse(false)
       updateThreadWaiting(activeThread.id, false)
       const errorMessage: ThreadMessage = createMessage({
         thread_id: activeThread.id,
         assistant_id: activeAssistant.assistant_id,
-        content: createMessageContent(JSON.stringify(error)),
+        content: createMessageContent(
+          typeof error === 'object' && error && 'message' in error
+            ? (error as { message: string }).message
+            : JSON.stringify(error)
+        ),
       })
       events.emit(MessageEvent.OnMessageResponse, errorMessage)
 
