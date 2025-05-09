@@ -27,7 +27,7 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/nvidia.svg'
     case 'meta':
       return '/images/model-provider/meta.svg'
-    case 'google':
+    case 'gemini':
       return '/images/model-provider/google.svg'
     case 'deepseek':
       return '/images/model-provider/deepseek.svg'
@@ -44,8 +44,8 @@ export const getProviderTitle = (provider: string) => {
       return 'OpenAI'
     case 'openrouter':
       return 'OpenRouter'
-    case 'google':
-      return 'Google'
+    case 'gemini':
+      return 'Gemini'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }

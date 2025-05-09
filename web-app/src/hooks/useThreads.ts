@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
 import { mockTheads } from '@/mock/data'
+import { models, TokenJS } from 'token.js'
+import { newAssistantThreadContent } from '@/helpers/threads'
 
 type ThreadState = {
   threads: Thread[]
@@ -14,6 +16,12 @@ type ThreadState = {
   deleteThread: (threadId: string) => void
   deleteAllThreads: () => void
   unstarAllThreads: () => void
+  addThreadContent: (threadId: string, content: ThreadContent) => void
+  sendCompletion: (
+    provider: ModelProvider | undefined,
+    threadId: string,
+    content: string
+  ) => Promise<void>
 }
 
 export const useThreads = create<ThreadState>()(
@@ -91,6 +99,77 @@ export const useThreads = create<ThreadState>()(
             threads: [...newThreads, ...state.threads],
           }
         })
+      },
+      addThreadContent: (threadId, content) => {
+        set((state) => ({
+          threads: state.threads.map((thread) =>
+            thread.id === threadId
+              ? {
+                  ...thread,
+                  content: [...(thread.content || []), content],
+                }
+              : thread
+          ),
+        }))
+      },
+      sendCompletion: async (
+        provider: ModelProvider | undefined,
+        threadId: string,
+        content: string
+      ): Promise<void> => {
+        const thread = get().threads.find((t) => t.id === threadId)
+
+        if (!thread?.model?.id || !provider || !provider.api_key) return
+
+        let providerName = provider.provider as unknown as keyof typeof models
+
+        if (!Object.keys(models).some((key) => key === providerName))
+          // Check if the provider is valid
+          providerName = 'openai-compatible'
+
+        const tokenJS = new TokenJS({
+          apiKey: provider.api_key,
+          baseURL: provider.base_url,
+        })
+
+        const completion = await tokenJS.chat.completions.create({
+          stream: true,
+          provider: providerName,
+          model: thread.model?.id,
+          messages: [
+            {
+              role: 'user',
+              content,
+            },
+          ],
+        })
+        const newContent = newAssistantThreadContent('')
+        set((state) => ({
+          threads: state.threads.map((thread) =>
+            thread.id === threadId
+              ? {
+                  ...thread,
+                  content: [...(thread.content || []), newContent],
+                }
+              : thread
+          ),
+        }))
+        for await (const part of completion) {
+          newContent.text!.value += part.choices[0]?.delta?.content || ''
+            set((state) => ({
+            threads: state.threads.map((thread) =>
+              thread.id === threadId
+              ? {
+                ...thread,
+                content: [
+                  ...(thread.content?.slice(0, -1) || []),
+                  newContent,
+                ],
+                }
+              : thread
+            ),
+            }))
+        }
       },
     }),
     {
