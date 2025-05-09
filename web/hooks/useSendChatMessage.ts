@@ -269,13 +269,15 @@ export default function useSendChatMessage(
       }
 
       // Start Model if not started
+      const isCortex = modelRequest.engine == InferenceEngine.cortex ||
+                       modelRequest.engine == InferenceEngine.cortex_llamacpp
       const modelId = selectedModel?.id ?? activeAssistantRef.current?.model.id
 
       if (base64Blob) {
         setFileUpload(undefined)
       }
 
-      if (modelRef.current?.id !== modelId && modelId) {
+      if (modelRef.current?.id !== modelId && modelId && isCortex) {
         const error = await startModel(modelId).catch((error: Error) => error)
         if (error) {
           updateThreadWaiting(activeThread.id, false)
@@ -299,13 +301,9 @@ export default function useSendChatMessage(
       extendBuiltInEngineModels(tokenJS, provider, modelId)
 
       // llama.cpp currently does not support streaming when tools are used.
-      let useStream = modelRequest.parameters?.stream
-      if (requestBuilder.tools) {
-        useStream =
-          useStream &&
-          modelRequest.engine !== InferenceEngine.cortex &&
-          modelRequest.engine !== InferenceEngine.cortex_llamacpp
-      }
+      const useStream = (requestBuilder.tools && isCortex) ?
+                        false :
+                        modelRequest.parameters?.stream
 
       let parentMessageId: string | undefined
       while (!isDone) {
@@ -333,7 +331,7 @@ export default function useSendChatMessage(
           messages: requestBuilder.messages as ChatCompletionMessageParam[],
           model: data.model?.id ?? '',
           tools: data.tools as ChatCompletionTool[],
-          tool_choice: 'auto',
+          tool_choice: data.tools ? 'auto' : undefined,
         })
         // Variables to track and accumulate streaming content
         if (!message.content.length) {
