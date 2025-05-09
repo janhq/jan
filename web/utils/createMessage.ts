@@ -4,7 +4,7 @@ import {
   MessageStatus,
   ThreadContent,
   ThreadMessage,
-} from '@janhq/core/.'
+} from '@janhq/core'
 import { ulid } from 'ulidx'
 
 export const emptyMessageContent: ThreadContent[] = [
