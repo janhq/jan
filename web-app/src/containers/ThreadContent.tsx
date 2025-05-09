@@ -1,7 +1,6 @@
-import { memo } from 'react'
 import { RenderMarkdown } from './RenderMarkdown'
 
-export const ThreadContent = memo((item: ThreadContent) => {
+export const ThreadContent = (item: ThreadContent) => {
   return (
     <div className="mb-4">
       {item.type === 'text' && item.text && item.role === 'user' && (
@@ -35,4 +34,4 @@ export const ThreadContent = memo((item: ThreadContent) => {
       )}
     </div>
   )
-})
+}
