@@ -1,10 +1,7 @@
 /**
  * The content type of the message.
  */
-enum ContentType {
-  Text = 'text',
-  Image = 'image_url',
-}
+type ContentType = 'text' | 'image_url'
 
 /**
  * The `ContentValue` type defines the shape of a content value object
@@ -31,12 +28,7 @@ type ThreadContent = {
   role: ChatCompletionRole
 }
 
-enum ChatCompletionRole {
-  System = 'system',
-  Assistant = 'assistant',
-  User = 'user',
-  Tool = 'tool',
-}
+type ChatCompletionRole = 'system' | 'assistant' | 'user' | 'tool'
 
 type Thread = {
   id: string

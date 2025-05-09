@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import HeaderPage from '@/containers/HeaderPage'
 
@@ -5,6 +6,9 @@ import { useThreads } from '@/hooks/useThreads'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import ChatInput from '@/containers/ChatInput'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { usePrompt } from '@/hooks/usePrompt'
+import { newUserThreadContent } from '@/helpers/threads'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -13,9 +17,23 @@ export const Route = createFileRoute('/threads/$threadId')({
 
 function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
-  const { getThreadById } = useThreads()
+  const { prompt } = usePrompt()
+  const { getProviderByName, selectedProvider } = useModelProvider()
+  const { getThreadById, addThreadContent, sendCompletion } = useThreads()
 
-  const thread = getThreadById(threadId)
+  const provider = useMemo(() => {
+    return getProviderByName(selectedProvider)
+  }, [selectedProvider, getProviderByName])
+
+  const sendMessage = useCallback(() => {
+    addThreadContent(threadId, newUserThreadContent(prompt))
+    sendCompletion(provider, threadId, prompt)
+  }, [prompt, threadId, provider, addThreadContent, sendCompletion])
+
+  const thread = useMemo(
+    () => getThreadById(threadId),
+    [threadId, getThreadById]
+  )
 
   if (!thread) return null
 
@@ -76,7 +94,7 @@ function ThreadDetail() {
           </div>
         </div>
         <div className="w-4/6 mx-auto py-2 shrink-0">
-          <ChatInput />
+          <ChatInput handleSubmit={sendMessage} />
         </div>
       </div>
     </div>

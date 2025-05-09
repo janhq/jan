@@ -1,7 +1,3 @@
-enum ContentType {
-  Text = 'text',
-  Image = 'image_url',
-}
 
 export const mockModelProvider = [
   {
@@ -412,48 +408,6 @@ export const mockModelProvider = [
   {
     active: false,
     api_key: '',
-    base_url: 'https://integrate.api.nvidia.com/v1',
-    explore_models_url: 'https://build.nvidia.com/models',
-    provider: 'nvidia',
-    settings: [
-      {
-        key: 'api-key',
-        title: 'API Key',
-        description:
-          "The NVIDIA API uses API keys for authentication. Visit your [API Keys](https://org.ngc.nvidia.com/setup/personal-keys) page to retrieve the API key you'll use in your requests.",
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'Insert API Key',
-          value: '',
-          type: 'password',
-          input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base OpenAI-compatible endpoint to use. See the [NVIDIA NIM documentation](https://docs.api.nvidia.com/nim/reference/llm-apis) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://integrate.api.nvidia.com/v1',
-          value: 'https://integrate.api.nvidia.com/v1',
-        },
-      },
-    ],
-    models: [
-      {
-        id: 'mistralai/mistral-7b-instruct-v0.3',
-        name: 'Mistral 7B Instruct v0.3',
-        version: '1.1',
-        description: 'Mistral 7B with NVIDIA',
-        capabilities: ['completion'],
-      },
-    ],
-  },
-  {
-    active: false,
-    api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
@@ -507,49 +461,6 @@ export const mockModelProvider = [
         version: '1.1',
         description:
           'Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.',
-        capabilities: ['completion'],
-      },
-    ],
-  },
-  {
-    active: false,
-    api_key: '',
-    base_url: 'https://withmartian.com/api/openai/v1',
-    explore_models_url: 'https://withmartian.github.io/llm-adapters/',
-    provider: 'martian',
-    settings: [
-      {
-        key: 'api-key',
-        title: 'API Key',
-        description:
-          "The Martian API uses API keys for authentication. Visit your [API Keys](https://withmartian.com/dashboard) page to retrieve the API key you'll use in your requests.",
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'Insert API Key',
-          value: '',
-          type: 'password',
-          input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base OpenAI-compatible endpoint to use. See the [Groq documentation](https://withmartian.github.io/llm-adapters/) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://withmartian.com/api/openai/v1',
-          value: 'https://withmartian.com/api/openai/v1',
-        },
-      },
-    ],
-    models: [
-      {
-        id: 'router',
-        name: 'Martian Model Router',
-        version: '1.0',
-        description:
-          'Martian Model Router dynamically routes requests to the best LLM in real-time',
         capabilities: ['completion'],
       },
     ],
@@ -629,7 +540,7 @@ export const mockModelProvider = [
     api_key: '',
     base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
     explore_models_url: 'https://ai.google.dev/gemini-api/docs/models/gemini',
-    provider: 'google',
+    provider: 'gemini',
     settings: [
       {
         key: 'api-key',
@@ -782,18 +693,18 @@ export const mockTheads = [
     content: [
       {
         role: 'user',
-        type: ContentType.Text,
+        type: 'text',
         text: {
           value: 'Dow u know Ultimate Markdown Demonstration',
           annotations: [],
         },
       },
       {
-        type: ContentType.Text,
+        type: 'text',
         role: 'system',
         text: {
           value:
-            '# :books: Ultimate Markdown Demonstration\n\nWelcome to the **Ultimate Markdown Demo**! This document covers a wide range of Markdown features.\n\n---\n\n## 1. Headings\n\n# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n\n---\n\n## 2. Text Formatting\n\n- **Bold**\n- *Italic*\n- ***Bold & Italic***\n- ~~Strikethrough~~\n\n> "Markdown is _awesome_!" — *Someone Famous*\n\n---\n\n## 3. Lists\n\n### 3.1. Unordered List\n\n- Item One\n  - Subitem A\n  - Subitem B\n    - Sub-Subitem i\n\n### 3.2. Ordered List\n\n1. First\n2. Second\n    1. Second-First\n    2. Second-Second\n3. Third\n\n---\n\n## 4. Links and Images\n\n- [Visit OpenAI](https://openai.com)\n- Inline Image:\n\n  ![Markdown Logo](https://markdown-here.com/img/icon256.png)\n\n- Linked Image:\n\n  [![Markdown Badge](https://img.shields.io/badge/Markdown-Ready-blue)](https://commonmark.org)\n\n---\n\n## 5. Code\n\n### 5.1. Inline Code\n\nUse the `print()` function in Python.\n\n### 5.2. Code Block\n\n```python\ndef greet(name):\n    return f"Hello, {name}!"\n\nprint(greet("Markdown"))\n```\n\n### 5.3. Syntax Highlighting (JavaScript)\n\n```javascript\nconst add = (a, b) => a + b;\nconsole.log(add(5, 3));\n```\n\n---\n\n## 6. Tables\n\n| Syntax | Description | Example |\n|--------|-------------|--------|\n| Header | Title       | Here\'s this |\n| Paragraph | Text | And more text |\n\n---\n\n## 7. Blockquotes\n\n> "A blockquote can be used to highlight information or quotes."\n\nNested Blockquote:\n\nLevel 1\n>Level 2\nLevel 3\n\n---\n\n## 8. Task Lists\n\n- [x] Write Markdown\n- [x] Check the output\n- [ ] Celebrate\n\n---\n\n## 9. Footnotes\n\nHere is a simple footnote[^1].\n\n[^1]: This is the footnote explanation.\n\n---\n\n## 10. Horizontal Rules\n\n---\n\n## 11. Emojis\n\n:tada: :sunglasses: :potable_water: :books:\n\n---\n\n## 12. Math (Using LaTeX)\n\nInline math: \\( E = mc^2 \\)\n\nBlock math:\n\n$$\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n$$\n\n---\n\n## 13. HTML in Markdown\n\nSometimes you need raw HTML:\n\n<div style="color:blue; font-weight:bold;">This is blue bold text using HTML inside Markdown!</div>\n\n---\n\n# :dart: That\'s a Wrap!\n\nCongratulations, you\'ve seen nearly every feature Markdown supports!',
+            '# :books: Ultimate Markdown Demonstration\n\nWelcome to the **Ultimate Markdown Demo**! This document covers a wide range of Markdown features.\n\n---\n\n## 1. Headings\n\n# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6\n\n---\n\n## 2. Text Formatting\n\n- **Bold**\n- *Italic*\n- ***Bold & Italic***\n- ~~Strikethrough~~\n\n> "Markdown is _awesome_!" — *Someone Famous*\n\n---\n\n## 3. Lists\n\n### 3.1. Unordered List\n\n- Item One\n  - Subitem A\n  - Subitem B\n    - Sub-Subitem i\n\n### 3.2. Ordered List\n\n1. First\n2. Second\n    1. Second-First\n    2. Second-Second\n3. Third\n\n---\n\n## 4. Links and Images\n\n- [Visit OpenAI](https://openai.com)\n- Inline Image:\n\n  ![Markdown Logo](https://jan.ai/assets/images/general/logo-mark.svg)\n\n- Linked Image:\n\n  [![Markdown Badge](https://img.shields.io/badge/Markdown-Ready-blue)](https://commonmark.org)\n\n---\n\n## 5. Code\n\n### 5.1. Inline Code\n\nUse the `print()` function in Python.\n\n### 5.2. Code Block\n\n```python\ndef greet(name):\n    return f"Hello, {name}!"\n\nprint(greet("Markdown"))\n```\n\n### 5.3. Syntax Highlighting (JavaScript)\n\n```javascript\nconst add = (a, b) => a + b;\nconsole.log(add(5, 3));\n```\n\n---\n\n## 6. Tables\n\n| Syntax | Description | Example |\n|--------|-------------|--------|\n| Header | Title       | Here\'s this |\n| Paragraph | Text | And more text |\n\n---\n\n## 7. Blockquotes\n\n> "A blockquote can be used to highlight information or quotes."\n\nNested Blockquote:\n\nLevel 1\n>Level 2\nLevel 3\n\n---\n\n## 8. Task Lists\n\n- [x] Write Markdown\n- [x] Check the output\n- [ ] Celebrate\n\n---\n\n## 9. Footnotes\n\nHere is a simple footnote[^1].\n\n[^1]: This is the footnote explanation.\n\n---\n\n## 10. Horizontal Rules\n\n---\n\n## 11. Emojis\n\n:tada: :sunglasses: :potable_water: :books:\n\n---\n\n## 12. Math (Using LaTeX)\n\nInline math: \\( E = mc^2 \\)\n\nBlock math:\n\n$$\n\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}\n$$\n\n---\n\n## 13. HTML in Markdown\n\nSometimes you need raw HTML:\n\n<div style="color:blue; font-weight:bold;">This is blue bold text using HTML inside Markdown!</div>\n\n---\n\n# :dart: That\'s a Wrap!\n\nCongratulations, you\'ve seen nearly every feature Markdown supports!',
           annotations: [],
         },
       },
@@ -810,14 +721,14 @@ export const mockTheads = [
     content: [
       {
         role: 'user',
-        type: ContentType.Text,
+        type: 'text',
         text: {
           value: 'Explain modern JavaScript',
           annotations: [],
         },
       },
       {
-        type: ContentType.Text,
+        type: 'text',
         role: 'system',
         text: {
           value:
