@@ -151,14 +151,14 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-preview-${{ inputs.new_version }}-deb
+          name: jan-linux-amd64-${{ inputs.new_version }}-deb
           path: ./src-tauri/target/release/bundle/deb/*.deb
 
       - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-preview-${{ inputs.new_version }}-AppImage
+          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
 
       ## create zip file and latest-linux.yml for linux electron auto updater
@@ -168,30 +168,15 @@ jobs:
           cd ./src-tauri/target/release/bundle
 
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb
-            APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage
+            DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
+            APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
             DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
             APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
-
-            # mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
-            # mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
 
             echo "🧩 BEFORE rename in ./deb:"
             ls -lh deb
 
             echo "🧩 BEFORE rename in ./appimage:"
-            ls -lh appimage
-
-            echo "🔁 Renaming DEB file to $DEB_FILE_NAME"
-            mv deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb deb/$DEB_FILE_NAME
-
-            echo "🔁 Renaming AppImage file to $APPIMAGE_FILE_NAME"
-            mv appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage appimage/$APPIMAGE_FILE_NAME
-
-            echo "✅ AFTER rename in ./deb:"
-            ls -lh deb
-
-            echo "✅ AFTER rename in ./appimage:"
             ls -lh appimage
 
             echo "🧪 Matching *.deb:"
@@ -201,8 +186,8 @@ jobs:
             find appimage -type f -name "*.AppImage"
 
           else
-            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64-preview.deb
-            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64-preview.AppImage
+            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
+            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
             DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
             APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
           fi
@@ -250,10 +235,10 @@ jobs:
           ls -lh ./appimage
 
           echo "📤 Upload .deb:"
-          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb
-
+          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb
           echo "📤 Upload .AppImage:"
-          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage
+          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage
+          
         working-directory: ./src-tauri/target/release/bundle
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}

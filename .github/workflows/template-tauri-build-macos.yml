@@ -158,7 +158,7 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.dmg
+          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |
             ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
@@ -168,21 +168,17 @@ jobs:
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip Jan-${{ inputs.channel }}.app
-            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip
-            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+            zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
+            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
+            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
-            TAR_NAME=Jan-${{ inputs.channel }}-preview.app.tar.gz
-
-            mv Jan-${{ inputs.channel }}.app.tar.gz $TAR_NAME
-            mv ../dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg ../dmg/$DMG_NAME
-
+            TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
           else
-            zip -r jan-mac-universal-${{ inputs.new_version }}-preview.zip Jan.app
-            FILE_NAME=jan-mac-universal-${{ inputs.new_version }}-preview.zip
+            zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
+            FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
             MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
-            DMG_NAME=Jan_${{ inputs.new_version }}_universal-preview.dmg
-            TAR_NAME=Jan-preview.app.tar.gz
+            DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
+            TAR_NAME=Jan.app.tar.gz
           fi
 
           FILE_SIZE=$(stat -f%z $FILE_NAME)
@@ -218,28 +214,15 @@ jobs:
           ls -lh ./dmg
           echo "🧩 Checking ./macos contents:"
           ls -lh ./macos
-
-          ORIGINAL_DMG="Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg"
-          RENAMED_DMG="${{ steps.metadata.outputs.DMG_NAME }}"
-
-          if [ "$RENAMED_DMG" != "$ORIGINAL_DMG" ]; then
-            echo "🔁 Renaming $ORIGINAL_DMG → $RENAMED_DMG"
-            if [ -f "./dmg/$ORIGINAL_DMG" ]; then
-              mv ./dmg/$ORIGINAL_DMG ./dmg/$RENAMED_DMG
-            else
-              echo "❌ File ./dmg/$ORIGINAL_DMG does not exist. Rename skipped!"
-            fi
-          else
-            echo "✅ No rename needed for DMG"
           fi
 
           echo "📤 Uploading DMG:"
-          ls -lh ./dmg/$RENAMED_DMG
-          aws s3 cp ./dmg/$RENAMED_DMG s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/$RENAMED_DMG
+          ls -lh ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
 
           echo "📤 Uploading TAR.GZ:"
-          ls -lh ./macos/${{ steps.metadata.outputs.TAR_NAME }}
-          aws s3 cp ./macos/${{ steps.metadata.outputs.TAR_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.TAR_NAME }}
+          ls -lh ./macos/Jan-${{ inputs.channel }}.app.tar.gz
+          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}-preview.app.tar.gz
         working-directory: ./src-tauri/target/universal-apple-darwin/release/bundle
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
