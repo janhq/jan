@@ -117,7 +117,18 @@ async function main() {
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun'),
       path.join(binDir)
     )
-    if (platform === 'linux') {
+    if(platform === 'darwin') {
+      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun_x86_64-apple-darwin'), (err) => {
+        if (err) {
+          console.log("Error Found:", err);
+        }
+      })
+      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun_aarch64-apple-darwin'), (err) => {
+        if (err) {
+          console.log("Error Found:", err);
+        }
+      })
+    } else if (platform === 'linux') {
       copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-x86_64-unknown-linux-gnu'), (err) => {
         if (err) {
           console.log("Error Found:", err);
@@ -156,7 +167,18 @@ async function main() {
       path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'),
       path.join(binDir)
     )
-    if (platform === 'linux') {
+    if (platform === 'darwin') {
+      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv_x86_64-apple-darwin'), (err) => {
+        if (err) {
+          console.log("Error Found:", err);
+        }
+      })
+      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv_aarch64-apple-darwin'), (err) => {
+        if (err) {
+          console.log("Error Found:", err);
+        }
+      })
+    } else if (platform === 'linux') {
       copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-x86_64-unknown-linux-gnu'), (err) => {
         if (err) {
           console.log("Error Found:", err);
