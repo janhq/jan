@@ -1,3 +1,4 @@
+import 'openai/shims/web'
 import { useCallback, useMemo, useState } from 'react'
 
 import {
@@ -18,10 +19,65 @@ import { useAtom, useAtomValue } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
 import useSWR from 'swr'
 
+import { models, TokenJS } from 'token.js'
+import { LLMProvider } from 'token.js/dist/chat'
+
 import { getDescriptionByEngine, getTitleByEngine } from '@/utils/modelEngine'
 
 import { extensionManager } from '@/extension/ExtensionManager'
 import { downloadedModelsAtom } from '@/helpers/atoms/Model.atom'
+
+export const builtInEngines = [
+  'openai',
+  'ai21',
+  'anthropic',
+  'gemini',
+  'cohere',
+  'bedrock',
+  'mistral',
+  'groq',
+  'perplexity',
+  'openrouter',
+  'openai-compatible',
+]
+
+export const convertBuiltInEngine = (engine?: string): LLMProvider => {
+  const engineName = normalizeBuiltInEngineName(engine) ?? ''
+  return (
+    builtInEngines.includes(engineName) ? engineName : 'openai-compatible'
+  ) as LLMProvider
+}
+
+export const normalizeBuiltInEngineName = (
+  engine?: string
+): string | undefined => {
+  return engine === ('google_gemini' as InferenceEngine) ? 'gemini' : engine
+}
+
+export const extendBuiltInEngineModels = (
+  tokenJS: TokenJS,
+  provider: LLMProvider,
+  model?: string
+) => {
+  if (provider !== 'openrouter' && provider !== 'openai-compatible' && model) {
+    if (
+      provider in Object.keys(models) &&
+      (models[provider].models as unknown as string[]).includes(model)
+    ) {
+      return
+    }
+
+    try {
+      // @ts-expect-error Unknown extendModelList provider type
+      tokenJS.extendModelList(provider, model, {
+        streaming: true,
+        toolCalls: true,
+      })
+    } catch (error) {
+      console.error('Failed to extend model list:', error)
+    }
+  }
+}
 
 export const releasedEnginesCacheAtom = atomWithStorage<{
   data: EngineReleased[]
