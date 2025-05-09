@@ -43,7 +43,7 @@ export const builtInEngines = [
 export const convertBuiltInEngine = (engine?: string): LLMProvider => {
   const engineName = normalizeBuiltInEngineName(engine) ?? ''
   return (
-    builtInEngines.includes(engineName) ? engine : 'openai-compatible'
+    builtInEngines.includes(engineName) ? engineName : 'openai-compatible'
   ) as LLMProvider
 }
 
