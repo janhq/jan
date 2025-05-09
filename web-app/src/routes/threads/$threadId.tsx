@@ -7,8 +7,12 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import ChatInput from '@/containers/ChatInput'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
-import { newUserThreadContent } from '@/helpers/threads'
+import {
+  newAssistantThreadContent,
+  newUserThreadContent,
+} from '@/helpers/threads'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { models, TokenJS } from 'token.js'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -17,36 +21,74 @@ export const Route = createFileRoute('/threads/$threadId')({
 
 function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
-  const { prompt } = usePrompt()
+  const { prompt, setPrompt } = usePrompt()
   const { getProviderByName, selectedProvider } = useModelProvider()
-  const { getThreadById, addThreadContent, sendCompletion } = useThreads()
+  const { getThreadById, addThreadContent, updateThreadContents } = useThreads()
+
+  const thread = getThreadById(threadId)
 
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
   }, [selectedProvider, getProviderByName])
 
-  const sendMessage = useCallback(() => {
+  const sendMessage = useCallback(async () => {
     addThreadContent(threadId, newUserThreadContent(prompt))
-    sendCompletion(provider, threadId, prompt)
-  }, [prompt, threadId, provider, addThreadContent, sendCompletion])
+    setPrompt('')
 
-  const thread = useMemo(
-    () => getThreadById(threadId),
-    [threadId, getThreadById]
-  )
+    if (!thread?.model?.id || !provider || !provider.api_key) return
 
-  if (!thread) return null
+    let providerName = provider.provider as unknown as keyof typeof models
+
+    if (!Object.keys(models).some((key) => key === providerName))
+      providerName = 'openai-compatible'
+
+    const tokenJS = new TokenJS({
+      apiKey: provider.api_key,
+      baseURL: provider.base_url,
+    })
+
+    const completion = await tokenJS.chat.completions.create({
+      stream: true,
+      provider: providerName,
+      model: thread.model?.id,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    })
+    const newContent = newAssistantThreadContent('')
+    const contents = thread.content || []
+    for await (const part of completion) {
+      newContent.text!.value += part.choices[0]?.delta?.content || ''
+      updateThreadContents(threadId, contents)
+    }
+  }, [
+    addThreadContent,
+    threadId,
+    prompt,
+    thread,
+    provider,
+    setPrompt,
+    updateThreadContents,
+  ])
+
+  const threadContent = useMemo(() => thread?.content, [thread])
+  const threadModel = useMemo(() => thread?.model, [thread])
+
+  if (!threadContent || !threadModel) return null
 
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <DropdownModelProvider threadData={thread} />
+        <DropdownModelProvider model={threadModel} />
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
         <div className="flex flex-col h-full w-full p-4 overflow-auto">
           <div className="max-w-none w-4/6 mx-auto">
-            {thread.content &&
-              thread.content.map((item, index) => {
+            {threadContent &&
+              threadContent.map((item, index) => {
                 return (
                   <div key={index} className="mb-4">
                     {item.type === 'text' &&

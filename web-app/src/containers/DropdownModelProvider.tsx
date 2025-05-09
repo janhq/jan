@@ -15,10 +15,13 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 type DropdownModelProviderProps = {
-  threadData?: Thread
+  model?: {
+    id: string
+    provider: string
+  }
 }
 
-const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
+const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   const { providers, selectModelProvider, selectedProvider, selectedModel } =
     useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
@@ -27,16 +30,13 @@ const DropdownModelProvider = ({ threadData }: DropdownModelProviderProps) => {
   // Initialize model provider only once
   useEffect(() => {
     // Auto select model when existing thread is passed
-    if (threadData) {
-      selectModelProvider(
-        threadData.model?.provider as string,
-        threadData.model?.id as string
-      )
+    if (model) {
+      selectModelProvider(model?.provider as string, model?.id as string)
     } else {
       // default model, we should add from setting
       selectModelProvider('llama.cpp', 'llama3.2:3b')
     }
-  }, [threadData, selectModelProvider]) // Only run when threadData changes
+  }, [model, selectModelProvider]) // Only run when threadData changes
 
   // Update display model when selection changes
   useEffect(() => {
