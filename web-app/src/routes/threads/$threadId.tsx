@@ -10,9 +10,9 @@ import { usePrompt } from '@/hooks/usePrompt'
 import {
   newAssistantThreadContent,
   newUserThreadContent,
+  sendCompletion,
 } from '@/helpers/threads'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { models, TokenJS } from 'token.js'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -32,38 +32,20 @@ function ThreadDetail() {
   }, [selectedProvider, getProviderByName])
 
   const sendMessage = useCallback(async () => {
+    if (!thread || !provider) return
     const userContent = newUserThreadContent(prompt)
     addThreadContent(threadId, userContent)
     setPrompt('')
 
-    if (!thread?.model?.id || !provider || !provider.api_key) return
+    const completion = await sendCompletion(thread, provider, prompt)
 
-    let providerName = provider.provider as unknown as keyof typeof models
-
-    if (!Object.keys(models).some((key) => key === providerName))
-      providerName = 'openai-compatible'
-
-    const tokenJS = new TokenJS({
-      apiKey: provider.api_key,
-      baseURL: provider.base_url,
-    })
-
-    const completion = await tokenJS.chat.completions.create({
-      stream: true,
-      provider: providerName,
-      model: thread.model?.id,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    })
-    const newContent = newAssistantThreadContent('')
-    const contents = thread.content || []
-    for await (const part of completion) {
-      newContent.text!.value += part.choices[0]?.delta?.content || ''
-      updateThreadContents(threadId, [...contents, userContent, newContent])
+    if (completion) {
+      const newContent = newAssistantThreadContent('')
+      const contents = thread.content || []
+      for await (const part of completion) {
+        newContent.text!.value += part.choices[0]?.delta?.content || ''
+        updateThreadContents(threadId, [...contents, userContent, newContent])
+      }
     }
   }, [
     addThreadContent,
