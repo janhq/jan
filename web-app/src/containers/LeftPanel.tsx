@@ -23,6 +23,7 @@ import { useThreads } from '@/hooks/useThreads'
 
 import { useTranslation } from 'react-i18next'
 import { useMemo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 
 const mainMenus = [
   {
@@ -53,19 +54,20 @@ const LeftPanel = () => {
     select: (state) => state.location.pathname,
   })
 
-  const { threads, deleteAllThreads, unstarAllThreads } = useThreads()
+  const { deleteAllThreads, unstarAllThreads } = useThreads()
 
-  const threadItems = useMemo(() => {
-    return Object.values(threads)
-  }, [threads])
+  const threads = useThreads(
+    useShallow((state) => Object.values(state.threads))
+  )
 
   const favoritedThreads = useMemo(() => {
-    return threadItems.filter((t) => t.isFavorite === true)
-  }, [threadItems])
-  
+    return threads.filter((t) => t.isFavorite === true)
+  }, [threads])
+
   const unFavoritedThreads = useMemo(() => {
-    return threadItems.filter((t) => t.isFavorite === false)
-  }, [threadItems])
+    return threads.filter((t) => !t.isFavorite)
+  }, [threads])
+
 
   return (
     <aside

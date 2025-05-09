@@ -41,10 +41,10 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 
-function SortableItem({ thread }: { thread: Thread }) {
+const SortableItem = memo(({ thread }: { thread: Thread }) => {
   const {
     attributes,
     listeners,
@@ -180,17 +180,14 @@ function SortableItem({ thread }: { thread: Thread }) {
       </div>
     </div>
   )
-}
+})
 
 type ThreadListProps = {
   threads: Thread[]
   isFavoriteSection?: boolean
 }
 
-export default function ThreadList({
-  threads,
-  isFavoriteSection = false,
-}: ThreadListProps) {
+function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
   const { setThreads, threads: allThreads } = useThreads()
 
   const sensors = useSensors(
@@ -245,3 +242,5 @@ export default function ThreadList({
     </DndContext>
   )
 }
+
+export default memo(ThreadList)

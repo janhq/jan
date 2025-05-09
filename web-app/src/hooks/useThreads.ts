@@ -6,6 +6,8 @@ import { mockTheads } from '@/mock/data'
 type ThreadState = {
   threads: Record<string, Thread>
   deletedThreadIds: string[]
+  streamingContent?: ThreadContent
+  currentThreadId?: string
   setThreads: (threads: Thread[]) => void
   fetchThreads: () => Promise<void>
   getFavoriteThreads: () => Thread[]
@@ -16,6 +18,8 @@ type ThreadState = {
   unstarAllThreads: () => void
   addThreadContent: (threadId: string, content: ThreadContent) => void
   updateThreadContents: (threadId: string, contents: ThreadContent[]) => void
+  updateStreamingContent: (content: ThreadContent | undefined) => void
+  setCurrentThreadId: (threadId: string) => void
 }
 
 export const useThreads = create<ThreadState>()(
@@ -135,6 +139,12 @@ export const useThreads = create<ThreadState>()(
             },
           },
         }))
+      },
+      updateStreamingContent: (content) => {
+        set({ streamingContent: content })
+      },
+      setCurrentThreadId: (threadId) => {
+        set({ currentThreadId: threadId })
       },
     }),
     {
