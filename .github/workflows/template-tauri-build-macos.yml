@@ -169,10 +169,31 @@ jobs:
           cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
           if [ "${{ inputs.channel }}" != "stable" ]; then
             zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
-            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}-preview.zip
+            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
             MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
-            TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
+            TAR_NAME=Jan-${{ inputs.channel }}-preview.app.tar.gz
+
+            echo "🧩 BEFORE rename in ./macos:"
+            ls -lh .
+
+            echo "🔁 Renaming zip file to $FILE_NAME"
+            mv jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip $FILE_NAME
+            echo "🔁 Renaming tar file to $TAR_NAME"
+            mv Jan-${{ inputs.channel }}.app.tar.gz $TAR_NAME
+
+            echo "🧩 AFTER rename in ./macos:"
+            ls -lh .
+
+            echo "🧩 BEFORE rename in ../dmg:"
+            ls -lh ../dmg
+
+            echo "🔁 Renaming DMG file to $DMG_NAME"
+            mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg $DMG_NAME  
+
+            echo "✅ AFTER rename in ../dmg:"
+            ls -lh ../dmg
+
           else
             zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
             FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
@@ -216,12 +237,12 @@ jobs:
           ls -lh ./macos
 
           echo "📤 Uploading DMG:"
-          ls -lh ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
-          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+          ls -lh ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+          aws s3 cp ./dmg/${{ steps.metadata.outputs.DMG_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.DMG_NAME }}
 
           echo "📤 Uploading TAR.GZ:"
-          ls -lh ./macos/Jan-${{ inputs.channel }}.app.tar.gz
-          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}-preview.app.tar.gz
+          ls -lh ./macos/${{ steps.metadata.outputs.TAR_NAME }}
+          aws s3 cp ./macos/${{ steps.metadata.outputs.TAR_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//${{ steps.metadata.outputs.TAR_NAME }}
         working-directory: ./src-tauri/target/universal-apple-darwin/release/bundle
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}

@@ -200,10 +200,19 @@ jobs:
         run: |
           cd ./src-tauri/target/release/bundle/nsis
           if [ "${{ inputs.channel }}" != "stable" ]; then
-            FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
+            FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe
             WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
 
             echo "🧩 Listing NSIS folder BEFORE rename:"
+            ls -lh .
+
+            echo "🔁 Attempting to rename:"
+            echo "mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe $FILE_NAME"
+
+            # Actually perform the rename
+            mv Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe $FILE_NAME || echo "⚠️ Rename failed, file may not exist"
+
+            echo "✅ AFTER rename:"
             ls -lh .
 
             echo "📂 All .exe files in nsis directory:"
@@ -211,7 +220,7 @@ jobs:
 
 
           else
-            FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
+            FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup-preview.exe
             WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
           fi
 
@@ -252,8 +261,8 @@ jobs:
           find . -name "*.exe"
 
           echo "📤 Uploading Windows setup to S3:"
-          echo "aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe"
-          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe
+          echo "aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}"
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
 
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}

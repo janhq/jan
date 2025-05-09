@@ -14,6 +14,9 @@ on:
         default: none
   pull_request_review:
     types: [submitted]
+  pull_request:
+    branches:
+      - chore/tauri-cicd
 
 jobs:
   set-public-provider:
@@ -47,10 +50,10 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-macos:
+  build-tauri-macos:
     uses: ./.github/workflows/template-tauri-build-macos.yml
-    needs: [get-update-version, set-public-provider]
     secrets: inherit
+    needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
@@ -58,7 +61,7 @@ jobs:
       channel: nightly
       cortex_api_port: "39261"
 
-  build-windows-x64:
+  build-tauri-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
@@ -68,7 +71,8 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
       cortex_api_port: "39261"
-  build-linux-x64:
+  
+  build-tauri-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
@@ -79,9 +83,52 @@ jobs:
       channel: nightly
       cortex_api_port: "39261"
 
+  build-electron-macos:
+    uses: ./.github/workflows/template-electron-build-macos.yml
+    needs: [get-update-version, set-public-provider]
+    secrets: inherit
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      nightly: true
+      beta: false
+      cortex_api_port: "39261"
+
+  build-electron-windows-x64:
+    uses: ./.github/workflows/template-electron-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      nightly: true
+      beta: false
+      cortex_api_port: "39261"
+  build-electron-linux-x64:
+    uses: ./.github/workflows/template-electron-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      nightly: true
+      beta: false
+      cortex_api_port: "39261"
+
   sync-temp-to-latest:
-    needs: [get-update-version, set-public-provider, build-windows-x64, build-linux-x64, build-macos]
     runs-on: ubuntu-latest
+    needs: [
+      set-public-provider, 
+      build-electron-windows-x64, 
+      build-electron-linux-x64, 
+      build-electron-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      build-tauri-macos
+    ]
     steps:
       - name: Getting the repo
         uses: actions/checkout@v3
@@ -92,13 +139,16 @@ jobs:
 
           VERSION=${{ needs.get-update-version.outputs.new_version }}
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
-          LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
-          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
-          WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
-          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
-          DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
+          LINUX_SIGNATURE="${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_SIG }}"
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          WINDOWS_SIGNATURE="${{ needs.build-tauri-windows-x64.outputs.WIN_SIG }}"
+          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
+          DARWIN_SIGNATURE="${{ needs.build-tauri-macos.outputs.MAC_UNIVERSAL_SIG }}"
           DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
-
+          # Log filenames for debugging
+          echo "Linux AppImage: ${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          echo "Windows: ${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
+          echo "macOS: ${{ needs.build-tauri-macos.outputs.TAR_NAME }}"
           jq --arg version "$VERSION" \
             --arg pub_date "$PUB_DATE" \
             --arg linux_signature "$LINUX_SIGNATURE" \
@@ -133,7 +183,17 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-electron-macos,
+      build-electron-windows-x64,
+      build-electron-linux-x64,
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -144,7 +204,17 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-pre-release-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-electron-macos,
+      build-electron-windows-x64,
+      build-electron-linux-x64,
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -155,7 +225,17 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-electron-macos,
+      build-electron-windows-x64,
+      build-electron-linux-x64,
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -167,7 +247,17 @@ jobs:
 
 
   comment-pr-build-url:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-electron-macos,
+      build-electron-windows-x64,
+      build-electron-linux-x64,
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request_review'
     steps:
@@ -182,5 +272,5 @@ jobs:
         run: |
           PR_URL=${{ github.event.pull_request.html_url }}
           RUN_ID=${{ github.run_id }}
-          COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
+          COMMENT="This is the Electron and Tauri build for this pull request. You can download both versions from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
           gh pr comment $PR_URL --body "$COMMENT"
