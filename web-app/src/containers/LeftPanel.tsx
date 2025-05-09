@@ -22,6 +22,7 @@ import {
 import { useThreads } from '@/hooks/useThreads'
 
 import { useTranslation } from 'react-i18next'
+import { useMemo } from 'react'
 
 const mainMenus = [
   {
@@ -53,6 +54,18 @@ const LeftPanel = () => {
   })
 
   const { threads, deleteAllThreads, unstarAllThreads } = useThreads()
+
+  const threadItems = useMemo(() => {
+    return Object.values(threads)
+  }, [threads])
+
+  const favoritedThreads = useMemo(() => {
+    return threadItems.filter((t) => t.isFavorite === true)
+  }, [threadItems])
+  
+  const unFavoritedThreads = useMemo(() => {
+    return threadItems.filter((t) => t.isFavorite === false)
+  }, [threadItems])
 
   return (
     <aside
@@ -92,7 +105,7 @@ const LeftPanel = () => {
           </div>
           <div className="flex flex-col w-full h-full overflow-hidden">
             <div className="h-full overflow-y-auto overflow-x-hidden">
-              {threads.filter((t) => t.isFavorite === true).length > 0 && (
+              {favoritedThreads.length > 0 && (
                 <>
                   <div className="flex items-center justify-between mb-2">
                     <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold sticky top-0">
@@ -119,14 +132,14 @@ const LeftPanel = () => {
                   </div>
                   <div className="flex flex-col mb-4">
                     <ThreadList
-                      threads={threads.filter((t) => t.isFavorite === true)}
+                      threads={favoritedThreads}
                       isFavoriteSection={true}
                     />
                   </div>
                 </>
               )}
 
-              {threads.filter((t) => t.isFavorite === false).length > 0 && (
+              {unFavoritedThreads.length > 0 && (
                 <>
                   <div className="flex items-center justify-between mb-2">
                     <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
@@ -156,7 +169,7 @@ const LeftPanel = () => {
 
               <div className="flex flex-col">
                 <ThreadList
-                  threads={threads.filter((t) => t.isFavorite === false)}
+                  threads={unFavoritedThreads}
                   isFavoriteSection={false}
                 />
               </div>
