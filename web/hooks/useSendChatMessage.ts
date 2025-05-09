@@ -325,24 +325,44 @@ export default function useSendChatMessage(
         })
         events.emit(MessageEvent.OnMessageResponse, message)
 
-        const response = await tokenJS.chat.completions.create({
-          stream: useStream,
-          provider,
-          messages: requestBuilder.messages as ChatCompletionMessageParam[],
-          model: data.model?.id ?? '',
-          tools: data.tools as ChatCompletionTool[],
-          tool_choice: data.tools ? 'auto' : undefined,
-        })
-        // Variables to track and accumulate streaming content
-        if (!message.content.length) {
-          message.content = emptyMessageContent
+        // we need to separate into 2 cases to appease linter
+        if (useStream) {
+          const response = await tokenJS.chat.completions.create({
+            stream: true,
+            provider,
+            messages: requestBuilder.messages as ChatCompletionMessageParam[],
+            model: data.model?.id ?? '',
+            tools: data.tools as ChatCompletionTool[],
+            tool_choice: data.tools ? 'auto' : undefined,
+          })
+          // Variables to track and accumulate streaming content
+          if (!message.content.length) {
+            message.content = emptyMessageContent
+          }
+          isDone = await processStreamingResponse(
+            response,
+            requestBuilder,
+            message
+          )
+        } else {
+          const response = await tokenJS.chat.completions.create({
+            stream: false,
+            provider,
+            messages: requestBuilder.messages as ChatCompletionMessageParam[],
+            model: data.model?.id ?? '',
+            tools: data.tools as ChatCompletionTool[],
+            tool_choice: data.tools ? 'auto' : undefined,
+          })
+          // Variables to track and accumulate streaming content
+          if (!message.content.length) {
+            message.content = emptyMessageContent
+          }
+          isDone = await processNonStreamingResponse(
+            response,
+            requestBuilder,
+            message
+          )
         }
-        const processFn = useStream ? processStreamingResponse : processNonStreamingResponse
-        isDone = await processFn(
-          response,
-          requestBuilder,
-          message
-        )
 
         message.status = MessageStatus.Ready
         events.emit(MessageEvent.OnMessageUpdate, message)
