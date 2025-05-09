@@ -5,7 +5,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import * as prismStyles from 'react-syntax-highlighter/dist/cjs/styles/prism'
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import virtualizedRenderer from 'react-syntax-highlighter-virtualized-renderer'
 import { getReadableLanguageName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -19,11 +19,12 @@ interface MarkdownProps {
   components?: Components
 }
 
-export function RenderMarkdown({
+function RenderMarkdownComponent({
   content,
   className,
   components,
 }: MarkdownProps) {
+
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
 
   // State for tracking which code block has been copied
@@ -146,3 +147,5 @@ export function RenderMarkdown({
     </div>
   )
 }
+
+export const RenderMarkdown = memo(RenderMarkdownComponent)
