@@ -208,6 +208,18 @@ export default function useSendChatMessage(
       }
 
       // Build Message Request
+      // TODO: detect if model supports tools
+      const tools = (await window.core.api.getTools())
+        ?.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
+        .map((tool: ModelTool) => ({
+          type: 'function' as const,
+          function: {
+            name: tool.name,
+            description: tool.description?.slice(0, 1024),
+            parameters: tool.inputSchema,
+            strict: false,
+          },
+        }))
       const requestBuilder = new MessageRequestBuilder(
         MessageRequestType.Thread,
         {
@@ -217,17 +229,7 @@ export default function useSendChatMessage(
         },
         activeThread,
         messages ?? currentMessages,
-        (await window.core.api.getTools())
-          ?.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
-          .map((tool: ModelTool) => ({
-            type: 'function' as const,
-            function: {
-              name: tool.name,
-              description: tool.description?.slice(0, 1024),
-              parameters: tool.inputSchema,
-              strict: false,
-            },
-          }))
+        (tools && tools.length) ? tools : undefined,
       ).addSystemMessage(activeAssistant.instructions)
 
       requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
@@ -282,92 +284,70 @@ export default function useSendChatMessage(
       }
       setIsGeneratingResponse(true)
 
-      if (requestBuilder.tools && requestBuilder.tools.length) {
-        let isDone = false
+      let isDone = false
 
-        const engine =
-          engines?.[requestBuilder.model.engine as InferenceEngine]?.[0]
-        const apiKey = engine?.api_key
-        const provider = convertBuiltInEngine(engine?.engine)
+      const engine =
+        engines?.[requestBuilder.model.engine as InferenceEngine]?.[0]
+      const apiKey = engine?.api_key
+      const provider = convertBuiltInEngine(engine?.engine)
 
-        const tokenJS = new TokenJS({
-          apiKey: apiKey ?? (await window.core.api.appToken()),
-          baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
-        })
+      const tokenJS = new TokenJS({
+        apiKey: apiKey ?? (await window.core.api.appToken()),
+        baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
+      })
 
-        extendBuiltInEngineModels(tokenJS, provider, modelId)
+      extendBuiltInEngineModels(tokenJS, provider, modelId)
 
-        let parentMessageId: string | undefined
-        while (!isDone) {
-          let messageId = ulid()
-          if (!parentMessageId) {
-            parentMessageId = ulid()
-            messageId = parentMessageId
-          }
-          const data = requestBuilder.build()
-          const message: ThreadMessage = createMessage({
-            id: messageId,
-            thread_id: activeThread.id,
-            assistant_id: activeAssistant.assistant_id,
-            metadata: {
-              ...(messageId !== parentMessageId
-                ? { parent_id: parentMessageId }
-                : {}),
-            },
-          })
-          events.emit(MessageEvent.OnMessageResponse, message)
-          // Variables to track and accumulate streaming content
+      // llama.cpp currently does not support streaming when tools are used.
+      let useStream = modelRequest.parameters?.stream
+      if (requestBuilder.tools) {
+        useStream =
+          useStream &&
+          modelRequest.engine !== InferenceEngine.cortex &&
+          modelRequest.engine !== InferenceEngine.cortex_llamacpp
+      }
 
-          if (
-            data.model?.parameters?.stream &&
-            data.model?.engine !== InferenceEngine.cortex &&
-            data.model?.engine !== InferenceEngine.cortex_llamacpp
-          ) {
-            const response = await tokenJS.chat.completions.create({
-              stream: true,
-              provider,
-              messages: requestBuilder.messages as ChatCompletionMessageParam[],
-              model: data.model?.id ?? '',
-              tools: data.tools as ChatCompletionTool[],
-              tool_choice: 'auto',
-            })
-
-            if (!message.content.length) {
-              message.content = emptyMessageContent
-            }
-
-            isDone = await processStreamingResponse(
-              response,
-              requestBuilder,
-              message
-            )
-          } else {
-            const response = await tokenJS.chat.completions.create({
-              stream: false,
-              provider,
-              messages: requestBuilder.messages as ChatCompletionMessageParam[],
-              model: data.model?.id ?? '',
-              tools: data.tools as ChatCompletionTool[],
-              tool_choice: 'auto',
-            })
-            // Variables to track and accumulate streaming content
-            if (!message.content.length) {
-              message.content = emptyMessageContent
-            }
-            isDone = await processNonStreamingResponse(
-              response,
-              requestBuilder,
-              message
-            )
-          }
-          message.status = MessageStatus.Ready
-          events.emit(MessageEvent.OnMessageUpdate, message)
+      let parentMessageId: string | undefined
+      while (!isDone) {
+        let messageId = ulid()
+        if (!parentMessageId) {
+          parentMessageId = ulid()
+          messageId = parentMessageId
         }
-      } else {
-        // Request for inference
-        EngineManager.instance()
-          .get(InferenceEngine.cortex)
-          ?.inference(requestBuilder.build())
+        const data = requestBuilder.build()
+        const message: ThreadMessage = createMessage({
+          id: messageId,
+          thread_id: activeThread.id,
+          assistant_id: activeAssistant.assistant_id,
+          metadata: {
+            ...(messageId !== parentMessageId
+              ? { parent_id: parentMessageId }
+              : {}),
+          },
+        })
+        events.emit(MessageEvent.OnMessageResponse, message)
+
+        const response = await tokenJS.chat.completions.create({
+          stream: useStream,
+          provider,
+          messages: requestBuilder.messages as ChatCompletionMessageParam[],
+          model: data.model?.id ?? '',
+          tools: data.tools as ChatCompletionTool[],
+          tool_choice: 'auto',
+        })
+        // Variables to track and accumulate streaming content
+        if (!message.content.length) {
+          message.content = emptyMessageContent
+        }
+        const processFn = useStream ? processStreamingResponse : processNonStreamingResponse
+        isDone = await processFn(
+          response,
+          requestBuilder,
+          message
+        )
+
+        message.status = MessageStatus.Ready
+        events.emit(MessageEvent.OnMessageUpdate, message)
       }
     } catch (error) {
       setIsGeneratingResponse(false)
