@@ -491,6 +491,12 @@ Function .onInit
     Call RestorePreviousInstallLocation
   ${EndIf}
 
+  ; Remove old Jan if it exists
+  ${If} ${FileExists} "$INSTDIR\LICENSE.electron.txt"
+      DeleteRegKey HKLM "Software\${PRODUCTNAME}"
+      RMDir /r "$INSTDIR"
+      Delete "$INSTDIR\*.*"
+  ${EndIf}
 
   !if "${INSTALLMODE}" == "both"
     !insertmacro MULTIUSER_INIT
