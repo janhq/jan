@@ -118,12 +118,12 @@ async function main() {
       path.join(binDir)
     )
     if(platform === 'darwin') {
-      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun_x86_64-apple-darwin'), (err) => {
+      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-x86_64-apple-darwin'), (err) => {
         if (err) {
           console.log("Error Found:", err);
         }
       })
-      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun_aarch64-apple-darwin'), (err) => {
+      copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-aarch64-apple-darwin'), (err) => {
         if (err) {
           console.log("Error Found:", err);
         }
@@ -168,12 +168,12 @@ async function main() {
       path.join(binDir)
     )
     if (platform === 'darwin') {
-      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv_x86_64-apple-darwin'), (err) => {
+      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-x86_64-apple-darwin'), (err) => {
         if (err) {
           console.log("Error Found:", err);
         }
       })
-      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv_aarch64-apple-darwin'), (err) => {
+      copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-aarch64-apple-darwin'), (err) => {
         if (err) {
           console.log("Error Found:", err);
         }
