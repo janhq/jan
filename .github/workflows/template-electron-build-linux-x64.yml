@@ -176,12 +176,12 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-${{ inputs.new_version }}-deb
+          name: jan-electron-linux-amd64-${{ inputs.new_version }}-deb
           path: ./electron/dist/*.deb
 
       - name: Upload Artifact .AppImage file
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
+          name: jan-electron-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./electron/dist/*.AppImage

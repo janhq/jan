@@ -158,7 +158,7 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
+          name: jan-tauri-mac-universal-${{ inputs.new_version }}.dmg
           path: |
             ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
 
@@ -214,7 +214,6 @@ jobs:
           ls -lh ./dmg
           echo "🧩 Checking ./macos contents:"
           ls -lh ./macos
-          fi
 
           echo "📤 Uploading DMG:"
           ls -lh ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg

@@ -229,5 +229,5 @@ jobs:
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-mac-universal-${{ inputs.new_version }}
+          name: jan-electron-mac-universal-${{ inputs.new_version }}
           path: ./electron/dist/*.dmg
