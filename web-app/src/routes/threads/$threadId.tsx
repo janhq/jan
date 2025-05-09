@@ -32,7 +32,8 @@ function ThreadDetail() {
   }, [selectedProvider, getProviderByName])
 
   const sendMessage = useCallback(async () => {
-    addThreadContent(threadId, newUserThreadContent(prompt))
+    const userContent = newUserThreadContent(prompt)
+    addThreadContent(threadId, userContent)
     setPrompt('')
 
     if (!thread?.model?.id || !provider || !provider.api_key) return
@@ -62,7 +63,7 @@ function ThreadDetail() {
     const contents = thread.content || []
     for await (const part of completion) {
       newContent.text!.value += part.choices[0]?.delta?.content || ''
-      updateThreadContents(threadId, contents)
+      updateThreadContents(threadId, [...contents, userContent, newContent])
     }
   }, [
     addThreadContent,
