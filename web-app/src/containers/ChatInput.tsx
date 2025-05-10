@@ -22,7 +22,7 @@ import {
   newAssistantThreadContent,
   newUserThreadContent,
   sendCompletion,
-} from '@/helpers/threads'
+} from '@/lib/completion'
 import { useThreads } from '@/hooks/useThreads'
 
 type ChatInputProps = {

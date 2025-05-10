@@ -8,6 +8,7 @@ import { ThemeProvider } from '@/providers/ThemeProvider'
 import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
 import { route } from '@/constants/routes'
+import { ExtensionProvider } from '@/providers/ExtensionProvider'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -16,7 +17,9 @@ export const Route = createRootRoute({
 const AppLayout = () => {
   return (
     <Fragment>
-      <DataProvider />
+      <ExtensionProvider>
+        <DataProvider />
+      </ExtensionProvider>
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}

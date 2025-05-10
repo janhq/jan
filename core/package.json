@@ -8,31 +8,13 @@
   ],
   "homepage": "https://jan.ai",
   "license": "AGPL-3.0",
-  "browser": "dist/index.js",
   "main": "dist/index.js",
-  "module": "dist/node/index.cjs.js",
   "typings": "dist/types/index.d.ts",
   "files": [
     "dist",
     "types"
   ],
   "author": "Jan <service@jan.ai>",
-  "exports": {
-    ".": "./dist/index.js",
-    "./node": "./dist/node/index.cjs.js"
-  },
-  "typesVersions": {
-    "*": {
-      ".": [
-        "./dist/index.js.map",
-        "./dist/types/index.d.ts"
-      ],
-      "node": [
-        "./dist/node/index.cjs.js.map",
-        "./dist/types/node/index.d.ts"
-      ]
-    }
-  },
   "scripts": {
     "lint": "tslint --project tsconfig.json -t codeFrame 'src/**/*.ts' 'test/**/*.ts'",
     "test": "jest",
