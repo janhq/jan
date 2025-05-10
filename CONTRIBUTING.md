@@ -6,8 +6,8 @@ First off, thank you for considering contributing to jan. It's people like you t
 
 ### Reporting Bugs
 
-- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/janhq/jan/issues).
-- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/janhq/jan/issues/new).
+- **Ensure the bug was not already reported** by searching on GitHub under [Issues](https://github.com/menloresearch/jan/issues).
+- If you're unable to find an open issue addressing the problem, [open a new one](https://github.com/menloresearch/jan/issues/new).
 
 ### Suggesting Enhancements
 

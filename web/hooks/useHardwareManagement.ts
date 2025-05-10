@@ -57,23 +57,20 @@ export function useGetHardwareInfo(updatePeriodically: boolean = true) {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
       refreshInterval: updatePeriodically ? 2000 : undefined,
+      
+      onSuccess(data) {
+        const usedMemory = data.ram.total - data.ram.available
+        setUsedRam(usedMemory)
+
+        setTotalRam(data.ram.total)
+
+        const ramUtilitized = (usedMemory / data.ram.total) * 100
+        setRamUtilitized(Math.round(ramUtilitized))
+
+        setCpuUsage(Math.round(data.cpu.usage))
+      },
     }
   )
-
-  const usedMemory =
-    Number(hardware?.ram.total) - Number(hardware?.ram.available)
-
-  if (hardware?.ram?.total && hardware?.ram?.available)
-    setUsedRam(Number(usedMemory))
-
-  if (hardware?.ram?.total) setTotalRam(hardware.ram.total)
-
-  const ramUtilitized =
-    ((Number(usedMemory) ?? 0) / (hardware?.ram.total ?? 1)) * 100
-
-  setRamUtilitized(Math.round(ramUtilitized))
-
-  setCpuUsage(Math.round(hardware?.cpu.usage ?? 0))
 
   return { hardware, error, mutate }
 }

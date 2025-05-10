@@ -44,11 +44,11 @@ Error logs are essential for troubleshooting issues and getting help from Jan te
 #### Through Terminal
 **Application Logs**
 ```bash
-tail -n 50 ~/Library/Application\ Support/jan/data/logs/app.log
+tail -n 50 ~/Library/Application\ Support/Jan/data/logs/app.log
 ```
 **Server Logs**
 ```bash
-tail -n 50 ~/Library/Application\ Support/jan/data/logs/cortex.log
+tail -n 50 ~/Library/Application\ Support/Jan/data/logs/cortex.log
 ```
 
 <Callout type="warning">
@@ -86,9 +86,9 @@ To resolve the issue where Jan is stuck in a broken build after installation:
 
       2. **Delete** Application Data, Cache, and User Data:
 
-      ```bash
+      ```cmd
       cd C:\Users\%USERNAME%\AppData\Roaming
-      rmdir /S jan
+      rmdir /S Jan
       ```
 
       3. If you are using a version before `0.4.2`, you need to run the following commands:
@@ -206,6 +206,7 @@ To verify GPU acceleration is turned on:
 
 <br/>
 ![Hardware](./_assets/trouble-shooting-01.png)
+![Hardware](./_assets/trouble-shooting-03.png)
 <br/>
 
 
