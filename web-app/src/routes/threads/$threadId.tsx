@@ -18,7 +18,7 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const { currentThreadId, getThreadById, setCurrentThreadId } = useThreads()
   const threadContent = useThreads(
-    useShallow((state) => state.threads[threadId].content)
+    useShallow((state) => state.threads[threadId]?.content || [])
   )
   const thread = useMemo(
     () => getThreadById(threadId),

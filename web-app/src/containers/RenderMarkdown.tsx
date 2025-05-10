@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable react-hooks/exhaustive-deps */
 import ReactMarkdown, { Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -113,7 +114,11 @@ function RenderMarkdownComponent({
                 overflow: 'auto',
                 border: 'none',
               }}
-              renderer={shouldVirtualize ? virtualizedRenderer() : undefined}
+              renderer={
+                shouldVirtualize
+                  ? (virtualizedRenderer() as (props: any) => React.ReactNode)
+                  : undefined
+              }
               PreTag="div"
               CodeTag={'code'}
               {...props}
