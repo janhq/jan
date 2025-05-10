@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import HeaderPage from '@/containers/HeaderPage'
 
@@ -24,10 +24,19 @@ function ThreadDetail() {
     () => getThreadById(threadId),
     [threadId, getThreadById]
   )
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (currentThreadId !== threadId) setCurrentThreadId(threadId)
   }, [threadId, currentThreadId, setCurrentThreadId])
+
+  // Auto-scroll to bottom when component mounts or thread content changes
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight
+    }
+  }, [threadContent])
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
@@ -39,7 +48,10 @@ function ThreadDetail() {
         <DropdownModelProvider model={threadModel} />
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
-        <div className="flex flex-col h-full w-full p-4 overflow-auto">
+        <div
+          ref={scrollContainerRef}
+          className="flex flex-col h-full w-full p-4 overflow-auto"
+        >
           <div className="max-w-none w-4/6 mx-auto">
             {threadContent &&
               threadContent.map((item, index) => {
