@@ -1,9 +1,13 @@
 import { useThreads } from '@/hooks/useThreads'
 import { ThreadContent } from './ThreadContent'
+import { memo } from 'react'
 
-// Remove memo to ensure component re-renders when streamingContent changes
-export const StreamingContent = () => {
+// Use memo with no dependencies to allow re-renders when props change
+export const StreamingContent = memo(() => {
   const { streamingContent } = useThreads()
+
   if (!streamingContent) return null
-  return <ThreadContent {...streamingContent} />
-}
+
+  // Pass a new object to ThreadContent to avoid reference issues
+  return <ThreadContent key="streaming" {...streamingContent} />
+})

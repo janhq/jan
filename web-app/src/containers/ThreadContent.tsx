@@ -1,9 +1,8 @@
 import { RenderMarkdown } from './RenderMarkdown'
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 
-// Remove the memo wrapper from the ThreadContent component to allow re-renders
-// when streaming content changes
-export const ThreadContent = (item: ThreadContent) => {
+// Use memo to prevent unnecessary re-renders, but allow re-renders when props change
+export const ThreadContent = memo((item: ThreadContent) => {
   // Use useMemo to stabilize the components prop
   const linkComponents = useMemo(
     () => ({
@@ -40,4 +39,4 @@ export const ThreadContent = (item: ThreadContent) => {
       )}
     </div>
   )
-}
+})

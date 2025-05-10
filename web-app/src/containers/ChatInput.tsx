@@ -94,13 +94,31 @@ const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
     const completion = await sendCompletion(thread, provider, prompt)
 
     if (completion) {
-      const currentContent = newAssistantThreadContent('')
-      for await (const part of completion) {
-        currentContent.text!.value += part.choices[0]?.delta?.content || ''
-        updateStreamingContent(currentContent)
+      let accumulatedText = ''
+      try {
+        for await (const part of completion) {
+          const delta = part.choices[0]?.delta?.content || ''
+          if (delta) {
+            accumulatedText += delta
+            // Create a new object each time to avoid reference issues
+            // Use a timeout to prevent React from batching updates too quickly
+            const currentContent = newAssistantThreadContent(accumulatedText)
+            updateStreamingContent(currentContent)
+            // Small delay to prevent too many updates in a short time
+            await new Promise((resolve) => setTimeout(resolve, 0))
+          }
+        }
+      } catch (error) {
+        console.error('Error during streaming:', error)
+      } finally {
+        // Create a final content object for adding to the thread
+        if (accumulatedText) {
+          const finalContent = newAssistantThreadContent(accumulatedText)
+          addThreadContent(currentThreadId, finalContent)
+        }
+        // Clear streaming content
+        updateStreamingContent(undefined)
       }
-      addThreadContent(currentThreadId, currentContent)
-      updateStreamingContent(undefined)
     }
   }, [
     thread,
