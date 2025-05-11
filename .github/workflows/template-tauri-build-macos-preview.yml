@@ -197,11 +197,11 @@ jobs:
           echo "🧩 Checking ./macos contents:"
           ls -lh ./macos
           echo "📤 Uploading DMG:"
-          ls -lh ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+          ls -lh ./dmg/
           aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
           
           echo "📤 Uploading TAR.GZ:"
-          ls -lh ./macos/Jan-${{ inputs.channel }}.app.tar.gz
+          ls -lh ./macos/
           aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}-preview.app.tar.gz
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
