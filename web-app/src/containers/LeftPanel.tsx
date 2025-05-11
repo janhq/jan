@@ -241,12 +241,14 @@ const LeftPanel = () => {
                                 size="sm"
                                 onClick={() => {
                                   deleteAllThreads()
-                                  navigate({ to: route.home })
                                   toast.success('Delete All Thread', {
                                     id: 'delete-thread',
                                     description:
                                       'All thread has been permanently deleted.',
                                   })
+                                  setTimeout(() => {
+                                    navigate({ to: route.home })
+                                  }, 0)
                                 }}
                               >
                                 Delete
