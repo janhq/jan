@@ -1,4 +1,4 @@
-import { Link, useRouterState } from '@tanstack/react-router'
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import {
@@ -61,6 +61,7 @@ const secondaryMenus = [
 const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
   const { t } = useTranslation()
+  const navigate = useNavigate()
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
@@ -224,6 +225,7 @@ const LeftPanel = () => {
                                     size="sm"
                                     onClick={() => {
                                       deleteAllThreads()
+                                      navigate({ to: route.home })
                                       toast.success('Delete All Thread', {
                                         id: 'delete-thread',
                                         description:
