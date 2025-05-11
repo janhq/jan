@@ -20,7 +20,7 @@ type ThreadState = {
   unstarAllThreads: () => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   setCurrentThreadId: (threadId?: string) => void
-  createThread: (model: ThreadModel) => Thread
+  createThread: (model: ThreadModel) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
 }
 
@@ -102,7 +102,7 @@ export const useThreads = create<ThreadState>()(
       setCurrentThreadId: (threadId) => {
         set({ currentThreadId: threadId })
       },
-      createThread: (model) => {
+      createThread: async (model) => {
         const newThread: Thread = {
           id: ulid(),
           title: 'New Thread',
@@ -110,7 +110,7 @@ export const useThreads = create<ThreadState>()(
           model,
           isFavorite: false,
         }
-        createThread(newThread).then((createdThread) => {
+        return await createThread(newThread).then((createdThread) => {
           set((state) => ({
             threads: {
               ...state.threads,
@@ -118,9 +118,8 @@ export const useThreads = create<ThreadState>()(
             },
             currentThreadId: createdThread.id,
           }))
+          return createdThread
         })
-
-        return newThread
       },
       updateCurrentThreadModel: (model) => {
         set((state) => {

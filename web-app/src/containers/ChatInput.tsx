@@ -91,7 +91,7 @@ const ChatInput = ({ className }: ChatInputProps) => {
     let currentThread = thread
 
     if (!thread) {
-      currentThread = createThread({
+      currentThread = await createThread({
         id: selectedModel?.id ?? defaultModel(selectedProvider),
         provider: selectedProvider,
       })
