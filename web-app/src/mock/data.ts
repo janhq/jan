@@ -1,131 +1,130 @@
-
 export const mockModelProvider = [
-  {
-    active: true,
-    provider: 'llama.cpp',
-    settings: [
-      {
-        key: 'cont_batching',
-        title: 'Continuous Batching',
-        description:
-          'Allows processing prompts in parallel with text generation, which usually improves performance.',
-        controller_type: 'checkbox',
-        controller_props: {
-          value: true,
-        },
-      },
-      {
-        key: 'n_parallel',
-        title: 'Parallel Operations',
-        description:
-          'Number of prompts that can be processed simultaneously by the model.',
-        controller_type: 'input',
-        controller_props: {
-          value: '4',
-          placeholder: '4',
-          type: 'number',
-        },
-      },
-      {
-        key: 'cpu_threads',
-        title: 'CPU Threads',
-        description:
-          'Number of CPU cores used for model processing when running without GPU.',
-        controller_type: 'input',
-        controller_props: {
-          value: '1',
-          placeholder: '1',
-          type: 'number',
-        },
-      },
-      {
-        key: 'flash_attn',
-        title: 'Flash Attention',
-        description:
-          'Optimizes memory usage and speeds up model inference using an efficient attention implementation.',
-        controller_type: 'checkbox',
-        controller_props: {
-          value: true,
-        },
-      },
+  // {
+  //   active: true,
+  //   provider: 'llama.cpp',
+  //   settings: [
+  //     {
+  //       key: 'cont_batching',
+  //       title: 'Continuous Batching',
+  //       description:
+  //         'Allows processing prompts in parallel with text generation, which usually improves performance.',
+  //       controller_type: 'checkbox',
+  //       controller_props: {
+  //         value: true,
+  //       },
+  //     },
+  //     {
+  //       key: 'n_parallel',
+  //       title: 'Parallel Operations',
+  //       description:
+  //         'Number of prompts that can be processed simultaneously by the model.',
+  //       controller_type: 'input',
+  //       controller_props: {
+  //         value: '4',
+  //         placeholder: '4',
+  //         type: 'number',
+  //       },
+  //     },
+  //     {
+  //       key: 'cpu_threads',
+  //       title: 'CPU Threads',
+  //       description:
+  //         'Number of CPU cores used for model processing when running without GPU.',
+  //       controller_type: 'input',
+  //       controller_props: {
+  //         value: '1',
+  //         placeholder: '1',
+  //         type: 'number',
+  //       },
+  //     },
+  //     {
+  //       key: 'flash_attn',
+  //       title: 'Flash Attention',
+  //       description:
+  //         'Optimizes memory usage and speeds up model inference using an efficient attention implementation.',
+  //       controller_type: 'checkbox',
+  //       controller_props: {
+  //         value: true,
+  //       },
+  //     },
 
-      {
-        key: 'caching_enabled',
-        title: 'Caching',
-        description:
-          'Stores recent prompts and responses to improve speed when similar questions are asked.',
-        controller_type: 'checkbox',
-        controller_props: {
-          value: true,
-        },
-      },
-      {
-        key: 'cache_type',
-        title: 'KV Cache Type',
-        description: 'Controls memory usage and precision trade-off.',
-        controller_type: 'dropdown',
-        controller_props: {
-          value: 'f16',
-          options: [
-            {
-              value: 'q4_0',
-              name: 'q4_0',
-            },
-            {
-              value: 'q8_0',
-              name: 'q8_0',
-            },
-            {
-              value: 'f16',
-              name: 'f16',
-            },
-          ],
-        },
-      },
-      {
-        key: 'use_mmap',
-        title: 'mmap',
-        description:
-          'Loads model files more efficiently by mapping them to memory, reducing RAM usage.',
-        controller_type: 'checkbox',
-        controller_props: {
-          value: true,
-        },
-      },
-    ],
-    models: [
-      {
-        id: 'llama3.2:3b',
-        model: 'llama3.2:3b',
-        name: 'llama3.2:3b',
-        capabilities: ['completion', 'tools'],
-        version: 2,
-        settings: {
-          prompt_template:
-            '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n',
-          ctx_len: 4096,
-          n_parallel: 1,
-          cpu_threads: 1,
-          ngl: 29,
-        },
-      },
-      {
-        id: 'deepseek-r1.2:3b',
-        model: 'deepseek-r1.2:3b',
-        name: 'deepseek-r1.2:3b',
-        capabilities: ['completion', 'tools'],
-        version: 2,
-        settings: {
-          prompt_template:
-            '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n',
-          ctx_len: 4096,
-          n_parallel: 1,
-          cpu_threads: 1,
-          ngl: 29,
-        },
-      },
-    ],
-  },
+  //     {
+  //       key: 'caching_enabled',
+  //       title: 'Caching',
+  //       description:
+  //         'Stores recent prompts and responses to improve speed when similar questions are asked.',
+  //       controller_type: 'checkbox',
+  //       controller_props: {
+  //         value: true,
+  //       },
+  //     },
+  //     {
+  //       key: 'cache_type',
+  //       title: 'KV Cache Type',
+  //       description: 'Controls memory usage and precision trade-off.',
+  //       controller_type: 'dropdown',
+  //       controller_props: {
+  //         value: 'f16',
+  //         options: [
+  //           {
+  //             value: 'q4_0',
+  //             name: 'q4_0',
+  //           },
+  //           {
+  //             value: 'q8_0',
+  //             name: 'q8_0',
+  //           },
+  //           {
+  //             value: 'f16',
+  //             name: 'f16',
+  //           },
+  //         ],
+  //       },
+  //     },
+  //     {
+  //       key: 'use_mmap',
+  //       title: 'mmap',
+  //       description:
+  //         'Loads model files more efficiently by mapping them to memory, reducing RAM usage.',
+  //       controller_type: 'checkbox',
+  //       controller_props: {
+  //         value: true,
+  //       },
+  //     },
+  //   ],
+  //   models: [
+  //     {
+  //       id: 'llama3.2:3b',
+  //       model: 'llama3.2:3b',
+  //       name: 'llama3.2:3b',
+  //       capabilities: ['completion', 'tools'],
+  //       version: 2,
+  //       settings: {
+  //         prompt_template:
+  //           '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n',
+  //         ctx_len: 4096,
+  //         n_parallel: 1,
+  //         cpu_threads: 1,
+  //         ngl: 29,
+  //       },
+  //     },
+  //     {
+  //       id: 'deepseek-r1.2:3b',
+  //       model: 'deepseek-r1.2:3b',
+  //       name: 'deepseek-r1.2:3b',
+  //       capabilities: ['completion', 'tools'],
+  //       version: 2,
+  //       settings: {
+  //         prompt_template:
+  //           '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{system_message}<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n',
+  //         ctx_len: 4096,
+  //         n_parallel: 1,
+  //         cpu_threads: 1,
+  //         ngl: 29,
+  //       },
+  //     },
+  //   ],
+  // },
   {
     active: false,
     api_key: '',
@@ -158,84 +157,7 @@ export const mockModelProvider = [
         },
       },
     ],
-    models: [
-      {
-        id: 'gpt-4.5-preview',
-        name: 'OpenAI GPT-4.5 Preview',
-        version: '1.2',
-        description:
-          'OpenAI GPT 4.5 Preview is a research preview of GPT-4.5, our largest and most capable GPT model yet',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gpt-4-turbo',
-        name: 'OpenAI GPT-4 Turbo',
-        version: '1.2',
-        description: 'OpenAI GPT 4 Turbo model is extremely good',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gpt-3.5-turbo',
-        name: 'OpenAI GPT-3.5 Turbo',
-        version: '1.1',
-        description: 'OpenAI GPT 3.5 Turbo model is extremely fast',
-        format: 'api',
-        capabilities: ['completion'],
-      },
-      {
-        id: 'gpt-4o',
-        name: 'OpenAI GPT-4o',
-        version: '1.1',
-        description:
-          'OpenAI GPT 4o is a new flagship model with fast speed and high quality',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gpt-4o-mini',
-        name: 'OpenAI GPT-4o mini',
-        version: '1.1',
-        description:
-          'GPT-4o mini (“o” for “omni”) is a fast, affordable small model for focused tasks.',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'o1',
-        name: 'OpenAI o1',
-        version: '1.0',
-        description: 'OpenAI o1 is a new model with complex reasoning',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'o1-preview',
-        name: 'OpenAI o1-preview',
-        version: '1.0',
-        description: 'OpenAI o1-preview is a new model with complex reasoning',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'o1-mini',
-        name: 'OpenAI o1-mini',
-        version: '1.0',
-        description: 'OpenAI o1-mini is a lightweight reasoning model',
-        format: 'api',
-        capabilities: ['completion'],
-      },
-      {
-        id: 'o3-mini',
-        name: 'OpenAI o3-mini',
-        version: '1.0',
-        description:
-          'OpenAI most recent reasoning model, providing high intelligence at the same cost and latency targets of o1-mini.',
-        format: 'api',
-        capabilities: ['completion', 'tools'],
-      },
-    ],
+    models: [],
   },
   {
     active: false,
@@ -270,40 +192,7 @@ export const mockModelProvider = [
         },
       },
     ],
-    models: [
-      {
-        id: 'claude-3-opus-latest',
-        name: 'Claude 3 Opus Latest',
-        version: '1.0',
-        description:
-          'Claude 3 Opus is a powerful model suitables for highly complex task.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'claude-3-5-haiku-latest',
-        name: 'Claude 3.5 Haiku Latest',
-        version: '1.0',
-        description:
-          'Claude 3.5 Haiku is the fastest model provides near-instant responsiveness.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'claude-3-5-sonnet-latest',
-        name: 'Claude 3.5 Sonnet Latest',
-        version: '1.0',
-        description:
-          'Claude 3.5 Sonnet raises the industry bar for intelligence, outperforming competitor models and Claude 3 Opus on a wide range of evaluations, with the speed and cost of our mid-tier model, Claude 3 Sonnet.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'claude-3-7-sonnet-latest',
-        name: 'Claude 3.7 Sonnet Latest',
-        version: '1.0',
-        description:
-          'Claude 3.7 Sonnet is the first hybrid reasoning model on the market. It is the most intelligent model yet. It is faster, more cost effective, and more capable than any other model in its class.',
-        capabilities: ['completion', 'tools'],
-      },
-    ],
+    models: [],
   },
   {
     active: false,
@@ -337,24 +226,7 @@ export const mockModelProvider = [
         },
       },
     ],
-    models: [
-      {
-        id: 'command-r-plus',
-        name: 'Command R+',
-        version: '1.0',
-        description:
-          'Command R+ is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It is best suited for complex RAG workflows and multi-step tool use.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'command-r',
-        name: 'Command R',
-        version: '1.0',
-        description:
-          'Command R is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It can be used for complex workflows like code generation, retrieval augmented generation (RAG), tool use, and agents.',
-        capabilities: ['completion', 'tools'],
-      },
-    ],
+    models: [],
   },
   {
     active: false,
@@ -438,32 +310,7 @@ export const mockModelProvider = [
         },
       },
     ],
-    models: [
-      {
-        id: 'mistral-small-latest',
-        name: 'Mistral Small',
-        version: '1.1',
-        description:
-          'Mistral Small is the ideal choice for simple tasks (Classification, Customer Support, or Text Generation) at an affordable price.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'mistral-large-latest',
-        name: 'Mistral Large',
-        version: '1.1',
-        description:
-          'Mistral Large is ideal for complex tasks (Synthetic Text Generation, Code Generation, RAG, or Agents).',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'open-mixtral-8x22b',
-        name: 'Mixtral 8x22B',
-        version: '1.1',
-        description:
-          'Mixtral 8x22B is a high-performance, cost-effective model designed for complex tasks.',
-        capabilities: ['completion'],
-      },
-    ],
+    models: [],
   },
   {
     active: false,
@@ -497,43 +344,7 @@ export const mockModelProvider = [
         },
       },
     ],
-    models: [
-      {
-        id: 'llama-3.3-70b-versatile',
-        name: 'Groq Llama-3.3-70B-Versatile',
-        version: '1.1',
-        description: 'Groq Llama 3 70b with supercharged speed!',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'llama-3.1-8b-instant',
-        name: 'Groq Llama 3.1 8b Instant',
-        version: '1.1',
-        description: 'Groq Llama 3.1 8b with supercharged speed!',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'llama3-70b-8192',
-        name: 'Groq Llama3-70B-8192',
-        version: '1.1',
-        description: 'Groq Llama 3 70b with supercharged speed!',
-        capabilities: ['completion'],
-      },
-      {
-        id: 'llama3-8b-8192',
-        name: 'Groq Llama3-70B-8192',
-        version: '1.1',
-        description: 'Groq Llama 3 8b with supercharged speed!',
-        capabilities: ['completion'],
-      },
-      {
-        id: 'gemma2-9b-it',
-        name: 'Groq Gemma 9B Instruct',
-        version: '1.2',
-        description: 'Groq Gemma 9b Instruct with supercharged speed!',
-        capabilities: ['completion', 'tools'],
-      },
-    ],
+    models: [],
   },
   {
     active: false,
@@ -568,121 +379,59 @@ export const mockModelProvider = [
         },
       },
     ],
-    models: [
-      {
-        id: 'gemini-2.5-pro-preview-03-25',
-        name: 'Gemini 2.5 Pro Preview 03-25',
-        version: '1.0',
-        description: '',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gemini-2.5-pro-exp-03-25',
-        name: 'Gemini 2.5 Pro Experimental 03-25',
-        version: '1.0',
-        description: '',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gemini-2.5-flash-preview-04-17',
-        name: 'Gemini 2.5 Flash Preview 04-17',
-        version: '1.0',
-        description: '',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gemini-2.0-flash',
-        name: 'Gemini 2.0 Flash',
-        version: '1.0',
-        description:
-          'A Gemini 2.0 Flash model optimized for cost efficiency and low latency.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gemini-2.0-flash-lite',
-        name: 'Gemini 2.0 Flash-Lite',
-        version: '1.0',
-        description:
-          'A Gemini 2.0 Flash model optimized for cost efficiency and low latency.',
-        capabilities: ['completion'],
-      },
-      {
-        id: 'gemini-1.5-pro',
-        name: 'Gemini 1.5 Pro',
-        version: '1.0',
-        description:
-          'Gemini 1.5 Pro is a mid-size multimodal model that is optimized for a wide-range of reasoning tasks. 1.5 Pro can process large amounts of data at once, including 2 hours of video, 19 hours of audio, codebases with 60,000 lines of code, or 2,000 pages of text. ',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gemini-1.5-flash',
-        name: 'Gemini 1.5 Flash',
-        version: '1.0',
-        description:
-          'Gemini 1.5 Flash is a fast and versatile multimodal model for scaling across diverse tasks.',
-        capabilities: ['completion', 'tools'],
-      },
-      {
-        id: 'gemini-1.5-flash-8b',
-        name: 'Gemini 1.5 Flash-8B',
-        version: '1.0',
-        description:
-          'Gemini 1.5 Flash-8B is a small model designed for lower intelligence tasks.',
-        capabilities: ['completion', 'tools'],
-      },
-    ],
+    models: [],
   },
-  {
-    active: false,
-    api_key: '',
-    base_url: 'https://api.deepseek.com',
-    explore_models_url: 'https://api-docs.deepseek.com/quick_start/pricing',
-    provider: 'deepseek',
-    settings: [
-      {
-        key: 'api-key',
-        title: 'API Key',
-        description:
-          "The DeepSeek API uses API keys for authentication. Visit your [API Keys](https://platform.deepseek.com/api_keys) page to retrieve the API key you'll use in your requests.",
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'Insert API Key',
-          value: '',
-          type: 'password',
-          input_actions: ['unobscure', 'copy'],
-        },
-      },
-      {
-        key: 'base-url',
-        title: 'Base URL',
-        description:
-          'The base endpoint to use. See the [DeepSeek documentation](https://api-docs.deepseek.com/) for more information.',
-        controller_type: 'input',
-        controller_props: {
-          placeholder: 'https://api.deepseek.com',
-          value: 'https://api.deepseek.com',
-        },
-      },
-    ],
-    models: [
-      {
-        id: 'deepseek-chat',
-        name: 'DeepSeek-V3',
-        version: '1.0',
-        description:
-          'The deepseek-chat model has been upgraded to DeepSeek-V3. deepseek-reasoner points to the new model DeepSeek-R1',
-        capabilities: ['completion'],
-      },
-      {
-        id: 'deepseek-reasoner',
-        name: 'DeepSeek-R1',
-        version: '1.0',
-        description:
-          'CoT (Chain of Thought) is the reasoning content deepseek-reasoner gives before output the final answer. For details, please refer to Reasoning Model.',
-        capabilities: ['completion'],
-      },
-    ],
-  },
+  // {
+  //   active: false,
+  //   api_key: '',
+  //   base_url: 'https://api.deepseek.com',
+  //   explore_models_url: 'https://api-docs.deepseek.com/quick_start/pricing',
+  //   provider: 'deepseek',
+  //   settings: [
+  //     {
+  //       key: 'api-key',
+  //       title: 'API Key',
+  //       description:
+  //         "The DeepSeek API uses API keys for authentication. Visit your [API Keys](https://platform.deepseek.com/api_keys) page to retrieve the API key you'll use in your requests.",
+  //       controller_type: 'input',
+  //       controller_props: {
+  //         placeholder: 'Insert API Key',
+  //         value: '',
+  //         type: 'password',
+  //         input_actions: ['unobscure', 'copy'],
+  //       },
+  //     },
+  //     {
+  //       key: 'base-url',
+  //       title: 'Base URL',
+  //       description:
+  //         'The base endpoint to use. See the [DeepSeek documentation](https://api-docs.deepseek.com/) for more information.',
+  //       controller_type: 'input',
+  //       controller_props: {
+  //         placeholder: 'https://api.deepseek.com',
+  //         value: 'https://api.deepseek.com',
+  //       },
+  //     },
+  //   ],
+  //   models: [
+  //     {
+  //       id: 'deepseek-chat',
+  //       name: 'DeepSeek-V3',
+  //       version: '1.0',
+  //       description:
+  //         'The deepseek-chat model has been upgraded to DeepSeek-V3. deepseek-reasoner points to the new model DeepSeek-R1',
+  //       capabilities: ['completion'],
+  //     },
+  //     {
+  //       id: 'deepseek-reasoner',
+  //       name: 'DeepSeek-R1',
+  //       version: '1.0',
+  //       description:
+  //         'CoT (Chain of Thought) is the reasoning content deepseek-reasoner gives before output the final answer. For details, please refer to Reasoning Model.',
+  //       capabilities: ['completion'],
+  //     },
+  //   ],
+  // },
 ]
 
 export const mockTheads = [
