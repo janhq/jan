@@ -48,7 +48,7 @@ export const useMessages = create<MessageState>()(
       },
     }),
     {
-      name: localStoregeKey.threads,
+      name: localStoregeKey.messages,
       storage: createJSONStorage(() => localStorage),
     }
   )
