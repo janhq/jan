@@ -68,6 +68,22 @@ export const newAssistantThreadContent = (
 })
 
 /**
+ * Empty thread content object.
+ * @returns
+ */
+export const emptyThreadContent = {
+  type: 'text',
+  role: ChatCompletionRole.Assistant,
+  content: [],
+  id: ulid(),
+  object: 'thread.message',
+  thread_id: '',
+  status: MessageStatus.Ready,
+  created_at: 0,
+  completed_at: 0,
+}
+
+/**
  * @fileoverview Helper function to send a completion request to the model provider.
  * @param thread
  * @param provider
