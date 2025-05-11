@@ -1,10 +1,10 @@
-import { useThreads } from '@/hooks/useThreads'
+import { useAppState } from '@/hooks/useAppState'
 import { ThreadContent } from './ThreadContent'
 import { memo } from 'react'
 
 // Use memo with no dependencies to allow re-renders when props change
 export const StreamingContent = memo(() => {
-  const { streamingContent } = useThreads()
+  const { streamingContent } = useAppState()
 
   if (!streamingContent) return null
 
