@@ -171,7 +171,7 @@ const LeftPanel = () => {
                               })
                             }}
                           >
-                            <IconStar size={16} className="mr-1" />
+                            <IconStar size={16} />
                             <span>{t('common.unstarAll')}</span>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -226,7 +226,7 @@ const LeftPanel = () => {
                             <DropdownMenuItem
                               onSelect={(e) => e.preventDefault()}
                             >
-                              <IconTrash size={16} className="mr-1" />
+                              <IconTrash size={16} />
                               <span>{t('common.deleteAll')}</span>
                             </DropdownMenuItem>
                           </DialogTrigger>
