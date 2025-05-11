@@ -33,9 +33,6 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         .clone()
         .unwrap_or_else(|| "".to_string());
 
-    if !force && stored_version == app_version {
-        return Ok(());
-    }
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -43,6 +40,10 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         .unwrap()
         .join("resources")
         .join("pre-install");
+
+    if !force && stored_version == app_version && extensions_path.exists() {
+        return Ok(());
+    }
 
     // Attempt to remove extensions folder
     if extensions_path.exists() {
