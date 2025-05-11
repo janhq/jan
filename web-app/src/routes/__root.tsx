@@ -9,6 +9,7 @@ import { KeyboardShortcutsProvider } from '@/providers/KeyboardShortcuts'
 import { DataProvider } from '@/providers/DataProvider'
 import { route } from '@/constants/routes'
 import { ExtensionProvider } from '@/providers/ExtensionProvider'
+import { ToasterProvider } from '@/providers/ToasterProvider'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -67,6 +68,7 @@ function RootLayout() {
     <Fragment>
       <ThemeProvider />
       <AppearanceProvider />
+      <ToasterProvider />
       {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
       {/* <TanStackRouterDevtools position="bottom-right" /> */}
     </Fragment>

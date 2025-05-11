@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import CodeBlockStyleSwitcher from '@/containers/CodeBlockStyleSwitcher'
 import { LineNumbersSwitcher } from '@/containers/LineNumbersSwitcher'
 import { CodeBlockExample } from '@/containers/CodeBlockExample'
+import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -81,7 +82,14 @@ function Appareances() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => resetAppearance()}
+                    onClick={() => {
+                      resetAppearance()
+                      toast.success('Appearance Reset', {
+                        id: 'reset-appearance',
+                        description:
+                          'Your appearance settings have been restored to default.',
+                      })
+                    }}
                   >
                     {t('common.reset')}
                   </Button>
@@ -109,7 +117,14 @@ function Appareances() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => resetCodeBlockStyle()}
+                    onClick={() => {
+                      resetCodeBlockStyle()
+                      toast.success('Code Block Style Reset', {
+                        id: 'code-block-style',
+                        description:
+                          'Your Code Block style settings have been restored to default.',
+                      })
+                    }}
                   >
                     {t('common.reset')}
                   </Button>
