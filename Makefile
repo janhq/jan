@@ -26,7 +26,6 @@ endif
 	yarn install
 	yarn build:joi
 	yarn build:core
-	yarn build:server
 	yarn build:extensions
 
 check-file-counts: install-and-build
