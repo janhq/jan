@@ -32,6 +32,7 @@ import { useMessages } from '@/hooks/useMessages'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
+import { MovingBorder } from './MovingBorder'
 
 type ChatInputProps = {
   className?: string
@@ -166,13 +167,28 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
   ])
 
   return (
-    <>
-      <div className="relative">
+    <div className="relative">
+      <div
+        className={cn(
+          'relative overflow-hidden p-[1px] rounded-lg',
+          Boolean(streamingContent) && 'opacity-70'
+        )}
+      >
+        {streamingContent && (
+          <div className="absolute inset-0">
+            <MovingBorder rx="10%" ry="10%">
+              <div
+                className={cn(
+                  'h-100 w-100 bg-[radial-gradient(var(--app-primary),transparent_60%)]'
+                )}
+              />
+            </MovingBorder>
+          </div>
+        )}
         <div
           className={cn(
-            'relative px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view-fg/2',
-            isFocused && 'ring-1 ring-main-view-fg/10',
-            Boolean(streamingContent) && 'opacity-50'
+            'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
+            isFocused && 'ring-1 ring-main-view-fg/10'
           )}
         >
           <TextareaAutosize
@@ -211,9 +227,16 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
             )}
           />
         </div>
-        <div className="absolute bg-transparent bottom-0 w-full p-2 ">
-          <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1">
+      </div>
+      <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
+        <div className="flex justify-between items-center w-full">
+          <div className="px-1 flex items-center gap-1">
+            <div
+              className={cn(
+                'px-1 flex items-center gap-1',
+                streamingContent && 'opacity-50 pointer-events-none'
+              )}
+            >
               {/* File attachment - always available */}
               <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconPaperclip size={18} className="text-main-view-fg/50" />
@@ -253,37 +276,37 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
                   <IconAtom size={18} className="text-main-view-fg/50" />
                 </div>
               )}
-
-              {showSpeedToken && (
-                <div className="flex items-center gap-1 text-main-view-fg/60 text-xs ml-1">
-                  <IconBrandSpeedtest size={18} />
-                  <span>42 tokens/sec</span>
-                </div>
-              )}
             </div>
 
-            {streamingContent ? (
-              <Button variant="destructive" size="icon">
-                <IconPlayerStopFilled />
-              </Button>
-            ) : (
-              <Button
-                variant={!prompt ? null : 'default'}
-                size="icon"
-                disabled={!prompt}
-                onClick={sendMessage}
-              >
-                {streamingContent ? (
-                  <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-                ) : (
-                  <ArrowRight className="text-primary-fg" />
-                )}
-              </Button>
+            {showSpeedToken && (
+              <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
+                <IconBrandSpeedtest size={18} />
+                <span>42 tokens/sec</span>
+              </div>
             )}
           </div>
+
+          {streamingContent ? (
+            <Button variant="destructive" size="icon">
+              <IconPlayerStopFilled />
+            </Button>
+          ) : (
+            <Button
+              variant={!prompt ? null : 'default'}
+              size="icon"
+              disabled={!prompt}
+              onClick={sendMessage}
+            >
+              {streamingContent ? (
+                <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+              ) : (
+                <ArrowRight className="text-primary-fg" />
+              )}
+            </Button>
+          )}
         </div>
       </div>
-    </>
+    </div>
   )
 }
 
