@@ -20,7 +20,6 @@ export const fetchThreads = async (): Promise<Thread[]> => {
         return threads.map((e) => {
           return {
             ...e,
-            content: [],
             updated: e.updated ?? 0,
             order: e.metadata?.order,
             isFavorite: e.metadata?.is_favorite,
@@ -67,7 +66,6 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
       .then((e) => {
         return {
           ...e,
-          content: [],
           updated: e.updated,
           model: {
             id: e.assistants?.[0]?.model.id,

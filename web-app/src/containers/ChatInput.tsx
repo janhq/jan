@@ -30,6 +30,7 @@ import { defaultModel } from '@/lib/models'
 import { useMessages } from '@/hooks/useMessages'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useAppState } from '@/hooks/useAppState'
 
 type ChatInputProps = {
   className?: string
@@ -49,10 +50,10 @@ const ChatInput = ({ className }: ChatInputProps) => {
 
   const {
     getCurrentThread,
-    streamingContent,
-    updateStreamingContent,
+
     createThread,
   } = useThreads()
+  const { streamingContent, updateStreamingContent } = useAppState()
 
   const { addMessage } = useMessages()
 
