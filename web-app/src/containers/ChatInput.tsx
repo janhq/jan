@@ -256,7 +256,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
 
               {showSpeedToken && (
                 <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
-                  <IconBrandSpeedtest size={16} />
+                  <IconBrandSpeedtest size={18} />
                   <span>42 tokens/sec</span>
                 </div>
               )}
