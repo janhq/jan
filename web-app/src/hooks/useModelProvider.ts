@@ -24,13 +24,13 @@ export const useModelProvider = create<ModelProviderState>()(
       setProviders: (providers) =>
         set((state) => {
           const existingProviders = state.providers
-          const updatedProviders = providers.map((e) => {
+          const updatedProviders = providers.map((provider) => {
             const existingProvider = existingProviders.find(
-              (x) => x.provider === e.provider
+              (x) => x.provider === provider.provider
             )
             return {
-              ...e,
-              settings: e.settings.map((setting) => {
+              ...provider,
+              settings: provider.settings.map((setting) => {
                 const existingSetting = existingProvider?.settings?.find(
                   (x) => x.key === setting.key
                 )
@@ -42,6 +42,8 @@ export const useModelProvider = create<ModelProviderState>()(
                   },
                 }
               }),
+              api_key: existingProvider?.api_key || provider.api_key,
+              base_url: existingProvider?.base_url || provider.base_url,
               active: existingProvider?.active || false,
             }
           })
