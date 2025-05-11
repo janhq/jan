@@ -28,7 +28,7 @@ export function getProviderLogo(provider: string) {
     case 'meta':
       return '/images/model-provider/meta.svg'
     case 'gemini':
-      return '/images/model-provider/google.svg'
+      return '/images/model-provider/gemini.svg'
     case 'deepseek':
       return '/images/model-provider/deepseek.svg'
     default:
