@@ -8,6 +8,7 @@ import {
   IconTrash,
   IconPencil,
 } from '@tabler/icons-react'
+import { useAppState } from '@/hooks/useAppState'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -53,6 +54,7 @@ export const ThreadContent = memo(
       []
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
+    const { streamingContent } = useAppState()
 
     return (
       <Fragment>
@@ -96,35 +98,34 @@ export const ThreadContent = memo(
               components={linkComponents}
             />
             <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
-              {item.isLastMessage && item.role === 'assistant' && (
-                <div className="flex items-center gap-1">
-                  <span>Speed: 42 tokens/sec</span>
-                </div>
-              )}
               <div className="flex items-center gap-2">
-                <CopyButton text={item.content?.[0]?.text.value || ''} />
-                <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                  onClick={() => {
-                    console.log('Delete clicked')
-                  }}
-                >
-                  <IconTrash size={16} />
-                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                    Delete
-                  </span>
-                </button>
-                <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                  onClick={() => {
-                    console.log('Regenerate clicked')
-                  }}
-                >
-                  <IconRefresh size={16} />
-                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                    Regenerate
-                  </span>
-                </button>
+                {!streamingContent && (
+                  <>
+                    <CopyButton text={item.content?.[0]?.text.value || ''} />
+                    <button
+                      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                      onClick={() => {
+                        console.log('Delete clicked')
+                      }}
+                    >
+                      <IconTrash size={16} />
+                      <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                        Delete
+                      </span>
+                    </button>
+                    <button
+                      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                      onClick={() => {
+                        console.log('Regenerate clicked')
+                      }}
+                    >
+                      <IconRefresh size={16} />
+                      <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                        Regenerate
+                      </span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </>

@@ -199,20 +199,8 @@ function ThreadDetail() {
             <div
               className="bg-main-view-fg/10 px-4 border border-main-view-fg/5 flex items-center justify-center rounded-xl gap-x-2 cursor-pointer pointer-events-auto"
               onClick={() => {
-                // First scroll to bottom with smooth animation
                 scrollToBottom(true)
                 setIsUserScrolling(false)
-                // // Add a delay to match the smooth scroll animation duration
-                // // This prevents the glitch by waiting for the scroll to complete
-                // // Use a longer timeout to ensure the animation completes
-                // setTimeout(() => {
-                //   setIsAtBottom(true)
-                //   // Reset the scroll position to the bottom
-                //   if (scrollContainerRef.current) {
-                //     scrollContainerRef.current.scrollTop =
-                //       scrollContainerRef.current.scrollHeight
-                //   }
-                // }, 500)
               }}
             >
               <p className="text-xs">Scroll to bottom</p>
