@@ -34,6 +34,7 @@
     "@uiw/react-textarea-code-editor": "^3.1.1",
     "class-variance-authority": "^0.7.1",
     "culori": "^4.0.1",
+    "fuse.js": "^7.1.0",
     "i18next": "^25.0.1",
     "katex": "^0.16.22",
     "lodash.debounce": "^4.0.8",
