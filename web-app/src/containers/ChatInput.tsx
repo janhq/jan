@@ -97,8 +97,6 @@ const ChatInput = ({ className }: ChatInputProps) => {
       })
     }
 
-    console.log(currentThread, provider)
-
     if (!currentThread || !provider) return
 
     addMessage(newUserThreadContent(currentThread.id, prompt))

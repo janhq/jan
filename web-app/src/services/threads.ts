@@ -15,6 +15,8 @@ export const fetchThreads = async (): Promise<Thread[]> => {
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.listThreads()
       .then((threads) => {
+        if (!Array.isArray(threads)) return []
+
         return threads.map((e) => {
           return {
             ...e,
@@ -72,4 +74,40 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
       })
       .catch(() => thread) ?? thread
   )
+}
+
+/**
+ * Updates an existing thread using the conversational extension.
+ * @param thread - The thread object to update.
+ */
+export const updateThread = (thread: Thread) => {
+  return ExtensionManager.getInstance()
+    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    ?.modifyThread({
+      ...thread,
+      assistants: [
+        {
+          model: {
+            id: thread.model?.id ?? '*',
+            engine: (thread.model?.provider ?? 'llama.cpp') as InferenceEngine,
+          },
+          assistant_id: 'jan',
+          assistant_name: 'Jan',
+        },
+      ],
+      object: 'thread',
+      created: Date.now(),
+      updated: Date.now(),
+    })
+}
+
+/**
+ * Deletes a thread using the conversational extension.
+ * @param threadId - The ID of the thread to delete.
+ * @returns 
+ */
+export const deleteThread = (threadId: string) => {
+  return ExtensionManager.getInstance()
+    .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
+    ?.deleteThread(threadId)
 }
