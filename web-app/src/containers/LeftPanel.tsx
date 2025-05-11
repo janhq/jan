@@ -68,12 +68,12 @@ const LeftPanel = () => {
     select: (state) => state.location.pathname,
   })
 
-  const { deleteAllThreads, unstarAllThreads, getFilteredThreads } =
+  const { deleteAllThreads, unstarAllThreads, getFilteredThreads, threads } =
     useThreads()
 
   const filteredThreads = useMemo(() => {
     return getFilteredThreads(searchTerm)
-  }, [getFilteredThreads, searchTerm])
+  }, [getFilteredThreads, searchTerm, threads])
 
   // Memoize categorized threads based on filteredThreads
   const favoritedThreads = useMemo(() => {

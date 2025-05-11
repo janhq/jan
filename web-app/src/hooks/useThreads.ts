@@ -27,9 +27,9 @@ const fuseOptions = {
   threshold: 0.4, // Increased threshold to require more exact matches
   includeMatches: true, // Keeping this to show where matches occur
   ignoreLocation: true, // Consider the location of matches
-  useExtendedSearch: false, // Disable extended search for more precise matching
-  distance: 10, // Reduced edit distance for stricter fuzzy matching
-  tokenize: true, // Keep tokenization for word-level matching
+  useExtendedSearch: true, // Disable extended search for more precise matching
+  distance: 40, // Reduced edit distance for stricter fuzzy matching
+  tokenize: false, // Keep tokenization for word-level matching
   matchAllTokens: true, // Require all tokens to match for better precision
   findAllMatches: false, // Only find the first match to reduce noise
 }
@@ -78,7 +78,6 @@ export const useThreads = create<ThreadState>()(
         // Use the index to search and return matching threads
 
         const searchResults = currentIndex.search(searchTerm)
-        console.log('searchResults', searchResults)
         const validIds = searchResults.map((result) => result.item.id)
         return Object.values(get().threads).filter((thread) =>
           validIds.includes(thread.id)
@@ -163,6 +162,7 @@ export const useThreads = create<ThreadState>()(
         set((state) => ({
           searchIndex: new Fuse(Object.values(state.threads), fuseOptions),
         }))
+        console.log('newThread', newThread)
         return await createThread(newThread).then((createdThread) => {
           set((state) => ({
             threads: {
