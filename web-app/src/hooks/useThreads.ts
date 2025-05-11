@@ -1,25 +1,27 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
-import { mockTheads } from '@/mock/data'
+import { ulid } from 'ulidx'
+import { ThreadMessage } from '@janhq/core'
+import { createThread } from '@/services/threads'
 
 type ThreadState = {
   threads: Record<string, Thread>
   deletedThreadIds: string[]
-  streamingContent?: ThreadContent
+  streamingContent?: ThreadMessage
   currentThreadId?: string
+  getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
-  fetchThreads: () => Promise<void>
   getFavoriteThreads: () => Thread[]
   getThreadById: (threadId: string) => Thread | undefined
   toggleFavorite: (threadId: string) => void
   deleteThread: (threadId: string) => void
   deleteAllThreads: () => void
   unstarAllThreads: () => void
-  addThreadContent: (threadId: string, content: ThreadContent) => void
-  updateThreadContents: (threadId: string, contents: ThreadContent[]) => void
-  updateStreamingContent: (content: ThreadContent | undefined) => void
-  setCurrentThreadId: (threadId: string) => void
+  updateStreamingContent: (content: ThreadMessage | undefined) => void
+  setCurrentThreadId: (threadId?: string) => void
+  createThread: (model: ThreadModel) => Thread
+  updateCurrentThreadModel: (model: ThreadModel) => void
 }
 
 export const useThreads = create<ThreadState>()(
@@ -90,61 +92,46 @@ export const useThreads = create<ThreadState>()(
       getThreadById: (threadId: string) => {
         return get().threads[threadId]
       },
-      fetchThreads: async () => {
-        const response = await new Promise<Thread[]>((resolve) =>
-          setTimeout(() => resolve(mockTheads as Thread[]), 0)
-        )
-
-        set((state) => {
-          const filteredResponse = response.filter(
-            (thread) => !state.deletedThreadIds.includes(thread.id)
-          )
-
-          const existingIds = new Set(Object.keys(state.threads))
-          const newThreads = filteredResponse.filter(
-            (t) => !existingIds.has(t.id)
-          )
-
-          const newThreadMap = newThreads.reduce(
-            (acc, thread) => {
-              acc[thread.id] = thread
-              return acc
-            },
-            {} as Record<string, Thread>
-          )
-
-          return {
-            threads: { ...state.threads, ...newThreadMap },
-          }
-        })
-      },
-      addThreadContent: (threadId, content) => {
-        set((state) => ({
-          threads: {
-            ...state.threads,
-            [threadId]: {
-              ...state.threads[threadId],
-              content: [...(state.threads[threadId].content || []), content],
-            },
-          },
-        }))
-      },
-      updateThreadContents: (threadId, contents) => {
-        set((state) => ({
-          threads: {
-            ...state.threads,
-            [threadId]: {
-              ...state.threads[threadId],
-              content: contents,
-            },
-          },
-        }))
-      },
       updateStreamingContent: (content) => {
         set({ streamingContent: content })
       },
       setCurrentThreadId: (threadId) => {
         set({ currentThreadId: threadId })
+      },
+      createThread: (model) => {
+        const newThread: Thread = {
+          id: ulid(),
+          title: 'New Thread',
+          content: [],
+          model,
+          isFavorite: false,
+        }
+        createThread(newThread).then((createdThread) => {
+          set((state) => ({
+            threads: {
+              ...state.threads,
+              [createdThread.id]: createdThread,
+            },
+            currentThreadId: createdThread.id,
+          }))
+        })
+
+        return newThread
+      },
+      updateCurrentThreadModel: (model) => {
+        set((state) => ({
+          threads: {
+            ...state.threads,
+            [state.currentThreadId as string]: {
+              ...state.threads[state.currentThreadId as string],
+              model,
+            },
+          },
+        }))
+      },
+      getCurrentThread: () => {
+        const { currentThreadId, threads } = get()
+        return currentThreadId ? threads[currentThreadId] : undefined
       },
     }),
     {

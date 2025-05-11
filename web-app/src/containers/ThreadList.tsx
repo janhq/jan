@@ -214,8 +214,8 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
           const reorderedSectionThreads = arrayMove(threads, oldIndex, newIndex)
 
           // Split all threads into favorites and non-favorites
-          const favThreads = allThreads.filter((t) => t.isFavorite)
-          const nonFavThreads = allThreads.filter((t) => !t.isFavorite)
+          const favThreads = Object.values(allThreads).filter((t) => t.isFavorite)
+          const nonFavThreads = Object.values(allThreads).filter((t) => !t.isFavorite)
 
           // Replace the appropriate section with the reordered threads
           let updatedThreads
