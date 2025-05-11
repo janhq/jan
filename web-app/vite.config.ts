@@ -23,6 +23,12 @@ export default defineConfig({
   },
   define: {
     IS_TAURI: JSON.stringify(process.env.IS_TAURI),
+    IS_MACOS: JSON.stringify(process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? 'false'),
+    IS_WINDOWS: JSON.stringify(process.env.TAURI_ENV_PLATFORM?.includes('windows') ?? 'false'),
+    IS_LINUX: JSON.stringify(process.env.TAURI_ENV_PLATFORM?.includes('unix') ?? 'false'),
+    IS_IOS: JSON.stringify(process.env.TAURI_ENV_PLATFORM?.includes('ios') ?? 'false'),
+    IS_ANDROID: JSON.stringify(process.env.TAURI_ENV_PLATFORM?.includes('android') ?? 'false'),
+    PLATFORM: JSON.stringify(process.env.TAURI_ENV_PLATFORM),
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
