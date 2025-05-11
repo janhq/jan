@@ -41,7 +41,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 import { toast } from 'sonner'
 
@@ -201,6 +201,15 @@ type ThreadListProps = {
 function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
   const { setThreads, threads: allThreads } = useThreads()
 
+  const sortedThreads = useMemo(() => {
+    return Object.values(allThreads).sort((a, b) => {
+      if (a.order && b.order) return a.order - b.order
+
+      // Later on top
+      return (b.updated || 0) - (a.updated || 0)
+    })
+  }, [allThreads])
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -225,12 +234,8 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
           const reorderedSectionThreads = arrayMove(threads, oldIndex, newIndex)
 
           // Split all threads into favorites and non-favorites
-          const favThreads = Object.values(allThreads).filter(
-            (t) => t.isFavorite
-          )
-          const nonFavThreads = Object.values(allThreads).filter(
-            (t) => !t.isFavorite
-          )
+          const favThreads = sortedThreads.filter((t) => t.isFavorite)
+          const nonFavThreads = sortedThreads.filter((t) => !t.isFavorite)
 
           // Replace the appropriate section with the reordered threads
           let updatedThreads
@@ -247,11 +252,11 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
       }}
     >
       <SortableContext
-        items={threads.map((t) => t.id)}
+        items={sortedThreads.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
       >
-        {threads.map((thread, i) => (
-          <SortableItem key={i} thread={thread} />
+        {sortedThreads.map((thread, index) => (
+          <SortableItem key={index} thread={thread} />
         ))}
       </SortableContext>
     </DndContext>

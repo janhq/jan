@@ -21,8 +21,9 @@ export const fetchThreads = async (): Promise<Thread[]> => {
           return {
             ...e,
             content: [],
-            createdAt: new Date(e.created),
-            updatedAt: new Date(e.updated),
+            updated: e.updated ?? 0,
+            order: e.metadata?.order,
+            isFavorite: e.metadata?.is_favorite,
             model: {
               id: e.assistants?.[0]?.model.id,
               provider: e.assistants?.[0]?.model.engine,
@@ -59,17 +60,20 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
             assistant_name: 'Jan',
           },
         ],
+        metadata: {
+          order: 1
+        }
       })
       .then((e) => {
         return {
           ...e,
           content: [],
-          createdAt: new Date(e.created),
-          updatedAt: new Date(e.updated),
+          updated: e.updated,
           model: {
             id: e.assistants?.[0]?.model.id,
             provider: e.assistants?.[0]?.model.engine,
           },
+          order: 1
         } as Thread
       })
       .catch(() => thread) ?? thread
@@ -95,16 +99,20 @@ export const updateThread = (thread: Thread) => {
           assistant_name: 'Jan',
         },
       ],
+      metadata: {
+        is_favorite: thread.isFavorite,
+        order: thread.order
+      },
       object: 'thread',
-      created: Date.now(),
-      updated: Date.now(),
+      created: Date.now()/ 1000,
+      updated: Date.now()/ 1000,
     })
 }
 
 /**
  * Deletes a thread using the conversational extension.
  * @param threadId - The ID of the thread to delete.
- * @returns 
+ * @returns
  */
 export const deleteThread = (threadId: string) => {
   return ExtensionManager.getInstance()

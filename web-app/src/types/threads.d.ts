@@ -42,4 +42,6 @@ type Thread = {
 
   content: ThreadContent[]
   model?: ThreadModel
+  updated: number
+  order?: number
 }
