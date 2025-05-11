@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
+  emptyThreadContent,
   newAssistantThreadContent,
   newUserThreadContent,
   sendCompletion,
@@ -109,6 +110,8 @@ const ChatInput = ({ className }: ChatInputProps) => {
     }
 
     if (!currentThread || !provider) return
+
+    updateStreamingContent(emptyThreadContent)
 
     addMessage(newUserThreadContent(currentThread.id, prompt))
     setPrompt('')
