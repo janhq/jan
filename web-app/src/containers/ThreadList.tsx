@@ -172,13 +172,15 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       size="sm"
                       onClick={() => {
                         deleteThread(thread.id)
-                        navigate({ to: route.home })
                         setOpenDropdown(false)
                         toast.success('Delete Thread', {
                           id: 'delete-thread',
                           description:
                             'This thread has been permanently deleted.',
                         })
+                        setTimeout(() => {
+                          navigate({ to: route.home })
+                        }, 0)
                       }}
                     >
                       Delete
@@ -256,8 +258,8 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
         items={sortedThreads.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
       >
-        {sortedThreads.map((thread, index) => (
-          <SortableItem key={index} thread={thread} />
+        {sortedThreads.map((thread) => (
+          <SortableItem key={thread.id} thread={thread} />
         ))}
       </SortableContext>
     </DndContext>
