@@ -23,19 +23,7 @@ type ThreadState = {
 }
 
 const fuseOptions = {
-  keys: [
-    ['title'],
-    {
-      name: 'content',
-      getFn: (thread: Thread) => {
-        // Extract all text values from the thread content
-        return thread.content
-          .filter((item) => item.text?.value)
-          .map((item) => item.text!.value)
-          .join('\n') // Join all text values into a single searchable string
-      },
-    },
-  ],
+  keys: [['title']],
   threshold: 0.2,
   includeMatches: true,
   ignoreLocation: true, // Ignore the location of the match in the string
