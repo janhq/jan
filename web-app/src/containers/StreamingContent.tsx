@@ -9,5 +9,6 @@ export const StreamingContent = memo(() => {
   if (!streamingContent) return null
 
   // Pass a new object to ThreadContent to avoid reference issues
-  return <ThreadContent {...streamingContent} />
+  // The streaming content is always the last message
+  return <ThreadContent {...streamingContent} isLastMessage={true} />
 })
