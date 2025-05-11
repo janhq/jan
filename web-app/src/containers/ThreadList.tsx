@@ -93,7 +93,9 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
       )}
     >
       <div className="py-1 pr-2 truncate">
-        <span className="text-left-panel-fg/90">{thread.title}</span>
+        <span className="text-left-panel-fg/90">
+          {thread.title || 'New Thread'}
+        </span>
       </div>
       <div className="flex items-center">
         <DropdownMenu
@@ -170,6 +172,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       size="sm"
                       onClick={() => {
                         deleteThread(thread.id)
+                        navigate({ to: route.home })
                         toast.success('Delete Thread', {
                           id: 'delete-thread',
                           description:
@@ -222,8 +225,12 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
           const reorderedSectionThreads = arrayMove(threads, oldIndex, newIndex)
 
           // Split all threads into favorites and non-favorites
-          const favThreads = Object.values(allThreads).filter((t) => t.isFavorite)
-          const nonFavThreads = Object.values(allThreads).filter((t) => !t.isFavorite)
+          const favThreads = Object.values(allThreads).filter(
+            (t) => t.isFavorite
+          )
+          const nonFavThreads = Object.values(allThreads).filter(
+            (t) => !t.isFavorite
+          )
 
           // Replace the appropriate section with the reordered threads
           let updatedThreads
@@ -243,8 +250,8 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
         items={threads.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
       >
-        {threads.map((thread) => (
-          <SortableItem key={thread.id} thread={thread} />
+        {threads.map((thread, i) => (
+          <SortableItem key={i} thread={thread} />
         ))}
       </SortableContext>
     </DndContext>
