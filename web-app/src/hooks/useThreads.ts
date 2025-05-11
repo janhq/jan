@@ -7,7 +7,6 @@ import { createThread, deleteThread, updateThread } from '@/services/threads'
 
 type ThreadState = {
   threads: Record<string, Thread>
-  deletedThreadIds: string[]
   streamingContent?: ThreadMessage
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
@@ -20,7 +19,7 @@ type ThreadState = {
   unstarAllThreads: () => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   setCurrentThreadId: (threadId?: string) => void
-  createThread: (model: ThreadModel) => Promise<Thread>
+  createThread: (model: ThreadModel, title?: string) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
 }
 
@@ -28,8 +27,14 @@ export const useThreads = create<ThreadState>()(
   persist(
     (set, get) => ({
       threads: {},
-      deletedThreadIds: [],
       setThreads: (threads) => {
+        threads.forEach((thread, index) => {
+          thread.order = index + 1
+          updateThread({
+            ...thread,
+            order: index + 1,
+          })
+        })
         const threadMap = threads.reduce(
           (acc, thread) => {
             acc[thread.id] = thread
@@ -40,15 +45,21 @@ export const useThreads = create<ThreadState>()(
         set({ threads: threadMap })
       },
       toggleFavorite: (threadId) => {
-        set((state) => ({
-          threads: {
-            ...state.threads,
-            [threadId]: {
-              ...state.threads[threadId],
-              isFavorite: !state.threads[threadId].isFavorite,
+        set((state) => {
+          updateThread({
+            ...state.threads[threadId],
+            isFavorite: !state.threads[threadId].isFavorite,
+          })
+          return {
+            threads: {
+              ...state.threads,
+              [threadId]: {
+                ...state.threads[threadId],
+                isFavorite: !state.threads[threadId].isFavorite,
+              },
             },
-          },
-        }))
+          }
+        })
       },
       deleteThread: (threadId) => {
         set((state) => {
@@ -57,7 +68,6 @@ export const useThreads = create<ThreadState>()(
           deleteThread(threadId)
           return {
             threads: remainingThreads,
-            deletedThreadIds: [...state.deletedThreadIds, threadId],
           }
         })
       },
@@ -69,7 +79,6 @@ export const useThreads = create<ThreadState>()(
           })
           return {
             threads: {},
-            deletedThreadIds: [...state.deletedThreadIds, ...allThreadIds],
           }
         })
       },
@@ -85,6 +94,9 @@ export const useThreads = create<ThreadState>()(
             },
             {} as Record<string, Thread>
           )
+          Object.values(updatedThreads).forEach((thread) => {
+            updateThread({ ...thread, isFavorite: false })
+          })
           return { threads: updatedThreads }
         })
       },
@@ -102,13 +114,14 @@ export const useThreads = create<ThreadState>()(
       setCurrentThreadId: (threadId) => {
         set({ currentThreadId: threadId })
       },
-      createThread: async (model) => {
+      createThread: async (model, title) => {
         const newThread: Thread = {
           id: ulid(),
-          title: 'New Thread',
+          title: title ?? 'New Thread',
           content: [],
           model,
-          isFavorite: false,
+          order: 1,
+          updated: Date.now() / 1000,
         }
         return await createThread(newThread).then((createdThread) => {
           set((state) => ({
@@ -123,6 +136,7 @@ export const useThreads = create<ThreadState>()(
       },
       updateCurrentThreadModel: (model) => {
         set((state) => {
+          if (!state.currentThreadId) return { ...state }
           const currentThread = state.getCurrentThread()
           if (currentThread) updateThread({ ...currentThread, model })
           return {

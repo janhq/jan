@@ -95,11 +95,17 @@ const ChatInput = ({ className }: ChatInputProps) => {
     let currentThread = thread
 
     if (!thread) {
-      currentThread = await createThread({
-        id: selectedModel?.id ?? defaultModel(selectedProvider),
-        provider: selectedProvider,
+      currentThread = await createThread(
+        {
+          id: selectedModel?.id ?? defaultModel(selectedProvider),
+          provider: selectedProvider,
+        },
+        prompt
+      )
+      router.navigate({
+        to: route.threadsDetail,
+        params: { threadId: currentThread.id },
       })
-      router.navigate({ to: route.threadsDetail, params: { threadId: currentThread.id } })
     }
 
     if (!currentThread || !provider) return
@@ -148,6 +154,7 @@ const ChatInput = ({ className }: ChatInputProps) => {
     createThread,
     selectedModel?.id,
     selectedProvider,
+    router,
     updateStreamingContent,
   ])
 
