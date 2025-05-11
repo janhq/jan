@@ -21,7 +21,35 @@ export const useModelProvider = create<ModelProviderState>()(
       providers: [],
       selectedProvider: 'llama.cpp',
       selectedModel: null,
-      setProviders: (providers) => set({ providers }),
+      setProviders: (providers) =>
+        set((state) => {
+          const existingProviders = state.providers
+          const updatedProviders = providers.map((e) => {
+            const existingProvider = existingProviders.find(
+              (x) => x.provider === e.provider
+            )
+            return {
+              ...e,
+              settings: e.settings.map((setting) => {
+                const existingSetting = existingProvider?.settings?.find(
+                  (x) => x.key === setting.key
+                )
+                return {
+                  ...setting,
+                  controller_props: {
+                    ...setting.controller_props,
+                    ...(existingSetting?.controller_props || {}),
+                  },
+                }
+              }),
+              active: existingProvider?.active || false,
+            }
+          })
+
+          return {
+            providers: updatedProviders,
+          }
+        }),
       updateProvider: (providerName, data) => {
         set((state) => ({
           providers: state.providers.map((provider) => {
