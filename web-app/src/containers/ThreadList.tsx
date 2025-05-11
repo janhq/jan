@@ -173,6 +173,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       onClick={() => {
                         deleteThread(thread.id)
                         navigate({ to: route.home })
+                        setOpenDropdown(false)
                         toast.success('Delete Thread', {
                           id: 'delete-thread',
                           description:
