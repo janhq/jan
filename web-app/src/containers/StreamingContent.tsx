@@ -9,5 +9,5 @@ export const StreamingContent = memo(() => {
   if (!streamingContent) return null
 
   // Pass a new object to ThreadContent to avoid reference issues
-  return <ThreadContent key="streaming" {...streamingContent} />
+  return <ThreadContent {...streamingContent} />
 })

@@ -1,5 +1,5 @@
 import { RenderMarkdown } from './RenderMarkdown'
-import { memo, useMemo } from 'react'
+import { Fragment, memo, useMemo } from 'react'
 
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo((item: ThreadContent) => {
@@ -14,7 +14,7 @@ export const ThreadContent = memo((item: ThreadContent) => {
   )
 
   return (
-    <div className="mb-4">
+    <Fragment>
       {item.type === 'text' && item.text && item.role === 'user' && (
         <div className="flex justify-end w-full">
           <div className="bg-accent text-accent-fg p-2 rounded-md inline-block">
@@ -37,6 +37,6 @@ export const ThreadContent = memo((item: ThreadContent) => {
           )}
         </div>
       )}
-    </div>
+    </Fragment>
   )
 })

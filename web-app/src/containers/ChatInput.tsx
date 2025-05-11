@@ -14,6 +14,7 @@ import {
   IconEye,
   IconTool,
   IconCodeCircle2,
+  IconPlayerStopFilled,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -27,11 +28,9 @@ import { useThreads } from '@/hooks/useThreads'
 
 type ChatInputProps = {
   className?: string
-  disabled?: boolean
-  isLoading?: boolean
 }
 
-const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
+const ChatInput = ({ className }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -47,6 +46,7 @@ const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
     currentThreadId,
     getThreadById,
     addThreadContent,
+    streamingContent,
     updateStreamingContent,
   } = useThreads()
 
@@ -82,10 +82,10 @@ const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
   }, [])
 
   useEffect(() => {
-    if (!disabled && textareaRef.current) {
+    if (textareaRef.current) {
       textareaRef.current.focus()
     }
-  }, [disabled])
+  }, [])
 
   const sendMessage = useCallback(async () => {
     if (!thread || !provider || !currentThreadId) return
@@ -131,48 +131,50 @@ const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
   ])
 
   return (
-    <div
-      className={cn(
-        'relative px-0 pt-4 pb-14 border border-main-view-fg/5 rounded-xl text-main-view-fg bg-main-view-fg/2',
-        isFocused && 'ring-1 ring-main-view-fg/10',
-        disabled && 'opacity-50'
-      )}
-    >
-      <TextareaAutosize
-        ref={textareaRef}
-        disabled={disabled}
-        minRows={1}
-        rows={1}
-        maxRows={10}
-        value={prompt}
-        onChange={(e) => {
-          setPrompt(e.target.value)
-          // Count the number of newlines to estimate rows
-          const newRows = (e.target.value.match(/\n/g) || []).length + 1
-          setRows(Math.min(newRows, maxRows))
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            if (!e.shiftKey && prompt) {
-              e.preventDefault()
-              // Submit the message when Enter is pressed without Shift
-              sendMessage()
-            }
-            // When Shift+Enter is pressed, a new line is added (default behavior)
-          }
-        }}
-        placeholder={t('common.placeholder.chatInput')}
-        autoFocus
-        spellCheck={spellCheckChatInput}
-        data-gramm={spellCheckChatInput}
-        data-gramm_editor={spellCheckChatInput}
-        data-gramm_grammarly={spellCheckChatInput}
+    <div className="relative">
+      <div
         className={cn(
-          'bg-transparent w-full flex-shrink-0 border-none resize-none outline-0 px-4',
-          rows < maxRows && 'scrollbar-hide',
-          className
+          'relative px-0 pt-4 pb-14 border border-main-view-fg/5 rounded-xl text-main-view-fg bg-main-view-fg/2',
+          isFocused && 'ring-1 ring-main-view-fg/10',
+          Boolean(streamingContent) && 'opacity-50'
         )}
-      />
+      >
+        <TextareaAutosize
+          ref={textareaRef}
+          disabled={Boolean(streamingContent)}
+          minRows={1}
+          rows={1}
+          maxRows={10}
+          value={prompt}
+          onChange={(e) => {
+            setPrompt(e.target.value)
+            // Count the number of newlines to estimate rows
+            const newRows = (e.target.value.match(/\n/g) || []).length + 1
+            setRows(Math.min(newRows, maxRows))
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              if (!e.shiftKey && prompt) {
+                e.preventDefault()
+                // Submit the message when Enter is pressed without Shift
+                sendMessage()
+              }
+              // When Shift+Enter is pressed, a new line is added (default behavior)
+            }
+          }}
+          placeholder={t('common.placeholder.chatInput')}
+          autoFocus
+          spellCheck={spellCheckChatInput}
+          data-gramm={spellCheckChatInput}
+          data-gramm_editor={spellCheckChatInput}
+          data-gramm_grammarly={spellCheckChatInput}
+          className={cn(
+            'bg-transparent w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+            rows < maxRows && 'scrollbar-hide',
+            className
+          )}
+        />
+      </div>
       <div className="absolute bg-transparent bottom-0 w-full p-2 ">
         <div className="flex justify-between items-center w-full">
           <div className="px-1 flex items-center gap-1">
@@ -216,18 +218,25 @@ const ChatInput = ({ className, disabled, isLoading }: ChatInputProps) => {
               </div>
             )}
           </div>
-          <Button
-            variant={!prompt ? null : 'default'}
-            size="icon"
-            disabled={!prompt}
-            onClick={sendMessage}
-          >
-            {isLoading ? (
-              <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-            ) : (
-              <ArrowRight className="text-primary-fg" />
-            )}
-          </Button>
+
+          {streamingContent ? (
+            <Button variant="destructive" size="icon">
+              <IconPlayerStopFilled />
+            </Button>
+          ) : (
+            <Button
+              variant={!prompt ? null : 'default'}
+              size="icon"
+              disabled={!prompt}
+              onClick={sendMessage}
+            >
+              {streamingContent ? (
+                <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+              ) : (
+                <ArrowRight className="text-primary-fg" />
+              )}
+            </Button>
+          )}
         </div>
       </div>
     </div>
