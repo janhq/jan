@@ -52,10 +52,6 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         });
     }
 
-    if !force {
-        return Ok(());
-    };
-
     // Attempt to create it again
     if !extensions_path.exists() {
         fs::create_dir_all(&extensions_path).map_err(|e| e.to_string())?;
