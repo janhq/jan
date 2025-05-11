@@ -30,7 +30,7 @@ function Index() {
           </div>
 
           <div className="flex-1 shrink-0">
-            <ChatInput isAtBottom={true} />
+            <ChatInput />
           </div>
         </div>
       </div>
