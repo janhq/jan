@@ -12,6 +12,7 @@ import { StreamingContent } from '@/containers/StreamingContent'
 import debounce from 'lodash.debounce'
 import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
+import { ModelLoader } from '@/containers/laoders/ModelLoader'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -132,12 +133,13 @@ function ThreadDetail() {
 
   if (!threadContent || !threadModel) return null
 
-  console.log(isAtBottom, 'isAtBottom')
+  // console.log(isAtBottom, 'isAtBottom')
 
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
         <DropdownModelProvider model={threadModel} />
+        <ModelLoader />
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
         <div
