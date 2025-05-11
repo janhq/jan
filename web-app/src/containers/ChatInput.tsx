@@ -170,7 +170,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
       <div className="relative">
         <div
           className={cn(
-            'relative px-0 pt-4 pb-14 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view-fg/2',
+            'relative px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view-fg/2',
             isFocused && 'ring-1 ring-main-view-fg/10',
             Boolean(streamingContent) && 'opacity-50'
           )}
@@ -178,7 +178,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
           <TextareaAutosize
             ref={textareaRef}
             disabled={Boolean(streamingContent)}
-            minRows={1}
+            minRows={2}
             rows={1}
             maxRows={10}
             value={prompt}
@@ -205,7 +205,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
             data-gramm_editor={spellCheckChatInput}
             data-gramm_grammarly={spellCheckChatInput}
             className={cn(
-              'bg-transparent w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+              'bg-transparent pt-4 w-full flex-shrink-0 border-none resize-none outline-0 px-4',
               rows < maxRows && 'scrollbar-hide',
               className
             )}
@@ -255,7 +255,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
               )}
 
               {showSpeedToken && (
-                <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
+                <div className="flex items-center gap-1 text-main-view-fg/60 text-xs ml-1">
                   <IconBrandSpeedtest size={18} />
                   <span>42 tokens/sec</span>
                 </div>

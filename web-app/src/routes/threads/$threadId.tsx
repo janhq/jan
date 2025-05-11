@@ -189,7 +189,7 @@ function ThreadDetail() {
             <StreamingContent />
           </div>
         </div>
-        <div className="w-4/6 mx-auto py-2 shrink-0 relative">
+        <div className="w-4/6 mx-auto pt-2 pb-3 shrink-0 relative">
           <div
             className={cn(
               'from-main-view/20 bg-gradient-to-b to-main-view absolute z-0 -top-6 h-8 py-1 flex w-full justify-center backdrop-blur pointer-events-none opacity-0 visibility-hidden',
