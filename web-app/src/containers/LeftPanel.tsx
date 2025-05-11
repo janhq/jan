@@ -22,8 +22,20 @@ import {
 import { useThreads } from '@/hooks/useThreads'
 
 import { useTranslation } from 'react-i18next'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
 
 const mainMenus = [
   {
@@ -68,6 +80,7 @@ const LeftPanel = () => {
     return threads.filter((t) => !t.isFavorite)
   }, [threads])
 
+  const [openDropdown, setOpenDropdown] = useState(false)
 
   return (
     <aside
@@ -124,7 +137,16 @@ const LeftPanel = () => {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent side="bottom" align="end">
-                          <DropdownMenuItem onClick={unstarAllThreads}>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              unstarAllThreads()
+                              toast.success('All Threads Unfavorited', {
+                                id: 'unfav-all-threads',
+                                description:
+                                  'All threads have been removed from your favorites.',
+                              })
+                            }}
+                          >
                             <IconStar size={16} className="mr-1" />
                             <span>{t('common.unstarAll')}</span>
                           </DropdownMenuItem>
@@ -148,22 +170,75 @@ const LeftPanel = () => {
                       {t('common.recents')}
                     </span>
                     <div className="relative">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
-                            <IconDots
-                              size={18}
-                              className="text-left-panel-fg/60"
-                            />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent side="bottom" align="end">
-                          <DropdownMenuItem onClick={deleteAllThreads}>
-                            <IconTrash size={16} className="mr-1" />
-                            <span>{t('common.deleteAll')}</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <Dialog
+                        onOpenChange={(open) => {
+                          if (!open) setOpenDropdown(false)
+                        }}
+                      >
+                        <DropdownMenu
+                          open={openDropdown}
+                          onOpenChange={(open) => setOpenDropdown(open)}
+                        >
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                              }}
+                            >
+                              <IconDots
+                                size={18}
+                                className="text-left-panel-fg/60"
+                              />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent side="bottom" align="end">
+                            <DialogTrigger asChild>
+                              <DropdownMenuItem
+                                onSelect={(e) => e.preventDefault()}
+                              >
+                                <IconTrash size={16} className="mr-1" />
+                                <span>{t('common.deleteAll')}</span>
+                              </DropdownMenuItem>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Delete Thread</DialogTitle>
+                                <DialogDescription>
+                                  Are you sure you want to delete this thread?
+                                  This action cannot be undone.
+                                </DialogDescription>
+                                <DialogFooter className="mt-2">
+                                  <DialogClose asChild>
+                                    <Button
+                                      variant="link"
+                                      size="sm"
+                                      className="hover:no-underline"
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </DialogClose>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                      deleteAllThreads()
+                                      toast.success('Delete All Thread', {
+                                        id: 'delete-thread',
+                                        description:
+                                          'All thread has been permanently deleted.',
+                                      })
+                                    }}
+                                  >
+                                    Delete
+                                  </Button>
+                                </DialogFooter>
+                              </DialogHeader>
+                            </DialogContent>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </Dialog>
                     </div>
                   </div>
                 </>

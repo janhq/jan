@@ -43,6 +43,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { memo, useState } from 'react'
 import { useNavigate, useMatches } from '@tanstack/react-router'
+import { toast } from 'sonner'
 
 const SortableItem = memo(({ thread }: { thread: Thread }) => {
   const {
@@ -167,7 +168,14 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => deleteThread(thread.id)}
+                      onClick={() => {
+                        deleteThread(thread.id)
+                        toast.success('Delete Thread', {
+                          id: 'delete-thread',
+                          description:
+                            'This thread has been permanently deleted.',
+                        })
+                      }}
                     >
                       Delete
                     </Button>
