@@ -160,7 +160,7 @@ function ThreadDetail() {
     <div className="flex flex-col h-full">
       <HeaderPage>
         <DropdownModelProvider model={threadModel} />
-        <ModelLoader />
+        {thread?.model?.provider === 'llama.cpp' && <ModelLoader />}
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
         <div
