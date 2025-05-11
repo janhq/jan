@@ -193,20 +193,39 @@ jobs:
           name: jan-${{ inputs.channel }}-tauri-windows-${{ inputs.new_version }}
           path: |
             ./src-tauri/target/release/bundle/nsis/*.exe
+      
+      ## create zip file and latest.yml for windows electron auto updater
+      - name: create zip file and latest.yml for windows electron auto updater
+        shell: bash
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe
+            WIN_SIG=$(cat Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe.sig)
+          else
+            FILE_NAME=Jan_${{ inputs.new_version }}_x64-setup.exe
+            WIN_SIG=$(cat Jan_${{ inputs.new_version }}_x64-setup.exe.sig)
+          fi
+
+          echo "::set-output name=WIN_SIG::$WIN_SIG"
+          echo "::set-output name=FILE_NAME::$FILE_NAME"
+        id: metadata
 
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
         shell: bash
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta' || inputs.channel == 'nightly'
         run: |
           cd ./src-tauri/target/release/bundle/nsis
 
-          # Upload for electron updater
-          aws s3 cp ./latest.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest.yml
-          aws s3 cp ./beta.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta.yml
-
           # Upload for tauri updater
-          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
+          echo "🧩 List all files in current directory:"
+          ls -lh
+
+          echo "🔍 Finding all .exe files:"
+          find . -name "*.exe"
+          echo "📤 Uploading Windows setup to S3:"
+          aws s3 cp ./Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}

@@ -160,20 +160,46 @@ jobs:
         with:
           name: jan-tauri-linux-amd64-${{ inputs.new_version }}-AppImage
           path: ./src-tauri/target/release/bundle/appimage/*.AppImage
-
-      ## Upload to s3 for nightly and beta
-      - name: upload to aws s3 if public provider is aws
-        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+      
+      ## create zip file and latest-linux.yml for linux electron auto updater
+      - name: Create zip file and latest-linux.yml for linux electron auto updater
+        id: packageinfo
         run: |
           cd ./src-tauri/target/release/bundle
 
-          # Upload for electron updater
-          aws s3 cp ./latest-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-linux.yml
-          aws s3 cp ./beta-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-linux.yml
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            DEB_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
+            APPIMAGE_FILE_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
+            DEB_SIG=$(cat deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb.sig)
+            APPIMAGE_SIG=$(cat appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage.sig)
+          else
+            DEB_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.deb
+            APPIMAGE_FILE_NAME=Jan_${{ inputs.new_version }}_amd64.AppImage
+            DEB_SIG=$(cat deb/Jan_${{ inputs.new_version }}_amd64.deb.sig)
+            APPIMAGE_SIG=$(cat appimage/Jan_${{ inputs.new_version }}_amd64.AppImage.sig)
+          fi
+
+          echo "DEB_SIG=$DEB_SIG" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_SIG=$APPIMAGE_SIG" >> $GITHUB_OUTPUT
+          echo "DEB_FILE_NAME=$DEB_FILE_NAME" >> $GITHUB_OUTPUT
+          echo "APPIMAGE_FILE_NAME=$APPIMAGE_FILE_NAME" >> $GITHUB_OUTPUT
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta' || inputs.channel == 'nightly'
+        run: |
+          cd ./src-tauri/target/release/bundle
 
           # Upload for tauri updater
-          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
-          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb
+
+          echo "🧩 Checking ./deb contents:"
+          ls -lh ./deb
+          echo "🧩 Checking ./appimage contents:"
+          ls -lh ./appimage
+          echo "📤 Upload .deb:"
+          aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb
+          echo "📤 Upload .AppImage:" 
+          aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}

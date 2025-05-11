@@ -161,21 +161,48 @@ jobs:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |
             ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+      
+            ## create zip file and latest-mac.yml for mac electron auto updater
+      - name: create zip file and latest-mac.yml for mac electron auto updater
+        run: |
+          cd ./src-tauri/target/universal-apple-darwin/release/bundle/macos
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            zip -r jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip Jan-${{ inputs.channel }}.app
+            FILE_NAME=jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
+            DMG_NAME=Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
+            MAC_UNIVERSAL_SIG=$(cat Jan-${{ inputs.channel }}.app.tar.gz.sig)
+            TAR_NAME=Jan-${{ inputs.channel }}.app.tar.gz
+          else
+            zip -r jan-mac-universal-${{ inputs.new_version }}.zip Jan.app
+            FILE_NAME=jan-mac-universal-${{ inputs.new_version }}.zip
+            MAC_UNIVERSAL_SIG=$(cat Jan.app.tar.gz.sig)
+            DMG_NAME=Jan_${{ inputs.new_version }}_universal.dmg
+            TAR_NAME=Jan.app.tar.gz
+          fi
 
+          echo "::set-output name=MAC_UNIVERSAL_SIG::$MAC_UNIVERSAL_SIG"
+          echo "::set-output name=FILE_NAME::$FILE_NAME"
+          echo "::set-output name=DMG_NAME::$DMG_NAME"
+          echo "::set-output name=TAR_NAME::$TAR_NAME"
+        id: metadata
       ## Upload to s3 for nightly and beta
       - name: upload to aws s3 if public provider is aws
         if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
         run: |
           cd ./src-tauri/target/universal-apple-darwin/release/bundle
 
-          # Upload for electron updater
-          aws s3 cp ./macos/latest-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-mac.yml
-          aws s3 cp ./macos/beta-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-mac.yml
-          aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-
           # Upload for tauri updater
-          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
-          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}.app.tar.gz
+          echo "🧩 Checking ./dmg contents:"
+          ls -lh ./dmg
+          echo "🧩 Checking ./macos contents:"
+          ls -lh ./macos
+          echo "📤 Uploading DMG:"
+          ls -lh ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+          aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal-preview.dmg
+          
+          echo "📤 Uploading TAR.GZ:"
+          ls -lh ./macos/Jan-${{ inputs.channel }}.app.tar.gz
+          aws s3 cp ./macos/Jan-${{ inputs.channel }}.app.tar.gz s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}//Jan-${{ inputs.channel }}_${{ inputs.new_version }}-preview.app.tar.gz
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
