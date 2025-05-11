@@ -202,16 +202,16 @@ type ThreadListProps = {
 }
 
 function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
-  const { setThreads, threads: allThreads } = useThreads()
+  const { setThreads } = useThreads()
 
   const sortedThreads = useMemo(() => {
-    return Object.values(allThreads).sort((a, b) => {
+    return threads.sort((a, b) => {
       if (a.order && b.order) return a.order - b.order
 
       // Later on top
       return (b.updated || 0) - (a.updated || 0)
     })
-  }, [allThreads])
+  }, [threads])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
