@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
 import { ThreadMessage } from '@janhq/core'
-import { createThread } from '@/services/threads'
+import { createThread, deleteThread, updateThread } from '@/services/threads'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -54,6 +54,7 @@ export const useThreads = create<ThreadState>()(
         set((state) => {
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { [threadId]: _, ...remainingThreads } = state.threads
+          deleteThread(threadId)
           return {
             threads: remainingThreads,
             deletedThreadIds: [...state.deletedThreadIds, threadId],
@@ -63,6 +64,9 @@ export const useThreads = create<ThreadState>()(
       deleteAllThreads: () => {
         set((state) => {
           const allThreadIds = Object.keys(state.threads)
+          allThreadIds.forEach((threadId) => {
+            deleteThread(threadId)
+          })
           return {
             threads: {},
             deletedThreadIds: [...state.deletedThreadIds, ...allThreadIds],
@@ -119,15 +123,19 @@ export const useThreads = create<ThreadState>()(
         return newThread
       },
       updateCurrentThreadModel: (model) => {
-        set((state) => ({
-          threads: {
-            ...state.threads,
-            [state.currentThreadId as string]: {
-              ...state.threads[state.currentThreadId as string],
-              model,
+        set((state) => {
+          const currentThread = state.getCurrentThread()
+          if (currentThread) updateThread({ ...currentThread, model })
+          return {
+            threads: {
+              ...state.threads,
+              [state.currentThreadId as string]: {
+                ...state.threads[state.currentThreadId as string],
+                model,
+              },
             },
-          },
-        }))
+          }
+        })
       },
       getCurrentThread: () => {
         const { currentThreadId, threads } = get()
