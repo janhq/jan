@@ -29,8 +29,8 @@ function Shortcuts() {
                 title="New Chat"
                 description="Create a new chat conversation"
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-muted rounded-md">
-                    <span className="text-sm font-medium">
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">
                       <PlatformMetaKey /> N
                     </span>
                   </div>
@@ -40,8 +40,8 @@ function Shortcuts() {
                 title="Toggle Sidebar"
                 description="Show or hide the sidebar"
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-muted rounded-md">
-                    <span className="text-sm font-medium">
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">
                       <PlatformMetaKey /> B
                     </span>
                   </div>
@@ -55,8 +55,8 @@ function Shortcuts() {
                 title="Send Message"
                 description="Send the current message"
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-muted rounded-md">
-                    <span className="text-sm font-medium">Enter</span>
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">Enter</span>
                   </div>
                 }
               />
@@ -64,8 +64,8 @@ function Shortcuts() {
                 title="New Line"
                 description="Insert a new line in the message"
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-muted rounded-md">
-                    <span className="text-sm font-medium">Shift + Enter</span>
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">Shift + Enter</span>
                   </div>
                 }
               />
@@ -77,8 +77,8 @@ function Shortcuts() {
                 title="Go to Settings"
                 description="Open the settings page"
                 actions={
-                  <div className="flex items-center justify-center px-3 py-1 bg-muted rounded-md">
-                    <span className="text-sm font-medium">
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">
                       <PlatformMetaKey /> ,
                     </span>
                   </div>
