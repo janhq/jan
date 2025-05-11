@@ -40,7 +40,6 @@ type Thread = {
   title: string
   isFavorite?: boolean
 
-  content: ThreadContent[]
   model?: ThreadModel
   updated: number
   order?: number

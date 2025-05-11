@@ -1,6 +1,7 @@
 export const localStoregeKey = {
   LeftPanel: 'left-panel',
   threads: 'threads',
+  messages: 'messages',
   theme: 'theme',
   modelProvider: 'model-provider',
   settingAppearance: 'setting-appearance',
