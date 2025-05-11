@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
-
+import Fuse from 'fuse.js'
 type ThreadState = {
   threads: Record<string, Thread>
   currentThreadId?: string
@@ -18,12 +18,27 @@ type ThreadState = {
   setCurrentThreadId: (threadId?: string) => void
   createThread: (model: ThreadModel, title?: string) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
+  getFilteredThreads: (searchTerm: string) => Thread[]
+  searchIndex: Fuse<Thread> | null
+}
+
+const fuseOptions = {
+  keys: ['title'],
+  threshold: 0.4, // Increased threshold to require more exact matches
+  includeMatches: true, // Keeping this to show where matches occur
+  ignoreLocation: true, // Consider the location of matches
+  useExtendedSearch: true, // Disable extended search for more precise matching
+  distance: 40, // Reduced edit distance for stricter fuzzy matching
+  tokenize: false, // Keep tokenization for word-level matching
+  matchAllTokens: true, // Require all tokens to match for better precision
+  findAllMatches: false, // Only find the first match to reduce noise
 }
 
 export const useThreads = create<ThreadState>()(
   persist(
     (set, get) => ({
       threads: {},
+      searchIndex: null,
       setThreads: (threads) => {
         threads.forEach((thread, index) => {
           thread.order = index + 1
@@ -40,6 +55,33 @@ export const useThreads = create<ThreadState>()(
           {} as Record<string, Thread>
         )
         set({ threads: threadMap })
+      },
+      getFilteredThreads: (searchTerm: string) => {
+        const { threads, searchIndex } = get()
+
+        // If no search term, return all threads
+        if (!searchTerm) {
+          // return all threads
+          return Object.values(threads)
+        }
+
+        const currentIndex =
+          searchIndex && searchIndex.search != undefined
+            ? searchIndex
+            : new Fuse(
+                Object.values(threads).map((item) => item),
+                fuseOptions
+              )
+
+        set({ searchIndex: currentIndex })
+
+        // Use the index to search and return matching threads
+
+        const searchResults = currentIndex.search(searchTerm)
+        const validIds = searchResults.map((result) => result.item.id)
+        return Object.values(get().threads).filter((thread) =>
+          validIds.includes(thread.id)
+        )
       },
       toggleFavorite: (threadId) => {
         set((state) => {
@@ -65,6 +107,7 @@ export const useThreads = create<ThreadState>()(
           deleteThread(threadId)
           return {
             threads: remainingThreads,
+            searchIndex: new Fuse(Object.values(remainingThreads), fuseOptions),
           }
         })
       },
@@ -116,6 +159,10 @@ export const useThreads = create<ThreadState>()(
           order: 1,
           updated: Date.now() / 1000,
         }
+        set((state) => ({
+          searchIndex: new Fuse(Object.values(state.threads), fuseOptions),
+        }))
+        console.log('newThread', newThread)
         return await createThread(newThread).then((createdThread) => {
           set((state) => ({
             threads: {

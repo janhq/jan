@@ -9,6 +9,7 @@ import {
   IconTrash,
   IconStar,
   IconAppsFilled,
+  IconX,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import ThreadList from './ThreadList'
@@ -23,7 +24,6 @@ import { useThreads } from '@/hooks/useThreads'
 
 import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import {
   Dialog,
   DialogClose,
@@ -62,24 +62,27 @@ const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [searchTerm, setSearchTerm] = useState('')
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
   })
 
-  const { deleteAllThreads, unstarAllThreads } = useThreads()
+  const { deleteAllThreads, unstarAllThreads, getFilteredThreads, threads } =
+    useThreads()
 
-  const threads = useThreads(
-    useShallow((state) => Object.values(state.threads))
-  )
+  const filteredThreads = useMemo(() => {
+    return getFilteredThreads(searchTerm)
+  }, [getFilteredThreads, searchTerm, threads])
 
+  // Memoize categorized threads based on filteredThreads
   const favoritedThreads = useMemo(() => {
-    return threads.filter((t) => t.isFavorite === true)
-  }, [threads])
+    return filteredThreads.filter((t) => t.isFavorite)
+  }, [filteredThreads])
 
   const unFavoritedThreads = useMemo(() => {
-    return threads.filter((t) => !t.isFavorite)
-  }, [threads])
+    return filteredThreads.filter((t) => !t.isFavorite)
+  }, [filteredThreads])
 
   const [openDropdown, setOpenDropdown] = useState(false)
 
@@ -119,138 +122,145 @@ const LeftPanel = () => {
               )
             })}
           </div>
+          <div className="relative mb-4 mx-1">
+            <input
+              type="text"
+              placeholder={t('common.search')}
+              className="w-full px-2 py-1.5 bg-left-panel-fg/10 rounded text-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/30"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
+                onClick={() => setSearchTerm('')}
+              >
+                <IconX size={14} />
+              </button>
+            )}
+          </div>
           <div className="flex flex-col w-full h-full overflow-hidden">
             <div className="h-full overflow-y-auto overflow-x-hidden">
-              {favoritedThreads.length > 0 && (
-                <>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold sticky top-0">
-                      {t('common.favorites')}
-                    </span>
-                    <div className="relative">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
-                            <IconDots
-                              size={18}
-                              className="text-left-panel-fg/60"
-                            />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent side="bottom" align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              unstarAllThreads()
-                              toast.success('All Threads Unfavorited', {
-                                id: 'unfav-all-threads',
-                                description:
-                                  'All threads have been removed from your favorites.',
-                              })
-                            }}
-                          >
-                            <IconStar size={16} className="mr-1" />
-                            <span>{t('common.unstarAll')}</span>
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </div>
-                  <div className="flex flex-col mb-4">
-                    <ThreadList
-                      threads={favoritedThreads}
-                      isFavoriteSection={true}
-                    />
-                  </div>
-                </>
-              )}
-
-              {unFavoritedThreads.length > 0 && (
-                <>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
-                      {t('common.recents')}
-                    </span>
-                    <div className="relative">
-                      <Dialog
-                        onOpenChange={(open) => {
-                          if (!open) setOpenDropdown(false)
+              <div className="flex items-center justify-between mb-2">
+                <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold sticky top-0">
+                  {t('common.favorites')}
+                </span>
+                <div className="relative">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10">
+                        <IconDots size={18} className="text-left-panel-fg/60" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="end">
+                      <DropdownMenuItem
+                        onClick={() => {
+                          unstarAllThreads()
+                          toast.success('All Threads Unfavorited', {
+                            id: 'unfav-all-threads',
+                            description:
+                              'All threads have been removed from your favorites.',
+                          })
                         }}
                       >
-                        <DropdownMenu
-                          open={openDropdown}
-                          onOpenChange={(open) => setOpenDropdown(open)}
-                        >
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                              }}
-                            >
-                              <IconDots
-                                size={18}
-                                className="text-left-panel-fg/60"
-                              />
-                            </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent side="bottom" align="end">
-                            <DialogTrigger asChild>
-                              <DropdownMenuItem
-                                onSelect={(e) => e.preventDefault()}
-                              >
-                                <IconTrash size={16} className="mr-1" />
-                                <span>{t('common.deleteAll')}</span>
-                              </DropdownMenuItem>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Delete Thread</DialogTitle>
-                                <DialogDescription>
-                                  Are you sure you want to delete this thread?
-                                  This action cannot be undone.
-                                </DialogDescription>
-                                <DialogFooter className="mt-2">
-                                  <DialogClose asChild>
-                                    <Button
-                                      variant="link"
-                                      size="sm"
-                                      className="hover:no-underline"
-                                    >
-                                      Cancel
-                                    </Button>
-                                  </DialogClose>
-                                  <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    onClick={() => {
-                                      deleteAllThreads()
-                                      navigate({ to: route.home })
-                                      toast.success('Delete All Thread', {
-                                        id: 'delete-thread',
-                                        description:
-                                          'All thread has been permanently deleted.',
-                                      })
-                                    }}
-                                  >
-                                    Delete
-                                  </Button>
-                                </DialogFooter>
-                              </DialogHeader>
-                            </DialogContent>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </Dialog>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="flex flex-col">
+                        <IconStar size={16} className="mr-1" />
+                        <span>{t('common.unstarAll')}</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+              <div className="flex flex-col mb-4">
                 <ThreadList
-                  threads={unFavoritedThreads}
-                  isFavoriteSection={false}
+                  threads={favoritedThreads}
+                  isFavoriteSection={true}
                 />
+                {favoritedThreads.length === 0 && (
+                  <p className="text-xs text-left-panel-fg/50 px-1 font-semibold">
+                    {t('chat.status.empty', { ns: 'chat' })}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between mb-2">
+                <span className="block text-xs text-left-panel-fg/50 px-1 font-semibold">
+                  {t('common.recents')}
+                </span>
+                <div className="relative">
+                  <Dialog
+                    onOpenChange={(open) => {
+                      if (!open) setOpenDropdown(false)
+                    }}
+                  >
+                    <DropdownMenu
+                      open={openDropdown}
+                      onOpenChange={(open) => setOpenDropdown(open)}
+                    >
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                          }}
+                        >
+                          <IconDots
+                            size={18}
+                            className="text-left-panel-fg/60"
+                          />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent side="bottom" align="end">
+                        <DialogTrigger asChild>
+                          <DropdownMenuItem
+                            onSelect={(e) => e.preventDefault()}
+                          >
+                            <IconTrash size={16} className="mr-1" />
+                            <span>{t('common.deleteAll')}</span>
+                          </DropdownMenuItem>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Delete Thread</DialogTitle>
+                            <DialogDescription>
+                              Are you sure you want to delete this thread? This
+                              action cannot be undone.
+                            </DialogDescription>
+                            <DialogFooter className="mt-2">
+                              <DialogClose asChild>
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  className="hover:no-underline"
+                                >
+                                  Cancel
+                                </Button>
+                              </DialogClose>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => {
+                                  deleteAllThreads()
+                                  navigate({ to: route.home })
+                                  toast.success('Delete All Thread', {
+                                    id: 'delete-thread',
+                                    description:
+                                      'All thread has been permanently deleted.',
+                                  })
+                                }}
+                              >
+                                Delete
+                              </Button>
+                            </DialogFooter>
+                          </DialogHeader>
+                        </DialogContent>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </Dialog>
+                </div>
+              </div>
+              <div className="flex flex-col mb-4">
+                <ThreadList threads={unFavoritedThreads} />
               </div>
             </div>
           </div>

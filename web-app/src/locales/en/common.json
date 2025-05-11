@@ -21,6 +21,7 @@
     "others": "Other",
     "language": "Language",
     "reset": "Reset",
+    "search": "Search",
 
     "placeholder": {
       "chatInput": "Ask me anything..."
