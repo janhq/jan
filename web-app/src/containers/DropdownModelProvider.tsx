@@ -87,7 +87,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                       alt={`${provider.provider} - Logo`}
                       className="size-4"
                     />
-                    <span className="capitalize">
+                    <span className="capitalize truncate">
                       {getProviderTitle(provider.provider)}
                     </span>
                   </DropdownMenuLabel>
@@ -120,7 +120,9 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                       }}
                     >
                       <div className="flex items-center gap-1.5 w-full">
-                        <span className="text-main-view-fg/70">{model.id}</span>
+                        <span className="truncate text-main-view-fg/70">
+                          {model.id}
+                        </span>
                         <div className="-mr-1.5">
                           <Capabilities capabilities={capabilities} />
                         </div>

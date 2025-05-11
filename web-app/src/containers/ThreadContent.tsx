@@ -62,7 +62,7 @@ export const ThreadContent = memo(
           <div>
             <div className="flex justify-end w-full">
               <div className="bg-accent text-accent-fg p-2 rounded-md inline-block">
-                <p>{item.content?.[0].text.value}</p>
+                <p className="select-text">{item.content?.[0].text.value}</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
