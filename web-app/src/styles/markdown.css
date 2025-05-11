@@ -166,6 +166,19 @@
     padding-left: 0;
   }
 
+  ol,
+  ul {
+    list-style: auto;
+    padding-left: 16px;
+    white-space: normal;
+    list-style-position: inside;
+    li {
+      p {
+        display: inline;
+      }
+    }
+  }
+
   /* Images */
   img {
     max-width: 100%;
