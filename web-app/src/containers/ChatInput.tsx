@@ -27,6 +27,8 @@ import {
 import { useThreads } from '@/hooks/useThreads'
 import { defaultModel } from '@/lib/models'
 import { useMessages } from '@/hooks/useMessages'
+import { useRouter } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 
 type ChatInputProps = {
   className?: string
@@ -52,6 +54,8 @@ const ChatInput = ({ className }: ChatInputProps) => {
   } = useThreads()
 
   const { addMessage } = useMessages()
+
+  const router = useRouter()
 
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
@@ -95,6 +99,7 @@ const ChatInput = ({ className }: ChatInputProps) => {
         id: selectedModel?.id ?? defaultModel(selectedProvider),
         provider: selectedProvider,
       })
+      router.navigate({ to: route.threadsDetail, params: { threadId: currentThread.id } })
     }
 
     if (!currentThread || !provider) return
