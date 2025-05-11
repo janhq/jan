@@ -23,7 +23,7 @@ type ThreadState = {
 }
 
 const fuseOptions = {
-  keys: [['title']],
+  keys: ['title'],
   threshold: 0.2,
   includeMatches: true,
   ignoreLocation: true, // Ignore the location of the match in the string

@@ -46,8 +46,6 @@ export const ThreadContent = memo(
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
 
-    console.log(item)
-
     return (
       <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (

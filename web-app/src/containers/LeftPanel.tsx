@@ -9,6 +9,7 @@ import {
   IconTrash,
   IconStar,
   IconAppsFilled,
+  IconX,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import ThreadList from './ThreadList'
@@ -23,7 +24,6 @@ import { useThreads } from '@/hooks/useThreads'
 
 import { useTranslation } from 'react-i18next'
 import { useMemo, useState } from 'react'
-import { useShallow } from 'zustand/react/shallow'
 import {
   Dialog,
   DialogClose,
@@ -62,16 +62,18 @@ const LeftPanel = () => {
   const { open, setLeftPanel } = useLeftPanel()
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [searchTerm, setSearchTerm] = useState('')
 
   const currentPath = useRouterState({
     select: (state) => state.location.pathname,
   })
 
-  const { deleteAllThreads, unstarAllThreads } = useThreads()
+  const { deleteAllThreads, unstarAllThreads, getFilteredThreads } =
+    useThreads()
 
-  const threads = useThreads(
-    useShallow((state) => Object.values(state.threads))
-  )
+  const threads = useMemo(() => {
+    return getFilteredThreads(searchTerm)
+  }, [getFilteredThreads, searchTerm])
 
   const favoritedThreads = useMemo(() => {
     return threads.filter((t) => t.isFavorite === true)
@@ -118,6 +120,23 @@ const LeftPanel = () => {
                 </Link>
               )
             })}
+          </div>
+          <div className="relative mb-4">
+            <input
+              type="text"
+              placeholder={t('common.search')}
+              className="w-full px-2 py-1.5 bg-left-panel-fg/10 rounded text-sm text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/30"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            {searchTerm && (
+              <button
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
+                onClick={() => setSearchTerm('')}
+              >
+                <IconX size={14} />
+              </button>
+            )}
           </div>
           <div className="flex flex-col w-full h-full overflow-hidden">
             <div className="h-full overflow-y-auto overflow-x-hidden">
