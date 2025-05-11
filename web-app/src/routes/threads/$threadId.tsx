@@ -172,7 +172,9 @@ function ThreadDetail() {
         >
           <div className="max-w-none w-4/6 mx-auto">
             {messages &&
-              messages.map((item) => {
+              messages.map((item, index) => {
+                // Only pass isLastMessage to the last message in the array
+                const isLastMessage = index === messages.length - 1
                 return (
                   <div
                     key={item.id}
@@ -180,7 +182,7 @@ function ThreadDetail() {
                     data-message-author-role={item.role}
                     className="mb-4"
                   >
-                    <ThreadContent {...item} />
+                    <ThreadContent {...item} isLastMessage={isLastMessage} />
                   </div>
                 )
               })}

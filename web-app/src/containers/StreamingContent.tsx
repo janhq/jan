@@ -1,3 +1,4 @@
+import { useAppState } from '@/hooks/useAppState'
 import { ThreadContent } from './ThreadContent'
 import { memo } from 'react'
 import { useAppState } from '@/hooks/useAppState'

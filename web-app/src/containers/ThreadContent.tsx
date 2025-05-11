@@ -1,7 +1,13 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
 import { Fragment, memo, useMemo, useState } from 'react'
-import { IconCopy, IconCopyCheck, IconRefresh } from '@tabler/icons-react'
+import {
+  IconCopy,
+  IconCopyCheck,
+  IconRefresh,
+  IconTrash,
+  IconPencil,
+} from '@tabler/icons-react'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -14,18 +20,20 @@ const CopyButton = ({ text }: { text: string }) => {
 
   return (
     <button
-      className="flex items-center gap-1 hover:text-accent transition-colors"
+      className="flex items-center gap-1 hover:text-accent transition-colors group relative"
       onClick={handleCopy}
     >
       {copied ? (
         <>
           <IconCopyCheck size={16} className="text-accent" />
-          <span>Copied!</span>
+          <span className="opacity-100">Copied!</span>
         </>
       ) : (
         <>
           <IconCopy size={16} />
-          <span>Copy</span>
+          <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+            Copy
+          </span>
         </>
       )}
     </button>
@@ -49,9 +57,35 @@ export const ThreadContent = memo(
     return (
       <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
-          <div className="flex justify-end w-full">
-            <div className="bg-accent text-accent-fg p-2 rounded-md inline-block">
-              <p>{item.content?.[0].text.value}</p>
+          <div>
+            <div className="flex justify-end w-full">
+              <div className="bg-accent text-accent-fg p-2 rounded-md inline-block">
+                <p>{item.content?.[0].text.value}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
+              <button
+                className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                onClick={() => {
+                  console.log('Edit clicked')
+                }}
+              >
+                <IconPencil size={16} />
+                <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                  Edit
+                </span>
+              </button>
+              <button
+                className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                onClick={() => {
+                  console.log('Delete clicked')
+                }}
+              >
+                <IconTrash size={16} />
+                <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                  Delete
+                </span>
+              </button>
             </div>
           </div>
         )}
@@ -61,22 +95,35 @@ export const ThreadContent = memo(
               content={item.content?.[0]?.text.value}
               components={linkComponents}
             />
-            <div className="flex items-center gap-2 mt-2 text-sm text-main-view-fg/60">
+            <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
               {item.isLastMessage && item.role === 'assistant' && (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs">Speed: 42 tokens/sec</span>
+                  <span>Speed: 42 tokens/sec</span>
                 </div>
               )}
               <div className="flex items-center gap-2">
                 <CopyButton text={item.content?.[0]?.text.value || ''} />
                 <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer"
+                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                  onClick={() => {
+                    console.log('Delete clicked')
+                  }}
+                >
+                  <IconTrash size={16} />
+                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                    Delete
+                  </span>
+                </button>
+                <button
+                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                   onClick={() => {
                     console.log('Regenerate clicked')
                   }}
                 >
                   <IconRefresh size={16} />
-                  <span>Regenerate</span>
+                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                    Regenerate
+                  </span>
                 </button>
               </div>
             </div>
