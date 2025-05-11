@@ -1,10 +1,14 @@
+import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
+import { fetchMessages } from '@/services/messages'
+import { fetchThreads } from '@/services/threads'
 import { useEffect } from 'react'
 
 export function DataProvider() {
   const { fetchModelProvider } = useModelProvider()
-  const { fetchThreads } = useThreads()
+  const { setThreads } = useThreads()
+  const { setMessages } = useMessages()
 
   useEffect(() => {
     fetchModelProvider()
@@ -12,7 +16,14 @@ export function DataProvider() {
   }, [])
 
   useEffect(() => {
-    fetchThreads()
+    fetchThreads().then((threads) => {
+      setThreads(threads)
+      threads.forEach((thread) =>
+        fetchMessages(thread.id).then((messages) =>
+          setMessages(thread.id, messages)
+        )
+      )
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

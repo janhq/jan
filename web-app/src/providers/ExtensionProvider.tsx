@@ -1,8 +1,9 @@
 import { ExtensionManager } from '@/lib/extension'
 import { APIs } from '@/lib/service'
-import { PropsWithChildren, useCallback, useEffect } from 'react'
+import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 export function ExtensionProvider({ children }: PropsWithChildren) {
+  const [finishedSetup, setFinishedSetup] = useState(false)
   const setupExtensions = useCallback(async () => {
     window.core = { api: APIs }
 
@@ -10,6 +11,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     await ExtensionManager.getInstance()
       .registerActive()
       .then(() => ExtensionManager.getInstance().load())
+      .then(() => setFinishedSetup(true))
   }, [])
 
   useEffect(() => {
@@ -20,5 +22,5 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     }
   }, [setupExtensions])
 
-  return <>{children}</>
+  return <>{finishedSetup && children}</>
 }

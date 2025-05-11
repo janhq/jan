@@ -25,6 +25,8 @@ import {
   sendCompletion,
 } from '@/lib/completion'
 import { useThreads } from '@/hooks/useThreads'
+import { defaultModel } from '@/lib/models'
+import { useMessages } from '@/hooks/useMessages'
 
 type ChatInputProps = {
   className?: string
@@ -43,21 +45,19 @@ const ChatInput = ({ className }: ChatInputProps) => {
     useModelProvider()
 
   const {
-    currentThreadId,
-    getThreadById,
-    addThreadContent,
+    getCurrentThread,
     streamingContent,
     updateStreamingContent,
+    createThread,
   } = useThreads()
+
+  const { addMessage } = useMessages()
 
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
   }, [selectedProvider, getProviderByName])
 
-  const thread = useMemo(
-    () => currentThreadId && getThreadById(currentThreadId),
-    [currentThreadId, getThreadById]
-  )
+  const thread = getCurrentThread()
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -88,10 +88,22 @@ const ChatInput = ({ className }: ChatInputProps) => {
   }, [])
 
   const sendMessage = useCallback(async () => {
-    if (!thread || !provider || !currentThreadId) return
-    addThreadContent(currentThreadId, newUserThreadContent(prompt))
+    let currentThread = thread
+
+    if (!thread) {
+      currentThread = createThread({
+        id: selectedModel?.id ?? defaultModel(selectedProvider),
+        provider: selectedProvider,
+      })
+    }
+
+    console.log(currentThread, provider)
+
+    if (!currentThread || !provider) return
+
+    addMessage(newUserThreadContent(currentThread.id, prompt))
     setPrompt('')
-    const completion = await sendCompletion(thread, provider, prompt)
+    const completion = await sendCompletion(currentThread, provider, prompt)
 
     if (completion) {
       let accumulatedText = ''
@@ -102,10 +114,11 @@ const ChatInput = ({ className }: ChatInputProps) => {
             accumulatedText += delta
             // Create a new object each time to avoid reference issues
             // Use a timeout to prevent React from batching updates too quickly
-            const currentContent = newAssistantThreadContent(accumulatedText)
+            const currentContent = newAssistantThreadContent(
+              currentThread.id,
+              accumulatedText
+            )
             updateStreamingContent(currentContent)
-            // Small delay to prevent too many updates in a short time
-            await new Promise((resolve) => setTimeout(resolve, 0))
           }
         }
       } catch (error) {
@@ -113,8 +126,11 @@ const ChatInput = ({ className }: ChatInputProps) => {
       } finally {
         // Create a final content object for adding to the thread
         if (accumulatedText) {
-          const finalContent = newAssistantThreadContent(accumulatedText)
-          addThreadContent(currentThreadId, finalContent)
+          const finalContent = newAssistantThreadContent(
+            currentThread.id,
+            accumulatedText
+          )
+          addMessage(finalContent)
         }
         // Clear streaming content
         updateStreamingContent(undefined)
@@ -123,10 +139,12 @@ const ChatInput = ({ className }: ChatInputProps) => {
   }, [
     thread,
     provider,
-    currentThreadId,
+    addMessage,
     prompt,
-    addThreadContent,
     setPrompt,
+    createThread,
+    selectedModel?.id,
+    selectedProvider,
     updateStreamingContent,
   ])
 

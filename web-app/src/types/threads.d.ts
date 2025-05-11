@@ -30,14 +30,16 @@ type ThreadContent = {
 
 type ChatCompletionRole = 'system' | 'assistant' | 'user' | 'tool'
 
+type ThreadModel = {
+    id: string
+    provider: string
+  }
+
 type Thread = {
   id: string
   title: string
   isFavorite?: boolean
 
   content: ThreadContent[]
-  model?: {
-    id: string
-    provider: string
-  }
+  model?: ThreadModel
 }

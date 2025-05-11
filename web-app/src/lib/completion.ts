@@ -1,5 +1,11 @@
+import {
+  ContentType,
+  ChatCompletionRole,
+  ThreadMessage,
+  MessageStatus,
+} from '@janhq/core'
 import { models, StreamCompletionResponse, TokenJS } from 'token.js'
-
+import { ulid } from 'ulidx'
 /**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects
@@ -8,13 +14,27 @@ import { models, StreamCompletionResponse, TokenJS } from 'token.js'
  * @param content - The content of the thread
  * @returns
  */
-export const newUserThreadContent = (content: string): ThreadContent => ({
+export const newUserThreadContent = (
+  threadId: string,
+  content: string
+): ThreadMessage => ({
   type: 'text',
-  role: 'user',
-  text: {
-    value: content,
-    annotations: [],
-  },
+  role: ChatCompletionRole.User,
+  content: [
+    {
+      type: ContentType.Text,
+      text: {
+        value: content,
+        annotations: [],
+      },
+    },
+  ],
+  id: ulid(),
+  object: 'thread.message',
+  thread_id: threadId,
+  status: MessageStatus.Ready,
+  created_at: 0,
+  completed_at: 0,
 })
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -24,13 +44,27 @@ export const newUserThreadContent = (content: string): ThreadContent => ({
  * @param content - The content of the thread
  * @returns
  */
-export const newAssistantThreadContent = (content: string): ThreadContent => ({
+export const newAssistantThreadContent = (
+  threadId: string,
+  content: string
+): ThreadMessage => ({
   type: 'text',
-  role: 'assistant',
-  text: {
-    value: content,
-    annotations: [],
-  },
+  role: ChatCompletionRole.Assistant,
+  content: [
+    {
+      type: ContentType.Text,
+      text: {
+        value: content,
+        annotations: [],
+      },
+    },
+  ],
+  id: ulid(),
+  object: 'thread.message',
+  thread_id: threadId,
+  status: MessageStatus.Ready,
+  created_at: 0,
+  completed_at: 0,
 })
 
 /**

@@ -13,6 +13,8 @@ import debounce from 'lodash.debounce'
 import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
 import { ModelLoader } from '@/containers/laoders/ModelLoader'
+import { useMessages } from '@/hooks/useMessages'
+import { fetchMessages } from '@/services/messages'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -30,9 +32,14 @@ function ThreadDetail() {
     setCurrentThreadId,
     streamingContent,
   } = useThreads()
-  const threadContent = useThreads(
-    useShallow((state) => state.threads[threadId]?.content || [])
+  const { setMessages } = useMessages()
+
+  const { messages } = useMessages(
+    useShallow((state) => ({
+      messages: state.messages[threadId],
+    }))
   )
+
   const thread = useMemo(
     () => getThreadById(threadId),
     [threadId, getThreadById]
@@ -42,9 +49,28 @@ function ThreadDetail() {
 
   useEffect(() => {
     if (currentThreadId !== threadId) setCurrentThreadId(threadId)
-  }, [threadId, currentThreadId, setCurrentThreadId])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, currentThreadId])
 
-  // Auto-scroll logic
+  useEffect(() => {
+    fetchMessages(threadId).then((fetchedMessages) => {
+      if (fetchedMessages) {
+        // Update the messages in the store
+        setMessages(threadId, fetchedMessages)
+      }
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId])
+
+  useEffect(() => {
+    return () => {
+      // Clear the current thread ID when the component unmounts
+      setCurrentThreadId(undefined)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Auto-scroll to bottom when component mounts or thread content changes
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current
     if (!scrollContainer) return
@@ -131,9 +157,7 @@ function ThreadDetail() {
 
   const threadModel = useMemo(() => thread?.model, [thread])
 
-  if (!threadContent || !threadModel) return null
-
-  // console.log(isAtBottom, 'isAtBottom')
+  if (!messages || !threadModel) return null
 
   return (
     <div className="flex flex-col h-full">
@@ -150,12 +174,12 @@ function ThreadDetail() {
           )}
         >
           <div className="max-w-none w-4/6 mx-auto">
-            {threadContent &&
-              threadContent.map((item, index) => {
+            {messages &&
+              messages.map((item) => {
                 return (
                   <div
-                    key={index}
-                    data-test-id={`message-${index}`}
+                    key={item.id}
+                    data-test-id={`message-${item.id}`}
                     data-message-author-role={item.role}
                     className="mb-4"
                   >

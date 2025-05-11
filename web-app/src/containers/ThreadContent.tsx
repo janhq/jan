@@ -1,8 +1,9 @@
+import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
 import { Fragment, memo, useMemo } from 'react'
 
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
-export const ThreadContent = memo((item: ThreadContent) => {
+export const ThreadContent = memo((item: ThreadMessage) => {
   // Use useMemo to stabilize the components prop
   const linkComponents = useMemo(
     () => ({
@@ -12,29 +13,31 @@ export const ThreadContent = memo((item: ThreadContent) => {
     }),
     []
   )
+  const image = useMemo(() => item.content?.[0]?.image_url, [item])
 
   return (
     <Fragment>
-      {item.type === 'text' && item.text && item.role === 'user' && (
+      {item.content?.[0]?.text && item.role === 'user' && (
         <div className="flex justify-end w-full">
           <div className="bg-accent text-accent-fg p-2 rounded-md inline-block">
-            <p>{item.text.value}</p>
+            <p>{item.content?.[0].text.value}</p>
           </div>
         </div>
       )}
-      {item.type === 'text' && item.text && item.role !== 'user' && (
-        <RenderMarkdown content={item.text.value} components={linkComponents} />
+      {item.content?.[0]?.text && item.role !== 'user' && (
+        <RenderMarkdown
+          content={item.content?.[0]?.text.value}
+          components={linkComponents}
+        />
       )}
-      {item.type === 'image_url' && item.image_url && (
+      {item.type === 'image_url' && image && (
         <div>
           <img
-            src={item.image_url.url}
-            alt={item.image_url.detail || 'Thread image'}
+            src={image.url}
+            alt={image.detail || 'Thread image'}
             className="max-w-full rounded-md"
           />
-          {item.image_url.detail && (
-            <p className="text-sm mt-1">{item.image_url.detail}</p>
-          )}
+          {image.detail && <p className="text-sm mt-1">{image.detail}</p>}
         </div>
       )}
     </Fragment>

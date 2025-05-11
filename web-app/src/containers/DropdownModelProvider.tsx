@@ -13,6 +13,7 @@ import Capabilities from './Capabilities'
 import { IconSettings } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useThreads } from '@/hooks/useThreads'
 
 type DropdownModelProviderProps = {
   model?: {
@@ -25,6 +26,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   const { providers, selectModelProvider, selectedProvider, selectedModel } =
     useModelProvider()
   const [displayModel, setDisplayModel] = useState<string>('')
+  const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
 
   // Initialize model provider only once
@@ -36,7 +38,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
       // default model, we should add from setting
       selectModelProvider('llama.cpp', 'llama3.2:3b')
     }
-  }, [model, selectModelProvider]) // Only run when threadData changes
+  }, [model, selectModelProvider, updateCurrentThreadModel]) // Only run when threadData changes
 
   // Update display model when selection changes
   useEffect(() => {
@@ -109,9 +111,13 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                     <DropdownMenuItem
                       className="h-8 mx-1"
                       key={`model-${modelIndex}`}
-                      onClick={() =>
+                      onClick={() => {
                         selectModelProvider(provider.provider, model.id)
-                      }
+                        updateCurrentThreadModel({
+                          id: model.id,
+                          provider: provider.provider,
+                        })
+                      }}
                     >
                       <div className="flex items-center gap-1.5 w-full">
                         <span className="text-main-view-fg/70">{model.id}</span>

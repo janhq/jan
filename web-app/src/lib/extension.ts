@@ -241,6 +241,6 @@ export class ExtensionManager {
   static getInstance() {
     if (!window.core.extensionManager)
       window.core.extensionManager = new ExtensionManager()
-    return window.core.extensionManager
+    return window.core.extensionManager as ExtensionManager
   }
 }
