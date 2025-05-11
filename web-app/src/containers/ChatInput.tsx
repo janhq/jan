@@ -35,9 +35,10 @@ import { useAppState } from '@/hooks/useAppState'
 
 type ChatInputProps = {
   className?: string
+  showSpeedToken?: boolean
 }
 
-const ChatInput = ({ className }: ChatInputProps) => {
+const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -253,10 +254,12 @@ const ChatInput = ({ className }: ChatInputProps) => {
                 </div>
               )}
 
-              <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
-                <IconBrandSpeedtest size={16} />
-                <span>42 tokens/sec</span>
-              </div>
+              {showSpeedToken && (
+                <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
+                  <IconBrandSpeedtest size={16} />
+                  <span>42 tokens/sec</span>
+                </div>
+              )}
             </div>
 
             {streamingContent ? (
