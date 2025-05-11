@@ -25,6 +25,7 @@ import {
   newAssistantThreadContent,
   newUserThreadContent,
   sendCompletion,
+  startModel,
 } from '@/lib/completion'
 import { useThreads } from '@/hooks/useThreads'
 import { defaultModel } from '@/lib/models'
@@ -61,6 +62,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
   const { addMessage } = useMessages()
 
   const router = useRouter()
+  const { updateLoadingModel } = useAppState()
 
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
@@ -119,43 +121,55 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
 
     addMessage(newUserThreadContent(currentThread.id, prompt))
     setPrompt('')
-    const completion = await sendCompletion(currentThread, provider, prompt)
+    try {
+      if (selectedModel?.id) {
+        updateLoadingModel(true)
+        await startModel(provider.provider, selectedModel.id).catch(() => {})
+        updateLoadingModel(false)
+      }
 
-    if (completion) {
-      let accumulatedText = ''
-      try {
-        for await (const part of completion) {
-          const delta = part.choices[0]?.delta?.content || ''
-          if (delta) {
-            accumulatedText += delta
-            // Create a new object each time to avoid reference issues
-            // Use a timeout to prevent React from batching updates too quickly
-            const currentContent = newAssistantThreadContent(
+      const completion = await sendCompletion(currentThread, provider, prompt)
+
+      if (completion) {
+        let accumulatedText = ''
+        try {
+          for await (const part of completion) {
+            const delta = part.choices[0]?.delta?.content || ''
+            if (delta) {
+              accumulatedText += delta
+              // Create a new object each time to avoid reference issues
+              // Use a timeout to prevent React from batching updates too quickly
+              const currentContent = newAssistantThreadContent(
+                currentThread.id,
+                accumulatedText
+              )
+              updateStreamingContent(currentContent)
+              await new Promise((resolve) => setTimeout(resolve, 0))
+            }
+          }
+        } catch (error) {
+          console.error('Error during streaming:', error)
+        } finally {
+          // Create a final content object for adding to the thread
+          if (accumulatedText) {
+            const finalContent = newAssistantThreadContent(
               currentThread.id,
               accumulatedText
             )
-            updateStreamingContent(currentContent)
-            await new Promise((resolve) => setTimeout(resolve, 0))
+            addMessage(finalContent)
           }
+          // Clear streaming content
         }
-      } catch (error) {
-        console.error('Error during streaming:', error)
-      } finally {
-        // Create a final content object for adding to the thread
-        if (accumulatedText) {
-          const finalContent = newAssistantThreadContent(
-            currentThread.id,
-            accumulatedText
-          )
-          addMessage(finalContent)
-        }
-        // Clear streaming content
       }
+    } catch (error) {
+      console.error('Error sending message:', error)
+      // Handle error (e.g., show a notification)
     }
     updateStreamingContent(undefined)
   }, [
     thread,
     provider,
+    updateStreamingContent,
     addMessage,
     prompt,
     setPrompt,
@@ -163,7 +177,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
     selectedModel?.id,
     selectedProvider,
     router,
-    updateStreamingContent,
+    updateLoadingModel,
   ])
 
   return (

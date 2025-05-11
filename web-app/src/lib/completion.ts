@@ -3,7 +3,10 @@ import {
   ChatCompletionRole,
   ThreadMessage,
   MessageStatus,
+  EngineManager,
+  ModelManager,
 } from '@janhq/core'
+import { invoke } from '@tauri-apps/api/core'
 import { models, StreamCompletionResponse, TokenJS } from 'token.js'
 import { ulid } from 'ulidx'
 /**
@@ -95,7 +98,7 @@ export const sendCompletion = async (
   provider: ModelProvider,
   prompt: string
 ): Promise<StreamCompletionResponse | undefined> => {
-  if (!thread?.model?.id || !provider || !provider.api_key) return undefined
+  if (!thread?.model?.id || !provider) return undefined
 
   let providerName = provider.provider as unknown as keyof typeof models
 
@@ -103,8 +106,8 @@ export const sendCompletion = async (
     providerName = 'openai-compatible'
 
   const tokenJS = new TokenJS({
-    apiKey: provider.api_key,
-    baseURL: provider.base_url,
+    apiKey: provider.api_key ?? (await invoke('app_token')),
+    baseURL: provider.base_url ?? 'http://localhost:39291/v1',
   })
 
   const completion = await tokenJS.chat.completions.create({
@@ -119,4 +122,25 @@ export const sendCompletion = async (
     ],
   })
   return completion
+}
+
+export const startModel = async (
+  provider: string,
+  model: string
+): Promise<void> => {
+  const providerObj = EngineManager.instance().get(
+    provider === 'llama.cpp' ? 'llama-cpp' : provider
+  )
+  const modelObj = ModelManager.instance().get(model)
+  if (providerObj && modelObj) return providerObj?.loadModel(modelObj)
+}
+export const stopModel = async (
+  provider: string,
+  model: string
+): Promise<void> => {
+  const providerObj = EngineManager.instance().get(
+    provider === 'llama.cpp' ? 'llama-cpp' : provider
+  )
+  const modelObj = ModelManager.instance().get(model)
+  if (providerObj && modelObj) return providerObj?.unloadModel(modelObj)
 }

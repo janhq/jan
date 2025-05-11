@@ -1,12 +1,18 @@
 import { ExtensionManager } from '@/lib/extension'
 import { APIs } from '@/lib/service'
-import { EngineManager } from '@janhq/core'
+import { EngineManager, ModelManager } from '@janhq/core'
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
 export function ExtensionProvider({ children }: PropsWithChildren) {
   const [finishedSetup, setFinishedSetup] = useState(false)
   const setupExtensions = useCallback(async () => {
-    window.core = { api: APIs, engineManager: new EngineManager() }
+    window.core = {
+      api: APIs,
+    }
+
+    window.core.extensionManager = new ExtensionManager()
+    window.core.engineManager = new EngineManager()
+    window.core.modelManager = new ModelManager()
 
     // Register all active extensions
     await ExtensionManager.getInstance()

@@ -1,6 +1,6 @@
 import { models as providerModels } from 'token.js'
 import { mockModelProvider } from '@/mock/data'
-// import { EngineManager } from '@janhq/core'
+import { EngineManager, InferenceEngine, ModelManager } from '@janhq/core'
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const builtinProviders = mockModelProvider.map((provider) => {
@@ -37,22 +37,38 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
 
   const runtimeProviders: ModelProvider[] = []
 
-//   for (const [key, value] of EngineManager.instance().engines) {
-//     const provider: ModelProvider = {
-//       //       active: boolean
-//       //   provider: string
-//       //   explore_models_url?: string
-//       //   api_key?: string
-//       //   base_url?: string
-//       //   settings: ProviderSetting[]
-//       //   models: Model[]
-//       active: false,
-//       provider: key,
-//       settings: [],
-//       models: [],
-//     }
-//     runtimeProviders.push(provider)
-//   }
+  for (const [key, value] of EngineManager.instance().engines) {
+    const providerName = key === InferenceEngine.cortex ? 'llama.cpp' : key
+    const models =
+      Array.from(ModelManager.instance().models.values()).filter(
+        (model) =>
+          (model.engine === 'llama-cpp' ? 'llama.cpp' : model.engine) ===
+            providerName &&
+          'status' in model &&
+          model.status === 'downloaded'
+      ) ?? []
+    const provider: ModelProvider = {
+      active: false,
+      provider: providerName,
+      settings: (await value.getSettings()).map((setting) => ({
+        key: setting.key,
+        title: setting.title,
+        description: setting.description,
+        controller_type: setting.controllerType as unknown,
+        controller_props: setting.controllerProps as unknown,
+      })) as ProviderSetting[],
+      models: models.map((model: Model) => ({
+        id: model.id,
+        model: model.id,
+        name: model.name,
+        description: model.description,
+        capabilities:
+          'capabilities' in model ? model.capabilities : ['completion'],
+        provider: providerName,
+      })),
+    }
+    runtimeProviders.push(provider)
+  }
 
   return runtimeProviders.concat(builtinProviders as ModelProvider[])
 }

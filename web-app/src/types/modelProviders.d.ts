@@ -16,7 +16,7 @@ type ProviderSetting = {
   key: string
   title: string
   description: string
-  controller_type: 'input' | 'checkbox' | 'dropdown'
+  controller_type: 'input' | 'checkbox' | 'dropdown' | 'slider'
   controller_props: ControllerProps
 }
 

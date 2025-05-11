@@ -29,7 +29,7 @@ function ThreadDetail() {
   const lastScrollTopRef = useRef(0)
   const { currentThreadId, getThreadById, setCurrentThreadId } = useThreads()
   const { setMessages } = useMessages()
-  const { streamingContent } = useAppState()
+  const { streamingContent, loadingModel } = useAppState()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -160,7 +160,9 @@ function ThreadDetail() {
     <div className="flex flex-col h-full">
       <HeaderPage>
         <DropdownModelProvider model={threadModel} />
-        {thread?.model?.provider === 'llama.cpp' && <ModelLoader />}
+        {thread?.model?.provider === 'llama.cpp' && loadingModel && (
+          <ModelLoader />
+        )}
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
         <div
