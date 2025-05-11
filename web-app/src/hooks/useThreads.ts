@@ -2,12 +2,10 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
-import { ThreadMessage } from '@janhq/core'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 
 type ThreadState = {
   threads: Record<string, Thread>
-  streamingContent?: ThreadMessage
   currentThreadId?: string
   getCurrentThread: () => Thread | undefined
   setThreads: (threads: Thread[]) => void
@@ -17,7 +15,6 @@ type ThreadState = {
   deleteThread: (threadId: string) => void
   deleteAllThreads: () => void
   unstarAllThreads: () => void
-  updateStreamingContent: (content: ThreadMessage | undefined) => void
   setCurrentThreadId: (threadId?: string) => void
   createThread: (model: ThreadModel, title?: string) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
@@ -108,9 +105,6 @@ export const useThreads = create<ThreadState>()(
       getThreadById: (threadId: string) => {
         return get().threads[threadId]
       },
-      updateStreamingContent: (content) => {
-        set({ streamingContent: content })
-      },
       setCurrentThreadId: (threadId) => {
         set({ currentThreadId: threadId })
       },
@@ -118,7 +112,6 @@ export const useThreads = create<ThreadState>()(
         const newThread: Thread = {
           id: ulid(),
           title: title ?? 'New Thread',
-          content: [],
           model,
           order: 1,
           updated: Date.now() / 1000,

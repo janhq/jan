@@ -15,6 +15,7 @@ import { ArrowDown } from 'lucide-react'
 import { ModelLoader } from '@/containers/laoders/ModelLoader'
 import { useMessages } from '@/hooks/useMessages'
 import { fetchMessages } from '@/services/messages'
+import { useAppState } from '@/hooks/useAppState'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -26,13 +27,9 @@ function ThreadDetail() {
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const lastScrollTopRef = useRef(0)
-  const {
-    currentThreadId,
-    getThreadById,
-    setCurrentThreadId,
-    streamingContent,
-  } = useThreads()
+  const { currentThreadId, getThreadById, setCurrentThreadId } = useThreads()
   const { setMessages } = useMessages()
+  const { streamingContent } = useAppState()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -49,7 +46,7 @@ function ThreadDetail() {
 
   useEffect(() => {
     if (currentThreadId !== threadId) setCurrentThreadId(threadId)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, currentThreadId])
 
   useEffect(() => {
@@ -59,7 +56,7 @@ function ThreadDetail() {
         setMessages(threadId, fetchedMessages)
       }
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
   useEffect(() => {
