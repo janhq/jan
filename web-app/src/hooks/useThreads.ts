@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
-
+import Fuse from 'fuse.js'
 type ThreadState = {
   threads: Record<string, Thread>
   currentThreadId?: string
@@ -18,12 +18,39 @@ type ThreadState = {
   setCurrentThreadId: (threadId?: string) => void
   createThread: (model: ThreadModel, title?: string) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
+  getFilteredThreads: (searchTerm: string) => Thread[]
+  searchIndex: Fuse<Thread> | null
+}
+
+const fuseOptions = {
+  keys: [
+    ['title'],
+    {
+      name: 'content',
+      getFn: (thread: Thread) => {
+        // Extract all text values from the thread content
+        return thread.content
+          .filter((item) => item.text?.value)
+          .map((item) => item.text!.value)
+          .join('\n') // Join all text values into a single searchable string
+      },
+    },
+  ],
+  threshold: 0.2,
+  includeMatches: true,
+  ignoreLocation: true, // Ignore the location of the match in the string
+  useExtendedSearch: true, // Enable extended search
+  distance: 20, // Maximum edit distance for fuzzy matching
+  tokenize: true, // Tokenize the search pattern and text
+  matchAllTokens: true, // Only require some tokens to match, not all
+  findAllMatches: true, // Find all matches, not just the first one,
 }
 
 export const useThreads = create<ThreadState>()(
   persist(
     (set, get) => ({
       threads: {},
+      searchIndex: null,
       setThreads: (threads) => {
         threads.forEach((thread, index) => {
           thread.order = index + 1
@@ -40,6 +67,32 @@ export const useThreads = create<ThreadState>()(
           {} as Record<string, Thread>
         )
         set({ threads: threadMap })
+      },
+      getFilteredThreads: (searchTerm: string) => {
+        const { threads, searchIndex } = get()
+
+        // If no search term, return all threads
+        if (!searchTerm) {
+          // return all threads
+          return Object.values(threads)
+        }
+
+        // Get current search index or create a new one if it doesn't exist
+        const currentIndex =
+          searchIndex ||
+          (() => {
+            const newIndex = new Fuse(Object.values(threads), fuseOptions)
+            // Update the store with the new index
+            set({ searchIndex: newIndex })
+            return newIndex
+          })()
+
+        // Use the index to search and return matching threads
+        const searchResults = currentIndex.search(searchTerm)
+        const validIds = searchResults.map((result) => result.item.id)
+        return Object.values(get().threads).filter((thread) =>
+          validIds.includes(thread.id)
+        )
       },
       toggleFavorite: (threadId) => {
         set((state) => {
