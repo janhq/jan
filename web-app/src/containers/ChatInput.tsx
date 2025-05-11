@@ -145,9 +145,9 @@ const ChatInput = ({ className }: ChatInputProps) => {
           addMessage(finalContent)
         }
         // Clear streaming content
-        updateStreamingContent(undefined)
       }
     }
+    updateStreamingContent(undefined)
   }, [
     thread,
     provider,
