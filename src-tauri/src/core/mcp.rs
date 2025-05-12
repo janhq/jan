@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, env, sync::Arc};
 
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::Value;
@@ -33,9 +33,26 @@ pub async fn run_mcp_commands(
     if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
         log::info!("MCP Servers: {server_map:#?}");
 
+        let exe_path = env::current_exe().expect("Failed to get current exe path");
+        let exe_parent_path = exe_path.parent().expect("Executable must have a parent directory");
+        let bin_path = exe_parent_path.to_path_buf();
         for (name, config) in server_map {
             if let Some((command, args, envs)) = extract_command_args(config) {
-                let mut cmd = Command::new(command);
+                let mut cmd = Command::new(command.clone());
+                if command.clone() == "npx" {
+                    let bun_x_path = format!("{}/bun", bin_path.display());
+                    cmd = Command::new(bun_x_path);
+                    cmd.arg("x");
+                }
+
+                if command.clone() == "uvx" {
+                    let bun_x_path = format!("{}/uv", bin_path.display());
+                    cmd = Command::new(bun_x_path);
+                    cmd.arg("tool run");
+                    cmd.arg("run");
+                }
+                println!("Command: {cmd:#?}");
+
                 args.iter().filter_map(Value::as_str).for_each(|arg| {
                     cmd.arg(arg);
                 });

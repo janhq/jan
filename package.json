@@ -26,6 +26,7 @@
     "install:cortex:linux:darwin": "cd src-tauri/binaries && ./download.sh",
     "install:cortex:win32": "cd src-tauri/binaries && download.bat",
     "install:cortex": "run-script-os",
+    "download:bin": "node ./scripts/download-bin.js",
     "dev:tauri": "yarn build:icon && yarn copy:assets:tauri && tauri dev",
     "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:server": "cd server && yarn build",
@@ -51,6 +52,8 @@
     "jest-environment-jsdom": "^29.7.0",
     "rimraf": "^3.0.2",
     "run-script-os": "^1.1.6",
+    "tar": "^4.4.19",
+    "unzipper": "^0.12.3",
     "wait-on": "^7.0.1"
   },
   "version": "0.0.0",
