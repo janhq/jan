@@ -184,7 +184,11 @@ function ThreadDetail() {
                     data-message-author-role={item.role}
                     className="mb-4"
                   >
-                    <ThreadContent {...item} isLastMessage={isLastMessage} />
+                    <ThreadContent
+                      {...item}
+                      isLastMessage={isLastMessage}
+                      index={index}
+                    />
                   </div>
                 )
               })}

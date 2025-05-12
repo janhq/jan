@@ -9,6 +9,7 @@ import {
   IconPencil,
 } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
+import ThinkingBlock from './ThinkingBlock'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -43,7 +44,7 @@ const CopyButton = ({ text }: { text: string }) => {
 
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo(
-  (item: ThreadMessage & { isLastMessage?: boolean }) => {
+  (item: ThreadMessage & { isLastMessage?: boolean; index?: number }) => {
     // Use useMemo to stabilize the components prop
     const linkComponents = useMemo(
       () => ({
@@ -55,6 +56,26 @@ export const ThreadContent = memo(
     )
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
     const { streamingContent } = useAppState()
+
+    const text = useMemo(
+      () => item.content.find((e) => e.type === 'text')?.text?.value ?? '',
+      [item.content]
+    )
+
+    const { reasoningSegment, textSegment } = useMemo(() => {
+      const isThinking = text.includes('<think>') && !text.includes('</think>')
+      if (isThinking) return { reasoningSegment: text, textSegment: '' }
+
+      const match = text.match(/<think>([\s\S]*?)<\/think>/)
+      if (match?.index === undefined)
+        return { reasoningSegment: undefined, textSegment: text }
+
+      const splitIndex = match.index + match[0].length
+      return {
+        reasoningSegment: text.slice(0, splitIndex),
+        textSegment: text.slice(splitIndex),
+      }
+    }, [text])
 
     return (
       <Fragment>
@@ -93,10 +114,13 @@ export const ThreadContent = memo(
         )}
         {item.content?.[0]?.text && item.role !== 'user' && (
           <>
-            <RenderMarkdown
-              content={item.content?.[0]?.text.value}
-              components={linkComponents}
-            />
+            {reasoningSegment && (
+              <ThinkingBlock
+                id={item.index ?? Number(item.id)}
+                text={reasoningSegment}
+              />
+            )}
+            <RenderMarkdown content={textSegment} components={linkComponents} />
             <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
               <div className="flex items-center gap-2">
                 {!streamingContent && (

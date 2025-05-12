@@ -258,8 +258,8 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
         items={sortedThreads.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
       >
-        {sortedThreads.map((thread) => (
-          <SortableItem key={thread.id} thread={thread} />
+        {sortedThreads.map((thread, index) => (
+          <SortableItem key={index} thread={thread} />
         ))}
       </SortableContext>
     </DndContext>
