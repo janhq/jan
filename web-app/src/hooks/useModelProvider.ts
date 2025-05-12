@@ -30,7 +30,7 @@ export const useModelProvider = create<ModelProviderState>()(
             )
             const models = existingProvider?.models || []
             const mergedModels = [
-              ...(existingProvider?.models ?? []),
+              ...(provider?.models ?? []),
               ...models.filter((e) => !models.some((m) => m.id === e.id)),
             ]
             return {
