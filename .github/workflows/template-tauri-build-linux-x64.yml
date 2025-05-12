@@ -99,15 +99,14 @@ jobs:
       - name: Install Tauri dependecies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2
 
       - name: Update app version base public_provider
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          jq '.bundle.resources = ["resources/themes/**/*", "resources/pre-install/**/*"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          jq '.bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.resources = ["resources/themes/**/*", "resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun", "usr/lib/Jan-${{ inputs.channel }}/binaries/engines": "binaries/engines"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           else
