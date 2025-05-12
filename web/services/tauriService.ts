@@ -22,6 +22,8 @@ export const Routes = [
   'saveMcpConfigs',
   'getMcpConfigs',
   'restartMcpServers',
+  'relaunch',
+  'installExtensions',
 ].map((r) => ({
   path: `app`,
   route: r,
