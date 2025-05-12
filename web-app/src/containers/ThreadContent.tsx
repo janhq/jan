@@ -10,6 +10,7 @@ import {
 } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import ThinkingBlock from './ThinkingBlock'
+import { cn } from '@/lib/utils'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -122,34 +123,37 @@ export const ThreadContent = memo(
             )}
             <RenderMarkdown content={textSegment} components={linkComponents} />
             <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
-              <div className="flex items-center gap-2">
-                {!streamingContent && (
-                  <>
-                    <CopyButton text={item.content?.[0]?.text.value || ''} />
-                    <button
-                      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                      onClick={() => {
-                        console.log('Delete clicked')
-                      }}
-                    >
-                      <IconTrash size={16} />
-                      <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                        Delete
-                      </span>
-                    </button>
-                    <button
-                      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                      onClick={() => {
-                        console.log('Regenerate clicked')
-                      }}
-                    >
-                      <IconRefresh size={16} />
-                      <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                        Regenerate
-                      </span>
-                    </button>
-                  </>
+              <div
+                className={cn(
+                  'flex items-center gap-2',
+                  item.isLastMessage &&
+                    streamingContent &&
+                    'opacity-0 visinility-hidden pointer-events-none'
                 )}
+              >
+                <CopyButton text={item.content?.[0]?.text.value || ''} />
+                <button
+                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                  onClick={() => {
+                    console.log('Delete clicked')
+                  }}
+                >
+                  <IconTrash size={16} />
+                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                    Delete
+                  </span>
+                </button>
+                <button
+                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                  onClick={() => {
+                    console.log('Regenerate clicked')
+                  }}
+                >
+                  <IconRefresh size={16} />
+                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                    Regenerate
+                  </span>
+                </button>
               </div>
             </div>
           </>
