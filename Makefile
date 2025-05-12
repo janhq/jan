@@ -41,7 +41,7 @@ dev: check-file-counts
 dev-tauri: check-file-counts
 	yarn install:cortex
 	yarn download:bin
-	yarn dev:tauri
+	CLEAN=true yarn dev:tauri
 
 # Linting
 lint: check-file-counts

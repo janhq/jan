@@ -41,7 +41,13 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         .join("resources")
         .join("pre-install");
 
-    if !force && stored_version == app_version && extensions_path.exists() {
+    let mut clean_up = force;
+
+    // Check CLEAN environment variable to optionally skip extension install
+    if std::env::var("CLEAN").is_ok() {
+        clean_up = true;
+    }
+    if !clean_up && stored_version == app_version && extensions_path.exists() {
         return Ok(());
     }
 
@@ -194,7 +200,9 @@ pub fn setup_mcp(app: &App) {
         if let Err(e) = run_mcp_commands(app_path_str, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
         }
-        app_handle.emit("mcp-update", "MCP servers updated").unwrap();
+        app_handle
+            .emit("mcp-update", "MCP servers updated")
+            .unwrap();
     });
 }
 
