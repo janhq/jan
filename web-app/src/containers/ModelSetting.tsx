@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/sheet'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { presetConfiguration } from '@/lib/predefined'
 
 // import {
 //   HoverCard,
