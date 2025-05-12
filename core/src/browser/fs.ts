@@ -80,10 +80,8 @@ const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
  * @param outsideJanDataFolder - Whether the file is outside the Jan data folder.
  * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
  */
-const fileStat: (path: string, outsideJanDataFolder?: boolean) => Promise<FileStat | undefined> = (
-  path,
-  outsideJanDataFolder
-) => globalThis.core.api?.fileStat(path, outsideJanDataFolder)
+const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
+  globalThis.core.api?.fileStat({ args: path })
 
 // TODO: Export `dummy` fs functions automatically
 // Currently adding these manually
