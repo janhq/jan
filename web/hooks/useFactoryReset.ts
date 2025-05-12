@@ -48,7 +48,7 @@ export default function useFactoryReset() {
 
       // 2: Delete the old jan data folder
       setFactoryResetState(FactoryResetState.DeletingData)
-      await fs.rm({ args: [janDataFolderPath] })
+      await fs.rm(janDataFolderPath)
 
       // 3: Set the default jan data folder
       if (!keepCurrentFolder) {
@@ -60,6 +60,8 @@ export default function useFactoryReset() {
         }
         await window.core?.api?.updateAppConfiguration({ configuration })
       }
+
+      await window.core?.api?.installExtensions()
 
       // Perform factory reset
       // await window.core?.api?.factoryReset()
