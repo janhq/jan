@@ -184,7 +184,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
     <div className="relative">
       <div
         className={cn(
-          'relative overflow-hidden p-[1px] rounded-lg',
+          'relative overflow-hidden p-[2px] rounded-lg',
           Boolean(streamingContent) && 'opacity-70'
         )}
       >

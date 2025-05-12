@@ -11,12 +11,15 @@ export function DownloadManagement() {
     <Popover>
       <PopoverTrigger>
         <div className="bg-left-panel-fg/10 hover:bg-left-panel-fg/12 p-2 rounded-md mx-1 mb-1 relative border border-left-panel-fg/10 cursor-pointer text-left">
-          <div className="bg-primary text-[10px] font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center">
+          <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center">
             2
           </div>
           <p className="text-left-panel-fg/80 font-medium">Downloads</p>
-          <div className="mt-2">
+          <div className="mt-2 flex items-center justify-between space-x-2">
             <Progress value={20} />
+            <span className="text-xs font-medium text-main-view-fg/80 shrink-0">
+              20%
+            </span>
           </div>
         </div>
       </PopoverTrigger>
