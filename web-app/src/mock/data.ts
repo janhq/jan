@@ -126,7 +126,7 @@ export const mockModelProvider = [
   //   ],
   // },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://api.openai.com/v1',
     explore_models_url: 'https://platform.openai.com/docs/models',
@@ -160,7 +160,7 @@ export const mockModelProvider = [
     models: [],
   },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://api.anthropic.com/v1',
     provider: 'anthropic',
@@ -195,7 +195,7 @@ export const mockModelProvider = [
     models: [],
   },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://api.cohere.ai/compatibility/v1',
     explore_models_url: 'https://docs.cohere.com/v2/docs/models',
@@ -229,7 +229,7 @@ export const mockModelProvider = [
     models: [],
   },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://openrouter.ai/api/v1',
     explore_models_url: 'https://openrouter.ai/models',
@@ -278,7 +278,7 @@ export const mockModelProvider = [
     ],
   },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://api.mistral.ai/v1',
     explore_models_url:
@@ -313,7 +313,7 @@ export const mockModelProvider = [
     models: [],
   },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://api.groq.com/openai/v1',
     explore_models_url: 'https://console.groq.com/docs/models',
@@ -347,7 +347,7 @@ export const mockModelProvider = [
     models: [],
   },
   {
-    active: false,
+    active: true,
     api_key: '',
     base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
     explore_models_url: 'https://ai.google.dev/gemini-api/docs/models/gemini',
@@ -382,7 +382,7 @@ export const mockModelProvider = [
     models: [],
   },
   // {
-  //   active: false,
+  //   active: true,
   //   api_key: '',
   //   base_url: 'https://api.deepseek.com',
   //   explore_models_url: 'https://api-docs.deepseek.com/quick_start/pricing',
