@@ -1,6 +1,8 @@
 import { models as providerModels } from 'token.js'
 import { mockModelProvider } from '@/mock/data'
 import { EngineManager, InferenceEngine, ModelManager } from '@janhq/core'
+import { ModelCapabilities } from '@/types/models'
+import { modelSettings } from './models'
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const builtinProviders = mockModelProvider.map((provider) => {
@@ -14,13 +16,13 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         models = builtInModels.map((model) => {
           const modelManifest = models.find((e) => e.id === model)
           const capabilities = [
-            'completion',
+            ModelCapabilities.COMPLETION,
             (
               providerModels[
                 provider.provider as unknown as keyof typeof providerModels
               ].supportsToolCalls as unknown as string[]
             ).includes(model)
-              ? 'tools'
+              ? ModelCapabilities.TOOLS
               : undefined,
           ].filter(Boolean) as string[]
           return {
@@ -63,8 +65,11 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         name: model.name,
         description: model.description,
         capabilities:
-          'capabilities' in model ? model.capabilities : ['completion'],
+          'capabilities' in model
+            ? model.capabilities
+            : [ModelCapabilities.COMPLETION],
         provider: providerName,
+        settings: modelSettings,
       })),
     }
     runtimeProviders.push(provider)

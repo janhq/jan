@@ -74,8 +74,9 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
         </SheetHeader>
         <div className="px-4 space-y-6">
           {Object.entries(model.settings || {}).map(([key, value]) => {
-            const config = presetConfiguration[key]
-            if (!config) return null
+            // const config = presetConfiguration[key]
+            // if (!config) return null
+            const config = value as ProviderSetting
             return (
               <div key={key} className="space-y-2">
                 <div className="flex flex-col">
@@ -92,7 +93,7 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
                     controllerType={config.controller_type}
                     controllerProps={{
                       ...config.controller_props,
-                      value: value,
+                      value: config.controller_props?.value,
                     }}
                     onChange={(newValue) => handleSettingChange(key, newValue)}
                   />
