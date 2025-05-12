@@ -2,39 +2,38 @@
 set BIN_PATH=./bin
 set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
-set ENGINE_VERSION=0.1.56
+set ENGINE_VERSION=b5350
 
-@REM Download cortex.llamacpp binaries
-set DOWNLOAD_URL=https://github.com/menloresearch/cortex.llamacpp/releases/download/v%ENGINE_VERSION%/cortex.llamacpp-%ENGINE_VERSION%-windows-amd64
-set CUDA_DOWNLOAD_URL=https://github.com/menloresearch/cortex.llamacpp/releases/download/v%ENGINE_VERSION%
-set SUBFOLDERS=windows-amd64-noavx-cuda-12-0 windows-amd64-noavx-cuda-11-7 windows-amd64-avx2-cuda-12-0 windows-amd64-avx2-cuda-11-7 windows-amd64-noavx windows-amd64-avx windows-amd64-avx2 windows-amd64-avx512 windows-amd64-vulkan
+@REM Download llama.cpp binaries
+set DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
+set DOWNLOAD_GGML_URL=https://github.com/ggml-org/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
+set CUDA_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%
+set SUBFOLDERS=win-noavx-cuda-cu12.0-x64 win-noavx-cuda-cu11.7-x64 win-avx2-cuda-cu12.0-x64 win-avx2-cuda-cu11.7-x64 win-noavx-x64 win-avx-x64 win-avx2-x64 win-avx512-x64 win-vulkan-x64
 
 call .\node_modules\.bin\download -e --strip 1 -o %BIN_PATH% https://github.com/menloresearch/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
-call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-12-0.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2-cuda-12-0/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-11-7.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2-cuda-11-7/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx-cuda-12-0.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-noavx-cuda-12-0/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx-cuda-11-7.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-noavx-cuda-11-7/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-noavx/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-avx.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx2/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-avx512.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-avx512/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %DOWNLOAD_URL%-vulkan.tar.gz -e --strip 1 -o %SHARED_PATH%/engines/cortex.llamacpp/windows-amd64-vulkan/v%ENGINE_VERSION%
-call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-12-0-windows-amd64.tar.gz -e --strip 1 -o %BIN_PATH%
-call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cuda-11-7-windows-amd64.tar.gz -e --strip 1 -o %BIN_PATH%
+call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-cu12.0-x64.tar.gz -e --strip 2 -o %SHARED_PATH%/engines/llama.cpp/win-avx2-cuda-cu12.0-x64/%ENGINE_VERSION%
+call .\node_modules\.bin\download %DOWNLOAD_URL%-avx2-cuda-cu11.7-x64.tar.gz -e --strip 2 -o %SHARED_PATH%/engines/llama.cpp/win-avx2-cuda-cu11.7-x64/%ENGINE_VERSION%
+call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx-cuda-cu12.0-x64.tar.gz -e --strip 2 -o %SHARED_PATH%/engines/llama.cpp/win-noavx-cuda-cu12.0-x64/%ENGINE_VERSION%
+call .\node_modules\.bin\download %DOWNLOAD_URL%-noavx-cuda-cu11.7-x64.tar.gz -e --strip 2 -o %SHARED_PATH%/engines/llama.cpp/win-noavx-cuda-cu11.7-x64/%ENGINE_VERSION%
+@REM call .\node_modules\.bin\download %DOWNLOAD_GGML_URL%-noavx-x64.zip -e --strip 1 -o %SHARED_PATH%/engines/llama.cpp/win-noavx-x64/%ENGINE_VERSION%
+@REM call .\node_modules\.bin\download %DOWNLOAD_GGML_URL%-avx-x64.zip -e --strip 1 -o %SHARED_PATH%/engines/llama.cpp/win-avx-x64/%ENGINE_VERSION%
+@REM call .\node_modules\.bin\download %DOWNLOAD_GGML_URL%-avx2-x64.zip -e --strip 1 -o %SHARED_PATH%/engines/llama.cpp/win-avx2-x64/%ENGINE_VERSION%
+@REM call .\node_modules\.bin\download %DOWNLOAD_GGML_URL%-avx512-x64.zip -e --strip 1 -o %SHARED_PATH%/engines/llama.cpp/win-avx512-x64/%ENGINE_VERSION%
+@REM call .\node_modules\.bin\download %DOWNLOAD_GGML_URL%-vulkan-x64.zip -e --strip 1 -o %SHARED_PATH%/engines/llama.cpp/win-vulkan-x64/%ENGINE_VERSION%
+call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu12.0-x64.tar.gz -e --strip 1 -o %BIN_PATH%
+call .\node_modules\.bin\download %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu11.7-x64.tar.gz -e --strip 1 -o %BIN_PATH%
 
 move %BIN_PATH%\cortex-server-beta.exe %BIN_PATH%\cortex-server.exe
 del %BIN_PATH%\cortex-beta.exe
 del %BIN_PATH%\cortex.exe
 
-@REM Loop through each folder and move DLLs (excluding engine.dll)
+@REM Loop through each folder and move DLLs
 for %%F in (%SUBFOLDERS%) do (
-    echo Processing folder: %SHARED_PATH%\engines\cortex.llamacpp\%%F\v%ENGINE_VERSION%
+    echo Processing folder: %SHARED_PATH%\engines\llama.cpp\%%F\%ENGINE_VERSION%
 
-    @REM Move all .dll files except engine.dll
-    for %%D in (%SHARED_PATH%\engines\cortex.llamacpp\%%F\v%ENGINE_VERSION%\*.dll) do (
-        if /I not "%%~nxD"=="engine.dll" (
-            move "%%D" "%BIN_PATH%"
-        )
+    @REM Move cu*.dll files
+    for %%D in (%SHARED_PATH%\engines\llama.cpp\%%F\%ENGINE_VERSION%\cu*.dll) do (
+        move "%%D" "%BIN_PATH%"        
     )
 )
 
