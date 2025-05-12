@@ -32,23 +32,23 @@ const gpuRunMode = (settings?: GpuSetting): RunMode => {
  */
 const os = (settings?: GpuSetting): string => {
   return PLATFORM === 'win32'
-    ? 'windows-amd64'
+    ? 'win'
     : PLATFORM === 'darwin'
     ? settings?.cpu?.arch === 'arm64'
-      ? 'mac-arm64'
-      : 'mac-amd64'
-    : 'linux-amd64'
+      ? 'macos-arm64'
+      : 'macos-x64'
+    : 'linux'
 }
 
 /**
- * The CUDA version that will be set - either '11-7' or '12-0'.
+ * The CUDA version that will be set - either 'cu12.0' or 'cu11.7'.
  * @param settings
  * @returns
  */
-const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
+const cudaVersion = (settings?: GpuSetting): 'cu12.0' | 'cu11.7' | undefined => {
   return settings.gpus?.some((gpu) => gpu.version.includes('12'))
-    ? '12-0'
-    : '11-7'
+    ? 'cu12.0'
+    : 'cu11.7'
 }
 
 /**
@@ -84,15 +84,17 @@ export const engineVariant = async (
                   : 'noavx',
                 runMode,
                 cudaVersion(gpuSetting),
+                'x64',
               ]
             : // For cpu only we need to check all available supported instructions
               [
                 (gpuSetting.cpu?.instructions ?? ['noavx']).find((e) =>
                   instructionBinaryNames.includes(e.toLowerCase())
                 ) ?? 'noavx',
+                'x64',
               ]),
         ].filter(Boolean)
-      : [platform, 'vulkan']
+      : [platform, 'vulkan', 'x64']
 
   let engineVariantString = engineVariant.join('-')
 
