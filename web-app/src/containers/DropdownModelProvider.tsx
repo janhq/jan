@@ -76,7 +76,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
             return (
               <div
                 className={cn(
-                  'bg-main-view-fg/4 first:mt-0 rounded-sm pb-1 my-1.5 first:mb-0 '
+                  'bg-main-view-fg/4 first:mt-0 rounded-sm my-1.5 first:mb-0 '
                 )}
                 key={`provider-${index}`}
               >
@@ -109,7 +109,12 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
 
                   return (
                     <DropdownMenuItem
-                      className="h-8 mx-1"
+                      className={cn(
+                        'h-8 mx-1',
+                        provider.provider !== 'llama.cpp' &&
+                          !provider.api_key?.length &&
+                          'hidden'
+                      )}
                       key={`model-${modelIndex}`}
                       onClick={() => {
                         selectModelProvider(provider.provider, model.id)

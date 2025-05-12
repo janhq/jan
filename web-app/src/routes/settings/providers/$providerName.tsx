@@ -14,6 +14,7 @@ import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 
 import { ModelSetting } from '@/containers/ModelSetting'
+import { DialoDeleteModel } from '@/containers/dialogs/DeleteModel'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -167,6 +168,10 @@ function ProviderDetail() {
                         {model.settings && (
                           <ModelSetting provider={provider} model={model} />
                         )}
+                        <DialoDeleteModel
+                          provider={provider}
+                          modelId={model.id}
+                        />
                       </div>
                     }
                   />
