@@ -28,8 +28,14 @@ export const useModelProvider = create<ModelProviderState>()(
             const existingProvider = existingProviders.find(
               (x) => x.provider === provider.provider
             )
+            const models = existingProvider?.models || []
+            const mergedModels = [
+              ...(existingProvider?.models ?? []),
+              ...models.filter((e) => !models.some((m) => m.id === e.id)),
+            ]
             return {
               ...provider,
+              models: mergedModels,
               settings: provider.settings.map((setting) => {
                 const existingSetting = existingProvider?.settings?.find(
                   (x) => x.key === setting.key
