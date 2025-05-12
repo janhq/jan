@@ -30,7 +30,7 @@ rand = "0.8"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers"] }
 tauri-plugin-store = "2"
 hyper = { version = "0.14", features = ["server"] }
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["full"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
     "client",
@@ -39,6 +39,7 @@ rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "mai
     "tower",
 ] }
 uuid = { version = "1.7", features = ["v4"] }
+env = "1.0.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

@@ -5,7 +5,7 @@
   "url": "https://aistudio.google.com/apikey",
   "api_key": "",
   "metadata": {
-    "get_models_url": "https://generativelanguage.googleapis.com/v1beta/models",
+    "get_models_url": "https://generativelanguage.googleapis.com/openai/v1beta/models",
     "header_template": "Authorization: Bearer {{api_key}}",
     "transform_req": {
       "chat_completions": {
