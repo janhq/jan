@@ -26,27 +26,24 @@ const useThinkingStore = create<ThinkingBlockState>((set) => ({
 
 const ThinkingBlock = ({ id, text }: Props) => {
   const { thinkingState, toggleState } = useThinkingStore()
-  const isExpanded = thinkingState[id] ?? false
   const loading = !text.includes('</think>')
+  const isExpanded = thinkingState[id] ?? false
   const handleClick = () => toggleState(id)
 
   if (!text.replace(/<\/?think>/g, '').trim()) return null
 
   return (
-    <div className="mx-auto w-full">
-      <div className="mb-4 rounded-lg border border-dashed border-main-view-fg/10 p-2">
-        <div
-          className="flex cursor-pointer items-center gap-3"
-          onClick={handleClick}
-        >
+    <div className="mx-auto w-full cursor-pointer" onClick={handleClick}>
+      <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2">
+        <div className="flex items-center gap-3">
           {loading && (
-            <Loader className="h-4 w-4 animate-spin text-main-view-fg/60]" />
+            <Loader className="size-4 animate-spin text-main-view-fg/60" />
           )}
           <button className="flex items-center gap-2 focus:outline-none">
             {isExpanded ? (
-              <ChevronUp className="h-4 w-4" />
+              <ChevronUp className="size-4 text-main-view-fg/60" />
             ) : (
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className="size-4 text-main-view-fg/60" />
             )}
             <span className="font-medium">
               {loading ? 'Thinking...' : 'Thought'}
