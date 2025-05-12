@@ -89,6 +89,31 @@ jobs:
         run: |
           cargo install ctoml
 
+      - name: Create bun and uv universal 
+        run: |
+          mkdir -p ./src-tauri/resources/bin/
+          cd ./src-tauri/resources/bin/
+          curl -L -o bun-darwin-x64.zip https://github.com/oven-sh/bun/releases/download/bun-v1.2.10/bun-darwin-x64.zip
+          curl -L -o bun-darwin-aarch64.zip https://github.com/oven-sh/bun/releases/download/bun-v1.2.10/bun-darwin-aarch64.zip
+          unzip bun-darwin-x64.zip
+          unzip bun-darwin-aarch64.zip
+          lipo -create -output bun-universal-apple-darwin bun-darwin-x64/bun bun-darwin-aarch64/bun
+          cp -f bun-darwin-aarch64/bun bun-aarch64-apple-darwin 
+          cp -f bun-darwin-x64/bun bun-x86_64-apple-darwin
+          cp -f bun-universal-apple-darwin bun
+          
+          curl -L -o uv-x86_64.tar.gz https://github.com/astral-sh/uv/releases/download/0.6.17/uv-x86_64-apple-darwin.tar.gz
+          curl -L -o uv-arm64.tar.gz https://github.com/astral-sh/uv/releases/download/0.6.17/uv-aarch64-apple-darwin.tar.gz
+          tar -xzf uv-x86_64.tar.gz
+          tar -xzf uv-arm64.tar.gz
+          mv uv-x86_64-apple-darwin uv-x86_64
+          mv uv-aarch64-apple-darwin uv-aarch64
+          lipo -create -output uv-universal-apple-darwin uv-x86_64/uv uv-aarch64/uv
+          cp -f uv-x86_64/uv uv-x86_64-apple-darwin
+          cp -f uv-aarch64/uv uv-aarch64-apple-darwin
+          cp -f uv-universal-apple-darwin uv
+          ls -la
+
       - name: Update app version based on latest release tag with build number
         run: |
           echo "Version: ${{ inputs.new_version }}"

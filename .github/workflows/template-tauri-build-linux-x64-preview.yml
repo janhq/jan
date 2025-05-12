@@ -99,13 +99,19 @@ jobs:
       - name: Install Tauri dependecies
         run: |
           sudo apt update
-          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2
 
       - name: Update app version base public_provider
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.resources = ["resources/themes/**/*", "resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun", "usr/lib/Jan-${{ inputs.channel }}/binaries/engines": "binaries/engines"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          else
+            jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun", "usr/lib/Jan/binaries/engines": "binaries/engines"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          fi
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
@@ -135,6 +141,18 @@ jobs:
       - name: Build app
         run: |
           make build-tauri
+          # Copy engines and bun to appimage
+           wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ./appimagetool
+          chmod +x ./appimagetool
+          if [ "${{ inputs.channel }}" != "stable" ]; then
+            cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/bin/bun
+            cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/engines
+            ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir $(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage)
+          else
+            cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
+            cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/engines
+            ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage)
+          fi    
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
