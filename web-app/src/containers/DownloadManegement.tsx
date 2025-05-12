@@ -31,7 +31,7 @@ export function DownloadManagement() {
             <p>Downloading</p>
           </div>
           <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
-            <div className="bg-main-view-fg/10 rounded-md p-2">
+            <div className="bg-main-view-fg/4 rounded-md p-2">
               <div className="flex items-center justify-between">
                 <p className="truncate text-main-view-fg/80">llama3.2:1b</p>
                 <div className="shrink-0 flex items-center space-x-0.5">
@@ -53,7 +53,7 @@ export function DownloadManagement() {
               </p>
             </div>
 
-            <div className="bg-main-view-fg/10 rounded-md p-2">
+            <div className="bg-main-view-fg/4 rounded-md p-2">
               <div className="flex items-center justify-between">
                 <p className="truncate text-main-view-fg/80">
                   deepseek-r1:1.5b

@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
-import { Button } from '@/components/ui/button'
+
 import HeaderPage from '@/containers/HeaderPage'
 
 import SettingsMenu from '@/containers/SettingsMenu'
@@ -63,9 +63,9 @@ function Extensions() {
                   <h1 className="text-main-view-fg font-medium text-base">
                     Extensions
                   </h1>
-                  <div className="flex items-center gap-2">
+                  {/* <div className="flex items-center gap-2">
                     <Button size="sm">Install Extension</Button>
-                  </div>
+                  </div> */}
                 </div>
               }
             >
