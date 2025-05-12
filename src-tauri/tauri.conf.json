@@ -83,11 +83,13 @@
       "icons/icon.ico"
     ],
     "resources": [
+      "binaries/engines/**/*",
       "resources/themes/**/*",
       "resources/pre-install/**/*"
     ],
     "externalBin": [
       "binaries/cortex-server",
+      "resources/bin/bun",
       "resources/bin/uv"
     ],
     "linux": {
