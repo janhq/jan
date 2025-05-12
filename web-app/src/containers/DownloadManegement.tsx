@@ -26,7 +26,7 @@ export function DownloadManagement() {
       <PopoverContent
         side="right"
         align="end"
-        className="p-0 overflow-hidden text-sm"
+        className="p-0 overflow-hidden text-sm select-none"
         sideOffset={6}
       >
         <div className="flex flex-col">
