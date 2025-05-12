@@ -217,14 +217,6 @@ jobs:
         if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta' || inputs.channel == 'nightly'
         run: |
           cd ./src-tauri/target/release/bundle/nsis
-
-          # Upload for tauri updater
-          echo "🧩 List all files in current directory:"
-          ls -lh
-
-          echo "🔍 Finding all .exe files:"
-          find . -name "*.exe"
-          echo "📤 Uploading Windows setup to S3:"
           aws s3 cp ./Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup.exe s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_x64-setup-preview.exe
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}

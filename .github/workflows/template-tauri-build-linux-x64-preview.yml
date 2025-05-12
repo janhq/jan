@@ -191,14 +191,7 @@ jobs:
           cd ./src-tauri/target/release/bundle
 
           # Upload for tauri updater
-
-          echo "🧩 Checking ./deb contents:"
-          ls -lh ./deb
-          echo "🧩 Checking ./appimage contents:"
-          ls -lh ./appimage
-          echo "📤 Upload .deb:"
           aws s3 cp ./deb/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.deb s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.deb
-          echo "📤 Upload .AppImage:" 
           aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64-preview.AppImage
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
