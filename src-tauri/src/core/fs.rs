@@ -107,7 +107,6 @@ mod tests {
     use super::*;
     use std::fs::{self, File};
     use std::io::Write;
-    use serde_json::to_string;
     use tauri::test::mock_app;
 
     #[test]

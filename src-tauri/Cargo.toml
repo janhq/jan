@@ -39,6 +39,7 @@ rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "mai
     "tower",
 ] }
 uuid = { version = "1.7", features = ["v4"] }
+env = "1.0.1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

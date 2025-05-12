@@ -44,3 +44,4 @@ src-tauri/Cargo.lock
 src-tauri/icons
 !src-tauri/icons/icon.png
 src-tauri/gen/apple
+src-tauri/resources/bin
