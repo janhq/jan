@@ -112,15 +112,15 @@
     font-family: monospace;
     @apply bg-main-view-fg/10 text-main-view-fg;
     overflow-x: auto;
-    /* padding: 16px; */
     border-radius: 8px;
     margin-bottom: 1em;
   }
 
   pre code {
     background-color: transparent;
-    padding: 0;
+    padding: 8px;
     @apply !text-sm;
+    display: inline-block;
   }
 
   /* Tables */
