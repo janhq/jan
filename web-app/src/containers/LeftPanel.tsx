@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { DownloadManagement } from './DownloadManegement'
 
 const mainMenus = [
   {
@@ -304,6 +305,7 @@ const LeftPanel = () => {
               )
             })}
           </div>
+          <DownloadManagement />
         </div>
       </div>
     </aside>

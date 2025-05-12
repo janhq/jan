@@ -30,6 +30,14 @@ function General() {
             {/* General */}
             <CardSetting title={t('common.general')}>
               <CardSettingItem
+                title="App Version"
+                actions={
+                  <>
+                    <span className="text-main-view-fg/80">v16.0.0</span>
+                  </>
+                }
+              />
+              <CardSettingItem
                 title={t('settings.general.autoStart', {
                   ns: 'settings',
                 })}
