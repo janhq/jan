@@ -3,7 +3,7 @@ import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { t } from 'i18next'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import {
   IconPencil,
   IconPlus,
@@ -136,7 +136,7 @@ function MCPServers() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <CardSetting
+            <Card
               header={
                 <div className="flex flex-col">
                   <div className="flex items-center justify-between">
@@ -183,8 +183,8 @@ function MCPServers() {
               </div>
             ) : (
               Object.entries(mcpServers).map(([key, config], index) => (
-                <CardSetting key={`${key}-${index}`}>
-                  <CardSettingItem
+                <Card key={`${key}-${index}`}>
+                  <CardItem
                     align="start"
                     title={
                       <div className="flex items-center gap-x-2">
@@ -250,7 +250,7 @@ function MCPServers() {
                       </div>
                     }
                   />
-                </CardSetting>
+                </Card>
               ))
             )}
           </div>

@@ -1,4 +1,4 @@
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import ProvidersMenu from '@/containers/ProvidersMenu'
 
@@ -52,7 +52,7 @@ function ProviderDetail() {
             </div>
 
             {/* Settings */}
-            <CardSetting>
+            <Card>
               {provider?.settings.map((setting, settingIndex) => {
                 // Use the DynamicController component
                 const actionComponent = (
@@ -101,7 +101,7 @@ function ProviderDetail() {
                 )
 
                 return (
-                  <CardSettingItem
+                  <CardItem
                     key={settingIndex}
                     title={setting.title}
                     column={
@@ -133,10 +133,10 @@ function ProviderDetail() {
                   />
                 )
               })}
-            </CardSetting>
+            </Card>
 
             {/* Models */}
-            <CardSetting
+            <Card
               header={
                 <div className="flex items-center justify-between mb-4">
                   <h1 className="text-main-view-fg font-medium text-base">
@@ -151,7 +151,7 @@ function ProviderDetail() {
               {provider?.models.map((model, modelIndex) => {
                 const capabilities = model.capabilities || []
                 return (
-                  <CardSettingItem
+                  <CardItem
                     key={modelIndex}
                     title={
                       <div className="flex items-center gap-2">
@@ -177,7 +177,7 @@ function ProviderDetail() {
                   />
                 )
               })}
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

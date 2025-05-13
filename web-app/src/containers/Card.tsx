@@ -1,13 +1,13 @@
 import { cn } from '@/lib/utils'
 import { ReactNode } from 'react'
 
-type CardSettingProps = {
+type CardProps = {
   title?: string
   children?: ReactNode
   header?: ReactNode
 }
 
-type CardSettingItemProps = {
+type CardItemProps = {
   title?: string | ReactNode
   description?: string | ReactNode
   align?: 'start' | 'center' | 'end'
@@ -16,14 +16,14 @@ type CardSettingItemProps = {
   className?: string
 }
 
-export function CardSettingItem({
+export function CardItem({
   title,
   description,
   className,
   align = 'center',
   column,
   actions,
-}: CardSettingItemProps) {
+}: CardItemProps) {
   return (
     <div
       className={cn(
@@ -50,7 +50,7 @@ export function CardSettingItem({
   )
 }
 
-export function CardSetting({ title, children, header }: CardSettingProps) {
+export function Card({ title, children, header }: CardProps) {
   return (
     <div className="bg-main-view-fg/3 p-4 rounded-lg text-main-view-fg/90 w-full">
       {title && (

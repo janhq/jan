@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from 'react-i18next'
@@ -69,7 +69,7 @@ function LocalAPIServer() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General Settings */}
-            <CardSetting
+            <Card
               header={
                 <div className="mb-3 flex w-full items-center border-b border-main-view-fg/4 pb-2">
                   <div className="w-full space-y-2">
@@ -82,7 +82,7 @@ function LocalAPIServer() {
                 </div>
               }
             >
-              <CardSettingItem
+              <CardItem
                 title="Server Logs"
                 description="View detailed logs of the local API server"
                 actions={
@@ -91,30 +91,30 @@ function LocalAPIServer() {
                   </Button>
                 }
               />
-            </CardSetting>
+            </Card>
 
             {/* Server Configuration */}
-            <CardSetting title="Server Configuration">
-              <CardSettingItem
+            <Card title="Server Configuration">
+              <CardItem
                 title="Server Host"
                 description="Choose between 127.0.0.1 or 0.0.0.0"
                 actions={<ServerHostSwitcher />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Server Port"
                 description="Set the port number for the API server"
                 actions={<PortInput />}
               />
-              <CardSettingItem
+              <CardItem
                 title="API Prefix"
                 description="Set the API endpoint prefix"
                 actions={<ApiPrefixInput />}
               />
-            </CardSetting>
+            </Card>
 
             {/* Advanced Settings */}
-            <CardSetting title="Advanced Settings">
-              <CardSettingItem
+            <Card title="Advanced Settings">
+              <CardItem
                 title="Cross-Origin Resource Sharing (CORS)"
                 description="Allow requests from different origins to access the API"
                 actions={
@@ -124,7 +124,7 @@ function LocalAPIServer() {
                   />
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title="Verbose Server Logs"
                 description="Enable detailed logging for debugging purposes"
                 actions={
@@ -134,7 +134,7 @@ function LocalAPIServer() {
                   />
                 }
               />
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

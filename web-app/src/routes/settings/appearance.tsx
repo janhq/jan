@@ -4,7 +4,7 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { ColorPickerAppBgColor } from '@/containers/ColorPickerAppBgColor'
 import { ColorPickerAppMainView } from '@/containers/ColorPickerAppMainView'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from 'react-i18next'
 import { ThemeSwitcher } from '@/containers/ThemeSwitcher'
 import { FontSizeSwitcher } from '@/containers/FontSizeSwitcher'
@@ -39,43 +39,43 @@ function Appareances() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Appearance */}
-            <CardSetting title="Appearance">
-              <CardSettingItem
+            <Card title="Appearance">
+              <CardItem
                 title="Theme"
                 description="Native appearance for consistent theming across OS UI elements"
                 actions={<ThemeSwitcher />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Font Size"
                 description="Adjust the size of text across the app"
                 actions={<FontSizeSwitcher />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Window Background"
                 description="Choose the App window color"
                 actions={<ColorPickerAppBgColor />}
               />
-              <CardSettingItem
+              <CardItem
                 title="App Main View"
                 description="Sets the background color for the main content area"
                 actions={<ColorPickerAppMainView />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Primary"
                 description="Controls the primary color used for components"
                 actions={<ColorPickerAppPrimaryColor />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Accent"
                 description="Controls the accent color used for highlights"
                 actions={<ColorPickerAppAccentColor />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Destructive"
                 description="Controls the color used for destructive actions"
                 actions={<ColorPickerAppDestructiveColor />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Reset to Default"
                 description="Reset all colors to their default values"
                 actions={
@@ -95,22 +95,22 @@ function Appareances() {
                   </Button>
                 }
               />
-            </CardSetting>
+            </Card>
 
             {/* Message */}
-            <CardSetting title="Chat Message">
-              <CardSettingItem
+            <Card title="Chat Message">
+              <CardItem
                 title="Code Block Style"
                 description="Choose the style for code block syntax highlighting"
                 actions={<CodeBlockStyleSwitcher />}
               />
               <CodeBlockExample />
-              <CardSettingItem
+              <CardItem
                 title="Show Line Numbers"
                 description="Toggle line numbers in code blocks"
                 actions={<LineNumbersSwitcher />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Reset Code Block Style"
                 description="Reset code block style to default"
                 actions={
@@ -130,7 +130,7 @@ function Appareances() {
                   </Button>
                 }
               />
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
@@ -28,8 +28,8 @@ function HTTPSProxy() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Proxy Configuration */}
-            <CardSetting title="Proxy Configuration">
-              <CardSettingItem
+            <Card title="Proxy Configuration">
+              <CardItem
                 title="Proxy URL"
                 className="block"
                 description={
@@ -42,7 +42,7 @@ function HTTPSProxy() {
                   </div>
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title="Authentication"
                 className="block"
                 description={
@@ -73,7 +73,7 @@ function HTTPSProxy() {
                   </div>
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title="No Proxy"
                 className="block"
                 description={
@@ -83,36 +83,36 @@ function HTTPSProxy() {
                   </div>
                 }
               />
-            </CardSetting>
+            </Card>
 
             {/* SSL Verification */}
-            <CardSetting title="SSL Verification">
-              <CardSettingItem
+            <Card title="SSL Verification">
+              <CardItem
                 title="Ignore SSL Certificates"
                 description="Allow self-signed or unverified certificates (may be required for certain proxies). Enable this reduces security. Only use this if you trust your proxy server."
                 actions={<Switch />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Proxy SSL"
                 description="Validate SSL certificate when connecting to the proxy server."
                 actions={<Switch />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Proxy Host SSL"
                 description="Validate SSL certificate of the proxy server host."
                 actions={<Switch />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Peer SSL"
                 description="Validate SSL certificate of the peer connections."
                 actions={<Switch />}
               />
-              <CardSettingItem
+              <CardItem
                 title="Host SSL"
                 description="Validate SSL certificate of destination hosts."
                 actions={<Switch />}
               />
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

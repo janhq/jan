@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from 'react-i18next'
 import { PlatformMetaKey } from '@/containers/PlatformMetaKey'
 
@@ -24,8 +24,8 @@ function Shortcuts() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Application */}
-            <CardSetting title="Application">
-              <CardSettingItem
+            <Card title="Application">
+              <CardItem
                 title="New Chat"
                 description="Create a new chat conversation"
                 actions={
@@ -36,7 +36,7 @@ function Shortcuts() {
                   </div>
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title="Toggle Sidebar"
                 description="Show or hide the sidebar"
                 actions={
@@ -47,11 +47,11 @@ function Shortcuts() {
                   </div>
                 }
               />
-            </CardSetting>
+            </Card>
 
             {/* Chat */}
-            <CardSetting title="Chat">
-              <CardSettingItem
+            <Card title="Chat">
+              <CardItem
                 title="Send Message"
                 description="Send the current message"
                 actions={
@@ -60,7 +60,7 @@ function Shortcuts() {
                   </div>
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title="New Line"
                 description="Insert a new line in the message"
                 actions={
@@ -69,11 +69,11 @@ function Shortcuts() {
                   </div>
                 }
               />
-            </CardSetting>
+            </Card>
 
             {/* Navigation */}
-            <CardSetting title="Navigation">
-              <CardSettingItem
+            <Card title="Navigation">
+              <CardItem
                 title="Go to Settings"
                 description="Open the settings page"
                 actions={
@@ -84,7 +84,7 @@ function Shortcuts() {
                   </div>
                 }
               />
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

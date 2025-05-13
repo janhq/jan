@@ -3,7 +3,7 @@ import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from 'react-i18next'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,7 +23,7 @@ function Privacy() {
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            <CardSetting
+            <Card
               header={
                 <div className="flex items-center justify-between mb-4">
                   <h1 className="text-main-view-fg font-medium text-base">
@@ -35,7 +35,7 @@ function Privacy() {
                 </div>
               }
             >
-              <CardSettingItem
+              <CardItem
                 title="Help us improve"
                 description={
                   <p>
@@ -46,7 +46,7 @@ function Privacy() {
                 }
                 align="start"
               />
-              <CardSettingItem
+              <CardItem
                 description={
                   <div className="text-main-view-fg/90">
                     <p>
@@ -80,7 +80,7 @@ function Privacy() {
                   </div>
                 }
               />
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

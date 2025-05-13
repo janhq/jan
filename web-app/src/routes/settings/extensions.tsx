@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 
 import HeaderPage from '@/containers/HeaderPage'
 
@@ -57,7 +57,7 @@ function Extensions() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
-            <CardSetting
+            <Card
               header={
                 <div className="flex items-center justify-between mb-4">
                   <h1 className="text-main-view-fg font-medium text-base">
@@ -71,7 +71,7 @@ function Extensions() {
             >
               {mockExtension.map((item, i) => {
                 return (
-                  <CardSettingItem
+                  <CardItem
                     key={i}
                     title={
                       <div className="flex items-center gap-x-2">
@@ -103,7 +103,7 @@ function Extensions() {
                   />
                 )
               })}
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>

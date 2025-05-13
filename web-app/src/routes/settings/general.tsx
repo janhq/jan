@@ -4,7 +4,7 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { CardSetting, CardSettingItem } from '@/containers/CardSetting'
+import { Card, CardItem } from '@/containers/Card'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -28,8 +28,8 @@ function General() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
-            <CardSetting title={t('common.general')}>
-              <CardSettingItem
+            <Card title={t('common.general')}>
+              <CardItem
                 title="App Version"
                 actions={
                   <>
@@ -37,27 +37,27 @@ function General() {
                   </>
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title={t('settings.general.autoStart', {
                   ns: 'settings',
                 })}
                 actions={<Switch />}
               />
-              <CardSettingItem
+              <CardItem
                 title={t('settings.general.autoDownload', {
                   ns: 'settings',
                 })}
                 actions={<Switch />}
               />
-              <CardSettingItem
+              <CardItem
                 title={t('common.language')}
                 actions={<LanguageSwitcher />}
               />
-            </CardSetting>
+            </Card>
 
             {/* Data folder */}
-            <CardSetting title={t('common.dataFolder')}>
-              <CardSettingItem
+            <Card title={t('common.dataFolder')}>
+              <CardItem
                 title={t('settings.dataFolder.appData', {
                   ns: 'settings',
                 })}
@@ -66,7 +66,7 @@ function General() {
                 })}
                 actions={<></>}
               />
-              <CardSettingItem
+              <CardItem
                 title={t('settings.dataFolder.appLogs', {
                   ns: 'settings',
                 })}
@@ -75,11 +75,11 @@ function General() {
                 })}
                 actions={<></>}
               />
-            </CardSetting>
+            </Card>
 
             {/* Other */}
-            <CardSetting title={t('common.others')}>
-              <CardSettingItem
+            <Card title={t('common.others')}>
+              <CardItem
                 title={t('settings.others.spellCheck', {
                   ns: 'settings',
                 })}
@@ -93,7 +93,7 @@ function General() {
                   />
                 }
               />
-              <CardSettingItem
+              <CardItem
                 title={t('settings.others.resetFactory', {
                   ns: 'settings',
                 })}
@@ -106,7 +106,7 @@ function General() {
                   </Button>
                 }
               />
-            </CardSetting>
+            </Card>
           </div>
         </div>
       </div>
