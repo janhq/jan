@@ -131,11 +131,31 @@ export class MessageRequestBuilder {
     return this
   }
 
+  reasoningTagHandle = (
+    message: ChatCompletionMessage
+  ): ChatCompletionMessageContent => {
+    let content =
+      typeof message.content === 'string'
+        ? message.content
+        : (message.content?.[0]?.text ?? '')
+    // Reasoning content should not be sent to the model
+    if (content.includes('<think>')) {
+      const match = content.match(/<think>([\s\S]*?)<\/think>/)
+      if (match?.index !== undefined) {
+        const splitIndex = match.index + match[0].length
+        content = content.slice(splitIndex).trim()
+      }
+    }
+    return content
+  }
+
   normalizeMessages = (
     messages: ChatCompletionMessage[]
   ): ChatCompletionMessage[] => {
     const stack = new Stack<ChatCompletionMessage>()
     for (const message of messages) {
+      // Handle message content such as reasoning tags
+      message.content = this.reasoningTagHandle(message)
       if (stack.isEmpty()) {
         stack.push(message)
         continue
