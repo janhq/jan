@@ -2,7 +2,7 @@ import { models as providerModels } from 'token.js'
 import { mockModelProvider } from '@/mock/data'
 import { EngineManager, InferenceEngine, ModelManager } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
-import { modelSettings } from './models'
+import { modelSettings } from '@/lib/predefined'
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const builtinProviders = mockModelProvider.map((provider) => {
