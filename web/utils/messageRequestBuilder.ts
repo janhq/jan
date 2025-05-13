@@ -155,7 +155,8 @@ export class MessageRequestBuilder {
     const stack = new Stack<ChatCompletionMessage>()
     for (const message of messages) {
       // Handle message content such as reasoning tags
-      message.content = this.reasoningTagHandle(message)
+      if (message.role === ChatCompletionRole.Assistant)
+        message.content = this.reasoningTagHandle(message)
       if (stack.isEmpty()) {
         stack.push(message)
         continue
