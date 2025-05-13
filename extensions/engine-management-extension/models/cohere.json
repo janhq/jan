@@ -26,5 +26,19 @@
       "stream": true
     },
     "engine": "cohere"
+  },
+  {
+    "model": "command-a-03-2025",
+    "object": "model",
+    "name": "Command A",
+    "version": "1.0",
+    "description": "Command A is an instruction-following conversational model that performs language tasks at a higher quality, more reliably, and with a longer context than previous models. It is best suited for complex RAG workflows and multi-step tool use.",
+    "inference_params": {
+      "max_tokens": 4096,
+      "temperature": 0.7,
+      "max_temperature": 1.0,
+      "stream": true
+    },
+    "engine": "cohere"
   }
 ]

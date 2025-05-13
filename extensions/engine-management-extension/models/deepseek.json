@@ -2,7 +2,7 @@
   {
     "model": "deepseek-chat",
     "object": "model",
-    "name": "DeepSeek Chat",
+    "name": "DeepSeek V3",
     "version": "1.0",
     "description": "The deepseek-chat model has been upgraded to DeepSeek-V3. deepseek-reasoner points to the new model DeepSeek-R1",
     "inference_params": {
