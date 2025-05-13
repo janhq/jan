@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
+import { Switch } from '@/components/ui/switch'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
@@ -181,13 +182,18 @@ function MCPServers() {
                 No MCP servers found
               </div>
             ) : (
-              Object.entries(mcpServers).map(([key, config]) => (
-                <CardSetting>
+              Object.entries(mcpServers).map(([key, config], index) => (
+                <CardSetting key={`${key}-${index}`}>
                   <CardSettingItem
-                    key={key}
+                    align="start"
                     title={
                       <div className="flex items-center gap-x-2">
-                        <h1 className="text-main-view-fg text-base">{key}</h1>
+                        <div className="size-2 rounded-full bg-accent" />
+                        {/* condition here when server is running or not */}
+                        {/* <div className="size-2 rounded-full bg-main-view-fg/20" /> */}
+                        <h1 className="text-main-view-fg text-base capitalize">
+                          {key}
+                        </h1>
                       </div>
                     }
                     description={
@@ -237,6 +243,9 @@ function MCPServers() {
                             size={18}
                             className="text-main-view-fg/50"
                           />
+                        </div>
+                        <div className="ml-2">
+                          <Switch />
                         </div>
                       </div>
                     }
