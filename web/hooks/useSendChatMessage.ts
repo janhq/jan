@@ -12,11 +12,9 @@ import {
   ThreadAssistantInfo,
   events,
   MessageEvent,
-  ContentType,
   EngineManager,
   InferenceEngine,
   MessageStatus,
-  ChatCompletionRole,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -26,7 +24,7 @@ import {
   ChatCompletionTool,
   ChatCompletionMessageToolCall,
 } from 'openai/resources/chat'
-
+import { OpenAI } from 'openai'
 import {
   CompletionResponse,
   StreamCompletionResponse,
@@ -293,12 +291,17 @@ export default function useSendChatMessage(
       const apiKey = engine?.api_key
       const provider = convertBuiltInEngine(engine?.engine)
 
-      const tokenJS = new TokenJS({
+      // const tokenJS = new TokenJS({
+      //   apiKey: apiKey ?? (await window.core.api.appToken()),
+      //   baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
+      // })
+      const tokenJS = new OpenAI({
         apiKey: apiKey ?? (await window.core.api.appToken()),
         baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
+        dangerouslyAllowBrowser: true,
       })
 
-      extendBuiltInEngineModels(tokenJS, provider, modelId)
+      // extendBuiltInEngineModels(tokenJS, provider, modelId)
 
       // llama.cpp currently does not support streaming when tools are used.
       const useStream = (requestBuilder.tools && isCortex) ?
@@ -326,15 +329,22 @@ export default function useSendChatMessage(
         events.emit(MessageEvent.OnMessageResponse, message)
 
         // we need to separate into 2 cases to appease linter
+        const controller = new AbortController()
+        EngineManager.instance().controller = controller
         if (useStream) {
-          const response = await tokenJS.chat.completions.create({
-            stream: true,
-            provider,
-            messages: requestBuilder.messages as ChatCompletionMessageParam[],
-            model: data.model?.id ?? '',
-            tools: data.tools as ChatCompletionTool[],
-            tool_choice: data.tools ? 'auto' : undefined,
-          })
+          const response = await tokenJS.chat.completions.create(
+            {
+              stream: true,
+              // provider,
+              messages: requestBuilder.messages as ChatCompletionMessageParam[],
+              model: data.model?.id ?? '',
+              tools: data.tools as ChatCompletionTool[],
+              tool_choice: data.tools ? 'auto' : undefined,
+            },
+            {
+              signal: controller.signal,
+            }
+          )
           // Variables to track and accumulate streaming content
           if (!message.content.length) {
             message.content = emptyMessageContent
