@@ -16,12 +16,12 @@ const symlinkEngines = async () => {
     appResourcePath(),
     'shared',
     'engines',
-    'cortex.llamacpp'
+    'llama.cpp'
   )
   const symlinkEnginePath = path.join(
     getJanDataFolderPath(),
     'engines',
-    'cortex.llamacpp'
+    'llama.cpp'
   )
   const variantFolders = await readdir(sourceEnginePath)
   const isStandalone = process.platform === 'linux'

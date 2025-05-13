@@ -32,23 +32,23 @@ const gpuRunMode = (settings?: GpuSetting): RunMode => {
  */
 const os = (settings?: GpuSetting): string => {
   return PLATFORM === 'win32'
-    ? 'windows-amd64'
+    ? 'win'
     : PLATFORM === 'darwin'
-    ? settings?.cpu?.arch === 'arm64'
-      ? 'mac-arm64'
-      : 'mac-amd64'
-    : 'linux-amd64'
+      ? settings?.cpu?.arch === 'arm64'
+        ? 'macos-arm64'
+        : 'macos-x64'
+      : 'linux'
 }
 
 /**
- * The CUDA version that will be set - either '11-7' or '12-0'.
+ * The CUDA version that will be set - either 'cu12.0' or 'cu11.7'.
  * @param settings
  * @returns
  */
-const cudaVersion = (settings?: GpuSetting): '12-0' | '11-7' | undefined => {
+const cudaVersion = (settings?: GpuSetting): 'cu12.0' | 'cu11.7' | undefined => {
   return settings.gpus?.some((gpu) => gpu.version.includes('12'))
-    ? '12-0'
-    : '11-7'
+    ? 'cu12.0'
+    : 'cu11.7'
 }
 
 /**
@@ -71,28 +71,30 @@ export const engineVariant = async (
   // Only Nvidia GPUs have addition_information set and activated by default
   let engineVariant =
     !gpuSetting?.vulkan ||
-    !gpuSetting.gpus?.length ||
-    gpuSetting.gpus.some((e) => e.additional_information && e.activated)
+      !gpuSetting.gpus?.length ||
+      gpuSetting.gpus.some((e) => e.additional_information && e.activated)
       ? [
-          platform,
-          ...(runMode === RunMode.Cuda
-            ? // For cuda we only need to check if the cpu supports avx2 or noavx - since other binaries are not shipped with the extension
-              [
-                gpuSetting.cpu?.instructions.includes('avx2') ||
-                gpuSetting.cpu?.instructions.includes('avx512')
-                  ? 'avx2'
-                  : 'noavx',
-                runMode,
-                cudaVersion(gpuSetting),
-              ]
-            : // For cpu only we need to check all available supported instructions
-              [
-                (gpuSetting.cpu?.instructions ?? ['noavx']).find((e) =>
-                  instructionBinaryNames.includes(e.toLowerCase())
-                ) ?? 'noavx',
-              ]),
-        ].filter(Boolean)
-      : [platform, 'vulkan']
+        platform,
+        ...(runMode === RunMode.Cuda
+          ? // For cuda we only need to check if the cpu supports avx2 or noavx - since other binaries are not shipped with the extension
+          [
+            gpuSetting.cpu?.instructions.includes('avx2') ||
+              gpuSetting.cpu?.instructions.includes('avx512')
+              ? 'avx2'
+              : 'noavx',
+            runMode,
+            cudaVersion(gpuSetting),
+            'x64',
+          ]
+          : // For cpu only we need to check all available supported instructions
+          [
+            (gpuSetting.cpu?.instructions ?? ['noavx']).find((e) =>
+              instructionBinaryNames.includes(e.toLowerCase())
+            ) ?? 'noavx',
+            'x64',
+          ]),
+      ].filter(Boolean)
+      : [platform, 'vulkan', 'x64']
 
   let engineVariantString = engineVariant.join('-')
 
