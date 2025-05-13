@@ -2,7 +2,7 @@
 set BIN_PATH=./bin
 set SHARED_PATH=./../../electron/shared
 set /p CORTEX_VERSION=<./bin/version.txt
-set ENGINE_VERSION=b5350
+set ENGINE_VERSION=b5351
 
 @REM Download llama.cpp binaries
 set DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
