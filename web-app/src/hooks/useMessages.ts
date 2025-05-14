@@ -2,13 +2,16 @@ import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
-import { createMessage } from '@/services/messages'
+import {
+  createMessage,
+  deleteMessage as deleteMessageExt,
+} from '@/services/messages'
 
 type MessageState = {
   messages: Record<string, ThreadMessage[]>
   setMessages: (threadId: string, messages: ThreadMessage[]) => void
   addMessage: (message: ThreadMessage) => void
-  deleteMessage: (messageId: string) => void
+  deleteMessage: (threadId: string, messageId: string) => void
 }
 
 export const useMessages = create<MessageState>()(
@@ -36,13 +39,15 @@ export const useMessages = create<MessageState>()(
           }))
         })
       },
-      deleteMessage: (messageId) => {
+      deleteMessage: (threadId, messageId) => {
+        deleteMessageExt(threadId, messageId)
         set((state) => ({
           messages: {
             ...state.messages,
-            [messageId]: state.messages[messageId].filter(
-              (message) => message.id !== messageId
-            ),
+            [threadId]:
+              state.messages[threadId]?.filter(
+                (message) => message.id !== messageId
+              ) || [],
           },
         }))
       },

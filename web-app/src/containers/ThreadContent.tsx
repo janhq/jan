@@ -11,6 +11,7 @@ import {
 import { useAppState } from '@/hooks/useAppState'
 import ThinkingBlock from './ThinkingBlock'
 import { cn } from '@/lib/utils'
+import { useMessages } from '@/hooks/useMessages'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -78,6 +79,8 @@ export const ThreadContent = memo(
       }
     }, [text])
 
+    const { deleteMessage } = useMessages()
+
     return (
       <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
@@ -102,7 +105,7 @@ export const ThreadContent = memo(
               <button
                 className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                 onClick={() => {
-                  console.log('Delete clicked')
+                  deleteMessage(item.thread_id, item.id)
                 }}
               >
                 <IconTrash size={16} />
@@ -135,7 +138,7 @@ export const ThreadContent = memo(
                 <button
                   className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                   onClick={() => {
-                    console.log('Delete clicked')
+                    deleteMessage(item.thread_id, item.id)
                   }}
                 >
                   <IconTrash size={16} />
