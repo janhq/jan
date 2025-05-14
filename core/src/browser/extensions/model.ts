@@ -40,4 +40,9 @@ export abstract class ModelExtension
    * Delete a model source
    */
   abstract deleteSource(source: string): Promise<void>
+
+  /**
+   * Fetch models hub
+   */
+  abstract fetchModelsHub(): Promise<void>
 }

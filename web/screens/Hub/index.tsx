@@ -25,7 +25,10 @@ import { twMerge } from 'tailwind-merge'
 import CenterPanelContainer from '@/containers/CenterPanelContainer'
 import ModelSearch from '@/containers/ModelSearch'
 
-import { useGetEngineModelSources } from '@/hooks/useEngineManagement'
+import {
+  useFetchModelsHub,
+  useGetEngineModelSources,
+} from '@/hooks/useEngineManagement'
 import { setImportModelStageAtom } from '@/hooks/useImportModel'
 
 import {
@@ -85,6 +88,7 @@ const hubCompatibleAtom = atom(false)
 const HubScreen = () => {
   const { sources } = useGetModelSources()
   const { sources: remoteModelSources } = useGetEngineModelSources()
+  const { mutate: fetchModelsHub } = useFetchModelsHub()
   const { addModelSource } = useModelSourcesMutation()
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
@@ -267,6 +271,10 @@ const HubScreen = () => {
       reader.readAsDataURL(files[0])
     },
   })
+
+  useEffect(() => {
+    fetchModelsHub()
+  }, [])
 
   return (
     <CenterPanelContainer>
