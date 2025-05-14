@@ -161,6 +161,8 @@ export function useActiveModel() {
 
     // const engine = EngineManager.instance().get(InferenceEngine.cortex)
     // engine?.stopInference()
+    // NOTE: this only works correctly if there is only 1 concurrent request
+    // at any point in time, which is a reasonable assumption to have.
     EngineManager.instance().controller?.abort()
   }, [activeModel, stateModel, stopModel])
 
