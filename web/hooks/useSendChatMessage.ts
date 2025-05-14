@@ -12,11 +12,9 @@ import {
   ThreadAssistantInfo,
   events,
   MessageEvent,
-  ContentType,
   EngineManager,
   InferenceEngine,
   MessageStatus,
-  ChatCompletionRole,
 } from '@janhq/core'
 import { extractInferenceParams, extractModelLoadParams } from '@janhq/core'
 import { atom, useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -26,12 +24,10 @@ import {
   ChatCompletionTool,
   ChatCompletionMessageToolCall,
 } from 'openai/resources/chat'
-
 import {
   CompletionResponse,
   StreamCompletionResponse,
   TokenJS,
-  models,
 } from 'token.js'
 import { ulid } from 'ulidx'
 
@@ -208,6 +204,18 @@ export default function useSendChatMessage(
       }
 
       // Build Message Request
+      // TODO: detect if model supports tools
+      const tools = (await window.core.api.getTools())
+        ?.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
+        .map((tool: ModelTool) => ({
+          type: 'function' as const,
+          function: {
+            name: tool.name,
+            description: tool.description?.slice(0, 1024),
+            parameters: tool.inputSchema,
+            strict: false,
+          },
+        }))
       const requestBuilder = new MessageRequestBuilder(
         MessageRequestType.Thread,
         {
@@ -217,17 +225,7 @@ export default function useSendChatMessage(
         },
         activeThread,
         messages ?? currentMessages,
-        (await window.core.api.getTools())
-          ?.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
-          .map((tool: ModelTool) => ({
-            type: 'function' as const,
-            function: {
-              name: tool.name,
-              description: tool.description?.slice(0, 1024),
-              parameters: tool.inputSchema,
-              strict: false,
-            },
-          }))
+        (tools && tools.length) ? tools : undefined,
       ).addSystemMessage(activeAssistant.instructions)
 
       requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
@@ -267,13 +265,15 @@ export default function useSendChatMessage(
       }
 
       // Start Model if not started
+      const isCortex = modelRequest.engine == InferenceEngine.cortex ||
+                       modelRequest.engine == InferenceEngine.cortex_llamacpp
       const modelId = selectedModel?.id ?? activeAssistantRef.current?.model.id
 
       if (base64Blob) {
         setFileUpload(undefined)
       }
 
-      if (modelRef.current?.id !== modelId && modelId) {
+      if (modelRef.current?.id !== modelId && modelId && isCortex) {
         const error = await startModel(modelId).catch((error: Error) => error)
         if (error) {
           updateThreadWaiting(activeThread.id, false)
@@ -282,92 +282,98 @@ export default function useSendChatMessage(
       }
       setIsGeneratingResponse(true)
 
-      if (requestBuilder.tools && requestBuilder.tools.length) {
-        let isDone = false
+      let isDone = false
 
-        const engine =
-          engines?.[requestBuilder.model.engine as InferenceEngine]?.[0]
-        const apiKey = engine?.api_key
-        const provider = convertBuiltInEngine(engine?.engine)
+      const engine =
+        engines?.[requestBuilder.model.engine as InferenceEngine]?.[0]
+      const apiKey = engine?.api_key
+      const provider = convertBuiltInEngine(engine?.engine)
 
-        const tokenJS = new TokenJS({
-          apiKey: apiKey ?? (await window.core.api.appToken()),
-          baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
+      const tokenJS = new TokenJS({
+        apiKey: apiKey ?? (await window.core.api.appToken()),
+        baseURL: apiKey ? undefined : `${API_BASE_URL}/v1`,
+      })
+
+      extendBuiltInEngineModels(tokenJS, provider, modelId)
+
+      // llama.cpp currently does not support streaming when tools are used.
+      const useStream = (requestBuilder.tools && isCortex) ?
+                        false :
+                        modelRequest.parameters?.stream
+
+      let parentMessageId: string | undefined
+      while (!isDone) {
+        let messageId = ulid()
+        if (!parentMessageId) {
+          parentMessageId = ulid()
+          messageId = parentMessageId
+        }
+        const data = requestBuilder.build()
+        const message: ThreadMessage = createMessage({
+          id: messageId,
+          thread_id: activeThread.id,
+          assistant_id: activeAssistant.assistant_id,
+          metadata: {
+            ...(messageId !== parentMessageId
+              ? { parent_id: parentMessageId }
+              : {}),
+          },
         })
+        events.emit(MessageEvent.OnMessageResponse, message)
 
-        extendBuiltInEngineModels(tokenJS, provider, modelId)
-
-        let parentMessageId: string | undefined
-        while (!isDone) {
-          let messageId = ulid()
-          if (!parentMessageId) {
-            parentMessageId = ulid()
-            messageId = parentMessageId
-          }
-          const data = requestBuilder.build()
-          const message: ThreadMessage = createMessage({
-            id: messageId,
-            thread_id: activeThread.id,
-            assistant_id: activeAssistant.assistant_id,
-            metadata: {
-              ...(messageId !== parentMessageId
-                ? { parent_id: parentMessageId }
-                : {}),
-            },
-          })
-          events.emit(MessageEvent.OnMessageResponse, message)
-          // Variables to track and accumulate streaming content
-
-          if (
-            data.model?.parameters?.stream &&
-            data.model?.engine !== InferenceEngine.cortex &&
-            data.model?.engine !== InferenceEngine.cortex_llamacpp
-          ) {
-            const response = await tokenJS.chat.completions.create({
+        // we need to separate into 2 cases to appease linter
+        const controller = new AbortController()
+        EngineManager.instance().controller = controller
+        if (useStream) {
+          const response = await tokenJS.chat.completions.create(
+            {
               stream: true,
               provider,
               messages: requestBuilder.messages as ChatCompletionMessageParam[],
               model: data.model?.id ?? '',
               tools: data.tools as ChatCompletionTool[],
-              tool_choice: 'auto',
-            })
-
-            if (!message.content.length) {
-              message.content = emptyMessageContent
+              tool_choice: data.tools ? 'auto' : undefined,
+            },
+            {
+              signal: controller.signal,
             }
-
-            isDone = await processStreamingResponse(
-              response,
-              requestBuilder,
-              message
-            )
-          } else {
-            const response = await tokenJS.chat.completions.create({
+          )
+          // Variables to track and accumulate streaming content
+          if (!message.content.length) {
+            message.content = emptyMessageContent
+          }
+          isDone = await processStreamingResponse(
+            response,
+            requestBuilder,
+            message
+          )
+        } else {
+          const response = await tokenJS.chat.completions.create(
+            {
               stream: false,
               provider,
               messages: requestBuilder.messages as ChatCompletionMessageParam[],
               model: data.model?.id ?? '',
               tools: data.tools as ChatCompletionTool[],
-              tool_choice: 'auto',
-            })
-            // Variables to track and accumulate streaming content
-            if (!message.content.length) {
-              message.content = emptyMessageContent
+              tool_choice: data.tools ? 'auto' : undefined,
+            },
+            {
+              signal: controller.signal,
             }
-            isDone = await processNonStreamingResponse(
-              response,
-              requestBuilder,
-              message
-            )
+          )
+          // Variables to track and accumulate streaming content
+          if (!message.content.length) {
+            message.content = emptyMessageContent
           }
-          message.status = MessageStatus.Ready
-          events.emit(MessageEvent.OnMessageUpdate, message)
+          isDone = await processNonStreamingResponse(
+            response,
+            requestBuilder,
+            message
+          )
         }
-      } else {
-        // Request for inference
-        EngineManager.instance()
-          .get(InferenceEngine.cortex)
-          ?.inference(requestBuilder.build())
+
+        message.status = MessageStatus.Ready
+        events.emit(MessageEvent.OnMessageUpdate, message)
       }
     } catch (error) {
       setIsGeneratingResponse(false)
