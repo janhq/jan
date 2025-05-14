@@ -120,7 +120,12 @@ async function main() {
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun'),
       path.join(binDir)
     )
-    if(platform === 'darwin') {
+    fs.chmod(path.join(binDir, 'bun'), 0o755, (err) => {
+      if (err) {
+        console.log('Add execution permission failed!', err)
+      }
+    });
+    if (platform === 'darwin') {
       copyFile(path.join(binDir, 'bun'), path.join(binDir, 'bun-x86_64-apple-darwin'), (err) => {
         if (err) {
           console.log("Error Found:", err);
