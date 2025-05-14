@@ -110,8 +110,11 @@ async function main() {
   }
 
   console.log(`Downloading Bun for ${bunPlatform}...`)
-  await download(bunUrl, path.join(tempBinDir, `bun-${bunPlatform}.zip`))
-  await decompress(bunPath, tempBinDir)
+  const bunSaveDir = path.join(tempBinDir, `bun-${bunPlatform}.zip`)
+  if (!fs.existsSync(bunSaveDir)) {
+    await download(bunUrl, bunSaveDir)
+    await decompress(bunPath, tempBinDir)
+  }
   try {
     copySync(
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun'),
@@ -156,12 +159,12 @@ async function main() {
   console.log('Bun downloaded.')
 
   console.log(`Downloading UV for ${uvPlatform}...`)
-  if (platform === 'win32') {
-    await download(uvUrl, path.join(tempBinDir, `uv-${uvPlatform}.zip`))
-  } else {
-    await download(uvUrl, path.join(tempBinDir, `uv-${uvPlatform}.tar.gz`))
+  const uvExt = platform === 'win32' ? `zip` : `tar.gz`
+  const uvSaveDir = path.join(tempBinDir, `uv-${uvPlatform}.${uvExt}`)
+  if (!fs.existsSync(uvSaveDir)) {
+    await download(uvUrl, uvSaveDir)
+    await decompress(uvPath, tempBinDir)
   }
-  await decompress(uvPath, tempBinDir)
   try {
     copySync(
       path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'),
