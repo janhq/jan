@@ -168,8 +168,7 @@ const RemoteEngineSettings = ({
                   <p className="mt-1 text-[hsla(var(--text-secondary))]">
                     {!customEngineLogo ? (
                       <span>
-                        Enter your authentication key to activate this
-                        engine.{' '}
+                        Enter your authentication key to activate this engine.{' '}
                       </span>
                     ) : (
                       <span>

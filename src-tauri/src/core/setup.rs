@@ -19,7 +19,9 @@ use super::{
 };
 
 pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), String> {
-    let store = app.store("store.json").expect("Store not initialized");
+    let mut store_path = get_jan_data_folder_path(app.clone());
+    store_path.push("store.json");
+    let store = app.store(store_path).expect("Store not initialized");
     let stored_version = store
         .get("version")
         .and_then(|v| v.as_str().map(String::from))
@@ -35,7 +37,12 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         return Ok(());
     }
     let extensions_path = get_jan_extensions_path(app.clone());
-    let pre_install_path = PathBuf::from("./resources/pre-install");
+    let pre_install_path = app
+        .path()
+        .resource_dir()
+        .unwrap()
+        .join("resources")
+        .join("pre-install");
 
     // Attempt to remove extensions folder
     if extensions_path.exists() {
@@ -198,29 +205,19 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
     // Setup sidecar
 
     let app_state = app.state::<AppState>();
+    let app_data_dir = get_jan_data_folder_path(app.handle().clone());
     let mut sidecar_command = app.shell().sidecar("cortex-server").unwrap().args([
         "--start-server",
         "--port",
         "39291",
         "--config_file_path",
-        app.app_handle()
-            .path()
-            .app_data_dir()
-            .unwrap()
-            .join(".janrc")
-            .to_str()
-            .unwrap(),
+        app_data_dir.join(".janrc").to_str().unwrap(),
         "--data_folder_path",
-        app.app_handle()
-            .path()
-            .app_data_dir()
-            .unwrap()
-            .to_str()
-            .unwrap(),
+        app_data_dir.to_str().unwrap(),
         "--cors",
         "ON",
         "--allowed_origins",
-        "http://localhost:3000",
+        "http://localhost:3000,tauri://localhost,http://tauri.localhost",
         "config",
         "--api_keys",
         app_state.inner().app_token.as_deref().unwrap_or(""),
@@ -286,7 +283,7 @@ fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {
 
 pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
     // Copy engine binaries to app_data
-    let app_data_dir = app.handle().path().app_data_dir().unwrap();
+    let app_data_dir = get_jan_data_folder_path(app.handle().clone());
     let binaries_dir = app.handle().path().resource_dir().unwrap().join("binaries");
     let themes_dir = app
         .handle()

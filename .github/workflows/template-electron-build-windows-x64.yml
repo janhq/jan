@@ -1,4 +1,4 @@
-name: build-linux-x64
+name: build-windows-x64
 on:
   workflow_call:
     inputs:
@@ -38,11 +38,20 @@ on:
         required: false
       DELTA_AWS_SECRET_ACCESS_KEY:
         required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
 
 jobs:
-  build-linux-x64:
-    runs-on: ubuntu-latest
-    environment: production
+  build-windows-x64:
+    runs-on: windows-latest
     permissions:
       contents: write
     steps:
@@ -75,7 +84,6 @@ jobs:
           cp electron/icons_dev/jan-nightly-tray@2x.png electron/icons/icon-tray@2x.png
           cp electron/icons_dev/jan-nightly-tray.png electron/icons/icon-tray.png
 
-
       - name: Installing node
         uses: actions/setup-node@v1
         with:
@@ -84,24 +92,36 @@ jobs:
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
-      - name: Update app version base public_provider
+      - name: Update app version base on tag
         if: inputs.public_provider != 'github'
+        id: version_update
+        shell: bash
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update the version in electron/package.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
+
           jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/nightly", "channel": "latest"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-nightly", "channel": "latest"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
+
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
           cat electron/package.json
+
           chmod +x .github/scripts/rename-app.sh
           .github/scripts/rename-app.sh ./electron/package.json nightly
           chmod +x .github/scripts/rename-workspace.sh
           .github/scripts/rename-workspace.sh ./package.json nightly
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh nightly
           echo "------------------------"
           cat ./electron/package.json
+          echo "------------------------"
+          cat ./package.json
           echo "------------------------"
 
       - name: Change App Name for beta version
@@ -112,25 +132,37 @@ jobs:
           .github/scripts/rename-app.sh ./electron/package.json beta
           chmod +x .github/scripts/rename-workspace.sh
           .github/scripts/rename-workspace.sh ./package.json beta
+          chmod +x .github/scripts/rename-uninstaller.sh
+          .github/scripts/rename-uninstaller.sh beta
           echo "------------------------"
           cat ./electron/package.json
           echo "------------------------"
           cat ./package.json
+          echo "------------------------"
+          cat ./electron/scripts/uninstaller.nsh
           jq '.build.publish = [{"provider": "generic", "url": "https://delta.jan.ai/beta", "channel": "beta"}, {"provider": "s3", "acl": null, "bucket": "${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}", "region": "${{ secrets.DELTA_AWS_REGION}}", "path": "temp-beta", "channel": "beta"}]' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           cat electron/package.json
 
       - name: Update app version base on tag
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github'
+        shell: bash
         run: |
           jq --arg version "${VERSION_TAG#v}" '.version = $version' electron/package.json > /tmp/package.json
           mv /tmp/package.json electron/package.json
           jq --arg version "${VERSION_TAG#v}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
+          jq '.build.win.sign = "./sign.js"' electron/package.json > /tmp/package.json
+          mv /tmp/package.json electron/package.json
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
+      - name: Install AzureSignTool
+        run: |
+          dotnet tool install --global AzureSignTool
+
       - name: Build and publish app to aws s3 r2 or github artifactory
+        shell: bash
         if: inputs.public_provider != 'github'
         run: |
           # check public_provider is true or not
@@ -141,25 +173,35 @@ jobs:
             make build-and-publish
           fi
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: homebrewltd
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: 'true'
           AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
 
-      - name: Build and publish app to github
+      - name: Build app and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == false
         run: |
           make build-and-publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: homebrewltd
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
 
-      - name: Build and publish app to github
+      - name: Build app and publish app to github
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && inputs.public_provider == 'github' && inputs.beta == true
         run: |
           make build-and-publish
@@ -167,21 +209,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
           AWS_EC2_METADATA_DISABLED: 'true'
           AWS_MAX_ATTEMPTS: '5'
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          AZURE_CERT_NAME: homebrewltd
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
 
-      - name: Upload Artifact .deb file
+      - name: Upload Artifact
         if: inputs.public_provider != 'github'
         uses: actions/upload-artifact@v4
         with:
-          name: jan-linux-amd64-${{ inputs.new_version }}-deb
-          path: ./electron/dist/*.deb
-
-      - name: Upload Artifact .AppImage file
-        if: inputs.public_provider != 'github'
-        uses: actions/upload-artifact@v4
-        with:
-          name: jan-linux-amd64-${{ inputs.new_version }}-AppImage
-          path: ./electron/dist/*.AppImage
+          name: jan-electron-win-x64-${{ inputs.new_version }}
+          path: ./electron/dist/*.exe

@@ -144,10 +144,10 @@ const ModelPage = ({ model, onGoBack }: Props) => {
                       {model.type !== 'cloud' && (
                         <>
                           <th></th>
-                          <th className="hidden max-w-32 px-6 py-3 text-left text-sm font-semibold sm:table-cell">
+                          <th className="max-w-32 hidden px-6 py-3 text-left text-sm font-semibold sm:table-cell">
                             Format
                           </th>
-                          <th className="hidden max-w-32 px-6 py-3 text-left text-sm font-semibold sm:table-cell">
+                          <th className="max-w-32 hidden px-6 py-3 text-left text-sm font-semibold sm:table-cell">
                             Size
                           </th>
                         </>
