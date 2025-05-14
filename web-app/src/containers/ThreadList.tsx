@@ -139,7 +139,10 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
             )}
             <Dialog
               onOpenChange={(open) => {
-                if (!open) setOpenDropdown(false)
+                if (!open) {
+                  setOpenDropdown(false)
+                  setTitle(thread.title)
+                }
               }}
             >
               <DialogTrigger asChild>
@@ -153,9 +156,15 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                   <DialogTitle>Rename Title</DialogTitle>
                   <Input
                     value={title}
-                    onChange={(e) => setTitle(e.target.value)}
+                    onChange={(e) => {
+                      setTitle(e.target.value)
+                    }}
                     className="mt-2"
-                  ></Input>
+                    onKeyDown={(e) => {
+                      // Prevent key from being captured by parent components
+                      e.stopPropagation()
+                    }}
+                  />
                   <DialogFooter className="mt-2 flex items-center">
                     <DialogClose asChild>
                       <Button
@@ -167,6 +176,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       </Button>
                     </DialogClose>
                     <Button
+                      disabled={!title}
                       onClick={() => {
                         renameThread(thread.id, title)
                         setOpenDropdown(false)
