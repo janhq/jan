@@ -5,12 +5,23 @@ import { SearchIcon } from 'lucide-react'
 
 import { useDebouncedCallback } from 'use-debounce'
 
+import {
+  useGetModelSources,
+  useModelSourcesMutation,
+} from '@/hooks/useModelSource'
+
+import Spinner from '../Loader/Spinner'
+
 type Props = {
+  supportModelImport?: boolean
   onSearchLocal?: (searchText: string) => void
 }
 
-const ModelSearch = ({ onSearchLocal }: Props) => {
+const ModelSearch = ({ supportModelImport, onSearchLocal }: Props) => {
   const [searchText, setSearchText] = useState('')
+  const [isSearching, setSearching] = useState(false)
+  const { mutate } = useGetModelSources()
+  const { addModelSource } = useModelSourcesMutation()
   const inputRef = useRef<HTMLInputElement | null>(null)
   const debounced = useDebouncedCallback(async () => {
     if (searchText.indexOf('/') === -1) {
@@ -20,6 +31,15 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
     }
     // Attempt to search local
     onSearchLocal?.(searchText)
+
+    setSearching(true)
+    // Attempt to search model source
+    if (supportModelImport)
+      addModelSource(searchText)
+        .then(() => mutate())
+        .then(() => onSearchLocal?.(searchText))
+        .catch(console.debug)
+        .finally(() => setSearching(false))
   }, 300)
 
   const onSearchChanged = useCallback(
@@ -50,8 +70,18 @@ const ModelSearch = ({ onSearchLocal }: Props) => {
   return (
     <Input
       ref={inputRef}
-      prefixIcon={<SearchIcon size={16} />}
-      placeholder="Search models..."
+      prefixIcon={
+        isSearching ? (
+          <Spinner size={16} strokeWidth={2} />
+        ) : (
+          <SearchIcon size={16} />
+        )
+      }
+      placeholder={
+        supportModelImport
+          ? 'Search or enter Hugging Face URL'
+          : 'Search models'
+      }
       onChange={onSearchChanged}
       onKeyDown={onKeyDown}
       value={searchText}

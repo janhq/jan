@@ -67,7 +67,7 @@ export default class JanModelExtension extends ModelExtension {
     }
 
     // Sync with cortexsohub
-    this.fetchCortexsoModels()
+    this.fetchModelsHub()
   }
 
   /**
@@ -450,7 +450,7 @@ export default class JanModelExtension extends ModelExtension {
   /**
    * Fetch models from cortex.so
    */
-  private fetchCortexsoModels = async () => {
+  fetchModelsHub = async () => {
     const models = await this.fetchModels()
 
     return this.queue.add(() =>

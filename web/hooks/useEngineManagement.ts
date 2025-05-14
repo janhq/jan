@@ -12,6 +12,7 @@ import {
   ModelEvent,
   ModelSource,
   ModelSibling,
+  ModelExtension,
 } from '@janhq/core'
 import { useAtom, useAtomValue } from 'jotai'
 import { atomWithStorage } from 'jotai/utils'
@@ -496,4 +497,22 @@ export const useRefreshModelList = (engine: string) => {
   )
 
   return { refreshingModels, refreshModels }
+}
+
+export const useFetchModelsHub = () => {
+  const extension = useMemo(
+    () => extensionManager.get<ModelExtension>(ExtensionTypeEnum.Model) ?? null,
+    []
+  )
+
+  const { data, error, mutate } = useSWR(
+    extension ? 'fetchModelsHub' : null,
+    () => extension?.fetchModelsHub(),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  )
+
+  return { modelsHub: data, error, mutate }
 }
