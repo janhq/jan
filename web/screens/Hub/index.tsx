@@ -422,7 +422,10 @@ const HubScreen = () => {
                 <div className="absolute left-1/2 top-1/2 z-10 mx-auto w-4/5 -translate-x-1/2 -translate-y-1/2 rounded-xl sm:w-2/6">
                   <div className="flex flex-col items-center justify-between gap-2 sm:flex-row">
                     <div className="w-full" ref={dropdownRef}>
-                      <ModelSearch onSearchLocal={onSearchUpdate} />
+                      <ModelSearch
+                        onSearchLocal={onSearchUpdate}
+                        supportModelImport
+                      />
                       <div
                         className={twMerge(
                           'invisible absolute mt-2 max-h-[400px] w-full overflow-y-auto rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-lg',
