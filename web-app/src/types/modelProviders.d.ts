@@ -2,7 +2,7 @@
  * The controller props for settings
  */
 type ControllerProps = {
-  value?: string | boolean
+  value?: string | boolean | number
   placeholder?: string
   type?: string
   options?: Array<{ value: string; name: string }>
@@ -31,7 +31,7 @@ type Model = {
   description?: string
   format?: string
   capabilities?: string[]
-  settings?: Record<string, unknown>
+  settings?: Record<string, ProviderSetting>
 }
 
 /**

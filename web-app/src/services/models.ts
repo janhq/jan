@@ -1,12 +1,21 @@
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, ModelExtension } from '@janhq/core'
+import { Model as CoreModel } from '@janhq/core'
 
+/**
+ * Fetches all available models.
+ * @returns A promise that resolves to the models.
+ */
 export const fetchModels = async () => {
   return ExtensionManager.getInstance()
     .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.getModels()
 }
 
+/**
+ * Fetches the sources of the models.
+ * @returns A promise that resolves to the model sources.
+ */
 export const fetchModelSources = async () => {
   const extension = ExtensionManager.getInstance().get<ModelExtension>(
     ExtensionTypeEnum.Model
@@ -26,6 +35,11 @@ export const fetchModelSources = async () => {
   }
 }
 
+/**
+ * Adds a new model source.
+ * @param source The source to add.
+ * @returns A promise that resolves when the source is added.
+ */
 export const addModelSource = async (source: string) => {
   const extension = ExtensionManager.getInstance().get<ModelExtension>(
     ExtensionTypeEnum.Model
@@ -41,6 +55,11 @@ export const addModelSource = async (source: string) => {
   }
 }
 
+/**
+ * Deletes a model source.
+ * @param source The source to delete.
+ * @returns A promise that resolves when the source is deleted.
+ */
 export const deleteModelSource = async (source: string) => {
   const extension = ExtensionManager.getInstance().get<ModelExtension>(
     ExtensionTypeEnum.Model
@@ -52,6 +71,29 @@ export const deleteModelSource = async (source: string) => {
     return await extension.deleteSource(source)
   } catch (error) {
     console.error('Failed to delete model source:', error)
+    throw error
+  }
+}
+
+/**
+ * Updates a model.
+ * @param model The model to update.
+ * @returns A promise that resolves when the model is updated.
+ */
+export const updateModel = async (
+  model: Partial<CoreModel>
+  // provider: string,
+) => {
+  const extension = ExtensionManager.getInstance().get<ModelExtension>(
+    ExtensionTypeEnum.Model
+  )
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    return await extension.updateModel(model)
+  } catch (error) {
+    console.error('Failed to update model:', error)
     throw error
   }
 }

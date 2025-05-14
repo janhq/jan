@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/sheet'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { updateModel } from '@/services/models'
+import { ModelSettingParams } from '@janhq/core'
 
 // import {
 //   HoverCard,
@@ -36,7 +38,13 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
       ...model,
       settings: {
         ...model.settings,
-        [key]: value,
+        [key]: {
+          ...(model.settings?.[key] != null ? model.settings?.[key] : {}),
+          controller_props: {
+            ...(model.settings?.[key]?.controller_props ?? {}),
+            value: value,
+          },
+        },
       },
     }
 
@@ -48,11 +56,18 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
       const updatedModels = [...provider.models]
 
       // Update the specific model in the array
-      updatedModels[modelIndex] = updatedModel
+      updatedModels[modelIndex] = updatedModel as Model
 
       // Update the provider with the new models array
       updateProvider(provider.provider, {
         models: updatedModels,
+      })
+
+      updateModel({
+        id: model.id,
+        settings: Object.entries(updatedModel.settings).map(([key, value]) => ({
+          [key]: value.controller_props?.value,
+        })) as ModelSettingParams,
       })
     }
   }
@@ -73,8 +88,6 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
         </SheetHeader>
         <div className="px-4 space-y-6">
           {Object.entries(model.settings || {}).map(([key, value]) => {
-            // const config = presetConfiguration[key]
-            // if (!config) return null
             const config = value as ProviderSetting
             return (
               <div key={key} className="space-y-2">

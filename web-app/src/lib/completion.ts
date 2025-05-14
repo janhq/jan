@@ -107,9 +107,11 @@ export const sendCompletion = async (
 
   const tokenJS = new TokenJS({
     apiKey: provider.api_key ?? (await invoke('app_token')),
+    // TODO: Retrieve from extension settings
     baseURL: provider.base_url ?? 'http://localhost:39291/v1',
   })
 
+  // TODO: Add message history
   const completion = await tokenJS.chat.completions.create({
     stream: true,
     provider: providerName,
@@ -128,6 +130,7 @@ export const startModel = async (
   provider: string,
   model: string
 ): Promise<void> => {
+  // TODO: Remove hard coded provider name
   const providerObj = EngineManager.instance().get(
     provider === 'llama.cpp' ? 'llama-cpp' : provider
   )
@@ -138,6 +141,7 @@ export const stopModel = async (
   provider: string,
   model: string
 ): Promise<void> => {
+  // TODO: Remove hard coded provider name
   const providerObj = EngineManager.instance().get(
     provider === 'llama.cpp' ? 'llama-cpp' : provider
   )
