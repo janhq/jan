@@ -33,8 +33,8 @@ jobs:
           draft: true
           prerelease: false
 
-  build-macos:
-    uses: ./.github/workflows/template-build-macos.yml
+  build-electron-macos:
+    uses: ./.github/workflows/template-electron-build-macos.yml
     secrets: inherit
     needs: [get-update-version]
     with:
@@ -44,8 +44,8 @@ jobs:
       nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  build-windows-x64:
-    uses: ./.github/workflows/template-build-windows-x64.yml
+  build-electron-windows-x64:
+    uses: ./.github/workflows/template-electron-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version]
     with:
@@ -55,8 +55,8 @@ jobs:
       nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
-  build-linux-x64:
-    uses: ./.github/workflows/template-build-linux-x64.yml
+  build-electron-linux-x64:
+    uses: ./.github/workflows/template-electron-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version]
     with:
@@ -65,9 +65,48 @@ jobs:
       beta: false
       nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
+  build-tauri-macos:
+    uses: ./.github/workflows/template-tauri-build-macos-preview.yml
+    secrets: inherit
+    needs: [get-update-version, create-draft-release]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      channel: stable
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+
+  build-tauri-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64-preview.yml
+    secrets: inherit
+    needs: [get-update-version, create-draft-release]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      channel: stable
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+
+  build-tauri-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64-preview.yml
+    secrets: inherit
+    needs: [get-update-version, create-draft-release]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      channel: stable
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
   update_release_draft:
-    needs: [build-macos, build-windows-x64, build-linux-x64]
+    needs: [
+      build-electron-windows-x64, 
+      build-electron-linux-x64, 
+      build-electron-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      build-tauri-macos
+    ]
     permissions:
       # write permission is required to create a github release
       contents: write

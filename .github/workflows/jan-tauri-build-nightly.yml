@@ -1,4 +1,4 @@
-name: Electron Builder - Nightly / Manual
+name: Tauri Builder - Nightly / Manual
 
 on:
   schedule:
@@ -14,9 +14,6 @@ on:
         default: none
   pull_request_review:
     types: [submitted]
-  pull_request:
-    branches:
-      - chore/tauri-cicd
 
 jobs:
   set-public-provider:
@@ -50,8 +47,19 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-tauri-macos:
-    uses: ./.github/workflows/template-tauri-build-macos-preview.yml
+  build-macos:
+    uses: ./.github/workflows/template-tauri-build-macos.yml
+    needs: [get-update-version, set-public-provider]
+    secrets: inherit
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
+
+  build-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -60,9 +68,8 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
       cortex_api_port: "39261"
-
-  build-tauri-windows-x64:
-    uses: ./.github/workflows/template-tauri-build-windows-x64-preview.yml
+  build-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -70,69 +77,54 @@ jobs:
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
-      cortex_api_port: "39261"
-  
-  build-tauri-linux-x64:
-    uses: ./.github/workflows/template-tauri-build-linux-x64-preview.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      channel: nightly
-      cortex_api_port: "39261"
-
-  build-electron-macos:
-    uses: ./.github/workflows/template-electron-build-macos.yml
-    needs: [get-update-version, set-public-provider]
-    secrets: inherit
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
-      cortex_api_port: "39261"
-
-  build-electron-windows-x64:
-    uses: ./.github/workflows/template-electron-build-windows-x64.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
-      cortex_api_port: "39261"
-  build-electron-linux-x64:
-    uses: ./.github/workflows/template-electron-build-linux-x64.yml
-    secrets: inherit
-    needs: [get-update-version, set-public-provider]
-    with:
-      ref: ${{ needs.set-public-provider.outputs.ref }}
-      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
       cortex_api_port: "39261"
 
   sync-temp-to-latest:
+    needs: [get-update-version, set-public-provider, build-windows-x64, build-linux-x64, build-macos]
     runs-on: ubuntu-latest
-    needs: [
-      set-public-provider, 
-      build-electron-windows-x64, 
-      build-electron-linux-x64, 
-      build-electron-macos,
-      build-tauri-windows-x64,
-      build-tauri-linux-x64,
-      build-tauri-macos
-    ]
     steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+      - name: create latest.json file
+        run: |
+
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          LINUX_SIGNATURE="${{ needs.build-linux-x64.outputs.APPIMAGE_SIG }}"
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
+          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
+          DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+
+          jq --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg linux_signature "$LINUX_SIGNATURE" \
+            --arg linux_url "$LINUX_URL" \
+            --arg windows_signature "$WINDOWS_SIGNATURE" \
+            --arg windows_url "$WINDOWS_URL" \
+            --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_arm_url "$DARWIN_URL" \
+            --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_amd_url "$DARWIN_URL" \
+            '.version = $version
+              | .pub_date = $pub_date
+              | .platforms["linux-x86_64"].signature = $linux_signature
+              | .platforms["linux-x86_64"].url = $linux_url
+              | .platforms["windows-x86_64"].signature = $windows_signature
+              | .platforms["windows-x86_64"].url = $windows_url
+              | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
+              | .platforms["darwin-aarch64"].url = $darwin_arm_url
+              | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
+              | .platforms["darwin-x86_64"].url = $darwin_amd_url' \
+            src-tauri/latest.json.template > latest.json
+            cat latest.json
       - name: Sync temp to latest
         if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
         run: |
+          aws s3 cp ./latest.json s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/latest.json
           aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/nightly/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
@@ -141,17 +133,7 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
-      build-tauri-macos,
-      build-tauri-windows-x64,
-      build-tauri-linux-x64,
-      get-update-version,
-      set-public-provider,
-      sync-temp-to-latest
-    ]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
     secrets: inherit
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -162,17 +144,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-pre-release-and-update-url-readme:
-    needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
-      build-tauri-macos,
-      build-tauri-windows-x64,
-      build-tauri-linux-x64,
-      get-update-version,
-      set-public-provider,
-      sync-temp-to-latest
-    ]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
     secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -183,17 +155,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
-      build-tauri-macos,
-      build-tauri-windows-x64,
-      build-tauri-linux-x64,
-      get-update-version,
-      set-public-provider,
-      sync-temp-to-latest
-    ]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
     secrets: inherit
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -205,17 +167,7 @@ jobs:
 
 
   comment-pr-build-url:
-    needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
-      build-tauri-macos,
-      build-tauri-windows-x64,
-      build-tauri-linux-x64,
-      get-update-version,
-      set-public-provider,
-      sync-temp-to-latest
-    ]
+    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request_review'
     steps:

@@ -120,6 +120,9 @@ build-and-publish: check-file-counts
 build: check-file-counts
 	yarn build
 
+build-tauri: check-file-counts
+	yarn build-tauri
+
 clean:
 ifeq ($(OS),Windows_NT)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
