@@ -44,6 +44,7 @@ import { Button } from '@/components/ui/button'
 import { memo, useMemo, useState } from 'react'
 import { useNavigate, useMatches } from '@tanstack/react-router'
 import { toast } from 'sonner'
+import { Input } from '@/components/ui/input'
 
 const SortableItem = memo(({ thread }: { thread: Thread }) => {
   const {
@@ -60,7 +61,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
-  const { toggleFavorite, deleteThread } = useThreads()
+  const { toggleFavorite, deleteThread, renameThread } = useThreads()
   const { t } = useTranslation()
   const [openDropdown, setOpenDropdown] = useState(false)
   const navigate = useNavigate()
@@ -78,6 +79,8 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
       navigate({ to: route.threadsDetail, params: { threadId: thread.id } })
     }
   }
+
+  const [title, setTitle] = useState(thread.title || 'New Thread')
 
   return (
     <div
@@ -134,10 +137,53 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                 <span>{t('common.star')}</span>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem>
-              <IconEdit />
-              <span>{t('common.rename')}</span>
-            </DropdownMenuItem>
+            <Dialog
+              onOpenChange={(open) => {
+                if (!open) setOpenDropdown(false)
+              }}
+            >
+              <DialogTrigger asChild>
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                  <IconEdit />
+                  <span>{t('common.rename')}</span>
+                </DropdownMenuItem>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Rename Title</DialogTitle>
+                  <Input
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="mt-2"
+                  ></Input>
+                  <DialogFooter className="mt-2 flex items-center">
+                    <DialogClose asChild>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="hover:no-underline"
+                      >
+                        Cancel
+                      </Button>
+                    </DialogClose>
+                    <Button
+                      onClick={() => {
+                        renameThread(thread.id, title)
+                        setOpenDropdown(false)
+                        toast.success('Renema Title', {
+                          id: 'rename-thread',
+                          description:
+                            "Thread title has been renamed to '" + title + "'",
+                        })
+                      }}
+                    >
+                      Rename
+                    </Button>
+                  </DialogFooter>
+                </DialogHeader>
+              </DialogContent>
+            </Dialog>
+
             <DropdownMenuSeparator />
             <Dialog
               onOpenChange={(open) => {
@@ -157,7 +203,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                     Are you sure you want to delete this thread? This action
                     cannot be undone.
                   </DialogDescription>
-                  <DialogFooter className="mt-2">
+                  <DialogFooter className="mt-2 flex items-center">
                     <DialogClose asChild>
                       <Button
                         variant="link"
@@ -169,7 +215,6 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                     </DialogClose>
                     <Button
                       variant="destructive"
-                      size="sm"
                       onClick={() => {
                         deleteThread(thread.id)
                         setOpenDropdown(false)

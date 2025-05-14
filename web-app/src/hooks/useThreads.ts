@@ -13,6 +13,7 @@ type ThreadState = {
   getThreadById: (threadId: string) => Thread | undefined
   toggleFavorite: (threadId: string) => void
   deleteThread: (threadId: string) => void
+  renameThread: (threadId: string, newTitle: string) => void
   deleteAllThreads: () => void
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
@@ -187,6 +188,31 @@ export const useThreads = create<ThreadState>()(
                 model,
               },
             },
+          }
+        })
+      },
+      renameThread: (threadId, newTitle) => {
+        set((state) => {
+          const thread = state.threads[threadId]
+          if (!thread) return state
+          const updatedThread = {
+            ...thread,
+            title: newTitle,
+          }
+          updateThread(updatedThread)
+          return {
+            threads: {
+              ...state.threads,
+              [threadId]: updatedThread,
+            },
+            // Update search index with the new title
+            searchIndex: new Fuse(
+              Object.values({
+                ...state.threads,
+                [threadId]: updatedThread,
+              }),
+              fuseOptions
+            ),
           }
         })
       },
