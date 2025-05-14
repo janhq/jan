@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStoregeKey } from '@/constants/localStorage'
+import { updateMCPConfig } from '@/services/mcp'
 
 // Define the structure of an MCP server configuration
 export type MCPServerConfig = {
@@ -51,12 +52,11 @@ export const useMCPServers = create<MCPServerStoreState>()(
 
       // Add a new MCP server or update if the key already exists
       addServer: (key, config) =>
-        set((state) => ({
-          mcpServers: {
-            ...state.mcpServers,
-            [key]: config,
-          },
-        })),
+        set((state) => {
+          const mcpServers = { ...state.mcpServers, [key]: config }
+          updateMCPConfig(JSON.stringify(mcpServers))
+          return { mcpServers }
+        }),
 
       // Edit an existing MCP server configuration
       editServer: (key, config) =>
@@ -64,12 +64,9 @@ export const useMCPServers = create<MCPServerStoreState>()(
           // Only proceed if the server exists
           if (!state.mcpServers[key]) return state
 
-          return {
-            mcpServers: {
-              ...state.mcpServers,
-              [key]: config,
-            },
-          }
+          const mcpServers = { ...state.mcpServers, [key]: config }
+          updateMCPConfig(JSON.stringify(mcpServers))
+          return { mcpServers }
         }),
 
       // Delete an MCP server by key
@@ -82,7 +79,7 @@ export const useMCPServers = create<MCPServerStoreState>()(
           if (updatedServers[key]) {
             delete updatedServers[key]
           }
-
+          updateMCPConfig(JSON.stringify(updatedServers))
           return {
             mcpServers: updatedServers,
             deletedServerKeys: [...state.deletedServerKeys, key],
