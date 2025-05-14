@@ -1,7 +1,7 @@
 @echo off
 
 set CORTEX_VERSION=1.0.13-rc6
-set ENGINE_VERSION=b5351
+set ENGINE_VERSION=b5371
 set ENGINE_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
 set ENGINE_DOWNLOAD_GGML_URL=https://github.com/ggml-org/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
 set CUDA_DOWNLOAD_URL=https://github.com/menloresearch/cortex.llamacpp/releases/download/v%ENGINE_VERSION%
@@ -12,16 +12,16 @@ set DOWNLOAD_TOOL=..\..\extensions\inference-cortex-extension\node_modules\.bin\
 @REM Download llama.cpp binaries
 call %DOWNLOAD_TOOL% -e --strip 1 -o %BIN_PATH% https://github.com/menloresearch/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
 call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx2-cuda-cu12.0-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx2-cuda-cu12.0-x64/%ENGINE_VERSION%
-@REM call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx2-cuda-cu11.7-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx2-cuda-cu11.7-x64/%ENGINE_VERSION%
-call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-noavx-cuda-cu12.0-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-noavx-cuda-cu12.0-x64/%ENGINE_VERSION%
+call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx2-cuda-cu11.7-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx2-cuda-cu11.7-x64/%ENGINE_VERSION%
+@REM call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-noavx-cuda-cu12.0-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-noavx-cuda-cu12.0-x64/%ENGINE_VERSION%
 @REM call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-noavx-cuda-cu11.7-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-noavx-cuda-cu11.7-x64/%ENGINE_VERSION%
-call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_GGML_URL%-noavx-x64.zip -e --strip 1 -o./engines/llama.cpp/win-noavx-x64/%ENGINE_VERSION%
-call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_GGML_URL%-avx-x64.zip -e --strip 1 -o./engines/llama.cpp/win-avx-x64/%ENGINE_VERSION%
-call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_GGML_URL%-avx2-x64.zip -e --strip 1 -o./engines/llama.cpp/win-avx2-x64/%ENGINE_VERSION%
-call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_GGML_URL%-avx512-x64.zip -e --strip 1 -o./engines/llama.cpp/win-avx512-x64/%ENGINE_VERSION%
+call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-noavx-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-noavx-x64/%ENGINE_VERSION%
+call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx-x64/%ENGINE_VERSION%
+call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx2-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx2-x64/%ENGINE_VERSION%
+call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx512-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx512-x64/%ENGINE_VERSION%
 call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_GGML_URL%-vulkan-x64.zip -e --strip 1 -o./engines/llama.cpp/win-vulkan-x64/%ENGINE_VERSION%
 call %DOWNLOAD_TOOL% %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu12.0-x64.tar.gz -e --strip 1 -o %BIN_PATH%
-@REM call %DOWNLOAD_TOOL% %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu11.7-x64.tar.gz -e --strip 1 -o %BIN_PATH%
+call %DOWNLOAD_TOOL% %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu11.7-x64.tar.gz -e --strip 1 -o %BIN_PATH%
 
 move %BIN_PATH%cortex-server-beta.exe %BIN_PATH%cortex-server.exe
 copy %BIN_PATH%cortex-server.exe %BIN_PATH%cortex-server-x86_64-pc-windows-msvc.exe
