@@ -38,12 +38,6 @@ function General() {
                 }
               />
               <CardItem
-                title={t('settings.general.autoStart', {
-                  ns: 'settings',
-                })}
-                actions={<Switch />}
-              />
-              <CardItem
                 title={t('settings.general.autoDownload', {
                   ns: 'settings',
                 })}

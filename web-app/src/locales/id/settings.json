@@ -1,7 +1,6 @@
 {
   "settings": {
     "general": {
-      "autoStart": "Mulai otomatis saat boot",
       "autoDownload": "Unduh pembaruan baru secara otomatis"
     },
     "dataFolder": {

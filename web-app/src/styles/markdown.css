@@ -191,7 +191,7 @@
   hr {
     border: 0;
     height: 1px;
-    background-color: var(--color-main-view-fg);
+    @apply bg-main-view-fg/50;
     opacity: 0.2;
     margin: 2em 0;
   }

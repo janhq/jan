@@ -10,8 +10,8 @@ export function DownloadManagement() {
   return (
     <Popover>
       <PopoverTrigger>
-        <div className="bg-left-panel-fg/10 hover:bg-left-panel-fg/12 p-2 rounded-md mx-1 mb-1 relative border border-left-panel-fg/10 cursor-pointer text-left">
-          <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center">
+        <div className="bg-left-panel-fg/10 hover:bg-left-panel-fg/12 p-2 rounded-md my-1 relative border border-left-panel-fg/10 cursor-pointer text-left">
+          <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
             2
           </div>
           <p className="text-left-panel-fg/80 font-medium">Downloads</p>
@@ -30,8 +30,8 @@ export function DownloadManagement() {
         sideOffset={6}
       >
         <div className="flex flex-col">
-          <div className="p-2 bg-main-view-fg/5 border-b border-main-view-fg/6">
-            <p>Downloading</p>
+          <div className="p-2 py-1.5 bg-main-view-fg/5 border-b border-main-view-fg/6">
+            <p className="text-xs text-main-view-fg/70">Downloading</p>
           </div>
           <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
             <div className="bg-main-view-fg/4 rounded-md p-2">

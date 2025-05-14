@@ -1,15 +1,20 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { useEffect, useMemo, useState } from 'react'
-import { ModelSource } from '@janhq/core'
+import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
+import { useState, useMemo, useEffect, ChangeEvent } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Search, ArrowLeft } from 'lucide-react'
-import { extractDescription, extractModelName } from '@/lib/models'
+import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import { fuzzySearch } from '@/lib/utils'
-import { Card } from '@/containers/Card'
+import { extractModelName, extractDescription } from '@/lib/models'
+import { IconDownload, IconFileCode, IconSearch } from '@tabler/icons-react'
+import { Switch } from '@/components/ui/switch'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.hub as any)({
@@ -25,23 +30,16 @@ function Hub() {
   const { sources, fetchSources, loading } = useModelSources()
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
-  const [selectedModel, setSelectedModel] = useState<ModelSource | undefined>(
-    undefined
+  const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
+    {}
   )
 
-  // Search functionality
-  const searchedModels = useMemo(
-    () =>
-      searchValue.length
-        ? (sources?.filter((e) =>
-            fuzzySearch(
-              searchValue.replace(/\s+/g, '').toLowerCase(),
-              e.id.toLowerCase()
-            )
-          ) ?? [])
-        : [],
-    [sources, searchValue]
-  )
+  const toggleModelExpansion = (modelId: string) => {
+    setExpandedModels((prev) => ({
+      ...prev,
+      [modelId]: !prev[modelId],
+    }))
+  }
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
@@ -60,200 +58,201 @@ function Hub() {
   // Filtered models
   const filteredModels = useMemo(() => {
     // Apply additional filters here if needed
-    return sortedModels
-  }, [sortedModels])
+    return searchValue.length
+      ? sortedModels?.filter((e) =>
+          fuzzySearch(
+            searchValue.replace(/\s+/g, '').toLowerCase(),
+            e.id.toLowerCase()
+          )
+        )
+      : sortedModels
+  }, [searchValue, sortedModels])
 
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
 
-  // Handle search input change
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setSearchValue(e.target.value)
   }
 
-  // Handle model selection
-  const handleModelSelect = (model: ModelSource) => {
-    setSelectedModel(model)
-  }
-
-  // Go back from model detail view
-  const handleGoBack = () => {
-    setSelectedModel(undefined)
-  }
-
-  // if (selectedModel) {
-  //   return (
-  //     <div className="flex h-full flex-col p-4">
-  //       <div className="mb-4 flex items-center">
-  //         <Button variant="link" onClick={handleGoBack} className="mr-2">
-  //           <ArrowLeft size={16} />
-  //         </Button>
-  //         <h2 className="text-xl font-semibold">
-  //           {extractModelRepo(selectedModel.id)}
-  //         </h2>
-  //       </div>
-  //       <div className="flex-1 overflow-auto">
-  //         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-  //           <div className="rounded-lg border p-4">
-  //             <h3 className="mb-2 text-lg font-medium">Model Information</h3>
-  //             <div className="space-y-2">
-  //               <div>
-  //                 <span className="font-medium">ID:</span> {selectedModel.id}
-  //               </div>
-  //               <div>
-  //                 <span className="font-medium">Downloads:</span>{' '}
-  //                 {selectedModel.metadata?.downloads || 0}
-  //               </div>
-  //               <div>
-  //                 <span className="font-medium">Created:</span>{' '}
-  //                 {new Date(
-  //                   selectedModel.metadata?.createdAt || 0
-  //                 ).toLocaleDateString()}
-  //               </div>
-  //               {selectedModel.metadata?.description && (
-  //                 <div>
-  //                   <span className="font-medium">Description:</span>{' '}
-  //                   {selectedModel.metadata.description}
-  //                 </div>
-  //               )}
-  //             </div>
-  //           </div>
-  //           <div className="rounded-lg border p-4">
-  //             <h3 className="mb-2 text-lg font-medium">Available Variants</h3>
-  //             <div className="space-y-2">
-  //               {selectedModel.models?.map((model, index) => (
-  //                 <div key={index} className="rounded-md border p-2">
-  //                   <div>
-  //                     <span className="font-medium">Name:</span>{' '}
-  //                     {model.id || 'Unknown'}
-  //                   </div>
-  //                   <div>
-  //                     <span className="font-medium">Size:</span>{' '}
-  //                     {(model.size / (1024 * 1024 * 1024)).toFixed(2)} GB
-  //                   </div>
-  //                   <div className="mt-2">
-  //                     <Button size="sm">Download</Button>
-  //                   </div>
-  //                 </div>
-  //               ))}
-  //             </div>
-  //           </div>
-  //         </div>
-  //       </div>
-  //     </div>
-  //   )
-  // }
-
   return (
-    <div className="flex h-full flex-col">
-      {/* <div className="px-4 py-6">
-        <h1 className="text-3xl font-editorialnew">Model Hub</h1>
-      </div> */}
-
-      {/* <div className="mb-4 flex flex-col space-y-4 sm:flex-row sm:items-center sm:space-x-4 sm:space-y-0">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search models..."
-            value={searchValue}
-            onChange={handleSearchChange}
-            className="pl-10"
-          />
-          {searchValue.length > 0 && (
-            <div className="absolute z-10 mt-1 w-full rounded-md border bg-background shadow-lg">
-              {searchedModels.length === 0 ? (
-                <div className="p-2 text-center text-muted-foreground">
-                  No results found
-                </div>
-              ) : (
-                <div className="max-h-60 overflow-auto">
-                  {searchedModels.map((model) => (
-                    <div
-                      key={model.id}
-                      className="cursor-pointer px-4 py-2 hover:bg-muted"
-                      onClick={() => handleModelSelect(model)}
-                    >
-                      {extractModelRepo(model.id)}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex-shrink-0">
-          <select
-            value={sortSelected}
-            onChange={(e) => setSortSelected(e.target.value)}
-            className="rounded-md border px-3 py-2"
-          >
-            {sortOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div> */}
-
-      <div className="flex-1 overflow-auto">
-        {loading ? (
-          <div className="flex h-40 items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              Loading models...
-            </div>
+    <div className="flex h-full w-full">
+      <div className="flex flex-col h-full w-full">
+        <div className="px-4 py-3 border-b border-main-view-fg/5 h-10 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <IconSearch className="text-main-view-fg/60" size={14} />
+            <input
+              placeholder="Search models..."
+              value={searchValue}
+              onChange={handleSearchChange}
+              className="w-full focus:outline-none"
+            />
           </div>
-        ) : filteredModels.length === 0 ? (
-          <div className="flex h-40 items-center justify-center">
-            <div className="text-center text-muted-foreground">
-              No models found
-            </div>
-          </div>
-        ) : (
-          <div className="p-4">
-            {filteredModels.map((model) => (
-              <div
-                key={model.id}
-                className="my-2"
-                // onClick={() => handleModelSelect(model)}
+          <DropdownMenu>
+            <DropdownMenuTrigger>
+              <span
+                title="Edit Theme"
+                className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
               >
-                <Card title={extractModelName(model.id) || ''}>
-                  <p>
-                    Lorem ipsum, dolor sit amet consectetur adipisicing elit.
-                    Nam, labore? Veniam beatae fugit quasi quia ab dolor, iure
-                    magni autem! Consectetur ad perspiciatis incidunt aliquid
-                    amet, assumenda sapiente inventore ipsam?
-                  </p>
-                </Card>
-                {/* <h3 className="mb-2 font-medium capitalize">
-                  {extractModelName(model.id) || ''}
-                  <div className="line-clamp-2">
-                    <RenderMarkdown
-                      components={{
-                        a: ({ ...props }) => (
-                          <a
-                            {...props}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          />
-                        ),
-                      }}
-                      content={
-                        extractDescription(model.metadata.description) || ''
-                      }
-                    />
-                  </div>
-                </h3> */}
-                {/* <div className="text-sm text-muted-foreground">
-                  <div>Downloads: {model.metadata?.downloads || 0}</div>
-                  <div>Variants: {model.models?.length || 0}</div>
-                </div> */}
+                {
+                  sortOptions.find((option) => option.value === sortSelected)
+                    ?.name
+                }
+              </span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end">
+              {sortOptions.map((option) => (
+                <DropdownMenuItem
+                  className={cn(
+                    'cursor-pointer my-0.5',
+                    sortSelected === option.value && 'bg-main-view-fg/5'
+                  )}
+                  key={option.value}
+                  onClick={() => setSortSelected(option.value)}
+                >
+                  {option.name}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
+          <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
+            {loading ? (
+              <div className="flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  Loading models...
+                </div>
               </div>
-            ))}
+            ) : filteredModels.length === 0 ? (
+              <div className="flex items-center justify-center">
+                <div className="text-center text-muted-foreground">
+                  No models found
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col pb-2 mb-2 gap-2">
+                {filteredModels.map((model) => {
+                  return (
+                    <div key={model.id}>
+                      <Card
+                        header={
+                          <div className="flex items-center justify-between gap-x-2">
+                            <Link
+                              to={
+                                `https://huggingface.co/${model.id}` as string
+                              }
+                              target="_blank"
+                            >
+                              <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
+                                {extractModelName(model.id) || ''}
+                              </h1>
+                            </Link>
+                            <div className="shrink-0 space-x-3">
+                              <span className="text-main-view-fg/70 font-medium text-xs">
+                                {toGigabytes(model.models?.[0]?.size)}
+                              </span>
+                              <Button>Download</Button>
+                            </div>
+                          </div>
+                        }
+                      >
+                        <div className="line-clamp-2 mt-3 text-main-view-fg/60">
+                          <RenderMarkdown
+                            components={{
+                              a: ({ ...props }) => (
+                                <a
+                                  {...props}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                />
+                              ),
+                            }}
+                            content={
+                              extractDescription(model.metadata.description) ||
+                              ''
+                            }
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="capitalize text-main-view-fg/80">
+                            By {model?.author}
+                          </span>
+                          <div className="flex items-center gap-4 ml-2">
+                            <div className="flex items-center gap-1">
+                              <IconDownload
+                                size={18}
+                                className="text-main-view-fg/50"
+                                title="Downloads"
+                              />
+                              <span className="text-main-view-fg/80">
+                                {model.metadata?.downloads || 0}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <IconFileCode
+                                size={20}
+                                className="text-main-view-fg/50"
+                                title="Variants"
+                              />
+                              <span className="text-main-view-fg/80">
+                                {model.models?.length || 0}
+                              </span>
+                            </div>
+                            {model.models.length > 1 && (
+                              <div className="flex items-center gap-2">
+                                <Switch
+                                  checked={!!expandedModels[model.id]}
+                                  onCheckedChange={() =>
+                                    toggleModelExpansion(model.id)
+                                  }
+                                />
+                                <p className="text-main-view-fg/70">
+                                  Show variants
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {expandedModels[model.id] &&
+                          model.models.length > 0 && (
+                            <div className="mt-5">
+                              {model.models.map((variant) => {
+                                return (
+                                  <CardItem
+                                    key={variant.id}
+                                    title={variant.id}
+                                    actions={
+                                      <div className="flex items-center gap-2">
+                                        {/* {defaultVariant && <>test</>} */}
+                                        <p className="text-main-view-fg/70 font-medium text-xs">
+                                          {toGigabytes(variant.size)}
+                                        </p>
+                                        <div
+                                          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                                          title="Edit All Servers JSON"
+                                        >
+                                          <IconDownload
+                                            size={16}
+                                            className="text-main-view-fg/80"
+                                          />
+                                        </div>
+                                      </div>
+                                    }
+                                  />
+                                )
+                              })}
+                            </div>
+                          )}
+                      </Card>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   )

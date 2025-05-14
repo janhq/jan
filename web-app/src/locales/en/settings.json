@@ -1,7 +1,6 @@
 {
   "settings": {
     "general": {
-      "autoStart": "Start Automatically on boot",
       "autoDownload": "Automatic download new updates"
     },
     "dataFolder": {

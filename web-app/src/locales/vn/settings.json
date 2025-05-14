@@ -1,7 +1,6 @@
 {
   "settings": {
     "general": {
-      "autoStart": "Tự động khởi động khi khởi động máy tính",
       "autoDownload": "Tự động tải xuống các bản cập nhật mới"
     },
     "dataFolder": {
