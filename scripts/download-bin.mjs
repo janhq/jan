@@ -175,6 +175,11 @@ async function main() {
       path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'),
       path.join(binDir)
     )
+    fs.chmod(path.join(binDir, 'uv'), 0o755, (err) => {
+      if (err) {
+        console.log('Add execution permission failed!', err)
+      }
+    });
     if (platform === 'darwin') {
       copyFile(path.join(binDir, 'uv'), path.join(binDir, 'uv-x86_64-apple-darwin'), (err) => {
         if (err) {
