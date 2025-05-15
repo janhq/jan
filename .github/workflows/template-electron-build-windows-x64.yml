@@ -51,6 +51,7 @@ on:
 
 jobs:
   build-windows-x64:
+    if: inputs.public_provider == 'github' || inputs.public_provider == 'none'
     runs-on: windows-latest
     permissions:
       contents: write

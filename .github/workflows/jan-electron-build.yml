@@ -65,38 +65,39 @@ jobs:
       beta: false
       nightly: false
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-  build-tauri-macos:
-    uses: ./.github/workflows/template-tauri-build-macos-preview.yml
-    secrets: inherit
-    needs: [get-update-version, create-draft-release]
-    with:
-      ref: ${{ github.ref }}
-      public_provider: github
-      channel: stable
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+    
+  # build-tauri-macos:
+  #   uses: ./.github/workflows/template-tauri-build-macos.yml
+  #   secrets: inherit
+  #   needs: [get-update-version, create-draft-release]
+  #   with:
+  #     ref: ${{ github.ref }}
+  #     public_provider: github
+  #     channel: stable
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  #     upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
-  build-tauri-windows-x64:
-    uses: ./.github/workflows/template-tauri-build-windows-x64-preview.yml
-    secrets: inherit
-    needs: [get-update-version, create-draft-release]
-    with:
-      ref: ${{ github.ref }}
-      public_provider: github
-      channel: stable
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+  # build-tauri-windows-x64:
+  #   uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+  #   secrets: inherit
+  #   needs: [get-update-version, create-draft-release]
+  #   with:
+  #     ref: ${{ github.ref }}
+  #     public_provider: github
+  #     channel: stable
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  #     upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
-  build-tauri-linux-x64:
-    uses: ./.github/workflows/template-tauri-build-linux-x64-preview.yml
-    secrets: inherit
-    needs: [get-update-version, create-draft-release]
-    with:
-      ref: ${{ github.ref }}
-      public_provider: github
-      channel: stable
-      new_version: ${{ needs.get-update-version.outputs.new_version }}
-      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+  # build-tauri-linux-x64:
+  #   uses: ./.github/workflows/template-tauri-build-linux-x64.yml
+  #   secrets: inherit
+  #   needs: [get-update-version, create-draft-release]
+  #   with:
+  #     ref: ${{ github.ref }}
+  #     public_provider: github
+  #     channel: stable
+  #     new_version: ${{ needs.get-update-version.outputs.new_version }}
+  #     upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
   update_release_draft:
     needs: [

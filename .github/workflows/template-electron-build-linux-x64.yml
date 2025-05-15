@@ -41,6 +41,7 @@ on:
 
 jobs:
   build-linux-x64:
+    if: inputs.public_provider == 'github' || inputs.public_provider == 'none'
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -130,7 +131,7 @@ jobs:
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
-      - name: Build and publish app to aws s3 r2 or github artifactory
+      - name: Build and publish app to aws s3 r2 or github artifactory      
         if: inputs.public_provider != 'github'
         run: |
           # check public_provider is true or not

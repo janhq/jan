@@ -68,6 +68,7 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
       cortex_api_port: "39261"
+      
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
