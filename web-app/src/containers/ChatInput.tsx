@@ -152,7 +152,9 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
     try {
       if (selectedModel?.id) {
         updateLoadingModel(true)
-        await startModel(provider.provider, selectedModel.id).catch(() => {})
+        await startModel(provider.provider, selectedModel.id).catch(
+          console.error
+        )
         updateLoadingModel(false)
       }
 

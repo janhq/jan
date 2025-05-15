@@ -107,8 +107,9 @@ endif
 
 # Testing
 test: lint
-	yarn build:test
-	yarn test:coverage
+	# yarn build:test
+	# yarn test:coverage
+	# Need e2e setup for tauri backend
 	yarn test
 
 # Builds and publishes the app

@@ -169,7 +169,7 @@ export class ExtensionManager {
   async activateExtension(extension: Extension) {
     // Import class
     const extensionUrl = extension.url
-    await import(convertFileSrc(extensionUrl)).then((extensionClass) => {
+    await import(/* @vite-ignore */convertFileSrc(extensionUrl)).then((extensionClass) => {
       // Register class if it has a default export
       if (
         typeof extensionClass.default === 'function' &&
