@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 
 import { Button, Modal } from '@janhq/joi'
 
+import { check, Update } from '@tauri-apps/plugin-updater'
 import { useAtom } from 'jotai'
 
 import { useGetLatestRelease } from '@/hooks/useGetLatestRelease'
@@ -16,6 +17,7 @@ const ModalAppUpdaterChangelog = () => {
   const [appUpdateAvailable, setAppUpdateAvailable] = useAtom(
     appUpdateAvailableAtom
   )
+  const updaterRef = useRef<Update | null>(null)
 
   const [open, setOpen] = useState(appUpdateAvailable)
 
@@ -25,6 +27,17 @@ const ModalAppUpdaterChangelog = () => {
 
   const beta = VERSION.includes('beta')
   const nightly = VERSION.includes('-')
+
+  const checkForUpdate = async () => {
+    const update = await check()
+    if (update) {
+      setAppUpdateAvailable(true)
+      updaterRef.current = update
+    }
+  }
+  useEffect(() => {
+    checkForUpdate()
+  }, [])
 
   const { release } = useGetLatestRelease(beta ? true : false)
 
@@ -73,8 +86,8 @@ const ModalAppUpdaterChangelog = () => {
             </Button>
             <Button
               autoFocus
-              onClick={() => {
-                window.core?.api?.appUpdateDownload()
+              onClick={async () => {
+                await updaterRef.current?.downloadAndInstall((event) => {})
                 setOpen(false)
                 setAppUpdateAvailable(false)
               }}

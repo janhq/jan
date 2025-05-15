@@ -16,7 +16,6 @@ import {
   events,
   ModelEvent,
 } from '@janhq/core'
-import PQueue from 'p-queue'
 import ky, { KyInstance } from 'ky'
 
 /**
@@ -47,8 +46,6 @@ export enum Settings {
  */
 export default class JanInferenceCortexExtension extends LocalOAIEngine {
   nodeModule: string = 'node'
-
-  queue = new PQueue({ concurrency: 1 })
 
   provider: string = InferenceEngine.cortex
 
@@ -81,13 +78,16 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * @returns
    */
   async apiInstance(): Promise<KyInstance> {
-    if(this.api) return this.api
-    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
+    if (this.api) return this.api
+    const apiKey = await window.core?.api.appToken()
     this.api = ky.extend({
       prefixUrl: CORTEX_API_URL,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: apiKey
+        ? {
+            Authorization: `Bearer ${apiKey}`,
+          }
+        : {},
+      retry: 10,
     })
     return this.api
   }
@@ -129,10 +129,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
-    // Run the process watchdog
-    // const systemInfo = await systemInformation()
-    this.queue.add(() => executeOnMain(NODE, 'run'))
-    this.queue.add(() => this.healthz())
+    await executeOnMain(NODE, 'run')
+
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -179,35 +177,33 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     this.abortControllers.set(model.id, controller)
 
-    return await this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .post('v1/models/start', {
-            json: {
-              ...extractModelLoadParams(model.settings),
-              model: model.id,
-              engine:
-                model.engine === InferenceEngine.nitro // Legacy model cache
-                  ? InferenceEngine.cortex_llamacpp
-                  : model.engine,
-              cont_batching: this.cont_batching,
-              n_parallel: this.n_parallel,
-              caching_enabled: this.caching_enabled,
-              flash_attn: this.flash_attn,
-              cache_type: this.cache_type,
-              use_mmap: this.use_mmap,
-              ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
-            },
-            timeout: false,
-            signal,
-          })
-          .json()
-          .catch(async (e) => {
-            throw (await e.response?.json()) ?? e
-          })
-          .finally(() => this.abortControllers.delete(model.id))
-          .then()
-      )
+    return await this.apiInstance().then((api) =>
+      api
+        .post('v1/models/start', {
+          json: {
+            ...extractModelLoadParams(model.settings),
+            model: model.id,
+            engine:
+              model.engine === InferenceEngine.nitro // Legacy model cache
+                ? InferenceEngine.cortex_llamacpp
+                : model.engine,
+            cont_batching: this.cont_batching,
+            n_parallel: this.n_parallel,
+            caching_enabled: this.caching_enabled,
+            flash_attn: this.flash_attn,
+            cache_type: this.cache_type,
+            use_mmap: this.use_mmap,
+            ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
+          },
+          timeout: false,
+          signal,
+        })
+        .json()
+        .catch(async (e) => {
+          throw (await e.response?.json()) ?? e
+        })
+        .finally(() => this.abortControllers.delete(model.id))
+        .then()
     )
   }
 
@@ -222,24 +218,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
           this.abortControllers.get(model.id)?.abort()
         })
         .then()
-    )
-  }
-
-  /**
-   * Do health check on cortex.cpp
-   * @returns
-   */
-  private async healthz(): Promise<void> {
-    return this.apiInstance().then((api) =>
-      api
-        .get('healthz', {
-          retry: {
-            limit: 20,
-            delay: () => 500,
-            methods: ['get'],
-          },
-        })
-        .then(() => {})
     )
   }
 
@@ -266,76 +244,64 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Subscribe to cortex.cpp websocket events
    */
   private subscribeToEvents() {
-    this.queue.add(
-      () =>
-        new Promise<void>((resolve) => {
-          this.socket = new WebSocket(`${CORTEX_SOCKET_URL}/events`)
+    console.log('Subscribing to events...')
+    this.socket = new WebSocket(`${CORTEX_SOCKET_URL}/events`)
 
-          this.socket.addEventListener('message', (event) => {
-            const data = JSON.parse(event.data)
+    this.socket.addEventListener('message', (event) => {
+      const data = JSON.parse(event.data)
 
-            const transferred = data.task.items.reduce(
-              (acc: number, cur: any) => acc + cur.downloadedBytes,
-              0
-            )
-            const total = data.task.items.reduce(
-              (acc: number, cur: any) => acc + cur.bytes,
-              0
-            )
-            const percent = total > 0 ? transferred / total : 0
+      const transferred = data.task.items.reduce(
+        (acc: number, cur: any) => acc + cur.downloadedBytes,
+        0
+      )
+      const total = data.task.items.reduce(
+        (acc: number, cur: any) => acc + cur.bytes,
+        0
+      )
+      const percent = total > 0 ? transferred / total : 0
 
-            events.emit(
-              DownloadTypes[data.type as keyof typeof DownloadTypes],
-              {
-                modelId: data.task.id,
-                percent: percent,
-                size: {
-                  transferred: transferred,
-                  total: total,
-                },
-                downloadType: data.task.type,
-              }
-            )
+      events.emit(DownloadTypes[data.type as keyof typeof DownloadTypes], {
+        modelId: data.task.id,
+        percent: percent,
+        size: {
+          transferred: transferred,
+          total: total,
+        },
+        downloadType: data.task.type,
+      })
 
-            if (data.task.type === 'Engine') {
-              events.emit(EngineEvent.OnEngineUpdate, {
-                type: DownloadTypes[data.type as keyof typeof DownloadTypes],
-                percent: percent,
-                id: data.task.id,
-              })
-            } else {
-              if (data.type === DownloadTypes.DownloadSuccess) {
-                // Delay for the state update from cortex.cpp
-                // Just to be sure
-                setTimeout(() => {
-                  events.emit(ModelEvent.OnModelsUpdate, {
-                    fetch: true,
-                  })
-                }, 500)
-              }
-            }
-          })
-
-          /**
-           * This is to handle the server segfault issue
-           */
-          this.socket.onclose = (event) => {
-            console.log('WebSocket closed:', event)
-            // Notify app to update model running state
-            events.emit(ModelEvent.OnModelStopped, {})
-
-            // Reconnect to the /events websocket
-            if (this.shouldReconnect) {
-              console.log(`Attempting to reconnect...`)
-              setTimeout(() => this.subscribeToEvents(), 1000)
-            }
-
-            // Queue up health check
-            this.queue.add(() => this.healthz())
-          }
-
-          resolve()
+      if (data.task.type === 'Engine') {
+        events.emit(EngineEvent.OnEngineUpdate, {
+          type: DownloadTypes[data.type as keyof typeof DownloadTypes],
+          percent: percent,
+          id: data.task.id,
         })
-    )
+      } else {
+        if (data.type === DownloadTypes.DownloadSuccess) {
+          // Delay for the state update from cortex.cpp
+          // Just to be sure
+          setTimeout(() => {
+            events.emit(ModelEvent.OnModelsUpdate, {
+              fetch: true,
+            })
+          }, 500)
+        }
+      }
+    })
+
+    /**
+     * This is to handle the server segfault issue
+     */
+    this.socket.onclose = (event) => {
+      console.log('WebSocket closed:', event)
+      // Notify app to update model running state
+      events.emit(ModelEvent.OnModelStopped, {})
+
+      // Reconnect to the /events websocket
+      if (this.shouldReconnect) {
+        console.log(`Attempting to reconnect...`)
+        setTimeout(() => this.subscribeToEvents(), 1000)
+      }
+    }
   }
 }

@@ -14,6 +14,9 @@ on:
         default: none
   pull_request_review:
     types: [submitted]
+  pull_request:
+    branches:
+      - chore/tauri-cicd
 
 jobs:
   set-public-provider:
@@ -47,8 +50,41 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-macos:
-    uses: ./.github/workflows/template-build-macos.yml
+  build-tauri-macos:
+    uses: ./.github/workflows/template-tauri-build-macos.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
+
+  build-tauri-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
+  
+  build-tauri-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      cortex_api_port: "39261"
+
+  build-electron-macos:
+    uses: ./.github/workflows/template-electron-build-macos.yml
     needs: [get-update-version, set-public-provider]
     secrets: inherit
     with:
@@ -59,8 +95,8 @@ jobs:
       beta: false
       cortex_api_port: "39261"
 
-  build-windows-x64:
-    uses: ./.github/workflows/template-build-windows-x64.yml
+  build-electron-windows-x64:
+    uses: ./.github/workflows/template-electron-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -70,8 +106,9 @@ jobs:
       nightly: true
       beta: false
       cortex_api_port: "39261"
-  build-linux-x64:
-    uses: ./.github/workflows/template-build-linux-x64.yml
+      
+  build-electron-linux-x64:
+    uses: ./.github/workflows/template-electron-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -83,8 +120,16 @@ jobs:
       cortex_api_port: "39261"
 
   sync-temp-to-latest:
-    needs: [set-public-provider, build-windows-x64, build-linux-x64, build-macos]
     runs-on: ubuntu-latest
+    needs: [
+      set-public-provider, 
+      build-electron-windows-x64, 
+      build-electron-linux-x64, 
+      build-electron-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      build-tauri-macos
+    ]
     steps:
       - name: Sync temp to latest
         if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
@@ -97,7 +142,14 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -108,7 +160,17 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-pre-release-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-electron-macos,
+      build-electron-windows-x64,
+      build-electron-linux-x64,
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -119,7 +181,14 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -131,7 +200,17 @@ jobs:
 
 
   comment-pr-build-url:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-electron-macos,
+      build-electron-windows-x64,
+      build-electron-linux-x64,
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request_review'
     steps:

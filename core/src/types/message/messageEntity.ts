@@ -36,6 +36,8 @@ export type ThreadMessage = {
   type?: string
   /** The error code which explain what error type. Used in conjunction with MessageStatus.Error */
   error_code?: ErrorCode
+
+  tool_call_id?: string
 }
 
 /**
@@ -43,6 +45,9 @@ export type ThreadMessage = {
  * @data_transfer_object
  */
 export type MessageRequest = {
+  /**
+   * The id of the message request.
+   */
   id?: string
 
   /**
@@ -71,11 +76,34 @@ export type MessageRequest = {
   // TODO: deprecate threadId field
   thread?: Thread
 
+  /**
+   * ChatCompletion tools
+   */
+  tools?: MessageTool[]
+
   /** Engine name to process */
   engine?: string
 
   /** Message type */
   type?: string
+}
+
+/**
+ * ChatCompletion Tool parameters
+ */
+export type MessageTool = {
+  type: string
+  function: MessageFunction
+}
+
+/**
+ * ChatCompletion Tool's function parameters
+ */
+export type MessageFunction = {
+  name: string
+  description?: string
+  parameters?: Record<string, unknown>
+  strict?: boolean
 }
 
 /**

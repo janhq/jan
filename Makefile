@@ -39,6 +39,11 @@ endif
 dev: check-file-counts
 	yarn dev
 
+dev-tauri: check-file-counts
+	yarn install:cortex
+	yarn download:bin
+	yarn dev:tauri
+
 # Linting
 lint: check-file-counts
 	yarn lint
@@ -114,6 +119,9 @@ build-and-publish: check-file-counts
 # Build
 build: check-file-counts
 	yarn build
+
+build-tauri: check-file-counts
+	yarn build-tauri
 
 clean:
 ifeq ($(OS),Windows_NT)

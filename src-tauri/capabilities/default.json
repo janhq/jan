@@ -1,0 +1,56 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "shell:allow-spawn",
+    "shell:allow-open",
+    "log:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*:*"
+        },
+        {
+          "url": "http://*:*"
+        }
+      ],
+      "deny": []
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "args": [
+            "--start-server",
+            {
+              "validator": "\\S+"
+            },
+            "--port",
+            {
+              "validator": "\\S+"
+            },
+            "--config_file_path",
+            {
+              "validator": "\\S+"
+            },
+            "--data_folder_path",
+            {
+              "validator": "\\S+"
+            }
+          ],
+          "name": "binaries/cortex-server",
+          "sidecar": true
+        }
+      ]
+    },
+    "store:default"
+  ]
+}

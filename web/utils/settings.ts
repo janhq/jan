@@ -8,7 +8,9 @@ export const updateDistinctId = async (id: string) => {
   const appConfiguration: AppConfiguration =
     await window.core?.api?.getAppConfigurations()
   appConfiguration.distinct_id = id
-  await window.core?.api?.updateAppConfiguration(appConfiguration)
+  await window.core?.api?.updateAppConfiguration({
+    configuration: appConfiguration,
+  })
 }
 
 /**

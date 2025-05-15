@@ -6,10 +6,12 @@ import {
   ChatCompletionRole,
   MessageRequest,
   MessageRequestType,
+  MessageTool,
   ModelInfo,
   Thread,
   ThreadMessage,
 } from '@janhq/core'
+import { ChatCompletionMessage as OAIChatCompletionMessage } from 'openai/resources/chat'
 import { ulid } from 'ulidx'
 
 import { Stack } from '@/utils/Stack'
@@ -22,12 +24,14 @@ export class MessageRequestBuilder {
   messages: ChatCompletionMessage[]
   model: ModelInfo
   thread: Thread
+  tools?: MessageTool[]
 
   constructor(
     type: MessageRequestType,
     model: ModelInfo,
     thread: Thread,
-    messages: ThreadMessage[]
+    messages: ThreadMessage[],
+    tools?: MessageTool[]
   ) {
     this.msgId = ulid()
     this.type = type
@@ -39,14 +43,34 @@ export class MessageRequestBuilder {
         role: msg.role,
         content: msg.content[0]?.text?.value ?? '.',
       }))
+    this.tools = tools
   }
 
+  pushAssistantMessage(message: OAIChatCompletionMessage) {
+    const { content, refusal, ...rest } = message
+    const normalizedMessage = {
+      ...rest,
+      ...(content ? { content } : {}),
+      ...(refusal ? { refusal } : {}),
+    }
+    this.messages = [
+      ...this.messages,
+      normalizedMessage as ChatCompletionMessage,
+    ]
+  }
+
+  pushToolMessage(message: string, toolCallId: string) {
+    this.messages = [
+      ...this.messages,
+      {
+        role: ChatCompletionRole.Tool,
+        content: message,
+        tool_call_id: toolCallId,
+      },
+    ]
+  }
   // Chainable
-  pushMessage(
-    message: string,
-    base64Blob: string | undefined,
-    fileInfo?: FileInfo
-  ) {
+  pushMessage(message: string, base64Blob?: string, fileInfo?: FileInfo) {
     if (base64Blob && fileInfo?.type === 'pdf')
       return this.addDocMessage(message, fileInfo?.name)
     else if (base64Blob && fileInfo?.type === 'image') {
@@ -185,9 +209,10 @@ export class MessageRequestBuilder {
       type: this.type,
       attachments: [],
       threadId: this.thread.id,
-      messages: this.normalizeMessages(this.messages),
+      messages: this.messages,
       model: this.model,
       thread: this.thread,
+      tools: this.tools,
     }
   }
 }

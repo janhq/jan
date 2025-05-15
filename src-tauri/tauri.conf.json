@@ -1,0 +1,111 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Jan",
+  "version": "0.5.16",
+  "identifier": "jan.ai.app",
+  "build": {
+    "frontendDist": "../web/out",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
+    "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "title": "Jan",
+        "width": 1024,
+        "height": 768,
+        "resizable": true,
+        "fullscreen": false,
+        "hiddenTitle": true,
+        "transparent": true,
+        "titleBarStyle": "Overlay",
+        "windowEffects": {
+          "effects": [
+            "fullScreenUI",
+            "mica",
+            "blur",
+            "acrylic"
+          ],
+          "state": "active"
+        }
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
+        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://registry.npmjs.org",
+        "font-src": [
+          "https://fonts.gstatic.com blob: data:"
+        ],
+        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
+        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "requireLiteralLeadingDot": false,
+          "allow": [
+            "**/*"
+          ]
+        }
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFNDEzMEVCMUEzNUFENDQKUldSRXJUVWE2ekJCTGc1Mm1BVXgrWmtES3huUlBFR0lCdG5qbWFvMzgyNDhGN3VTTko5Q1NtTW0K",
+      "endpoints": [
+        "https://github.com/menloresearch/jan/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "app",
+      "dmg",
+      "deb",
+      "appimage"
+    ],
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "binaries/engines/**/*",
+      "resources/themes/**/*",
+      "resources/pre-install/**/*"
+    ],
+    "externalBin": [
+      "binaries/cortex-server",
+      "resources/bin/bun",
+      "resources/bin/uv"
+    ],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false,
+        "files": {}
+      },
+      "deb": {
+        "files": {
+          "usr/bin/bun": "resources/bin/bun",
+          "usr/lib/Jan/binaries/engines": "binaries/engines"
+        }
+      }
+    },
+    "windows": {
+      "signCommand": "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"
+    }
+  }
+}

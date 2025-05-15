@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import { InferenceEngine } from '@janhq/core'
 
@@ -9,7 +9,11 @@ import {
   Tooltip,
   useClickOutside,
   badgeVariants,
+  Badge,
+  Modal,
+  Switch,
 } from '@janhq/joi'
+import { listen } from '@tauri-apps/api/event'
 import { useAtom, useAtomValue } from 'jotai'
 import {
   FileTextIcon,
@@ -19,6 +23,7 @@ import {
   SettingsIcon,
   ChevronUpIcon,
   Settings2Icon,
+  WrenchIcon,
 } from 'lucide-react'
 
 import { twMerge } from 'tailwind-merge'
@@ -34,6 +39,7 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 import { uploader } from '@/utils/file'
 import { isLocalEngine } from '@/utils/modelEngine'
 
+import { ChatContext } from '../../ThreadCenterPanel'
 import FileUploadPreview from '../FileUploadPreview'
 import ImageUploadPreview from '../ImageUploadPreview'
 
@@ -47,10 +53,12 @@ import { spellCheckAtom } from '@/helpers/atoms/Setting.atom'
 import {
   activeSettingInputBoxAtom,
   activeThreadAtom,
+  disabledThreadToolsAtom,
   getActiveThreadIdAtom,
   isBlockingSendAtom,
 } from '@/helpers/atoms/Thread.atom'
 import { activeTabThreadRightPanelAtom } from '@/helpers/atoms/ThreadRightPanel.atom'
+import { ModelTool } from '@/types/model'
 
 const ChatInput = () => {
   const activeThread = useAtomValue(activeThreadAtom)
@@ -61,8 +69,10 @@ const ChatInput = () => {
   const [activeSettingInputBox, setActiveSettingInputBox] = useAtom(
     activeSettingInputBoxAtom
   )
-  const { sendChatMessage } = useSendChatMessage()
+  const { showApprovalModal } = useContext(ChatContext)
+  const { sendChatMessage } = useSendChatMessage(showApprovalModal)
   const selectedModel = useAtomValue(selectedModelAtom)
+  const [disabledTools, setDisableTools] = useAtom(disabledThreadToolsAtom)
 
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const [fileUpload, setFileUpload] = useAtom(fileUploadAtom)
@@ -75,11 +85,17 @@ const ChatInput = () => {
   const isBlockingSend = useAtomValue(isBlockingSendAtom)
   const activeAssistant = useAtomValue(activeAssistantAtom)
   const { stopInference } = useActiveModel()
+  const [tools, setTools] = useState<any>([])
+  const [showToolsModal, setShowToolsModal] = useState(false)
 
   const upload = uploader()
   const [activeTabThreadRightPanel, setActiveTabThreadRightPanel] = useAtom(
     activeTabThreadRightPanelAtom
   )
+
+  const availableTools = useMemo(() => {
+    return tools.filter((tool: ModelTool) => !disabledTools.includes(tool.name))
+  }, [tools, disabledTools])
 
   const refAttachmentMenus = useClickOutside(() =>
     setShowAttachmentMenus(false)
@@ -97,6 +113,18 @@ const ChatInput = () => {
       setActiveSettingInputBox(true)
     }
   }, [activeSettingInputBox, selectedModel, setActiveSettingInputBox])
+
+  useEffect(() => {
+    window.core?.api?.getTools().then((data: ModelTool[]) => {
+      setTools(data)
+    })
+
+    listen('mcp-update', (event) => {
+      window.core?.api?.getTools().then((data: ModelTool[]) => {
+        setTools(data)
+      })
+    })
+  }, [])
 
   const onStopInferenceClick = async () => {
     stopInference()
@@ -392,6 +420,77 @@ const ChatInput = () => {
                 className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
               />
             </button>
+            {tools && tools.length > 0 && (
+              <>
+                <Badge
+                  theme="secondary"
+                  className={twMerge(
+                    'flex cursor-pointer items-center gap-x-1'
+                  )}
+                  variant={'outline'}
+                  onClick={() => setShowToolsModal(true)}
+                >
+                  <WrenchIcon
+                    size={16}
+                    className="flex-shrink-0 cursor-pointer text-[hsla(var(--text-secondary))]"
+                  />
+                  <span className="text-xs">{availableTools.length}</span>
+                </Badge>
+
+                <Modal
+                  open={showToolsModal}
+                  onOpenChange={setShowToolsModal}
+                  title="Available MCP Tools"
+                  content={
+                    <div className="overflow-y-auto">
+                      <div className="mb-2 py-2 text-sm text-[hsla(var(--text-secondary))]">
+                        Jan can use tools provided by specialized servers using
+                        Model Context Protocol.{' '}
+                        <a
+                          href="https://modelcontextprotocol.io/introduction"
+                          target="_blank"
+                          className="text-[hsla(var(--app-link))]"
+                        >
+                          Learn more about MCP
+                        </a>
+                      </div>
+                      {tools.map((tool: any) => (
+                        <div
+                          key={tool.name}
+                          className="flex items-center gap-x-3 px-4 py-3 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                        >
+                          <WrenchIcon
+                            size={16}
+                            className="flex-shrink-0 text-[hsla(var(--text-secondary))]"
+                          />
+                          <div className="flex w-full flex-1 flex-row justify-between">
+                            <div>
+                              <div className="font-medium">{tool.name}</div>
+                              <div className="text-sm text-[hsla(var(--text-secondary))]">
+                                {tool.description}
+                              </div>
+                            </div>
+                            <Switch
+                              checked={!disabledTools.includes(tool.name)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setDisableTools((prev) =>
+                                    prev.filter((t) => t !== tool.name)
+                                  )
+                                } else {
+                                  setDisableTools([...disabledTools, tool.name])
+                                }
+                              }}
+                              className="flex-shrink-0"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  }
+                />
+              </>
+            )}
           </div>
           {selectedModel && (
             <Button

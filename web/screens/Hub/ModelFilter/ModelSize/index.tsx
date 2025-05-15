@@ -1,9 +1,8 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
-import { Slider, Input, Tooltip } from '@janhq/joi'
+import { Slider, Input } from '@janhq/joi'
 
 import { atom, useAtom } from 'jotai'
-import { InfoIcon } from 'lucide-react'
 
 export const hubModelSizeMinAtom = atom(0)
 export const hubModelSizeMaxAtom = atom(100)

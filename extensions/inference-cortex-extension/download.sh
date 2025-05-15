@@ -2,10 +2,10 @@
 
 # Read CORTEX_VERSION
 CORTEX_VERSION=$(cat ./bin/version.txt)
-ENGINE_VERSION=0.1.56
+ENGINE_VERSION=b5371
 CORTEX_RELEASE_URL="https://github.com/menloresearch/cortex.cpp/releases/download"
-ENGINE_DOWNLOAD_URL="https://github.com/menloresearch/cortex.llamacpp/releases/download/v${ENGINE_VERSION}/cortex.llamacpp-${ENGINE_VERSION}"
-CUDA_DOWNLOAD_URL="https://github.com/menloresearch/cortex.llamacpp/releases/download/v${ENGINE_VERSION}"
+ENGINE_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/${ENGINE_VERSION}/llama-${ENGINE_VERSION}-bin
+CUDA_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/${ENGINE_VERSION}
 BIN_PATH=./bin
 SHARED_PATH="../../electron/shared"
 # Detect platform
@@ -20,17 +20,17 @@ if [ "$OS_TYPE" == "Linux" ]; then
     chmod +x "./bin/cortex-server"
 
     # Download engines for Linux
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx512.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx512/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2-cuda-12-0/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-avx2-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-avx2-cuda-11-7/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-12-0.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-12-0/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-noavx-cuda-11-7.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-noavx-cuda-11-7/v${ENGINE_VERSION}" 1
-    download "${ENGINE_DOWNLOAD_URL}-linux-amd64-vulkan.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/linux-amd64-vulkan/v${ENGINE_VERSION}" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-12-0-linux-amd64.tar.gz" -e --strip 1 -o "${BIN_PATH}" 1
-    download "${CUDA_DOWNLOAD_URL}/cuda-11-7-linux-amd64.tar.gz" -e --strip 1 -o "${BIN_PATH}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-noavx-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-noavx-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-avx-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-avx-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-avx2-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-avx2-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-avx512-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-avx512-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-avx2-cuda-cu12.0-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-avx2-cuda-cu12.0-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-avx2-cuda-cu11.7-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-avx2-cuda-cu11.7-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-noavx-cuda-cu12.0-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-noavx-cuda-cu12.0-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-noavx-cuda-cu11.7-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-noavx-cuda-cu11.7-x64/${ENGINE_VERSION}" 1
+    download "${ENGINE_DOWNLOAD_URL}-linux-vulkan-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/linux-vulkan-x64/${ENGINE_VERSION}" 1
+    download "${CUDA_DOWNLOAD_URL}/cudart-llama-bin-linux-cu12.0-x64.tar.gz" -e --strip 1 -o "${BIN_PATH}" 1
+    download "${CUDA_DOWNLOAD_URL}/cudart-llama-bin-linux-cu11.7-x64.tar.gz" -e --strip 1 -o "${BIN_PATH}" 1
 
 elif [ "$OS_TYPE" == "Darwin" ]; then
     # macOS downloads
@@ -41,8 +41,8 @@ elif [ "$OS_TYPE" == "Darwin" ]; then
     chmod +x "./bin/cortex-server"
 
     # Download engines for macOS
-    download "${ENGINE_DOWNLOAD_URL}-mac-arm64.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/mac-arm64/v${ENGINE_VERSION}"
-    download "${ENGINE_DOWNLOAD_URL}-mac-amd64.tar.gz" -e --strip 1 -o "${SHARED_PATH}/engines/cortex.llamacpp/mac-amd64/v${ENGINE_VERSION}"
+    download "${ENGINE_DOWNLOAD_URL}-macos-arm64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/macos-arm64/${ENGINE_VERSION}"
+    download "${ENGINE_DOWNLOAD_URL}-macos-x64.tar.gz" -e --strip 2 -o "${SHARED_PATH}/engines/llama.cpp/macos-x64/${ENGINE_VERSION}"
 
 else
     echo "Unsupported operating system: $OS_TYPE"

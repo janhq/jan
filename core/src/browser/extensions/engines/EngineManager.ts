@@ -6,6 +6,7 @@ import { AIEngine } from './AIEngine'
  */
 export class EngineManager {
   public engines = new Map<string, AIEngine>()
+  public controller: AbortController | null = null
 
   /**
    * Registers an engine.

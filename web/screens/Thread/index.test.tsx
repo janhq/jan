@@ -1,5 +1,9 @@
+/**
+ * @jest-environment jsdom
+ */
+import 'openai/shims/node'
 import React from 'react'
-import { render } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import ThreadScreen from './index'
 import { useStarterScreen } from '../../hooks/useStarterScreen'
 import '@testing-library/jest-dom'
@@ -17,22 +21,25 @@ global.API_BASE_URL = 'http://localhost:3000'
 
 describe('ThreadScreen', () => {
   it('renders OnDeviceStarterScreen when isShowStarterScreen is true', () => {
-    ;(useStarterScreen as jest.Mock).mockReturnValue({
-      isShowStarterScreen: true,
-      extensionHasSettings: false,
+    act(() => {
+      ;(useStarterScreen as jest.Mock).mockReturnValue({
+        isShowStarterScreen: true,
+        extensionHasSettings: false,
+      })
     })
-
     const { getByText } = render(<ThreadScreen />)
     expect(getByText('Select a model to start')).toBeInTheDocument()
   })
 
-  it('renders Thread panels when isShowStarterScreen is false', () => {
+  it('renders Thread panels when isShowStarterScreen is false', async () => {
     ;(useStarterScreen as jest.Mock).mockReturnValue({
       isShowStarterScreen: false,
       extensionHasSettings: false,
     })
+    await waitFor(() => {
+      render(<ThreadScreen />)
 
-    const { getByText } = render(<ThreadScreen />)
-    expect(getByText('Welcome!')).toBeInTheDocument()
+      expect(screen.getByText('Welcome!')).toBeInTheDocument()
+    })
   })
 })

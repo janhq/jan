@@ -9,8 +9,6 @@ import { extensionManager } from '@/extension/ExtensionManager'
 import { useCreateNewThread } from './useCreateNewThread'
 import { Thread } from '@janhq/core/dist/types/types'
 import { currentPromptAtom } from '@/containers/Providers/Jotai'
-import { setActiveThreadIdAtom, deleteThreadStateAtom } from '@/helpers/atoms/Thread.atom'
-import { deleteChatMessageAtom as deleteChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 // Mock the necessary dependencies
 // Mock dependencies
 jest.mock('jotai', () => ({
@@ -44,6 +42,7 @@ describe('useDeleteThread', () => {
 
     extensionManager.get = jest.fn().mockReturnValue({
       deleteThread: mockDeleteThread,
+      getThreadAssistant: jest.fn().mockResolvedValue({}),
     })
 
     const { result } = renderHook(() => useDeleteThread())

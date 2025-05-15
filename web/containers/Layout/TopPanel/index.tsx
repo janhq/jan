@@ -70,9 +70,13 @@ const TopPanel = () => {
         reduceTransparent &&
           'border-b border-[hsla(var(--app-border))] bg-[hsla(var(--top-panel-bg))]'
       )}
+      data-tauri-drag-region
     >
       {!isMac && <LogoMark width={24} height={24} className="-ml-1 mr-2" />}
-      <div className="flex w-full items-center justify-between text-[hsla(var(--text-secondary))]">
+      <div
+        className="flex w-full items-center justify-between text-[hsla(var(--text-secondary))]"
+        data-tauri-drag-region
+      >
         <div className="unset-drag flex cursor-pointer gap-x-0.5">
           {!isMac && (
             <Button

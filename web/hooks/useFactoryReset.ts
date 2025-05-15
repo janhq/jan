@@ -39,11 +39,9 @@ export default function useFactoryReset() {
       await stopModel()
 
       await Promise.all(
-        EngineManager.instance()
-          .engines.values()
-          .map(async (engine) => {
-            await engine.onUnload()
-          })
+        Object.values(EngineManager.instance().engines).map(async (engine) => {
+          await engine.onUnload()
+        })
       )
 
       await new Promise((resolve) => setTimeout(resolve, 4000))
@@ -60,20 +58,21 @@ export default function useFactoryReset() {
           quick_ask: appConfiguration?.quick_ask ?? false,
           distinct_id: appConfiguration?.distinct_id,
         }
-        await window.core?.api?.updateAppConfiguration(configuration)
+        await window.core?.api?.updateAppConfiguration({ configuration })
       }
 
+      await window.core?.api?.installExtensions()
+
       // Perform factory reset
-      await window.core?.api?.factoryReset()
+      // await window.core?.api?.factoryReset()
 
       // 4: Clear app local storage
       setFactoryResetState(FactoryResetState.ClearLocalStorage)
       // reset the localStorage
       localStorage.clear()
 
-      window.core = undefined
       // 5: Relaunch the app
-      window.location.reload()
+      window.core.api.relaunch()
     },
     [defaultJanDataFolder, stopModel, setFactoryResetState]
   )

@@ -2,8 +2,9 @@
 
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
-import Extension from './Extension'
+import { convertFileSrc } from '@tauri-apps/api/core'
 
+import Extension from './Extension'
 /**
  * Manages the registration and retrieval of extensions.
  */
@@ -123,33 +124,30 @@ export class ExtensionManager {
    */
   async activateExtension(extension: Extension) {
     // Import class
-    const extensionUrl = window.electronAPI
-      ? extension.url
-      : extension.url.replace(
-          'extension://',
-          `${window.core?.api?.baseApiUrl ?? ''}/extensions/`
-        )
-    await import(/* webpackIgnore: true */ extensionUrl).then(
-      (extensionClass) => {
-        // Register class if it has a default export
-        if (
-          typeof extensionClass.default === 'function' &&
-          extensionClass.default.prototype
-        ) {
-          this.register(
+    const extensionUrl = extension.url
+    await import(
+      /* webpackIgnore: true */ IS_TAURI
+        ? convertFileSrc(extensionUrl)
+        : extensionUrl
+    ).then((extensionClass) => {
+      // Register class if it has a default export
+      if (
+        typeof extensionClass.default === 'function' &&
+        extensionClass.default.prototype
+      ) {
+        this.register(
+          extension.name,
+          new extensionClass.default(
+            extension.url,
             extension.name,
-            new extensionClass.default(
-              extension.url,
-              extension.name,
-              extension.productName,
-              extension.active,
-              extension.description,
-              extension.version
-            )
+            extension.productName,
+            extension.active,
+            extension.description,
+            extension.version
           )
-        }
+        )
       }
-    )
+    })
   }
 
   /**
@@ -158,7 +156,7 @@ export class ExtensionManager {
    */
   async registerActive() {
     // Get active extensions
-    const activeExtensions = await this.getActive()
+    const activeExtensions = (await this.getActive()) ?? []
     // Activate all
     await Promise.all(
       activeExtensions.map((ext: Extension) => this.activateExtension(ext))

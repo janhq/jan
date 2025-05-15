@@ -24,7 +24,7 @@ export const themesOptionsAtom = atomWithStorage<
 
 export const selectedThemeIdAtom = atomWithStorage<string>(
   THEME,
-  '',
+  'joi-light',
   undefined,
   { getOnInit: true }
 )
@@ -36,7 +36,7 @@ export const themeDataAtom = atomWithStorage<Theme | undefined>(
 )
 export const reduceTransparentAtom = atomWithStorage<boolean>(
   REDUCE_TRANSPARENT,
-  false,
+  true,
   undefined,
   { getOnInit: true }
 )

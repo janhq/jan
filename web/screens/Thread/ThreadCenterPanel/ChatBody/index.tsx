@@ -4,13 +4,15 @@ import { ThreadMessage } from '@janhq/core'
 import { ScrollArea } from '@janhq/joi'
 import { useVirtualizer } from '@tanstack/react-virtual'
 
-import { useAtomValue } from 'jotai'
+import { useAtomValue, useSetAtom } from 'jotai'
 
 import { loadModelErrorAtom } from '@/hooks/useActiveModel'
 
 import ChatItem from '../ChatItem'
 
 import LoadModelError from '../LoadModelError'
+
+import { toolCallBlockStateAtom } from '../TextMessage/ToolCallBlock'
 
 import EmptyThread from './EmptyThread'
 
@@ -65,9 +67,11 @@ const ChatBody = memo(
     const parentRef = useRef<HTMLDivElement>(null)
     const prevScrollTop = useRef(0)
     const isUserManuallyScrollingUp = useRef(false)
+    const isNestedScrollviewExpanding = useRef(false)
     const currentThread = useAtomValue(activeThreadAtom)
     const isBlockingSend = useAtomValue(isBlockingSendAtom)
     const showScrollBar = useAtomValue(showScrollBarAtom)
+    const setToolCallExpanded = useSetAtom(toolCallBlockStateAtom)
 
     const count = useMemo(
       () => (messages?.length ?? 0) + (loadModelError ? 1 : 0),
@@ -97,7 +101,10 @@ const ChatBody = memo(
       _,
       instance
     ) => {
-      if (isUserManuallyScrollingUp.current === true && isBlockingSend)
+      if (
+        isNestedScrollviewExpanding ||
+        (isUserManuallyScrollingUp.current === true && isBlockingSend)
+      )
         return false
       return (
         // item.start < (instance.scrollOffset ?? 0) &&
@@ -129,6 +136,22 @@ const ChatBody = memo(
       },
       [isBlockingSend]
     )
+
+    const preserveScrollOnExpand = (callback: () => void) => {
+      isNestedScrollviewExpanding.current = true
+      const scrollEl = parentRef.current
+      const prevScrollTop = scrollEl?.scrollTop ?? 0
+      const prevScrollHeight = scrollEl?.scrollHeight ?? 0
+
+      callback() // Expand content (e.g. setIsExpanded(true))
+
+      if (scrollEl)
+        requestAnimationFrame(() => {
+          const newScrollHeight = scrollEl?.scrollHeight ?? 0
+          scrollEl.scrollTop =
+            prevScrollTop + (newScrollHeight - prevScrollHeight)
+        })
+    }
 
     return (
       <div className="flex h-full w-full flex-col overflow-x-hidden">
@@ -178,6 +201,15 @@ const ChatBody = memo(
                       index={virtualRow.index}
                       isCurrentMessage={
                         virtualRow.index === messages?.length - 1
+                      }
+                      isLast={virtualRow.index === messages?.length - 1}
+                      onExpand={(props) =>
+                        preserveScrollOnExpand(() => {
+                          setToolCallExpanded((prev) => ({
+                            ...prev,
+                            ...props,
+                          }))
+                        })
                       }
                     />
                   )}

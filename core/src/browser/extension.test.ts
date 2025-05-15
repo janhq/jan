@@ -1,7 +1,5 @@
 import { BaseExtension } from './extension'
 import { SettingComponentProps } from '../types'
-import { getJanDataFolderPath, joinPath } from './core'
-import { fs } from './fs'
 jest.mock('./core')
 jest.mock('./fs')
 
@@ -90,18 +88,32 @@ describe('BaseExtension', () => {
       { key: 'setting2', controllerProps: { value: 'value2' } } as any,
     ]
 
-    ;(getJanDataFolderPath as jest.Mock).mockResolvedValue('/data')
-    ;(joinPath as jest.Mock).mockResolvedValue('/data/settings/TestExtension')
-    ;(fs.existsSync as jest.Mock).mockResolvedValue(false)
-    ;(fs.mkdir as jest.Mock).mockResolvedValue(undefined)
-    ;(fs.writeFileSync as jest.Mock).mockResolvedValue(undefined)
+    const localStorageMock = (() => {
+      let store: Record<string, string> = {}
 
+      return {
+        getItem: (key: string) => store[key] || null,
+        setItem: (key: string, value: string) => {
+          store[key] = value
+        },
+        removeItem: (key: string) => {
+          delete store[key]
+        },
+        clear: () => {
+          store = {}
+        },
+      }
+    })()
+
+    Object.defineProperty(global, 'localStorage', {
+      value: localStorageMock,
+    })
+    const mock = jest.spyOn(localStorage, 'setItem')
     await baseExtension.registerSettings(settings)
 
-    expect(fs.mkdir).toHaveBeenCalledWith('/data/settings/TestExtension')
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
-      '/data/settings/TestExtension',
-      JSON.stringify(settings, null, 2)
+    expect(mock).toHaveBeenCalledWith(
+      'TestExtension',
+      JSON.stringify(settings)
     )
   })
 
@@ -125,17 +137,15 @@ describe('BaseExtension', () => {
     ]
 
     jest.spyOn(baseExtension, 'getSettings').mockResolvedValue(settings)
-    ;(getJanDataFolderPath as jest.Mock).mockResolvedValue('/data')
-    ;(joinPath as jest.Mock).mockResolvedValue('/data/settings/TestExtension/settings.json')
-    ;(fs.writeFileSync as jest.Mock).mockResolvedValue(undefined)
+    const mockSetItem = jest.spyOn(localStorage, 'setItem')
 
     await baseExtension.updateSettings([
       { key: 'setting1', controllerProps: { value: 'newValue' } } as any,
     ])
 
-    expect(fs.writeFileSync).toHaveBeenCalledWith(
-      '/data/settings/TestExtension/settings.json',
-      JSON.stringify([{ key: 'setting1', controllerProps: { value: 'newValue' } }], null, 2)
+    expect(mockSetItem).toHaveBeenCalledWith(
+      'TestExtension',
+      JSON.stringify([{ key: 'setting1', controllerProps: { value: 'newValue' } }])
     )
   })
 })

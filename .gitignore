@@ -23,19 +23,6 @@ coverage
 *.log
 core/lib/**
 
-# Nitro binary files
-extensions/*-extension/bin/*/nitro
-extensions/*-extension/bin/*/*.metal
-extensions/*-extension/bin/*/*.exe
-extensions/*-extension/bin/*/*.dll
-extensions/*-extension/bin/*/*.exp
-extensions/*-extension/bin/*/*.lib
-extensions/*-extension/bin/saved-*
-extensions/*-extension/bin/*.tar.gz
-extensions/*-extension/bin/vulkaninfoSDK.exe
-extensions/*-extension/bin/vulkaninfo
-
-
 # Turborepo
 .turbo
 electron/test-data
@@ -51,3 +38,10 @@ electron/shared/**
 # docs
 docs/yarn.lock
 electron/.version.bak
+src-tauri/binaries/engines/cortex.llamacpp
+src-tauri/resources/themes
+src-tauri/Cargo.lock
+src-tauri/icons
+!src-tauri/icons/icon.png
+src-tauri/gen/apple
+src-tauri/resources/bin

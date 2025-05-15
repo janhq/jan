@@ -2,13 +2,10 @@ import { useCallback, useEffect } from 'react'
 
 import { useTheme } from 'next-themes'
 
-import { fs, joinPath } from '@janhq/core'
-
-import { useAtom, useAtomValue } from 'jotai'
+import { useAtom } from 'jotai'
 
 import cssVars from '@/utils/jsonToCssVariables'
 
-import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 import {
   selectedThemeIdAtom,
   themeDataAtom,
@@ -18,7 +15,6 @@ import {
 type NativeThemeProps = 'light' | 'dark'
 
 export const useLoadTheme = () => {
-  const janDataFolderPath = useAtomValue(janDataFolderPathAtom)
   const [themeOptions, setThemeOptions] = useAtom(themesOptionsAtom)
   const [themeData, setThemeData] = useAtom(themeDataAtom)
   const [selectedIdTheme, setSelectedIdTheme] = useAtom(selectedThemeIdAtom)
@@ -26,12 +22,14 @@ export const useLoadTheme = () => {
 
   const setNativeTheme = useCallback(
     (nativeTheme: NativeThemeProps) => {
+      if (!window.electronAPI) return
+
       if (nativeTheme === 'dark') {
-        window?.electronAPI?.setNativeThemeDark()
+        window?.core?.api?.setNativeThemeDark()
         setTheme('dark')
         localStorage.setItem('nativeTheme', 'dark')
       } else {
-        window?.electronAPI?.setNativeThemeLight()
+        window?.core?.api?.setNativeThemeLight()
         setTheme('light')
         localStorage.setItem('nativeTheme', 'light')
       }
@@ -40,6 +38,7 @@ export const useLoadTheme = () => {
   )
 
   const applyTheme = (theme: Theme) => {
+    if (!theme.variables) return
     const variables = cssVars(theme.variables)
     const headTag = document.getElementsByTagName('head')[0]
     const styleTag = document.createElement('style')
@@ -48,45 +47,32 @@ export const useLoadTheme = () => {
   }
 
   const getThemes = useCallback(async () => {
-    if (!janDataFolderPath.length) return
-    const folderPath = await joinPath([janDataFolderPath, 'themes'])
-    const installedThemes = await fs.readdirSync(folderPath)
+    const installedThemes = await window.core.api.getThemes()
 
-    const themesOptions: { name: string; value: string }[] = installedThemes
-      .filter((x: string) => x !== '.DS_Store')
-      .map(async (x: string) => {
-        const y = await joinPath([`${folderPath}/${x}`, `theme.json`])
-        const c: Theme = JSON.parse(await fs.readFileSync(y, 'utf-8'))
-        return { name: c?.displayName, value: c.id }
+    const themesOptions: { name: string; value: string }[] =
+      installedThemes.map((x: string) => ({
+        name: x
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, (char) => char.toUpperCase()),
+        value: x,
+      }))
+    setThemeOptions(themesOptions)
+
+    if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
+    const theme: Theme = JSON.parse(
+      await window.core.api.readTheme({
+        themeName: selectedIdTheme,
       })
-    Promise.all(themesOptions).then((results) => {
-      setThemeOptions(results)
-    })
+    )
 
-    if (janDataFolderPath.length > 0) {
-      if (!selectedIdTheme.length) return setSelectedIdTheme('joi-light')
-      const filePath = await joinPath([
-        `${folderPath}/${selectedIdTheme}`,
-        `theme.json`,
-      ])
-      const theme: Theme = JSON.parse(await fs.readFileSync(filePath, 'utf-8'))
-
-      setThemeData(theme)
-      setNativeTheme(theme.nativeTheme)
-      applyTheme(theme)
-    }
-  }, [
-    janDataFolderPath,
-    selectedIdTheme,
-    setNativeTheme,
-    setSelectedIdTheme,
-    setThemeData,
-    setThemeOptions,
-  ])
+    setThemeData(theme)
+    setNativeTheme(theme.nativeTheme)
+    applyTheme(theme)
+  }, [selectedIdTheme])
 
   const configureTheme = useCallback(async () => {
     if (!themeData || !themeOptions) {
-      await getThemes()
+      getThemes()
     } else {
       applyTheme(themeData)
     }
@@ -95,11 +81,9 @@ export const useLoadTheme = () => {
 
   useEffect(() => {
     configureTheme()
-  }, [
-    configureTheme,
-    selectedIdTheme,
-    setNativeTheme,
-    setSelectedIdTheme,
-    themeData?.nativeTheme,
-  ])
+  }, [themeData])
+
+  useEffect(() => {
+    getThemes()
+  }, [])
 }
