@@ -11,7 +11,6 @@ import {
   executeOnMain,
   EngineEvent,
   LocalOAIEngine,
-  InferenceEngine,
   extractModelLoadParams,
   events,
   ModelEvent,
@@ -49,7 +48,7 @@ type LoadedModelResponse = { data: { engine: string; id: string }[] }
 export default class JanInferenceCortexExtension extends LocalOAIEngine {
   nodeModule: string = 'node'
 
-  provider: string = InferenceEngine.cortex
+  provider: string = 'cortex'
 
   shouldReconnect = true
 
@@ -198,8 +197,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...extractModelLoadParams(model.settings),
             model: model.id,
             engine:
-              model.engine === InferenceEngine.nitro // Legacy model cache
-                ? InferenceEngine.cortex_llamacpp
+              model.engine === "nitro" // Legacy model cache
+                ? "llama-cpp"
                 : model.engine,
             cont_batching: this.cont_batching,
             n_parallel: this.n_parallel,

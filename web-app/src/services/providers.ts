@@ -1,6 +1,6 @@
 import { models as providerModels } from 'token.js'
 import { mockModelProvider } from '@/mock/data'
-import { EngineManager, InferenceEngine, ModelManager } from '@janhq/core'
+import { EngineManager, ModelManager } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 
@@ -40,7 +40,8 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
   const runtimeProviders: ModelProvider[] = []
 
   for (const [key, value] of EngineManager.instance().engines) {
-    const providerName = key === InferenceEngine.cortex ? 'llama.cpp' : key
+    // TODO: Remove this when the cortex extension is removed
+    const providerName = key === 'cortex' ? 'llama.cpp' : key
     const models =
       Array.from(ModelManager.instance().models.values()).filter(
         (model) =>
@@ -70,7 +71,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         description: model.description,
         capabilities:
           'capabilities' in model
-            ? model.capabilities as string[]
+            ? (model.capabilities as string[])
             : [ModelCapabilities.COMPLETION],
         provider: providerName,
         settings: modelSettings,
