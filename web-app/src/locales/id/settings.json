@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "general": {
+      "autoDownload": "Unduh pembaruan baru secara otomatis"
+    },
+    "dataFolder": {
+      "appData": "Data Aplikasi",
+      "appDataDesc": "Lokasi default untuk pesan dan data pengguna lainnya",
+      "appLogs": "Log Aplikasi",
+      "appLogsDesc": "Lokasi default Log Aplikasi"
+    },
+    "others": {
+      "spellCheck": "Pemeriksaan Ejaan",
+      "spellCheckDesc": "Aktifkan untuk mengaktifkan pemeriksaan ejaan input chat.",
+      "resetFactory": "Atur Ulang ke Pengaturan Pabrik",
+      "resetFactoryDesc": "Kembalikan aplikasi ke keadaan awal, menghapus semua model dan riwayat chat. Tindakan ini tidak dapat diubah dan hanya disarankan jika aplikasi rusak"
+    }
+  }
+}

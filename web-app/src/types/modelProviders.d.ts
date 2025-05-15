@@ -1,0 +1,53 @@
+/**
+ * The controller props for settings
+ */
+type ControllerProps = {
+  value?: string | boolean | number
+  placeholder?: string
+  type?: string
+  options?: Array<{ value: string; name: string }>
+  input_actions?: string[]
+}
+
+/**
+ * The setting item for a provider
+ */
+type ProviderSetting = {
+  key: string
+  title: string
+  description: string
+  controller_type: 'input' | 'checkbox' | 'dropdown' | 'slider'
+  controller_props: ControllerProps
+}
+
+/**
+ * The model object structure
+ */
+type Model = {
+  id: string
+  model?: string
+  name?: string
+  version?: number | string
+  description?: string
+  format?: string
+  capabilities?: string[]
+  settings?: Record<string, unknown>
+}
+
+/**
+ * The provider object structure
+ */
+type ProviderObject = {
+  active: boolean
+  provider: string
+  explore_models_url?: string
+  api_key?: string
+  base_url?: string
+  settings: ProviderSetting[]
+  models: Model[]
+}
+
+/**
+ * The model provider type
+ */
+type ModelProvider = ProviderObject

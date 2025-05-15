@@ -33,9 +33,6 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         .clone()
         .unwrap_or_else(|| "".to_string());
 
-    if !force && stored_version == app_version {
-        return Ok(());
-    }
     let extensions_path = get_jan_extensions_path(app.clone());
     let pre_install_path = app
         .path()
@@ -44,16 +41,22 @@ pub fn install_extensions(app: tauri::AppHandle, force: bool) -> Result<(), Stri
         .join("resources")
         .join("pre-install");
 
+    let mut clean_up = force;
+
+    // Check CLEAN environment variable to optionally skip extension install
+    if std::env::var("CLEAN").is_ok() {
+        clean_up = true;
+    }
+    if !clean_up && stored_version == app_version && extensions_path.exists() {
+        return Ok(());
+    }
+
     // Attempt to remove extensions folder
     if extensions_path.exists() {
         fs::remove_dir_all(&extensions_path).unwrap_or_else(|_| {
             log::info!("Failed to remove existing extensions folder, it may not exist.");
         });
     }
-
-    if !force {
-        return Ok(());
-    };
 
     // Attempt to create it again
     if !extensions_path.exists() {
@@ -197,7 +200,9 @@ pub fn setup_mcp(app: &App) {
         if let Err(e) = run_mcp_commands(app_path_str, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
         }
-        app_handle.emit("mcp-update", "MCP servers updated").unwrap();
+        app_handle
+            .emit("mcp-update", "MCP servers updated")
+            .unwrap();
     });
 }
 
@@ -217,7 +222,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         "--cors",
         "ON",
         "--allowed_origins",
-        "http://localhost:3000,tauri://localhost,http://tauri.localhost",
+        "http://localhost:3000,http://localhost:1420",
         "config",
         "--api_keys",
         app_state.inner().app_token.as_deref().unwrap_or(""),

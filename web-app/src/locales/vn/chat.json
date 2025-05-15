@@ -1,0 +1,9 @@
+{
+  "chat": {
+    "welcome": "Xin chào, bạn khỏe không?",
+    "description": "Tôi có thể giúp gì cho bạn hôm nay?",
+    "status": {
+      "empty": "Không tìm thấy cuộc trò chuyện"
+    }
+  }
+}

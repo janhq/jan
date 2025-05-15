@@ -26,10 +26,21 @@
     "description": "Number of CPU cores used for model processing when running without GPU.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "",
+      "value": "-1",
       "placeholder": "Number of CPU threads",
       "type": "number",
       "textAlign": "right"
+    }
+  },
+  {
+    "key": "threads_batch",
+    "title": "Threads (Batch)",
+    "description": "Number of threads for batch and prompt processing (default: same as Threads).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": -1,
+      "placeholder": "-1 (same as Threads)",
+      "type": "number"
     }
   },
   {

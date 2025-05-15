@@ -51,6 +51,27 @@ pub fn exists_sync<R: Runtime>(
 }
 
 #[tauri::command]
+pub fn file_stat<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    args: String,
+) -> Result<String, String> {
+    if args.is_empty() {
+        return Err("file_stat error: Invalid argument".to_string());
+    }
+
+    let path = resolve_path(app_handle, &args);
+    let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
+    let is_directory = metadata.is_dir();
+    let file_size = if is_directory { 0 } else { metadata.len() };
+    // return { isDirectory, fileSize } object
+    let result = format!(
+        "{{\"isDirectory\": {}, \"fileSize\": {}}}",
+        is_directory, file_size
+    );
+    Ok(result)
+}
+
+#[tauri::command]
 pub fn read_file_sync<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     args: Vec<String>,

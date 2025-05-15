@@ -26,7 +26,6 @@ endif
 	yarn install
 	yarn build:joi
 	yarn build:core
-	yarn build:server
 	yarn build:extensions
 
 check-file-counts: install-and-build
@@ -42,7 +41,7 @@ dev: check-file-counts
 dev-tauri: check-file-counts
 	yarn install:cortex
 	yarn download:bin
-	yarn dev:tauri
+	CLEAN=true yarn dev:tauri
 
 # Linting
 lint: check-file-counts

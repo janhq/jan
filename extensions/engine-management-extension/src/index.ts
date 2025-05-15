@@ -56,9 +56,6 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
     // Update default local engine
     this.updateDefaultEngine()
 
-    // Populate default remote engines
-    this.populateDefaultRemoteEngines()
-
     // Migrate
     this.migrate()
   }

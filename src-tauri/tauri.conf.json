@@ -4,8 +4,8 @@
   "version": "0.5.16",
   "identifier": "jan.ai.app",
   "build": {
-    "frontendDist": "../web/out",
-    "devUrl": "http://localhost:3000",
+    "frontendDist": "../web-app/dist",
+    "devUrl": "http://localhost:1420",
     "beforeDevCommand": "cross-env IS_TAURI=true yarn dev:web",
     "beforeBuildCommand": "cross-env IS_TAURI=true yarn build:web"
   },
@@ -13,22 +13,25 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Jan",
         "width": 1024,
-        "height": 768,
+        "height": 800,
         "resizable": true,
         "fullscreen": false,
+        "center": true,
         "hiddenTitle": true,
         "transparent": true,
+        "trafficLightPosition": {
+          "x": 12,
+          "y": 22
+        },
+        "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
-          "effects": [
-            "fullScreenUI",
-            "mica",
-            "blur",
-            "acrylic"
-          ],
-          "state": "active"
+          "effects": ["fullScreenUI", "mica", "blur", "acrylic"],
+          "state": "active",
+          "radius": 8
         }
       }
     ],
@@ -55,6 +58,10 @@
     }
   },
   "plugins": {
+    "os": {
+      "version": "latest",
+      "resolve": true
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFNDEzMEVCMUEzNUFENDQKUldSRXJUVWE2ekJCTGc1Mm1BVXgrWmtES3huUlBFR0lCdG5qbWFvMzgyNDhGN3VTTko5Q1NtTW0K",
       "endpoints": [

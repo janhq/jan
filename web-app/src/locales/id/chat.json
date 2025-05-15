@@ -1,0 +1,9 @@
+{
+  "chat": {
+    "welcome": "Hai, apa kabar?",
+    "description": "Apa yang bisa saya bantu hari ini?",
+    "status": {
+      "empty": "Tidak ada percakapan ditemukan"
+    }
+  }
+}

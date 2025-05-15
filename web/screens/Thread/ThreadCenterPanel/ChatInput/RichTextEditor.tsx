@@ -30,6 +30,8 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { ChatContext } from '../../ThreadCenterPanel'
 
+import { ChatContext } from '../../ThreadCenterPanel'
+
 import { getCurrentChatMessagesAtom } from '@/helpers/atoms/ChatMessage.atom'
 
 import { selectedModelAtom } from '@/helpers/atoms/Model.atom'

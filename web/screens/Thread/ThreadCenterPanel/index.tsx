@@ -19,6 +19,8 @@ import { snackbar } from '@/containers/Toast'
 
 import { useTollCallPromiseModal } from '@/containers/ToolCallApprovalModal'
 
+import { useTollCallPromiseModal } from '@/containers/ToolCallApprovalModal'
+
 import { activeModelAtom } from '@/hooks/useActiveModel'
 import { reloadModelAtom } from '@/hooks/useSendChatMessage'
 

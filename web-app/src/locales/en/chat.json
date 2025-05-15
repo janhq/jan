@@ -1,0 +1,9 @@
+{
+  "chat": {
+    "welcome": "Hi, how are you?",
+    "description": "How can I help you today?",
+    "status": {
+      "empty": "No Chats Found"
+    }
+  }
+}
