@@ -7,9 +7,15 @@ import {
   ModelManager,
 } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
-import { models, StreamCompletionResponse, TokenJS } from 'token.js'
+import {
+  ChatCompletionTool,
+  models,
+  StreamCompletionResponse,
+  TokenJS,
+} from 'token.js'
 import { ulid } from 'ulidx'
 import { normalizeProvider } from './models'
+import { MCPTool } from '@/types/completion'
 /**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects
@@ -97,7 +103,8 @@ export const emptyThreadContent: ThreadMessage = {
 export const sendCompletion = async (
   thread: Thread,
   provider: ModelProvider,
-  prompt: string
+  prompt: string,
+  tools: MCPTool[] = []
 ): Promise<StreamCompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 
@@ -123,6 +130,7 @@ export const sendCompletion = async (
         content: prompt,
       },
     ],
+    tools: normalizeTools(tools),
   })
   return completion
 }
@@ -157,4 +165,22 @@ export const stopModel = async (
   const providerObj = EngineManager.instance().get(normalizeProvider(provider))
   const modelObj = ModelManager.instance().get(model)
   if (providerObj && modelObj) return providerObj?.unloadModel(modelObj)
+}
+
+/**
+ * @fileoverview Helper function to normalize tools for the chat completion request.
+ * This function converts the MCPTool objects to ChatCompletionTool objects.
+ * @param tools 
+ * @returns 
+ */
+export const normalizeTools = (tools: MCPTool[]): ChatCompletionTool[] => {
+  return tools.map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description?.slice(0, 1024),
+      parameters: tool.inputSchema,
+      strict: false,
+    },
+  }))
 }

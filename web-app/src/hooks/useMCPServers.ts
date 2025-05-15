@@ -54,7 +54,7 @@ export const useMCPServers = create<MCPServerStoreState>()(
       addServer: (key, config) =>
         set((state) => {
           const mcpServers = { ...state.mcpServers, [key]: config }
-          updateMCPConfig(JSON.stringify(mcpServers))
+          updateMCPConfig(JSON.stringify({ mcpServers }))
           return { mcpServers }
         }),
 
@@ -65,7 +65,7 @@ export const useMCPServers = create<MCPServerStoreState>()(
           if (!state.mcpServers[key]) return state
 
           const mcpServers = { ...state.mcpServers, [key]: config }
-          updateMCPConfig(JSON.stringify(mcpServers))
+          updateMCPConfig(JSON.stringify({ mcpServers }))
           return { mcpServers }
         }),
 
@@ -79,7 +79,11 @@ export const useMCPServers = create<MCPServerStoreState>()(
           if (updatedServers[key]) {
             delete updatedServers[key]
           }
-          updateMCPConfig(JSON.stringify(updatedServers))
+          updateMCPConfig(
+            JSON.stringify({
+              mcpServers: updatedServers,
+            })
+          )
           return {
             mcpServers: updatedServers,
             deletedServerKeys: [...state.deletedServerKeys, key],

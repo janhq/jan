@@ -6,4 +6,5 @@
  */
 export const updateMCPConfig = async (configs: string) => {
   await window.core?.api?.saveMcpConfigs({ configs })
+  await window.core?.api?.restartMcpServers()
 }
