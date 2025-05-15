@@ -652,6 +652,8 @@ Section Install
 
   ; Copy external binaries
     File /a "/oname=cortex-server.exe" "D:\a\jan\jan\src-tauri\binaries\cortex-server-x86_64-pc-windows-msvc.exe"
+    File /a "/oname=bun.exe" "D:\a\jan\jan\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
+    File /a "/oname=uv.exe" "D:\a\jan\jan\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
 
   ; Create file associations
 
@@ -782,6 +784,8 @@ Section Uninstall
 
   ; Delete external binaries
     Delete "$INSTDIR\cortex-server.exe"
+    Delete "$INSTDIR\bun.exe"
+    Delete "$INSTDIR\uv.exe"
 
   ; Delete app associations
 
