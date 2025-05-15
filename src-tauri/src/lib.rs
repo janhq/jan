@@ -63,7 +63,7 @@ pub fn run() {
             core::threads::create_thread_assistant,
             core::threads::modify_thread_assistant,
             // Download
-            core::utils::hf::download_hf_repo,
+            core::utils::download::download_file,
             core::utils::download::cancel_download_task,
         ])
         .manage(AppState {

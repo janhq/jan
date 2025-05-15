@@ -1,5 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import {
   ModelExtension,
   Model,
@@ -10,7 +8,6 @@ import {
   ModelSource,
   extractInferenceParams,
   extractModelLoadParams,
-  events,
 } from '@janhq/core'
 import { scanModelsFolder } from './legacy/model-json'
 import { deleteModelFiles } from './legacy/delete'
@@ -26,14 +23,6 @@ export enum Settings {
 /** Data List Response Type */
 type Data<T> = {
   data: T[]
-}
-
-type DownloadInfo = {
-  task_id: string
-  total_size: number
-  downloaded_size: number
-  download_type: string
-  event_type: string
 }
 
 /**
@@ -74,29 +63,6 @@ export default class JanModelExtension extends ModelExtension {
       this.updateCortexConfig({ huggingface_token: huggingfaceToken })
     }
 
-    // listen to tauri events
-    // TODO: move this to core? i.e. forward tauri events to core events
-    listen<DownloadInfo>('download', (event) => {
-      let payload = event.payload
-      let eventName = {
-        Updated: 'onFileDownloadUpdate',
-        Error: 'onFileDownloadError',
-        Success: 'onFileDownloadSuccess',
-        Stopped: 'onFileDownloadStopped',
-        Started: 'onFileDownloadStarted',
-      }[payload.event_type]
-
-      events.emit(eventName, {
-        modelId: payload.task_id,
-        percent: payload.downloaded_size / payload.total_size,
-        size: {
-          transferred: payload.downloaded_size,
-          total: payload.total_size,
-        },
-        downloadType: payload.download_type,
-      })
-    })
-
     // Sync with cortexsohub
     this.fetchModelsHub()
   }
@@ -125,39 +91,6 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async pullModel(model: string, id?: string, name?: string): Promise<void> {
-    if (id == null && name == null) {
-      let parts = model.split(":")
-      let author, repo, branch, files, subdir;
-
-      // Cortex format
-      if (parts.length == 2) {
-        author = "cortexso"
-        repo = parts[0]
-        branch = parts[1]
-        files = null
-        subdir = `cortex.so/${repo}/${branch}`
-      } else if (parts.length == 3) {
-        // TODO: we need to generate <filename>.yml for cortex
-        author = parts[0]
-        repo = parts[1]
-        files = [parts[2]]
-        branch = "main"
-        subdir = `huggingface.co/${author}/${repo}`
-      }
-
-      // TODO: insert a model entry to cortex.db
-      const f = async function() {
-        let path = await invoke("get_jan_data_folder_path")
-        await invoke("download_hf_repo", {
-          taskId: model,
-          repoId: `${author}/${repo}`,
-          branch: branch,
-          files: files,
-          saveDir: `${path}/models/${subdir}`,
-        })
-      }
-      return f().catch(console.log)
-    }
 
     /**
      * Sending POST to /models/pull/{id} endpoint to pull the model
@@ -180,7 +113,6 @@ export default class JanModelExtension extends ModelExtension {
    * @returns {Promise<void>} A promise that resolves when the download has been cancelled.
    */
   async cancelModelPull(model: string): Promise<void> {
-    return invoke<void>("cancel_download_task", {taskId: model}).catch(console.error)
     /**
      * Sending DELETE to /models/pull/{id} endpoint to cancel a model pull
      */
