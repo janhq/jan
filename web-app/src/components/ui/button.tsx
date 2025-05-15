@@ -12,12 +12,12 @@ const buttonVariants = cva(
         default: 'bg-primary text-primary-fg shadow-xs hover:bg-primary/90',
         destructive:
           'bg-destructive shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 text-destructive-fg',
-        link: 'underline-offset-4 hover:underline',
+        link: 'underline-offset-4 hover:no-underline',
       },
       size: {
         default: 'h-7 px-3 py-2 has-[>svg]:px-3 rounded-sm',
         sm: 'h-6 rounded gap-1.5 px-2 has-[>svg]:px-2.5',
-        lg: 'h-9 rounded-md px-6 has-[>svg]:px-4',
+        lg: 'h-9 rounded-md px-4 has-[>svg]:px-4',
         icon: 'size-8',
       },
     },
