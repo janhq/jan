@@ -22,8 +22,10 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   emptyThreadContent,
+  extractToolCall,
   newAssistantThreadContent,
   newUserThreadContent,
+  postMessageProcessing,
   sendCompletion,
   startModel,
 } from '@/lib/completion'
@@ -37,6 +39,8 @@ import { MovingBorder } from './MovingBorder'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { CompletionMessagesBuilder } from '@/lib/messages'
+import { ChatCompletionMessageToolCall } from 'openai/resources'
 
 type ChatInputProps = {
   className?: string
@@ -57,12 +61,10 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
     useModelProvider()
 
   const { getCurrentThread: retrieveThread, createThread } = useThreads()
-  const { streamingContent, updateStreamingContent } = useAppState()
-
+  const { streamingContent, updateStreamingContent, updateLoadingModel } =
+    useAppState()
   const { addMessage } = useMessages()
-
   const router = useRouter()
-  const { updateLoadingModel } = useAppState()
 
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
@@ -104,9 +106,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
     })
-    return () => {
-      unsubscribe()
-    }
+    return unsubscribe
   }, [])
 
   useEffect(() => {
@@ -146,7 +146,6 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
     if (!activeThread || !provider) return
 
     updateStreamingContent(emptyThreadContent)
-
     addMessage(newUserThreadContent(activeThread.id, prompt))
     setPrompt('')
     try {
@@ -158,18 +157,30 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
         updateLoadingModel(false)
       }
 
-      const completion = await sendCompletion(
-        activeThread,
-        provider,
-        prompt,
-        tools
-      )
+      const builder = new CompletionMessagesBuilder()
+      // REMARK: Would it possible to not attach the entire message history to the request?
+      // TODO: If not amend messages history here
+      builder.addUserMessage(prompt)
 
-      if (!completion) throw new Error('No completion received')
-      let accumulatedText = ''
-      try {
+      let isCompleted = false
+
+      while (!isCompleted) {
+        const completion = await sendCompletion(
+          activeThread,
+          provider,
+          builder.getMessages(),
+          tools
+        )
+
+        if (!completion) throw new Error('No completion received')
+        let accumulatedText = ''
+        const currentCall: ChatCompletionMessageToolCall | null = null
+        const toolCalls: ChatCompletionMessageToolCall[] = []
         for await (const part of completion) {
           const delta = part.choices[0]?.delta?.content || ''
+          if (part.choices[0]?.delta?.tool_calls) {
+            extractToolCall(part, currentCall, toolCalls)
+          }
           if (delta) {
             accumulatedText += delta
             // Create a new object each time to avoid reference issues
@@ -182,17 +193,17 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
             await new Promise((resolve) => setTimeout(resolve, 0))
           }
         }
-      } catch (error) {
-        console.error('Error during streaming:', error)
-      } finally {
         // Create a final content object for adding to the thread
-        if (accumulatedText) {
-          const finalContent = newAssistantThreadContent(
-            activeThread.id,
-            accumulatedText
-          )
-          addMessage(finalContent)
-        }
+        const finalContent = newAssistantThreadContent(
+          activeThread.id,
+          accumulatedText
+        )
+        builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
+        const updatedMessage = await postMessageProcessing(toolCalls, builder, finalContent)
+        console.log(updatedMessage)
+        addMessage(updatedMessage ?? finalContent)
+
+        isCompleted = !toolCalls.length
       }
     } catch (error) {
       console.error('Error sending message:', error)
