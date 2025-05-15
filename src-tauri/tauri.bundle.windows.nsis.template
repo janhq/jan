@@ -802,7 +802,7 @@ Section Uninstall
   RMDir /r /REBOOTOK "$INSTDIR\binaries\engines"
   RMDir /REBOOTOK "$INSTDIR\resources\pre-install"
   RMDir /REBOOTOK "$INSTDIR\resources\themes"
-  RMDir /REBOOTOK "$INSTDIR\binaries"
+  RMDir /r /REBOOTOK "$INSTDIR\binaries"
   RMDir /REBOOTOK "$INSTDIR\resources"
   RMDir "$INSTDIR"
 
