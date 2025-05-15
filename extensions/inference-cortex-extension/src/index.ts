@@ -29,7 +29,7 @@ enum DownloadTypes {
   DownloadStarted = 'onFileDownloadStarted',
 }
 
-export enum Settings {
+enum Settings {
   n_parallel = 'n_parallel',
   cont_batching = 'cont_batching',
   caching_enabled = 'caching_enabled',
@@ -38,6 +38,8 @@ export enum Settings {
   use_mmap = 'use_mmap',
   cpu_threads = 'cpu_threads',
 }
+
+type LoadedModelResponse = { data: { engine: string; id: string }[] }
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
@@ -129,8 +131,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
-    await executeOnMain(NODE, 'run')
-
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -176,6 +176,20 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     const { signal } = controller
 
     this.abortControllers.set(model.id, controller)
+
+    const loadedModels = await this.apiInstance()
+      .then((e) => e.get('inferences/server/models'))
+      .then((e) => e.json())
+      .then((e) => (e as LoadedModelResponse).data ?? [])
+      .catch(() => [])
+
+    console.log('Loaded models:', loadedModels)
+
+    // This is to avoid loading the same model multiple times
+    if (loadedModels.some((model) => model.id === model.id)) {
+      console.log(`Model ${model.id} already loaded`)
+      return
+    }
 
     return await this.apiInstance().then((api) =>
       api
