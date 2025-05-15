@@ -7,7 +7,7 @@ export enum Settings {
 }
 
 type DownloadEvent = {
-  url: string
+  task_id: string
   total_size: number
   downloaded_size: number
   download_type: string
@@ -24,7 +24,7 @@ export default class DownloadManager extends BaseExtension {
 
   async onUnload() { }
 
-  async downloadFile(url: string, path: string): Promise<void> {
+  async downloadFile(url: string, path: string) {
     // relay tauri events to Jan events
     const unlisten = await listen<DownloadEvent>('download', (event) => {
       let payload = event.payload
@@ -37,7 +37,7 @@ export default class DownloadManager extends BaseExtension {
       }[payload.event_type]
 
       events.emit(eventName, {
-        modelId: payload.url,
+        modelId: payload.task_id,
         percent: payload.downloaded_size / payload.total_size,
         size: {
           transferred: payload.downloaded_size,
@@ -48,24 +48,68 @@ export default class DownloadManager extends BaseExtension {
     })
 
     try {
-      await invoke<void>("download_file", {
-        url,
-        path,
-        headers: this.hf_token ? { Authorization: `Bearer ${this.hf_token}` } : {}
-      })
+      await invoke<void>("download_file", { url, path, headers: this._getHeaders() })
     } catch (error) {
-      console.error("Error downloading file:", error);
+      console.error("Error downloading file:", error)
       events.emit('onFileDownloadError', {
         modelId: url,
         downloadType: 'Model',
       })
-      throw error;
+      throw error
     } finally {
       unlisten()
     }
   }
 
-  async cancelDownload(taskId: string): Promise<void> {
-    return invoke<void>("cancel_download_task", { taskId }).catch(console.error)
+  async downloadHfRepo(modelId: string, saveDir: string, branch?: string) {
+    // relay tauri events to Jan events
+    const unlisten = await listen<DownloadEvent>('download', (event) => {
+      let payload = event.payload
+      let eventName = {
+        Updated: 'onFileDownloadUpdate',
+        Error: 'onFileDownloadError',
+        Success: 'onFileDownloadSuccess',
+        Stopped: 'onFileDownloadStopped',
+        Started: 'onFileDownloadStarted',
+      }[payload.event_type]
+
+      events.emit(eventName, {
+        modelId: payload.task_id,
+        percent: payload.downloaded_size / payload.total_size,
+        size: {
+          transferred: payload.downloaded_size,
+          total: payload.total_size,
+        },
+        downloadType: payload.download_type,
+      })
+    })
+
+    try {
+      await invoke<void>("download_hf_repo", { modelId, saveDir, branch, headers: this._getHeaders() })
+    } catch (error) {
+      console.error("Error downloading file:", error)
+      events.emit('onFileDownloadError', {
+        modelId: modelId,
+        downloadType: 'Model',
+      })
+      throw error
+    } finally {
+      unlisten()
+    }
+  }
+
+  async cancelDownload(taskId: string) {
+    try {
+      await invoke<void>("cancel_download_task", { taskId })
+    } catch (error) {
+      console.error("Error cancelling download:", error)
+      throw error
+    }
+  }
+
+  _getHeaders() {
+    return {
+      ...(this.hf_token && { Authorization: `Bearer ${this.hf_token}` })
+    }
   }
 }
