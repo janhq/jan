@@ -51,7 +51,7 @@ jobs:
     uses: ./.github/workflows/template-get-update-version.yml
 
   build-tauri-macos:
-    uses: ./.github/workflows/template-tauri-build-macos-preview.yml
+    uses: ./.github/workflows/template-tauri-build-macos.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -62,7 +62,7 @@ jobs:
       cortex_api_port: "39261"
 
   build-tauri-windows-x64:
-    uses: ./.github/workflows/template-tauri-build-windows-x64-preview.yml
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -73,7 +73,7 @@ jobs:
       cortex_api_port: "39261"
   
   build-tauri-linux-x64:
-    uses: ./.github/workflows/template-tauri-build-linux-x64-preview.yml
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
@@ -106,6 +106,7 @@ jobs:
       nightly: true
       beta: false
       cortex_api_port: "39261"
+      
   build-electron-linux-x64:
     uses: ./.github/workflows/template-electron-build-linux-x64.yml
     secrets: inherit
@@ -142,9 +143,6 @@ jobs:
 
   noti-discord-nightly-and-update-url-readme:
     needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
       build-tauri-macos,
       build-tauri-windows-x64,
       build-tauri-linux-x64,
@@ -184,9 +182,6 @@ jobs:
 
   noti-discord-manual-and-update-url-readme:
     needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
       build-tauri-macos,
       build-tauri-windows-x64,
       build-tauri-linux-x64,

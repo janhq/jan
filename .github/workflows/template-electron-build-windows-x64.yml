@@ -163,15 +163,9 @@ jobs:
 
       - name: Build and publish app to aws s3 r2 or github artifactory
         shell: bash
-        if: inputs.public_provider != 'github'
+        if: inputs.public_provider == 'none'
         run: |
-          # check public_provider is true or not
-          echo "public_provider is ${{ inputs.public_provider }}"
-          if [ "${{ inputs.public_provider }}" == "none" ]; then
-            make build
-          else
-            make build-and-publish
-          fi
+          make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
