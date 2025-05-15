@@ -95,12 +95,13 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
           mv /tmp/package.json web/package.json
 
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
+          echo "---------Cargo.toml---------"
           cat ./src-tauri/Cargo.toml
 
           generate_build_version() {
@@ -134,9 +135,7 @@ jobs:
           }
           generate_build_version ${{ inputs.new_version }}
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
-          echo "------------------"
-          cat ./src-tauri/tauri.bundle.windows.nsis.template
+          sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template          
 
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
@@ -146,6 +145,7 @@ jobs:
             chmod +x .github/scripts/rename-tauri-app.sh
             .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json ${{ inputs.channel }}
 
+            echo "---------tauri.conf.json---------"
             cat ./src-tauri/tauri.conf.json
 
             # Update Cargo.toml
@@ -160,6 +160,8 @@ jobs:
             sed -i "s/jan_productname/Jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
             sed -i "s/jan_mainbinaryname/jan-${{ inputs.channel }}/g" ./src-tauri/tauri.bundle.windows.nsis.template
           fi
+          echo "---------nsis.template---------"
+          cat ./src-tauri/tauri.bundle.windows.nsis.template
 
       - name: Install AzureSignTool
         run: |
