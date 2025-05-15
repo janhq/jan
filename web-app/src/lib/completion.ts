@@ -9,6 +9,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { models, StreamCompletionResponse, TokenJS } from 'token.js'
 import { ulid } from 'ulidx'
+import { normalizeProvider } from './models'
 /**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects
@@ -108,7 +109,7 @@ export const sendCompletion = async (
   const tokenJS = new TokenJS({
     apiKey: provider.api_key ?? (await invoke('app_token')),
     // TODO: Retrieve from extension settings
-    baseURL: provider.base_url ?? 'http://localhost:39291/v1',
+    baseURL: provider.base_url,
   })
 
   // TODO: Add message history
@@ -126,25 +127,34 @@ export const sendCompletion = async (
   return completion
 }
 
+/**
+ * @fileoverview Helper function to start a model.
+ * This function loads the model from the provider.
+ * @param provider
+ * @param model
+ * @returns
+ */
 export const startModel = async (
   provider: string,
   model: string
 ): Promise<void> => {
-  // TODO: Remove hard coded provider name
-  const providerObj = EngineManager.instance().get(
-    provider === 'llama.cpp' ? 'llama-cpp' : provider
-  )
+  const providerObj = EngineManager.instance().get(normalizeProvider(provider))
   const modelObj = ModelManager.instance().get(model)
   if (providerObj && modelObj) return providerObj?.loadModel(modelObj)
 }
+
+/**
+ * @fileoverview Helper function to stop a model.
+ * This function unloads the model from the provider.
+ * @param provider
+ * @param model
+ * @returns
+ */
 export const stopModel = async (
   provider: string,
   model: string
 ): Promise<void> => {
-  // TODO: Remove hard coded provider name
-  const providerObj = EngineManager.instance().get(
-    provider === 'llama.cpp' ? 'llama-cpp' : provider
-  )
+  const providerObj = EngineManager.instance().get(normalizeProvider(provider))
   const modelObj = ModelManager.instance().get(model)
   if (providerObj && modelObj) return providerObj?.unloadModel(modelObj)
 }

@@ -52,6 +52,10 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
     const provider: ModelProvider = {
       active: false,
       provider: providerName,
+      base_url:
+        'inferenceUrl' in value
+          ? (value.inferenceUrl as string).replace('/chat/completions', '')
+          : '',
       settings: (await value.getSettings()).map((setting) => ({
         key: setting.key,
         title: setting.title,
@@ -59,14 +63,14 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         controller_type: setting.controllerType as unknown,
         controller_props: setting.controllerProps as unknown,
       })) as ProviderSetting[],
-      models: models.map((model: Model) => ({
+      models: models.map((model) => ({
         id: model.id,
         model: model.id,
         name: model.name,
         description: model.description,
         capabilities:
           'capabilities' in model
-            ? model.capabilities
+            ? model.capabilities as string[]
             : [ModelCapabilities.COMPLETION],
         provider: providerName,
         settings: modelSettings,
