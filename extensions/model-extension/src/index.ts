@@ -91,7 +91,6 @@ export default class JanModelExtension extends ModelExtension {
    * @returns A Promise that resolves when the model is downloaded.
    */
   async pullModel(model: string, id?: string, name?: string): Promise<void> {
-
     /**
      * Sending POST to /models/pull/{id} endpoint to pull the model
      */

@@ -26,7 +26,6 @@
   ],
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
-    "@tauri-apps/api": "^2.5.0",
     "ky": "^1.7.2",
     "p-queue": "^8.0.1"
   },

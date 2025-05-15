@@ -1,5 +1,4 @@
 pub mod download;
-pub mod hf;
 
 use std::fs;
 use std::path::PathBuf;
