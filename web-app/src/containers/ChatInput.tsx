@@ -117,17 +117,19 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
-    currentThread = await createThread(
-      {
-        id: selectedModel?.id ?? defaultModel(selectedProvider),
-        provider: selectedProvider,
-      },
-      prompt
-    )
-    router.navigate({
-      to: route.threadsDetail,
-      params: { threadId: currentThread.id },
-    })
+    if (!currentThread) {
+      currentThread = await createThread(
+        {
+          id: selectedModel?.id ?? defaultModel(selectedProvider),
+          provider: selectedProvider,
+        },
+        prompt
+      )
+      router.navigate({
+        to: route.threadsDetail,
+        params: { threadId: currentThread.id },
+      })
+    }
     return currentThread
   }, [
     createThread,

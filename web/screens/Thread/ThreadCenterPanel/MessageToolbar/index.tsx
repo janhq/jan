@@ -24,6 +24,8 @@ import useSendChatMessage from '@/hooks/useSendChatMessage'
 
 import { ChatContext } from '../../ThreadCenterPanel'
 
+import { ChatContext } from '../../ThreadCenterPanel'
+
 import { extensionManager } from '@/extension'
 import {
   deleteMessageAtom,
