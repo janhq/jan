@@ -161,39 +161,37 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
         tools
       )
 
-      if (completion) {
-        let accumulatedText = ''
-        try {
-          for await (const part of completion) {
-            const delta = part.choices[0]?.delta?.content || ''
-            if (delta) {
-              accumulatedText += delta
-              // Create a new object each time to avoid reference issues
-              // Use a timeout to prevent React from batching updates too quickly
-              const currentContent = newAssistantThreadContent(
-                activeThread.id,
-                accumulatedText
-              )
-              updateStreamingContent(currentContent)
-              await new Promise((resolve) => setTimeout(resolve, 0))
-            }
-          }
-        } catch (error) {
-          console.error('Error during streaming:', error)
-        } finally {
-          // Create a final content object for adding to the thread
-          if (accumulatedText) {
-            const finalContent = newAssistantThreadContent(
+      if (!completion) throw new Error('No completion received')
+      let accumulatedText = ''
+      try {
+        for await (const part of completion) {
+          const delta = part.choices[0]?.delta?.content || ''
+          if (delta) {
+            accumulatedText += delta
+            // Create a new object each time to avoid reference issues
+            // Use a timeout to prevent React from batching updates too quickly
+            const currentContent = newAssistantThreadContent(
               activeThread.id,
               accumulatedText
             )
-            addMessage(finalContent)
+            updateStreamingContent(currentContent)
+            await new Promise((resolve) => setTimeout(resolve, 0))
           }
+        }
+      } catch (error) {
+        console.error('Error during streaming:', error)
+      } finally {
+        // Create a final content object for adding to the thread
+        if (accumulatedText) {
+          const finalContent = newAssistantThreadContent(
+            activeThread.id,
+            accumulatedText
+          )
+          addMessage(finalContent)
         }
       }
     } catch (error) {
       console.error('Error sending message:', error)
-      // Handle error (e.g., show a notification)
     }
     updateStreamingContent(undefined)
   }, [
@@ -247,12 +245,10 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
               setRows(Math.min(newRows, maxRows))
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                if (!e.shiftKey && prompt) {
-                  e.preventDefault()
-                  // Submit the message when Enter is pressed without Shift
-                  sendMessage()
-                }
+              if (e.key === 'Enter' && !e.shiftKey && prompt) {
+                e.preventDefault()
+                // Submit the message when Enter is pressed without Shift
+                sendMessage()
                 // When Shift+Enter is pressed, a new line is added (default behavior)
               }
             }}
