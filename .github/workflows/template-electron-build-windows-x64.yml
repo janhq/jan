@@ -51,6 +51,7 @@ on:
 
 jobs:
   build-windows-x64:
+    if: inputs.public_provider == 'github' || inputs.public_provider == 'none'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -163,9 +164,15 @@ jobs:
 
       - name: Build and publish app to aws s3 r2 or github artifactory
         shell: bash
-        if: inputs.public_provider == 'none'
+        if: inputs.public_provider != 'github'
         run: |
-          make build
+          # check public_provider is true or not
+          echo "public_provider is ${{ inputs.public_provider }}"
+          if [ "${{ inputs.public_provider }}" == "none" ]; then
+            make build
+          else
+            make build-and-publish
+          fi
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}

@@ -41,6 +41,7 @@ on:
 
 jobs:
   build-linux-x64:
+    if: inputs.public_provider == 'github' || inputs.public_provider == 'none'
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -130,10 +131,16 @@ jobs:
         env:
           VERSION_TAG: ${{ inputs.new_version }}
 
-      - name: Build and publish app to github artifactory        
-        if: inputs.public_provider == 'none'
+      - name: Build and publish app to aws s3 r2 or github artifactory      
+        if: inputs.public_provider != 'github'
         run: |
-          make build
+          # check public_provider is true or not
+          echo "public_provider is ${{ inputs.public_provider }}"
+          if [ "${{ inputs.public_provider }}" == "none" ]; then
+            make build
+          else
+            make build-and-publish
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
