@@ -14,8 +14,8 @@
   "scripts": {
     "lint": "yarn workspace jan lint && yarn workspace @janhq/web lint",
     "test:unit": "jest",
-    "test:coverage": "jest --coverage",
-    "test": "yarn workspace jan test:e2e",
+    "test:coverage": "yarn workspace @janhq/web-app test",
+    "test": "yarn workspace @janhq/web-app test",
     "test-local": "yarn lint && yarn build:test && yarn test",
     "copy:assets": "cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"themes/**\" \"electron/themes\"",
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"themes/**\" \"src-tauri/resources/themes\"",
