@@ -24,11 +24,7 @@ import {
   ChatCompletionTool,
   ChatCompletionMessageToolCall,
 } from 'openai/resources/chat'
-import {
-  CompletionResponse,
-  StreamCompletionResponse,
-  TokenJS,
-} from 'token.js'
+import { CompletionResponse, StreamCompletionResponse, TokenJS } from 'token.js'
 import { ulid } from 'ulidx'
 
 import { modelDropdownStateAtom } from '@/containers/ModelDropdown'
@@ -225,7 +221,7 @@ export default function useSendChatMessage(
         },
         activeThread,
         messages ?? currentMessages,
-        (tools && tools.length) ? tools : undefined,
+        tools && tools.length ? tools : undefined
       ).addSystemMessage(activeAssistant.instructions)
 
       requestBuilder.pushMessage(prompt, base64Blob, fileUpload)
@@ -265,8 +261,9 @@ export default function useSendChatMessage(
       }
 
       // Start Model if not started
-      const isCortex = modelRequest.engine == InferenceEngine.cortex ||
-                       modelRequest.engine == InferenceEngine.cortex_llamacpp
+      const isCortex =
+        modelRequest.engine == InferenceEngine.cortex ||
+        modelRequest.engine == InferenceEngine.cortex_llamacpp
       const modelId = selectedModel?.id ?? activeAssistantRef.current?.model.id
 
       if (base64Blob) {
@@ -297,9 +294,10 @@ export default function useSendChatMessage(
       extendBuiltInEngineModels(tokenJS, provider, modelId)
 
       // llama.cpp currently does not support streaming when tools are used.
-      const useStream = (requestBuilder.tools && isCortex) ?
-                        false :
-                        modelRequest.parameters?.stream
+      const useStream =
+        requestBuilder.tools && isCortex
+          ? false
+          : modelRequest.parameters?.stream
 
       let parentMessageId: string | undefined
       while (!isDone) {
