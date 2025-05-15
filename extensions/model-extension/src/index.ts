@@ -1,7 +1,6 @@
 import {
   ModelExtension,
   Model,
-  InferenceEngine,
   joinPath,
   dirName,
   fs,
@@ -37,7 +36,7 @@ export default class JanModelExtension extends ModelExtension {
    */
   async apiInstance(): Promise<KyInstance> {
     if (this.api) return this.api
-    const apiKey = (await window.core?.api.appToken())
+    const apiKey = await window.core?.api.appToken()
     this.api = ky.extend({
       prefixUrl: CORTEX_API_URL,
       headers: apiKey
@@ -45,7 +44,7 @@ export default class JanModelExtension extends ModelExtension {
             Authorization: `Bearer ${apiKey}`,
           }
         : {},
-      retry: 10
+      retry: 10,
     })
     return this.api
   }
@@ -153,9 +152,7 @@ export default class JanModelExtension extends ModelExtension {
      * Here we are filtering out the models that are not imported
      * and are not using llama.cpp engine
      */
-    var toImportModels = legacyModels.filter(
-      (e) => e.engine === InferenceEngine.nitro
-    )
+    var toImportModels = legacyModels.filter((e) => e.engine === 'nitro')
 
     /**
      * Fetch models from cortex.cpp

@@ -1,9 +1,5 @@
 import { ExtensionManager } from '@/lib/extension'
-import {
-  ConversationalExtension,
-  ExtensionTypeEnum,
-  InferenceEngine,
-} from '@janhq/core'
+import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 
 /**
  * Fetches all threads from the conversational extension.
@@ -52,16 +48,15 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
           {
             model: {
               id: thread.model?.id ?? '*',
-              engine: (thread.model?.provider ??
-                'llama.cpp') as InferenceEngine,
+              engine: thread.model?.provider ?? 'llama.cpp',
             },
             assistant_id: 'jan',
             assistant_name: 'Jan',
           },
         ],
         metadata: {
-          order: 1
-        }
+          order: 1,
+        },
       })
       .then((e) => {
         return {
@@ -71,7 +66,7 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
             id: e.assistants?.[0]?.model.id,
             provider: e.assistants?.[0]?.model.engine,
           },
-          order: 1
+          order: 1,
         } as Thread
       })
       .catch(() => thread) ?? thread
@@ -91,7 +86,7 @@ export const updateThread = (thread: Thread) => {
         {
           model: {
             id: thread.model?.id ?? '*',
-            engine: (thread.model?.provider ?? 'llama.cpp') as InferenceEngine,
+            engine: (thread.model?.provider ?? 'llama.cpp'),
           },
           assistant_id: 'jan',
           assistant_name: 'Jan',
@@ -99,11 +94,11 @@ export const updateThread = (thread: Thread) => {
       ],
       metadata: {
         is_favorite: thread.isFavorite,
-        order: thread.order
+        order: thread.order,
       },
       object: 'thread',
-      created: Date.now()/ 1000,
-      updated: Date.now()/ 1000,
+      created: Date.now() / 1000,
+      updated: Date.now() / 1000,
     })
 }
 
