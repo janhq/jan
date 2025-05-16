@@ -24,7 +24,7 @@ export default class DownloadManager extends BaseExtension {
 
   async onUnload() { }
 
-  async downloadFile(url: string, path: string) {
+  async downloadFile(url: string, path: string, taskId: string) {
     // relay tauri events to Jan events
     const unlisten = await listen<DownloadEvent>('download', (event) => {
       let payload = event.payload
@@ -36,8 +36,11 @@ export default class DownloadManager extends BaseExtension {
         Started: 'onFileDownloadStarted',
       }[payload.event_type]
 
+      // remove this once event system is back in web-app
+      console.log(taskId, payload.downloaded_size / payload.total_size)
+
       events.emit(eventName, {
-        modelId: payload.task_id,
+        modelId: taskId,
         percent: payload.downloaded_size / payload.total_size,
         size: {
           transferred: payload.downloaded_size,
@@ -48,7 +51,10 @@ export default class DownloadManager extends BaseExtension {
     })
 
     try {
-      await invoke<void>("download_file", { url, path, headers: this._getHeaders() })
+      await invoke<void>(
+        "download_file",
+        { url, path, taskId, headers: this._getHeaders() },
+      )
     } catch (error) {
       console.error("Error downloading file:", error)
       events.emit('onFileDownloadError', {
@@ -61,7 +67,7 @@ export default class DownloadManager extends BaseExtension {
     }
   }
 
-  async downloadHfRepo(modelId: string, saveDir: string, branch?: string) {
+  async downloadHfRepo(modelId: string, saveDir: string, taskId: string, branch?: string) {
     // relay tauri events to Jan events
     const unlisten = await listen<DownloadEvent>('download', (event) => {
       let payload = event.payload
@@ -73,8 +79,11 @@ export default class DownloadManager extends BaseExtension {
         Started: 'onFileDownloadStarted',
       }[payload.event_type]
 
+      // remove this once event system is back in web-app
+      console.log(taskId, payload.downloaded_size / payload.total_size)
+
       events.emit(eventName, {
-        modelId: payload.task_id,
+        modelId: taskId,
         percent: payload.downloaded_size / payload.total_size,
         size: {
           transferred: payload.downloaded_size,
@@ -85,7 +94,10 @@ export default class DownloadManager extends BaseExtension {
     })
 
     try {
-      await invoke<void>("download_hf_repo", { modelId, saveDir, branch, headers: this._getHeaders() })
+      await invoke<void>(
+        "download_hf_repo",
+        { modelId, saveDir, taskId, branch, headers: this._getHeaders() },
+    )
     } catch (error) {
       console.error("Error downloading file:", error)
       events.emit('onFileDownloadError', {

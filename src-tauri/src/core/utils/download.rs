@@ -45,6 +45,7 @@ pub async fn download_file(
     state: State<'_, AppState>,
     url: &str,
     path: &Path,
+    task_id: &str,
     headers: HashMap<String, String>,
 ) -> Result<(), String> {
     // insert cancel tokens
@@ -56,7 +57,7 @@ pub async fn download_file(
         }
         download_manager
             .cancel_tokens
-            .insert(url.to_string(), cancel_token.clone());
+            .insert(task_id.to_string(), cancel_token.clone());
     }
 
     let header_map = _convert_headers(headers).map_err(err_to_string)?;
@@ -65,7 +66,7 @@ pub async fn download_file(
         .map_err(err_to_string)?;
     log::info!("File size: {}", total_size);
     let mut evt = DownloadEvent {
-        task_id: url.to_string(),
+        task_id: task_id.to_string(),
         total_size,
         downloaded_size: 0,
         download_type: "Model".to_string(),
@@ -122,6 +123,7 @@ pub async fn download_hf_repo(
     state: State<'_, AppState>,
     model_id: &str,
     save_dir: &Path,
+    task_id: &str,
     branch: Option<&str>,
     headers: HashMap<String, String>,
 ) -> Result<(), String> {
@@ -144,12 +146,12 @@ pub async fn download_hf_repo(
         }
         download_manager
             .cancel_tokens
-            .insert(model_id.to_string(), cancel_token.clone());
+            .insert(task_id.to_string(), cancel_token.clone());
     }
 
     let total_size = items.iter().map(|f| f.size).sum::<u64>();
     let mut evt = DownloadEvent {
-        task_id: model_id.to_string(),
+        task_id: task_id.to_string(),
         total_size,
         downloaded_size: 0,
         download_type: "Model".to_string(),
@@ -216,10 +218,10 @@ pub async fn cancel_download_task(state: State<'_, AppState>, task_id: &str) -> 
     let mut download_manager = state.download_manager.lock().await;
     if let Some(token) = download_manager.cancel_tokens.remove(task_id) {
         token.cancel();
-        log::info!("Cancelled download URL: {}", task_id);
+        log::info!("Cancelled download task_id: {}", task_id);
         Ok(())
     } else {
-        Err(format!("No download URL: {}", task_id))
+        Err(format!("No download task_id: {}", task_id))
     }
 }
 
