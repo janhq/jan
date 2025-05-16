@@ -68,5 +68,8 @@
   "resolutions": {
     "yallist": "4.0.0"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "yarn@4.5.3",
+  "dependencies": {
+    "@tanstack/router": "0.0.1-beta.53"
+  }
 }
