@@ -24,7 +24,7 @@ const AppLayout = () => {
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
-        <div className="absolute w-full h-2 z-50" data-tauri-drag-region />
+        <div className="absolute w-full h-10 z-10" data-tauri-drag-region />
 
         <div className="flex h-full">
           {/* left content panel - only show if not logs route */}
