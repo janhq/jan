@@ -1,5 +1,6 @@
 use crate::core::cmd::get_jan_data_folder_path;
 use crate::core::state::AppState;
+use crate::core::utils::normalize_path;
 use futures_util::StreamExt;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
@@ -79,6 +80,7 @@ pub async fn download_file(
     let save_path = data_dir.join(path);
 
     let mut has_error = false;
+    let mut error_msg = String::new();
     match _download_file_internal(
         app.clone(),
         url,
@@ -94,7 +96,8 @@ pub async fn download_file(
         }
         Err((evt_, e)) => {
             evt = evt_; // reassign ownership
-            log::error!("Failed to download file: {}", e);
+            error_msg = format!("Failed to download file: {}", e);
+            log::error!("{}", error_msg);
             has_error = true;
         }
     }
@@ -106,7 +109,7 @@ pub async fn download_file(
     }
     if has_error {
         let _ = std::fs::remove_file(&save_path); // don't check error
-        return Err("Failed to download file".to_string());
+        return Err(error_msg);
     }
 
     // emit final event
@@ -164,6 +167,7 @@ pub async fn download_hf_repo(
 
     let local_dir = get_jan_data_folder_path(app.clone()).join(save_dir);
     let mut has_error = false;
+    let mut error_msg = String::new();
     for item in items {
         let url = format!(
             "https://huggingface.co/{}/resolve/{}/{}",
@@ -188,7 +192,8 @@ pub async fn download_hf_repo(
             }
             Err((evt_, e)) => {
                 evt = evt_; // reassign ownership
-                log::error!("Failed to download file: {}", e);
+                error_msg = format!("Failed to download file: {}", e);
+                log::error!("{}", error_msg);
                 has_error = true;
                 break;
             }
@@ -202,7 +207,7 @@ pub async fn download_hf_repo(
     }
     if has_error {
         let _ = std::fs::remove_dir_all(&local_dir); // don't check error
-        return Err("Failed to download HF repo".to_string());
+        return Err(error_msg);
     }
 
     // emit final event
@@ -273,6 +278,22 @@ async fn _download_file_internal(
 ) -> Result<DownloadEvent, (DownloadEvent, Box<dyn std::error::Error>)> {
     log::info!("Downloading file: {}", url);
 
+    // normalize and enforce scope
+    // this will also resolve symlinks
+    let path = normalize_path(&path);
+    let jan_data_folder = get_jan_data_folder_path(app.clone());
+    if !path.starts_with(&jan_data_folder) {
+        return Err((
+            evt.clone(),
+            format!(
+                "Path {} is outside of Jan data folder {}",
+                path.display(),
+                jan_data_folder.display()
+            )
+            .into(),
+        ));
+    }
+
     // .read_timeout() and .connect_timeout() requires reqwest 0.12, which is not
     // compatible with hyper 0.14
     let client = reqwest::Client::builder()
@@ -302,13 +323,12 @@ async fn _download_file_internal(
     }
 
     // Create parent directories if they don't exist
-    // TODO: sanitize path and enforce scope
     if let Some(parent) = path.parent() {
         if !parent.exists() {
             std::fs::create_dir_all(parent).map_err(|e| (evt.clone(), e.into()))?;
         }
     }
-    let mut file = File::create(path)
+    let mut file = File::create(&path)
         .await
         .map_err(|e| (evt.clone(), e.into()))?;
 
@@ -341,7 +361,7 @@ async fn _download_file_internal(
     // cleanup
     file.flush().await.map_err(|e| (evt.clone(), e.into()))?;
     if evt.event_type == DownloadEventType::Stopped {
-        let _ = std::fs::remove_file(path); // don't check error
+        let _ = std::fs::remove_file(&path); // don't check error
     }
 
     // caller should emit a final event after calling this function
