@@ -268,6 +268,9 @@ async fn _get_file_size(
     }
 }
 
+// NOTE: Caller of this function should pass ownership of `evt` to this function
+// (no .clone()) and obtain it back. Both Ok and Err will return ownership of
+// the modified `evt` object back to the caller.
 async fn _download_file_internal(
     app: tauri::AppHandle,
     url: &str,
@@ -279,8 +282,7 @@ async fn _download_file_internal(
     log::info!("Downloading file: {}", url);
 
     // normalize and enforce scope
-    // this will also resolve symlinks
-    let path = normalize_path(&path);
+    let path = normalize_path(path);
     let jan_data_folder = get_jan_data_folder_path(app.clone());
     if !path.starts_with(&jan_data_folder) {
         return Err((
