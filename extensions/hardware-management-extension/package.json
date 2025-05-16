@@ -13,7 +13,8 @@
     "codesign:darwin": "../../.github/scripts/auto-sign.sh",
     "codesign:win32:linux": "echo 'No codesigning required'",
     "codesign": "run-script-os",
-    "build:publish": "rimraf *.tgz --glob || true && yarn build && yarn codesign && npm pack && cpx *.tgz ../../pre-install"
+    "build:publish": "rimraf *.tgz --glob || true && yarn build && yarn codesign && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:tauri": "yarn build:publish"
   },
   "exports": {
     ".": "./dist/index.js",

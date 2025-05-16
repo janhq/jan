@@ -638,7 +638,17 @@ Section Install
     SetOutPath "$INSTDIR\binaries"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\binaries\engines\"
     SetOutPath $INSTDIR
-    File /r "D:\a\jan\jan\src-tauri\binaries\*.dll"
+    File /a "/oname=cublas64_11.dll" "D:\a\jan\jan\src-tauri\binaries\cublas64_11.dll"
+    File /a "/oname=cublas64_12.dll" "D:\a\jan\jan\src-tauri\binaries\cublas64_12.dll"
+    File /a "/oname=cublasLt64_11.dll" "D:\a\jan\jan\src-tauri\binaries\cublasLt64_11.dll"
+    File /a "/oname=cublasLt64_12.dll" "D:\a\jan\jan\src-tauri\binaries\cublasLt64_12.dll"
+    File /a "/oname=cudart64_12.dll" "D:\a\jan\jan\src-tauri\binaries\cudart64_12.dll"
+    File /a "/oname=cudart64_110.dll" "D:\a\jan\jan\src-tauri\binaries\cudart64_110.dll"
+    File /a "/oname=msvcp140.dll" "D:\a\jan\jan\src-tauri\binaries\msvcp140.dll"
+    File /a "/oname=vcomp140.dll" "D:\a\jan\jan\src-tauri\binaries\vcomp140.dll"
+    File /a "/oname=vcruntime140_1.dll" "D:\a\jan\jan\src-tauri\binaries\vcruntime140_1.dll"
+    File /a "/oname=vcruntime140.dll" "D:\a\jan\jan\src-tauri\binaries\vcruntime140.dll"
+    File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\binaries\vulkan-1.dll"
     File /a "/oname=resources\pre-install\janhq-assistant-extension-1.0.2.tgz" "D:\a\jan\jan\src-tauri\resources\pre-install\janhq-assistant-extension-1.0.2.tgz"
     File /a "/oname=resources\pre-install\janhq-conversational-extension-1.0.0.tgz" "D:\a\jan\jan\src-tauri\resources\pre-install\janhq-conversational-extension-1.0.0.tgz"
     File /a "/oname=resources\pre-install\janhq-engine-management-extension-1.0.3.tgz" "D:\a\jan\jan\src-tauri\resources\pre-install\janhq-engine-management-extension-1.0.3.tgz"
@@ -804,7 +814,7 @@ Section Uninstall
   RMDir /REBOOTOK "$INSTDIR\resources\themes"
   RMDir /r /REBOOTOK "$INSTDIR\binaries"
   RMDir /REBOOTOK "$INSTDIR\resources"
-  RMDir "$INSTDIR"
+  RMDir /r "$INSTDIR"
 
   ; Remove shortcuts if not updating
   ${If} $UpdateMode <> 1

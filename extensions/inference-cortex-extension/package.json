@@ -15,7 +15,10 @@
     "downloadcortex": "run-script-os",
     "build:publish:darwin": "rimraf *.tgz --glob || true && yarn build && yarn downloadcortex && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
     "build:publish:win32:linux": "rimraf *.tgz --glob || true && yarn build && yarn downloadcortex && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
-    "build:publish": "run-script-os"
+    "build:publish": "run-script-os",
+    "build:publish:tauri:darwin": "rimraf *.tgz --glob || true && yarn build && ../../.github/scripts/auto-sign.sh && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:tauri:win32:linux": "rimraf *.tgz --glob || true && yarn build && cpx \"bin/**\" \"dist/bin\" && npm pack && cpx *.tgz ../../pre-install",
+    "build:publish:tauri": "run-script-os"
   },
   "exports": {
     ".": "./dist/index.js",

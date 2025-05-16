@@ -39,6 +39,7 @@
     "build:electron": "yarn copy:assets && yarn workspace jan build",
     "build:electron:test": "yarn workspace jan build:test",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish",
+    "build:extensions:tauri": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish:tauri",
     "build:test": "yarn copy:assets && yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\" && yarn workspace jan build:test",
     "build": "yarn build:web && yarn build:electron",
     "build-tauri": "yarn build:web && yarn build:tauri",
