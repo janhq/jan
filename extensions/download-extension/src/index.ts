@@ -37,7 +37,7 @@ export default class DownloadManager extends BaseExtension {
       }[payload.event_type]
 
       // remove this once event system is back in web-app
-      console.log(taskId, payload.downloaded_size / payload.total_size)
+      console.log(taskId, payload.event_type, payload.downloaded_size / payload.total_size)
 
       events.emit(eventName, {
         modelId: taskId,
@@ -80,7 +80,7 @@ export default class DownloadManager extends BaseExtension {
       }[payload.event_type]
 
       // remove this once event system is back in web-app
-      console.log(taskId, payload.downloaded_size / payload.total_size)
+      console.log(taskId, payload.event_type, payload.downloaded_size / payload.total_size)
 
       events.emit(eventName, {
         modelId: taskId,

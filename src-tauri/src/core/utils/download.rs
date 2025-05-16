@@ -17,12 +17,12 @@ pub struct DownloadManagerState {
 
 // this is to emulate the current way of downloading files by Cortex + Jan
 // we can change this later
-#[derive(serde::Serialize, Clone, Debug)]
+#[derive(serde::Serialize, Clone, Debug, PartialEq)]
 pub enum DownloadEventType {
     Started,
     Updated,
     Success,
-    // Error,
+    // Error,  // we don't need to emit an Error event. just return an error directly
     Stopped,
 }
 
@@ -89,17 +89,11 @@ pub async fn download_file(
     )
     .await
     {
-        Ok((evt_, is_cancelled)) => {
-            // reassign ownership
-            evt = evt_;
-            evt.event_type = if is_cancelled {
-                DownloadEventType::Stopped
-            } else {
-                DownloadEventType::Success
-            };
-            app.emit("download", evt.clone()).unwrap();
+        Ok(evt_) => {
+            evt = evt_; // reassign ownership
         }
-        Err(e) => {
+        Err((evt_, e)) => {
+            evt = evt_; // reassign ownership
             log::error!("Failed to download file: {}", e);
             has_error = true;
         }
@@ -111,8 +105,17 @@ pub async fn download_file(
         download_manager.cancel_tokens.remove(url);
     }
     if has_error {
+        let _ = std::fs::remove_file(&save_path); // don't check error
         return Err("Failed to download file".to_string());
     }
+
+    // emit final event
+    if evt.event_type == DownloadEventType::Stopped {
+        let _ = std::fs::remove_file(&save_path); // don't check error
+    } else {
+        evt.event_type = DownloadEventType::Success;
+    }
+    app.emit("download", evt.clone()).unwrap();
 
     Ok(())
 }
@@ -161,7 +164,7 @@ pub async fn download_hf_repo(
 
     let local_dir = get_jan_data_folder_path(app.clone()).join(save_dir);
     let mut has_error = false;
-    for (i, item) in items.iter().enumerate() {
+    for item in items {
         let url = format!(
             "https://huggingface.co/{}/resolve/{}/{}",
             model_id, branch_str, item.path
@@ -177,21 +180,14 @@ pub async fn download_hf_repo(
         )
         .await
         {
-            Ok((evt_, is_cancelled)) => {
-                // reassign ownership
-                evt = evt_;
-
-                if is_cancelled {
-                    evt.event_type = DownloadEventType::Stopped;
-                } else if i == items.len() - 1 {
-                    // last file
-                    evt.event_type = DownloadEventType::Success;
-                } else {
-                    evt.event_type = DownloadEventType::Updated;
+            Ok(evt_) => {
+                evt = evt_; // reassign ownership
+                if evt.event_type == DownloadEventType::Stopped {
+                    break;
                 }
-                app.emit("download", evt.clone()).unwrap();
             }
-            Err(e) => {
+            Err((evt_, e)) => {
+                evt = evt_; // reassign ownership
                 log::error!("Failed to download file: {}", e);
                 has_error = true;
                 break;
@@ -205,9 +201,17 @@ pub async fn download_hf_repo(
         download_manager.cancel_tokens.remove(model_id);
     }
     if has_error {
-        let _ = std::fs::remove_dir_all(local_dir); // don't check error
+        let _ = std::fs::remove_dir_all(&local_dir); // don't check error
         return Err("Failed to download HF repo".to_string());
     }
+
+    // emit final event
+    if evt.event_type == DownloadEventType::Stopped {
+        let _ = std::fs::remove_dir_all(&local_dir); // don't check error
+    } else {
+        evt.event_type = DownloadEventType::Success;
+    }
+    app.emit("download", evt.clone()).unwrap();
 
     Ok(())
 }
@@ -266,7 +270,7 @@ async fn _download_file_internal(
     header_map: HeaderMap,
     mut evt: DownloadEvent,
     cancel_token: CancellationToken,
-) -> Result<(DownloadEvent, bool), Box<dyn std::error::Error>> {
+) -> Result<DownloadEvent, (DownloadEvent, Box<dyn std::error::Error>)> {
     log::info!("Downloading file: {}", url);
 
     // .read_timeout() and .connect_timeout() requires reqwest 0.12, which is not
@@ -275,43 +279,55 @@ async fn _download_file_internal(
         .http2_keep_alive_timeout(Duration::from_secs(15))
         // .read_timeout(Duration::from_secs(10))  // timeout between chunks
         // .connect_timeout(Duration::from_secs(10)) // timeout for first connection
-        .build()?;
+        .build()
+        .map_err(|e| (evt.clone(), e.into()))?;
 
-    let resp = client.get(url).headers(header_map).send().await?;
+    let resp = client
+        .get(url)
+        .headers(header_map)
+        .send()
+        .await
+        .map_err(|e| (evt.clone(), e.into()))?;
 
     if !resp.status().is_success() {
-        return Err(format!(
-            "Failed to download: HTTP status {}, {}",
-            resp.status(),
-            resp.text().await.unwrap_or_default()
-        )
-        .into());
+        return Err((
+            evt,
+            format!(
+                "Failed to download: HTTP status {}, {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            )
+            .into(),
+        ));
     }
 
     // Create parent directories if they don't exist
     // TODO: sanitize path and enforce scope
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|e| (evt.clone(), e.into()))?;
         }
     }
-    let mut file = File::create(path).await?;
+    let mut file = File::create(path)
+        .await
+        .map_err(|e| (evt.clone(), e.into()))?;
 
     // write chunk to file
     let mut stream = resp.bytes_stream();
-    let mut is_cancelled = false;
     let mut download_delta = 0u64;
     evt.event_type = DownloadEventType::Updated;
 
     while let Some(chunk) = stream.next().await {
         if cancel_token.is_cancelled() {
             log::info!("Download cancelled: {}", url);
-            is_cancelled = true;
+            evt.event_type = DownloadEventType::Stopped;
             break;
         }
 
-        let chunk = chunk?;
-        file.write_all(&chunk).await?;
+        let chunk = chunk.map_err(|e| (evt.clone(), e.into()))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| (evt.clone(), e.into()))?;
         download_delta += chunk.len() as u64;
 
         // only update every 1MB
@@ -323,15 +339,15 @@ async fn _download_file_internal(
     }
 
     // cleanup
-    file.flush().await?;
-    if is_cancelled {
+    file.flush().await.map_err(|e| (evt.clone(), e.into()))?;
+    if evt.event_type == DownloadEventType::Stopped {
         let _ = std::fs::remove_file(path); // don't check error
     }
 
     // caller should emit a final event after calling this function
     evt.downloaded_size += download_delta;
 
-    Ok((evt, is_cancelled))
+    Ok(evt)
 }
 
 #[derive(serde::Deserialize)]
