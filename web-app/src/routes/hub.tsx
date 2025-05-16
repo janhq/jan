@@ -79,7 +79,7 @@ function Hub() {
   return (
     <div className="flex h-full w-full">
       <div className="flex flex-col h-full w-full">
-        <div className="px-4 py-3 border-b border-main-view-fg/5 h-10 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-main-view-fg/5 h-10 flex items-center justify-between relative z-20">
           <div className="flex items-center gap-2">
             <IconSearch className="text-main-view-fg/60" size={14} />
             <input

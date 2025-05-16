@@ -54,7 +54,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 rounded font-medium cursor-pointer flex items-center gap-1.5">
+        <button className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 rounded font-medium cursor-pointer flex items-center gap-1.5 relative z-20">
           <img
             src={getProviderLogo(selectedProvider as string)}
             alt={`${selectedProvider} - Logo`}
