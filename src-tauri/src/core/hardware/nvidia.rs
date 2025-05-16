@@ -1,19 +1,18 @@
 pub struct NvidiaInfo {
+    name: String,
     index: u64,
     total_vram: u64,
     free_vram: u64,
-    name: String,
-    compute_cap: String,
+    compute_capability: String,
     driver_version: String,
     uuid: String,
 }
 
-impl From<NvidiaInfo> for super::Gpu {
+impl From<NvidiaInfo> for super::GpuInfo {
     fn from(val: NvidiaInfo) -> Self {
-        super::Gpu {
-            activated: true,
+        super::GpuInfo {
             additional_information: Some(super::GpuAdditionalInfo {
-                compute_cap: val.compute_cap,
+                compute_cap: val.compute_capability,
                 driver_version: val.driver_version.clone(),
             }),
             free_vram: val.free_vram,
@@ -58,7 +57,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
                 total_vram: parts[1].parse()?,
                 free_vram: parts[2].parse()?,
                 name: parts[3].parse()?,
-                compute_cap: parts[4].parse()?,
+                compute_capability: parts[4].parse()?,
                 driver_version: parts[5].parse()?,
                 uuid: parts[6].parse()?,
             };
@@ -96,7 +95,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
                 total_vram: parts[1].parse()?,
                 free_vram: parts[2].parse()?,
                 name: parts[3].parse()?,
-                compute_cap: "unknown".to_string(),
+                compute_capability: "unknown".to_string(),
                 driver_version: parts[4].parse()?,
                 uuid: parts[5].parse()?,
             };
