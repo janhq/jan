@@ -39,7 +39,6 @@ dev: check-file-counts
 	yarn dev
 
 dev-tauri: check-file-counts
-	yarn install:cortex
 	yarn download:bin
 	yarn copy:lib
 	CLEAN=true yarn dev:tauri

@@ -10,8 +10,8 @@ use crate::core::state::AppState;
 pub enum ServerError {
     #[error("Server is already running")]
     AlreadyRunning,
-    #[error("Server is not running")]
-    NotRunning,
+  //  #[error("Server is not running")]
+  //  NotRunning,
     #[error("Failed to locate server binary: {0}")]
     BinaryNotFound(String),
     #[error("Failed to determine resource path: {0}")]
