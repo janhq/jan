@@ -3,12 +3,9 @@ use std::{
     fs::{self, File},
     io::Read,
     path::PathBuf,
-    sync::Arc,
 };
 use tar::Archive;
-use tauri::{App, Emitter, Listener, Manager};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
+use tauri::{App, Emitter, Manager};
 use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
@@ -200,22 +197,18 @@ pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>();
     let servers = state.mcp_servers.clone();
     let app_handle: tauri::AppHandle = app.handle().clone();
-    
     // Setup kill-mcp-servers event listener (similar to cortex kill-sidecar)
     let app_handle_for_kill = app_handle.clone();
     app_handle.listen("kill-mcp-servers", move |_event| {
         let app_handle = app_handle_for_kill.clone();
         tauri::async_runtime::spawn(async move {
             log::info!("Received kill-mcp-servers event - cleaning up MCP servers");
-            
             let app_state = app_handle.state::<AppState>();
-            
             // Stop all running MCP servers
             if let Err(e) = super::mcp::stop_mcp_servers(app_state.mcp_servers.clone()).await {
                 log::error!("Failed to stop MCP servers: {}", e);
                 return;
             }
-            
             // Clear active servers and restart counts
             {
                 let mut active_servers = app_state.mcp_active_servers.lock().await;
@@ -225,11 +218,9 @@ pub fn setup_mcp(app: &App) {
                 let mut restart_counts = app_state.mcp_restart_counts.lock().await;
                 restart_counts.clear();
             }
-            
             log::info!("MCP servers cleaned up successfully");
         });
     });
-    
     tauri::async_runtime::spawn(async move {
         if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
@@ -471,65 +462,22 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
     Ok(())
 }
 
+//pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
+//    // Copy engine binaries to app_data
+//    let app_data_dir = app.handle().path().app_data_dir().unwrap();
+//    let binaries_dir = app.handle().path().resource_dir().unwrap().join("binaries");
+//    let themes_dir = app
+//        .handle()
+//        .path()
+//        .resource_dir()
+//        .unwrap()
+//        .join("resources");
 //
-// Clean up function to kill the sidecar process
-//
-pub fn clean_up() {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("taskkill")
-            .args(["-f", "-im", "llama-server.exe"])
-            .creation_flags(0x08000000)
-            .spawn();
-        let _ = std::process::Command::new("taskkill")
-            .args(["-f", "-im", "cortex-server.exe"])
-            .creation_flags(0x08000000)
-            .spawn();
-    }
-    #[cfg(unix)]
-    {
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", "llama-server"])
-            .spawn();
-        let _ = std::process::Command::new("pkill")
-            .args(["-f", "cortex-server"])
-            .spawn();
-    }
-    log::info!("Clean up function executed, sidecar processes killed.");
-}
-
-fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {
-    fs::create_dir_all(&dst).map_err(|e| e.to_string())?;
-    log::info!("Copying from {:?} to {:?}", src, dst);
-    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let ty = entry.file_type().map_err(|e| e.to_string())?;
-        if ty.is_dir() {
-            copy_dir_all(entry.path(), dst.join(entry.file_name())).map_err(|e| e.to_string())?;
-        } else {
-            fs::copy(entry.path(), dst.join(entry.file_name())).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
-    // Copy engine binaries to app_data
-    let app_data_dir = get_jan_data_folder_path(app.handle().clone());
-    let binaries_dir = app.handle().path().resource_dir().unwrap().join("binaries");
-    let resources_dir = app
-        .handle()
-        .path()
-        .resource_dir()
-        .unwrap()
-        .join("resources");
-
-    if let Err(e) = copy_dir_all(binaries_dir, app_data_dir.clone()) {
-        log::error!("Failed to copy binaries: {}", e);
-    }
-    if let Err(e) = copy_dir_all(resources_dir, app_data_dir.clone()) {
-        log::error!("Failed to copy resources: {}", e);
-    }
-    Ok(())
-}
+//    if let Err(e) = copy_dir_all(binaries_dir, app_data_dir.clone()) {
+//        log::error!("Failed to copy binaries: {}", e);
+//    }
+//    if let Err(e) = copy_dir_all(themes_dir, app_data_dir.clone()) {
+//        log::error!("Failed to copy themes: {}", e);
+//    }
+//    Ok(())
+//}
