@@ -1,16 +1,14 @@
 mod core;
 use core::{
     cmd::get_jan_data_folder_path,
-    setup::{self, setup_engine_binaries, setup_mcp, setup_sidecar},
+    setup::{self, setup_mcp},
     state::{generate_app_token, AppState},
     utils::download::DownloadManagerState,
 };
 use std::{collections::HashMap, sync::Arc};
 
-use tauri::Emitter;
 use tokio::sync::Mutex;
 
-use crate::core::setup::clean_up;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -122,17 +120,17 @@ pub fn run() {
                 log::error!("Failed to install extensions: {}", e);
             }
             setup_mcp(app);
-            setup_sidecar(app).expect("Failed to setup sidecar");
-            setup_engine_binaries(app).expect("Failed to setup engine binaries");
             Ok(())
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
-                    window.emit("kill-sidecar", ()).unwrap();
                     window.emit("kill-mcp-servers", ()).unwrap();
                     clean_up();
                 }
+                let client = Client::new();
+                let url = "http://127.0.0.1:39291/processManager/destroy";
+                let _ = client.delete(url).send();
             }
             _ => {}
         })
