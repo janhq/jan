@@ -1,13 +1,12 @@
 mod core;
 use core::{
     cmd::get_jan_data_folder_path,
-    setup::{self, setup_engine_binaries, setup_mcp, setup_sidecar},
+    setup::{self, setup_mcp},
     state::{generate_app_token, AppState},
     utils::download::DownloadManagerState,
 };
 use std::{collections::HashMap, sync::Arc};
 
-use tauri::Emitter;
 use tokio::sync::Mutex;
 
 use reqwest::blocking::Client;
@@ -105,24 +104,13 @@ pub fn run() {
                 log::error!("Failed to install extensions: {}", e);
             }
             setup_mcp(app);
-            setup_sidecar(app).expect("Failed to setup sidecar");
-            setup_engine_binaries(app).expect("Failed to setup engine binaries");
-            // TODO(any) need to wire up with frontend
-            // let handle = app.handle().clone();
-            // tauri::async_runtime::spawn(async move {
-            //     handle_app_update(handle).await.unwrap();
-            // });
             Ok(())
         })
-        .on_window_event(|window, event| match event {
+        .on_window_event(|_window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
-                if window.label() == "main" {
-                    let client = Client::new();
-                    let url = "http://127.0.0.1:39291/processManager/destroy";
-                    let _ = client.delete(url).send();
-
-                    window.emit("kill-sidecar", ()).unwrap();
-                }
+                let client = Client::new();
+                let url = "http://127.0.0.1:39291/processManager/destroy";
+                let _ = client.delete(url).send();
             }
             _ => {}
         })

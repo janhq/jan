@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@janhq/core": "../../core/package.tgz",
+    "@tauri-apps/api": "^1.4.0",
     "fetch-retry": "^5.0.6",
     "ulidx": "^2.3.0"
   },
