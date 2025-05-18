@@ -7,7 +7,7 @@ import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { abortDownload } from '@/services/models'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
-import { IconPlayerPauseFilled, IconX } from '@tabler/icons-react'
+import { IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo } from 'react'
 
 export function DownloadManagement() {
