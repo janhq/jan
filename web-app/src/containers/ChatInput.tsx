@@ -41,6 +41,7 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import { getTools } from '@/services/mcp'
 
 type ChatInputProps = {
   className?: string
@@ -93,16 +94,15 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
   }, [])
 
   useEffect(() => {
-    window.core?.api?.getTools().then((data: MCPTool[]) => {
-      setTools(data)
-    })
-
-    let unsubscribe = () => {}
-    listen(SystemEvent.MCP_UPDATE, () => {
-      window.core?.api?.getTools().then((data: MCPTool[]) => {
+    function updateTools() {
+      getTools().then((data: MCPTool[]) => {
         setTools(data)
       })
-    }).then((unsub) => {
+    }
+    updateTools()
+
+    let unsubscribe = () => {}
+    listen(SystemEvent.MCP_UPDATE, updateTools).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
     })
@@ -199,8 +199,11 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
           accumulatedText
         )
         builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
-        const updatedMessage = await postMessageProcessing(toolCalls, builder, finalContent)
-        console.log(updatedMessage)
+        const updatedMessage = await postMessageProcessing(
+          toolCalls,
+          builder,
+          finalContent
+        )
         addMessage(updatedMessage ?? finalContent)
 
         isCompleted = !toolCalls.length
