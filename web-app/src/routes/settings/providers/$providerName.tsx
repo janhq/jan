@@ -6,6 +6,7 @@ import { cn, getProviderTitle } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
 import {
   createFileRoute,
+  Link,
   useNavigate,
   useParams,
   useSearch,
@@ -228,35 +229,49 @@ function ProviderDetail() {
                   </div>
                 }
               >
-                {provider?.models.map((model, modelIndex) => {
-                  const capabilities = model.capabilities || []
-                  return (
-                    <CardItem
-                      key={modelIndex}
-                      title={
-                        <div className="flex items-center gap-2">
-                          <h1 className="font-medium">{model.id}</h1>
-                          <Capabilities capabilities={capabilities} />
-                        </div>
-                      }
-                      actions={
-                        <div className="flex items-center gap-2">
-                          <DialogEditModel
-                            provider={provider}
-                            modelId={model.id}
-                          />
-                          {model.settings && (
-                            <ModelSetting provider={provider} model={model} />
-                          )}
-                          <DialoDeleteModel
-                            provider={provider}
-                            modelId={model.id}
-                          />
-                        </div>
-                      }
-                    />
-                  )
-                })}
+                {provider?.models.length ? (
+                  provider?.models.map((model, modelIndex) => {
+                    const capabilities = model.capabilities || []
+                    return (
+                      <CardItem
+                        key={modelIndex}
+                        title={
+                          <div className="flex items-center gap-2">
+                            <h1 className="font-medium">{model.id}</h1>
+                            <Capabilities capabilities={capabilities} />
+                          </div>
+                        }
+                        actions={
+                          <div className="flex items-center gap-2">
+                            <DialogEditModel
+                              provider={provider}
+                              modelId={model.id}
+                            />
+                            {model.settings && (
+                              <ModelSetting provider={provider} model={model} />
+                            )}
+                            <DialoDeleteModel
+                              provider={provider}
+                              modelId={model.id}
+                            />
+                          </div>
+                        }
+                      />
+                    )
+                  })
+                ) : (
+                  <div className="-mt-2">
+                    <div className="flex items-center gap-2 text-left-panel-fg/80">
+                      <h6 className="font-medium text-base">No model found</h6>
+                    </div>
+                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
+                      Available models will be listed here. If you don’t have
+                      any models yet, visit the&nbsp;
+                      <Link to={route.hub}>Hub</Link>
+                      &nbsp;to download.
+                    </p>
+                  </div>
+                )}
               </Card>
             </div>
           </div>
