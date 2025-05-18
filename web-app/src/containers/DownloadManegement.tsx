@@ -5,12 +5,15 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { abortDownload } from '@/services/models'
+import { getProviders } from '@/services/providers'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo } from 'react'
 
 export function DownloadManagement() {
+  const { setProviders } = useModelProvider()
   const { downloads, updateProgress, removeDownload } = useDownloadStore()
   const downloadCount = useMemo(
     () => Object.keys(downloads).length,
@@ -72,8 +75,9 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
       removeDownload(state.modelId)
+      getProviders().then(setProviders)
     },
-    [removeDownload]
+    [removeDownload, setProviders]
   )
 
   useEffect(() => {

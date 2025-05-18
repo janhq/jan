@@ -36,6 +36,16 @@ export const fetchModelSources = async () => {
 }
 
 /**
+ * Fetches the model hub.
+ * @returns A promise that resolves to the model hub.
+ */
+export const fetchModelHub = async () => {
+  return ExtensionManager.getInstance()
+    .get<ModelExtension>(ExtensionTypeEnum.Model)
+    ?.fetchModelsHub()
+}
+
+/**
  * Adds a new model source.
  * @param source The source to add.
  * @returns A promise that resolves when the source is added.
@@ -134,6 +144,26 @@ export const abortDownload = async (id: string) => {
     return await extension.cancelModelPull(id)
   } catch (error) {
     console.error('Failed to abort model download:', error)
+    throw error
+  }
+}
+
+/**
+ * Deletes a model.
+ * @param id
+ * @returns
+ */
+export const deleteModel = async (id: string) => {
+  const extension = ExtensionManager.getInstance().get<ModelExtension>(
+    ExtensionTypeEnum.Model
+  )
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    return await extension.deleteModel(id)
+  } catch (error) {
+    console.error('Failed to delete model:', error)
     throw error
   }
 }
