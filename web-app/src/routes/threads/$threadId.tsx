@@ -177,7 +177,6 @@ function ThreadDetail() {
               messages.map((item, index) => {
                 // Only pass isLastMessage to the last message in the array
                 const isLastMessage = index === messages.length - 1
-                console.log(messages, 'messages')
                 return (
                   <div
                     key={item.id}
