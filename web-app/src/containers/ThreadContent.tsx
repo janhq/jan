@@ -1,6 +1,6 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
-import { Fragment, memo, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import {
   IconCopy,
   IconCopyCheck,
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
 import ThinkingBlock from '@/containers/ThinkingBlock'
 import ToolCallBlock from '@/containers/ToolCallBlock'
+import { useChat } from '@/hooks/useChat'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -25,7 +26,7 @@ const CopyButton = ({ text }: { text: string }) => {
 
   return (
     <button
-      className="flex items-center gap-1 hover:text-accent transition-colors group relative"
+      className="flex items-center gap-1 hover:text-accent transition-colors group relative cursor-pointer"
       onClick={handleCopy}
     >
       {copied ? (
@@ -80,7 +81,18 @@ export const ThreadContent = memo(
       }
     }, [text])
 
-    const { deleteMessage } = useMessages()
+    const { getMessages, deleteMessage } = useMessages()
+    const { sendMessage } = useChat()
+
+    const regenerate = useCallback(() => {
+      // Only regenerate assistant message is allowed
+      deleteMessage(item.thread_id, item.id)
+      const threadMessages = getMessages(item.thread_id)
+      const lastMessage = threadMessages[threadMessages.length - 1]
+      if (!lastMessage) return
+      deleteMessage(lastMessage.thread_id, lastMessage.id)
+      sendMessage(lastMessage.content?.[0]?.text?.value || '')
+    }, [deleteMessage, getMessages, item, sendMessage])
 
     const isToolCalls =
       item.metadata &&
@@ -170,17 +182,17 @@ export const ThreadContent = memo(
                       Delete
                     </span>
                   </button>
-                  <button
-                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                    onClick={() => {
-                      console.log('Regenerate clicked')
-                    }}
-                  >
-                    <IconRefresh size={16} />
-                    <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                      Regenerate
-                    </span>
-                  </button>
+                  {item.isLastMessage && (
+                    <button
+                      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                      onClick={regenerate}
+                    >
+                      <IconRefresh size={16} />
+                      <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                        Regenerate
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}

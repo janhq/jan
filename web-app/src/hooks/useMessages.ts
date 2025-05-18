@@ -9,6 +9,7 @@ import {
 
 type MessageState = {
   messages: Record<string, ThreadMessage[]>
+  getMessages: (threadId: string) => ThreadMessage[]
   setMessages: (threadId: string, messages: ThreadMessage[]) => void
   addMessage: (message: ThreadMessage) => void
   deleteMessage: (threadId: string, messageId: string) => void
@@ -16,8 +17,11 @@ type MessageState = {
 
 export const useMessages = create<MessageState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       messages: {},
+      getMessages: (threadId) => {
+        return get().messages[threadId] || []
+      },
       setMessages: (threadId, messages) => {
         set((state) => ({
           messages: {
