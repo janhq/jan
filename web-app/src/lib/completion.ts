@@ -20,6 +20,7 @@ import { normalizeProvider } from './models'
 import { MCPTool } from '@/types/completion'
 import { CompletionMessagesBuilder } from './messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import { callTool } from '@/services/mcp'
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -224,8 +225,7 @@ export const extractToolCall = (
       }
 
       if (deltaToolCalls[0]?.function?.arguments) {
-        currentCall!.function.arguments +=
-          deltaToolCalls[0].function.arguments
+        currentCall!.function.arguments += deltaToolCalls[0].function.arguments
       }
     }
   }
@@ -268,7 +268,7 @@ export const postMessageProcessing = async (
         ],
       }
 
-      const result = await window.core.api.callTool({
+      const result = await callTool({
         toolName: toolCall.function.name,
         arguments: toolCall.function.arguments.length
           ? JSON.parse(toolCall.function.arguments)

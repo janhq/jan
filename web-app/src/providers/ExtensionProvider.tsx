@@ -1,5 +1,6 @@
 import { ExtensionManager } from '@/lib/extension'
 import { APIs } from '@/lib/service'
+import { EventEmitter } from '@/services/eventsService'
 import { EngineManager, ModelManager } from '@janhq/core'
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 
@@ -10,6 +11,7 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
       api: APIs,
     }
 
+    window.core.events = new EventEmitter()
     window.core.extensionManager = new ExtensionManager()
     window.core.engineManager = new EngineManager()
     window.core.modelManager = new ModelManager()
