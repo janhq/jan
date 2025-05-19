@@ -77,6 +77,7 @@ export interface ModelInfo {
   name: string;          // human‑readable, e.g., "Qwen3 4B Q4_0"
   quant_type?: string;    // q4_0 (optional as it might be part of ID or name)
   providerId: string;    // e.g. "llama.cpp"
+  port: number;
   sizeBytes: number;
   tags?: string[];
   path?: string;          // Absolute path to the model file, if applicable
@@ -106,24 +107,38 @@ export interface PullResult {
 }
 
 // 3. /load
-export interface LoadOptions {
-  providerId: string;
-  modelPath: string;
-  /** any provider‑specific tuning options for llama.cpp server */
-  options?: {
-    port?: number; // 0 means dynamic port
-    n_gpu_layers?: number;
-    n_ctx?: number; // context size
-    // ... other llama-cpp-python or llama.cpp server flags
-    [key: string]: any;
-  };
+export interface loadOptions {
+  modelPath: string
+  port?: number
+  n_gpu_layers?: number
+  n_ctx?: number
+  threads?: number
+  threads_batch?: number
+  ctx_size?: number
+  n_predict?: number
+  batch_size?: number
+  ubatch_size?: number
+  device?: string
+  split_mode?: string
+  main_gpu?: number
+  flash_attn?: boolean
+  cont_batching?: boolean
+  no_mmap?: boolean
+  mlock?: boolean
+  no_kv_offload?: boolean
+  cache_type_k?: string
+  cache_type_v?: string
+  defrag_thold?: number
+  rope_scaling?: string
+  rope_scale?: number
+  rope_freq_base?: number
+  rope_freq_scale?: number
 }
 
 export interface SessionInfo {
   sessionId: string;    // opaque handle for unload/chat
   port: number;       // llama-server output port (corrected from portid)
   modelPath: string;    // path of the loaded model
-  providerId: string;
   settings: Record<string, unknown>; // The actual settings used to load
 }
 
