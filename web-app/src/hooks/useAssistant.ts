@@ -9,7 +9,7 @@ export type Assistant = {
   created_at: number
   description?: string
   instructions: string
-  parameters: Record<string, string>
+  parameters: Record<string, unknown>
 }
 
 interface AssistantState {
