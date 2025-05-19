@@ -24,19 +24,7 @@ export const fetchThreads = async (): Promise<Thread[]> => {
               id: e.assistants?.[0]?.model?.id,
               provider: e.assistants?.[0]?.model?.engine,
             },
-            assistants: e.assistants?.map((assistant) => ({
-              id: assistant.assistant_id,
-              name: assistant.assistant_name,
-              model: {
-                id: assistant.model?.id,
-                provider: assistant.model?.engine,
-              },
-              description: '',
-              icon: '',
-              instructions: assistant.instructions,
-              created_at: Date.now(),
-              parameters: {},
-            })) ?? [defaultAssistant],
+            assistants: e.assistants ?? [defaultAssistant],
           } as Thread
         })
       })
@@ -64,8 +52,8 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
               id: thread.model?.id ?? '*',
               engine: thread.model?.provider ?? 'llama.cpp',
             },
-            assistant_id: 'jan',
-            assistant_name: 'Jan',
+            id: 'jan',
+            name: 'Jan',
           },
         ],
         metadata: {
@@ -81,19 +69,7 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
             provider: e.assistants?.[0]?.model?.engine,
           },
           order: 1,
-          assistants: e.assistants?.map((assistant) => ({
-            id: assistant.assistant_id,
-            name: assistant.assistant_name,
-            model: {
-              id: assistant.model?.id,
-              provider: assistant.model?.engine,
-            },
-            description: '',
-            icon: '',
-            instructions: assistant.instructions,
-            created_at: Date.now(),
-            parameters: {},
-          })) ?? [defaultAssistant],
+          assistants: e.assistants ?? [defaultAssistant],
         } as Thread
       })
       .catch(() => thread) ?? thread
@@ -115,8 +91,8 @@ export const updateThread = (thread: Thread) => {
             id: thread.model?.id ?? '*',
             engine: thread.model?.provider ?? 'llama.cpp',
           },
-          assistant_id: e.id ?? e.assistant_id,
-          assistant_name: e.name ?? e.assistant_name,
+          id: e.id,
+          name: e.name,
           instructions: e.instructions,
         }
       }) ?? [
@@ -125,8 +101,8 @@ export const updateThread = (thread: Thread) => {
             id: thread.model?.id ?? '*',
             engine: thread.model?.provider ?? 'llama.cpp',
           },
-          assistant_id: 'jan',
-          assistant_name: 'Jan',
+          id: 'jan',
+          name: 'Jan',
         },
       ],
       metadata: {

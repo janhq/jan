@@ -97,8 +97,8 @@ pub struct ImageContentValue {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ThreadAssistantInfo {
-    pub assistant_id: String,
-    pub assistant_name: String,
+    pub id: String,
+    pub name: String,
     pub model: ModelInfo,
     pub instructions: Option<String>,
     pub tools: Option<Vec<AssistantTool>>,
@@ -456,16 +456,16 @@ pub async fn modify_thread_assistant<R: Runtime>(
         serde_json::from_str(&data).map_err(|e| e.to_string())?
     };
     let assistant_id = assistant
-        .get("assistant_id")
+        .get("id")
         .and_then(|v| v.as_str())
-        .ok_or("Missing assistant_id")?;
+        .ok_or("Missing id")?;
     if let Some(assistants) = thread
         .get_mut("assistants")
         .and_then(|a: &mut serde_json::Value| a.as_array_mut())
     {
         if let Some(index) = assistants
             .iter()
-            .position(|a| a.get("assistant_id").and_then(|v| v.as_str()) == Some(assistant_id))
+            .position(|a| a.get("id").and_then(|v| v.as_str()) == Some(assistant_id))
         {
             assistants[index] = assistant.clone();
             let data = serde_json::to_string_pretty(&thread).map_err(|e| e.to_string())?;

@@ -27,8 +27,8 @@ export type Thread = {
  * @stored
  */
 export type ThreadAssistantInfo = {
-  assistant_id: string
-  assistant_name: string
+  id: string
+  name: string
   model: ModelInfo
   instructions?: string
   tools?: AssistantTool[]
