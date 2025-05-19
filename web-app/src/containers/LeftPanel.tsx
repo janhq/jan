@@ -290,7 +290,7 @@ const LeftPanel = () => {
                 </>
               )}
 
-              <div className="flex flex-col mb-4">
+              <div className="flex flex-col">
                 <ThreadList threads={unFavoritedThreads} />
               </div>
             </div>
