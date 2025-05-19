@@ -21,22 +21,6 @@
     "prebuild": "rimraf dist",
     "build": "tsc -p . && rolldown -c rolldown.config.mjs"
   },
-  "exports": {
-    ".": "./dist/index.js",
-    "./node": "./dist/node/index.cjs.js"
-  },
-  "typesVersions": {
-    "*": {
-      ".": [
-        "./dist/index.js.map",
-        "./dist/types/index.d.ts"
-      ],
-      "node": [
-        "./dist/node/index.cjs.js.map",
-        "./dist/types/node/index.d.ts"
-      ]
-    }
-  },
   "devDependencies": {
     "@npmcli/arborist": "^7.1.0",
     "@types/jest": "^29.5.14",
