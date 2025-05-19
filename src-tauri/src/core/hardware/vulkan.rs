@@ -1,8 +1,4 @@
-use vulkano::{
-    instance::{Instance, InstanceCreateInfo},
-    memory::MemoryHeapFlags,
-    VulkanLibrary,
-};
+use ash::{vk, Entry};
 
 #[derive(Debug)]
 pub struct VulkanInfo {
@@ -81,47 +77,90 @@ pub fn get_vulkan_gpus() -> Vec<VulkanInfo> {
     }
 }
 
+fn parse_c_string(buf: &[i8]) -> String {
+    unsafe { std::ffi::CStr::from_ptr(buf.as_ptr()) }
+        .to_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
 fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Error>> {
-    let library = VulkanLibrary::new()?;
-    let instance = Instance::new(library, InstanceCreateInfo::default())?;
+    // let entry = unsafe { Entry::load()? };
+    let entry =
+        unsafe { Entry::load_from("/opt/homebrew/Cellar/molten-vk/1.3.0/lib/libMoltenVK.dylib")? };
+    let app_info = vk::ApplicationInfo {
+        api_version: vk::make_api_version(0, 1, 1, 0),
+        ..Default::default()
+    };
+    let create_info = vk::InstanceCreateInfo {
+        p_application_info: &app_info,
+        ..Default::default()
+    };
+    let instance = unsafe { entry.create_instance(&create_info, None)? };
 
     let mut device_info_list = vec![];
-    for (i, device) in instance.enumerate_physical_devices()?.enumerate() {
-        let total_memory = device
-            .memory_properties()
+
+    for (i, device) in unsafe { instance.enumerate_physical_devices()? }
+        .iter()
+        .enumerate()
+    {
+        // create a chain of properties struct for VkPhysicalDeviceProperties2(3)
+        // https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDeviceProperties2.html
+        // props2 -> driver_props -> id_props -> memory_props
+        let mut mem_props = vk::PhysicalDeviceMemoryBudgetPropertiesEXT::default();
+        let mut id_props = vk::PhysicalDeviceIDProperties {
+            p_next: &mut mem_props as *mut _ as *mut std::ffi::c_void,
+            ..Default::default()
+        };
+        let mut driver_props = vk::PhysicalDeviceDriverProperties {
+            p_next: &mut id_props as *mut _ as *mut std::ffi::c_void,
+            ..Default::default()
+        };
+        let mut props2 = vk::PhysicalDeviceProperties2 {
+            p_next: &mut driver_props as *mut _ as *mut std::ffi::c_void,
+            ..Default::default()
+        };
+        unsafe {
+            instance.get_physical_device_properties2(*device, &mut props2);
+        }
+
+        let props = props2.properties;
+        if props.device_type == vk::PhysicalDeviceType::CPU {
+            continue;
+        }
+
+        let mut memory_info = super::MemoryInfo { total: 0, used: 0 };
+        for (heap_idx, heap) in unsafe { instance.get_physical_device_memory_properties(*device) }
             .memory_heaps
             .iter()
-            // Vulkan may include host (CPU) memory
-            .filter(|heap| heap.flags.contains(MemoryHeapFlags::DEVICE_LOCAL))
-            .map(|heap| heap.size)
-            .sum::<u64>()
-            / (1024 * 1024); // convert to MiB
+            .enumerate()
+        {
+            if heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL) {
+                memory_info.total += heap.size / (1024 * 1024); // convert to MiB
+                memory_info.used += mem_props.heap_usage[heap_idx] / (1024 * 1024);
+            }
+        }
 
-        // TODO: used memory, we can use heap_budget. but it seems like vulkano does not expose it
-
-        let props = device.properties();
         let device_info = VulkanInfo {
-            name: props.device_name.clone(),
+            name: parse_c_string(&props.device_name),
             index: i as u64, // do we need this?
-            memory: super::MemoryInfo {
-                total: total_memory,
-                used: 0,
-            },
+            memory: memory_info,
             vendor: parse_vendor_id(props.vendor_id),
-            uuid: props
-                .device_uuid
-                .map(|bytes| parse_uuid(&bytes))
-                .unwrap_or_default(),
+            uuid: parse_uuid(&id_props.device_uuid),
             device_type: format!("{:?}", props.device_type),
             device_id: props.device_id,
-            driver_version: props.driver_info.clone().unwrap_or_default(),
+            driver_version: parse_c_string(&driver_props.driver_info),
             api_version: format!(
                 "{}.{}.{}",
-                props.api_version.major, props.api_version.minor, props.api_version.patch
+                vk::api_version_major(props.api_version),
+                vk::api_version_minor(props.api_version),
+                vk::api_version_patch(props.api_version)
             ),
         };
         device_info_list.push(device_info);
     }
+
+    unsafe { instance.destroy_instance(None) };
 
     Ok(device_info_list)
 }
