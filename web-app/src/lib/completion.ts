@@ -177,7 +177,10 @@ export const stopModel = async (
  * @param tools
  * @returns
  */
-export const normalizeTools = (tools: MCPTool[]): ChatCompletionTool[] => {
+export const normalizeTools = (
+  tools: MCPTool[]
+): ChatCompletionTool[] | undefined => {
+  if (tools.length === 0) return undefined
   return tools.map((tool) => ({
     type: 'function',
     function: {

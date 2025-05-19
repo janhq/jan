@@ -50,6 +50,7 @@ pub fn run() {
             core::cmd::get_tools,
             core::cmd::call_tool,
             core::mcp::restart_mcp_servers,
+            core::mcp::get_connected_servers,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,
