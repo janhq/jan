@@ -8,7 +8,6 @@
 
 import {
   AIEngine,
-  localProvider,
   getJanDataFolderPath,
   fs,
   Model,
@@ -64,7 +63,7 @@ function parseGGUFFileName(filename: string): {
  */
 export default class inference_llamacpp_extension
   extends AIEngine
-  implements localProvider
+  implements LocalProvider
 {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamcpp'
@@ -136,7 +135,7 @@ export default class inference_llamacpp_extension
       for (const entry of entries) {
         if (entry.name?.endsWith('.gguf') && entry.isFile) {
           const modelPath = await path.join(modelsDir, entry.name)
-          const stats = await fs.stat(modelPath) // Tauri's fs.stat or Node's fs.statSync
+          const stats = await fs.stat(modelPath)
           const parsedName = parseGGUFFileName(entry.name)
 
           result.push({
@@ -170,7 +169,7 @@ export default class inference_llamacpp_extension
     // TODO: implement abortPull
   }
 
-  async loadModel(opts: LoadOptions): Promise<SessionInfo> {
+  async load(opts: LoadOptions): Promise<SessionInfo> {
     if (opts.providerId !== this.providerId) {
       throw new Error('Invalid providerId for LlamaCppProvider.loadModel')
     }
@@ -232,7 +231,7 @@ export default class inference_llamacpp_extension
     }
   }
 
-  async unloadModel(opts: UnloadOptions): Promise<UnloadResult> {
+  async unload(opts: UnloadOptions): Promise<UnloadResult> {
     if (opts.providerId !== this.providerId) {
       return { success: false, error: 'Invalid providerId' }
     }
@@ -292,7 +291,7 @@ export default class inference_llamacpp_extension
       `[${this.providerId} AIEngine] Received OnModelInit for:`,
       model.id
     )
-    return super.loadModel(model)
+    return super.load(model)
   }
 
   override async unloadModel(model?: Model): Promise<any> {
@@ -302,6 +301,6 @@ export default class inference_llamacpp_extension
       `[${this.providerId} AIEngine] Received OnModelStop for:`,
       model?.id || 'all models'
     )
-    return super.unloadModel(model)
+    return super.unload(model)
   }
 }
