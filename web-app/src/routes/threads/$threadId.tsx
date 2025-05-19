@@ -16,6 +16,7 @@ import { useMessages } from '@/hooks/useMessages'
 import { fetchMessages } from '@/services/messages'
 import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
+import { useAssistant } from '@/hooks/useAssistant'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -28,6 +29,7 @@ function ThreadDetail() {
   const [isAtBottom, setIsAtBottom] = useState(true)
   const lastScrollTopRef = useRef(0)
   const { currentThreadId, getThreadById, setCurrentThreadId } = useThreads()
+  const { setCurrentAssistant, assistants } = useAssistant()
   const { setMessages } = useMessages()
   const { streamingContent, loadingModel } = useAppState()
 
@@ -45,9 +47,16 @@ function ThreadDetail() {
   const isFirstRender = useRef(true)
 
   useEffect(() => {
-    if (currentThreadId !== threadId) setCurrentThreadId(threadId)
+    if (currentThreadId !== threadId) {
+      setCurrentThreadId(threadId)
+      const assistant = assistants.find(
+        (assistant) => assistant.id === thread?.assistants?.[0]?.id
+      )
+      if (assistant) setCurrentAssistant(assistant)
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, currentThreadId])
+  }, [threadId, currentThreadId, assistants])
 
   useEffect(() => {
     fetchMessages(threadId).then((fetchedMessages) => {

@@ -82,11 +82,11 @@ export const updateThread = (thread: Thread) => {
     .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
     ?.modifyThread({
       ...thread,
-      assistants: [
+      assistants: thread.assistants ?? [
         {
           model: {
             id: thread.model?.id ?? '*',
-            engine: (thread.model?.provider ?? 'llama.cpp'),
+            engine: thread.model?.provider ?? 'llama.cpp',
           },
           assistant_id: 'jan',
           assistant_name: 'Jan',

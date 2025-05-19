@@ -20,6 +20,7 @@ type ThreadState = {
   createThread: (model: ThreadModel, title?: string) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
+  updateCurrentThreadAssistant: (assistant: Assistant) => void
   searchIndex: Fuse<Thread> | null
 }
 
@@ -163,7 +164,6 @@ export const useThreads = create<ThreadState>()(
         set((state) => ({
           searchIndex: new Fuse(Object.values(state.threads), fuseOptions),
         }))
-        console.log('newThread', newThread)
         return await createThread(newThread).then((createdThread) => {
           set((state) => ({
             threads: {
@@ -173,6 +173,23 @@ export const useThreads = create<ThreadState>()(
             currentThreadId: createdThread.id,
           }))
           return createdThread
+        })
+      },
+      updateCurrentThreadAssistant: (assistant) => {
+        set((state) => {
+          if (!state.currentThreadId) return { ...state }
+          const currentThread = state.getCurrentThread()
+          if (currentThread)
+            updateThread({ ...currentThread, assistants: [assistant] })
+          return {
+            threads: {
+              ...state.threads,
+              [state.currentThreadId as string]: {
+                ...state.threads[state.currentThreadId as string],
+                assistants: [assistant],
+              },
+            },
+          }
         })
       },
       updateCurrentThreadModel: (model) => {

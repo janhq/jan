@@ -15,6 +15,8 @@ type SearchParams = {
   }
 }
 import DropdownAssistant from '@/containers/DropdownAssistant'
+import { useEffect } from 'react'
+import { useThreads } from '@/hooks/useThreads'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -28,6 +30,7 @@ function Index() {
   const { providers } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const selectedModel = search.model
+  const { setCurrentThreadId } = useThreads()
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp
@@ -36,6 +39,10 @@ function Index() {
       provider.api_key?.length ||
       (provider.provider === 'llama.cpp' && provider.models.length)
   )
+
+  useEffect(() => {
+    setCurrentThreadId(undefined)
+  }, [setCurrentThreadId])
 
   if (!hasValidProviders) {
     return <SetupScreen />
