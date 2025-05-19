@@ -91,7 +91,6 @@
       "binaries/**/*"
     ],
     "externalBin": [
-      "binaries/cortex-server",
       "resources/bin/bun",
       "resources/bin/uv"
     ],
