@@ -63,7 +63,7 @@ pub async fn run_mcp_commands(
                 });
 
                 let service =
-                    ().serve(TokioChildProcess::new(&mut cmd).map_err(|e| e.to_string())?)
+                    ().serve(TokioChildProcess::new(cmd).map_err(|e| e.to_string())?)
                         .await
                         .map_err(|e| e.to_string())?;
 
