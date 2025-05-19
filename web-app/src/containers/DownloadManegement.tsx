@@ -125,7 +125,7 @@ export function DownloadManagement() {
               <div className="mt-2 flex items-center justify-between space-x-2">
                 <Progress value={overallProgress * 100} />
                 <span className="text-xs font-medium text-main-view-fg/80 shrink-0">
-                  {overallProgress.toFixed(2)}%
+                  {Math.round(overallProgress * 100)}%
                 </span>
               </div>
             </div>
@@ -175,7 +175,7 @@ export function DownloadManagement() {
                     />
                     <p className="text-main-view-fg/60 text-xs">
                       {`${renderGB(download.current)} / ${renderGB(download.total)}`}{' '}
-                      GB ({download.progress.toFixed(2)}%)
+                      GB ({Math.round(download.progress * 100)}%)
                     </p>
                   </div>
                 ))}

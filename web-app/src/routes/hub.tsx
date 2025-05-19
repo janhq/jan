@@ -1,9 +1,10 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
-import { useState, useMemo, useEffect, ChangeEvent } from 'react'
+import { useState, useMemo, useEffect, ChangeEvent, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
@@ -18,6 +19,15 @@ import {
 import { downloadModel } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
+
+type ModelProps = {
+  model: {
+    id: string
+    models: {
+      id: string
+    }[]
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.hub as any)({
@@ -93,14 +103,26 @@ function Hub() {
     [downloads]
   )
 
-  interface ModelProps {
-    model: {
-      id: string
-      models: {
-        id: string
-      }[]
-    }
-  }
+  const { getProviderByName } = useModelProvider()
+  const llamaProvider = getProviderByName('llama.cpp')
+
+  const navigate = useNavigate()
+
+  const handleUseModel = useCallback(
+    (modelId: string) => {
+      navigate({
+        to: route.home,
+        params: {},
+        search: {
+          model: {
+            id: modelId,
+            provider: 'llama.cpp',
+          },
+        },
+      })
+    },
+    [navigate]
+  )
 
   const DownloadButtonPlaceholder = useMemo(() => {
     return ({ model }: ModelProps) => {
@@ -108,6 +130,9 @@ function Hub() {
       const isDownloading = downloadProcesses.some((e) => e.id === modelId)
       const downloadProgress =
         downloadProcesses.find((e) => e.id === modelId)?.progress || 0
+      const isDownloaded = llamaProvider?.models.some(
+        (m: { id: string }) => m.id === modelId
+      )
 
       return (
         <>
@@ -118,13 +143,19 @@ function Hub() {
                 {Math.round(downloadProgress * 100)}%
               </span>
             </div>
+          ) : isDownloaded ? (
+            <Button size="sm" onClick={() => handleUseModel(modelId)}>
+              Use
+            </Button>
           ) : (
-            <Button onClick={() => downloadModel(modelId)}>Download</Button>
+            <Button size="sm" onClick={() => downloadModel(modelId)}>
+              Download
+            </Button>
           )}
         </>
       )
     }
-  }, [downloadProcesses])
+  }, [downloadProcesses, llamaProvider?.models, handleUseModel])
 
   return (
     <div className="flex h-full w-full">
@@ -282,20 +313,50 @@ function Hub() {
                                       downloadProcesses.find(
                                         (e) => e.id === variant.id
                                       )?.progress || 0
+                                    const isDownloaded =
+                                      llamaProvider?.models.some(
+                                        (m: { id: string }) =>
+                                          m.id === variant.id
+                                      )
 
-                                    return isDownloading ? (
-                                      <>
-                                        <div className="flex items-center gap-2 w-20">
-                                          <Progress
-                                            value={downloadProgress * 100}
-                                          />
-                                          <span className="text-xs text-center text-main-view-fg/70">
-                                            {Math.round(downloadProgress * 100)}
-                                            %
-                                          </span>
+                                    if (isDownloading) {
+                                      return (
+                                        <>
+                                          <div className="flex items-center gap-2 w-20">
+                                            <Progress
+                                              value={downloadProgress * 100}
+                                            />
+                                            <span className="text-xs text-center text-main-view-fg/70">
+                                              {Math.round(
+                                                downloadProgress * 100
+                                              )}
+                                              %
+                                            </span>
+                                          </div>
+                                        </>
+                                      )
+                                    }
+
+                                    if (isDownloaded) {
+                                      return (
+                                        <div
+                                          className="flex items-center justify-center rounded bg-main-view-fg/10"
+                                          title="Use this model"
+                                        >
+                                          <Button
+                                            variant="link"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleUseModel(variant.id)
+                                            }
+                                          >
+                                            Use
+                                          </Button>
                                         </div>
-                                      </>
-                                    ) : (
+                                      )
+                                    }
+
+                                    return (
                                       <div
                                         className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                                         title="Download model"
