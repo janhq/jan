@@ -38,8 +38,6 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       setCorsEnabled: (value) => set({ corsEnabled: value }),
       verboseLogs: true,
       setVerboseLogs: (value) => set({ verboseLogs: value }),
-      serverStatus: 'stopped',
-      setServerStatus: (value) => set({ serverStatus: value }),
     }),
     {
       name: localStoregeKey.settingLocalApiServer,
