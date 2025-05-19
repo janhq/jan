@@ -3,7 +3,7 @@
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import {
@@ -20,23 +20,14 @@ import {
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import {
-  emptyThreadContent,
-  newAssistantThreadContent,
-  newUserThreadContent,
-  sendCompletion,
-  startModel,
-} from '@/lib/completion'
-import { useThreads } from '@/hooks/useThreads'
-import { defaultModel } from '@/lib/models'
-import { useMessages } from '@/hooks/useMessages'
-import { useRouter } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
+
 import { useAppState } from '@/hooks/useAppState'
 import { MovingBorder } from './MovingBorder'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { getTools } from '@/services/mcp'
+import { useChat } from '@/hooks/useChat'
 
 type ChatInputProps = {
   className?: string
@@ -47,26 +38,14 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const [tools, setTools] = useState<MCPTool[]>([])
+  const { streamingContent, updateTools } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
   const maxRows = 10
 
-  const { getProviderByName, selectedModel, selectedProvider } =
-    useModelProvider()
-
-  const { getCurrentThread: retrieveThread, createThread } = useThreads()
-  const { streamingContent, updateStreamingContent } = useAppState()
-
-  const { addMessage } = useMessages()
-
-  const router = useRouter()
-  const { updateLoadingModel } = useAppState()
-
-  const provider = useMemo(() => {
-    return getProviderByName(selectedProvider)
-  }, [selectedProvider, getProviderByName])
+  const { selectedModel } = useModelProvider()
+  const { sendMessage } = useChat()
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -91,124 +70,26 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
   }, [])
 
   useEffect(() => {
-    window.core?.api?.getTools().then((data: MCPTool[]) => {
-      setTools(data)
-    })
+    function setTools() {
+      getTools().then((data: MCPTool[]) => {
+        updateTools(data)
+      })
+    }
+    setTools()
 
     let unsubscribe = () => {}
-    listen(SystemEvent.MCP_UPDATE, () => {
-      window.core?.api?.getTools().then((data: MCPTool[]) => {
-        setTools(data)
-      })
-    }).then((unsub) => {
+    listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
     })
-    return () => {
-      unsubscribe()
-    }
-  }, [])
+    return unsubscribe
+  }, [updateTools])
 
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus()
     }
   }, [])
-
-  const getCurrentThread = useCallback(async () => {
-    let currentThread = retrieveThread()
-    if (!currentThread) {
-      currentThread = await createThread(
-        {
-          id: selectedModel?.id ?? defaultModel(selectedProvider),
-          provider: selectedProvider,
-        },
-        prompt
-      )
-      router.navigate({
-        to: route.threadsDetail,
-        params: { threadId: currentThread.id },
-      })
-    }
-    return currentThread
-  }, [
-    createThread,
-    prompt,
-    retrieveThread,
-    router,
-    selectedModel?.id,
-    selectedProvider,
-  ])
-
-  const sendMessage = useCallback(async () => {
-    const activeThread = await getCurrentThread()
-
-    if (!activeThread || !provider) return
-
-    updateStreamingContent(emptyThreadContent)
-
-    addMessage(newUserThreadContent(activeThread.id, prompt))
-    setPrompt('')
-    try {
-      if (selectedModel?.id) {
-        updateLoadingModel(true)
-        await startModel(provider.provider, selectedModel.id).catch(
-          console.error
-        )
-        updateLoadingModel(false)
-      }
-
-      const completion = await sendCompletion(
-        activeThread,
-        provider,
-        prompt,
-        tools
-      )
-
-      if (!completion) throw new Error('No completion received')
-      let accumulatedText = ''
-      try {
-        for await (const part of completion) {
-          const delta = part.choices[0]?.delta?.content || ''
-          if (delta) {
-            accumulatedText += delta
-            // Create a new object each time to avoid reference issues
-            // Use a timeout to prevent React from batching updates too quickly
-            const currentContent = newAssistantThreadContent(
-              activeThread.id,
-              accumulatedText
-            )
-            updateStreamingContent(currentContent)
-            await new Promise((resolve) => setTimeout(resolve, 0))
-          }
-        }
-      } catch (error) {
-        console.error('Error during streaming:', error)
-      } finally {
-        // Create a final content object for adding to the thread
-        if (accumulatedText) {
-          const finalContent = newAssistantThreadContent(
-            activeThread.id,
-            accumulatedText
-          )
-          addMessage(finalContent)
-        }
-      }
-    } catch (error) {
-      console.error('Error sending message:', error)
-    }
-    updateStreamingContent(undefined)
-  }, [
-    getCurrentThread,
-    provider,
-    updateStreamingContent,
-    addMessage,
-    prompt,
-    setPrompt,
-    selectedModel,
-    tools,
-    updateLoadingModel,
-  ])
 
   return (
     <div className="relative">
@@ -252,7 +133,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
               if (e.key === 'Enter' && !e.shiftKey && prompt) {
                 e.preventDefault()
                 // Submit the message when Enter is pressed without Shift
-                sendMessage()
+                sendMessage(prompt)
                 // When Shift+Enter is pressed, a new line is added (default behavior)
               }
             }}
@@ -337,7 +218,7 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
               variant={!prompt ? null : 'default'}
               size="icon"
               disabled={!prompt}
-              onClick={sendMessage}
+              onClick={() => sendMessage(prompt)}
             >
               {streamingContent ? (
                 <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />

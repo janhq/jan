@@ -97,3 +97,43 @@ export const updateModel = async (
     throw error
   }
 }
+
+/**
+ * Downloads a model.
+ * @param model The model to download.
+ * @returns A promise that resolves when the model download task is created.
+ */
+export const downloadModel = async (id: string) => {
+  const extension = ExtensionManager.getInstance().get<ModelExtension>(
+    ExtensionTypeEnum.Model
+  )
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    return await extension.pullModel(id)
+  } catch (error) {
+    console.error('Failed to download model:', error)
+    throw error
+  }
+}
+
+/**
+ * Aborts a model download.
+ * @param id
+ * @returns
+ */
+export const abortDownload = async (id: string) => {
+  const extension = ExtensionManager.getInstance().get<ModelExtension>(
+    ExtensionTypeEnum.Model
+  )
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    return await extension.cancelModelPull(id)
+  } catch (error) {
+    console.error('Failed to abort model download:', error)
+    throw error
+  }
+}

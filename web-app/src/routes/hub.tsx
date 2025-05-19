@@ -15,6 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { downloadModel } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.hub as any)({
@@ -79,7 +80,7 @@ function Hub() {
   return (
     <div className="flex h-full w-full">
       <div className="flex flex-col h-full w-full">
-        <div className="px-4 py-3 border-b border-main-view-fg/5 h-10 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-main-view-fg/5 h-10 flex items-center justify-between relative z-20">
           <div className="flex items-center gap-2">
             <IconSearch className="text-main-view-fg/60" size={14} />
             <input
@@ -153,7 +154,13 @@ function Hub() {
                               <span className="text-main-view-fg/70 font-medium text-xs">
                                 {toGigabytes(model.models?.[0]?.size)}
                               </span>
-                              <Button>Download</Button>
+                              <Button
+                                onClick={() =>
+                                  downloadModel(model.models[0]?.id)
+                                }
+                              >
+                                Download
+                              </Button>
                             </div>
                           </div>
                         }
@@ -232,6 +239,9 @@ function Hub() {
                                         <div
                                           className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                                           title="Edit All Servers JSON"
+                                          onClick={() =>
+                                            downloadModel(variant.id)
+                                          }
                                         >
                                           <IconDownload
                                             size={16}

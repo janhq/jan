@@ -8,6 +8,7 @@ import { SliderControl } from '@/containers/dynamicControllerSetting/SliderContr
 type DynamicControllerProps = {
   key?: string
   title?: string
+  className?: string
   description?: string
   controllerType: 'input' | 'checkbox' | 'dropdown' | 'textarea' | 'slider'
   controllerProps: {
@@ -25,6 +26,7 @@ type DynamicControllerProps = {
 }
 
 export function DynamicControllerSetting({
+  className,
   controllerType,
   controllerProps,
   onChange,
@@ -36,6 +38,7 @@ export function DynamicControllerSetting({
         placeholder={controllerProps.placeholder}
         value={(controllerProps.value as string) || ''}
         inputActions={controllerProps.input_actions}
+        className={className}
         onChange={(newValue) => onChange(newValue)}
       />
     )

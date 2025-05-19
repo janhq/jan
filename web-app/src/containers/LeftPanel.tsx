@@ -8,6 +8,7 @@ import {
   IconSettingsFilled,
   IconTrash,
   IconStar,
+  IconMessageFilled,
   IconAppsFilled,
   IconX,
   IconSearch,
@@ -50,9 +51,6 @@ const mainMenus = [
     icon: IconAppsFilled,
     route: route.hub,
   },
-]
-
-const secondaryMenus = [
   {
     title: 'common.settings',
     icon: IconSettingsFilled,
@@ -89,6 +87,8 @@ const LeftPanel = () => {
 
   const [openDropdown, setOpenDropdown] = useState(false)
 
+  console.log(threads)
+
   return (
     <aside
       className={cn(
@@ -98,7 +98,7 @@ const LeftPanel = () => {
     >
       <div className="relative h-8">
         <button
-          className="absolute top-1/2 right-0 -translate-y-1/2"
+          className="absolute top-1/2 right-0 -translate-y-1/2 z-20"
           onClick={() => setLeftPanel(!open)}
         >
           <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out">
@@ -109,23 +109,7 @@ const LeftPanel = () => {
 
       <div className="flex flex-col justify-between h-[calc(100%-32px)] mt-0">
         <div className="flex flex-col justify-between h-full">
-          <div className="mt-2 mb-4 space-y-1">
-            {mainMenus.map((menu) => {
-              return (
-                <Link
-                  key={menu.title}
-                  to={menu.route}
-                  className="flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded [&.active]:bg-left-panel-fg/10"
-                >
-                  <menu.icon size={18} className="text-left-panel-fg/70" />
-                  <span className="font-medium text-left-panel-fg/90">
-                    {t(menu.title)}
-                  </span>
-                </Link>
-              )
-            })}
-          </div>
-          <div className="relative mb-4 mx-1">
+          <div className="relative mb-4 mx-1 mt-2">
             <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
             <input
               type="text"
@@ -275,6 +259,33 @@ const LeftPanel = () => {
                 </div>
               )}
 
+              {filteredThreads.length === 0 && searchTerm.length > 0 && (
+                <div className="px-1 mt-2">
+                  <div className="flex items-center gap-1 text-left-panel-fg/80">
+                    <IconSearch size={18} />
+                    <h6 className="font-medium text-base">No results found</h6>
+                  </div>
+                  <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
+                    We couldn't find any chats matching your search. Try a
+                    different keyword.
+                  </p>
+                </div>
+              )}
+
+              {Object.keys(threads).length === 0 && !searchTerm && (
+                <>
+                  <div className="px-1 mt-2">
+                    <div className="flex items-center gap-1 text-left-panel-fg/80">
+                      <IconMessageFilled size={18} />
+                      <h6 className="font-medium text-base">No threads yet</h6>
+                    </div>
+                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
+                      Start a new conversation to see your thread history here.
+                    </p>
+                  </div>
+                </>
+              )}
+
               <div className="flex flex-col mb-4">
                 <ThreadList threads={unFavoritedThreads} />
               </div>
@@ -282,7 +293,7 @@ const LeftPanel = () => {
           </div>
 
           <div className="space-y-1 py-1 mt-2">
-            {secondaryMenus.map((menu) => {
+            {mainMenus.map((menu) => {
               const isActive =
                 currentPath.includes(route.settings.index) &&
                 menu.route.includes(route.settings.index)

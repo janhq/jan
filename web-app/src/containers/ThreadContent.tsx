@@ -1,6 +1,6 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
-import { Fragment, memo, useMemo, useState } from 'react'
+import { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import {
   IconCopy,
   IconCopyCheck,
@@ -9,9 +9,11 @@ import {
   IconPencil,
 } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
-import ThinkingBlock from './ThinkingBlock'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
+import ThinkingBlock from '@/containers/ThinkingBlock'
+import ToolCallBlock from '@/containers/ToolCallBlock'
+import { useChat } from '@/hooks/useChat'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -24,7 +26,7 @@ const CopyButton = ({ text }: { text: string }) => {
 
   return (
     <button
-      className="flex items-center gap-1 hover:text-accent transition-colors group relative"
+      className="flex items-center gap-1 hover:text-accent transition-colors group relative cursor-pointer"
       onClick={handleCopy}
     >
       {copied ? (
@@ -79,7 +81,24 @@ export const ThreadContent = memo(
       }
     }, [text])
 
-    const { deleteMessage } = useMessages()
+    const { getMessages, deleteMessage } = useMessages()
+    const { sendMessage } = useChat()
+
+    const regenerate = useCallback(() => {
+      // Only regenerate assistant message is allowed
+      deleteMessage(item.thread_id, item.id)
+      const threadMessages = getMessages(item.thread_id)
+      const lastMessage = threadMessages[threadMessages.length - 1]
+      if (!lastMessage) return
+      deleteMessage(lastMessage.thread_id, lastMessage.id)
+      sendMessage(lastMessage.content?.[0]?.text?.value || '')
+    }, [deleteMessage, getMessages, item, sendMessage])
+
+    const isToolCalls =
+      item.metadata &&
+      'tool_calls' in item.metadata &&
+      Array.isArray(item.metadata.tool_calls) &&
+      item.metadata.tool_calls.length
 
     return (
       <Fragment>
@@ -124,41 +143,59 @@ export const ThreadContent = memo(
                 text={reasoningSegment}
               />
             )}
+
             <RenderMarkdown content={textSegment} components={linkComponents} />
-            <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
-              <div
-                className={cn(
-                  'flex items-center gap-2',
-                  item.isLastMessage &&
-                    streamingContent &&
-                    'opacity-0 visinility-hidden pointer-events-none'
-                )}
-              >
-                <CopyButton text={item.content?.[0]?.text.value || ''} />
-                <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                  onClick={() => {
-                    deleteMessage(item.thread_id, item.id)
-                  }}
+
+            {isToolCalls && item.metadata?.tool_calls ? (
+              <>
+                {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
+                  <ToolCallBlock
+                    id={toolCall.tool?.id ?? 0}
+                    name={toolCall.tool?.function?.name ?? ''}
+                    key={toolCall.tool?.id}
+                    result={JSON.stringify(toolCall.response)}
+                    loading={toolCall.state === 'pending'}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {!isToolCalls && (
+              <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
+                <div
+                  className={cn(
+                    'flex items-center gap-2',
+                    item.isLastMessage &&
+                      streamingContent &&
+                      'opacity-0 visinility-hidden pointer-events-none'
+                  )}
                 >
-                  <IconTrash size={16} />
-                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                    Delete
-                  </span>
-                </button>
-                <button
-                  className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                  onClick={() => {
-                    console.log('Regenerate clicked')
-                  }}
-                >
-                  <IconRefresh size={16} />
-                  <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
-                    Regenerate
-                  </span>
-                </button>
+                  <CopyButton text={item.content?.[0]?.text.value || ''} />
+                  <button
+                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                    onClick={() => {
+                      deleteMessage(item.thread_id, item.id)
+                    }}
+                  >
+                    <IconTrash size={16} />
+                    <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                      Delete
+                    </span>
+                  </button>
+                  {item.isLastMessage && (
+                    <button
+                      className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                      onClick={regenerate}
+                    >
+                      <IconRefresh size={16} />
+                      <span className="opacity-0 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto group-hover:opacity-100 transition-all duration-300 ease-in-out">
+                        Regenerate
+                      </span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
         {item.type === 'image_url' && image && (

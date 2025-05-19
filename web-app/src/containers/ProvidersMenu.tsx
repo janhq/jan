@@ -4,7 +4,11 @@ import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useNavigate, useMatches, Link } from '@tanstack/react-router'
 import { IconArrowLeft } from '@tabler/icons-react'
 
-const ProvidersMenu = () => {
+const ProvidersMenu = ({
+  stepSetupRemoteProvider,
+}: {
+  stepSetupRemoteProvider: boolean
+}) => {
   const { providers } = useModelProvider()
   const navigate = useNavigate()
   const matches = useMatches()
@@ -17,40 +21,51 @@ const ProvidersMenu = () => {
           <span className="text-main-view-fg/80">Back</span>
         </div>
       </Link>
-      {providers.map((provider, index) => {
-        const isActive = matches.some(
-          (match) =>
-            match.routeId === '/settings/providers/$providerName' &&
-            'providerName' in match.params &&
-            match.params.providerName === provider.provider
-        )
+      <div className="first-step-setup-remote-provider">
+        {providers.map((provider, index) => {
+          const isActive = matches.some(
+            (match) =>
+              match.routeId === '/settings/providers/$providerName' &&
+              'providerName' in match.params &&
+              match.params.providerName === provider.provider
+          )
 
-        return (
-          <div key={index} className="flex flex-col px-2 my-1.5 ">
-            <div
-              className={cn(
-                'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
-                isActive && 'bg-main-view-fg/5'
-              )}
-              onClick={() =>
-                navigate({
-                  to: route.settings.providers,
-                  params: { providerName: provider.provider },
-                })
-              }
-            >
-              <img
-                src={getProviderLogo(provider.provider)}
-                alt={`${provider.provider} - Logo`}
-                className="size-4"
-              />
-              <span className="capitalize">
-                {getProviderTitle(provider.provider)}
-              </span>
+          return (
+            <div key={index} className="flex flex-col px-2 my-1.5 ">
+              <div
+                className={cn(
+                  'flex px-2 items-center gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded [&.active]:bg-main-view-fg/5 text-main-view-fg/80',
+                  isActive && 'bg-main-view-fg/5',
+                  // hidden for llama.cpp provider for setup remote provider
+                  provider.provider === 'llama.cpp' &&
+                    stepSetupRemoteProvider &&
+                    'hidden'
+                )}
+                onClick={() =>
+                  navigate({
+                    to: route.settings.providers,
+                    params: {
+                      providerName: provider.provider,
+                    },
+                    ...(stepSetupRemoteProvider
+                      ? { search: { step: 'setup_remote_provider' } }
+                      : {}),
+                  })
+                }
+              >
+                <img
+                  src={getProviderLogo(provider.provider)}
+                  alt={`${provider.provider} - Logo`}
+                  className="size-4"
+                />
+                <span className="capitalize">
+                  {getProviderTitle(provider.provider)}
+                </span>
+              </div>
             </div>
-          </div>
-        )
-      })}
+          )
+        })}
+      </div>
     </div>
   )
 }

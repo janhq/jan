@@ -4,6 +4,8 @@ import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from 'react-i18next'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import SetupScreen from '@/containers/SetupScreen'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.home as any)({
@@ -12,6 +14,19 @@ export const Route = createFileRoute(route.home as any)({
 
 function Index() {
   const { t } = useTranslation()
+  const { providers } = useModelProvider()
+
+  // Conditional to check if there are any valid providers
+  // required min 1 api_key or 1 model in llama.cpp
+  const hasValidProviders = providers.some(
+    (provider) =>
+      provider.api_key?.length ||
+      (provider.provider === 'llama.cpp' && provider.models.length)
+  )
+
+  if (!hasValidProviders) {
+    return <SetupScreen />
+  }
 
   return (
     <div className="flex h-full flex-col flex-justify-center">
@@ -28,7 +43,6 @@ function Index() {
               {t('chat.description', { ns: 'chat' })}
             </p>
           </div>
-
           <div className="flex-1 shrink-0">
             <ChatInput showSpeedToken={false} />
           </div>

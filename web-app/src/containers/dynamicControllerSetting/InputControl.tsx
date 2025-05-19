@@ -9,6 +9,7 @@ type InputControl = {
   value: string
   onChange: (value: string) => void
   inputActions?: string[]
+  className?: string
 }
 
 export function InputControl({
@@ -16,6 +17,7 @@ export function InputControl({
   placeholder = '',
   value = '',
   onChange,
+  className,
   inputActions = [],
 }: InputControl) {
   const [showPassword, setShowPassword] = useState(false)
@@ -30,7 +32,13 @@ export function InputControl({
   const inputType = type === 'password' && showPassword ? 'text' : type
 
   return (
-    <div className={cn('relative', type === 'number' ? 'w-16' : 'w-full')}>
+    <div
+      className={cn(
+        'relative',
+        type === 'number' ? 'w-16' : 'w-full',
+        className
+      )}
+    >
       <Input
         type={inputType}
         placeholder={placeholder}
