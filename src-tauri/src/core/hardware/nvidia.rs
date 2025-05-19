@@ -2,9 +2,10 @@ pub struct NvidiaInfo {
     name: String,
     index: u64,
     memory: super::MemoryInfo,
-    compute_capability: String,
-    driver_version: String,
     uuid: String,
+    driver_version: String,
+    // NVIDIA-specific info
+    compute_capability: String,
 }
 
 impl From<NvidiaInfo> for super::GpuInfo {
@@ -16,9 +17,6 @@ impl From<NvidiaInfo> for super::GpuInfo {
             vendor: super::GpuVendor::Nvidia,
             uuid: val.uuid,
             driver_version: val.driver_version,
-            additional_information: Some(super::GpuAdditionalInfo {
-                compute_cap: val.compute_capability,
-            }),
         }
     }
 }

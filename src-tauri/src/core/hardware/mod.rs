@@ -1,4 +1,5 @@
 pub mod nvidia;
+pub mod vulkan;
 
 use std::sync::OnceLock;
 use sysinfo::{MemoryRefreshKind, System};
@@ -187,11 +188,6 @@ impl CpuInfo {
 }
 
 #[derive(serde::Serialize)]
-pub struct GpuAdditionalInfo {
-    compute_cap: String,
-}
-
-#[derive(serde::Serialize)]
 pub enum GpuVendor {
     Nvidia,
     AMD,
@@ -208,19 +204,18 @@ pub struct GpuInfo {
     vendor: GpuVendor,
     uuid: String,
     driver_version: String,
-    additional_information: Option<GpuAdditionalInfo>,
 }
 
 impl GpuInfo {
     pub fn get_gpus() -> Vec<GpuInfo> {
-        nvidia::get_nvidia_gpus()
-            .into_iter()
-            .map(|gpu| gpu.into())
-            .collect()
+        let mut gpus = vec![];
+        gpus.extend(nvidia::get_nvidia_gpus().into_iter().map(|gpu| gpu.into()));
+        gpus.extend(vulkan::get_vulkan_gpus().into_iter().map(|gpu| gpu.into()));
+        gpus
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Debug)]
 pub struct MemoryInfo {
     total: u64, // in MiB
     used: u64,
