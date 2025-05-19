@@ -6,39 +6,44 @@ use sysinfo::{MemoryRefreshKind, System};
 static CPU_STATIC_INFO: OnceLock<CpuStaticInfo> = OnceLock::new();
 static OS_NAME: OnceLock<String> = OnceLock::new();
 
+#[derive(Clone)]
 struct CpuStaticInfo {
     name: String,
-    cores: usize,
+    core_count: usize,
     arch: String,
     extensions: Vec<String>,
 }
 
 impl CpuStaticInfo {
     fn new() -> Self {
-        let name = System::new()
-            .cpus()
-            .first()
-            .map(|cpu| cpu.brand())
-            .unwrap_or("unknown")
-            .to_string();
+        CPU_STATIC_INFO
+            .get_or_init(|| {
+                let name = System::new()
+                    .cpus()
+                    .first()
+                    .map(|cpu| cpu.brand())
+                    .unwrap_or("unknown")
+                    .to_string();
 
-        // cortex only returns amd64, arm64, or Unsupported
-        // TODO: find how Jan uses this value, if we can use
-        // std::env::consts::ARCH directly
-        let arch = match std::env::consts::ARCH {
-            "x86" => "amd64",
-            "x86_64" => "amd64",
-            "arm" => "arm64",
-            "aarch64" => "arm64",
-            _ => "Unsupported",
-        };
+                // cortex only returns amd64, arm64, or Unsupported
+                // TODO: find how Jan uses this value, if we can use
+                // std::env::consts::ARCH directly
+                let arch = match std::env::consts::ARCH {
+                    "x86" => "amd64",
+                    "x86_64" => "amd64",
+                    "arm" => "arm64",
+                    "aarch64" => "arm64",
+                    _ => "Unsupported",
+                };
 
-        CpuStaticInfo {
-            name,
-            cores: System::physical_core_count().unwrap_or(0),
-            arch: arch.to_string(),
-            extensions: CpuStaticInfo::get_extensions(),
-        }
+                CpuStaticInfo {
+                    name,
+                    core_count: System::physical_core_count().unwrap_or(0),
+                    arch: arch.to_string(),
+                    extensions: CpuStaticInfo::get_extensions(),
+                }
+            })
+            .clone()
     }
 
     // TODO: see if we need to check for all CPU extensions
@@ -141,10 +146,6 @@ impl CpuStaticInfo {
     }
 }
 
-fn get_cpu_static_info() -> &'static CpuStaticInfo {
-    CPU_STATIC_INFO.get_or_init(CpuStaticInfo::new)
-}
-
 fn get_os_name() -> &'static String {
     OS_NAME.get_or_init(|| System::long_os_version().unwrap_or("unknown".to_string()))
 }
@@ -154,7 +155,7 @@ fn get_os_name() -> &'static String {
 #[derive(serde::Serialize)]
 pub struct CpuInfo {
     name: String,
-    cores: usize,
+    core_count: usize,
     arch: String,
     extensions: Vec<String>,
     usage: f32,
@@ -173,11 +174,11 @@ impl CpuInfo {
         let total_usage = cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>();
         let usage = total_usage / (cpus.len().max(1) as f32);
 
-        let static_info = get_cpu_static_info();
+        let static_info = CpuStaticInfo::new();
 
         CpuInfo {
             name: static_info.name.to_string(),
-            cores: static_info.cores,
+            core_count: static_info.core_count,
             arch: static_info.arch.clone(),
             extensions: static_info.extensions.clone(),
             usage,
@@ -192,6 +193,7 @@ pub struct GpuAdditionalInfo {
 }
 
 // TODO: we might not need everything in this struct
+// use enum?
 #[derive(serde::Serialize)]
 pub struct GpuInfo {
     name: String,
