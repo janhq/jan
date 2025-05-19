@@ -17,9 +17,14 @@ type ThreadState = {
   deleteAllThreads: () => void
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
-  createThread: (model: ThreadModel, title?: string) => Promise<Thread>
+  createThread: (
+    model: ThreadModel,
+    title?: string,
+    assistant?: Assistant
+  ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
+  updateCurrentThreadAssistant: (assistant: Assistant) => void
   searchIndex: Fuse<Thread> | null
 }
 
@@ -152,18 +157,18 @@ export const useThreads = create<ThreadState>()(
       setCurrentThreadId: (threadId) => {
         set({ currentThreadId: threadId })
       },
-      createThread: async (model, title) => {
+      createThread: async (model, title, assistant) => {
         const newThread: Thread = {
           id: ulid(),
           title: title ?? 'New Thread',
           model,
           order: 1,
           updated: Date.now() / 1000,
+          assistants: assistant ? [assistant] : [],
         }
         set((state) => ({
           searchIndex: new Fuse(Object.values(state.threads), fuseOptions),
         }))
-        console.log('newThread', newThread)
         return await createThread(newThread).then((createdThread) => {
           set((state) => ({
             threads: {
@@ -173,6 +178,26 @@ export const useThreads = create<ThreadState>()(
             currentThreadId: createdThread.id,
           }))
           return createdThread
+        })
+      },
+      updateCurrentThreadAssistant: (assistant) => {
+        set((state) => {
+          if (!state.currentThreadId) return { ...state }
+          const currentThread = state.getCurrentThread()
+          if (currentThread)
+            updateThread({
+              ...currentThread,
+              assistants: [{ ...assistant, model: currentThread.model }],
+            })
+          return {
+            threads: {
+              ...state.threads,
+              [state.currentThreadId as string]: {
+                ...state.threads[state.currentThreadId as string],
+                assistants: [assistant],
+              },
+            },
+          }
         })
       },
       updateCurrentThreadModel: (model) => {

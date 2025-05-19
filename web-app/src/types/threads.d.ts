@@ -31,11 +31,12 @@ type ThreadContent = {
 type ChatCompletionRole = 'system' | 'assistant' | 'user' | 'tool'
 
 type ThreadModel = {
-    id: string
-    provider: string
-  }
+  id: string
+  provider: string
+}
 
 type Thread = {
+  assistants?: ThreadAssistantInfo[]
   id: string
   title: string
   isFavorite?: boolean
@@ -43,4 +44,14 @@ type Thread = {
   model?: ThreadModel
   updated: number
   order?: number
+}
+
+type Assistant = {
+  avatar?: string
+  id: string
+  name: string
+  created_at: number
+  description?: string
+  instructions: string
+  parameters: Record<string, unknown>
 }

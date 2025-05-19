@@ -9,20 +9,25 @@ import {
 import { useAssistant } from '@/hooks/useAssistant'
 import AddEditAssistant from './dialogs/AddEditAssistant'
 import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
+import { useThreads } from '@/hooks/useThreads'
 
 const DropdownAssistant = () => {
-  const { assistants, addAssistant, updateAssistant } = useAssistant()
+  const {
+    assistants,
+    currentAssistant,
+    addAssistant,
+    updateAssistant,
+    setCurrentAssistant,
+  } = useAssistant()
+  const { updateCurrentThreadAssistant } = useThreads()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAssistantId, setEditingAssistantId] = useState<string | null>(
     null
   )
-  const [selectedAssistantId, setSelectedAssistantId] = useState<string | null>(
-    assistants[0]?.id || null
-  )
 
   const selectedAssistant =
-    assistants.find((a) => a.id === selectedAssistantId) || assistants[0]
+    assistants.find((a) => a.id === currentAssistant.id) || assistants[0]
 
   return (
     <>
@@ -63,7 +68,10 @@ const DropdownAssistant = () => {
               <DropdownMenuItem className="flex justify-between items-center">
                 <span
                   className="truncate text-main-view-fg/70 flex-1 cursor-pointer"
-                  onClick={() => setSelectedAssistantId(assistant.id)}
+                  onClick={() => {
+                    setCurrentAssistant(assistant)
+                    updateCurrentThreadAssistant(assistant)
+                  }}
                 >
                   {assistant.name}
                 </span>

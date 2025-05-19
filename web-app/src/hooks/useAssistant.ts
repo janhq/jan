@@ -2,24 +2,17 @@ import { localStoregeKey } from '@/constants/localStorage'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type Assistant = {
-  avatar?: string
-  id: string
-  name: string
-  created_at: number
-  description?: string
-  instructions: string
-  parameters: Record<string, unknown>
-}
 
 interface AssistantState {
   assistants: Assistant[]
+  currentAssistant: Assistant
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   deleteAssistant: (id: string) => void
+  setCurrentAssistant: (assistant: Assistant) => void
 }
 
-const defaultAssistant: Assistant = {
+export const defaultAssistant: Assistant = {
   avatar: '',
   id: 'jan',
   name: 'Jan',
@@ -33,6 +26,7 @@ export const useAssistant = create<AssistantState>()(
   persist(
     (set, get) => ({
       assistants: [defaultAssistant],
+      currentAssistant: defaultAssistant,
       addAssistant: (assistant) =>
         set({ assistants: [...get().assistants, assistant] }),
       updateAssistant: (assistant) =>
@@ -43,6 +37,9 @@ export const useAssistant = create<AssistantState>()(
         }),
       deleteAssistant: (id) =>
         set({ assistants: get().assistants.filter((a) => a.id !== id) }),
+      setCurrentAssistant: (assistant) => {
+        set({ currentAssistant: assistant })
+      },
     }),
     {
       name: localStoregeKey.assistant,

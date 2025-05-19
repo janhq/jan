@@ -18,10 +18,12 @@ import {
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import { useAssistant } from './useAssistant'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
   const { tools } = useAppState()
+  const { currentAssistant } = useAssistant()
 
   const { getProviderByName, selectedModel, selectedProvider } =
     useModelProvider()
@@ -43,7 +45,8 @@ export const useChat = () => {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        prompt
+        prompt,
+        currentAssistant
       )
       router.navigate({
         to: route.threadsDetail,
@@ -58,6 +61,7 @@ export const useChat = () => {
     router,
     selectedModel?.id,
     selectedProvider,
+    currentAssistant,
   ])
 
   const sendMessage = useCallback(
@@ -79,6 +83,8 @@ export const useChat = () => {
         }
 
         const builder = new CompletionMessagesBuilder()
+        if (currentAssistant?.instructions?.length > 0)
+          builder.addSystemMessage(currentAssistant?.instructions || '')
         // REMARK: Would it possible to not attach the entire message history to the request?
         // TODO: If not amend messages history here
         builder.addUserMessage(message)
@@ -143,9 +149,10 @@ export const useChat = () => {
       addMessage,
       setPrompt,
       selectedModel,
-      tools,
+      currentAssistant?.instructions,
       setAbortController,
       updateLoadingModel,
+      tools,
     ]
   )
 
