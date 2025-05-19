@@ -3,7 +3,7 @@
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import {
@@ -44,7 +44,7 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, updateTools } = useAppState()
+  const { streamingContent, updateTools, abortControllers } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
@@ -96,6 +96,13 @@ const ChatInput = ({
       textareaRef.current.focus()
     }
   }, [])
+
+  const stopStreaming = useCallback(
+    (threadId: string) => {
+      abortControllers[threadId]?.abort()
+    },
+    [abortControllers]
+  )
 
   return (
     <div className="relative">
@@ -218,7 +225,11 @@ const ChatInput = ({
           </div>
 
           {streamingContent ? (
-            <Button variant="destructive" size="icon">
+            <Button
+              variant="destructive"
+              size="icon"
+              onClick={() => stopStreaming(streamingContent.thread_id)}
+            >
               <IconPlayerStopFilled />
             </Button>
           ) : (

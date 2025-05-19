@@ -27,7 +27,8 @@ export const useChat = () => {
     useModelProvider()
 
   const { getCurrentThread: retrieveThread, createThread } = useThreads()
-  const { updateStreamingContent, updateLoadingModel } = useAppState()
+  const { updateStreamingContent, updateLoadingModel, setAbortController } =
+    useAppState()
   const { addMessage } = useMessages()
   const router = useRouter()
 
@@ -83,12 +84,14 @@ export const useChat = () => {
         builder.addUserMessage(message)
 
         let isCompleted = false
-
+        const abortController = new AbortController()
+        setAbortController(activeThread.id, abortController)
         while (!isCompleted) {
           const completion = await sendCompletion(
             activeThread,
             provider,
             builder.getMessages(),
+            abortController,
             tools
           )
 
@@ -141,6 +144,7 @@ export const useChat = () => {
       setPrompt,
       selectedModel,
       tools,
+      setAbortController,
       updateLoadingModel,
     ]
   )

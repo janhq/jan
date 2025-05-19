@@ -94,12 +94,16 @@ function ThreadDetail() {
   useEffect(() => {
     // Only auto-scroll when the user is not actively scrolling
     // AND either at the bottom OR there's streaming content
-    if (!isUserScrolling && (streamingContent || isAtBottom)) {
+    if (
+      !isUserScrolling &&
+      (streamingContent || isAtBottom) &&
+      messages?.length
+    ) {
       // Use non-smooth scrolling for auto-scroll to prevent jank
       scrollToBottom(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingContent, isUserScrolling])
+  }, [streamingContent, isUserScrolling, messages])
 
   const scrollToBottom = (smooth = false) => {
     if (scrollContainerRef.current) {
@@ -194,7 +198,7 @@ function ThreadDetail() {
                   </div>
                 )
               })}
-            <StreamingContent />
+            <StreamingContent threadId={threadId} />
           </div>
         </div>
         <div className="w-4/6 mx-auto pt-2 pb-3 shrink-0 relative">
