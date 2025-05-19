@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams } from '@tanstack/react-router'
 import { UIEventHandler } from 'react'
-import HeaderPage from '@/containers/HeaderPage'
-
-import { useThreads } from '@/hooks/useThreads'
-import ChatInput from '@/containers/ChatInput'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
-import { useShallow } from 'zustand/react/shallow'
-import { ThreadContent } from '@/containers/ThreadContent'
-import { StreamingContent } from '@/containers/StreamingContent'
 import debounce from 'lodash.debounce'
 import { cn } from '@/lib/utils'
 import { ArrowDown } from 'lucide-react'
+
+import HeaderPage from '@/containers/HeaderPage'
+import { useThreads } from '@/hooks/useThreads'
+import ChatInput from '@/containers/ChatInput'
+import { useShallow } from 'zustand/react/shallow'
+import { ThreadContent } from '@/containers/ThreadContent'
+import { StreamingContent } from '@/containers/StreamingContent'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import { useMessages } from '@/hooks/useMessages'
 import { fetchMessages } from '@/services/messages'
 import { useAppState } from '@/hooks/useAppState'
+import DropdownAssistant from '@/containers/DropdownAssistant'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -159,7 +159,9 @@ function ThreadDetail() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <DropdownModelProvider model={threadModel} />
+        <div className="flex items-center justify-between w-full pr-2">
+          <DropdownAssistant />
+        </div>
         {thread?.model?.provider === 'llama.cpp' && loadingModel && (
           <ModelLoader />
         )}
@@ -213,7 +215,7 @@ function ThreadDetail() {
               <ArrowDown size={12} />
             </div>
           </div>
-          <ChatInput />
+          <ChatInput model={threadModel} />
         </div>
       </div>
     </div>

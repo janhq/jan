@@ -28,13 +28,19 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { getTools } from '@/services/mcp'
 import { useChat } from '@/hooks/useChat'
+import DropdownModelProvider from '@/containers/DropdownModelProvider'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
+  model?: ThreadModel
 }
 
-const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
+const ChatInput = ({
+  model,
+  className,
+  showSpeedToken = true,
+}: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -160,6 +166,8 @@ const ChatInput = ({ className, showSpeedToken = true }: ChatInputProps) => {
                 streamingContent && 'opacity-50 pointer-events-none'
               )}
             >
+              <DropdownModelProvider model={model} />
+
               {/* File attachment - always available */}
               <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconPaperclip size={18} className="text-main-view-fg/50" />

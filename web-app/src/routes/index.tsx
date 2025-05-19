@@ -3,7 +3,7 @@ import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from 'react-i18next'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
@@ -14,6 +14,7 @@ type SearchParams = {
     provider: string
   }
 }
+import DropdownAssistant from '@/containers/DropdownAssistant'
 
 export const Route = createFileRoute(route.home as any)({
   component: Index,
@@ -43,7 +44,7 @@ function Index() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <DropdownModelProvider model={selectedModel} />
+        <DropdownAssistant />
       </HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center">
         <div className="w-4/6 mx-auto">
@@ -56,7 +57,7 @@ function Index() {
             </p>
           </div>
           <div className="flex-1 shrink-0">
-            <ChatInput showSpeedToken={false} />
+            <ChatInput showSpeedToken={false} model={selectedModel} />
           </div>
         </div>
       </div>

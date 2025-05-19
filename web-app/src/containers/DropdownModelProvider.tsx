@@ -16,10 +16,7 @@ import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 
 type DropdownModelProviderProps = {
-  model?: {
-    id: string
-    provider: string
-  }
+  model?: ThreadModel
 }
 
 const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
@@ -54,13 +51,23 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 rounded font-medium cursor-pointer flex items-center gap-1.5 relative z-20">
+        <button
+          title={displayModel}
+          className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 rounded font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-40"
+        >
           <img
             src={getProviderLogo(selectedProvider as string)}
             alt={`${selectedProvider} - Logo`}
             className="size-4"
           />
-          <span className="text-main-view-fg/80">{displayModel}</span>
+          <span
+            className={cn(
+              'text-main-view-fg/80 truncate leading-normal',
+              !selectedModel?.id && 'text-main-view-fg/50'
+            )}
+          >
+            {displayModel}
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -115,6 +122,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                           !provider.api_key?.length &&
                           'hidden'
                       )}
+                      title={model.id}
                       key={`model-${modelIndex}`}
                       onClick={() => {
                         selectModelProvider(provider.provider, model.id)

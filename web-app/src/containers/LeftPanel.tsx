@@ -12,6 +12,7 @@ import {
   IconAppsFilled,
   IconX,
   IconSearch,
+  IconClipboardSmileFilled,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import ThreadList from './ThreadList'
@@ -45,6 +46,11 @@ const mainMenus = [
     title: 'common.newChat',
     icon: IconCirclePlusFilled,
     route: route.home,
+  },
+  {
+    title: 'Assistant',
+    icon: IconClipboardSmileFilled,
+    route: route.assistant,
   },
   {
     title: 'common.hub',
@@ -86,8 +92,6 @@ const LeftPanel = () => {
   }, [filteredThreads])
 
   const [openDropdown, setOpenDropdown] = useState(false)
-
-  console.log(threads)
 
   return (
     <aside

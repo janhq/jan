@@ -1,6 +1,7 @@
 export const route = {
   // home as new chat or thread
   home: '/',
+  assistant: '/assistant',
   settings: {
     index: '/settings',
     providers: '/settings/providers/$providerName',
