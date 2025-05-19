@@ -1,5 +1,6 @@
 use vulkano::{
     instance::{Instance, InstanceCreateInfo},
+    memory::MemoryHeapFlags,
     VulkanLibrary,
 };
 
@@ -86,21 +87,26 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
 
     let mut device_info_list = vec![];
     for (i, device) in instance.enumerate_physical_devices()?.enumerate() {
-        // this is not accurate / implementation-specific
-        // better to use something else to get memory usage.
-        // let total_memory = device
-        //     .memory_properties()
-        //     .memory_heaps
-        //     .iter()
-        //     .map(|heap| heap.size)
-        //     .sum::<u64>()
-        //     / (1024 * 1024); // convert to MiB
+        let total_memory = device
+            .memory_properties()
+            .memory_heaps
+            .iter()
+            // Vulkan may include host (CPU) memory
+            .filter(|heap| heap.flags.contains(MemoryHeapFlags::DEVICE_LOCAL))
+            .map(|heap| heap.size)
+            .sum::<u64>()
+            / (1024 * 1024); // convert to MiB
+
+        // TODO: used memory, we can use heap_budget. but it seems like vulkano does not expose it
 
         let props = device.properties();
         let device_info = VulkanInfo {
             name: props.device_name.clone(),
             index: i as u64, // do we need this?
-            memory: super::MemoryInfo { total: 0, used: 0 },
+            memory: super::MemoryInfo {
+                total: total_memory,
+                used: 0,
+            },
             vendor: parse_vendor_id(props.vendor_id),
             uuid: props
                 .device_uuid
