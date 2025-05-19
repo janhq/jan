@@ -44,25 +44,6 @@ fn parse_vendor_id(vendor_id: u32) -> String {
     }
 }
 
-// how to parse driver version is vendor-specific
-fn parse_driver_version(driver_version: u32, vendor_id: u32) -> String {
-    match vendor_id {
-        VENDOR_ID_NVIDIA => format!(
-            "{}.{}.{}",
-            driver_version >> 22,
-            (driver_version >> 14) & 0xff,
-            driver_version & 0x3fff
-        ),
-        // fallback, Vulkan scheme
-        _ => format!(
-            "{}.{}.{}",
-            driver_version >> 22,
-            (driver_version >> 12) & 0x3ff,
-            driver_version & 0xfff
-        ),
-    }
-}
-
 fn parse_uuid(bytes: &[u8; 16]) -> String {
     format!(
         "{:02x}{:02x}{:02x}{:02x}-\
@@ -127,7 +108,7 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
                 .unwrap_or_default(),
             device_type: format!("{:?}", props.device_type),
             device_id: props.device_id,
-            driver_version: parse_driver_version(props.driver_version, props.vendor_id),
+            driver_version: props.driver_info.clone().unwrap_or_default(),
             api_version: format!(
                 "{}.{}.{}",
                 props.api_version.major, props.api_version.minor, props.api_version.patch
