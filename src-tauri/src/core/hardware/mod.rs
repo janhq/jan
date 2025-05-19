@@ -2,12 +2,13 @@ pub mod nvidia;
 pub mod vulkan;
 
 use std::sync::OnceLock;
-use sysinfo::{MemoryRefreshKind, System};
+use sysinfo::System;
 
 static CPU_STATIC_INFO: OnceLock<CpuStaticInfo> = OnceLock::new();
 static OS_NAME: OnceLock<String> = OnceLock::new();
+static SYSTEM_STATIC_INFO: OnceLock<SystemStaticInfo> = OnceLock::new();
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, Debug)]
 struct CpuStaticInfo {
     name: String,
     core_count: usize,
@@ -19,7 +20,10 @@ impl CpuStaticInfo {
     fn new() -> Self {
         CPU_STATIC_INFO
             .get_or_init(|| {
-                let name = System::new()
+                let mut system = System::new();
+                system.refresh_cpu_all();
+
+                let name = system
                     .cpus()
                     .first()
                     .map(|cpu| cpu.brand())
@@ -151,20 +155,63 @@ fn get_os_name() -> &'static String {
     OS_NAME.get_or_init(|| System::long_os_version().unwrap_or("unknown".to_string()))
 }
 
-// NOTE: some these can be enum
-// TODO: separate static info and dynamic info (e.g. CPU cores vs CPU usage)
-#[derive(serde::Serialize)]
-pub struct CpuInfo {
+#[derive(serde::Serialize, Clone, Debug)]
+struct GpuStaticInfo {
     name: String,
-    core_count: usize,
-    arch: String,
-    extensions: Vec<String>,
-    usage: f32,
+    index: u64,
+    total_memory: u64,
+    vendor: String,
+    uuid: String,
+    driver_version: String,
 }
 
-impl CpuInfo {
-    pub fn new() -> CpuInfo {
+impl GpuStaticInfo {
+    pub fn get_gpus() -> Vec<GpuStaticInfo> {
+        let mut gpus = vec![];
+        gpus.extend(nvidia::get_nvidia_gpus().into_iter().map(|gpu| gpu.into()));
+        // TODO: filter out NVIDIA GPUs based on UUID
+        gpus.extend(vulkan::get_vulkan_gpus().into_iter().map(|gpu| gpu.into()));
+        gpus
+    }
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct SystemStaticInfo {
+    cpu: CpuStaticInfo,
+    os: String,
+    total_memory: u64,
+    gpus: Vec<GpuStaticInfo>,
+}
+
+impl SystemStaticInfo {
+    fn new() -> Self {
+        SYSTEM_STATIC_INFO
+            .get_or_init(|| {
+                let mut system = System::new();
+                system.refresh_memory();
+
+                SystemStaticInfo {
+                    cpu: CpuStaticInfo::new(),
+                    os: get_os_name().to_string(),
+                    total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
+                    gpus: GpuStaticInfo::get_gpus(),
+                }
+            })
+            .clone()
+    }
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct SystemUsageInfo {
+    cpu_usage: f32,
+    used_memory: u64,
+    total_memory: u64,
+}
+
+impl SystemUsageInfo {
+    pub fn new() -> Self {
         let mut system = System::new();
+        system.refresh_memory();
 
         // need to refresh 2 times to get CPU usage
         system.refresh_cpu_all();
@@ -172,73 +219,42 @@ impl CpuInfo {
         system.refresh_cpu_all();
 
         let cpus = system.cpus();
-        let total_usage = cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>();
-        let usage = total_usage / (cpus.len().max(1) as f32);
+        let cpu_usage =
+            cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / (cpus.len().max(1) as f32);
+        let used_memory = system.used_memory() / 1024 / 1024; // bytes to MiB
+        let total_memory = system.total_memory() / 1024 / 1024; // bytes to MiB
 
-        let static_info = CpuStaticInfo::new();
-
-        CpuInfo {
-            name: static_info.name.to_string(),
-            core_count: static_info.core_count,
-            arch: static_info.arch.clone(),
-            extensions: static_info.extensions.clone(),
-            usage,
+        SystemUsageInfo {
+            cpu_usage,
+            used_memory,
+            total_memory,
         }
     }
-}
-
-// TODO: we might not need everything in this struct
-#[derive(serde::Serialize)]
-pub struct GpuInfo {
-    name: String,
-    index: u64,
-    memory: MemoryInfo,
-    vendor: String,
-    uuid: String,
-    driver_version: String,
-}
-
-impl GpuInfo {
-    pub fn get_gpus() -> Vec<GpuInfo> {
-        let mut gpus = vec![];
-        gpus.extend(nvidia::get_nvidia_gpus().into_iter().map(|gpu| gpu.into()));
-        gpus.extend(vulkan::get_vulkan_gpus().into_iter().map(|gpu| gpu.into()));
-        gpus
-    }
-}
-
-#[derive(serde::Serialize, Debug)]
-pub struct MemoryInfo {
-    total: u64, // in MiB
-    used: u64,
-}
-
-impl MemoryInfo {
-    pub fn new() -> MemoryInfo {
-        let mut system = System::new();
-        system.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
-
-        MemoryInfo {
-            total: system.total_memory() / 1024 / 1024, // bytes to MiB
-            used: system.used_memory() / 1024 / 1024,
-        }
-    }
-}
-
-#[derive(serde::Serialize)]
-pub struct SystemInfo {
-    cpu: CpuInfo,
-    os: String,
-    memory: MemoryInfo,
-    gpus: Vec<GpuInfo>,
 }
 
 #[tauri::command]
-pub fn get_system_info() -> SystemInfo {
-    SystemInfo {
-        cpu: CpuInfo::new(),
-        os: get_os_name().to_string(),
-        memory: MemoryInfo::new(),
-        gpus: GpuInfo::get_gpus(),
+pub fn get_system_static_info() -> SystemStaticInfo {
+    SystemStaticInfo::new()
+}
+
+#[tauri::command]
+pub fn get_system_usage_info() -> SystemUsageInfo {
+    SystemUsageInfo::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_system_static_info() {
+        let sys_info = SystemStaticInfo::new();
+        println!("System Static Info: {:?}", sys_info);
+    }
+
+    #[test]
+    fn test_system_usage_info() {
+        let usage = SystemUsageInfo::new();
+        println!("System Usage Info: {:?}", usage);
     }
 }

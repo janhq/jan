@@ -1,10 +1,10 @@
 use ash::{vk, Entry};
 
 #[derive(Debug)]
-pub struct VulkanInfo {
+pub struct VulkanStaticInfo {
     name: String,
     index: u64,
-    memory: super::MemoryInfo,
+    total_memory: u64,
     vendor: String,
     uuid: String,
     driver_version: String,
@@ -14,12 +14,12 @@ pub struct VulkanInfo {
     device_id: u32, // remove this?
 }
 
-impl From<VulkanInfo> for super::GpuInfo {
-    fn from(val: VulkanInfo) -> Self {
-        super::GpuInfo {
+impl From<VulkanStaticInfo> for super::GpuStaticInfo {
+    fn from(val: VulkanStaticInfo) -> Self {
+        super::GpuStaticInfo {
             name: val.name,
             index: val.index,
-            memory: val.memory,
+            total_memory: val.total_memory,
             vendor: val.vendor,
             uuid: val.uuid,
             driver_version: val.driver_version,
@@ -67,7 +67,7 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-pub fn get_vulkan_gpus() -> Vec<VulkanInfo> {
+pub fn get_vulkan_gpus() -> Vec<VulkanStaticInfo> {
     match get_vulkan_gpus_internal() {
         Ok(gpus) => gpus,
         Err(e) => {
@@ -84,7 +84,7 @@ fn parse_c_string(buf: &[i8]) -> String {
         .to_string()
 }
 
-fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Error>> {
+fn get_vulkan_gpus_internal() -> Result<Vec<VulkanStaticInfo>, Box<dyn std::error::Error>> {
     let entry = unsafe { Entry::load()? };
     let app_info = vk::ApplicationInfo {
         api_version: vk::make_api_version(0, 1, 1, 0),
@@ -104,12 +104,8 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
     {
         // create a chain of properties struct for VkPhysicalDeviceProperties2(3)
         // https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDeviceProperties2.html
-        // props2 -> driver_props -> id_props -> memory_props
-        let mut mem_props = vk::PhysicalDeviceMemoryBudgetPropertiesEXT::default();
-        let mut id_props = vk::PhysicalDeviceIDProperties {
-            p_next: &mut mem_props as *mut _ as *mut std::ffi::c_void,
-            ..Default::default()
-        };
+        // props2 -> driver_props -> id_props
+        let mut id_props = vk::PhysicalDeviceIDProperties::default();
         let mut driver_props = vk::PhysicalDeviceDriverProperties {
             p_next: &mut id_props as *mut _ as *mut std::ffi::c_void,
             ..Default::default()
@@ -127,23 +123,15 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
             continue;
         }
 
-        let mut memory_info = super::MemoryInfo { total: 0, used: 0 };
-        for (heap_idx, heap) in unsafe { instance.get_physical_device_memory_properties(*device) }
-            .memory_heaps
-            .iter()
-            .enumerate()
-        {
-            if heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL) {
-                memory_info.total += heap.size / (1024 * 1024); // convert to MiB
-                // NOTE: this is only for Vulkan-allocated memory
-                memory_info.used += mem_props.heap_usage[heap_idx] / (1024 * 1024);
-            }
-        }
-
-        let device_info = VulkanInfo {
+        let device_info = VulkanStaticInfo {
             name: parse_c_string(&props.device_name),
             index: i as u64, // do we need this?
-            memory: memory_info,
+            total_memory: unsafe { instance.get_physical_device_memory_properties(*device) }
+                .memory_heaps
+                .iter()
+                .filter(|heap| heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL))
+                .map(|heap| heap.size / (1024 * 1024))
+                .sum(),
             vendor: parse_vendor_id(props.vendor_id),
             uuid: parse_uuid(&id_props.device_uuid),
             device_type: format!("{:?}", props.device_type),
