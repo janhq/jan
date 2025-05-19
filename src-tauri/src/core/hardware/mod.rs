@@ -187,21 +187,13 @@ impl CpuInfo {
     }
 }
 
-#[derive(serde::Serialize)]
-pub enum GpuVendor {
-    Nvidia,
-    AMD,
-    Intel,
-    Unknown,
-}
-
 // TODO: we might not need everything in this struct
 #[derive(serde::Serialize)]
 pub struct GpuInfo {
     name: String,
     index: u64,
     memory: MemoryInfo,
-    vendor: GpuVendor,
+    vendor: String,
     uuid: String,
     driver_version: String,
 }

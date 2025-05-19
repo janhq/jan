@@ -8,7 +8,7 @@ pub struct VulkanInfo {
     name: String,
     index: u64,
     memory: super::MemoryInfo,
-    vendor_id: u32, // change this to vendor string
+    vendor: String,
     uuid: String,
     driver_version: String,
     // Vulkan-specific info
@@ -23,10 +23,43 @@ impl From<VulkanInfo> for super::GpuInfo {
             name: val.name,
             index: val.index,
             memory: val.memory,
-            vendor: super::GpuVendor::Unknown,
+            vendor: val.vendor,
             uuid: val.uuid,
             driver_version: val.driver_version,
         }
+    }
+}
+
+// https://devicehunt.com/all-pci-vendors
+const VENDOR_ID_AMD: u32 = 0x1002;
+const VENDOR_ID_NVIDIA: u32 = 0x10DE;
+const VENDOR_ID_INTEL: u32 = 0x8086;
+
+fn parse_vendor_id(vendor_id: u32) -> String {
+    match vendor_id {
+        VENDOR_ID_AMD => "AMD".to_string(),
+        VENDOR_ID_NVIDIA => "NVIDIA".to_string(),
+        VENDOR_ID_INTEL => "Intel".to_string(),
+        _ => format!("Unknown. vendor_id: {vendor_id:#X}"),
+    }
+}
+
+// how to parse driver version is vendor-specific
+fn parse_driver_version(driver_version: u32, vendor_id: u32) -> String {
+    match vendor_id {
+        VENDOR_ID_NVIDIA => format!(
+            "{}.{}.{}",
+            driver_version >> 22,
+            (driver_version >> 14) & 0xff,
+            driver_version & 0x3fff
+        ),
+        // fallback, Vulkan scheme
+        _ => format!(
+            "{}.{}.{}",
+            driver_version >> 22,
+            (driver_version >> 12) & 0x3ff,
+            driver_version & 0xfff
+        ),
     }
 }
 
@@ -72,43 +105,33 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
 
     let mut device_info_list = vec![];
     for (i, device) in instance.enumerate_physical_devices()?.enumerate() {
-        let total_memory = device
-            .memory_properties()
-            .memory_heaps
-            .iter()
-            .map(|heap| heap.size)
-            .sum::<u64>() / (1024 * 1024); // convert to MiB
+        // this is not accurate / implementation-specific
+        // better to use something else to get memory usage.
+        // let total_memory = device
+        //     .memory_properties()
+        //     .memory_heaps
+        //     .iter()
+        //     .map(|heap| heap.size)
+        //     .sum::<u64>()
+        //     / (1024 * 1024); // convert to MiB
 
-        let properties = device.properties();
-
+        let props = device.properties();
         let device_info = VulkanInfo {
-            name: properties.device_name.clone(),
+            name: props.device_name.clone(),
             index: i as u64, // do we need this?
-            uuid: properties
+            memory: super::MemoryInfo { total: 0, used: 0 },
+            vendor: parse_vendor_id(props.vendor_id),
+            uuid: props
                 .device_uuid
                 .map(|bytes| parse_uuid(&bytes))
                 .unwrap_or_default(),
-            device_type: format!("{:?}", properties.device_type),
-            // TODO: look up vendor_id and device_id
-            vendor_id: properties.vendor_id,
-            device_id: properties.device_id,
-            // TODO: where is this from?
-            driver_version: format!(
-                "{}.{}.{}",
-                properties.driver_version >> 22,
-                (properties.driver_version >> 12) & 0x3ff,
-                properties.driver_version & 0xfff
-            ),
+            device_type: format!("{:?}", props.device_type),
+            device_id: props.device_id,
+            driver_version: parse_driver_version(props.driver_version, props.vendor_id),
             api_version: format!(
                 "{}.{}.{}",
-                properties.api_version.major,
-                properties.api_version.minor,
-                properties.api_version.patch
+                props.api_version.major, props.api_version.minor, props.api_version.patch
             ),
-            memory: super::MemoryInfo {
-                total: total_memory,
-                used: 0, // TODO: implement this
-            },
         };
         device_info_list.push(device_info);
     }

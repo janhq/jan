@@ -14,7 +14,7 @@ impl From<NvidiaInfo> for super::GpuInfo {
             name: val.name,
             index: val.index,
             memory: val.memory,
-            vendor: super::GpuVendor::Nvidia,
+            vendor: "NVIDIA".to_string(),
             uuid: val.uuid,
             driver_version: val.driver_version,
         }
