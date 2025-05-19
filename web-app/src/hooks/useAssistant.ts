@@ -12,7 +12,7 @@ interface AssistantState {
   setCurrentAssistant: (assistant: Assistant) => void
 }
 
-const defaultAssistant: Assistant = {
+export const defaultAssistant: Assistant = {
   avatar: '',
   id: 'jan',
   name: 'Jan',

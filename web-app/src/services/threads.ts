@@ -1,3 +1,4 @@
+import { defaultAssistant } from '@/hooks/useAssistant'
 import { ExtensionManager } from '@/lib/extension'
 import { ConversationalExtension, ExtensionTypeEnum } from '@janhq/core'
 
@@ -20,9 +21,22 @@ export const fetchThreads = async (): Promise<Thread[]> => {
             order: e.metadata?.order,
             isFavorite: e.metadata?.is_favorite,
             model: {
-              id: e.assistants?.[0]?.model.id,
-              provider: e.assistants?.[0]?.model.engine,
+              id: e.assistants?.[0]?.model?.id,
+              provider: e.assistants?.[0]?.model?.engine,
             },
+            assistants: e.assistants?.map((assistant) => ({
+              id: assistant.assistant_id,
+              name: assistant.assistant_name,
+              model: {
+                id: assistant.model?.id,
+                provider: assistant.model?.engine,
+              },
+              description: '',
+              icon: '',
+              instructions: assistant.instructions,
+              created_at: Date.now(),
+              parameters: {},
+            })) ?? [defaultAssistant],
           } as Thread
         })
       })
@@ -63,10 +77,23 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
           ...e,
           updated: e.updated,
           model: {
-            id: e.assistants?.[0]?.model.id,
-            provider: e.assistants?.[0]?.model.engine,
+            id: e.assistants?.[0]?.model?.id,
+            provider: e.assistants?.[0]?.model?.engine,
           },
           order: 1,
+          assistants: e.assistants?.map((assistant) => ({
+            id: assistant.assistant_id,
+            name: assistant.assistant_name,
+            model: {
+              id: assistant.model?.id,
+              provider: assistant.model?.engine,
+            },
+            description: '',
+            icon: '',
+            instructions: assistant.instructions,
+            created_at: Date.now(),
+            parameters: {},
+          })) ?? [defaultAssistant],
         } as Thread
       })
       .catch(() => thread) ?? thread
@@ -82,7 +109,17 @@ export const updateThread = (thread: Thread) => {
     .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
     ?.modifyThread({
       ...thread,
-      assistants: thread.assistants ?? [
+      assistants: thread.assistants?.map((e) => {
+        return {
+          model: {
+            id: thread.model?.id ?? '*',
+            engine: thread.model?.provider ?? 'llama.cpp',
+          },
+          assistant_id: e.id ?? e.assistant_id,
+          assistant_name: e.name ?? e.assistant_name,
+          instructions: e.instructions,
+        }
+      }) ?? [
         {
           model: {
             id: thread.model?.id ?? '*',

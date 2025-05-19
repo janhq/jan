@@ -17,7 +17,11 @@ type ThreadState = {
   deleteAllThreads: () => void
   unstarAllThreads: () => void
   setCurrentThreadId: (threadId?: string) => void
-  createThread: (model: ThreadModel, title?: string, assistant?: Assistant) => Promise<Thread>
+  createThread: (
+    model: ThreadModel,
+    title?: string,
+    assistant?: Assistant
+  ) => Promise<Thread>
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
@@ -181,7 +185,10 @@ export const useThreads = create<ThreadState>()(
           if (!state.currentThreadId) return { ...state }
           const currentThread = state.getCurrentThread()
           if (currentThread)
-            updateThread({ ...currentThread, assistants: [assistant] })
+            updateThread({
+              ...currentThread,
+              assistants: [{ ...assistant, model: currentThread.model }],
+            })
           return {
             threads: {
               ...state.threads,

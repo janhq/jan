@@ -36,7 +36,7 @@ type ThreadModel = {
 }
 
 type Thread = {
-  assistants?: AssistantInfo[]
+  assistants?: ThreadAssistantInfo[]
   id: string
   title: string
   isFavorite?: boolean
