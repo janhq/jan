@@ -34,9 +34,15 @@ pub async fn run_mcp_commands(
         log::info!("MCP Servers: {server_map:#?}");
 
         let exe_path = env::current_exe().expect("Failed to get current exe path");
-        let exe_parent_path = exe_path.parent().expect("Executable must have a parent directory");
+        let exe_parent_path = exe_path
+            .parent()
+            .expect("Executable must have a parent directory");
         let bin_path = exe_parent_path.to_path_buf();
         for (name, config) in server_map {
+            if let Some(false) = extract_active_status(config) {
+                log::info!("Server {name} is not active, skipping.");
+                continue;
+            }
             if let Some((command, args, envs)) = extract_command_args(config) {
                 let mut cmd = Command::new(command.clone());
                 if command.clone() == "npx" {
@@ -94,6 +100,12 @@ fn extract_command_args(
         .as_object()?
         .clone();
     Some((command, args, envs))
+}
+
+fn extract_active_status(config: &Value) -> Option<bool> {
+    let obj = config.as_object()?;
+    let active = obj.get("active")?.as_bool()?;
+    Some(active)
 }
 
 #[tauri::command]

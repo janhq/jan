@@ -8,6 +8,7 @@ export type MCPServerConfig = {
   command: string
   args: string[]
   env: Record<string, string>
+  active?: boolean
 }
 
 // Define the structure of all MCP servers
