@@ -11,16 +11,16 @@ pub struct NvidiaInfo {
 impl From<NvidiaInfo> for super::GpuInfo {
     fn from(val: NvidiaInfo) -> Self {
         super::GpuInfo {
+            name: val.name,
+            index: val.index,
+            total_vram: val.total_vram,
+            free_vram: val.free_vram,
+            kind: super::GpuKind::Nvidia,
+            uuid: val.uuid,
+            driver_version: val.driver_version,
             additional_information: Some(super::GpuAdditionalInfo {
                 compute_cap: val.compute_capability,
-                driver_version: val.driver_version.clone(),
             }),
-            free_vram: val.free_vram,
-            id: val.index.to_string(),
-            name: val.name,
-            total_vram: val.total_vram,
-            uuid: val.uuid,
-            version: val.driver_version,
         }
     }
 }

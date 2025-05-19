@@ -189,19 +189,26 @@ impl CpuInfo {
 #[derive(serde::Serialize)]
 pub struct GpuAdditionalInfo {
     compute_cap: String,
-    driver_version: String,
+}
+
+#[derive(serde::Serialize)]
+pub enum GpuKind {
+    Nvidia,
+    AMD,
+    Intel,
+    Unknown,
 }
 
 // TODO: we might not need everything in this struct
-// use enum?
 #[derive(serde::Serialize)]
 pub struct GpuInfo {
     name: String,
-    id: String,
+    index: u64,
     total_vram: u64,
     free_vram: u64,
+    kind: GpuKind,
     uuid: String,
-    version: String,
+    driver_version: String,
     additional_information: Option<GpuAdditionalInfo>,
 }
 
