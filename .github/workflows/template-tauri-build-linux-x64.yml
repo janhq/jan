@@ -131,6 +131,7 @@ jobs:
             
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
+            ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             echo "------------------"
             cat ./src-tauri/Cargo.toml
 

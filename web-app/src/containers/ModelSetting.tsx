@@ -41,6 +41,7 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
         [key]: {
           ...(model.settings?.[key] != null ? model.settings?.[key] : {}),
           controller_props: {
+            // @ts-ignore
             ...(model.settings?.[key]?.controller_props ?? {}),
             value: value,
           },
@@ -66,6 +67,7 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
       updateModel({
         id: model.id,
         settings: Object.entries(updatedModel.settings).map(([key, value]) => ({
+          // @ts-ignore
           [key]: value.controller_props?.value,
         })) as ModelSettingParams,
       })

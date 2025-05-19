@@ -274,7 +274,7 @@ export const postMessageProcessing = async (
           ? JSON.parse(toolCall.function.arguments)
           : {},
       })
-
+      // @ts-ignore
       if (result.error) break
 
       message.metadata = {
@@ -291,7 +291,7 @@ export const postMessageProcessing = async (
           },
         ],
       }
-
+      // @ts-ignore
       builder.addToolMessage(result.content[0]?.text ?? '', toolCall.id)
       // update message metadata
       return message

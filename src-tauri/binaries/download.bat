@@ -21,7 +21,7 @@ call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx2-x64.tar.gz -e --strip 2 -o./engi
 call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_URL%-avx512-x64.tar.gz -e --strip 2 -o./engines/llama.cpp/win-avx512-x64/%ENGINE_VERSION%
 call %DOWNLOAD_TOOL% %ENGINE_DOWNLOAD_GGML_URL%-vulkan-x64.zip -e --strip 1 -o./engines/llama.cpp/win-vulkan-x64/%ENGINE_VERSION%
 call %DOWNLOAD_TOOL% %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu12.0-x64.tar.gz -e --strip 1 -o %BIN_PATH%
-@REM call %DOWNLOAD_TOOL% %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu11.7-x64.tar.gz -e --strip 1 -o %BIN_PATH%
+call %DOWNLOAD_TOOL% %CUDA_DOWNLOAD_URL%/cudart-llama-bin-win-cu11.7-x64.tar.gz -e --strip 1 -o %BIN_PATH%
 
 move %BIN_PATH%cortex-server-beta.exe %BIN_PATH%cortex-server.exe
 copy %BIN_PATH%cortex-server.exe %BIN_PATH%cortex-server-x86_64-pc-windows-msvc.exe
