@@ -1,11 +1,18 @@
 use std::{collections::HashMap, env, sync::Arc};
 
+use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::{process::Command, sync::Mutex};
+use std::{fs};
 
 use super::{cmd::get_jan_data_folder_path, state::AppState};
+
+const DEFAULT_MCP_CONFIG: &str = r#"{
+    "mcpServers": {}
+}"#;
+
 
 /// Runs MCP commands by reading configuration from a JSON file and initializing servers
 ///
@@ -173,6 +180,104 @@ pub async fn get_connected_servers(
     let servers = state.mcp_servers.clone();
     let servers_map = servers.lock().await;
     Ok(servers_map.keys().cloned().collect())
+}
+
+/// Retrieves all available tools from all MCP servers
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+///
+/// # Returns
+/// * `Result<Vec<Tool>, String>` - A vector of all tools if successful, or an error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Iterates through all connected servers
+/// 3. Gets the list of tools from each server
+/// 4. Combines all tools into a single vector
+/// 5. Returns the combined list of all available tools
+#[tauri::command]
+pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
+    let servers = state.mcp_servers.lock().await;
+    let mut all_tools: Vec<Tool> = Vec::new();
+
+    for (_, service) in servers.iter() {
+        // List tools
+        let tools = service.list_all_tools().await.map_err(|e| e.to_string())?;
+
+        for tool in tools {
+            all_tools.push(tool);
+        }
+    }
+
+    Ok(all_tools)
+}
+
+/// Calls a tool on an MCP server by name with optional arguments
+///
+/// # Arguments
+/// * `state` - Application state containing MCP server connections
+/// * `tool_name` - Name of the tool to call
+/// * `arguments` - Optional map of argument names to values
+///
+/// # Returns
+/// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
+///
+/// This function:
+/// 1. Locks the MCP servers mutex to access server connections
+/// 2. Searches through all servers for one containing the named tool
+/// 3. When found, calls the tool on that server with the provided arguments
+/// 4. Returns error if no server has the requested tool
+#[tauri::command]
+pub async fn call_tool(
+    state: State<'_, AppState>,
+    tool_name: String,
+    arguments: Option<Map<String, Value>>,
+) -> Result<CallToolResult, String> {
+    let servers = state.mcp_servers.lock().await;
+
+    // Iterate through servers and find the first one that contains the tool
+    for (_, service) in servers.iter() {
+        if let Ok(tools) = service.list_all_tools().await {
+            if tools.iter().any(|t| t.name == tool_name) {
+                return service
+                    .call_tool(CallToolRequestParam {
+                        name: tool_name.into(),
+                        arguments,
+                    })
+                    .await
+                    .map_err(|e| e.to_string());
+            }
+        }
+    }
+
+    Err(format!("Tool {} not found", tool_name))
+}
+
+#[tauri::command]
+pub async fn get_mcp_configs(app: AppHandle) -> Result<String, String> {
+    let mut path = get_jan_data_folder_path(app);
+    path.push("mcp_config.json");
+    log::info!("read mcp configs, path: {:?}", path);
+
+    // Create default empty config if file doesn't exist
+    if !path.exists() {
+        log::info!("mcp_config.json not found, creating default empty config");
+        fs::write(&path, DEFAULT_MCP_CONFIG)
+            .map_err(|e| format!("Failed to create default MCP config: {}", e))?;
+    }
+
+    let contents = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    return Ok(contents);
+}
+
+#[tauri::command]
+pub async fn save_mcp_configs(app: AppHandle, configs: String) -> Result<(), String> {
+    let mut path = get_jan_data_folder_path(app);
+    path.push("mcp_config.json");
+    log::info!("save mcp configs, path: {:?}", path);
+
+    fs::write(path, configs).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

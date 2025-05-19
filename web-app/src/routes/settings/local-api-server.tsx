@@ -11,6 +11,7 @@ import { PortInput } from '@/containers/PortInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { useAppState } from '@/hooks/useAppState'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -27,9 +28,9 @@ function LocalAPIServer() {
     serverHost,
     serverPort,
     apiPrefix,
-    serverStatus,
-    setServerStatus,
   } = useLocalApiServer()
+
+  const { serverStatus, setServerStatus } = useAppState()
 
   const toggleAPIServer = async () => {
     setServerStatus('pending')
@@ -115,8 +116,7 @@ function LocalAPIServer() {
                     </p>
                   </div>
                   <Button onClick={toggleAPIServer}>
-                    {`${serverStatus === 'running' ? 'Stop' : 'Start'}`}{' '}
-                    Server
+                    {`${serverStatus === 'running' ? 'Stop' : 'Start'}`} Server
                   </Button>
                 </div>
               }

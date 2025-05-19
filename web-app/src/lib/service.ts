@@ -26,6 +26,7 @@ export const AppRoutes = [
   'getMcpConfigs',
   'restartMcpServers',
   'getConnectedServers',
+  'readLogs',
 ]
 // Define API routes based on different route types
 export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
