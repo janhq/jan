@@ -8,9 +8,16 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { IconPlus, IconTrash } from '@tabler/icons-react'
+import { IconPlus, IconTrash, IconChevronDown } from '@tabler/icons-react'
 import { Assistant } from '@/hooks/useAssistant'
 import { Textarea } from '@/components/ui/textarea'
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -37,7 +44,8 @@ export default function AddEditAssistant({
     initialData?.instructions || ''
   )
   const [paramsKeys, setParamsKeys] = useState<string[]>([''])
-  const [paramsValues, setParamsValues] = useState<string[]>([''])
+  const [paramsValues, setParamsValues] = useState<unknown[]>([''])
+  const [paramsTypes, setParamsTypes] = useState<string[]>(['string'])
 
   // Reset form when modal opens/closes or editing key changes
   useEffect(() => {
@@ -50,8 +58,17 @@ export default function AddEditAssistant({
       const keys = Object.keys(initialData.parameters || {})
       const values = Object.values(initialData.parameters || {})
 
+      // Determine parameter types based on values
+      const types = values.map((value) => {
+        if (typeof value === 'boolean') return 'boolean'
+        if (typeof value === 'number') return 'number'
+        if (typeof value === 'object') return 'json'
+        return 'string'
+      })
+
       setParamsKeys(keys.length > 0 ? keys : [''])
       setParamsValues(values.length > 0 ? values : [''])
+      setParamsTypes(types.length > 0 ? types : ['string'])
     } else if (open) {
       // Add mode - reset form
       resetForm()
@@ -65,43 +82,88 @@ export default function AddEditAssistant({
     setInstructions('')
     setParamsKeys([''])
     setParamsValues([''])
+    setParamsTypes(['string'])
   }
 
   const handleParameterChange = (
     index: number,
-    value: string,
-    isKey: boolean
+    value: unknown,
+    field: 'key' | 'value' | 'type'
   ) => {
-    if (isKey) {
+    if (field === 'key') {
       const newKeys = [...paramsKeys]
-      newKeys[index] = value
+      newKeys[index] = value as string
       setParamsKeys(newKeys)
-    } else {
+    } else if (field === 'value') {
       const newValues = [...paramsValues]
-      newValues[index] = value
+
+      // Convert value based on parameter type
+      if (paramsTypes[index] === 'number' && typeof value === 'string') {
+        newValues[index] = value === '' ? '' : Number(value)
+      } else if (
+        paramsTypes[index] === 'boolean' &&
+        typeof value === 'boolean'
+      ) {
+        newValues[index] = value
+      } else if (paramsTypes[index] === 'json' && typeof value === 'string') {
+        try {
+          newValues[index] = value === '' ? {} : JSON.parse(value)
+        } catch {
+          // If JSON is invalid, keep as string
+          newValues[index] = value
+        }
+      } else {
+        newValues[index] = value
+      }
+
       setParamsValues(newValues)
+    } else {
+      const newTypes = [...paramsTypes]
+      newTypes[index] = value as string
+
+      // Reset value based on the new type
+      const newValues = [...paramsValues]
+
+      if (value === 'string') {
+        newValues[index] = ''
+      } else if (value === 'number') {
+        newValues[index] = ''
+      } else if (value === 'boolean') {
+        newValues[index] = false
+      } else if (value === 'json') {
+        newValues[index] = {}
+      }
+
+      setParamsValues(newValues)
+      setParamsTypes(newTypes)
     }
   }
 
   const handleAddParameter = () => {
     setParamsKeys([...paramsKeys, ''])
     setParamsValues([...paramsValues, ''])
+    setParamsTypes([...paramsTypes, 'string'])
   }
 
   const handleRemoveParameter = (index: number) => {
     const newKeys = [...paramsKeys]
     const newValues = [...paramsValues]
+    const newTypes = [...paramsTypes]
     newKeys.splice(index, 1)
     newValues.splice(index, 1)
+    newTypes.splice(index, 1)
     setParamsKeys(newKeys.length > 0 ? newKeys : [''])
     setParamsValues(newValues.length > 0 ? newValues : [''])
+    setParamsTypes(newTypes.length > 0 ? newTypes : ['string'])
   }
 
   const handleSave = () => {
     // Convert parameters arrays to object
-    const parameters: Record<string, string> = {}
+    const parameters: Record<string, unknown> = {}
     paramsKeys.forEach((key, index) => {
-      parameters[key] = paramsValues[index] || ''
+      if (key) {
+        parameters[key] = paramsValues[index]
+      }
     })
 
     const assistant: Assistant = {
@@ -126,7 +188,7 @@ export default function AddEditAssistant({
             {editingKey ? 'Edit Assistant' : 'Add Assistant'}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-2">
           <div className="space-y-2">
             <label className="text-sm mb-2 inline-block">Name</label>
             <Input
@@ -152,10 +214,11 @@ export default function AddEditAssistant({
             <label className="text-sm mb-2 inline-block">
               Description (optional)
             </label>
-            <Input
+            <Textarea
               value={description || ''}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Enter description"
+              className="resize-none"
             />
           </div>
 
@@ -165,6 +228,8 @@ export default function AddEditAssistant({
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               placeholder="Enter instructions"
+              className="resize-none"
+              rows={4}
             />
           </div>
 
@@ -184,19 +249,116 @@ export default function AddEditAssistant({
                 <Input
                   value={key}
                   onChange={(e) =>
-                    handleParameterChange(index, e.target.value, true)
+                    handleParameterChange(index, e.target.value, 'key')
                   }
                   placeholder="Key"
-                  className="flex-1"
+                  className="w-24"
                 />
-                <Input
-                  value={paramsValues[index] || ''}
-                  onChange={(e) =>
-                    handleParameterChange(index, e.target.value, false)
-                  }
-                  placeholder="Value"
-                  className="flex-1"
-                />
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <div className="relative w-30">
+                      <Input
+                        value={
+                          paramsTypes[index].charAt(0).toUpperCase() +
+                          paramsTypes[index].slice(1)
+                        }
+                        readOnly
+                      />
+                      <IconChevronDown
+                        size={14}
+                        className="text-main-view-fg/50 absolute right-2 top-1/2 -translate-y-1/2"
+                      />
+                    </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-32" align="start">
+                    <DropdownMenuItem
+                      onClick={() =>
+                        handleParameterChange(index, 'string', 'type')
+                      }
+                    >
+                      String
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        handleParameterChange(index, 'number', 'type')
+                      }
+                    >
+                      Number
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        handleParameterChange(index, 'boolean', 'type')
+                      }
+                    >
+                      Boolean
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        handleParameterChange(index, 'json', 'type')
+                      }
+                    >
+                      JSON
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                {paramsTypes[index] === 'boolean' ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <div className="relative flex-1">
+                        <Input
+                          value={paramsValues[index] ? 'True' : 'False'}
+                          readOnly
+                        />
+                        <IconChevronDown
+                          size={14}
+                          className="text-main-view-fg/50 absolute right-2 top-1/2 -translate-y-1/2"
+                        />
+                      </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent className="w-24" align="start">
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleParameterChange(index, true, 'value')
+                        }
+                      >
+                        True
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() =>
+                          handleParameterChange(index, false, 'value')
+                        }
+                      >
+                        False
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : paramsTypes[index] === 'json' ? (
+                  <Input
+                    value={
+                      typeof paramsValues[index] === 'object'
+                        ? JSON.stringify(paramsValues[index], null, 2)
+                        : paramsValues[index]?.toString() || ''
+                    }
+                    onChange={(e) =>
+                      handleParameterChange(index, e.target.value, 'value')
+                    }
+                    placeholder="JSON Value"
+                    className="flex-1"
+                  />
+                ) : (
+                  <Input
+                    value={paramsValues[index]?.toString() || ''}
+                    onChange={(e) =>
+                      handleParameterChange(index, e.target.value, 'value')
+                    }
+                    type={paramsTypes[index] === 'number' ? 'number' : 'text'}
+                    placeholder="Value"
+                    className="flex-1"
+                  />
+                )}
+
                 <div
                   className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                   onClick={() => handleRemoveParameter(index)}

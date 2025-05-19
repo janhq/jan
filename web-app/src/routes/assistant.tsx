@@ -6,13 +6,17 @@ import { useAssistant } from '@/hooks/useAssistant'
 import type { Assistant } from '@/hooks/useAssistant'
 
 import HeaderPage from '@/containers/HeaderPage'
-import {
-  IconCirclePlus,
-  IconCodeCircle,
-  IconPencil,
-  IconTrash,
-} from '@tabler/icons-react'
+import { IconCirclePlus, IconPencil, IconTrash } from '@tabler/icons-react'
 import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.assistant as any)({
@@ -20,9 +24,25 @@ export const Route = createFileRoute(route.assistant as any)({
 })
 
 function Assistant() {
-  const { assistants, addAssistant, updateAssistant } = useAssistant()
+  const { assistants, addAssistant, updateAssistant, deleteAssistant } =
+    useAssistant()
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDelete = (id: string) => {
+    setDeletingId(id)
+    setDeleteConfirmOpen(true)
+  }
+
+  const confirmDelete = () => {
+    if (deletingId) {
+      deleteAssistant(deletingId)
+      setDeleteConfirmOpen(false)
+      setDeletingId(null)
+    }
+  }
 
   const handleSave = (assistant: Assistant) => {
     if (editingKey) {
@@ -51,7 +71,7 @@ function Assistant() {
                   {assistant.name}
                 </h3>
                 <div className="flex items-center gap-0.5">
-                  <div
+                  {/* <div
                     className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                     title="Edit Assistant in JSON"
                   >
@@ -59,7 +79,7 @@ function Assistant() {
                       size={18}
                       className="text-main-view-fg/50"
                     />
-                  </div>
+                  </div> */}
                   <div
                     className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                     title="Edit Assistant"
@@ -73,12 +93,16 @@ function Assistant() {
                   <div
                     className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                     title="Delete Assistant"
+                    onClick={() => handleDelete(assistant.id)}
                   >
                     <IconTrash size={18} className="text-main-view-fg/50" />
                   </div>
                 </div>
               </div>
-              <p className="text-main-view-fg/50 mt-1">
+              <p
+                className="text-main-view-fg/50 mt-1 line-clamp-2"
+                title={assistant.description}
+              >
                 {assistant.description}
               </p>
             </div>
@@ -103,6 +127,28 @@ function Assistant() {
           }
           onSave={handleSave}
         />
+        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Assistant</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this assistant? This action
+                cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="link"
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete} autoFocus>
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )
