@@ -16,6 +16,8 @@ import AddEditMCPServer from '@/containers/dialogs/AddEditMCPServer'
 import DeleteMCPServerConfirm from '@/containers/dialogs/DeleteMCPServerConfirm'
 import EditJsonMCPserver from '@/containers/dialogs/EditJsonMCPserver'
 import { Switch } from '@/components/ui/switch'
+import { twMerge } from 'tailwind-merge'
+import { getConnectedServers } from '@/services/mcp'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
@@ -23,12 +25,7 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 })
 
 function MCPServers() {
-  const { fetchMCPServers, mcpServers, addServer, editServer, deleteServer } =
-    useMCPServers()
-
-  useEffect(() => {
-    fetchMCPServers()
-  }, [fetchMCPServers])
+  const { mcpServers, addServer, editServer, deleteServer } = useMCPServers()
 
   const [open, setOpen] = useState(false)
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -46,6 +43,7 @@ function MCPServers() {
   const [jsonEditorData, setJsonEditorData] = useState<
     MCPServerConfig | Record<string, MCPServerConfig> | undefined
   >(undefined)
+  const [connectedServers, setConnectedServers] = useState<string[]>([])
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -137,6 +135,10 @@ function MCPServers() {
     }
   }
 
+  useEffect(() => {
+    getConnectedServers().then(setConnectedServers)
+  }, [setConnectedServers])
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -198,7 +200,14 @@ function MCPServers() {
                     align="start"
                     title={
                       <div className="flex items-center gap-x-2">
-                        <div className="size-2 rounded-full bg-accent" />
+                        <div
+                          className={twMerge(
+                            'size-2 rounded-full',
+                            connectedServers.includes(key)
+                              ? 'bg-accent'
+                              : 'bg-main-view-fg/50'
+                          )}
+                        />
                         {/* condition here when server is running or not */}
                         {/* <div className="size-2 rounded-full bg-main-view-fg/20" /> */}
                         <h1 className="text-main-view-fg text-base capitalize">

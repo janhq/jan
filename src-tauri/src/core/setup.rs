@@ -190,14 +190,11 @@ fn extract_extension_manifest<R: Read>(
 }
 
 pub fn setup_mcp(app: &App) {
-    let app_path = get_jan_data_folder_path(app.handle().clone());
-
     let state = app.state::<AppState>().inner();
-    let app_path_str = app_path.to_str().unwrap().to_string();
     let servers = state.mcp_servers.clone();
-    let app_handle = app.handle().clone();
+    let app_handle: tauri::AppHandle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = run_mcp_commands(app_path_str, servers).await {
+        if let Err(e) = run_mcp_commands(&app_handle, servers).await {
             log::error!("Failed to run mcp commands: {}", e);
         }
         app_handle

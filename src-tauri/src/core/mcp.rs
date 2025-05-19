@@ -2,7 +2,7 @@ use std::{collections::HashMap, env, sync::Arc};
 
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::{process::Command, sync::Mutex};
 
 use super::{cmd::get_jan_data_folder_path, state::AppState};
@@ -16,15 +16,17 @@ use super::{cmd::get_jan_data_folder_path, state::AppState};
 /// # Returns
 /// * `Ok(())` if servers were initialized successfully
 /// * `Err(String)` if there was an error reading config or starting servers
-pub async fn run_mcp_commands(
-    app_path: String,
+pub async fn run_mcp_commands<R: Runtime>(
+    app: &AppHandle<R>,
     servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
 ) -> Result<(), String> {
+    let app_path = get_jan_data_folder_path(app.clone());
+    let app_path_str = app_path.to_str().unwrap().to_string();
     log::info!(
         "Load MCP configs from {}",
-        app_path.clone() + "/mcp_config.json"
+        app_path_str.clone() + "/mcp_config.json"
     );
-    let config_content = std::fs::read_to_string(app_path.clone() + "/mcp_config.json")
+    let config_content = std::fs::read_to_string(app_path_str.clone() + "/mcp_config.json")
         .map_err(|e| format!("Failed to read config file: {}", e))?;
 
     let mcp_servers: serde_json::Value = serde_json::from_str(&config_content)
@@ -68,12 +70,28 @@ pub async fn run_mcp_commands(
                     }
                 });
 
-                let service =
-                    ().serve(TokioChildProcess::new(cmd).map_err(|e| e.to_string())?)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                let process = TokioChildProcess::new(cmd);
+                match process {
+                    Ok(p) => {
+                        let service = ().serve(p).await;
 
-                servers_state.lock().await.insert(name.clone(), service);
+                        match service {
+                            Ok(running_service) => {
+                                servers_state
+                                    .lock()
+                                    .await
+                                    .insert(name.clone(), running_service);
+                                log::info!("Server {name} started successfully.");
+                            }
+                            Err(e) => {
+                                log::error!("Failed to start server {name}: {e}");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to run command {name}: {e}");
+                    }
+                }
             }
         }
     }
@@ -84,6 +102,19 @@ pub async fn run_mcp_commands(
         // Initialize
         let _server_info = service.peer_info();
         log::info!("Connected to server: {_server_info:#?}");
+        // Emit event to the frontend
+        let event = format!("mcp-connected");
+        let server_info: &rmcp::model::InitializeResult = service.peer_info();
+        let name = server_info.server_info.name.clone();
+        let version = server_info.server_info.version.clone();
+        let payload = serde_json::json!({
+            "name": name,
+            "version": version,
+        });
+        // service.peer_info().server_info.name
+        app.emit(&event, payload)
+            .map_err(|e| format!("Failed to emit event: {}", e))?;
+        log::info!("Emitted event: {event}");
     }
     Ok(())
 }
@@ -110,14 +141,12 @@ fn extract_active_status(config: &Value) -> Option<bool> {
 
 #[tauri::command]
 pub async fn restart_mcp_servers(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let app_path = get_jan_data_folder_path(app.clone());
-    let app_path_str = app_path.to_str().unwrap().to_string();
     let servers = state.mcp_servers.clone();
     // Stop the servers
     stop_mcp_servers(state.mcp_servers.clone()).await?;
 
     // Restart the servers
-    run_mcp_commands(app_path_str, servers).await?;
+    run_mcp_commands(&app, servers).await?;
 
     app.emit("mcp-update", "MCP servers updated")
         .map_err(|e| format!("Failed to emit event: {}", e))
@@ -136,6 +165,15 @@ pub async fn stop_mcp_servers(
     drop(servers_map); // Release the lock after stopping
     Ok(())
 }
+#[tauri::command]
+pub async fn get_connected_servers(
+    _app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    let servers = state.mcp_servers.clone();
+    let servers_map = servers.lock().await;
+    Ok(servers_map.keys().cloned().collect())
+}
 
 #[cfg(test)]
 mod tests {
@@ -144,21 +182,22 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use std::sync::Arc;
+    use tauri::test::mock_app;
     use tokio::sync::Mutex;
 
     #[tokio::test]
     async fn test_run_mcp_commands() {
+        let app = mock_app();
         // Create a mock mcp_config.json file
         let config_path = "mcp_config.json";
-        let mut file = File::create(config_path).expect("Failed to create config file");
+        let mut file: File = File::create(config_path).expect("Failed to create config file");
         file.write_all(b"{\"mcpServers\":{}}")
             .expect("Failed to write to config file");
 
         // Call the run_mcp_commands function
-        let app_path = ".".to_string();
         let servers_state: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
             Arc::new(Mutex::new(HashMap::new()));
-        let result = run_mcp_commands(app_path, servers_state).await;
+        let result = run_mcp_commands(app.handle(), servers_state).await;
 
         // Assert that the function returns Ok(())
         assert!(result.is_ok());

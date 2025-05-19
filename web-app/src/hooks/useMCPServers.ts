@@ -25,21 +25,6 @@ type MCPServerStoreState = {
   addServer: (key: string, config: MCPServerConfig) => void
   editServer: (key: string, config: MCPServerConfig) => void
   deleteServer: (key: string) => void
-  fetchMCPServers: () => Promise<void>
-}
-
-// Mock data for MCP servers
-export const mockMCPServers: MCPServers = {
-  puppeteer: {
-    command: 'npx',
-    args: ['-y', '@tokenizin/mcp-npx-fetch'],
-    env: {},
-  },
-  inspector: {
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/inspector'],
-    env: {},
-  },
 }
 
 export const useMCPServers = create<MCPServerStoreState>()(
@@ -90,66 +75,6 @@ export const useMCPServers = create<MCPServerStoreState>()(
             deletedServerKeys: [...state.deletedServerKeys, key],
           }
         }),
-
-      // Fetch MCP servers
-      fetchMCPServers: async () => {
-        set({ loading: true })
-
-        // Simulate API call with mock data
-        const response = await new Promise<MCPServers>((resolve) =>
-          setTimeout(() => resolve(mockMCPServers), 0)
-        )
-
-        set((state) => {
-          // Filter out deleted servers from the response
-          const filteredResponse = { ...response }
-          state.deletedServerKeys.forEach((key) => {
-            delete filteredResponse[key]
-          })
-
-          const localKeys = Object.keys(state.mcpServers)
-          const responseKeys = Object.keys(filteredResponse)
-
-          // Check if the keys are the same
-          const hasSameKeys =
-            localKeys.length === responseKeys.length &&
-            localKeys.every((key) => responseKeys.includes(key))
-
-          // Check if values are the same for each key
-          const hasSameValues =
-            hasSameKeys &&
-            localKeys.every((key) => {
-              const current = state.mcpServers[key]
-              const resp = filteredResponse[key]
-
-              return (
-                current.command === resp.command &&
-                JSON.stringify(current.args) === JSON.stringify(resp.args) &&
-                JSON.stringify(current.env) === JSON.stringify(resp.env)
-              )
-            })
-
-          // If everything is the same, don't update
-          if (hasSameValues) {
-            return { loading: false }
-          }
-
-          // Add only new servers, preserving existing ones
-          const existingKeys = new Set(localKeys)
-          const newServers: MCPServers = {}
-
-          responseKeys.forEach((key) => {
-            if (!existingKeys.has(key)) {
-              newServers[key] = filteredResponse[key]
-            }
-          })
-
-          return {
-            mcpServers: { ...newServers, ...state.mcpServers },
-            loading: false,
-          }
-        })
-      },
     }),
     {
       name: localStoregeKey.settingMCPSevers, // Using existing key for now
