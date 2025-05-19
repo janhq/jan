@@ -77,7 +77,7 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
             .memory_heaps
             .iter()
             .map(|heap| heap.size)
-            .sum();
+            .sum::<u64>() / (1024 * 1024); // convert to MiB
 
         let properties = device.properties();
 
