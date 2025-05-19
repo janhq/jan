@@ -19,8 +19,44 @@ export const Route = createFileRoute(route.settings.local_api_server as any)({
 
 function LocalAPIServer() {
   const { t } = useTranslation()
-  const { corsEnabled, setCorsEnabled, verboseLogs, setVerboseLogs } =
-    useLocalApiServer()
+  const {
+    corsEnabled,
+    setCorsEnabled,
+    verboseLogs,
+    setVerboseLogs,
+    serverHost,
+    serverPort,
+    apiPrefix,
+    serverStatus,
+    setServerStatus,
+  } = useLocalApiServer()
+
+  const toggleAPIServer = async () => {
+    setServerStatus('pending')
+    if (serverStatus === 'stopped') {
+      window.core?.api
+        ?.startServer({
+          host: serverHost,
+          port: serverPort,
+          prefix: apiPrefix,
+          isCorsEnabled: corsEnabled,
+          isVerboseEnabled: verboseLogs,
+        })
+        .then(() => {
+          setServerStatus('running')
+        })
+    } else {
+      window.core?.api
+        ?.stopServer()
+        .then(() => {
+          setServerStatus('stopped')
+        })
+        .catch((error: unknown) => {
+          console.error('Error stopping server:', error)
+          setServerStatus('stopped')
+        })
+    }
+  }
 
   const handleOpenLogs = async () => {
     try {
@@ -78,7 +114,10 @@ function LocalAPIServer() {
                       Start an OpenAI-compatible local HTTP server.
                     </p>
                   </div>
-                  <Button>Start Server</Button>
+                  <Button onClick={toggleAPIServer}>
+                    {`${serverStatus === 'running' ? 'Stop' : 'Start'}`}{' '}
+                    Server
+                  </Button>
                 </div>
               }
             >

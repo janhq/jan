@@ -18,7 +18,7 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { DialogEditModel } from '@/containers/dialogs/EditModel'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { ModelSetting } from '@/containers/ModelSetting'
-import { DialoDeleteModel } from '@/containers/dialogs/DeleteModel'
+import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
@@ -250,7 +250,7 @@ function ProviderDetail() {
                             {model.settings && (
                               <ModelSetting provider={provider} model={model} />
                             )}
-                            <DialoDeleteModel
+                            <DialogDeleteModel
                               provider={provider}
                               modelId={model.id}
                             />

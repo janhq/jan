@@ -13,6 +13,7 @@ type ModelProviderState = {
     providerName: string,
     modelName: string
   ) => Model | undefined
+  deleteModel: (modelId: string) => void
 }
 
 export const useModelProvider = create<ModelProviderState>()(
@@ -31,7 +32,9 @@ export const useModelProvider = create<ModelProviderState>()(
             const models = existingProvider?.models || []
             const mergedModels = [
               ...(provider?.models ?? []),
-              ...models.filter((e) => !provider?.models.some((m) => m.id === e.id)),
+              ...models.filter(
+                (e) => !provider?.models.some((m) => m.id === e.id)
+              ),
             ]
             return {
               ...provider,
@@ -97,6 +100,19 @@ export const useModelProvider = create<ModelProviderState>()(
         })
 
         return modelObject
+      },
+      deleteModel: (modelId: string) => {
+        set((state) => ({
+          providers: state.providers.map((provider) => {
+            const models = provider.models.filter(
+              (model) => model.id !== modelId
+            )
+            return {
+              ...provider,
+              models,
+            }
+          }),
+        }))
       },
     }),
     {

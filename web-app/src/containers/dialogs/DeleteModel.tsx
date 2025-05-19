@@ -9,22 +9,37 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { deleteModel } from '@/services/models'
+import { getProviders } from '@/services/providers'
 
 import { IconTrash } from '@tabler/icons-react'
 
 import { useState, useEffect } from 'react'
 import { toast } from 'sonner'
 
-type DialoDeleteModelProps = {
+type DialogDeleteModelProps = {
   provider: ModelProvider
   modelId?: string
 }
 
-export const DialoDeleteModel = ({
+export const DialogDeleteModel = ({
   provider,
   modelId,
-}: DialoDeleteModelProps) => {
+}: DialogDeleteModelProps) => {
   const [selectedModelId, setSelectedModelId] = useState<string>('')
+  const { setProviders, deleteModel: deleteModelCache } = useModelProvider()
+
+  const removeModel = async () => {
+    deleteModelCache(selectedModelId)
+    deleteModel(selectedModelId).then(() => {
+      getProviders().then(setProviders)
+      toast.success('Delete Model', {
+        id: `delete-model-${selectedModel?.id}`,
+        description: `Model ${selectedModel?.id} has been permanently deleted.`,
+      })
+    })
+  }
 
   // Initialize with the provided model ID or the first model if available
   useEffect(() => {
@@ -68,16 +83,7 @@ export const DialoDeleteModel = ({
             </Button>
           </DialogClose>
           <DialogClose asChild>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                toast.success('Delete Model', {
-                  id: `delete-model-${selectedModel.id}`,
-                  description: `Model ${selectedModel.id} has been permanently deleted.`,
-                })
-              }}
-            >
+            <Button variant="destructive" size="sm" onClick={removeModel}>
               Delete
             </Button>
           </DialogClose>
