@@ -35,7 +35,7 @@ reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
 tokio = { version = "1", features = ["full"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
     "client",
-    "transport-sse",
+    "transport-sse-server",
     "transport-child-process",
     "tower",
 ] }
