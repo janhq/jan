@@ -51,3 +51,20 @@ type ProviderObject = {
  * The model provider type
  */
 type ModelProvider = ProviderObject
+
+/**
+ * Proxy configuration options
+ * @description This type defines the structure of the proxy configuration options.
+ */
+type ProxyOptions = {
+  proxyEnabled: boolean
+  proxyUrl: string
+  proxyUsername: string
+  proxyPassword: string
+  proxyIgnoreSSL: boolean
+  verifyProxySSL: boolean
+  verifyProxyHostSSL: boolean
+  verifyPeerSSL: boolean
+  verifyHostSSL: boolean
+  noProxy: string
+}
