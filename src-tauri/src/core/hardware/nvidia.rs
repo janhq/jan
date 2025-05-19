@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct NvidiaStaticInfo {
     name: String,
     index: u64,
@@ -45,7 +46,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaStaticInfo> {
 
         for line in std::str::from_utf8(&output.stdout)?.lines() {
             let parts: Vec<&str> = line.split(", ").collect();
-            if parts.len() != 7 {
+            if parts.len() != 6 {
                 return Err(format!("Unable to parse line: {}", line).into());
             }
             let info = NvidiaStaticInfo {
@@ -82,7 +83,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaStaticInfo> {
 
         for line in std::str::from_utf8(&output.stdout)?.lines() {
             let parts: Vec<&str> = line.split(", ").collect();
-            if parts.len() != 6 {
+            if parts.len() != 5 {
                 return Err(format!("Unable to parse line: {}", line).into());
             }
             let info = NvidiaStaticInfo {
@@ -106,4 +107,17 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaStaticInfo> {
     }
 
     vec![]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_nvidia_gpus() {
+        let gpus = get_nvidia_gpus();
+        for (i, gpu) in gpus.iter().enumerate() {
+            println!("GPU {}: {:?}", i, gpu);
+        }
+    }
 }
