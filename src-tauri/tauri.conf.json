@@ -90,7 +90,6 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "binaries/engines/**/*",
       "resources/themes/**/*",
       "resources/pre-install/**/*",
       "resources/lib/"
@@ -106,9 +105,7 @@
       },
       "deb": {
         "files": {
-          "usr/bin/bun": "resources/bin/bun",
-          "usr/lib/Jan/binaries": "binaries/deps",
-          "usr/lib/Jan/binaries/engines": "binaries/engines"
+          "usr/bin/bun": "resources/bin/bun"
         }
       }
     },
