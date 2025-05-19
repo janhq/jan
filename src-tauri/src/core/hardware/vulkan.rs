@@ -85,9 +85,7 @@ fn parse_c_string(buf: &[i8]) -> String {
 }
 
 fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Error>> {
-    // let entry = unsafe { Entry::load()? };
-    let entry =
-        unsafe { Entry::load_from("/opt/homebrew/Cellar/molten-vk/1.3.0/lib/libMoltenVK.dylib")? };
+    let entry = unsafe { Entry::load()? };
     let app_info = vk::ApplicationInfo {
         api_version: vk::make_api_version(0, 1, 1, 0),
         ..Default::default()
@@ -137,6 +135,7 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanInfo>, Box<dyn std::error::Err
         {
             if heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL) {
                 memory_info.total += heap.size / (1024 * 1024); // convert to MiB
+                // NOTE: this is only for Vulkan-allocated memory
                 memory_info.used += mem_props.heap_usage[heap_idx] / (1024 * 1024);
             }
         }
