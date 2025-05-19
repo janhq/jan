@@ -123,9 +123,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [
       set-public-provider, 
-      build-electron-windows-x64, 
-      build-electron-linux-x64, 
-      build-electron-macos,
+      # build-electron-windows-x64, 
+      # build-electron-linux-x64, 
+      # build-electron-macos,
       build-tauri-windows-x64,
       build-tauri-linux-x64,
       build-tauri-macos
@@ -161,9 +161,9 @@ jobs:
 
   noti-discord-pre-release-and-update-url-readme:
     needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
+      # build-electron-macos,
+      # build-electron-windows-x64,
+      # build-electron-linux-x64,
       build-tauri-macos,
       build-tauri-windows-x64,
       build-tauri-linux-x64,
@@ -201,9 +201,9 @@ jobs:
 
   comment-pr-build-url:
     needs: [
-      build-electron-macos,
-      build-electron-windows-x64,
-      build-electron-linux-x64,
+      # build-electron-macos,
+      # build-electron-windows-x64,
+      # build-electron-linux-x64,
       build-tauri-macos,
       build-tauri-windows-x64,
       build-tauri-linux-x64,
