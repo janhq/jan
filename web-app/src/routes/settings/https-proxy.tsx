@@ -7,7 +7,9 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { EyeOff, Eye } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useProxyConfig } from '@/hooks/useProxyConfig'
+import { configurePullOptions } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.https_proxy as any)({
@@ -17,6 +19,65 @@ export const Route = createFileRoute(route.settings.https_proxy as any)({
 function HTTPSProxy() {
   const { t } = useTranslation()
   const [showPassword, setShowPassword] = useState(false)
+  const {
+    proxyUrl,
+    proxyEnabled,
+    proxyUsername,
+    proxyPassword,
+    proxyIgnoreSSL,
+    verifyProxySSL,
+    verifyProxyHostSSL,
+    verifyPeerSSL,
+    verifyHostSSL,
+    noProxy,
+    setProxyEnabled,
+    setProxyUsername,
+    setProxyPassword,
+    setProxyIgnoreSSL,
+    setVerifyProxySSL,
+    setVerifyProxyHostSSL,
+    setVerifyPeerSSL,
+    setVerifyHostSSL,
+    setNoProxy,
+    setProxyUrl,
+  } = useProxyConfig()
+
+  useEffect(() => {
+    if (proxyUrl && !proxyEnabled) {
+      setProxyEnabled(true)
+    } else if (!proxyUrl && proxyEnabled) {
+      setProxyEnabled(false)
+    }
+  }, [proxyEnabled, proxyUrl, setProxyEnabled])
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      configurePullOptions({
+        proxyUrl,
+        proxyEnabled,
+        proxyUsername,
+        proxyPassword,
+        proxyIgnoreSSL,
+        verifyProxySSL,
+        verifyProxyHostSSL,
+        verifyPeerSSL,
+        verifyHostSSL,
+        noProxy,
+      })
+    }, 300)
+    return () => clearTimeout(handler)
+  }, [
+    noProxy,
+    proxyEnabled,
+    proxyIgnoreSSL,
+    proxyPassword,
+    proxyUrl,
+    proxyUsername,
+    verifyHostSSL,
+    verifyPeerSSL,
+    verifyProxyHostSSL,
+    verifyProxySSL,
+  ])
 
   return (
     <div className="flex flex-col h-full">
@@ -38,6 +99,8 @@ function HTTPSProxy() {
                     <Input
                       className="w-full"
                       placeholder="http://<user>:<password>@<domain or IP>:<port>"
+                      value={proxyUrl}
+                      onChange={(e) => setProxyUrl(e.target.value)}
                     />
                   </div>
                 }
@@ -49,12 +112,18 @@ function HTTPSProxy() {
                   <div className="space-y-2">
                     <p>Credentials for your proxy server (if required).</p>
                     <div className="flex gap-2">
-                      <Input placeholder="Username" />
+                      <Input
+                        placeholder="Username"
+                        value={proxyUsername}
+                        onChange={(e) => setProxyUsername(e.target.value)}
+                      />
                       <div className="relative shrink-0 w-1/2">
                         <Input
                           type={showPassword ? 'text' : 'password'}
                           placeholder="Password"
                           className="pr-16"
+                          value={proxyPassword}
+                          onChange={(e) => setProxyPassword(e.target.value)}
                         />
                         <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
                           <button
@@ -79,7 +148,11 @@ function HTTPSProxy() {
                 description={
                   <div className="space-y-2">
                     <p>List of hosts that should bypass the proxy.</p>
-                    <Input placeholder="localhost, 127.0.0.1" />
+                    <Input
+                      placeholder="localhost, 127.0.0.1"
+                      value={noProxy}
+                      onChange={(e) => setNoProxy(e.target.value)}
+                    />
                   </div>
                 }
               />
@@ -90,27 +163,54 @@ function HTTPSProxy() {
               <CardItem
                 title="Ignore SSL Certificates"
                 description="Allow self-signed or unverified certificates (may be required for certain proxies). Enable this reduces security. Only use this if you trust your proxy server."
-                actions={<Switch />}
+                actions={
+                  <Switch
+                    checked={proxyIgnoreSSL}
+                    onCheckedChange={(checked) => setProxyIgnoreSSL(checked)}
+                  />
+                }
               />
               <CardItem
                 title="Proxy SSL"
                 description="Validate SSL certificate when connecting to the proxy server."
-                actions={<Switch />}
+                actions={
+                  <Switch
+                    checked={verifyProxySSL}
+                    onCheckedChange={(checked) => setVerifyProxySSL(checked)}
+                  />
+                }
               />
               <CardItem
                 title="Proxy Host SSL"
                 description="Validate SSL certificate of the proxy server host."
-                actions={<Switch />}
+                actions={
+                  <Switch
+                    checked={verifyProxyHostSSL}
+                    onCheckedChange={(checked) =>
+                      setVerifyProxyHostSSL(checked)
+                    }
+                  />
+                }
               />
               <CardItem
                 title="Peer SSL"
                 description="Validate SSL certificate of the peer connections."
-                actions={<Switch />}
+                actions={
+                  <Switch
+                    checked={verifyPeerSSL}
+                    onCheckedChange={(checked) => setVerifyPeerSSL(checked)}
+                  />
+                }
               />
               <CardItem
                 title="Host SSL"
                 description="Validate SSL certificate of destination hosts."
-                actions={<Switch />}
+                actions={
+                  <Switch
+                    checked={verifyHostSSL}
+                    onCheckedChange={(checked) => setVerifyHostSSL(checked)}
+                  />
+                }
               />
             </Card>
           </div>

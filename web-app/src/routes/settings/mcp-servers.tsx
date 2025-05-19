@@ -127,6 +127,16 @@ function MCPServers() {
     }
   }
 
+  const toggleServer = (serverKey: string, active: boolean) => {
+    if (serverKey) {
+      // Save single server
+      editServer(serverKey, {
+        ...(mcpServers[serverKey] as MCPServerConfig),
+        active,
+      })
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -245,7 +255,12 @@ function MCPServers() {
                           />
                         </div>
                         <div className="ml-2">
-                          <Switch />
+                          <Switch
+                            checked={config.active === false ? false : true}
+                            onCheckedChange={(checked) =>
+                              toggleServer(key, checked)
+                            }
+                          />
                         </div>
                       </div>
                     }
