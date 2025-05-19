@@ -45,7 +45,8 @@ export const useChat = () => {
           id: selectedModel?.id ?? defaultModel(selectedProvider),
           provider: selectedProvider,
         },
-        prompt
+        prompt,
+        currentAssistant
       )
       router.navigate({
         to: route.threadsDetail,
@@ -60,6 +61,7 @@ export const useChat = () => {
     router,
     selectedModel?.id,
     selectedProvider,
+    currentAssistant,
   ])
 
   const sendMessage = useCallback(
