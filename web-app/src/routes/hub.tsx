@@ -1,9 +1,10 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
-import { useState, useMemo, useEffect, ChangeEvent } from 'react'
+import { useState, useMemo, useEffect, ChangeEvent, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
@@ -16,6 +17,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { downloadModel } from '@/services/models'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { Progress } from '@/components/ui/progress'
+
+type ModelProps = {
+  model: {
+    id: string
+    models: {
+      id: string
+    }[]
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.hub as any)({
@@ -77,6 +89,74 @@ function Hub() {
     setSearchValue(e.target.value)
   }
 
+  const { downloads } = useDownloadStore()
+
+  const downloadProcesses = useMemo(
+    () =>
+      Object.values(downloads).map((download) => ({
+        id: download.name,
+        name: download.name,
+        progress: download.progress,
+        current: download.current,
+        total: download.total,
+      })),
+    [downloads]
+  )
+
+  const { getProviderByName } = useModelProvider()
+  const llamaProvider = getProviderByName('llama.cpp')
+
+  const navigate = useNavigate()
+
+  const handleUseModel = useCallback(
+    (modelId: string) => {
+      navigate({
+        to: route.home,
+        params: {},
+        search: {
+          model: {
+            id: modelId,
+            provider: 'llama.cpp',
+          },
+        },
+      })
+    },
+    [navigate]
+  )
+
+  const DownloadButtonPlaceholder = useMemo(() => {
+    return ({ model }: ModelProps) => {
+      const modelId = model.models[0]?.id
+      const isDownloading = downloadProcesses.some((e) => e.id === modelId)
+      const downloadProgress =
+        downloadProcesses.find((e) => e.id === modelId)?.progress || 0
+      const isDownloaded = llamaProvider?.models.some(
+        (m: { id: string }) => m.id === modelId
+      )
+
+      return (
+        <>
+          {isDownloading ? (
+            <div className="flex items-center gap-2 w-20">
+              <Progress value={downloadProgress * 100} />
+              <span className="text-xs text-center text-main-view-fg/70">
+                {Math.round(downloadProgress * 100)}%
+              </span>
+            </div>
+          ) : isDownloaded ? (
+            <Button size="sm" onClick={() => handleUseModel(modelId)}>
+              Use
+            </Button>
+          ) : (
+            <Button size="sm" onClick={() => downloadModel(modelId)}>
+              Download
+            </Button>
+          )}
+        </>
+      )
+    }
+  }, [downloadProcesses, llamaProvider?.models, handleUseModel])
+
   return (
     <div className="flex h-full w-full">
       <div className="flex flex-col h-full w-full">
@@ -134,131 +214,172 @@ function Hub() {
               </div>
             ) : (
               <div className="flex flex-col pb-2 mb-2 gap-2">
-                {filteredModels.map((model) => {
-                  return (
-                    <div key={model.id}>
-                      <Card
-                        header={
-                          <div className="flex items-center justify-between gap-x-2">
-                            <Link
-                              to={
-                                `https://huggingface.co/${model.id}` as string
-                              }
-                              target="_blank"
-                            >
-                              <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
-                                {extractModelName(model.id) || ''}
-                              </h1>
-                            </Link>
-                            <div className="shrink-0 space-x-3">
-                              <span className="text-main-view-fg/70 font-medium text-xs">
-                                {toGigabytes(model.models?.[0]?.size)}
-                              </span>
-                              <Button
-                                onClick={() =>
-                                  downloadModel(model.models[0]?.id)
+                {filteredModels.map((model) => (
+                  <div key={model.id}>
+                    <Card
+                      header={
+                        <div className="flex items-center justify-between gap-x-2">
+                          <Link
+                            to={`https://huggingface.co/${model.id}` as string}
+                            target="_blank"
+                          >
+                            <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
+                              {extractModelName(model.id) || ''}
+                            </h1>
+                          </Link>
+                          <div className="shrink-0 space-x-3 flex items-center">
+                            <span className="text-main-view-fg/70 font-medium text-xs">
+                              {toGigabytes(model.models?.[0]?.size)}
+                            </span>
+                            <DownloadButtonPlaceholder model={model} />
+                          </div>
+                        </div>
+                      }
+                    >
+                      <div className="line-clamp-2 mt-3 text-main-view-fg/60">
+                        <RenderMarkdown
+                          components={{
+                            a: ({ ...props }) => (
+                              <a
+                                {...props}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              />
+                            ),
+                          }}
+                          content={
+                            extractDescription(model.metadata.description) || ''
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="capitalize text-main-view-fg/80">
+                          By {model?.author}
+                        </span>
+                        <div className="flex items-center gap-4 ml-2">
+                          <div className="flex items-center gap-1">
+                            <IconDownload
+                              size={18}
+                              className="text-main-view-fg/50"
+                              title="Downloads"
+                            />
+                            <span className="text-main-view-fg/80">
+                              {model.metadata?.downloads || 0}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <IconFileCode
+                              size={20}
+                              className="text-main-view-fg/50"
+                              title="Variants"
+                            />
+                            <span className="text-main-view-fg/80">
+                              {model.models?.length || 0}
+                            </span>
+                          </div>
+                          {model.models.length > 1 && (
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={!!expandedModels[model.id]}
+                                onCheckedChange={() =>
+                                  toggleModelExpansion(model.id)
                                 }
-                              >
-                                Download
-                              </Button>
-                            </div>
-                          </div>
-                        }
-                      >
-                        <div className="line-clamp-2 mt-3 text-main-view-fg/60">
-                          <RenderMarkdown
-                            components={{
-                              a: ({ ...props }) => (
-                                <a
-                                  {...props}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                />
-                              ),
-                            }}
-                            content={
-                              extractDescription(model.metadata.description) ||
-                              ''
-                            }
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 mt-2">
-                          <span className="capitalize text-main-view-fg/80">
-                            By {model?.author}
-                          </span>
-                          <div className="flex items-center gap-4 ml-2">
-                            <div className="flex items-center gap-1">
-                              <IconDownload
-                                size={18}
-                                className="text-main-view-fg/50"
-                                title="Downloads"
                               />
-                              <span className="text-main-view-fg/80">
-                                {model.metadata?.downloads || 0}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <IconFileCode
-                                size={20}
-                                className="text-main-view-fg/50"
-                                title="Variants"
-                              />
-                              <span className="text-main-view-fg/80">
-                                {model.models?.length || 0}
-                              </span>
-                            </div>
-                            {model.models.length > 1 && (
-                              <div className="flex items-center gap-2">
-                                <Switch
-                                  checked={!!expandedModels[model.id]}
-                                  onCheckedChange={() =>
-                                    toggleModelExpansion(model.id)
-                                  }
-                                />
-                                <p className="text-main-view-fg/70">
-                                  Show variants
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        {expandedModels[model.id] &&
-                          model.models.length > 0 && (
-                            <div className="mt-5">
-                              {model.models.map((variant) => {
-                                return (
-                                  <CardItem
-                                    key={variant.id}
-                                    title={variant.id}
-                                    actions={
-                                      <div className="flex items-center gap-2">
-                                        {/* {defaultVariant && <>test</>} */}
-                                        <p className="text-main-view-fg/70 font-medium text-xs">
-                                          {toGigabytes(variant.size)}
-                                        </p>
-                                        <div
-                                          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                                          title="Edit All Servers JSON"
-                                          onClick={() =>
-                                            downloadModel(variant.id)
-                                          }
-                                        >
-                                          <IconDownload
-                                            size={16}
-                                            className="text-main-view-fg/80"
-                                          />
-                                        </div>
-                                      </div>
-                                    }
-                                  />
-                                )
-                              })}
+                              <p className="text-main-view-fg/70">
+                                Show variants
+                              </p>
                             </div>
                           )}
-                      </Card>
-                    </div>
-                  )
-                })}
+                        </div>
+                      </div>
+                      {expandedModels[model.id] && model.models.length > 0 && (
+                        <div className="mt-5">
+                          {model.models.slice(1).map((variant) => (
+                            <CardItem
+                              key={variant.id}
+                              title={variant.id}
+                              actions={
+                                <div className="flex items-center gap-2">
+                                  {/* {defaultVariant && <>test</>} */}
+                                  <p className="text-main-view-fg/70 font-medium text-xs">
+                                    {toGigabytes(variant.size)}
+                                  </p>
+                                  {(() => {
+                                    const isDownloading =
+                                      downloadProcesses.some(
+                                        (e) => e.id === variant.id
+                                      )
+                                    const downloadProgress =
+                                      downloadProcesses.find(
+                                        (e) => e.id === variant.id
+                                      )?.progress || 0
+                                    const isDownloaded =
+                                      llamaProvider?.models.some(
+                                        (m: { id: string }) =>
+                                          m.id === variant.id
+                                      )
+
+                                    if (isDownloading) {
+                                      return (
+                                        <>
+                                          <div className="flex items-center gap-2 w-20">
+                                            <Progress
+                                              value={downloadProgress * 100}
+                                            />
+                                            <span className="text-xs text-center text-main-view-fg/70">
+                                              {Math.round(
+                                                downloadProgress * 100
+                                              )}
+                                              %
+                                            </span>
+                                          </div>
+                                        </>
+                                      )
+                                    }
+
+                                    if (isDownloaded) {
+                                      return (
+                                        <div
+                                          className="flex items-center justify-center rounded bg-main-view-fg/10"
+                                          title="Use this model"
+                                        >
+                                          <Button
+                                            variant="link"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleUseModel(variant.id)
+                                            }
+                                          >
+                                            Use
+                                          </Button>
+                                        </div>
+                                      )
+                                    }
+
+                                    return (
+                                      <div
+                                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                                        title="Download model"
+                                        onClick={() =>
+                                          downloadModel(variant.id)
+                                        }
+                                      >
+                                        <IconDownload
+                                          size={16}
+                                          className="text-main-view-fg/80"
+                                        />
+                                      </div>
+                                    )
+                                  })()}
+                                </div>
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  </div>
+                ))}
               </div>
             )}
           </div>

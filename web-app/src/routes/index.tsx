@@ -1,20 +1,33 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from 'react-i18next'
-import DropdownModelProvider from '@/containers/DropdownModelProvider'
+
 import { useModelProvider } from '@/hooks/useModelProvider'
 import SetupScreen from '@/containers/SetupScreen'
+import { route } from '@/constants/routes'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SearchParams = {
+  model?: {
+    id: string
+    provider: string
+  }
+}
+import DropdownAssistant from '@/containers/DropdownAssistant'
+
 export const Route = createFileRoute(route.home as any)({
   component: Index,
+  validateSearch: (search: Record<string, unknown>): SearchParams => ({
+    model: search.model as SearchParams['model'],
+  }),
 })
 
 function Index() {
   const { t } = useTranslation()
   const { providers } = useModelProvider()
+  const search = useSearch({ from: route.home as any })
+  const selectedModel = search.model
 
   // Conditional to check if there are any valid providers
   // required min 1 api_key or 1 model in llama.cpp
@@ -31,7 +44,7 @@ function Index() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <DropdownModelProvider />
+        <DropdownAssistant />
       </HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center">
         <div className="w-4/6 mx-auto">
@@ -44,7 +57,7 @@ function Index() {
             </p>
           </div>
           <div className="flex-1 shrink-0">
-            <ChatInput showSpeedToken={false} />
+            <ChatInput showSpeedToken={false} model={selectedModel} />
           </div>
         </div>
       </div>

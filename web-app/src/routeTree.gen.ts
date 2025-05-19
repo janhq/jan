@@ -12,6 +12,7 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as HubImport } from './routes/hub'
+import { Route as AssistantImport } from './routes/assistant'
 import { Route as IndexImport } from './routes/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
@@ -30,6 +31,12 @@ import { Route as SettingsProvidersProviderNameImport } from './routes/settings/
 const HubRoute = HubImport.update({
   id: '/hub',
   path: '/hub',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AssistantRoute = AssistantImport.update({
+  id: '/assistant',
+  path: '/assistant',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -115,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexImport
+      parentRoute: typeof rootRoute
+    }
+    '/assistant': {
+      id: '/assistant'
+      path: '/assistant'
+      fullPath: '/assistant'
+      preLoaderRoute: typeof AssistantImport
       parentRoute: typeof rootRoute
     }
     '/hub': {
@@ -208,6 +222,7 @@ declare module '@tanstack/react-router' {
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -224,6 +239,7 @@ export interface FileRoutesByFullPath {
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -241,6 +257,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
+  '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -259,6 +276,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/assistant'
     | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -274,6 +292,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/assistant'
     | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -289,6 +308,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/assistant'
     | '/hub'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -306,6 +326,7 @@ export interface FileRouteTypes {
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AssistantRoute: typeof AssistantRoute
   HubRoute: typeof HubRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -322,6 +343,7 @@ export interface RootRouteChildren {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AssistantRoute: AssistantRoute,
   HubRoute: HubRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
@@ -347,6 +369,7 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/assistant",
         "/hub",
         "/local-api-server/logs",
         "/settings/appearance",
@@ -363,6 +386,9 @@ export const routeTree = rootRoute
     },
     "/": {
       "filePath": "index.tsx"
+    },
+    "/assistant": {
+      "filePath": "assistant.tsx"
     },
     "/hub": {
       "filePath": "hub.tsx"

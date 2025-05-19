@@ -18,7 +18,7 @@ const HeaderPage = ({ children }: HeaderPageProps) => {
         platformName === 'macos' && !open ? 'pl-18' : 'pl-4'
       )}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center w-full gap-2">
         {!open && (
           <button
             className="size-5 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-main-view-fg/10"
