@@ -192,7 +192,7 @@ pub struct GpuAdditionalInfo {
 }
 
 #[derive(serde::Serialize)]
-pub enum GpuKind {
+pub enum GpuVendor {
     Nvidia,
     AMD,
     Intel,
@@ -204,9 +204,8 @@ pub enum GpuKind {
 pub struct GpuInfo {
     name: String,
     index: u64,
-    total_vram: u64,
-    free_vram: u64,
-    kind: GpuKind,
+    memory: MemoryInfo,
+    vendor: GpuVendor,
     uuid: String,
     driver_version: String,
     additional_information: Option<GpuAdditionalInfo>,
@@ -223,8 +222,8 @@ impl GpuInfo {
 
 #[derive(serde::Serialize)]
 pub struct MemoryInfo {
-    available: u64,
-    total: u64,
+    total: u64, // in MiB
+    used: u64,
 }
 
 impl MemoryInfo {
@@ -232,13 +231,9 @@ impl MemoryInfo {
         let mut system = System::new();
         system.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
 
-        // system.free_memory() and .available_memory() is a bit strange on macOS
-        // TODO: check on Windows and Ubuntu
-        let total_mem = system.total_memory();
-        let avail_mem = total_mem - system.used_memory();
         MemoryInfo {
-            available: avail_mem / 1024 / 1024, // bytes to MiB
-            total: total_mem / 1024 / 1024,     // bytes to MiB
+            total: system.total_memory() / 1024 / 1024, // bytes to MiB
+            used: system.used_memory() / 1024 / 1024,
         }
     }
 }

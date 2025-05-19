@@ -1,8 +1,7 @@
 pub struct NvidiaInfo {
     name: String,
     index: u64,
-    total_vram: u64,
-    free_vram: u64,
+    memory: super::MemoryInfo,
     compute_capability: String,
     driver_version: String,
     uuid: String,
@@ -13,9 +12,8 @@ impl From<NvidiaInfo> for super::GpuInfo {
         super::GpuInfo {
             name: val.name,
             index: val.index,
-            total_vram: val.total_vram,
-            free_vram: val.free_vram,
-            kind: super::GpuKind::Nvidia,
+            memory: val.memory,
+            vendor: super::GpuVendor::Nvidia,
             uuid: val.uuid,
             driver_version: val.driver_version,
             additional_information: Some(super::GpuAdditionalInfo {
@@ -40,7 +38,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
         let mut results = vec![];
 
         let output = std::process::Command::new("nvidia-smi")
-            .arg("--query-gpu=index,memory.total,memory.free,name,compute_cap,driver_version,uuid")
+            .arg("--query-gpu=index,memory.total,memory.used,name,compute_cap,driver_version,uuid")
             .arg("--format=csv,noheader,nounits")
             .output()?;
         if !output.status.success() {
@@ -54,8 +52,10 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
             }
             let info = NvidiaInfo {
                 index: parts[0].parse()?,
-                total_vram: parts[1].parse()?,
-                free_vram: parts[2].parse()?,
+                memory: super::MemoryInfo {
+                    total: parts[1].parse()?,
+                    used: parts[2].parse()?,
+                },
                 name: parts[3].parse()?,
                 compute_capability: parts[4].parse()?,
                 driver_version: parts[5].parse()?,
@@ -92,8 +92,10 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaInfo> {
             }
             let info = NvidiaInfo {
                 index: parts[0].parse()?,
-                total_vram: parts[1].parse()?,
-                free_vram: parts[2].parse()?,
+                memory: super::MemoryInfo {
+                    total: parts[1].parse()?,
+                    used: parts[2].parse()?,
+                },
                 name: parts[3].parse()?,
                 compute_capability: "unknown".to_string(),
                 driver_version: parts[4].parse()?,
