@@ -12,8 +12,10 @@ import { IconCirclePlus } from '@tabler/icons-react'
 import type { Assistant } from '@/hooks/useAssistant'
 
 const DropdownAssistant = () => {
+  // @ts-ignore
   const { assistants, addAssistant, updateAssistant } = useAssistant()
   const [open, setOpen] = useState(false)
+  // @ts-ignore
   const [editingKey, setEditingKey] = useState<string | null>(null)
 
   const handleSave = (assistant: Assistant) => {
