@@ -44,13 +44,14 @@ pub fn run() {
             core::cmd::app_token,
             core::cmd::start_server,
             core::cmd::stop_server,
-            core::cmd::save_mcp_configs,
-            core::cmd::get_mcp_configs,
+            core::cmd::read_logs,
             // MCP commands
-            core::cmd::get_tools,
-            core::cmd::call_tool,
+            core::mcp::get_tools,
+            core::mcp::call_tool,
             core::mcp::restart_mcp_servers,
             core::mcp::get_connected_servers,
+            core::mcp::save_mcp_configs,
+            core::mcp::get_mcp_configs,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,
@@ -76,14 +77,14 @@ pub fn run() {
         .setup(|app| {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
-                    .targets([if cfg!(debug_assertions) {
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
-                    } else {
+                    .targets([
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
                             path: get_jan_data_folder_path(app.handle().clone()).join("logs"),
                             file_name: Some("app".to_string()),
-                        })
-                    }])
+                        }),
+                    ])
                     .build(),
             )?;
             // Install extensions

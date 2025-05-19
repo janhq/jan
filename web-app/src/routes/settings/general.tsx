@@ -8,6 +8,17 @@ import { Card, CardItem } from '@/containers/Card'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { factoryReset } from '@/services/app'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -17,6 +28,11 @@ export const Route = createFileRoute(route.settings.general as any)({
 function General() {
   const { t } = useTranslation()
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
+
+  const resetApp = async () => {
+    // TODO: Loading indicator
+    await factoryReset()
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -95,9 +111,42 @@ function General() {
                   ns: 'settings',
                 })}
                 actions={
-                  <Button variant="destructive" size="sm">
-                    {t('common.reset')}
-                  </Button>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button variant="destructive" size="sm">
+                        {t('common.reset')}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Factory Reset</DialogTitle>
+                        <DialogDescription>
+                          Are you sure you want to reset the app to factory
+                          settings? This action is irreversible and recommended
+                          only if the application is corrupted.
+                        </DialogDescription>
+                        <DialogFooter className="mt-2 flex items-center">
+                          <DialogClose asChild>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="hover:no-underline"
+                            >
+                              Cancel
+                            </Button>
+                          </DialogClose>
+                          <DialogClose asChild>
+                            <Button
+                              variant="destructive"
+                              onClick={() => resetApp()}
+                            >
+                              Reset
+                            </Button>
+                          </DialogClose>
+                        </DialogFooter>
+                      </DialogHeader>
+                    </DialogContent>
+                  </Dialog>
                 }
               />
             </Card>

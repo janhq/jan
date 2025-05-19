@@ -1,6 +1,6 @@
 import { ExtensionManager } from '@/lib/extension'
 import { APIs } from '@/lib/service'
-import { EventEmitter } from '@/services/eventsService'
+import { EventEmitter } from '@/services/events'
 import { EngineManager, ModelManager } from '@janhq/core'
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
 

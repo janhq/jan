@@ -2,6 +2,8 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState } from 'react'
+import { parseLogLine, readLogs } from '@/services/app'
+import { listen } from '@tauri-apps/api/event'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.localApiServerlogs as any)({
@@ -12,72 +14,36 @@ export const Route = createFileRoute(route.localApiServerlogs as any)({
 interface LogEntry {
   timestamp: string
   level: 'info' | 'warn' | 'error' | 'debug'
+  target: string
   message: string
 }
 
-// Generate dummy log data
-const generateDummyLogs = (): LogEntry[] => {
-  const logs: LogEntry[] = []
-  const levels: ('info' | 'warn' | 'error' | 'debug')[] = [
-    'info',
-    'warn',
-    'error',
-    'debug',
-  ]
-  const messages = [
-    'Server started on port 3000',
-    'Received request: GET /api/v1/models',
-    'Processing request...',
-    'Request completed in 120ms',
-    'Connection established with client',
-    'Authentication successful for user',
-    'Failed to connect to database',
-    'API rate limit exceeded',
-    'Memory usage: 256MB',
-    'CPU usage: 45%',
-    'Websocket connection closed',
-    'Cache miss for key: model_list',
-    'Updating configuration...',
-    'Configuration updated successfully',
-    'Initializing model...',
-  ]
-
-  // Generate 50 log entries
-  const now = new Date()
-  for (let i = 0; i < 50; i++) {
-    const timestamp = new Date(now.getTime() - (50 - i) * 30000) // 30 seconds apart
-    logs.push({
-      timestamp: timestamp.toISOString(),
-      level: levels[Math.floor(Math.random() * levels.length)],
-      message: messages[Math.floor(Math.random() * messages.length)],
-    })
-  }
-
-  return logs
-}
+const SERVER_LOG_TARGET = 'app_lib::core::server'
+const LOG_EVENT_NAME = 'log://log'
 
 function LogsViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([])
 
   useEffect(() => {
-    // Load dummy logs when component mounts
-    setLogs(generateDummyLogs())
-
-    // Simulate new logs coming in every 5 seconds
-    const interval = setInterval(() => {
-      setLogs((currentLogs) => {
-        const newLog: LogEntry = {
-          timestamp: new Date().toISOString(),
-          level: ['info', 'warn', 'error', 'debug'][
-            Math.floor(Math.random() * 4)
-          ] as 'info' | 'warn' | 'error' | 'debug',
-          message: `New activity at ${new Date().toLocaleTimeString()}`,
-        }
-        return [...currentLogs, newLog]
-      })
-    }, 5000)
-
-    return () => clearInterval(interval)
+    readLogs().then((logData) => {
+      const logs = logData
+        .filter((log) => log?.target === SERVER_LOG_TARGET)
+        .filter(Boolean) as LogEntry[]
+      setLogs(logs)
+    })
+    let unsubscribe = () => {}
+    listen(LOG_EVENT_NAME, (event) => {
+      const { message } = event.payload as { message: string }
+      const log: LogEntry | undefined = parseLogLine(message)
+      if (log?.target === SERVER_LOG_TARGET) {
+        setLogs((prevLogs) => [...prevLogs, log])
+      }
+    }).then((unsub) => {
+      unsubscribe = unsub
+    })
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // Function to get appropriate color for log level
