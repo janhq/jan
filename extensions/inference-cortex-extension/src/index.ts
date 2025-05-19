@@ -185,7 +185,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     console.log('Loaded models:', loadedModels)
 
     // This is to avoid loading the same model multiple times
-    if (loadedModels.some((model) => model.id === model.id)) {
+    if (loadedModels.some((e) => e.id === model.id)) {
       console.log(`Model ${model.id} already loaded`)
       return
     }

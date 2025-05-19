@@ -7,10 +7,12 @@ type AppState = {
   loadingModel?: boolean
   tools: MCPTool[]
   serverStatus: 'running' | 'stopped' | 'pending'
+  abortControllers: Record<string, AbortController>
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
+  setAbortController: (threadId: string, controller: AbortController) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -18,6 +20,7 @@ export const useAppState = create<AppState>()((set) => ({
   loadingModel: false,
   tools: [],
   serverStatus: 'stopped',
+  abortControllers: {},
   updateStreamingContent: (content) => {
     set({ streamingContent: content })
   },
@@ -28,4 +31,12 @@ export const useAppState = create<AppState>()((set) => ({
     set({ tools })
   },
   setServerStatus: (value) => set({ serverStatus: value }),
+  setAbortController: (threadId, controller) => {
+    set((state) => ({
+      abortControllers: {
+        ...state.abortControllers,
+        [threadId]: controller,
+      },
+    }))
+  },
 }))

@@ -110,6 +110,7 @@ export const sendCompletion = async (
   thread: Thread,
   provider: ModelProvider,
   messages: ChatCompletionMessageParam[],
+  abortController: AbortController,
   tools: MCPTool[] = []
 ): Promise<StreamCompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
@@ -126,14 +127,19 @@ export const sendCompletion = async (
   })
 
   // TODO: Add message history
-  const completion = await tokenJS.chat.completions.create({
-    stream: true,
-    provider: providerName,
-    model: thread.model?.id,
-    messages,
-    tools: normalizeTools(tools),
-    tool_choice: tools.length ? 'auto' : undefined,
-  })
+  const completion = await tokenJS.chat.completions.create(
+    {
+      stream: true,
+      provider: providerName,
+      model: thread.model?.id,
+      messages,
+      tools: normalizeTools(tools),
+      tool_choice: tools.length ? 'auto' : undefined,
+    },
+    {
+      signal: abortController.signal,
+    }
+  )
   return completion
 }
 
