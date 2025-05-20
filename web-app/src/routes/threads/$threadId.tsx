@@ -11,7 +11,7 @@ import ChatInput from '@/containers/ChatInput'
 import { useShallow } from 'zustand/react/shallow'
 import { ThreadContent } from '@/containers/ThreadContent'
 import { StreamingContent } from '@/containers/StreamingContent'
-import { ModelLoader } from '@/containers/loaders/ModelLoader'
+
 import { useMessages } from '@/hooks/useMessages'
 import { fetchMessages } from '@/services/messages'
 import { useAppState } from '@/hooks/useAppState'
@@ -31,7 +31,7 @@ function ThreadDetail() {
   const { currentThreadId, getThreadById, setCurrentThreadId } = useThreads()
   const { setCurrentAssistant, assistants } = useAssistant()
   const { setMessages } = useMessages()
-  const { streamingContent, loadingModel } = useAppState()
+  const { streamingContent } = useAppState()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -172,9 +172,6 @@ function ThreadDetail() {
         <div className="flex items-center justify-between w-full pr-2">
           <DropdownAssistant />
         </div>
-        {thread?.model?.provider === 'llama.cpp' && loadingModel && (
-          <ModelLoader />
-        )}
       </HeaderPage>
       <div className="flex flex-col h-[calc(100%-40px)] ">
         <div

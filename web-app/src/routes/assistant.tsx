@@ -56,7 +56,7 @@ function Assistant() {
   return (
     <div className="flex h-full flex-col flex-justify-center">
       <HeaderPage>
-        <span>Assistant</span>
+        <span>Assistants</span>
       </HeaderPage>
       <div className="h-full p-4 overflow-y-auto">
         <div className="grid grid-cols-3 gap-4">
