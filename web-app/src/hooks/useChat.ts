@@ -22,7 +22,7 @@ import { useAssistant } from './useAssistant'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
-  const { tools } = useAppState()
+  const { tools, updateTokenSpeed } = useAppState()
   const { currentAssistant } = useAssistant()
 
   const { getProviderByName, selectedModel, selectedProvider } =
@@ -119,6 +119,7 @@ export const useChat = () => {
                 accumulatedText
               )
               updateStreamingContent(currentContent)
+              updateTokenSpeed(currentContent)
               await new Promise((resolve) => setTimeout(resolve, 0))
             }
           }
@@ -153,6 +154,7 @@ export const useChat = () => {
       setAbortController,
       updateLoadingModel,
       tools,
+      updateTokenSpeed,
     ]
   )
 
