@@ -5,7 +5,7 @@ pub mod vulkan;
 use std::sync::OnceLock;
 use sysinfo::System;
 
-static SYSTEM_STATIC_INFO: OnceLock<SystemStaticInfo> = OnceLock::new();
+static SYSTEM_INFO: OnceLock<SystemInfo> = OnceLock::new();
 
 #[derive(Clone, serde::Serialize, Debug)]
 struct CpuStaticInfo {
@@ -147,86 +147,46 @@ impl CpuStaticInfo {
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
-struct GpuStaticInfo {
-    name: String,
-    index: u64,
-    total_memory: u64,
-    vendor: String,
-    uuid: String,
-    driver_version: String,
+enum Gpu {
+    Nvidia(nvidia::NvidiaGpu),
+    Vulkan(vulkan::VulkanGpu),
 }
 
-fn get_gpu_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Vec<GpuStaticInfo> {
-    let mut seen_uuids = std::collections::HashSet::new();
-    let mut gpus = vec![];
-
-    // filter duplicates by UUID. prioritize GPU info from NVML over the one
-    // from Vulkan
-    for nvidia_gpu in nvidia::get_nvidia_gpus_static() {
-        if seen_uuids.insert(nvidia_gpu.uuid.clone()) {
-            gpus.push(nvidia_gpu.into());
+impl Gpu {
+    pub fn get_usage(&self) -> GpuUsage {
+        match self {
+            Gpu::Nvidia(gpu) => gpu.get_usage(),
+            Gpu::Vulkan(gpu) => gpu.get_usage(),
         }
     }
-
-    for vulkan_gpu in vulkan::get_vulkan_gpus_static() {
-        if seen_uuids.insert(vulkan_gpu.uuid.clone()) {
-            gpus.push(vulkan_gpu.into());
-        }
-    }
-
-    gpus
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
-pub struct SystemStaticInfo {
+pub struct SystemInfo {
     cpu: CpuStaticInfo,
     os: String,
     total_memory: u64,
-    gpus: Vec<GpuStaticInfo>,
+    gpus: Vec<Gpu>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
-pub struct MemoryUsage {
+pub struct GpuUsage {
+    uuid: String,
     used_memory: u64,
     total_memory: u64,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
-pub struct SystemUsageInfo {
+pub struct SystemUsage {
     cpu: f32,
     used_memory: u64,
     total_memory: u64,
-    gpus: Vec<MemoryUsage>,
-}
-
-impl SystemUsageInfo {
-    pub fn new() -> Self {
-        let mut system = System::new();
-        system.refresh_memory();
-
-        // need to refresh 2 times to get CPU usage
-        system.refresh_cpu_all();
-        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-        system.refresh_cpu_all();
-
-        let cpus = system.cpus();
-        let cpu_usage =
-            cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / (cpus.len().max(1) as f32);
-        let used_memory = system.used_memory() / 1024 / 1024; // bytes to MiB
-        let total_memory = system.total_memory() / 1024 / 1024; // bytes to MiB
-
-        SystemUsageInfo {
-            cpu: cpu_usage,
-            used_memory,
-            total_memory,
-            gpus: nvidia::get_nvidia_gpus_memory_usage(),
-        }
-    }
+    gpus: Vec<GpuUsage>,
 }
 
 #[tauri::command]
-pub fn get_system_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemStaticInfo {
-    SYSTEM_STATIC_INFO
+pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInfo {
+    SYSTEM_INFO
         .get_or_init(|| {
             if vulkan::VULKAN_INSTANCE.get().is_none() {
                 vulkan::init_vulkan(app.clone());
@@ -235,19 +195,54 @@ pub fn get_system_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Sy
             let mut system = System::new();
             system.refresh_memory();
 
-            SystemStaticInfo {
+            let mut gpus = vec![];
+            let mut gpu_uuids = std::collections::HashSet::new();
+            for gpu in nvidia::get_nvidia_gpus() {
+                gpu_uuids.insert(gpu.uuid.clone());
+                gpus.push(Gpu::Nvidia(gpu));
+            }
+
+            // only keep NVIDIA GPU from nvml
+            for gpu in vulkan::get_vulkan_gpus() {
+                if !gpu_uuids.contains(&gpu.uuid) {
+                    gpus.push(Gpu::Vulkan(gpu));
+                }
+            }
+
+            SystemInfo {
                 cpu: CpuStaticInfo::new(),
                 os: System::long_os_version().unwrap_or("Unknown".to_string()),
                 total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
-                gpus: get_gpu_static_info(app.clone()),
+                gpus,
             }
         })
         .clone()
 }
 
 #[tauri::command]
-pub fn get_system_usage_info() -> SystemUsageInfo {
-    SystemUsageInfo::new()
+pub fn get_system_usage<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemUsage {
+    let mut system = System::new();
+    system.refresh_memory();
+
+    // need to refresh 2 times to get CPU usage
+    system.refresh_cpu_all();
+    std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+    system.refresh_cpu_all();
+
+    let cpus = system.cpus();
+    let cpu_usage =
+        cpus.iter().map(|cpu| cpu.cpu_usage()).sum::<f32>() / (cpus.len().max(1) as f32);
+
+    SystemUsage {
+        cpu: cpu_usage,
+        used_memory: system.used_memory() / 1024 / 1024, // bytes to MiB,
+        total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB,
+        gpus: get_system_info(app.clone())
+            .gpus
+            .iter()
+            .map(|gpu| gpu.get_usage())
+            .collect(),
+    }
 }
 
 #[cfg(test)]
@@ -256,15 +251,16 @@ mod tests {
     use tauri::test::mock_app;
 
     #[test]
-    fn test_system_static_info() {
+    fn test_system_info() {
         let app = mock_app();
-        let sys_info = get_system_static_info(app.handle().clone());
-        println!("System Static Info: {:?}", sys_info);
+        let info = get_system_info(app.handle().clone());
+        println!("System Static Info: {:?}", info);
     }
 
     #[test]
-    fn test_system_usage_info() {
-        let usage = SystemUsageInfo::new();
+    fn test_system_usage() {
+        let app = mock_app();
+        let usage = get_system_usage(app.handle().clone());
         println!("System Usage Info: {:?}", usage);
     }
 }

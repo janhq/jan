@@ -1,142 +1,188 @@
-// default implementation
-#[cfg(not(target_os = "linux"))]
-#[cfg(not(target_os = "windows"))]
-pub fn get_amd_gpus_memory_usage() -> Vec<super::MemoryUsage> {
-    vec![]
-}
+use super::vulkan;
 
-// TODO: add matching logic
-// /device/device is the same as Vulkan deviceId
-#[cfg(target_os = "linux")]
-pub fn get_amd_gpus_memory_usage() -> Vec<super::MemoryUsage> {
-    use std::fs;
-    use std::path::Path;
-
-    let mut result = Vec::new();
-
-    for card_idx in 0.. {
-        let device_path = format!("/sys/class/drm/card{}/device", card_idx);
-        if !Path::new(&device_path).exists() {
-            break;
-        }
-
-        // Check if this is an AMD GPU by looking for amdgpu directory
-        let amdgpu_path = format!("{}/driver/module/drivers/pci:amdgpu", device_path);
-        if !Path::new(&amdgpu_path).exists() {
-            continue;
-        }
-
-        let read_mem = |path: &str| -> u64 {
-            fs::read_to_string(path)
-                .map(|content| content.trim().parse::<u64>().unwrap_or(0))
-                .unwrap_or(0)
-                / 1024
-                / 1024 // Convert bytes to MiB
-        };
-        result.push(super::MemoryUsage {
-            total_memory: read_mem(&format!("{}/mem_info_vram_total", device_path)),
-            used_memory: read_mem(&format!("{}/mem_info_vram_used", device_path)),
-        });
+impl vulkan::VulkanGpu {
+    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(target_os = "windows"))]
+    pub fn get_usage_amd(&self) -> super::GpuUsage {
+        self.get_usage_unsupported()
     }
 
-    result
+    #[cfg(target_os = "linux")]
+    pub fn get_usage_amd(&self) -> super::GpuUsage {
+        use std::fs;
+        use std::path::Path;
+
+        for card_idx in 0.. {
+            let device_path = format!("/sys/class/drm/card{}/device", card_idx);
+            if !Path::new(&device_path).exists() {
+                break;
+            }
+
+            // Check if this is an AMD GPU by looking for amdgpu directory
+            if !Path::new(&format!("{}/driver/module/drivers/pci:amdgpu", device_path)).exists() {
+                continue;
+            }
+
+            // match device_id from Vulkan info
+            let device_id = fs::read_to_string(format!("{}/device", device_path))
+                .map(|s| u32::from_str_radix(s.trim(), 16).unwrap_or(0))
+                .unwrap_or(0);
+            if device_id != self.device_id {
+                continue;
+            }
+
+            let read_mem = |path: &str| -> u64 {
+                fs::read_to_string(path)
+                    .map(|content| content.trim().parse::<u64>().unwrap_or(0))
+                    .unwrap_or(0)
+                    / 1024
+                    / 1024 // Convert bytes to MiB
+            };
+            return super::GpuUsage {
+                uuid: self.uuid.clone(),
+                total_memory: read_mem(&format!("{}/mem_info_vram_total", device_path)),
+                used_memory: read_mem(&format!("{}/mem_info_vram_used", device_path)),
+            };
+        }
+
+        super::GpuUsage {
+            uuid: self.uuid.clone(),
+            used_memory: 0,
+            total_memory: 0,
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    pub fn get_usage_amd(&self) -> super::GpuUsage {
+        use std::collections::HashMap;
+
+        let memory_usage_map = windows_impl::get_gpu_usage().unwrap_or_else(|_| {
+            log::error!("Failed to get AMD GPU memory usage");
+            HashMap::new()
+        });
+
+        match memory_usage_map.get(&self.name) {
+            Some(&used_memory) => super::GpuUsage {
+                uuid: self.uuid.clone(),
+                used_memory: used_memory as u64,
+                total_memory: self.total_memory,
+            },
+            None => self.get_usage_unsupported(),
+        }
+    }
 }
 
-// TODO: add matching logic
+// TODO: refactor this into a more egonomic API
 #[cfg(target_os = "windows")]
-pub fn get_amd_gpus_memory_usage() -> Vec<super::MemoryUsage> {
+mod windows_impl {
+    use libc;
     use libloading::{Library, Symbol};
-    use std::ffi::c_void;
-    use std::mem::{size_of, MaybeUninit};
+    use std::collections::HashMap;
+    use std::ffi::{c_char, c_int, c_void, CStr};
+    use std::mem::{self, MaybeUninit};
+    use std::ptr;
 
-    // ADL function types
-    type AdlMainControlCreate = unsafe extern "C" fn(i32) -> *mut c_void;
-    type AdlMainControlDestroy = unsafe extern "C" fn();
-    type AdlAdapterNumberofadaptersGet = unsafe extern "C" fn(*mut i32) -> i32;
-    type AdlAdapterMemoryinfoGet = unsafe extern "C" fn(i32, *mut ADLMemoryInfo) -> i32;
-
+    // === FFI Struct Definitions ===
     #[repr(C)]
     #[allow(non_snake_case)]
-    struct ADLMemoryInfo {
-        iSize: i32,
-        iLocalMemory: i32,
-        iMemoryBandwidth: i32,
-        iMemoryUsed: i32,
+    #[derive(Debug, Copy, Clone)]
+    pub struct AdapterInfo {
+        pub iSize: c_int,
+        pub iAdapterIndex: c_int,
+        pub strUDID: [c_char; 256],
+        pub iBusNumber: c_int,
+        pub iDeviceNumber: c_int,
+        pub iFunctionNumber: c_int,
+        pub iVendorID: c_int,
+        pub strAdapterName: [c_char; 256],
+        pub strDisplayName: [c_char; 256],
+        pub iPresent: c_int,
+        pub iExist: c_int,
+        pub strDriverPath: [c_char; 256],
+        pub strDriverPathExt: [c_char; 256],
+        pub strPNPString: [c_char; 256],
+        pub iOSDisplayIndex: c_int,
     }
 
-    let mut result = Vec::new();
+    type ADL_MAIN_MALLOC_CALLBACK = Option<unsafe extern "C" fn(i32) -> *mut c_void>;
+    type ADL_MAIN_CONTROL_CREATE = unsafe extern "C" fn(ADL_MAIN_MALLOC_CALLBACK, c_int) -> c_int;
+    type ADL_MAIN_CONTROL_DESTROY = unsafe extern "C" fn() -> c_int;
+    type ADL_ADAPTER_NUMBEROFADAPTERS_GET = unsafe extern "C" fn(*mut c_int) -> c_int;
+    type ADL_ADAPTER_ADAPTERINFO_GET = unsafe extern "C" fn(*mut AdapterInfo, c_int) -> c_int;
+    type ADL_ADAPTER_ACTIVE_GET = unsafe extern "C" fn(c_int, *mut c_int) -> c_int;
+    type ADL_GET_DEDICATED_VRAM_USAGE =
+        unsafe extern "C" fn(*mut c_void, c_int, *mut c_int) -> c_int;
 
-    unsafe {
-        // Load ADL library
-        let lib = Library::new("atiadlxx.dll").or_else(|_| Library::new("atiadlxy.dll"));
-        let lib = match lib {
-            Ok(lib) => lib,
-            Err(_) => return result,
-        };
+    // === ADL Memory Allocator ===
+    unsafe extern "C" fn adl_malloc(i_size: i32) -> *mut c_void {
+        libc::malloc(i_size as usize)
+    }
 
-        // Get function pointers
-        let adl_create: Symbol<AdlMainControlCreate> = match lib.get(b"ADL_Main_Control_Create") {
-            Ok(func) => func,
-            Err(_) => return result,
-        };
+    pub fn get_gpu_usage() -> Result<HashMap<String, i32>, Box<dyn std::error::Error>> {
+        unsafe {
+            let lib = Library::new("atiadlxx.dll").or_else(|_| Library::new("atiadlxy.dll"))?;
 
-        let adl_destroy: Symbol<AdlMainControlDestroy> = match lib.get(b"ADL_Main_Control_Destroy")
-        {
-            Ok(func) => func,
-            Err(_) => return result,
-        };
+            let adl_main_control_create: Symbol<ADL_MAIN_CONTROL_CREATE> =
+                lib.get(b"ADL_Main_Control_Create")?;
+            let adl_main_control_destroy: Symbol<ADL_MAIN_CONTROL_DESTROY> =
+                lib.get(b"ADL_Main_Control_Destroy")?;
+            let adl_adapter_number_of_adapters_get: Symbol<ADL_ADAPTER_NUMBEROFADAPTERS_GET> =
+                lib.get(b"ADL_Adapter_NumberOfAdapters_Get")?;
+            let adl_adapter_adapter_info_get: Symbol<ADL_ADAPTER_ADAPTERINFO_GET> =
+                lib.get(b"ADL_Adapter_AdapterInfo_Get")?;
+            let adl_adapter_active_get: Symbol<ADL_ADAPTER_ACTIVE_GET> =
+                lib.get(b"ADL_Adapter_Active_Get")?;
+            let adl_get_dedicated_vram_usage: Symbol<ADL_GET_DEDICATED_VRAM_USAGE> =
+                lib.get(b"ADL2_Adapter_DedicatedVRAMUsage_Get")?;
 
-        let adl_get_num_adapters: Symbol<AdlAdapterNumberofadaptersGet> =
-            match lib.get(b"ADL_Adapter_NumberOfAdapters_Get") {
-                Ok(func) => func,
-                Err(_) => return result,
-            };
+            // TODO: try to put nullptr here. then we don't need direct libc dep
+            if adl_main_control_create(Some(adl_malloc), 1) != 0 {
+                return Err("ADL initialization error!".into());
+            }
+            // NOTE: after this call, we must call ADL_Main_Control_Destroy
+            // whenver we encounter an error
 
-        let adl_get_memory_info: Symbol<AdlAdapterMemoryinfoGet> =
-            match lib.get(b"ADL_Adapter_MemoryInfo_Get") {
-                Ok(func) => func,
-                Err(_) => return result,
-            };
+            let mut num_adapters: c_int = 0;
+            if adl_adapter_number_of_adapters_get(&mut num_adapters as *mut _) != 0 {
+                return Err("Cannot get number of adapters".into());
+            }
 
-        // Initialize ADL
-        adl_create(1);
+            let mut vram_usages = HashMap::new();
 
-        // Get number of adapters
-        let mut num_adapters = 0;
-        if adl_get_num_adapters(&mut num_adapters) == 0 {
-            // For each adapter, get memory info
-            for i in 0..num_adapters {
-                let mut mem_info = MaybeUninit::<ADLMemoryInfo>::zeroed().assume_init();
-                mem_info.iSize = size_of::<ADLMemoryInfo>() as i32;
+            if num_adapters > 0 {
+                let mut adapter_info: Vec<AdapterInfo> =
+                    vec![MaybeUninit::zeroed().assume_init(); num_adapters as usize];
+                let ret = adl_adapter_adapter_info_get(
+                    adapter_info.as_mut_ptr(),
+                    mem::size_of::<AdapterInfo>() as i32 * num_adapters,
+                );
+                if ret != 0 {
+                    return Err("Cannot get adapter info".into());
+                }
 
-                if adl_get_memory_info(i, &mut mem_info) == 0 {
-                    result.push(super::MemoryUsage {
-                        total_memory: mem_info.iLocalMemory as u64,
-                        used_memory: mem_info.iMemoryUsed as u64,
-                    });
+                for adapter in adapter_info.iter() {
+                    let mut is_active = 0;
+                    adl_adapter_active_get(adapter.iAdapterIndex, &mut is_active);
+
+                    if is_active != 0 {
+                        let mut vram_mb = 0;
+                        let _ = adl_get_dedicated_vram_usage(
+                            ptr::null_mut(),
+                            adapter.iAdapterIndex,
+                            &mut vram_mb,
+                        );
+                        // NOTE: adapter name might not be unique?
+                        let name = CStr::from_ptr(adapter.strAdapterName.as_ptr())
+                            .to_string_lossy()
+                            .into_owned();
+                        vram_usages.insert(name, vram_mb);
+                    }
                 }
             }
-        }
 
-        // Clean up
-        adl_destroy();
-    }
+            adl_main_control_destroy();
 
-    result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_amd_gpus_memory_usage() {
-        let result = get_amd_gpus_memory_usage();
-        for (i, usage) in result.iter().enumerate() {
-            println!(
-                "GPU {}: {} MiB / {} MiB",
-                i, usage.used_memory, usage.total_memory
-            );
+            Ok(vram_usages)
         }
     }
 }
