@@ -28,8 +28,8 @@ export const AppRoutes = [
   'getConnectedServers',
   'readLogs',
   'changeAppDataFolder',
-  'get_system_static_info',
-  'get_system_usage_info',
+  'getSystemStaticInfo',
+  'getSystemUsageInfo',
 ]
 // Define API routes based on different route types
 export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
