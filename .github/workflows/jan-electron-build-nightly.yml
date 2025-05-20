@@ -16,7 +16,7 @@ on:
     types: [submitted]
   pull_request:
     branches:
-      - chore/tauri-cicd
+      - release/**
 
 jobs:
   set-public-provider:
