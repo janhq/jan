@@ -168,8 +168,9 @@ fn get_vulkan_gpus_static_jan<R: tauri::Runtime>(
         return vec![];
     };
 
+    // NOTE: this does not work in test mode (mock app)
     match app.path().resolve(
-        format!("resources/lib/{}", lib_name),
+        format!("lib/{}", lib_name),
         BaseDirectory::Resource,
     ) {
         Ok(lib_path) => {
