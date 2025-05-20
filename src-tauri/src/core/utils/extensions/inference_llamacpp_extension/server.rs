@@ -79,7 +79,7 @@ pub struct UnloadResult {
 
 // --- Load Command ---
 #[tauri::command]
-pub async fn load(
+pub async fn load_llama_model(
     app_handle: AppHandle,      // Get the AppHandle
     state: State<'_, AppState>, // Access the shared state
     args: Vec<String>,          // Arguments from the frontend
@@ -143,7 +143,7 @@ pub async fn load(
 
 // --- Unload Command ---
 #[tauri::command]
-pub async fn unload(session_id: String, state: State<'_, AppState>) -> ServerResult<UnloadResult> {
+pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) -> ServerResult<UnloadResult> {
     let mut process_lock = state.llama_server_process.lock().await;
     // Take the child process out of the Option, leaving None in its place
     if let Some(mut child) = process_lock.take() {
