@@ -34,6 +34,8 @@ on:
       - 'Makefile'
       - 'extensions/**'
       - 'core/**'
+      - 'src-tauri/**'
+      - 'web-app/**'
       - '!README.md'
 
 jobs:
