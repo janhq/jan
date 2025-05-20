@@ -2,7 +2,6 @@ use nvml_wrapper::{error::NvmlError, Nvml};
 use std::sync::OnceLock;
 
 static NVML: OnceLock<Option<Nvml>> = OnceLock::new();
-static NVIDIA_GPUS: OnceLock<Vec<NvidiaStaticInfo>> = OnceLock::new();
 
 // NvmlError doesn't implement Copy, so we have to store an Option in OnceLock
 fn get_nvml() -> Option<&'static Nvml> {
@@ -34,15 +33,13 @@ impl From<NvidiaStaticInfo> for super::GpuStaticInfo {
 }
 
 pub fn get_nvidia_gpus_static() -> Vec<NvidiaStaticInfo> {
-    NVIDIA_GPUS
-        .get_or_init(|| match get_nvidia_gpus_static_internal() {
-            Ok(gpus) => gpus,
-            Err(e) => {
-                log::error!("Failed to get NVIDIA GPUs: {}", e);
-                vec![]
-            }
-        })
-        .clone()
+    match get_nvidia_gpus_static_internal() {
+        Ok(gpus) => gpus,
+        Err(e) => {
+            log::error!("Failed to get NVIDIA GPUs: {}", e);
+            vec![]
+        }
+    }
 }
 
 fn get_nvidia_gpus_static_internal() -> Result<Vec<NvidiaStaticInfo>, NvmlError> {

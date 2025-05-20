@@ -3,9 +3,9 @@ pub mod vulkan;
 
 use std::sync::OnceLock;
 use sysinfo::System;
+use tauri::path::BaseDirectory;
+use tauri::Manager;
 
-static CPU_STATIC_INFO: OnceLock<CpuStaticInfo> = OnceLock::new();
-static OS_NAME: OnceLock<String> = OnceLock::new();
 static SYSTEM_STATIC_INFO: OnceLock<SystemStaticInfo> = OnceLock::new();
 
 #[derive(Clone, serde::Serialize, Debug)]
@@ -18,37 +18,33 @@ struct CpuStaticInfo {
 
 impl CpuStaticInfo {
     fn new() -> Self {
-        CPU_STATIC_INFO
-            .get_or_init(|| {
-                let mut system = System::new();
-                system.refresh_cpu_all();
+        let mut system = System::new();
+        system.refresh_cpu_all();
 
-                let name = system
-                    .cpus()
-                    .first()
-                    .map(|cpu| cpu.brand())
-                    .unwrap_or("unknown")
-                    .to_string();
+        let name = system
+            .cpus()
+            .first()
+            .map(|cpu| cpu.brand())
+            .unwrap_or("unknown")
+            .to_string();
 
-                // cortex only returns amd64, arm64, or Unsupported
-                // TODO: find how Jan uses this value, if we can use
-                // std::env::consts::ARCH directly
-                let arch = match std::env::consts::ARCH {
-                    "x86" => "amd64",
-                    "x86_64" => "amd64",
-                    "arm" => "arm64",
-                    "aarch64" => "arm64",
-                    _ => "Unsupported",
-                };
+        // cortex only returns amd64, arm64, or Unsupported
+        // TODO: find how Jan uses this value, if we can use
+        // std::env::consts::ARCH directly
+        let arch = match std::env::consts::ARCH {
+            "x86" => "amd64",
+            "x86_64" => "amd64",
+            "arm" => "arm64",
+            "aarch64" => "arm64",
+            _ => "Unsupported",
+        };
 
-                CpuStaticInfo {
-                    name,
-                    core_count: System::physical_core_count().unwrap_or(0),
-                    arch: arch.to_string(),
-                    extensions: CpuStaticInfo::get_extensions(),
-                }
-            })
-            .clone()
+        CpuStaticInfo {
+            name,
+            core_count: System::physical_core_count().unwrap_or(0),
+            arch: arch.to_string(),
+            extensions: CpuStaticInfo::get_extensions(),
+        }
     }
 
     // TODO: see if we need to check for all CPU extensions
@@ -151,10 +147,6 @@ impl CpuStaticInfo {
     }
 }
 
-fn get_os_name() -> &'static String {
-    OS_NAME.get_or_init(|| System::long_os_version().unwrap_or("unknown".to_string()))
-}
-
 #[derive(serde::Serialize, Clone, Debug)]
 struct GpuStaticInfo {
     name: String,
@@ -165,26 +157,61 @@ struct GpuStaticInfo {
     driver_version: String,
 }
 
-impl GpuStaticInfo {
-    pub fn get_gpus() -> Vec<GpuStaticInfo> {
-        let mut seen_uuids = std::collections::HashSet::new();
-        let mut gpus = vec![];
+fn get_vulkan_gpus_static_jan<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Vec<vulkan::VulkanStaticInfo> {
+    let lib_name = if cfg!(target_os = "windows") {
+        "vulkan-1.dll"
+    } else if cfg!(target_os = "linux") {
+        "libvulkan.so"
+    } else {
+        return vec![];
+    };
 
-        // filter duplicates by UUID. prioritize GPU info from NVML over the one
-        // from Vulkan
-        for nvidia_gpu in nvidia::get_nvidia_gpus_static() {
-            if seen_uuids.insert(nvidia_gpu.uuid.clone()) {
-                gpus.push(nvidia_gpu.into());
-            }
+    match app.path().resolve(
+        format!("resources/lib/{}", lib_name),
+        BaseDirectory::Resource,
+    ) {
+        Ok(lib_path) => {
+            let lib_path_str = lib_path.to_string_lossy().to_string();
+            vulkan::get_vulkan_gpus_static(&lib_path_str)
         }
-        for vulkan_gpu in vulkan::get_vulkan_gpus_static() {
-            if seen_uuids.insert(vulkan_gpu.uuid.clone()) {
-                gpus.push(vulkan_gpu.into());
-            }
+        Err(_) => {
+            log::error!("Failed to resolve Vulkan library path");
+            vec![]
         }
-
-        gpus
     }
+}
+
+fn get_gpu_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Vec<GpuStaticInfo> {
+    let mut seen_uuids = std::collections::HashSet::new();
+    let mut gpus = vec![];
+
+    // filter duplicates by UUID. prioritize GPU info from NVML over the one
+    // from Vulkan
+    for nvidia_gpu in nvidia::get_nvidia_gpus_static() {
+        if seen_uuids.insert(nvidia_gpu.uuid.clone()) {
+            gpus.push(nvidia_gpu.into());
+        }
+    }
+
+    let vulkan_gpus = {
+        // try to use system Vulkan first
+        // if that's not available, try to use the one bundled with Jan
+        let vulkan_gpus = vulkan::get_vulkan_gpus_static("");
+        if vulkan_gpus.is_empty() {
+            get_vulkan_gpus_static_jan(app.clone())
+        } else {
+            vulkan_gpus
+        }
+    };
+    for vulkan_gpu in vulkan_gpus {
+        if seen_uuids.insert(vulkan_gpu.uuid.clone()) {
+            gpus.push(vulkan_gpu.into());
+        }
+    }
+
+    gpus
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -193,24 +220,6 @@ pub struct SystemStaticInfo {
     os: String,
     total_memory: u64,
     gpus: Vec<GpuStaticInfo>,
-}
-
-impl SystemStaticInfo {
-    fn new() -> Self {
-        SYSTEM_STATIC_INFO
-            .get_or_init(|| {
-                let mut system = System::new();
-                system.refresh_memory();
-
-                SystemStaticInfo {
-                    cpu: CpuStaticInfo::new(),
-                    os: get_os_name().to_string(),
-                    total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
-                    gpus: GpuStaticInfo::get_gpus(),
-                }
-            })
-            .clone()
-    }
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -253,8 +262,20 @@ impl SystemUsageInfo {
 }
 
 #[tauri::command]
-pub fn get_system_static_info() -> SystemStaticInfo {
-    SystemStaticInfo::new()
+pub fn get_system_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemStaticInfo {
+    SYSTEM_STATIC_INFO
+        .get_or_init(|| {
+            let mut system = System::new();
+            system.refresh_memory();
+
+            SystemStaticInfo {
+                cpu: CpuStaticInfo::new(),
+                os: System::long_os_version().unwrap_or("Unknown".to_string()),
+                total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
+                gpus: get_gpu_static_info(app.clone()),
+            }
+        })
+        .clone()
 }
 
 #[tauri::command]
@@ -265,10 +286,12 @@ pub fn get_system_usage_info() -> SystemUsageInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::mock_app;
 
     #[test]
     fn test_system_static_info() {
-        let sys_info = SystemStaticInfo::new();
+        let app = mock_app();
+        let sys_info = get_system_static_info(app.handle().clone());
         println!("System Static Info: {:?}", sys_info);
     }
 

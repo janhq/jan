@@ -1,7 +1,4 @@
 use ash::{vk, Entry};
-use std::sync::OnceLock;
-
-static VULKAN_GPUS: OnceLock<Vec<VulkanStaticInfo>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct VulkanStaticInfo {
@@ -70,16 +67,14 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-pub fn get_vulkan_gpus_static() -> Vec<VulkanStaticInfo> {
-    VULKAN_GPUS
-        .get_or_init(|| match get_vulkan_gpus_static_internal() {
-            Ok(gpus) => gpus,
-            Err(e) => {
-                log::error!("Failed to get Vulkan GPUs: {:?}", e);
-                vec![]
-            }
-        })
-        .clone()
+pub fn get_vulkan_gpus_static(lib_path: &str) -> Vec<VulkanStaticInfo> {
+    match get_vulkan_gpus_static_internal(lib_path) {
+        Ok(gpus) => gpus,
+        Err(e) => {
+            log::error!("Failed to get Vulkan GPUs: {:?}", e);
+            vec![]
+        }
+    }
 }
 
 fn parse_c_string(buf: &[i8]) -> String {
@@ -89,10 +84,14 @@ fn parse_c_string(buf: &[i8]) -> String {
         .to_string()
 }
 
-fn get_vulkan_gpus_static_internal() -> Result<Vec<VulkanStaticInfo>, Box<dyn std::error::Error>> {
-    // NOTE: we can put Vulkan instance in a OnceLock too, but since we only query
-    // Vulkan info once, we don't need to keep it around.
-    let entry = unsafe { Entry::load()? };
+fn get_vulkan_gpus_static_internal(
+    lib_path: &str,
+) -> Result<Vec<VulkanStaticInfo>, Box<dyn std::error::Error>> {
+    let entry = if lib_path.is_empty() {
+        unsafe { Entry::load()? }
+    } else {
+        unsafe { Entry::load_from(lib_path)? }
+    };
     let app_info = vk::ApplicationInfo {
         api_version: vk::make_api_version(0, 1, 1, 0),
         ..Default::default()
@@ -169,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_get_vulkan_gpus_static() {
-        let gpus = get_vulkan_gpus_static();
+        let gpus = get_vulkan_gpus_static("");
         println!("Found {} GPU(s):", gpus.len());
         for (i, gpu) in gpus.iter().enumerate() {
             println!("GPU {}: {:?}", i, gpu);
