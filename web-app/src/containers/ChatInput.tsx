@@ -16,6 +16,7 @@ import {
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconBrandSpeedtest,
+  IconX,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -56,8 +57,16 @@ const ChatInput = ({
 
   const { selectedModel } = useModelProvider()
   const { sendMessage } = useChat()
+  const [message, setMessage] = useState('')
 
-  console.log(model)
+  const handleSendMesage = (prompt: string) => {
+    if (!selectedModel) {
+      setMessage('Please select a model to start chatting.')
+      return
+    }
+    setMessage('')
+    sendMessage(prompt)
+  }
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -130,154 +139,173 @@ const ChatInput = ({
 
   return (
     <div className="relative">
-      <div
-        className={cn(
-          'relative overflow-hidden p-[2px] rounded-lg',
-          Boolean(streamingContent) && 'opacity-70'
-        )}
-      >
-        {streamingContent && (
-          <div className="absolute inset-0">
-            <MovingBorder rx="10%" ry="10%">
-              <div
-                className={cn(
-                  'h-100 w-100 bg-[radial-gradient(var(--app-primary),transparent_60%)]'
-                )}
-              />
-            </MovingBorder>
-          </div>
-        )}
+      <div className="relative">
         <div
           className={cn(
-            'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
-            isFocused && 'ring-1 ring-main-view-fg/10'
+            'relative overflow-hidden p-[2px] rounded-lg',
+            Boolean(streamingContent) && 'opacity-70'
           )}
         >
-          <TextareaAutosize
-            ref={textareaRef}
-            disabled={Boolean(streamingContent)}
-            minRows={2}
-            rows={1}
-            maxRows={10}
-            value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value)
-              // Count the number of newlines to estimate rows
-              const newRows = (e.target.value.match(/\n/g) || []).length + 1
-              setRows(Math.min(newRows, maxRows))
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && prompt) {
-                e.preventDefault()
-                // Submit the message when Enter is pressed without Shift
-                sendMessage(prompt)
-                // When Shift+Enter is pressed, a new line is added (default behavior)
-              }
-            }}
-            placeholder={t('common.placeholder.chatInput')}
-            autoFocus
-            spellCheck={spellCheckChatInput}
-            data-gramm={spellCheckChatInput}
-            data-gramm_editor={spellCheckChatInput}
-            data-gramm_grammarly={spellCheckChatInput}
+          {streamingContent && (
+            <div className="absolute inset-0">
+              <MovingBorder rx="10%" ry="10%">
+                <div
+                  className={cn(
+                    'h-100 w-100 bg-[radial-gradient(var(--app-primary),transparent_60%)]'
+                  )}
+                />
+              </MovingBorder>
+            </div>
+          )}
+          <div
             className={cn(
-              'bg-transparent pt-4 w-full flex-shrink-0 border-none resize-none outline-0 px-4',
-              rows < maxRows && 'scrollbar-hide',
-              className
+              'relative z-20 px-0 pb-10 border border-main-view-fg/5 rounded-lg text-main-view-fg bg-main-view',
+              isFocused && 'ring-1 ring-main-view-fg/10'
             )}
-          />
-        </div>
-      </div>
-      <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
-        <div className="flex justify-between items-center w-full">
-          <div className="px-1 flex items-center gap-1">
-            <div
+          >
+            <TextareaAutosize
+              ref={textareaRef}
+              disabled={Boolean(streamingContent)}
+              minRows={2}
+              rows={1}
+              maxRows={10}
+              value={prompt}
+              onChange={(e) => {
+                setPrompt(e.target.value)
+                // Count the number of newlines to estimate rows
+                const newRows = (e.target.value.match(/\n/g) || []).length + 1
+                setRows(Math.min(newRows, maxRows))
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && prompt) {
+                  e.preventDefault()
+                  // Submit the message when Enter is pressed without Shift
+                  handleSendMesage(prompt)
+                  // When Shift+Enter is pressed, a new line is added (default behavior)
+                }
+              }}
+              placeholder={t('common.placeholder.chatInput')}
+              autoFocus
+              spellCheck={spellCheckChatInput}
+              data-gramm={spellCheckChatInput}
+              data-gramm_editor={spellCheckChatInput}
+              data-gramm_grammarly={spellCheckChatInput}
               className={cn(
-                'px-1 flex items-center gap-1',
-                streamingContent && 'opacity-50 pointer-events-none'
+                'bg-transparent pt-4 w-full flex-shrink-0 border-none resize-none outline-0 px-4',
+                rows < maxRows && 'scrollbar-hide',
+                className
               )}
-            >
-              {model?.provider === 'llama.cpp' && loadingModel ? (
-                <ModelLoader />
-              ) : (
-                <DropdownModelProvider model={model} />
-              )}
+            />
+          </div>
+        </div>
 
-              {/* File attachment - always available */}
-              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                <IconPaperclip size={18} className="text-main-view-fg/50" />
-              </div>
+        <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
+          <div className="flex justify-between items-center w-full">
+            <div className="px-1 flex items-center gap-1">
+              <div
+                className={cn(
+                  'px-1 flex items-center gap-1',
+                  streamingContent && 'opacity-50 pointer-events-none'
+                )}
+              >
+                {model?.provider === 'llama.cpp' && loadingModel ? (
+                  <ModelLoader />
+                ) : (
+                  <DropdownModelProvider model={model} />
+                )}
 
-              {/* Microphone - always available - Temp Hide */}
-              {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                {/* File attachment - always available */}
+                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                  <IconPaperclip size={18} className="text-main-view-fg/50" />
+                </div>
+
+                {/* Microphone - always available - Temp Hide */}
+                {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
               </div> */}
 
-              {selectedModel?.capabilities?.includes('vision') && (
-                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                  <IconEye size={18} className="text-main-view-fg/50" />
-                </div>
-              )}
+                {selectedModel?.capabilities?.includes('vision') && (
+                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                    <IconEye size={18} className="text-main-view-fg/50" />
+                  </div>
+                )}
 
-              {selectedModel?.capabilities?.includes('embeddings') && (
-                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                  <IconCodeCircle2 size={18} className="text-main-view-fg/50" />
-                </div>
-              )}
+                {selectedModel?.capabilities?.includes('embeddings') && (
+                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                    <IconCodeCircle2
+                      size={18}
+                      className="text-main-view-fg/50"
+                    />
+                  </div>
+                )}
 
-              {selectedModel?.capabilities?.includes('tools') && (
-                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                  <IconTool size={18} className="text-main-view-fg/50" />
-                </div>
-              )}
+                {selectedModel?.capabilities?.includes('tools') && (
+                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                    <IconTool size={18} className="text-main-view-fg/50" />
+                  </div>
+                )}
 
-              {selectedModel?.capabilities?.includes('web_search') && (
-                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                  <IconWorld size={18} className="text-main-view-fg/50" />
-                </div>
-              )}
+                {selectedModel?.capabilities?.includes('web_search') && (
+                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                    <IconWorld size={18} className="text-main-view-fg/50" />
+                  </div>
+                )}
 
-              {selectedModel?.capabilities?.includes('reasoning') && (
-                <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                  <IconAtom size={18} className="text-main-view-fg/50" />
+                {selectedModel?.capabilities?.includes('reasoning') && (
+                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                    <IconAtom size={18} className="text-main-view-fg/50" />
+                  </div>
+                )}
+              </div>
+
+              {showSpeedToken && (
+                <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
+                  <IconBrandSpeedtest size={18} />
+                  <span>
+                    {Math.round(tokenSpeed?.tokenSpeed ?? 0)} tokens/sec
+                  </span>
                 </div>
               )}
             </div>
 
-            {showSpeedToken && (
-              <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
-                <IconBrandSpeedtest size={18} />
-                <span>
-                  {Math.round(tokenSpeed?.tokenSpeed ?? 0)} tokens/sec
-                </span>
-              </div>
+            {streamingContent ? (
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={() => stopStreaming(streamingContent.thread_id)}
+              >
+                <IconPlayerStopFilled />
+              </Button>
+            ) : (
+              <Button
+                variant={!prompt ? null : 'default'}
+                size="icon"
+                disabled={!prompt}
+                onClick={() => handleSendMesage(prompt)}
+              >
+                {streamingContent ? (
+                  <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                ) : (
+                  <ArrowRight className="text-primary-fg" />
+                )}
+              </Button>
             )}
           </div>
-
-          {streamingContent ? (
-            <Button
-              variant="destructive"
-              size="icon"
-              onClick={() => stopStreaming(streamingContent.thread_id)}
-            >
-              <IconPlayerStopFilled />
-            </Button>
-          ) : (
-            <Button
-              variant={!prompt ? null : 'default'}
-              size="icon"
-              disabled={!prompt}
-              onClick={() => sendMessage(prompt)}
-            >
-              {streamingContent ? (
-                <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
-              ) : (
-                <ArrowRight className="text-primary-fg" />
-              )}
-            </Button>
-          )}
         </div>
       </div>
+      {message && !selectedModel && (
+        <div className="bg-main-view-fg/2 -mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
+          <div className="flex items-center gap-1 justify-between">
+            {message}
+            <IconX
+              className="size-3 text-main-view-fg/30 cursor-pointer"
+              onClick={() => {
+                setMessage('')
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
