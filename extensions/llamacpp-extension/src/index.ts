@@ -235,25 +235,7 @@ export default class llamacpp_extension
   async chat(
     opts: chatOptions
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-    const sessionInfo = this.activeSessions.get(opts.sessionId)
-    if (!sessionInfo) {
-      throw new Error(
-        `No active session found for sessionId: ${opts.sessionId}`
-      )
-    }
-
-    // For streaming responses
-    if (opts.stream) {
-      return this.streamChat(opts)
-    }
-
-    // For non-streaming responses
-    try {
-      return await invoke<chatCompletion>('plugin:llamacpp|chat', { opts })
-    } catch (error) {
-      console.error('Error during chat completion:', error)
-      throw new Error(`Chat completion failed: ${error}`)
-    }
+      throw new Error("method not implemented yet")
   }
 
   async delete(opts: deleteOptions): Promise<deleteResult> {
