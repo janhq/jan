@@ -10,7 +10,6 @@ import {
   IconPaperclip,
   IconWorld,
   IconAtom,
-  IconMicrophone,
   IconEye,
   IconTool,
   IconCodeCircle2,
@@ -29,6 +28,7 @@ import { SystemEvent } from '@/types/events'
 import { getTools } from '@/services/mcp'
 import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
+import { ModelLoader } from '@/containers/loaders/ModelLoader'
 
 type ChatInputProps = {
   className?: string
@@ -44,7 +44,8 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, updateTools, abortControllers } = useAppState()
+  const { streamingContent, updateTools, abortControllers, loadingModel } =
+    useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
@@ -52,6 +53,8 @@ const ChatInput = ({
 
   const { selectedModel } = useModelProvider()
   const { sendMessage } = useChat()
+
+  console.log(model)
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -173,17 +176,21 @@ const ChatInput = ({
                 streamingContent && 'opacity-50 pointer-events-none'
               )}
             >
-              <DropdownModelProvider model={model} />
+              {model?.provider === 'llama.cpp' && loadingModel ? (
+                <ModelLoader />
+              ) : (
+                <DropdownModelProvider model={model} />
+              )}
 
               {/* File attachment - always available */}
               <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconPaperclip size={18} className="text-main-view-fg/50" />
               </div>
 
-              {/* Microphone - always available */}
-              <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+              {/* Microphone - always available - Temp Hide */}
+              {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
-              </div>
+              </div> */}
 
               {selectedModel?.capabilities?.includes('vision') && (
                 <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">

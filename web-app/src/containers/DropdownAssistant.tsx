@@ -41,7 +41,7 @@ const DropdownAssistant = () => {
             </button>
           </DropdownMenuTrigger>
           <div
-            className="size-5 cursor-pointer relative z-10 flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+            className="size-5 cursor-pointer relative z-10 flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out "
             onClick={() => {
               console.log('edit clicked', selectedAssistant)
               if (selectedAssistant) {
@@ -64,7 +64,7 @@ const DropdownAssistant = () => {
           align="start"
         >
           {assistants.map((assistant) => (
-            <div className="relative" key={assistant.id}>
+            <div className="relative pr-6" key={assistant.id}>
               <DropdownMenuItem className="flex justify-between items-center">
                 <span
                   className="truncate text-main-view-fg/70 flex-1 cursor-pointer"
@@ -76,7 +76,7 @@ const DropdownAssistant = () => {
                   {assistant.name}
                 </span>
               </DropdownMenuItem>
-              <div className="absolute top-1/2 -translate-y-1/2 right-2">
+              <div className="absolute top-1/2 -translate-y-1/2 right-1">
                 <div className="size-5 text-main-view-fg/50 cursor-pointer relative z-10 flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
                   <IconSettings
                     size={16}
