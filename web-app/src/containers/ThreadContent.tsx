@@ -176,19 +176,21 @@ export const ThreadContent = memo(
                           Cancel
                         </Button>
                       </DialogClose>
-                      <Button
-                        disabled={!message}
-                        onClick={() => {
-                          editMessage(item.id)
-                          toast.success('Edit Message', {
-                            id: 'edit-message',
-                            description:
-                              'Message edited successfully. Please wait for the model to respond.',
-                          })
-                        }}
-                      >
-                        Save
-                      </Button>
+                      <DialogClose asChild>
+                        <Button
+                          disabled={!message}
+                          onClick={() => {
+                            editMessage(item.id)
+                            toast.success('Edit Message', {
+                              id: 'edit-message',
+                              description:
+                                'Message edited successfully. Please wait for the model to respond.',
+                            })
+                          }}
+                        >
+                          Save
+                        </Button>
+                      </DialogClose>
                     </DialogFooter>
                   </DialogHeader>
                 </DialogContent>
