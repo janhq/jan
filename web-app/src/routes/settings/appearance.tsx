@@ -50,6 +50,7 @@ function Appareances() {
                 description="Adjust the size of text across the app"
                 actions={<FontSizeSwitcher />}
               />
+
               <CardItem
                 title="Window Background"
                 description="Choose the App window color"
@@ -97,10 +98,10 @@ function Appareances() {
               />
             </Card>
 
-            {/* Message */}
-            <Card title="Chat Message">
+            {/* Codeblock */}
+            <Card>
               <CardItem
-                title="Code Block Style"
+                title="Code Block"
                 description="Choose the style for code block syntax highlighting"
                 actions={<CodeBlockStyleSwitcher />}
               />
@@ -119,7 +120,7 @@ function Appareances() {
                     size="sm"
                     onClick={() => {
                       resetCodeBlockStyle()
-                      toast.success('Code Block Style Reset', {
+                      toast.success('Code Block Reset', {
                         id: 'code-block-style',
                         description:
                           'Your Code Block style settings have been restored to default.',
