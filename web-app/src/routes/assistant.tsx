@@ -3,7 +3,6 @@ import { route } from '@/constants/routes'
 import { useState } from 'react'
 
 import { useAssistant } from '@/hooks/useAssistant'
-import type { Assistant } from '@/hooks/useAssistant'
 
 import HeaderPage from '@/containers/HeaderPage'
 import { IconCirclePlus, IconPencil, IconTrash } from '@tabler/icons-react'

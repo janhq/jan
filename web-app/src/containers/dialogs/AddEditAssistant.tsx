@@ -9,7 +9,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IconPlus, IconTrash, IconChevronDown } from '@tabler/icons-react'
-import { Assistant } from '@/hooks/useAssistant'
 import { Textarea } from '@/components/ui/textarea'
 
 import {
