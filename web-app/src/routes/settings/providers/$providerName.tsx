@@ -22,6 +22,7 @@ import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
+import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -214,6 +215,8 @@ function ProviderDetail() {
                     />
                   )
                 })}
+
+                <DeleteProvider provider={provider} />
               </Card>
 
               {/* Models */}
