@@ -4,8 +4,6 @@ pub mod vulkan;
 
 use std::sync::OnceLock;
 use sysinfo::System;
-use tauri::path::BaseDirectory;
-use tauri::Manager;
 
 static SYSTEM_STATIC_INFO: OnceLock<SystemStaticInfo> = OnceLock::new();
 
@@ -158,33 +156,6 @@ struct GpuStaticInfo {
     driver_version: String,
 }
 
-fn get_vulkan_gpus_static_jan<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-) -> Vec<vulkan::VulkanStaticInfo> {
-    let lib_name = if cfg!(target_os = "windows") {
-        "vulkan-1.dll"
-    } else if cfg!(target_os = "linux") {
-        "libvulkan.so"
-    } else {
-        return vec![];
-    };
-
-    // NOTE: this does not work in test mode (mock app)
-    match app.path().resolve(
-        format!("resources/lib/{}", lib_name),
-        BaseDirectory::Resource,
-    ) {
-        Ok(lib_path) => {
-            let lib_path_str = lib_path.to_string_lossy().to_string();
-            vulkan::get_vulkan_gpus_static(&lib_path_str)
-        }
-        Err(_) => {
-            log::error!("Failed to resolve Vulkan library path");
-            vec![]
-        }
-    }
-}
-
 fn get_gpu_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Vec<GpuStaticInfo> {
     let mut seen_uuids = std::collections::HashSet::new();
     let mut gpus = vec![];
@@ -197,17 +168,7 @@ fn get_gpu_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> Vec<GpuSt
         }
     }
 
-    let vulkan_gpus = {
-        // try to use system Vulkan first
-        // if that's not available, try to use the one bundled with Jan
-        let vulkan_gpus = vulkan::get_vulkan_gpus_static("");
-        if vulkan_gpus.is_empty() {
-            get_vulkan_gpus_static_jan(app.clone())
-        } else {
-            vulkan_gpus
-        }
-    };
-    for vulkan_gpu in vulkan_gpus {
+    for vulkan_gpu in vulkan::get_vulkan_gpus_static() {
         if seen_uuids.insert(vulkan_gpu.uuid.clone()) {
             gpus.push(vulkan_gpu.into());
         }
@@ -267,6 +228,10 @@ impl SystemUsageInfo {
 pub fn get_system_static_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemStaticInfo {
     SYSTEM_STATIC_INFO
         .get_or_init(|| {
+            if vulkan::VULKAN_INSTANCE.get().is_none() {
+                vulkan::init_vulkan(app.clone());
+            }
+
             let mut system = System::new();
             system.refresh_memory();
 
