@@ -29,7 +29,7 @@ export abstract class LocalOAIEngine extends OAIEngine {
   /**
    * Load the model.
    */
-  override async loadModel(model: Model & { file_path?: string }, abortController?: AbortController): Promise<void> {
+  async loadModel(model: Model & { file_path?: string }): Promise<void> {
     if (model.engine.toString() !== this.provider) return
     const modelFolder = 'file_path' in model && model.file_path ? await dirName(model.file_path) : await this.getModelFilePath(model.id)
     const systemInfo = await systemInformation()
@@ -55,7 +55,7 @@ export abstract class LocalOAIEngine extends OAIEngine {
   /**
    * Stops the model.
    */
-  override async unloadModel(model?: Model) {
+  async unloadModel(model?: Model) {
     if (model?.engine && model.engine?.toString() !== this.provider) return Promise.resolve()
 
     this.loadedModel = undefined
