@@ -168,7 +168,11 @@ struct GpuStaticInfo {
 impl GpuStaticInfo {
     pub fn get_gpus() -> Vec<GpuStaticInfo> {
         let mut gpus = vec![];
-        gpus.extend(nvidia::get_nvidia_gpus().into_iter().map(|gpu| gpu.into()));
+        gpus.extend(
+            nvidia::get_nvidia_gpus_static()
+                .into_iter()
+                .map(|gpu| gpu.into()),
+        );
         // TODO: filter out NVIDIA GPUs based on UUID
         gpus.extend(vulkan::get_vulkan_gpus().into_iter().map(|gpu| gpu.into()));
         gpus
@@ -202,7 +206,7 @@ impl SystemStaticInfo {
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
-pub struct GpuMemoryUsage {
+pub struct MemoryUsage {
     used_memory: u64,
     total_memory: u64,
 }
@@ -212,7 +216,7 @@ pub struct SystemUsageInfo {
     cpu: f32,
     used_memory: u64,
     total_memory: u64,
-    gpus: Vec<GpuMemoryUsage>,
+    gpus: Vec<MemoryUsage>,
 }
 
 impl SystemUsageInfo {
@@ -235,7 +239,7 @@ impl SystemUsageInfo {
             cpu: cpu_usage,
             used_memory,
             total_memory,
-            gpus: vec![],
+            gpus: nvidia::get_nvidia_gpus_memory_usage(),
         }
     }
 }
