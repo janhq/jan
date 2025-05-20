@@ -219,7 +219,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         "--cors",
         "ON",
         "--allowed_origins",
-        "http://localhost:3000,http://localhost:1420",
+        "http://localhost:3000,http://localhost:1420,tauri://localhost,http://tauri.localhost",
         "config",
         "--api_keys",
         app_state.inner().app_token.as_deref().unwrap_or(""),
