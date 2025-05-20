@@ -167,14 +167,22 @@ struct GpuStaticInfo {
 
 impl GpuStaticInfo {
     pub fn get_gpus() -> Vec<GpuStaticInfo> {
+        let mut seen_uuids = std::collections::HashSet::new();
         let mut gpus = vec![];
-        gpus.extend(
-            nvidia::get_nvidia_gpus_static()
-                .into_iter()
-                .map(|gpu| gpu.into()),
-        );
-        // TODO: filter out NVIDIA GPUs based on UUID
-        gpus.extend(vulkan::get_vulkan_gpus().into_iter().map(|gpu| gpu.into()));
+
+        // filter duplicates by UUID. prioritize GPU info from NVML over the one
+        // from Vulkan
+        for nvidia_gpu in nvidia::get_nvidia_gpus_static() {
+            if seen_uuids.insert(nvidia_gpu.uuid.clone()) {
+                gpus.push(nvidia_gpu.into());
+            }
+        }
+        for vulkan_gpu in vulkan::get_vulkan_gpus_static() {
+            if seen_uuids.insert(vulkan_gpu.uuid.clone()) {
+                gpus.push(vulkan_gpu.into());
+            }
+        }
+
         gpus
     }
 }
