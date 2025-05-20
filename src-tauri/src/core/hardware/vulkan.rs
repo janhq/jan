@@ -5,7 +5,7 @@ pub struct VulkanGpu {
     pub name: String,
     pub index: u64,
     pub total_memory: u64,
-    pub vendor_id: u32,
+    pub vendor: super::Vendor,
     pub uuid: String,
     pub driver_version: String,
     // Vulkan-specific info
@@ -16,8 +16,8 @@ pub struct VulkanGpu {
 
 impl VulkanGpu {
     pub fn get_usage(&self) -> super::GpuUsage {
-        match self.vendor_id {
-            VENDOR_ID_AMD => self.get_usage_amd(),
+        match self.vendor {
+            super::Vendor::AMD => self.get_usage_amd(),
             _ => self.get_usage_unsupported(),
         }
     }
@@ -28,20 +28,6 @@ impl VulkanGpu {
             used_memory: 0,
             total_memory: 0,
         }
-    }
-}
-
-// https://devicehunt.com/all-pci-vendors
-pub const VENDOR_ID_AMD: u32 = 0x1002;
-pub const VENDOR_ID_NVIDIA: u32 = 0x10DE;
-pub const VENDOR_ID_INTEL: u32 = 0x8086;
-
-pub fn parse_vendor_id(vendor_id: u32) -> String {
-    match vendor_id {
-        VENDOR_ID_AMD => "AMD".to_string(),
-        VENDOR_ID_NVIDIA => "NVIDIA".to_string(),
-        VENDOR_ID_INTEL => "Intel".to_string(),
-        _ => format!("Unknown. vendor_id: {vendor_id:#X}"),
     }
 }
 
@@ -140,7 +126,7 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<VulkanGpu>, Box<dyn st
                 .filter(|heap| heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL))
                 .map(|heap| heap.size / (1024 * 1024))
                 .sum(),
-            vendor_id: props.vendor_id,
+            vendor: super::Vendor::from_vendor_id(props.vendor_id),
             uuid: parse_uuid(&id_props.device_uuid),
             device_type: format!("{:?}", props.device_type),
             device_id: props.device_id,

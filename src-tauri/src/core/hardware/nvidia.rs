@@ -13,6 +13,7 @@ pub struct NvidiaGpu {
     pub name: String,
     pub index: u64,
     pub total_memory: u64,
+    pub vendor: super::Vendor,
     pub uuid: String,
     pub driver_version: String,
     // NVIDIA-specific info
@@ -55,6 +56,7 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaGpu> {
                 name: device.name()?,
                 index: i as u64,
                 total_memory: device.memory_info()?.total / 1024 / 1024, // bytes to MiB
+                vendor: super::Vendor::NVIDIA,
                 uuid: {
                     let mut uuid = device.uuid()?;
                     if uuid.starts_with("GPU-") {

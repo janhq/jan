@@ -147,7 +147,33 @@ impl CpuStaticInfo {
     }
 }
 
-#[derive(serde::Serialize, Clone, Debug)]
+// https://devicehunt.com/all-pci-vendors
+pub const VENDOR_ID_AMD: u32 = 0x1002;
+pub const VENDOR_ID_NVIDIA: u32 = 0x10DE;
+pub const VENDOR_ID_INTEL: u32 = 0x8086;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum Vendor {
+    AMD,
+    NVIDIA,
+    Intel,
+    Unknown(u32),
+}
+
+impl Vendor {
+    pub fn from_vendor_id(vendor_id: u32) -> Self {
+        match vendor_id {
+            VENDOR_ID_AMD => Vendor::AMD,
+            VENDOR_ID_NVIDIA => Vendor::NVIDIA,
+            VENDOR_ID_INTEL => Vendor::Intel,
+            _ => Vendor::Unknown(vendor_id),
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(untagged)]
 enum Gpu {
     Nvidia(nvidia::NvidiaGpu),
     Vulkan(vulkan::VulkanGpu),
