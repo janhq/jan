@@ -22,7 +22,7 @@ import { useAssistant } from './useAssistant'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
-  const { tools, updateTokenSpeed } = useAppState()
+  const { tools, updateTokenSpeed, resetTokenSpeed } = useAppState()
   const { currentAssistant } = useAssistant()
 
   const { getProviderByName, selectedModel, selectedProvider } =
@@ -68,6 +68,7 @@ export const useChat = () => {
     async (message: string) => {
       const activeThread = await getCurrentThread()
 
+      resetTokenSpeed()
       if (!activeThread || !provider) return
 
       updateStreamingContent(emptyThreadContent)
@@ -145,6 +146,7 @@ export const useChat = () => {
     },
     [
       getCurrentThread,
+      resetTokenSpeed,
       provider,
       updateStreamingContent,
       addMessage,

@@ -15,6 +15,7 @@ type AppState = {
   updateTools: (tools: MCPTool[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
   updateTokenSpeed: (message: ThreadMessage) => void
+  resetTokenSpeed: () => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -70,5 +71,9 @@ export const useAppState = create<AppState>()((set) => ({
           message: message.id,
         },
       }
+    }),
+  resetTokenSpeed: () =>
+    set({
+      tokenSpeed: undefined,
     }),
 }))
