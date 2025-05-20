@@ -55,3 +55,10 @@ type Assistant = {
   instructions: string
   parameters: Record<string, unknown>
 }
+
+type TokenSpeed = {
+  message: string
+  tokenSpeed: number
+  tokenCount: number
+  lastTimestamp: number
+}

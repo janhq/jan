@@ -2,16 +2,48 @@ import { route } from '@/constants/routes'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useNavigate, useMatches, Link } from '@tanstack/react-router'
-import { IconArrowLeft } from '@tabler/icons-react'
+import { IconArrowLeft, IconCirclePlus } from '@tabler/icons-react'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { useCallback, useState } from 'react'
+import { openAIProviderSettings } from '@/mock/data'
 
 const ProvidersMenu = ({
   stepSetupRemoteProvider,
 }: {
   stepSetupRemoteProvider: boolean
 }) => {
-  const { providers } = useModelProvider()
+  const { providers, addProvider } = useModelProvider()
   const navigate = useNavigate()
   const matches = useMatches()
+  const [name, setName] = useState('')
+  const createProvider = useCallback(() => {
+    addProvider({
+      provider: name,
+      active: true,
+      models: [],
+      settings: openAIProviderSettings as ProviderSetting[],
+      api_key: '',
+      base_url: 'https://api.openai.com/v1',
+    })
+    setTimeout(() => {
+      navigate({
+        to: route.settings.providers,
+        params: {
+          providerName: name,
+        },
+      })
+    }, 0)
+  }, [name, addProvider, navigate])
 
   return (
     <div className="w-44 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
@@ -65,6 +97,51 @@ const ProvidersMenu = ({
             </div>
           )
         })}
+
+        <Dialog>
+          <DialogTrigger asChild>
+            <div
+              className="bg-main-view flex cursor-pointer px-4 my-1.5 items-center gap-1.5  text-main-view-fg/80"
+              onClick={() => {}}
+            >
+              <IconCirclePlus size={16} />
+              <span className="capitalize">
+                Add Provider
+              </span>
+            </div>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add OpenAI Provider</DialogTitle>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-2"
+                placeholder="Enter a name for your provider"
+                onKeyDown={(e) => {
+                  // Prevent key from being captured by parent components
+                  e.stopPropagation()
+                }}
+              />
+              <DialogFooter className="mt-2 flex items-center">
+                <DialogClose asChild>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="hover:no-underline"
+                  >
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button disabled={!name} onClick={createProvider}>
+                    Create
+                  </Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogHeader>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )
