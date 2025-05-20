@@ -11,7 +11,7 @@ export const getHardwareInfo = async () => {
       ExtensionTypeEnum.Hardware
     )
 
-  if (!extension) throw new Error('Model extension not found')
+  if (!extension) throw new Error('Hardware extension not found')
 
   try {
     return await extension?.getHardware()
