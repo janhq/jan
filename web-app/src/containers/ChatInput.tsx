@@ -3,6 +3,7 @@
 import TextareaAutosize from 'react-textarea-autosize'
 import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
@@ -47,6 +48,7 @@ const ChatInput = ({
   const { streamingContent, updateTools, abortControllers, loadingModel } =
     useAppState()
   const { prompt, setPrompt } = usePrompt()
+  const { currentThreadId } = useThreads()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
   const { tokenSpeed } = useAppState()
@@ -95,11 +97,29 @@ const ChatInput = ({
     return unsubscribe
   }, [updateTools])
 
+  // Focus when component mounts
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.focus()
     }
   }, [])
+
+  // Focus when thread changes
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.focus()
+    }
+  }, [currentThreadId])
+
+  // Focus when streaming content finishes
+  useEffect(() => {
+    if (!streamingContent && textareaRef.current) {
+      // Small delay to ensure UI has updated
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 10)
+    }
+  }, [streamingContent])
 
   const stopStreaming = useCallback(
     (threadId: string) => {
@@ -227,7 +247,9 @@ const ChatInput = ({
             {showSpeedToken && (
               <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
                 <IconBrandSpeedtest size={18} />
-                <span>{Math.round(tokenSpeed?.tokenSpeed ?? 0)} tokens/sec</span>
+                <span>
+                  {Math.round(tokenSpeed?.tokenSpeed ?? 0)} tokens/sec
+                </span>
               </div>
             )}
           </div>
