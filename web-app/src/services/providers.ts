@@ -1,9 +1,10 @@
 import { models as providerModels } from 'token.js'
 import { mockModelProvider } from '@/mock/data'
-import { EngineManager } from '@janhq/core'
+import { EngineManager, SettingComponentProps } from '@janhq/core'
 import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { fetchModels } from './models'
+import { ExtensionManager } from '@/lib/extension'
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const builtinProviders = mockModelProvider.map((provider) => {
@@ -83,4 +84,29 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
   }
 
   return runtimeProviders.concat(builtinProviders as ModelProvider[])
+}
+
+/**
+ * Update the settings of a provider extension.
+ * TODO: Later on we don't retrieve this using provider name
+ * @param providerName
+ * @param settings
+ */
+export const updateSettings = async (
+  providerName: string,
+  settings: ProviderSetting[]
+): Promise<void> => {
+  const provider = providerName === 'llama.cpp' ? 'cortex' : providerName
+  return ExtensionManager.getInstance()
+    .getEngine(provider)
+    ?.updateSettings(
+      settings.map((setting) => ({
+        ...setting,
+        controllerProps: {
+          ...setting.controller_props,
+          value: setting.controller_props.value ?? '',
+        },
+        controllerType: setting.controller_type,
+      })) as SettingComponentProps[]
+    )
 }

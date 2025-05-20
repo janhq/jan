@@ -22,6 +22,8 @@ import { DialogDeleteModel } from '@/containers/dialogs/DeleteModel'
 import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
+import DeleteProvider from '@/containers/dialogs/DeleteProvider'
+import { updateSettings } from '@/services/providers'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -165,6 +167,7 @@ function ProviderDetail() {
                             ) {
                               updateObj.base_url = newValue
                             }
+                            updateSettings(providerName, updateObj.settings ?? [])
                             updateProvider(providerName, {
                               ...provider,
                               ...updateObj,
@@ -214,6 +217,8 @@ function ProviderDetail() {
                     />
                   )
                 })}
+
+                <DeleteProvider provider={provider} />
               </Card>
 
               {/* Models */}

@@ -13,6 +13,8 @@ type ModelProviderState = {
     providerName: string,
     modelName: string
   ) => Model | undefined
+  addProvider: (provider: ModelProvider) => void
+  deleteProvider: (providerName: string) => void
   deleteModel: (modelId: string) => void
 }
 
@@ -112,6 +114,18 @@ export const useModelProvider = create<ModelProviderState>()(
               models,
             }
           }),
+        }))
+      },
+      addProvider: (provider: ModelProvider) => {
+        set((state) => ({
+          providers: [...state.providers, provider],
+        }))
+      },
+      deleteProvider: (providerName: string) => {
+        set((state) => ({
+          providers: state.providers.filter(
+            (provider) => provider.provider !== providerName
+          ),
         }))
       },
     }),

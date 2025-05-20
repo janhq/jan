@@ -17,8 +17,6 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/martian.svg'
     case 'openrouter':
       return '/images/model-provider/openRouter.svg'
-    case 'openai':
-      return '/images/model-provider/openai.svg'
     case 'groq':
       return '/images/model-provider/groq.svg'
     case 'cohere':
@@ -32,7 +30,7 @@ export function getProviderLogo(provider: string) {
     case 'deepseek':
       return '/images/model-provider/deepseek.svg'
     default:
-      return undefined
+      return '/images/model-provider/openai.svg'
   }
 }
 
