@@ -16,9 +16,6 @@ export abstract class AIEngine extends BaseExtension {
    */
   override onLoad() {
     this.registerEngine()
-
-    events.on(ModelEvent.OnModelInit, (model: Model) => this.loadModel(model))
-    events.on(ModelEvent.OnModelStop, (model: Model) => this.unloadModel(model))
   }
 
   /**
@@ -27,31 +24,4 @@ export abstract class AIEngine extends BaseExtension {
   registerEngine() {
     EngineManager.instance().register(this)
   }
-
-  /**
-   * Loads the model.
-   */
-  async loadModel(model: Partial<Model>, abortController?: AbortController): Promise<any> {
-    if (model?.engine?.toString() !== this.provider) return Promise.resolve()
-    events.emit(ModelEvent.OnModelReady, model)
-    return Promise.resolve()
-  }
-  /**
-   * Stops the model.
-   */
-  async unloadModel(model?: Partial<Model>): Promise<any> {
-    if (model?.engine && model.engine.toString() !== this.provider) return Promise.resolve()
-    events.emit(ModelEvent.OnModelStopped, model ?? {})
-    return Promise.resolve()
-  }
-
-  /**
-   * Inference request
-   */
-  inference(data: MessageRequest) {}
-
-  /**
-   * Stop inference
-   */
-  stopInference() {}
 }

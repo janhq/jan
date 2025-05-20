@@ -3,7 +3,6 @@ use serde::{Serialize, Deserialize};
 use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Manager, State}; // Import Manager trait
 use tokio::process::Command;
-use std::collections::HashMap;
 use uuid::Uuid;
 use thiserror;
 
@@ -70,7 +69,12 @@ pub struct SessionInfo {
     pub session_id: String,       // opaque handle for unload/chat
     pub port: u16,                // llama-server output port
     pub model_path: String,       // path of the loaded model
-    pub settings: HashMap<String, serde_json::Value>, // The actual settings used to load
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct UnloadResult {
+    success: bool,
+    error: Option<String>,
 }
 
 // --- Load Command ---
@@ -102,40 +106,12 @@ pub async fn load(
         )));
     }
 
-    let mut port = 8080; // Default port
-    let mut model_path = String::new();
-    let mut settings: HashMap<String, serde_json::Value> = HashMap::new();
-
-    // Extract arguments into settings map and specific fields
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--port" && i + 1 < args.len() {
-            if let Ok(p) = args[i + 1].parse::<u16>() {
-                port = p;
-            }
-            settings.insert("port".to_string(), serde_json::Value::String(args[i + 1].clone()));
-            i += 2;
-        } else if args[i] == "-m" && i + 1 < args.len() {
-            model_path = args[i + 1].clone();
-            settings.insert("modelPath".to_string(), serde_json::Value::String(model_path.clone()));
-            i += 2;
-        } else if i + 1 < args.len() && args[i].starts_with("-") {
-            // Store other arguments as settings
-            let key = args[i].trim_start_matches("-").trim_start_matches("-");
-            settings.insert(key.to_string(), serde_json::Value::String(args[i + 1].clone()));
-            i += 2;
-        } else {
-            // Handle boolean flags
-            if args[i].starts_with("-") {
-                let key = args[i].trim_start_matches("-").trim_start_matches("-");
-                settings.insert(key.to_string(), serde_json::Value::Bool(true));
-            }
-            i += 1;
-        }
-    }
+    let port = 8080; // Default port
 
     // Configure the command to run the server
     let mut command = Command::new(server_path);
+
+    let model_path = args[0].replace("-m", "");
     command.args(args);
 
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
@@ -145,17 +121,21 @@ pub async fn load(
     // Spawn the child process
     let child = command.spawn().map_err(ServerError::Io)?;
 
-    log::info!("Server process started with PID: {:?}", child.id());
+    // Get the PID to use as session ID
+    let pid = child.id().map(|id| id.to_string()).unwrap_or_else(|| {
+        // Fallback in case we can't get the PID for some reason
+        format!("unknown_pid_{}", Uuid::new_v4())
+    });
+
+    log::info!("Server process started with PID: {}", pid);
 
     // Store the child process handle in the state
     *process_lock = Some(child);
 
-    let session_id = format!("session_{}", Uuid::new_v4());
     let session_info = SessionInfo {
-        session_id,
+        session_id: pid,  // Use PID as session ID
         port,
         model_path,
-        settings,
     };
 
     Ok(session_info)
@@ -163,32 +143,65 @@ pub async fn load(
 
 // --- Unload Command ---
 #[tauri::command]
-pub async fn unload(state: State<'_, AppState>) -> ServerResult<()> {
+pub async fn unload(session_id: String, state: State<'_, AppState>) -> ServerResult<UnloadResult> {
     let mut process_lock = state.llama_server_process.lock().await;
-
     // Take the child process out of the Option, leaving None in its place
     if let Some(mut child) = process_lock.take() {
+        // Convert the PID to a string to compare with the session_id
+        let process_pid = child.id().map(|pid| pid.to_string()).unwrap_or_default();
+
+        // Check if the session_id matches the PID
+        if session_id != process_pid && !session_id.is_empty() && !process_pid.is_empty() {
+            // Put the process back in the lock since we're not killing it
+            *process_lock = Some(child);
+
+            log::warn!(
+                "Session ID mismatch: provided {} vs process {}",
+                session_id,
+                process_pid
+            );
+
+            return Ok(UnloadResult {
+                success: false,
+                error: Some(format!("Session ID mismatch: provided {} doesn't match process {}", 
+                    session_id, process_pid)),
+            });
+        }
+
         log::info!(
             "Attempting to terminate server process with PID: {:?}",
             child.id()
         );
+
         // Kill the process
-        // `start_kill` is preferred in async contexts
         match child.start_kill() {
             Ok(_) => {
-                log::info!("Server process termination signal sent.");
-                Ok(())
+                log::info!("Server process termination signal sent successfully");
+
+                Ok(UnloadResult {
+                    success: true,
+                    error: None,
+                })
             }
             Err(e) => {
-                // For simplicity, we log and return error.
                 log::error!("Failed to kill server process: {}", e);
-                // Put it back? Maybe not useful if kill failed.
-                // *process_lock = Some(child);
-                Err(ServerError::Io(e))
+
+                // Return formatted error
+                Ok(UnloadResult {
+                    success: false,
+                    error: Some(format!("Failed to kill server process: {}", e)),
+                })
             }
         }
     } else {
-        log::warn!("Attempted to unload server, but it was not running.");
-        Ok(())
+        log::warn!("Attempted to unload server, but no process was running");
+
+        // If no process is running but client thinks there is, 
+        // still report success since the end state is what they wanted
+        Ok(UnloadResult {
+            success: true,
+            error: None,
+        })
     }
 }
+
