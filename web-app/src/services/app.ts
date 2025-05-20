@@ -7,10 +7,7 @@ import { invoke } from '@tauri-apps/api/core'
  * @returns {Promise<void>}
  */
 export const factoryReset = async () => {
-  const appConfiguration: AppConfiguration | undefined =
-    await window.core?.api?.getAppConfigurations()
-
-  const janDataFolderPath = appConfiguration?.data_folder
+  const janDataFolderPath = await getJanDataFolder()
   if (janDataFolderPath) await fs.rm(janDataFolderPath)
   window.localStorage.clear()
   await window.core?.api?.installExtensions()
@@ -48,5 +45,22 @@ export const parseLogLine = (line: string) => {
     level,
     target,
     message,
+  }
+}
+
+/**
+ * @description This function is used to get the Jan data folder path.
+ * It retrieves the path from the app configuration.
+ * @returns {Promise<string | undefined>} The Jan data folder path or undefined if not found
+ */
+export const getJanDataFolder = async (): Promise<string | undefined> => {
+  try {
+    const appConfiguration: AppConfiguration | undefined =
+      await window.core?.api?.getAppConfigurations()
+
+    return appConfiguration?.data_folder
+  } catch (error) {
+    console.error('Failed to get Jan data folder:', error)
+    return undefined
   }
 }
