@@ -57,7 +57,7 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
           },
         ],
         metadata: {
-          order: 1,
+          // order: 1,
         },
       })
       .then((e) => {
@@ -68,7 +68,7 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
             id: e.assistants?.[0]?.model?.id,
             provider: e.assistants?.[0]?.model?.engine,
           },
-          order: 1,
+          // order: 1,
           assistants: e.assistants ?? [defaultAssistant],
         } as Thread
       })

@@ -256,7 +256,7 @@ type ThreadListProps = {
   isFavoriteSection?: boolean
 }
 
-function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
+function ThreadList({ threads }: ThreadListProps) {
   const { setThreads } = useThreads()
 
   const sortedThreads = useMemo(() => {
@@ -284,28 +284,20 @@ function ThreadList({ threads, isFavoriteSection = false }: ThreadListProps) {
       collisionDetection={closestCenter}
       onDragEnd={(event) => {
         const { active, over } = event
-        if (active.id !== over?.id) {
-          const oldIndex = threads.findIndex((t) => t.id === active.id)
-          const newIndex = threads.findIndex((t) => t.id === over?.id)
+        if (active.id !== over?.id && over) {
+          // Access Global State
+          const allThreadsMap = useThreads.getState().threads;
+          const allThreadsArray = Object.values(allThreadsMap);
 
-          // Create a new array with the reordered threads from this section only
-          const reorderedSectionThreads = arrayMove(threads, oldIndex, newIndex)
+          // Calculate Global Indices
+          const oldIndexInGlobal = allThreadsArray.findIndex((t) => t.id === active.id);
+          const newIndexInGlobal = allThreadsArray.findIndex((t) => t.id === over.id);
 
-          // Split all threads into favorites and non-favorites
-          const favThreads = sortedThreads.filter((t) => t.isFavorite)
-          const nonFavThreads = sortedThreads.filter((t) => !t.isFavorite)
-
-          // Replace the appropriate section with the reordered threads
-          let updatedThreads
-          if (isFavoriteSection) {
-            // If we're in the favorites section, update favorites and keep non-favorites as is
-            updatedThreads = [...reorderedSectionThreads, ...nonFavThreads]
-          } else {
-            // If we're in the non-favorites section, update non-favorites and keep favorites as is
-            updatedThreads = [...favThreads, ...reorderedSectionThreads]
+          // Reorder Globally and Update State
+          if (oldIndexInGlobal !== -1 && newIndexInGlobal !== -1) {
+            const reorderedGlobalThreads = arrayMove(allThreadsArray, oldIndexInGlobal, newIndexInGlobal);
+            setThreads(reorderedGlobalThreads);
           }
-
-          setThreads(updatedThreads)
         }
       }}
     >
