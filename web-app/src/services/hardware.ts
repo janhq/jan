@@ -36,7 +36,7 @@ export const setActiveGpus = async (data: { gpus: number[] }) => {
   }
 
   try {
-    const response = await extension.setAvtiveGpu(data)
+    const response = await extension.setActiveGpu(data)
     return response
   } catch (error) {
     console.error('Failed to install engine variant:', error)

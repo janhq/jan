@@ -19,7 +19,7 @@ export abstract class HardwareManagementExtension extends BaseExtension {
   /**
    * @returns A Promise that resolves to an object of set active gpus.
    */
-  abstract setAvtiveGpu(data: { gpus: number[] }): Promise<{
+  abstract setActiveGpu(data: { gpus: number[] }): Promise<{
     message: string
     activated_gpus: number[]
   }>
