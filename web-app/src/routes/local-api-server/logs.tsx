@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { parseLogLine, readLogs } from '@/services/app'
 import { listen } from '@tauri-apps/api/event'
 
@@ -23,6 +23,7 @@ const LOG_EVENT_NAME = 'log://log'
 
 function LogsViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([])
+  const logsContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     readLogs().then((logData) => {
@@ -30,13 +31,25 @@ function LogsViewer() {
         .filter((log) => log?.target === SERVER_LOG_TARGET)
         .filter(Boolean) as LogEntry[]
       setLogs(logs)
+
+      // Scroll to bottom after initial logs are loaded
+      setTimeout(() => {
+        scrollToBottom()
+      }, 100)
     })
     let unsubscribe = () => {}
     listen(LOG_EVENT_NAME, (event) => {
       const { message } = event.payload as { message: string }
       const log: LogEntry | undefined = parseLogLine(message)
       if (log?.target === SERVER_LOG_TARGET) {
-        setLogs((prevLogs) => [...prevLogs, log])
+        setLogs((prevLogs) => {
+          const newLogs = [...prevLogs, log]
+          // Schedule scroll to bottom after state update
+          setTimeout(() => {
+            scrollToBottom()
+          }, 0)
+          return newLogs
+        })
       }
     }).then((unsub) => {
       unsubscribe = unsub
@@ -45,6 +58,14 @@ function LogsViewer() {
       unsubscribe()
     }
   }, [])
+
+  // Function to scroll to the bottom of the logs container
+  const scrollToBottom = () => {
+    if (logsContainerRef.current) {
+      const { scrollHeight, clientHeight } = logsContainerRef.current
+      logsContainerRef.current.scrollTop = scrollHeight - clientHeight
+    }
+  }
 
   // Function to get appropriate color for log level
   const getLogLevelColor = (level: string) => {
@@ -70,7 +91,7 @@ function LogsViewer() {
 
   return (
     <div className="flex flex-col h-full bg-main-view">
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" ref={logsContainerRef}>
         <div className="font-mono p-2">
           {logs.length === 0 ? (
             <div className="text-center text-main-view-fg/50 py-8">
