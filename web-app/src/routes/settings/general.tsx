@@ -8,6 +8,9 @@ import { Card, CardItem } from '@/containers/Card'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useEffect, useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
+
 import {
   Dialog,
   DialogClose,
@@ -18,7 +21,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { factoryReset } from '@/services/app'
+import { factoryReset, getJanDataFolder } from '@/services/app'
+import { IconFolder } from '@tabler/icons-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -28,6 +32,16 @@ export const Route = createFileRoute(route.settings.general as any)({
 function General() {
   const { t } = useTranslation()
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
+  const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
+
+  useEffect(() => {
+    const fetchDataFolder = async () => {
+      const path = await getJanDataFolder()
+      setJanDataFolder(path)
+    }
+
+    fetchDataFolder()
+  }, [])
 
   const resetApp = async () => {
     // TODO: Loading indicator
@@ -71,10 +85,47 @@ function General() {
                 title={t('settings.dataFolder.appData', {
                   ns: 'settings',
                 })}
-                description={t('settings.dataFolder.appDataDesc', {
-                  ns: 'settings',
-                })}
-                actions={<></>}
+                align="start"
+                description={
+                  <>
+                    <span>
+                      {t('settings.dataFolder.appDataDesc', {
+                        ns: 'settings',
+                      })}
+                    </span>
+                    <span
+                      title={janDataFolder}
+                      className="bg-main-view-fg/10 text-xs mt-1 px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1"
+                    >
+                      {janDataFolder}
+                    </span>
+                  </>
+                }
+                actions={
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="hover:no-underline"
+                    onClick={async () => {
+                      const selectedPath = await open({
+                        multiple: false,
+                        directory: true,
+                        defaultPath: janDataFolder,
+                      })
+                      if (selectedPath === janDataFolder) return
+                      if (selectedPath !== null) {
+                        setJanDataFolder(selectedPath)
+                        // TODO: we need function to move everything into new folder selectedPath
+                        // eg like this
+                        // await window.core?.api?.moveDataFolder(selectedPath)
+                      }
+                    }}
+                  >
+                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                      <IconFolder size={18} className="text-main-view-fg/50" />
+                    </div>
+                  </Button>
+                }
               />
               <CardItem
                 title={t('settings.dataFolder.appLogs', {
