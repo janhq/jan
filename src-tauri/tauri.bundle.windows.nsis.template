@@ -630,8 +630,11 @@ Section Install
 
   ; Copy resources
     CreateDirectory "$INSTDIR\binaries"
+    CreateDirectory "$INSTDIR\binaries\engines"
     CreateDirectory "$INSTDIR\resources"
-    SetOutPath "$INSTDIR\binaries"
+    CreateDirectory "$INSTDIR\resources\pre-install"
+    CreateDirectory "$INSTDIR\resources\themes"
+    SetOutPath "$INSTDIR\binaries\engines"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\binaries\engines\"
     SetOutPath $INSTDIR
     ; File /a "/oname=cublas64_11.dll" "D:\a\jan\jan\src-tauri\binaries\cublas64_11.dll"
@@ -645,8 +648,9 @@ Section Install
     File /a "/oname=vcruntime140_1.dll" "D:\a\jan\jan\src-tauri\binaries\vcruntime140_1.dll"
     File /a "/oname=vcruntime140.dll" "D:\a\jan\jan\src-tauri\binaries\vcruntime140.dll"
     File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\binaries\vulkan-1.dll"
-    SetOutPath "$INSTDIR\resources"
+    SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
+    SetOutPath "$INSTDIR\resources\themes"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\themes\"
     SetOutPath $INSTDIR
 
