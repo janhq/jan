@@ -6,35 +6,30 @@
  * @module llamacpp-extension/src/index
  */
 
-import {
-  AIEngine,
-  getJanDataFolderPath,
-  fs,
-  Model,
-} from '@janhq/core'
+import { AIEngine, getJanDataFolderPath, fs, joinPath } from '@janhq/core'
 
 import { invoke } from '@tauri-apps/api/tauri'
 import {
-  LocalProvider,
-  ModelInfo,
-  ListOptions,
-  ListResult,
-  PullOptions,
-  PullResult,
-  LoadOptions,
-  SessionInfo,
-  UnloadOptions,
-  UnloadResult,
-  ChatOptions,
-  ChatCompletion,
-  ChatCompletionChunk,
-  DeleteOptions,
-  DeleteResult,
-  ImportOptions,
-  ImportResult,
-  AbortPullOptions,
-  AbortPullResult,
-  ChatCompletionRequest,
+  localProvider,
+  modelInfo,
+  listOptions,
+  listResult,
+  pullOptions,
+  pullResult,
+  loadOptions,
+  sessionInfo,
+  unloadOptions,
+  unloadResult,
+  chatOptions,
+  chatCompletion,
+  chatCompletionChunk,
+  deleteOptions,
+  deleteResult,
+  importOptions,
+  importResult,
+  abortPullOptions,
+  abortPullResult,
+  chatCompletionRequest,
 } from './types'
 
 /**
@@ -61,246 +56,224 @@ function parseGGUFFileName(filename: string): {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class inference_llamacpp_extension
+export default class llamacpp_extension
   extends AIEngine
-  implements LocalProvider
+  implements localProvider
 {
   provider: string = 'llamacpp'
-  readonly providerId: string = 'llamcpp'
+  readonly providerId: string = 'llamacpp'
 
-  private activeSessions: Map<string, SessionInfo> = new Map()
-
+  private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
+  private activeRequests: Map<string, AbortController> = new Map()
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
-    this.registerSettings(SETTINGS_DEFINITIONS)
+    this.registerSettings(SETTINGS)
 
-    const customPath = await this.getSetting<string>(
-      LlamaCppSettings.ModelsPath,
-      ''
-    )
-    if (customPath && (await fs.exists(customPath))) {
-      this.modelsBasePath = customPath
+    // Initialize models base path - assuming this would be retrieved from settings
+    this.modelsBasePath = await joinPath([
+      await getJanDataFolderPath(),
+      'models',
+    ])
+  }
+
+  // Implement the required LocalProvider interface methods
+  async list(opts: listOptions): Promise<listResult> {
+    throw new Error('method not implemented yet')
+  }
+
+  async pull(opts: pullOptions): Promise<pullResult> {
+    throw new Error('method not implemented yet')
+  }
+
+  async load(opts: loadOptions): Promise<sessionInfo> {
+    const args: string[] = []
+
+    // model option is required
+    args.push('-m', opts.modelPath)
+    args.push('--port', String(opts.port || 8080)) // Default port if not specified
+
+    if (opts.n_gpu_layers === undefined) {
+      // in case of CPU only build, this option will be ignored
+      args.push('-ngl', '99')
     } else {
-      this.modelsBasePath = await path.join(
-        await getJanDataFolderPath(),
-        'models',
-        ENGINE_ID
-      )
+      args.push('-ngl', String(opts.n_gpu_layers))
     }
-    await fs.createDirAll(this.modelsBasePath)
 
-    console.log(
-      `${this.providerId} provider loaded. Models path: ${this.modelsBasePath}`
-    )
-
-    // Optionally, list and register models with the core system if AIEngine expects it
-    // const models = await this.listModels({ providerId: this.providerId });
-    // this.registerModels(this.mapModelInfoToCoreModel(models)); // mapModelInfoToCoreModel would be a helper
-  }
-
-  async getModelsPath(): Promise<string> {
-    // Ensure modelsBasePath is initialized
-    if (!this.modelsBasePath) {
-      const customPath = await this.getSetting<string>(
-        LlamaCppSettings.ModelsPath,
-        ''
-      )
-      if (customPath && (await fs.exists(customPath))) {
-        this.modelsBasePath = customPath
-      } else {
-        this.modelsBasePath = await path.join(
-          await getJanDataFolderPath(),
-          'models',
-          ENGINE_ID
-        )
-      }
-      await fs.createDirAll(this.modelsBasePath)
+    if (opts.n_ctx !== undefined) {
+      args.push('-c', String(opts.n_ctx))
     }
-    return this.modelsBasePath
-  }
 
-  async listModels(_opts: ListOptions): Promise<ListResult> {
-    const modelsDir = await this.getModelsPath()
-    const result: ModelInfo[] = []
+    // Add remaining options from the interface
+    if (opts.threads !== undefined) {
+      args.push('--threads', String(opts.threads))
+    }
+
+    if (opts.threads_batch !== undefined) {
+      args.push('--threads-batch', String(opts.threads_batch))
+    }
+
+    if (opts.ctx_size !== undefined) {
+      args.push('--ctx-size', String(opts.ctx_size))
+    }
+
+    if (opts.n_predict !== undefined) {
+      args.push('--n-predict', String(opts.n_predict))
+    }
+
+    if (opts.batch_size !== undefined) {
+      args.push('--batch-size', String(opts.batch_size))
+    }
+
+    if (opts.ubatch_size !== undefined) {
+      args.push('--ubatch-size', String(opts.ubatch_size))
+    }
+
+    if (opts.device !== undefined) {
+      args.push('--device', opts.device)
+    }
+
+    if (opts.split_mode !== undefined) {
+      args.push('--split-mode', opts.split_mode)
+    }
+
+    if (opts.main_gpu !== undefined) {
+      args.push('--main-gpu', String(opts.main_gpu))
+    }
+
+    // Boolean flags
+    if (opts.flash_attn === true) {
+      args.push('--flash-attn')
+    }
+
+    if (opts.cont_batching === true) {
+      args.push('--cont-batching')
+    }
+
+    if (opts.no_mmap === true) {
+      args.push('--no-mmap')
+    }
+
+    if (opts.mlock === true) {
+      args.push('--mlock')
+    }
+
+    if (opts.no_kv_offload === true) {
+      args.push('--no-kv-offload')
+    }
+
+    if (opts.cache_type_k !== undefined) {
+      args.push('--cache-type-k', opts.cache_type_k)
+    }
+
+    if (opts.cache_type_v !== undefined) {
+      args.push('--cache-type-v', opts.cache_type_v)
+    }
+
+    if (opts.defrag_thold !== undefined) {
+      args.push('--defrag-thold', String(opts.defrag_thold))
+    }
+
+    if (opts.rope_scaling !== undefined) {
+      args.push('--rope-scaling', opts.rope_scaling)
+    }
+
+    if (opts.rope_scale !== undefined) {
+      args.push('--rope-scale', String(opts.rope_scale))
+    }
+
+    if (opts.rope_freq_base !== undefined) {
+      args.push('--rope-freq-base', String(opts.rope_freq_base))
+    }
+
+    if (opts.rope_freq_scale !== undefined) {
+      args.push('--rope-freq-scale', String(opts.rope_freq_scale))
+    }
+    console.log('Calling Tauri command load with args:', args)
 
     try {
-      if (!(await fs.exists(modelsDir))) {
-        await fs.createDirAll(modelsDir)
-        return []
-      }
+      const sessionInfo = await invoke<sessionInfo>('plugin:llamacpp|load', {
+        args: args,
+      })
 
-      const entries = await fs.readDir(modelsDir)
-      for (const entry of entries) {
-        if (entry.name?.endsWith('.gguf') && entry.isFile) {
-          const modelPath = await path.join(modelsDir, entry.name)
-          const stats = await fs.stat(modelPath)
-          const parsedName = parseGGUFFileName(entry.name)
-
-          result.push({
-            id: `${parsedName.baseModelId}${parsedName.quant ? `/${parsedName.quant}` : ''}`, // e.g., "mistral-7b/Q4_0"
-            name: entry.name.replace('.gguf', ''), // Or a more human-friendly name
-            quant_type: parsedName.quant,
-            providerId: this.providerId,
-            sizeBytes: stats.size,
-            path: modelPath,
-            tags: [this.providerId, parsedName.quant || 'unknown_quant'].filter(
-              Boolean
-            ) as string[],
-          })
-        }
-      }
-    } catch (error) {
-      console.error(`[${this.providerId}] Error listing models:`, error)
-      // Depending on desired behavior, either throw or return empty/partial list
-    }
-    return result
-  }
-
-  // pullModel
-  async pullModel(opts: PullOptions): Promise<PullResult> {
-    // TODO: Implement pullModel
-    return 0;
-  }
-
-  // abortPull
-  async abortPull(opts: AbortPullOptions): Promise<AbortPullResult> {
-    // TODO: implement abortPull
-  }
-
-  async load(opts: LoadOptions): Promise<SessionInfo> {
-    if (opts.providerId !== this.providerId) {
-      throw new Error('Invalid providerId for LlamaCppProvider.loadModel')
-    }
-
-    const sessionId = uuidv4()
-    const loadParams = {
-      model_path: opts.modelPath,
-      session_id: sessionId, // Pass sessionId to Rust for tracking
-      // Default llama.cpp server options, can be overridden by opts.options
-      port: opts.options?.port ?? 0, // 0 for dynamic port assignment by OS
-      n_gpu_layers:
-        opts.options?.n_gpu_layers ??
-        (await this.getSetting(LlamaCppSettings.DefaultNGpuLayers, -1)),
-      n_ctx:
-        opts.options?.n_ctx ??
-        (await this.getSetting(LlamaCppSettings.DefaultNContext, 2048)),
-      // Spread any other options from opts.options
-      ...(opts.options || {}),
-    }
-
-    try {
-      console.log(
-        `[${this.providerId}] Requesting to load model: ${opts.modelPath} with options:`,
-        loadParams
-      )
-      // This matches the Rust handler: core::utils::extensions::inference_llamacpp_extension::server::load
-      const rustResponse: {
-        session_id: string
-        port: number
-        model_path: string
-        settings: Record<string, unknown>
-      } = await invoke('plugin:llamacpp|load', { params: loadParams }) // Adjust namespace if needed
-
-      if (!rustResponse || !rustResponse.port) {
-        throw new Error(
-          'Rust load function did not return expected port or session info.'
-        )
-      }
-
-      const sessionInfo: SessionInfo = {
-        sessionId: rustResponse.session_id, // Use sessionId from Rust if it regenerates/confirms it
-        port: rustResponse.port,
-        modelPath: rustResponse.model_path,
-        providerId: this.providerId,
-        settings: rustResponse.settings, // Settings actually used by the server
-      }
-
+      // Store the session info for later use
       this.activeSessions.set(sessionInfo.sessionId, sessionInfo)
-      console.log(
-        `[${this.providerId}] Model loaded: ${sessionInfo.modelPath} on port ${sessionInfo.port}, session: ${sessionInfo.sessionId}`
-      )
+
       return sessionInfo
     } catch (error) {
-      console.error(
-        `[${this.providerId}] Error loading model ${opts.modelPath}:`,
-        error
-      )
-      throw error // Re-throw to be handled by the caller
+      console.error('Error loading llama-server:', error)
+      throw new Error(`Failed to load llama-server: ${error}`)
     }
   }
 
-  async unload(opts: UnloadOptions): Promise<UnloadResult> {
-    if (opts.providerId !== this.providerId) {
-      return { success: false, error: 'Invalid providerId' }
-    }
-    const session = this.activeSessions.get(opts.sessionId)
-    if (!session) {
+  async unload(opts: unloadOptions): Promise<unloadResult> {
+    try {
+      // Pass the PID as the session_id
+      const result = await invoke<unloadResult>('plugin:llamacpp|unload', {
+        session_id: opts.sessionId, // Using PID as session ID
+      })
+
+      // If successful, remove from active sessions
+      if (result.success) {
+        this.activeSessions.delete(opts.sessionId)
+        console.log(`Successfully unloaded model with PID ${opts.sessionId}`)
+      } else {
+        console.warn(`Failed to unload model: ${result.error}`)
+      }
+
+      return result
+    } catch (error) {
+      console.error('Error in unload command:', error)
       return {
         success: false,
-        error: `No active session found for id: ${opts.sessionId}`,
+        error: `Failed to unload model: ${error}`,
       }
-    }
-
-    try {
-      console.log(
-        `[${this.providerId}] Requesting to unload model for session: ${opts.sessionId}`
-      )
-      // Matches: core::utils::extensions::inference_llamacpp_extension::server::unload
-      const rustResponse: { success: boolean; error?: string } = await invoke(
-        'plugin:llamacpp|unload',
-        { sessionId: opts.sessionId }
-      )
-
-      if (rustResponse.success) {
-        this.activeSessions.delete(opts.sessionId)
-        console.log(
-          `[${this.providerId}] Session ${opts.sessionId} unloaded successfully.`
-        )
-        return { success: true }
-      } else {
-        console.error(
-          `[${this.providerId}] Failed to unload session ${opts.sessionId}: ${rustResponse.error}`
-        )
-        return {
-          success: false,
-          error: rustResponse.error || 'Unknown error during unload',
-        }
-      }
-    } catch (error: any) {
-      console.error(
-        `[${this.providerId}] Error invoking unload for session ${opts.sessionId}:`,
-        error
-      )
-      return { success: false, error: error.message || String(error) }
     }
   }
 
   async chat(
-    opts: ChatOptions
-  ): Promise<ChatCompletion | AsyncIterable<ChatCompletionChunk>> {}
+    opts: chatOptions
+  ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
+    const sessionInfo = this.activeSessions.get(opts.sessionId)
+    if (!sessionInfo) {
+      throw new Error(
+        `No active session found for sessionId: ${opts.sessionId}`
+      )
+    }
 
-  async deleteModel(opts: DeleteOptions): Promise<DeleteResult> {}
+    // For streaming responses
+    if (opts.stream) {
+      return this.streamChat(opts)
+    }
 
-  async importModel(opts: ImportOptions): Promise<ImportResult> {}
-
-  override async loadModel(model: Model): Promise<any> {
-    if (model.engine?.toString() !== this.provider) return Promise.resolve()
-    console.log(
-      `[${this.providerId} AIEngine] Received OnModelInit for:`,
-      model.id
-    )
-    return super.load(model)
+    // For non-streaming responses
+    try {
+      return await invoke<chatCompletion>('plugin:llamacpp|chat', { opts })
+    } catch (error) {
+      console.error('Error during chat completion:', error)
+      throw new Error(`Chat completion failed: ${error}`)
+    }
   }
 
-  override async unloadModel(model?: Model): Promise<any> {
-    if (model?.engine && model.engine.toString() !== this.provider)
-      return Promise.resolve()
-    console.log(
-      `[${this.providerId} AIEngine] Received OnModelStop for:`,
-      model?.id || 'all models'
-    )
-    return super.unload(model)
+  async delete(opts: deleteOptions): Promise<deleteResult> {
+      throw new Error("method not implemented yet")
+  }
+
+  async import(opts: importOptions): Promise<importResult> {
+      throw new Error("method not implemented yet")
+  }
+
+  async abortPull(opts: abortPullOptions): Promise<abortPullResult> {
+    throw new Error('method not implemented yet')
+  }
+
+  // Optional method for direct client access
+  getChatClient(sessionId: string): any {
+      throw new Error("method not implemented yet")
+  }
+
+  onUnload(): void {
+    throw new Error('Method not implemented.')
   }
 }
