@@ -1,4 +1,4 @@
-export const localStoregeKey = {
+export const localStorageKey = {
   LeftPanel: 'left-panel',
   threads: 'threads',
   messages: 'messages',

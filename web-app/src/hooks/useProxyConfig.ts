@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 type ProxyConfigState = {
   proxyEnabled: boolean
@@ -52,7 +52,7 @@ export const useProxyConfig = create<ProxyConfigState>()(
       setNoProxy: (noProxy) => set({ noProxy }),
     }),
     {
-      name: localStoregeKey.settingLocalApiServer,
+      name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => localStorage),
     }
   )

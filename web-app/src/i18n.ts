@@ -11,9 +11,9 @@ import enSettings from '@/locales/en/settings.json'
 import idSettings from '@/locales/id/settings.json'
 import vnSettings from '@/locales/vn/settings.json'
 
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
-const stored = localStorage.getItem(localStoregeKey.settingGeneral)
+const stored = localStorage.getItem(localStorageKey.settingGeneral)
 const parsed = stored ? JSON.parse(stored) : {}
 const defaultLang = parsed?.state?.currentLanguage
 

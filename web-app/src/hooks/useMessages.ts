@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { createJSONStorage, persist } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 import {
   createMessage,
   deleteMessage as deleteMessageExt,
@@ -57,7 +57,7 @@ export const useMessages = create<MessageState>()(
       },
     }),
     {
-      name: localStoregeKey.messages,
+      name: localStorageKey.messages,
       storage: createJSONStorage(() => localStorage),
     }
   )

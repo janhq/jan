@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { getCurrentWindow, Theme } from '@tauri-apps/api/window'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 // Function to check if OS prefers dark mode
 export const checkOSDarkMode = (): boolean => {
@@ -48,7 +48,7 @@ export const useTheme = create<ThemeState>()(
       return initialState
     },
     {
-      name: localStoregeKey.theme,
+      name: localStorageKey.theme,
       storage: createJSONStorage(() => localStorage),
     }
   )

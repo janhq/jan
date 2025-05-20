@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 type LocalApiServerState = {
   // Run local API server once app opens
@@ -40,7 +40,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       setVerboseLogs: (value) => set({ verboseLogs: value }),
     }),
     {
-      name: localStoregeKey.settingLocalApiServer,
+      name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => localStorage),
     }
   )

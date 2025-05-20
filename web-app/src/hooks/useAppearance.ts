@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 import { RgbaColor } from 'react-colorful'
 import { rgb, oklch, formatCss } from 'culori'
 import { useTheme } from './useTheme'
@@ -533,7 +533,7 @@ export const useAppearance = create<AppearanceState>()(
       }
     },
     {
-      name: localStoregeKey.settingAppearance,
+      name: localStorageKey.settingAppearance,
       storage: createJSONStorage(() => localStorage),
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {

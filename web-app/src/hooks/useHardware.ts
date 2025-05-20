@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 // Hardware data types
 export interface CPU {
@@ -210,7 +210,7 @@ export const useHardware = create<HardwareStore>()(
         }),
     }),
     {
-      name: localStoregeKey.settingHardware,
+      name: localStorageKey.settingHardware,
       storage: createJSONStorage(() => localStorage),
     }
   )

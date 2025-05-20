@@ -1,7 +1,6 @@
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-
 
 interface AssistantState {
   assistants: Assistant[]
@@ -42,7 +41,7 @@ export const useAssistant = create<AssistantState>()(
       },
     }),
     {
-      name: localStoregeKey.assistant,
+      name: localStorageKey.assistant,
     }
   )
 )

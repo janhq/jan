@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 import { updateMCPConfig } from '@/services/mcp'
 
 // Define the structure of an MCP server configuration
@@ -77,7 +77,7 @@ export const useMCPServers = create<MCPServerStoreState>()(
         }),
     }),
     {
-      name: localStoregeKey.settingMCPSevers, // Using existing key for now
+      name: localStorageKey.settingMCPSevers, // Using existing key for now
       storage: createJSONStorage(() => localStorage),
     }
   )
