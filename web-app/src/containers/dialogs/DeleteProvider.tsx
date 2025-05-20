@@ -17,6 +17,7 @@ import { EngineManager } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { normalizeProvider } from '@/lib/models'
 
 type Props = {
   provider?: ProviderObject
@@ -27,7 +28,7 @@ const DeleteProvider = ({ provider }: Props) => {
   if (
     !provider ||
     Object.keys(models).includes(provider.provider) ||
-    EngineManager.instance().get(provider.provider)
+    EngineManager.instance().get(normalizeProvider(provider.provider))
   )
     return null
 
