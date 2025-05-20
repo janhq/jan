@@ -4,6 +4,7 @@ pub mod vulkan;
 
 use std::sync::OnceLock;
 use sysinfo::System;
+use tauri::{path::BaseDirectory, Manager};
 
 static SYSTEM_INFO: OnceLock<SystemInfo> = OnceLock::new();
 
@@ -184,14 +185,29 @@ pub struct SystemUsage {
     gpus: Vec<GpuUsage>,
 }
 
+fn get_jan_libvulkan_path<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> String {
+    let lib_name = if cfg!(target_os = "windows") {
+        "vulkan-1.dll"
+    } else if cfg!(target_os = "linux") {
+        "libvulkan.so"
+    } else {
+        return "".to_string();
+    };
+
+    // NOTE: this does not work in test mode (mock app)
+    match app.path().resolve(
+        format!("resources/lib/{}", lib_name),
+        BaseDirectory::Resource,
+    ) {
+        Ok(lib_path) => lib_path.to_string_lossy().to_string(),
+        Err(_) => "".to_string(),
+    }
+}
+
 #[tauri::command]
 pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInfo {
     SYSTEM_INFO
         .get_or_init(|| {
-            if vulkan::VULKAN_INSTANCE.get().is_none() {
-                vulkan::init_vulkan(app.clone());
-            }
-
             let mut system = System::new();
             system.refresh_memory();
 
@@ -202,8 +218,18 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
                 gpus.push(Gpu::Nvidia(gpu));
             }
 
+            // try system vulkan first
+            let paths = vec!["".to_string(), get_jan_libvulkan_path(app.clone())];
+            let mut vulkan_gpus = vec![];
+            for path in paths {
+                vulkan_gpus = vulkan::get_vulkan_gpus(&path);
+                if !vulkan_gpus.is_empty() {
+                    break;
+                }
+            }
+
             // only keep NVIDIA GPU from nvml
-            for gpu in vulkan::get_vulkan_gpus() {
+            for gpu in vulkan_gpus {
                 if !gpu_uuids.contains(&gpu.uuid) {
                     gpus.push(Gpu::Vulkan(gpu));
                 }

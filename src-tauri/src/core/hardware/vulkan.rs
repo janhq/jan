@@ -1,61 +1,4 @@
-use ash::{vk, Entry, Instance};
-use std::sync::OnceLock;
-use tauri::{path::BaseDirectory, Manager};
-
-pub static VULKAN_INSTANCE: OnceLock<Option<Instance>> = OnceLock::new();
-
-pub fn init_vulkan<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
-    let closure = || -> Result<Instance, Box<dyn std::error::Error>> {
-        let entry = unsafe { Entry::load() }.or_else(|e| {
-            let lib_path = get_jan_libvulkan_path(app);
-            if lib_path.is_empty() {
-                return Err(e);
-            }
-            unsafe { Entry::load_from(lib_path) }
-        })?;
-
-        let app_info = vk::ApplicationInfo {
-            api_version: vk::make_api_version(0, 1, 1, 0),
-            ..Default::default()
-        };
-        let create_info = vk::InstanceCreateInfo {
-            p_application_info: &app_info,
-            ..Default::default()
-        };
-        let instance = unsafe { entry.create_instance(&create_info, None)? };
-
-        Ok(instance)
-    };
-
-    match closure() {
-        Ok(instance) => {
-            VULKAN_INSTANCE.set(Some(instance)).ok();
-        }
-        Err(e) => {
-            VULKAN_INSTANCE.set(None).ok();
-            log::error!("Failed to create Vulkan instance: {:?}", e);
-        }
-    }
-}
-
-fn get_jan_libvulkan_path<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> String {
-    let lib_name = if cfg!(target_os = "windows") {
-        "vulkan-1.dll"
-    } else if cfg!(target_os = "linux") {
-        "libvulkan.so"
-    } else {
-        return "".to_string();
-    };
-
-    // NOTE: this does not work in test mode (mock app)
-    match app.path().resolve(
-        format!("resources/lib/{}", lib_name),
-        BaseDirectory::Resource,
-    ) {
-        Ok(lib_path) => lib_path.to_string_lossy().to_string(),
-        Err(_) => "".to_string(),
-    }
-}
+use ash::{vk, Entry};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct VulkanGpu {
@@ -128,8 +71,8 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-pub fn get_vulkan_gpus() -> Vec<VulkanGpu> {
-    match get_vulkan_gpus_internal() {
+pub fn get_vulkan_gpus(lib_path: &str) -> Vec<VulkanGpu> {
+    match get_vulkan_gpus_internal(lib_path) {
         Ok(gpus) => gpus,
         Err(e) => {
             log::error!("Failed to get Vulkan GPUs: {:?}", e);
@@ -145,16 +88,21 @@ fn parse_c_string(buf: &[i8]) -> String {
         .to_string()
 }
 
-fn get_vulkan_gpus_internal() -> Result<Vec<VulkanGpu>, Box<dyn std::error::Error>> {
-    // the first error is when VULKAN_INSTANCE is not initted.
-    // the second error is when VULKAN_INSTANCE is initted, but it's None.
-    // NOTE: we don't call instance.destroy_instance(None) since it has
-    // static lifetime and we re-use it across multiple calls.
-    let instance = VULKAN_INSTANCE
-        .get()
-        .ok_or("Vulkan instance not initialized")?
-        .clone()
-        .ok_or("Vulkan is not available")?;
+fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<VulkanGpu>, Box<dyn std::error::Error>> {
+    let entry = if lib_path.is_empty() {
+        unsafe { Entry::load()? }
+    } else {
+        unsafe { Entry::load_from(lib_path)? }
+    };
+    let app_info = vk::ApplicationInfo {
+        api_version: vk::make_api_version(0, 1, 1, 0),
+        ..Default::default()
+    };
+    let create_info = vk::InstanceCreateInfo {
+        p_application_info: &app_info,
+        ..Default::default()
+    };
+    let instance = unsafe { entry.create_instance(&create_info, None)? };
 
     let mut device_info_list = vec![];
 
@@ -206,23 +154,25 @@ fn get_vulkan_gpus_internal() -> Result<Vec<VulkanGpu>, Box<dyn std::error::Erro
         };
         device_info_list.push(device_info);
     }
+
+    unsafe {
+        instance.destroy_instance(None);
+    }
+
     Ok(device_info_list)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tauri::test::mock_app;
 
     #[test]
-    fn test_get_vulkan_gpus_static() {
-        let app = mock_app();
-        init_vulkan(app.handle().clone());
-
-        let gpus = get_vulkan_gpus();
-        println!("Found {} GPU(s):", gpus.len());
+    fn test_get_vulkan_gpus() {
+        let gpus = get_vulkan_gpus("");
         for (i, gpu) in gpus.iter().enumerate() {
-            println!("GPU {}: {:?}", i, gpu);
+            println!("GPU {}:", i);
+            println!("    {:?}", gpu);
+            println!("    {:?}", gpu.get_usage());
         }
     }
 }
