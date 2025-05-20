@@ -31,7 +31,7 @@ type Model = {
   description?: string
   format?: string
   capabilities?: string[]
-  settings?: Record<string, unknown>
+  settings?: Record<string, ProviderSetting>
 }
 
 /**

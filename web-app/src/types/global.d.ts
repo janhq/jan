@@ -1,5 +1,3 @@
-import { ExtensionManager } from '@/lib/extension'
-
 type Language = 'en' | 'id' | 'vn'
 declare module 'react-syntax-highlighter-virtualized-renderer'
 
