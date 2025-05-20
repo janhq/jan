@@ -202,10 +202,17 @@ impl SystemStaticInfo {
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
-pub struct SystemUsageInfo {
-    cpu_usage: f32,
+pub struct GpuMemoryUsage {
     used_memory: u64,
     total_memory: u64,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct SystemUsageInfo {
+    cpu: f32,
+    used_memory: u64,
+    total_memory: u64,
+    gpus: Vec<GpuMemoryUsage>,
 }
 
 impl SystemUsageInfo {
@@ -225,9 +232,10 @@ impl SystemUsageInfo {
         let total_memory = system.total_memory() / 1024 / 1024; // bytes to MiB
 
         SystemUsageInfo {
-            cpu_usage,
+            cpu: cpu_usage,
             used_memory,
             total_memory,
+            gpus: vec![],
         }
     }
 }
