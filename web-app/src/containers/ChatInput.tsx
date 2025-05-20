@@ -49,6 +49,7 @@ const ChatInput = ({
   const { prompt, setPrompt } = usePrompt()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
+  const { tokenSpeed } = useAppState()
   const maxRows = 10
 
   const { selectedModel } = useModelProvider()
@@ -226,7 +227,7 @@ const ChatInput = ({
             {showSpeedToken && (
               <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
                 <IconBrandSpeedtest size={18} />
-                <span>42 tokens/sec</span>
+                <span>{Math.round(tokenSpeed?.tokenSpeed ?? 0)} tokens/sec</span>
               </div>
             )}
           </div>
