@@ -21,6 +21,10 @@ const menuSettings = [
     route: route.settings.shortcuts,
   },
   {
+    title: 'Hardware',
+    route: route.settings.hardware,
+  },
+  {
     title: 'MCP Servers',
     route: route.settings.mcp_servers,
   },

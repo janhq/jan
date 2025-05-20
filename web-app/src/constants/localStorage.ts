@@ -10,4 +10,5 @@ export const localStoregeKey = {
   settingCodeBlock: 'setting-code-block',
   settingMCPSevers: 'setting-mcp-servers',
   settingLocalApiServer: 'setting-local-api-server',
+  settingHardware: 'setting-hardware',
 }
