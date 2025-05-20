@@ -153,7 +153,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Rename Title</DialogTitle>
+                  <DialogTitle>Thread Title</DialogTitle>
                   <Input
                     value={title}
                     onChange={(e) => {
@@ -180,7 +180,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
                       onClick={() => {
                         renameThread(thread.id, title)
                         setOpenDropdown(false)
-                        toast.success('Renema Title', {
+                        toast.success('Rename Thread', {
                           id: 'rename-thread',
                           description:
                             "Thread title has been renamed to '" + title + "'",

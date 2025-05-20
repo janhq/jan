@@ -221,9 +221,9 @@ const LeftPanel = () => {
                           </DialogTrigger>
                           <DialogContent>
                             <DialogHeader>
-                              <DialogTitle>Delete Thread</DialogTitle>
+                              <DialogTitle>Delete All Threads</DialogTitle>
                               <DialogDescription>
-                                Are you sure you want to delete this thread?
+                                All threads will be deleted. 
                                 This action cannot be undone.
                               </DialogDescription>
                               <DialogFooter className="mt-2">
@@ -241,10 +241,10 @@ const LeftPanel = () => {
                                   size="sm"
                                   onClick={() => {
                                     deleteAllThreads()
-                                    toast.success('Delete All Thread', {
-                                      id: 'delete-thread',
+                                    toast.success('Delete All Threads', {
+                                      id: 'delete-all-thread',
                                       description:
-                                        'All thread has been permanently deleted.',
+                                        'All threads have been permanently deleted.',
                                     })
                                     setTimeout(() => {
                                       navigate({ to: route.home })
