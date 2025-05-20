@@ -77,7 +77,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
             ? (model.capabilities as string[])
             : [ModelCapabilities.COMPLETION],
         provider: providerName,
-        settings: modelSettings,
+        settings: modelSettings ,
       })),
     }
     runtimeProviders.push(provider)
