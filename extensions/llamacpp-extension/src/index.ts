@@ -6,11 +6,11 @@
  * @module llamacpp-extension/src/index
  */
 
-import { AIEngine, getJanDataFolderPath, fs, joinPath } from '@janhq/core'
-
-import { invoke } from '@tauri-apps/api/tauri'
 import {
-  localProvider,
+  AIEngine,
+  getJanDataFolderPath,
+  fs,
+  joinPath,
   modelInfo,
   listOptions,
   listResult,
@@ -30,7 +30,9 @@ import {
   abortPullOptions,
   abortPullResult,
   chatCompletionRequest,
-} from './types'
+} from '@janhq/core'
+
+import { invoke } from '@tauri-apps/api/tauri'
 
 /**
  * Helper to convert GGUF model filename to a more structured ID/name
@@ -56,10 +58,7 @@ function parseGGUFFileName(filename: string): {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
-export default class llamacpp_extension
-  extends AIEngine
-  implements localProvider
-{
+export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
 
@@ -79,16 +78,19 @@ export default class llamacpp_extension
   }
 
   // Implement the required LocalProvider interface methods
-  async list(opts: listOptions): Promise<listResult> {
+  override async list(opts: listOptions): Promise<listResult> {
     throw new Error('method not implemented yet')
   }
 
-  async pull(opts: pullOptions): Promise<pullResult> {
+  override async pull(opts: pullOptions): Promise<pullResult> {
     throw new Error('method not implemented yet')
   }
 
-  async load(opts: loadOptions): Promise<sessionInfo> {
+  override async load(opts: loadOptions): Promise<sessionInfo> {
     const args: string[] = []
+
+    // disable llama-server webui
+    args.push('--no-webui')
 
     // model option is required
     args.push('-m', opts.modelPath)
@@ -193,24 +195,24 @@ export default class llamacpp_extension
     console.log('Calling Tauri command load with args:', args)
 
     try {
-      const sessionInfo = await invoke<sessionInfo>('plugin:llamacpp|load', {
+      const sInfo = await invoke<sessionInfo>('load_llama_model', {
         args: args,
       })
 
       // Store the session info for later use
-      this.activeSessions.set(sessionInfo.sessionId, sessionInfo)
+      this.activeSessions.set(sInfo.sessionId, sInfo)
 
-      return sessionInfo
+      return sInfo
     } catch (error) {
       console.error('Error loading llama-server:', error)
       throw new Error(`Failed to load llama-server: ${error}`)
     }
   }
 
-  async unload(opts: unloadOptions): Promise<unloadResult> {
+  override async unload(opts: unloadOptions): Promise<unloadResult> {
     try {
       // Pass the PID as the session_id
-      const result = await invoke<unloadResult>('plugin:llamacpp|unload', {
+      const result = await invoke<unloadResult>('unload_llama_model', {
         session_id: opts.sessionId, // Using PID as session ID
       })
 
@@ -232,27 +234,125 @@ export default class llamacpp_extension
     }
   }
 
-  async chat(
-    opts: chatOptions
+  private async *handleStreamingResponse(
+    url: string,
+    headers: HeadersInit,
+    body: string
+  ): AsyncIterable<chatCompletionChunk> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    })
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+      )
+    }
+
+    if (!response.body) {
+      throw new Error('Response body is null')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Process complete lines in the buffer
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep the last incomplete line in the buffer
+
+        for (const line of lines) {
+          const trimmedLine = line.trim()
+          if (!trimmedLine || trimmedLine === 'data: [DONE]') {
+            continue
+          }
+
+          if (trimmedLine.startsWith('data: ')) {
+            const jsonStr = trimmedLine.slice(6)
+            try {
+              const chunk = JSON.parse(jsonStr) as chatCompletionChunk
+              yield chunk
+            } catch (e) {
+              console.error('Error parsing JSON from stream:', e)
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock()
+    }
+  }
+
+  private findSessionByModel(modelName: string): sessionInfo | undefined {
+    for (const [, session] of this.activeSessions) {
+      if (session.modelName === modelName) {
+        return session
+      }
+    }
+    return undefined
+  }
+
+  override async chat(
+    opts: chatCompletionRequest
   ): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>> {
-      throw new Error("method not implemented yet")
+    const sessionInfo = this.findSessionByModel(opts.model)
+    if (!sessionInfo) {
+      throw new Error(`No active session found for model: ${opts.model}`)
+    }
+    const baseUrl = `http://localhost:${sessionInfo.port}/v1`
+    const url = `${baseUrl}/chat/completions`
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer test-k`,
+    }
+
+    const body = JSON.stringify(opts)
+    if (opts.stream) {
+      return this.handleStreamingResponse(url, headers, body)
+    }
+    // Handle non-streaming response
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => null)
+      throw new Error(
+        `API request failed with status ${response.status}: ${JSON.stringify(errorData)}`
+      )
+    }
+
+    return (await response.json()) as chatCompletion
   }
 
-  async delete(opts: deleteOptions): Promise<deleteResult> {
-      throw new Error("method not implemented yet")
+  override async delete(opts: deleteOptions): Promise<deleteResult> {
+    throw new Error('method not implemented yet')
   }
 
-  async import(opts: importOptions): Promise<importResult> {
-      throw new Error("method not implemented yet")
+  override async import(opts: importOptions): Promise<importResult> {
+    throw new Error('method not implemented yet')
   }
 
-  async abortPull(opts: abortPullOptions): Promise<abortPullResult> {
+  override async abortPull(opts: abortPullOptions): Promise<abortPullResult> {
     throw new Error('method not implemented yet')
   }
 
   // Optional method for direct client access
-  getChatClient(sessionId: string): any {
-      throw new Error("method not implemented yet")
+  override getChatClient(sessionId: string): any {
+    throw new Error('method not implemented yet')
   }
 
   onUnload(): void {

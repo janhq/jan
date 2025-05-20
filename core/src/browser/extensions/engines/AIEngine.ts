@@ -1,15 +1,208 @@
-import { events } from '../../events'
 import { BaseExtension } from '../../extension'
-import { MessageRequest, Model, ModelEvent } from '../../../types'
 import { EngineManager } from './EngineManager'
+
+/* AIEngine class types */
+
+export interface chatCompletionRequestMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string | null
+  name?: string
+  tool_calls?: any[] // Simplified
+  tool_call_id?: string
+}
+
+export interface chatCompletionRequest {
+  provider: string,
+  model: string // Model ID, though for local it might be implicit via sessionId
+  messages: chatCompletionRequestMessage[]
+  temperature?: number | null
+  top_p?: number | null
+  n?: number | null
+  stream?: boolean | null
+  stop?: string | string[] | null
+  max_tokens?: number
+  presence_penalty?: number | null
+  frequency_penalty?: number | null
+  logit_bias?: { [key: string]: number } | null
+  user?: string
+  // ... TODO: other OpenAI params
+}
+
+export interface chatCompletionChunkChoiceDelta {
+  content?: string | null
+  role?: 'system' | 'user' | 'assistant' | 'tool'
+  tool_calls?: any[] // Simplified
+}
+
+export interface chatCompletionChunkChoice {
+  index: number
+  delta: chatCompletionChunkChoiceDelta
+  finish_reason?: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call' | null
+}
+
+export interface chatCompletionChunk {
+  id: string
+  object: 'chat.completion.chunk'
+  created: number
+  model: string
+  choices: chatCompletionChunkChoice[]
+  system_fingerprint?: string
+}
+
+export interface chatCompletionChoice {
+  index: number
+  message: chatCompletionRequestMessage // Response message
+  finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call'
+  logprobs?: any // Simplified
+}
+
+export interface chatCompletion {
+  id: string
+  object: 'chat.completion'
+  created: number
+  model: string // Model ID used
+  choices: chatCompletionChoice[]
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+  system_fingerprint?: string
+}
+// --- End OpenAI types ---
+
+// Shared model metadata
+export interface modelInfo {
+  id: string // e.g. "qwen3-4B" or "org/model/quant"
+  name: string // human‑readable, e.g., "Qwen3 4B Q4_0"
+  quant_type?: string // q4_0 (optional as it might be part of ID or name)
+  providerId: string // e.g. "llama.cpp"
+  port: number
+  sizeBytes: number
+  tags?: string[]
+  path?: string // Absolute path to the model file, if applicable
+  // Additional provider-specific metadata can be added here
+  [key: string]: any
+}
+
+// 1. /list
+export interface listOptions {
+  providerId: string // To specify which provider if a central manager calls this
+}
+export type listResult = modelInfo[]
+
+// 2. /pull
+export interface pullOptions {
+  providerId: string
+  modelId: string // Identifier for the model to pull (e.g., from a known registry)
+  downloadUrl: string // URL to download the model from
+  /** optional callback to receive download progress */
+  onProgress?: (progress: { percent: number; downloadedBytes: number; totalBytes?: number }) => void
+}
+export interface pullResult {
+  success: boolean
+  path?: string // local file path to the pulled model
+  error?: string
+  modelInfo?: modelInfo // Info of the pulled model
+}
+
+// 3. /load
+export interface loadOptions {
+  modelPath: string
+  port?: number
+  n_gpu_layers?: number
+  n_ctx?: number
+  threads?: number
+  threads_batch?: number
+  ctx_size?: number
+  n_predict?: number
+  batch_size?: number
+  ubatch_size?: number
+  device?: string
+  split_mode?: string
+  main_gpu?: number
+  flash_attn?: boolean
+  cont_batching?: boolean
+  no_mmap?: boolean
+  mlock?: boolean
+  no_kv_offload?: boolean
+  cache_type_k?: string
+  cache_type_v?: string
+  defrag_thold?: number
+  rope_scaling?: string
+  rope_scale?: number
+  rope_freq_base?: number
+  rope_freq_scale?: number
+}
+
+export interface sessionInfo {
+  sessionId: string // opaque handle for unload/chat
+  port: number // llama-server output port (corrected from portid)
+  modelName: string, //name of the model
+  modelPath: string // path of the loaded model
+}
+
+// 4. /unload
+export interface unloadOptions {
+  providerId: string
+  sessionId: string
+}
+export interface unloadResult {
+  success: boolean
+  error?: string
+}
+
+// 5. /chat
+export interface chatOptions {
+  providerId: string
+  sessionId: string
+  /** Full OpenAI ChatCompletionRequest payload */
+  payload: chatCompletionRequest
+}
+// Output for /chat will be Promise<ChatCompletion> for non-streaming
+// or Promise<AsyncIterable<ChatCompletionChunk>> for streaming
+
+// 6. /delete
+export interface deleteOptions {
+  providerId: string
+  modelId: string // The ID of the model to delete (implies finding its path)
+  modelPath?: string // Optionally, direct path can be provided
+}
+export interface deleteResult {
+  success: boolean
+  error?: string
+}
+
+// 7. /import
+export interface importOptions {
+  providerId: string
+  sourcePath: string // Path to the local model file to import
+  desiredModelId?: string // Optional: if user wants to name it specifically
+}
+export interface importResult {
+  success: boolean
+  modelInfo?: modelInfo
+  error?: string
+}
+
+// 8. /abortPull
+export interface abortPullOptions {
+  providerId: string
+  modelId: string // The modelId whose download is to be aborted
+}
+export interface abortPullResult {
+  success: boolean
+  error?: string
+}
 
 /**
  * Base AIEngine
  * Applicable to all AI Engines
  */
+
 export abstract class AIEngine extends BaseExtension {
-  // The inference engine
-  abstract provider: string
+  // The inference engine ID, implementing the readonly providerId from interface
+  abstract readonly provider: string
 
   /**
    * On extension load, subscribe to events.
@@ -24,4 +217,49 @@ export abstract class AIEngine extends BaseExtension {
   registerEngine() {
     EngineManager.instance().register(this)
   }
+
+  /**
+   * Lists available models
+   */
+  abstract list(opts: listOptions): Promise<listResult>
+
+  /**
+   * Pulls/downloads a model
+   */
+  abstract pull(opts: pullOptions): Promise<pullResult>
+
+  /**
+   * Loads a model into memory
+   */
+  abstract load(opts: loadOptions): Promise<sessionInfo>
+
+  /**
+   * Unloads a model from memory
+   */
+  abstract unload(opts: unloadOptions): Promise<unloadResult>
+
+  /**
+   * Sends a chat request to the model
+   */
+  abstract chat(opts: chatCompletionRequest): Promise<chatCompletion | AsyncIterable<chatCompletionChunk>>
+
+  /**
+   * Deletes a model
+   */
+  abstract delete(opts: deleteOptions): Promise<deleteResult>
+
+  /**
+   * Imports a model
+   */
+  abstract import(opts: importOptions): Promise<importResult>
+
+  /**
+   * Aborts an ongoing model pull
+   */
+  abstract abortPull(opts: abortPullOptions): Promise<abortPullResult>
+
+  /**
+   * Optional method to get the underlying chat client
+   */
+  getChatClient?(sessionId: string): any
 }

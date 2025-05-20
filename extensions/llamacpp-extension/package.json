@@ -30,8 +30,7 @@
   },
   "files": [
     "dist/*",
-    "package.json",
-    "README.md"
+    "package.json"
   ],
   "bundleDependencies": [
     "fetch-retry"
