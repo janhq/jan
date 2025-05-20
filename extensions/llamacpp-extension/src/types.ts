@@ -89,7 +89,7 @@ export interface modelInfo {
 export interface listOptions {
   providerId: string; // To specify which provider if a central manager calls this
 }
-export type listResult = ModelInfo[];
+export type listResult = modelInfo[];
 
 // 2. /pull
 export interface pullOptions {
