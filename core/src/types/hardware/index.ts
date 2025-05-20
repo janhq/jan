@@ -27,14 +27,29 @@ export type Os = {
   version: string
 }
 
+export type Power = {
+  battery_life: number
+  charging_status: string
+  is_power_saving: boolean
+}
+
 export type Ram = {
   available: number
   total: number
+  type: string
+}
+
+export type Storage = {
+  available: number
+  total: number
+  type: string
 }
 
 export type HardwareInformation = {
   cpu: Cpu
   gpus: Gpu[]
   os: Os
+  power: Power
   ram: Ram
+  storage: Storage
 }
