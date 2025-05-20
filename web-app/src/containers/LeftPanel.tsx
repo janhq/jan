@@ -48,7 +48,7 @@ const mainMenus = [
     route: route.home,
   },
   {
-    title: 'Assistant',
+    title: 'Assistants',
     icon: IconClipboardSmileFilled,
     route: route.assistant,
   },
