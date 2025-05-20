@@ -359,7 +359,7 @@ const ModelDropdown = ({
         className={twMerge(
           'absolute right-0 z-20 mt-2 max-h-80 w-full overflow-hidden rounded-lg border border-[hsla(var(--app-border))] bg-[hsla(var(--app-bg))] shadow-sm',
           open ? 'flex' : 'hidden',
-          chatInputMode && 'bottom-8 left-0 w-72'
+          chatInputMode && 'bottom-8 left-0 md:w-72 lg:w-96'
         )}
         ref={setDropdownOptions}
       >
@@ -585,7 +585,7 @@ const ModelDropdown = ({
                                     <div className="flex gap-x-2">
                                       <p
                                         className={twMerge(
-                                          'max-w-[200px] overflow-hidden truncate whitespace-nowrap',
+                                          'overflow-hidden truncate whitespace-nowrap md:max-w-[200px] lg:max-w-[300px]',
                                           !isDownloaded &&
                                             'text-[hsla(var(--text-secondary))]'
                                         )}
