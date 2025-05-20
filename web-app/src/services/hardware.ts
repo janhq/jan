@@ -20,3 +20,26 @@ export const getHardwareInfo = async () => {
     throw error
   }
 }
+
+/**
+ * Set gpus activate
+ * @returns A Promise that resolves set gpus activate.
+ */
+export const setActiveGpus = async (data: { gpus: number[] }) => {
+  const extension =
+    ExtensionManager.getInstance().get<HardwareManagementExtension>(
+      ExtensionTypeEnum.Hardware
+    )
+
+  if (!extension) {
+    throw new Error('Extension is not available')
+  }
+
+  try {
+    const response = await extension.setAvtiveGpu(data)
+    return response
+  } catch (error) {
+    console.error('Failed to install engine variant:', error)
+    throw error
+  }
+}
