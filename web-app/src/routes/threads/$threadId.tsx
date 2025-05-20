@@ -45,6 +45,7 @@ function ThreadDetail() {
   )
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isFirstRender = useRef(true)
+  const messagesCount = useMemo(() => messages?.length ?? 0, [messages])
 
   useEffect(() => {
     if (currentThreadId !== threadId) {
@@ -103,16 +104,12 @@ function ThreadDetail() {
   useEffect(() => {
     // Only auto-scroll when the user is not actively scrolling
     // AND either at the bottom OR there's streaming content
-    if (
-      !isUserScrolling &&
-      (streamingContent || isAtBottom) &&
-      messages?.length
-    ) {
+    if (!isUserScrolling && (streamingContent || isAtBottom) && messagesCount) {
       // Use non-smooth scrolling for auto-scroll to prevent jank
       scrollToBottom(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamingContent, isUserScrolling, messages])
+  }, [streamingContent, isUserScrolling, messagesCount])
 
   const scrollToBottom = (smooth = false) => {
     if (scrollContainerRef.current) {
