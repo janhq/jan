@@ -36,6 +36,7 @@ enum Settings {
   cache_type = 'cache_type',
   use_mmap = 'use_mmap',
   cpu_threads = 'cpu_threads',
+  huggingfaceToken = 'hugging-face-access-token',
 }
 
 type LoadedModelResponse = { data: { engine: string; id: string }[] }
@@ -130,6 +131,13 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
+    const huggingfaceToken = await this.getSetting<string>(
+      Settings.huggingfaceToken,
+      ''
+    )
+    if (huggingfaceToken) {
+      this.updateCortexConfig({ huggingface_token: huggingfaceToken })
+    }
     this.subscribeToEvents()
 
     window.addEventListener('beforeunload', () => {
@@ -145,6 +153,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     super.onUnload()
   }
 
+  /**
+   * Subscribe to settings update and make change accordingly
+   * @param key
+   * @param value
+   */
   onSettingUpdate<T>(key: string, value: T): void {
     if (key === Settings.n_parallel && typeof value === 'string') {
       this.n_parallel = Number(value) ?? 1
@@ -161,6 +174,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     } else if (key === Settings.cpu_threads && typeof value === 'string') {
       const threads_number = Number(value)
       if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
+    } else if (key === Settings.huggingfaceToken) {
+      this.updateCortexConfig({ huggingface_token: value })
     }
   }
 
@@ -251,6 +266,18 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       .catch(() => {
         // Do nothing
       })
+  }
+
+  /**
+   * Update cortex config
+   * @param body
+   */
+  private async updateCortexConfig(body: {
+    [key: string]: any
+  }): Promise<void> {
+    return this.apiInstance()
+      .then((api) => api.patch('v1/configs', { json: body }).then(() => {}))
+      .catch((e) => console.debug(e))
   }
 
   /**
