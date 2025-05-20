@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 type LeftPanelStoreState = {
   // @ts-ignore
@@ -20,7 +20,7 @@ export const useGeneralSetting = create<LeftPanelStoreState>()(
       setCurrentLanguage: (value) => set({ currentLanguage: value }),
     }),
     {
-      name: localStoregeKey.settingGeneral,
+      name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
     }
   )

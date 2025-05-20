@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 type ModelProviderState = {
   providers: ModelProvider[]
@@ -116,7 +116,7 @@ export const useModelProvider = create<ModelProviderState>()(
       },
     }),
     {
-      name: localStoregeKey.modelProvider,
+      name: localStorageKey.modelProvider,
       storage: createJSONStorage(() => localStorage),
     }
   )

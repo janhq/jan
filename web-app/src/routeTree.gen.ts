@@ -20,6 +20,7 @@ import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
 import { Route as SettingsHttpsProxyImport } from './routes/settings/https-proxy'
+import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
@@ -79,6 +80,12 @@ const SettingsLocalApiServerRoute = SettingsLocalApiServerImport.update({
 const SettingsHttpsProxyRoute = SettingsHttpsProxyImport.update({
   id: '/settings/https-proxy',
   path: '/settings/https-proxy',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsHardwareRoute = SettingsHardwareImport.update({
+  id: '/settings/hardware',
+  path: '/settings/hardware',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -166,6 +173,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsGeneralImport
       parentRoute: typeof rootRoute
     }
+    '/settings/hardware': {
+      id: '/settings/hardware'
+      path: '/settings/hardware'
+      fullPath: '/settings/hardware'
+      preLoaderRoute: typeof SettingsHardwareImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/https-proxy': {
       id: '/settings/https-proxy'
       path: '/settings/https-proxy'
@@ -228,6 +242,7 @@ export interface FileRoutesByFullPath {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
@@ -245,6 +260,7 @@ export interface FileRoutesByTo {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
@@ -263,6 +279,7 @@ export interface FileRoutesById {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
+  '/settings/hardware': typeof SettingsHardwareRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
@@ -282,6 +299,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
+    | '/settings/hardware'
     | '/settings/https-proxy'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
@@ -298,6 +316,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
+    | '/settings/hardware'
     | '/settings/https-proxy'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
@@ -314,6 +333,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
+    | '/settings/hardware'
     | '/settings/https-proxy'
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
@@ -332,6 +352,7 @@ export interface RootRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsHardwareRoute: typeof SettingsHardwareRoute
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
@@ -349,6 +370,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsHardwareRoute: SettingsHardwareRoute,
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
@@ -375,6 +397,7 @@ export const routeTree = rootRoute
         "/settings/appearance",
         "/settings/extensions",
         "/settings/general",
+        "/settings/hardware",
         "/settings/https-proxy",
         "/settings/local-api-server",
         "/settings/mcp-servers",
@@ -404,6 +427,9 @@ export const routeTree = rootRoute
     },
     "/settings/general": {
       "filePath": "settings/general.tsx"
+    },
+    "/settings/hardware": {
+      "filePath": "settings/hardware.tsx"
     },
     "/settings/https-proxy": {
       "filePath": "settings/https-proxy.tsx"

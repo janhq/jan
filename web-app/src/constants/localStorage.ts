@@ -1,4 +1,4 @@
-export const localStoregeKey = {
+export const localStorageKey = {
   LeftPanel: 'left-panel',
   threads: 'threads',
   messages: 'messages',
@@ -10,4 +10,5 @@ export const localStoregeKey = {
   settingCodeBlock: 'setting-code-block',
   settingMCPSevers: 'setting-mcp-servers',
   settingLocalApiServer: 'setting-local-api-server',
+  settingHardware: 'setting-hardware',
 }

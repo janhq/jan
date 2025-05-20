@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 import Fuse from 'fuse.js'
@@ -247,7 +247,7 @@ export const useThreads = create<ThreadState>()(
       },
     }),
     {
-      name: localStoregeKey.threads,
+      name: localStorageKey.threads,
       storage: createJSONStorage(() => localStorage),
     }
   )

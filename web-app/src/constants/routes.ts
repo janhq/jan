@@ -13,6 +13,7 @@ export const route = {
     local_api_server: '/settings/local-api-server',
     mcp_servers: '/settings/mcp-servers',
     https_proxy: '/settings/https-proxy',
+    hardware: '/settings/hardware',
   },
   hub: '/hub',
   localApiServerlogs: '/local-api-server/logs',

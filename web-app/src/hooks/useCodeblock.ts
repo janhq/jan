@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStoregeKey } from '@/constants/localStorage'
+import { localStorageKey } from '@/constants/localStorage'
 
 export type CodeBlockStyle = string
 
@@ -39,7 +39,7 @@ export const useCodeblock = create<CodeBlockState>()(
       }
     },
     {
-      name: localStoregeKey.settingCodeBlock,
+      name: localStorageKey.settingCodeBlock,
       storage: createJSONStorage(() => localStorage),
     }
   )
