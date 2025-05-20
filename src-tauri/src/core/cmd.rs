@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, io};
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use super::{server, setup, state::AppState};
@@ -265,6 +265,65 @@ pub fn get_active_extensions(app: AppHandle) -> Vec<serde_json::Value> {
 #[tauri::command]
 pub fn get_user_home_path(app: AppHandle) -> String {
     return get_app_configurations(app.clone()).data_folder;
+}
+
+/// Recursively copy a directory from src to dst
+fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)?;
+    }
+
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn change_app_data_folder(
+    app_handle: tauri::AppHandle,
+    new_data_folder: String,
+) -> Result<(), String> {
+    // Get current data folder path
+    let current_data_folder = get_jan_data_folder_path(app_handle.clone());
+    let new_data_folder_path = PathBuf::from(&new_data_folder);
+    
+    // Create the new data folder if it doesn't exist
+    if !new_data_folder_path.exists() {
+        fs::create_dir_all(&new_data_folder_path)
+            .map_err(|e| format!("Failed to create new data folder: {}", e))?;
+    }
+    
+    // Copy all files from the old folder to the new one
+    if current_data_folder.exists() {
+        log::info!(
+            "Copying data from {:?} to {:?}",
+            current_data_folder,
+            new_data_folder_path
+        );
+        
+        copy_dir_recursive(&current_data_folder, &new_data_folder_path)
+            .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
+    } else {
+        log::info!("Current data folder does not exist, nothing to copy");
+    }
+    
+    // Update the configuration to point to the new folder
+    let mut configuration = get_app_configurations(app_handle.clone());
+    configuration.data_folder = new_data_folder;
+    
+    // Save the updated configuration
+    update_app_configuration(app_handle, configuration)
 }
 
 #[tauri::command]
