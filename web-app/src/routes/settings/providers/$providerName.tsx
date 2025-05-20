@@ -4,6 +4,8 @@ import ProvidersMenu from '@/containers/ProvidersMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
+import { open } from '@tauri-apps/plugin-dialog'
+import { importModel } from '@/services/models'
 import {
   createFileRoute,
   Link,
@@ -24,6 +26,10 @@ import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { updateSettings } from '@/services/providers'
+import { Button } from '@/components/ui/button'
+import { IconFolderPlus } from '@tabler/icons-react'
+import { getProviders } from '@/services/providers'
+import { toast } from 'sonner'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -62,7 +68,7 @@ const steps = [
 function ProviderDetail() {
   const { step } = useSearch({ from: Route.id })
   const { providerName } = useParams({ from: Route.id })
-  const { getProviderByName, updateProvider } = useModelProvider()
+  const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
@@ -167,7 +173,10 @@ function ProviderDetail() {
                             ) {
                               updateObj.base_url = newValue
                             }
-                            updateSettings(providerName, updateObj.settings ?? [])
+                            updateSettings(
+                              providerName,
+                              updateObj.settings ?? []
+                            )
                             updateProvider(providerName, {
                               ...provider,
                               ...updateObj,
@@ -229,7 +238,51 @@ function ProviderDetail() {
                       Models
                     </h1>
                     <div className="flex items-center gap-2">
-                      {provider && <DialogAddModel provider={provider} />}
+                      {provider && provider.provider !== 'llama.cpp' && (
+                        <DialogAddModel provider={provider} />
+                      )}
+                      {provider && provider.provider === 'llama.cpp' && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="hover:no-underline"
+                          onClick={async () => {
+                            const selectedFile = await open({
+                              multiple: false,
+                              directory: false,
+                              filters: [
+                                {
+                                  name: 'GGUF',
+                                  extensions: ['gguf'],
+                                },
+                              ],
+                            })
+
+                            if (selectedFile) {
+                              try {
+                                await importModel(selectedFile)
+                              } catch (error) {
+                                console.error('Failed to import model:', error)
+                              } finally {
+                                // Refresh the provider to update the models list
+                                getProviders().then(setProviders)
+                                toast.success('Import Model', {
+                                  id: `import-model-${provider.provider}`,
+                                  description: `Model ${provider.provider} has been imported successfully.`,
+                                })
+                              }
+                            }
+                          }}
+                        >
+                          <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                            <IconFolderPlus
+                              size={18}
+                              className="text-main-view-fg/50"
+                            />
+                            <span className="text-main-view-fg/70">Import</span>
+                          </div>
+                        </Button>
+                      )}
                     </div>
                   </div>
                 }

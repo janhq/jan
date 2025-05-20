@@ -169,6 +169,42 @@ export const deleteModel = async (id: string) => {
 }
 
 /**
+ * Imports a model from a file path.
+ * @param filePath The path to the model file or an array of file paths.
+ * @param modelId Optional model ID. If not provided, it will be derived from the file name.
+ * @param provider The provider for the model (default: 'llama.cpp').
+ * @returns A promise that resolves when the model is imported.
+ */
+export const importModel = async (
+  filePath: string | string[],
+  modelId?: string,
+  provider: string = 'llama.cpp'
+) => {
+  const extension = ExtensionManager.getInstance().get<ModelExtension>(
+    ExtensionTypeEnum.Model
+  )
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    // If filePath is an array, use the first element
+    const path = Array.isArray(filePath) ? filePath[0] : filePath
+
+    // If no path was selected, throw an error
+    if (!path) throw new Error('No file selected')
+
+    // Extract filename from path to use as model ID if not provided
+    const defaultModelId = path.split('/').pop()?.split('.')[0] || path
+    const modelIdToUse = modelId || defaultModelId
+
+    return await extension.importModel(modelIdToUse, path, provider)
+  } catch (error) {
+    console.error('Failed to import model:', error)
+    throw error
+  }
+}
+
+/**
  * Configures the proxy options for model downloads.
  * @param param0
  */
