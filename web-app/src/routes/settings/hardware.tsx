@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from 'react-i18next'
 import { useHardware } from '@/hooks/useHardware'
-import type { GPU } from '@/hooks/useHardware'
+import type { GPU, HardwareData } from '@/hooks/useHardware'
 import { useEffect } from 'react'
 import {
   DndContext,
@@ -25,84 +25,21 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { IconGripVertical } from '@tabler/icons-react'
+import { getHardwareInfo } from '@/services/hardware'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
   component: Hardware,
 })
-
-const fetchHardwareData = () => {
-  return {
-    cpu: {
-      arch: 'x86_64',
-      cores: 8,
-      instructions: ['SSE4.1', 'SSE4.2', 'AVX2'],
-      model: 'Apple M4 chip (10-core CPU, 10-core GPU)',
-      usage: Math.random() * 100, // Simulate changing CPU usage
-    },
-    gpus: [
-      {
-        activated: true,
-        additional_information: {
-          compute_cap: '7.5',
-          driver_version: '535.129.03',
-        },
-        free_vram: Math.floor(Math.random() * 4 * 1024 * 1024 * 1024), // Random free VRAM
-        id: '0',
-        name: 'NVIDIA GeForce RTX 3080',
-        total_vram: 10 * 1024 * 1024 * 1024, // 10GB in bytes
-        uuid: 'GPU-123456789-0',
-        version: '7.5',
-      },
-      {
-        activated: true,
-        additional_information: {
-          compute_cap: '8.6',
-          driver_version: '535.129.03',
-        },
-        free_vram: Math.floor(Math.random() * 8 * 1024 * 1024 * 1024), // Random free VRAM
-        id: '1',
-        name: 'NVIDIA GeForce RTX 4070',
-        total_vram: 12 * 1024 * 1024 * 1024, // 12GB in bytes
-        uuid: 'GPU-123456789-1',
-        version: '8.6',
-      },
-      {
-        activated: false,
-        additional_information: {
-          compute_cap: '6.1',
-          driver_version: '535.129.03',
-        },
-        free_vram: Math.floor(Math.random() * 6 * 1024 * 1024 * 1024), // Random free VRAM
-        id: '2',
-        name: 'NVIDIA GeForce GTX 1660 Ti',
-        total_vram: 6 * 1024 * 1024 * 1024, // 6GB in bytes
-        uuid: 'GPU-123456789-2',
-        version: '6.1',
-      },
-    ],
-    os: {
-      name: 'macOS',
-      version: '14.0',
-    },
-    ram: {
-      available: Math.floor(Math.random() * 16 * 1024 * 1024 * 1024), // Random available RAM
-      total: 32 * 1024 * 1024 * 1024, // 32GB in bytes
-    },
-  }
-}
-
 // Format bytes to a human-readable format
-const formatBytes = (bytes: number, decimals = 2) => {
-  if (bytes === 0) return '0 Bytes'
-
-  const k = 1024
-  const dm = decimals < 0 ? 0 : decimals
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
-
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]
+function formatMegaBytes(mb: number) {
+  const tb = mb / (1024 * 1024)
+  if (tb >= 1) {
+    return `${tb.toFixed(2)} TB`
+  } else {
+    const gb = mb / 1024
+    return `${gb.toFixed(2)} GB`
+  }
 }
 
 function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
@@ -154,7 +91,8 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title="VRAM"
           actions={
             <span className="text-main-view-fg/80">
-              {formatBytes(gpu.free_vram)} free of {formatBytes(gpu.total_vram)}
+              {formatMegaBytes(gpu.free_vram)} free of{' '}
+              {formatMegaBytes(gpu.total_vram)}
             </span>
           }
         />
@@ -189,6 +127,12 @@ function Hardware() {
     reorderGPUs,
   } = useHardware()
 
+  useEffect(() => {
+    getHardwareInfo().then((data) =>
+      setHardwareData(data as unknown as HardwareData)
+    )
+  }, [setHardwareData])
+
   // Set up DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -213,13 +157,12 @@ function Hardware() {
   }
 
   useEffect(() => {
-    const data = fetchHardwareData()
-    setHardwareData(data)
-
     const intervalId = setInterval(() => {
-      const newData = fetchHardwareData()
-      updateCPUUsage(newData.cpu.usage)
-      updateRAMAvailable(newData.ram.available)
+      getHardwareInfo().then((data) => {
+        setHardwareData(data as unknown as HardwareData)
+        updateCPUUsage(data.cpu.usage)
+        updateRAMAvailable(data.ram.available)
+      })
     }, 5000)
 
     return () => clearInterval(intervalId)
@@ -280,14 +223,16 @@ function Hardware() {
                   </span>
                 }
               />
-              <CardItem
-                title="Instructions"
-                actions={
-                  <span className="text-main-view-fg/80">
-                    {hardwareData.cpu.instructions.join(', ')}
-                  </span>
-                }
-              />
+              {hardwareData.cpu.instructions.join(', ').length > 0 && (
+                <CardItem
+                  title="Instructions"
+                  actions={
+                    <span className="text-main-view-fg/80">
+                      {hardwareData.cpu.instructions.join(', ')}
+                    </span>
+                  }
+                />
+              )}
               <CardItem
                 title="Usage"
                 actions={
@@ -310,7 +255,7 @@ function Hardware() {
                 title="Total RAM"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatBytes(hardwareData.ram.total)}
+                    {formatMegaBytes(hardwareData.ram.total)}
                   </span>
                 }
               />
@@ -318,7 +263,7 @@ function Hardware() {
                 title="Available RAM"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatBytes(hardwareData.ram.available)}
+                    {formatMegaBytes(hardwareData.ram.available)}
                   </span>
                 }
               />

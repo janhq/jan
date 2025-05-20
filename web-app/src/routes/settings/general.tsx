@@ -63,7 +63,7 @@ function General() {
                 title="App Version"
                 actions={
                   <>
-                    <span className="text-main-view-fg/80">v16.0.0</span>
+                    <span className="text-main-view-fg/80">v{VERSION}</span>
                   </>
                 }
               />

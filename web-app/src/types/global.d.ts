@@ -19,4 +19,5 @@ declare global {
   let IS_IOS: boolean
   let IS_ANDROID: boolean
   let PLATFORM: string
+  let VERSION: string
 }
