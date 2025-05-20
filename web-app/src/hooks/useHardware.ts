@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
+import { setActiveGpus } from '@/services/hardware'
 
 // Hardware data types
 export interface CPU {
@@ -171,7 +172,7 @@ export const useHardware = create<HardwareStore>()(
           },
         })),
 
-      toggleGPUActivation: (index) =>
+      toggleGPUActivation: (index) => {
         set((state) => {
           const newGPUs = [...state.hardwareData.gpus]
           if (index >= 0 && index < newGPUs.length) {
@@ -180,13 +181,17 @@ export const useHardware = create<HardwareStore>()(
               activated: !newGPUs[index].activated,
             }
           }
+          setActiveGpus({
+            gpus: newGPUs.filter((e) => e.activated).map((e) => e.id as unknown as number),
+          })
           return {
             hardwareData: {
               ...state.hardwareData,
               gpus: newGPUs,
             },
           }
-        }),
+        })
+      },
 
       reorderGPUs: (oldIndex, newIndex) =>
         set((state) => {
