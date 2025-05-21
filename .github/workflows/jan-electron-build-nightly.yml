@@ -96,7 +96,7 @@ jobs:
           VERSION=${{ needs.get-update-version.outputs.new_version }}
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
           LINUX_SIGNATURE="${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_SIG }}"
-          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}".tar.gz
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-tauri-windows-x64.outputs.WIN_SIG }}"
           WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
           DARWIN_SIGNATURE="${{ needs.build-tauri-macos.outputs.MAC_UNIVERSAL_SIG }}"
