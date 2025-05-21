@@ -142,3 +142,7 @@ export function formatMegaBytes(mb: number) {
     return `${gb.toFixed(2)} GB`
   }
 }
+
+export function isDev() {
+  return window.location.host.startsWith('localhost:')
+}

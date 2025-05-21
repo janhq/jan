@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useState, useEffect } from 'react'
 import { useReleaseNotes } from '@/hooks/useReleaseNotes'
 import { RenderMarkdown } from '../RenderMarkdown'
+import { isDev } from '@/lib/utils'
 
 const DialogAppUpdater = () => {
   const { updateState, downloadAndInstallUpdate } = useAppUpdater()
@@ -22,7 +23,9 @@ const DialogAppUpdater = () => {
   const { release, fetchLatestRelease } = useReleaseNotes()
 
   useEffect(() => {
-    fetchLatestRelease(beta ? true : false)
+    if (!isDev()) {
+      fetchLatestRelease(beta ? true : false)
+    }
   }, [beta, fetchLatestRelease])
 
   if (remindMeLater) return null

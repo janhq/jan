@@ -1,3 +1,4 @@
+import { isDev } from '@/lib/utils'
 import { check, Update } from '@tauri-apps/plugin-updater'
 import { useState, useCallback } from 'react'
 
@@ -22,14 +23,16 @@ export const useAppUpdater = () => {
 
   const checkForUpdate = useCallback(async () => {
     try {
-      const update = await check()
-      if (update) {
-        setUpdateState((prev) => ({
-          ...prev,
-          isUpdateAvailable: true,
-          updateInfo: update,
-        }))
-        return update
+      if (!isDev()) {
+        const update = await check()
+        if (update) {
+          setUpdateState((prev) => ({
+            ...prev,
+            isUpdateAvailable: true,
+            updateInfo: update,
+          }))
+          return update
+        }
       }
       return null
     } catch (error) {
