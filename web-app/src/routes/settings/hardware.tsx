@@ -163,6 +163,43 @@ function Hardware() {
     return () => clearInterval(intervalId)
   }, [setHardwareData, updateCPUUsage, updateRAMAvailable])
 
+  const handleClickSystemMonitor = async () => {
+    try {
+      // Check if system monitor window already exists
+      const existingWindow = await WebviewWindow.getByLabel(
+        'system-monitor-window'
+      )
+
+      if (existingWindow) {
+        // If window exists, focus it
+        await existingWindow.setFocus()
+        console.log('Focused existing system monitor window')
+      } else {
+        // Create a new system monitor window
+        const monitorWindow = new WebviewWindow('system-monitor-window', {
+          url: route.systemMonitor,
+          title: 'System Monitor - Jan',
+          width: 900,
+          height: 600,
+          resizable: true,
+          center: true,
+        })
+
+        // Listen for window creation
+        monitorWindow.once('tauri://created', () => {
+          console.log('System monitor window created')
+        })
+
+        // Listen for window errors
+        monitorWindow.once('tauri://error', (e) => {
+          console.error('Error creating system monitor window:', e)
+        })
+      }
+    } catch (error) {
+      console.error('Failed to open system monitor window:', error)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -170,45 +207,7 @@ function Hardware() {
           <h1 className="font-medium">{t('common.settings')}</h1>
           <div
             className="flex items-center gap-1 hover:bg-main-view-fg/8 px-1.5 py-0.5 rounded relative z-10 cursor-pointer"
-            onClick={async () => {
-              try {
-                // Check if system monitor window already exists
-                const existingWindow = await WebviewWindow.getByLabel(
-                  'system-monitor-window'
-                )
-
-                if (existingWindow) {
-                  // If window exists, focus it
-                  await existingWindow.setFocus()
-                  console.log('Focused existing system monitor window')
-                } else {
-                  // Create a new system monitor window
-                  const monitorWindow = new WebviewWindow(
-                    'system-monitor-window',
-                    {
-                      url: route.systemMonitor,
-                      title: 'System Monitor - Jan',
-                      width: 900,
-                      height: 600,
-                      resizable: true,
-                      center: true,
-                    }
-                  )
-
-                  // Listen for window creation
-                  monitorWindow.once('tauri://created', () => {
-                    console.log('System monitor window created')
-                  })
-
-                  // Listen for window errors
-                  monitorWindow.once('tauri://error', (e) => {
-                    console.error('Error creating system monitor window:', e)
-                  })
-                }
-              } catch (error) {
-                console.error('Failed to open system monitor window:', error)
-              }
-            }}
+            onClick={handleClickSystemMonitor}
           >
             <IconDeviceDesktopAnalytics className="text-main-view-fg/50 size-5" />
             <p>System monitor</p>
