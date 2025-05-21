@@ -156,20 +156,25 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 
     let package_name = env!("CARGO_PKG_NAME");
     log::debug!("Package name: {}", package_name);
-    let mut old_data_dir = app_path
-        .clone()
+    #[cfg(target_os = "linux")]
+    let old_data_dir = {
+        if let Some(config_path) = dirs::config_dir() {
+            config_path.join(package_name)
+        } else {
+            log::debug!("Could not determine config directory");
+            app_path
+                .parent()
+                .unwrap_or(&app_path.join("../"))
+                .join(package_name)
+        }
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let old_data_dir = app_path
         .parent()
         .unwrap_or(&app_path.join("../"))
         .join(package_name);
 
-    #[cfg(target_os = "linux")]
-    {
-        if let Some(config_path) = dirs::config_dir() {
-            old_data_dir = config_path.join(package_name);
-        } else {
-            log::debug!("Could not determine config directory");
-        }
-    }
     log::debug!("old_data_dir: {}", old_data_dir.display());
 
     if old_data_dir.exists() {
