@@ -16,6 +16,7 @@
     "core:window:allow-set-focus",
     "os:default",
     "log:default",
+    "updater:default",
     "dialog:default",
     "core:webview:allow-create-webview-window",
     {
