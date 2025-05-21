@@ -11,6 +11,7 @@
 // Import Routes
 
 import { Route as rootRoute } from './routes/__root'
+import { Route as SystemMonitorImport } from './routes/system-monitor'
 import { Route as HubImport } from './routes/hub'
 import { Route as AssistantImport } from './routes/assistant'
 import { Route as IndexImport } from './routes/index'
@@ -28,6 +29,12 @@ import { Route as LocalApiServerLogsImport } from './routes/local-api-server/log
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
 // Create/Update Routes
+
+const SystemMonitorRoute = SystemMonitorImport.update({
+  id: '/system-monitor',
+  path: '/system-monitor',
+  getParentRoute: () => rootRoute,
+} as any)
 
 const HubRoute = HubImport.update({
   id: '/hub',
@@ -145,6 +152,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HubImport
       parentRoute: typeof rootRoute
     }
+    '/system-monitor': {
+      id: '/system-monitor'
+      path: '/system-monitor'
+      fullPath: '/system-monitor'
+      preLoaderRoute: typeof SystemMonitorImport
+      parentRoute: typeof rootRoute
+    }
     '/local-api-server/logs': {
       id: '/local-api-server/logs'
       path: '/local-api-server/logs'
@@ -238,6 +252,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
+  '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -256,6 +271,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
+  '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -275,6 +291,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
+  '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -295,6 +312,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assistant'
     | '/hub'
+    | '/system-monitor'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -312,6 +330,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assistant'
     | '/hub'
+    | '/system-monitor'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -329,6 +348,7 @@ export interface FileRouteTypes {
     | '/'
     | '/assistant'
     | '/hub'
+    | '/system-monitor'
     | '/local-api-server/logs'
     | '/settings/appearance'
     | '/settings/extensions'
@@ -348,6 +368,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AssistantRoute: typeof AssistantRoute
   HubRoute: typeof HubRoute
+  SystemMonitorRoute: typeof SystemMonitorRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
@@ -366,6 +387,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AssistantRoute: AssistantRoute,
   HubRoute: HubRoute,
+  SystemMonitorRoute: SystemMonitorRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
@@ -393,6 +415,7 @@ export const routeTree = rootRoute
         "/",
         "/assistant",
         "/hub",
+        "/system-monitor",
         "/local-api-server/logs",
         "/settings/appearance",
         "/settings/extensions",
@@ -415,6 +438,9 @@ export const routeTree = rootRoute
     },
     "/hub": {
       "filePath": "hub.tsx"
+    },
+    "/system-monitor": {
+      "filePath": "system-monitor.tsx"
     },
     "/local-api-server/logs": {
       "filePath": "local-api-server/logs.tsx"

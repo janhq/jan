@@ -1,0 +1,237 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { useEffect } from 'react'
+import { useHardware } from '@/hooks/useHardware'
+import { getHardwareInfo } from '@/services/hardware'
+import { Progress } from '@/components/ui/progress'
+import type { HardwareData } from '@/hooks/useHardware'
+import { route } from '@/constants/routes'
+import { formatMegaBytes } from '@/lib/utils'
+import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Route = createFileRoute(route.systemMonitor as any)({
+  component: SystemMonitor,
+})
+
+function SystemMonitor() {
+  const { hardwareData, setHardwareData, updateCPUUsage, updateRAMAvailable } =
+    useHardware()
+
+  useEffect(() => {
+    // Initial data fetch
+    getHardwareInfo().then((data) => {
+      setHardwareData(data as unknown as HardwareData)
+    })
+
+    // Set up interval for real-time updates
+    const intervalId = setInterval(() => {
+      getHardwareInfo().then((data) => {
+        setHardwareData(data as unknown as HardwareData)
+        updateCPUUsage(data.cpu.usage)
+        updateRAMAvailable(data.ram.available)
+      })
+    }, 5000)
+
+    return () => clearInterval(intervalId)
+  }, [setHardwareData, updateCPUUsage, updateRAMAvailable])
+
+  // Calculate RAM usage percentage
+  const ramUsagePercentage =
+    ((hardwareData.ram.total - hardwareData.ram.available) /
+      hardwareData.ram.total) *
+    100
+
+  return (
+    <div className="flex flex-col h-full bg-main-view overflow-y-auto p-6">
+      <div className="flex items-center mb-4 gap-2">
+        <IconDeviceDesktopAnalytics className="text-main-view-fg/80 size-6" />
+        <h1 className="text-xl font-bold text-main-view-fg">System Monitor</h1>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* CPU Usage Card */}
+        <div className="bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-main-view-fg mb-4">
+            CPU Usage
+          </h2>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Model</span>
+              <span className="text-main-view-fg">
+                {hardwareData.cpu.model}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Cores</span>
+              <span className="text-main-view-fg">
+                {hardwareData.cpu.cores}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Architecture</span>
+              <span className="text-main-view-fg">{hardwareData.cpu.arch}</span>
+            </div>
+            <div className="mt-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-main-view-fg/70">Current Usage</span>
+                <span className="text-main-view-fg font-bold">
+                  {hardwareData.cpu.usage.toFixed(2)}%
+                </span>
+              </div>
+              <Progress value={hardwareData.cpu.usage} className="h-3 w-full" />
+            </div>
+          </div>
+        </div>
+
+        {/* RAM Usage Card */}
+        <div className="bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-main-view-fg mb-4">
+            Memory Usage
+          </h2>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Total RAM</span>
+              <span className="text-main-view-fg">
+                {formatMegaBytes(hardwareData.ram.total)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Available RAM</span>
+              <span className="text-main-view-fg">
+                {formatMegaBytes(hardwareData.ram.available)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Used RAM</span>
+              <span className="text-main-view-fg">
+                {formatMegaBytes(
+                  hardwareData.ram.total - hardwareData.ram.available
+                )}
+              </span>
+            </div>
+            <div className="mt-4">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-main-view-fg/70">Current Usage</span>
+                <span className="text-main-view-fg font-bold">
+                  {ramUsagePercentage.toFixed(2)}%
+                </span>
+              </div>
+              <Progress value={ramUsagePercentage} className="h-3 w-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Current Active Model Section */}
+      <div className="mt-6 bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-main-view-fg mb-4">
+          Current Active Model
+        </h2>
+        <div className="bg-main-view-fg/3 rounded-lg p-4">
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-semibold text-main-view-fg">GPT-4o</span>
+          </div>
+          <div className="flex flex-col gap-2 mt-3">
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Provider</span>
+              <span className="text-main-view-fg">OpenAI</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Context Length</span>
+              <span className="text-main-view-fg">128K tokens</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-main-view-fg/70">Status</span>
+              <span className="text-main-view-fg">
+                <div className="bg-green-500/20 px-1 font-bold py-0.5 rounded text-green-700 text-xs">
+                  Running
+                </div>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Active GPUs Section */}
+      <div className="mt-6 bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
+        <h2 className="text-base font-semibold text-main-view-fg mb-4">
+          Active GPUs
+        </h2>
+        {hardwareData.gpus.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {hardwareData.gpus
+              .filter((gpu) => gpu.activated)
+              .map((gpu, index) => (
+                <div
+                  key={gpu.id || index}
+                  className="bg-main-view-fg/3 rounded-lg p-4"
+                >
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold text-main-view-fg">
+                      {gpu.name}
+                    </span>
+                    <div className="bg-green-500/20">Active</div>
+                  </div>
+                  <div className="flex flex-col gap-2 mt-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-main-view-fg/70">VRAM Usage</span>
+                      <span className="text-main-view-fg">
+                        {formatMegaBytes(gpu.total_vram - gpu.free_vram)} /{' '}
+                        {formatMegaBytes(gpu.total_vram)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-main-view-fg/70">
+                        Driver Version:
+                      </span>
+                      <span className="text-main-view-fg">
+                        {gpu.additional_information.driver_version}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-main-view-fg/70">
+                        Compute Capability:
+                      </span>
+                      <span className="text-main-view-fg">
+                        {gpu.additional_information.compute_cap}
+                      </span>
+                    </div>
+                    <div className="mt-2">
+                      <Progress
+                        value={
+                          ((gpu.total_vram - gpu.free_vram) / gpu.total_vram) *
+                          100
+                        }
+                        className={`h-2 w-full ${
+                          ((gpu.total_vram - gpu.free_vram) / gpu.total_vram) *
+                            100 >
+                          80
+                            ? 'bg-red-500/30'
+                            : ((gpu.total_vram - gpu.free_vram) /
+                                  gpu.total_vram) *
+                                  100 >
+                                50
+                              ? 'bg-yellow-500/30'
+                              : 'bg-green-500/30'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        ) : (
+          <div className="text-center text-main-view-fg/50 py-4">
+            No GPUs detected
+          </div>
+        )}
+        {hardwareData.gpus.length > 0 &&
+          !hardwareData.gpus.some((gpu) => gpu.activated) && (
+            <div className="text-center text-main-view-fg/50 py-4">
+              No active GPUs. All GPUs are currently disabled.
+            </div>
+          )}
+      </div>
+    </div>
+  )
+}

@@ -115,7 +115,13 @@ function LocalAPIServer() {
                       Start an OpenAI-compatible local HTTP server.
                     </p>
                   </div>
-                  <Button onClick={toggleAPIServer}>
+                  <Button
+                    onClick={toggleAPIServer}
+                    variant={
+                      serverStatus === 'running' ? 'destructive' : 'default'
+                    }
+                    size="sm"
+                  >
                     {`${serverStatus === 'running' ? 'Stop' : 'Start'}`} Server
                   </Button>
                 </div>

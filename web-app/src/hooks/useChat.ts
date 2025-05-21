@@ -37,7 +37,7 @@ export const useChat = () => {
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
   }, [selectedProvider, getProviderByName])
-  
+
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
     if (!currentThread) {
