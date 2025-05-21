@@ -189,27 +189,14 @@ impl Vendor {
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
-#[serde(untagged)]
-pub enum GpuAdditionalInfo {
-    Nvidia {
-        compute_capability: String,
-    },
-    Vulkan {
-        device_type: String,
-        api_version: String,
-        device_id: u32,
-    },
-}
-
-#[derive(Clone, Debug, serde::Serialize)]
 pub struct GpuInfo {
     pub name: String,
-    pub index: u64,
     pub total_memory: u64,
     pub vendor: Vendor,
     pub uuid: String,
     pub driver_version: String,
-    pub additional_info: GpuAdditionalInfo,
+    pub nvidia_info: Option<nvidia::NvidiaInfo>,
+    pub vulkan_info: Option<vulkan::VulkanInfo>,
 }
 
 impl GpuInfo {

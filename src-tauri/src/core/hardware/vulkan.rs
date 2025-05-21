@@ -1,5 +1,13 @@
-use super::{GpuAdditionalInfo, GpuInfo, Vendor};
+use super::{GpuInfo, Vendor};
 use ash::{vk, Entry};
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct VulkanInfo {
+    pub index: u64,
+    pub device_type: String,
+    pub api_version: String,
+    pub device_id: u32,
+}
 
 fn parse_uuid(bytes: &[u8; 16]) -> String {
     format!(
@@ -89,7 +97,6 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
 
         let device_info = GpuInfo {
             name: parse_c_string(&props.device_name),
-            index: i as u64, // do we need this?
             total_memory: unsafe { instance.get_physical_device_memory_properties(*device) }
                 .memory_heaps
                 .iter()
@@ -99,16 +106,18 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std:
             vendor: Vendor::from_vendor_id(props.vendor_id),
             uuid: parse_uuid(&id_props.device_uuid),
             driver_version: parse_c_string(&driver_props.driver_info),
-            additional_info: GpuAdditionalInfo::Vulkan {
+            nvidia_info: None,
+            vulkan_info: Some(VulkanInfo {
+                index: i as u64,
                 device_type: format!("{:?}", props.device_type),
-                device_id: props.device_id,
                 api_version: format!(
                     "{}.{}.{}",
                     vk::api_version_major(props.api_version),
                     vk::api_version_minor(props.api_version),
                     vk::api_version_patch(props.api_version)
                 ),
-            },
+                device_id: props.device_id,
+            }),
         };
         device_info_list.push(device_info);
     }

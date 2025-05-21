@@ -9,9 +9,16 @@ impl GpuInfo {
 
     #[cfg(target_os = "linux")]
     pub fn get_usage_amd(&self) -> GpuUsage {
-        use super::GpuAdditionalInfo;
         use std::fs;
         use std::path::Path;
+
+        let device_id = match &self.vulkan_info {
+            Some(vulkan_info) => vulkan_info.device_id,
+            None => {
+                log::error!("get_usage_amd called without Vulkan info");
+                return self.get_usage_unsupported();
+            }
+        };
 
         for card_idx in 0.. {
             let device_path = format!("/sys/class/drm/card{}/device", card_idx);
@@ -28,16 +35,8 @@ impl GpuInfo {
             let this_device_id = fs::read_to_string(format!("{}/device", device_path))
                 .map(|s| u32::from_str_radix(s.trim(), 16).unwrap_or(0))
                 .unwrap_or(0);
-
-            match self.additional_info {
-                GpuAdditionalInfo::Vulkan { device_id, .. } => {
-                    if this_device_id != device_id {
-                        continue;
-                    }
-                }
-                _ => {
-                    continue;
-                }
+            if this_device_id != device_id {
+                continue;
             }
 
             let read_mem = |path: &str| -> u64 {

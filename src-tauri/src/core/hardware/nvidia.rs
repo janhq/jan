@@ -1,8 +1,14 @@
-use super::{GpuAdditionalInfo, GpuInfo, GpuUsage, Vendor};
+use super::{GpuInfo, GpuUsage, Vendor};
 use nvml_wrapper::{error::NvmlError, Nvml};
 use std::sync::OnceLock;
 
 static NVML: OnceLock<Option<Nvml>> = OnceLock::new();
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NvidiaInfo {
+    pub index: u32,
+    pub compute_capability: String,
+}
 
 // NvmlError doesn't implement Copy, so we have to store an Option in OnceLock
 fn get_nvml() -> Option<&'static Nvml> {
@@ -11,9 +17,16 @@ fn get_nvml() -> Option<&'static Nvml> {
 
 impl GpuInfo {
     pub fn get_usage_nvidia(&self) -> GpuUsage {
+        let index = match self.nvidia_info {
+            Some(ref nvidia_info) => nvidia_info.index,
+            None => {
+                log::error!("get_usage_nvidia() called on non-NVIDIA GPU");
+                return self.get_usage_unsupported();
+            }
+        };
         let closure = || -> Result<GpuUsage, NvmlError> {
             let nvml = get_nvml().ok_or(NvmlError::Unknown)?;
-            let device = nvml.device_by_index(self.index as u32)?;
+            let device = nvml.device_by_index(index)?;
             let mem_info = device.memory_info()?;
             Ok(GpuUsage {
                 uuid: self.uuid.clone(),
@@ -22,12 +35,8 @@ impl GpuInfo {
             })
         };
         closure().unwrap_or_else(|e| {
-            log::error!("Failed to get memory usage for GPU {}: {}", self.index, e);
-            GpuUsage {
-                uuid: self.uuid.clone(),
-                used_memory: 0,
-                total_memory: 0,
-            }
+            log::error!("Failed to get memory usage for NVIDIA GPU {}: {}", index, e);
+            self.get_usage_unsupported()
         })
     }
 }
@@ -43,7 +52,6 @@ pub fn get_nvidia_gpus() -> Vec<GpuInfo> {
             let device = nvml.device_by_index(i)?;
             gpus.push(GpuInfo {
                 name: device.name()?,
-                index: i as u64,
                 total_memory: device.memory_info()?.total / 1024 / 1024, // bytes to MiB
                 vendor: Vendor::NVIDIA,
                 uuid: {
@@ -54,12 +62,14 @@ pub fn get_nvidia_gpus() -> Vec<GpuInfo> {
                     uuid
                 },
                 driver_version: driver_version.clone(),
-                additional_info: GpuAdditionalInfo::Nvidia {
+                nvidia_info: Some(NvidiaInfo {
+                    index: i,
                     compute_capability: {
                         let cc = device.cuda_compute_capability()?;
                         format!("{}.{}", cc.major, cc.minor)
                     },
-                },
+                }),
+                vulkan_info: None,
             });
         }
 
