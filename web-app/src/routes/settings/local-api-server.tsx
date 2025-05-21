@@ -14,6 +14,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
 import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
+import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -101,6 +102,8 @@ function LocalAPIServer() {
     }
   }
 
+  const isServerRunning = serverStatus === 'running'
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -122,12 +125,10 @@ function LocalAPIServer() {
                   </div>
                   <Button
                     onClick={toggleAPIServer}
-                    variant={
-                      serverStatus === 'running' ? 'destructive' : 'default'
-                    }
+                    variant={isServerRunning ? 'destructive' : 'default'}
                     size="sm"
                   >
-                    {`${serverStatus === 'running' ? 'Stop' : 'Start'}`} Server
+                    {`${isServerRunning ? 'Stop' : 'Start'}`} Server
                   </Button>
                 </div>
               }
@@ -155,16 +156,25 @@ function LocalAPIServer() {
               <CardItem
                 title="Server Host"
                 description="Choose between 127.0.0.1 or 0.0.0.0"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
                 actions={<ServerHostSwitcher />}
               />
               <CardItem
                 title="Server Port"
                 description="Set the port number for the API server"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
                 actions={<PortInput />}
               />
               <CardItem
                 title="API Prefix"
                 description="Set the API endpoint prefix"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
                 actions={<ApiPrefixInput />}
               />
             </Card>
@@ -174,6 +184,9 @@ function LocalAPIServer() {
               <CardItem
                 title="Cross-Origin Resource Sharing (CORS)"
                 description="Allow requests from different origins to access the API"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
                 actions={
                   <Switch
                     checked={corsEnabled}
@@ -184,6 +197,9 @@ function LocalAPIServer() {
               <CardItem
                 title="Verbose Server Logs"
                 description="Enable detailed logging for debugging purposes"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
                 actions={
                   <Switch
                     checked={verboseLogs}
