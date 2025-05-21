@@ -266,11 +266,9 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
             let mut system = System::new();
             system.refresh_memory();
 
-            let mut gpus = vec![];
-            let mut gpu_uuids = std::collections::HashSet::new();
+            let mut gpu_map = std::collections::HashMap::new();
             for gpu in nvidia::get_nvidia_gpus() {
-                gpu_uuids.insert(gpu.uuid.clone());
-                gpus.push(gpu);
+                gpu_map.insert(gpu.uuid.clone(), gpu);
             }
 
             // try system vulkan first
@@ -283,10 +281,15 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
                 }
             }
 
-            // only keep NVIDIA GPU from nvml
             for gpu in vulkan_gpus {
-                if !gpu_uuids.contains(&gpu.uuid) {
-                    gpus.push(gpu);
+                match gpu_map.get_mut(&gpu.uuid) {
+                    // for existing NVIDIA GPUs, add Vulkan info
+                    Some(nvidia_gpu) => {
+                        nvidia_gpu.vulkan_info = gpu.vulkan_info;
+                    }
+                    None => {
+                        gpu_map.insert(gpu.uuid.clone(), gpu);
+                    }
                 }
             }
 
@@ -294,7 +297,7 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
                 cpu: CpuStaticInfo::new(),
                 os: System::long_os_version().unwrap_or("Unknown".to_string()),
                 total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
-                gpus,
+                gpus: gpu_map.into_values().collect(),
             }
         })
         .clone()
