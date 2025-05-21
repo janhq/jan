@@ -10,12 +10,12 @@ type DynamicControllerProps = {
   title?: string
   className?: string
   description?: string
-  controllerType: 'input' | 'checkbox' | 'dropdown' | 'textarea' | 'slider'
+  controllerType: 'input' | 'checkbox' | 'dropdown' | 'textarea' | 'slider' | string
   controllerProps: {
     value?: string | boolean | number
     placeholder?: string
     type?: string
-    options?: Array<{ value: string; name: string }>
+    options?: Array<{ value: number | string; name: string }>
     input_actions?: string[]
     rows?: number
     min?: number

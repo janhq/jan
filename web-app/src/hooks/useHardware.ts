@@ -182,7 +182,7 @@ export const useHardware = create<HardwareStore>()(
             }
           }
           setActiveGpus({
-            gpus: newGPUs.filter((e) => e.activated).map((e) => e.id as unknown as number),
+            gpus: newGPUs.filter((e) => e.activated).map((e) => parseInt(e.id)),
           })
           return {
             hardwareData: {

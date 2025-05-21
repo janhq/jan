@@ -12,7 +12,7 @@
     ]
   },
   "scripts": {
-    "lint": "yarn workspace jan lint && yarn workspace @janhq/web lint",
+    "lint": "yarn workspace @janhq/web-app lint",
     "test:unit": "jest",
     "test:coverage": "yarn workspace @janhq/web-app test",
     "test": "yarn workspace @janhq/web-app test",

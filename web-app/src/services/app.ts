@@ -64,3 +64,12 @@ export const getJanDataFolder = async (): Promise<string | undefined> => {
     return undefined
   }
 }
+
+/**
+ * @description This function is used to relocate the Jan data folder.
+ * It will change the app data folder to the specified path.
+ * @param path The new path for the Jan data folder
+ */
+export const relocateJanDataFolder = async (path: string) => {
+  window.core?.api?.changeAppDataFolder({ newDataFolder: path })
+}

@@ -20,7 +20,6 @@ export default function LanguageSwitcher() {
 
   const changeLanguage = (lng: string) => {
     i18n.changeLanguage(lng)
-    // @ts-ignore
     setCurrentLanguage(lng as Language)
   }
 

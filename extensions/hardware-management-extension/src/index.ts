@@ -51,7 +51,7 @@ export default class JSONHardwareManagementExtension extends HardwareManagementE
   /**
    * @returns A Promise that resolves to an object of set gpu activate.
    */
-  async setAvtiveGpu(data: { gpus: number[] }): Promise<{
+  async setActiveGpu(data: { gpus: number[] }): Promise<{
     message: string
     activated_gpus: number[]
   }> {
