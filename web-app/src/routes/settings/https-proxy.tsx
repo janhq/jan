@@ -47,7 +47,7 @@ function HTTPSProxy() {
       setProxyEnabled(checked)
       configurePullOptions({
         proxyUrl,
-        proxyEnabled,
+        proxyEnabled: checked,
         proxyUsername,
         proxyPassword,
         proxyIgnoreSSL,
