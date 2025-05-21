@@ -72,12 +72,6 @@ function General() {
                 }
               />
               <CardItem
-                title={t('settings.general.autoDownload', {
-                  ns: 'settings',
-                })}
-                actions={<Switch />}
-              />
-              <CardItem
                 title={t('common.language')}
                 actions={<LanguageSwitcher />}
               />

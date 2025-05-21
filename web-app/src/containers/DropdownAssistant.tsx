@@ -36,6 +36,9 @@ const DropdownAssistant = () => {
           <DropdownMenuTrigger asChild>
             <button className="bg-main-view-fg/5 py-0.5 hover:bg-main-view-fg/8 px-2 rounded font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-40">
               <span className="text-main-view-fg/80 truncate">
+                {selectedAssistant?.avatar && (
+                  <span className="mr-1">{selectedAssistant?.avatar}</span>
+                )}
                 {selectedAssistant?.name || 'Jan'}
               </span>
             </button>
@@ -43,7 +46,6 @@ const DropdownAssistant = () => {
           <div
             className="size-5 cursor-pointer relative z-10 flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out "
             onClick={() => {
-              console.log('edit clicked', selectedAssistant)
               if (selectedAssistant) {
                 setEditingAssistantId(selectedAssistant.id)
                 setDialogOpen(true)
@@ -73,6 +75,7 @@ const DropdownAssistant = () => {
                     updateCurrentThreadAssistant(assistant)
                   }}
                 >
+                  <span className="mr-1">{assistant?.avatar}</span>
                   {assistant.name}
                 </span>
               </DropdownMenuItem>
