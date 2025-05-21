@@ -153,12 +153,23 @@ export const sendCompletion = async (
  * @returns
  */
 export const startModel = async (
-  provider: string,
+  provider: ProviderObject,
   model: string
 ): Promise<void> => {
-  const providerObj = EngineManager.instance().get(normalizeProvider(provider))
-  const modelObj = ModelManager.instance().get(model)
-  if (providerObj && modelObj) return providerObj?.loadModel(modelObj)
+  const providerObj = EngineManager.instance().get(
+    normalizeProvider(provider.provider)
+  )
+  const modelObj = provider.models.find((m) => m.id === model)
+  if (providerObj && modelObj)
+    return providerObj?.loadModel({
+      id: modelObj.id,
+      settings: Object.fromEntries(
+        Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
+          key,
+          value.controller_props?.value, // assuming each setting is { value: ... }
+        ])
+      ),
+    })
 }
 
 /**

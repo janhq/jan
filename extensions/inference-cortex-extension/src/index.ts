@@ -180,10 +180,14 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }
 
   override async loadModel(
-    model: Model & { file_path?: string }
+    model: Partial<Model> & {
+      id: string
+      settings?: object
+      file_path?: string
+    }
   ): Promise<void> {
     // Cortex will handle these settings
-    const { llama_model_path, mmproj, ...settings } = model.settings
+    const { llama_model_path, mmproj, ...settings } = model.settings ?? {}
     model.settings = settings
 
     const controller = new AbortController()
