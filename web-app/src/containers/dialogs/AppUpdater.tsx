@@ -74,17 +74,6 @@ const DialogAppUpdater = () => {
                     content={release?.body}
                   />
                 )}
-                <RenderMarkdown
-                  components={{
-                    a: ({ ...props }) => (
-                      <a {...props} target="_blank" rel="noopener noreferrer" />
-                    ),
-                    h2: ({ ...props }) => (
-                      <h2 {...props} className="!text-xl !mt-0" />
-                    ),
-                  }}
-                  content={release?.body}
-                />
               </div>
             )}
 

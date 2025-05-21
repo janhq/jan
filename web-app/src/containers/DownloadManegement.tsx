@@ -116,8 +116,6 @@ export function DownloadManagement() {
     return ((gb * 100) / 100).toFixed(2)
   }
 
-  console.log(isLeftPanelOpen, 'isLeftPanelOpen')
-
   return (
     <>
       {(downloadCount > 0 ||
@@ -139,7 +137,7 @@ export function DownloadManagement() {
               </div>
             ) : (
               <div className="fixed bottom-4 left-4 z-50 size-10 bg-main-view border-2 border-main-view-fg/10 rounded-full shadow-md cursor-pointer flex items-center justify-center">
-                <div className="realtive">
+                <div className="relative">
                   <IconDownload
                     className="text-main-view-fg/50 -mt-1"
                     size={20}
