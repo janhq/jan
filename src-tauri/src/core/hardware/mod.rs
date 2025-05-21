@@ -190,16 +190,42 @@ impl Vendor {
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(untagged)]
-enum Gpu {
-    Nvidia(nvidia::NvidiaGpu),
-    Vulkan(vulkan::VulkanGpu),
+pub enum GpuAdditionalInfo {
+    Nvidia {
+        compute_capability: String,
+    },
+    Vulkan {
+        device_type: String,
+        api_version: String,
+        device_id: u32,
+    },
 }
 
-impl Gpu {
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct GpuInfo {
+    pub name: String,
+    pub index: u64,
+    pub total_memory: u64,
+    pub vendor: Vendor,
+    pub uuid: String,
+    pub driver_version: String,
+    pub additional_info: GpuAdditionalInfo,
+}
+
+impl GpuInfo {
     pub fn get_usage(&self) -> GpuUsage {
-        match self {
-            Gpu::Nvidia(gpu) => gpu.get_usage(),
-            Gpu::Vulkan(gpu) => gpu.get_usage(),
+        match self.vendor {
+            Vendor::NVIDIA => self.get_usage_nvidia(),
+            Vendor::AMD => self.get_usage_amd(),
+            _ => self.get_usage_unsupported(),
+        }
+    }
+
+    pub fn get_usage_unsupported(&self) -> GpuUsage {
+        GpuUsage {
+            uuid: self.uuid.clone(),
+            used_memory: 0,
+            total_memory: 0,
         }
     }
 }
@@ -209,7 +235,7 @@ pub struct SystemInfo {
     cpu: CpuStaticInfo,
     os: String,
     total_memory: u64,
-    gpus: Vec<Gpu>,
+    gpus: Vec<GpuInfo>,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -257,7 +283,7 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
             let mut gpu_uuids = std::collections::HashSet::new();
             for gpu in nvidia::get_nvidia_gpus() {
                 gpu_uuids.insert(gpu.uuid.clone());
-                gpus.push(Gpu::Nvidia(gpu));
+                gpus.push(gpu);
             }
 
             // try system vulkan first
@@ -273,7 +299,7 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
             // only keep NVIDIA GPU from nvml
             for gpu in vulkan_gpus {
                 if !gpu_uuids.contains(&gpu.uuid) {
-                    gpus.push(Gpu::Vulkan(gpu));
+                    gpus.push(gpu);
                 }
             }
 

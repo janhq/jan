@@ -1,3 +1,4 @@
+use super::{GpuAdditionalInfo, GpuInfo, GpuUsage, Vendor};
 use nvml_wrapper::{error::NvmlError, Nvml};
 use std::sync::OnceLock;
 
@@ -8,25 +9,13 @@ fn get_nvml() -> Option<&'static Nvml> {
     NVML.get_or_init(|| Nvml::init().ok()).as_ref()
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct NvidiaGpu {
-    pub name: String,
-    pub index: u64,
-    pub total_memory: u64,
-    pub vendor: super::Vendor,
-    pub uuid: String,
-    pub driver_version: String,
-    // NVIDIA-specific info
-    pub compute_capability: String,
-}
-
-impl NvidiaGpu {
-    pub fn get_usage(&self) -> super::GpuUsage {
-        let closure = || -> Result<super::GpuUsage, NvmlError> {
+impl GpuInfo {
+    pub fn get_usage_nvidia(&self) -> GpuUsage {
+        let closure = || -> Result<GpuUsage, NvmlError> {
             let nvml = get_nvml().ok_or(NvmlError::Unknown)?;
             let device = nvml.device_by_index(self.index as u32)?;
             let mem_info = device.memory_info()?;
-            Ok(super::GpuUsage {
+            Ok(GpuUsage {
                 uuid: self.uuid.clone(),
                 used_memory: mem_info.used / 1024 / 1024, // bytes to MiB
                 total_memory: mem_info.total / 1024 / 1024, // bytes to MiB
@@ -34,7 +23,7 @@ impl NvidiaGpu {
         };
         closure().unwrap_or_else(|e| {
             log::error!("Failed to get memory usage for GPU {}: {}", self.index, e);
-            super::GpuUsage {
+            GpuUsage {
                 uuid: self.uuid.clone(),
                 used_memory: 0,
                 total_memory: 0,
@@ -43,8 +32,8 @@ impl NvidiaGpu {
     }
 }
 
-pub fn get_nvidia_gpus() -> Vec<NvidiaGpu> {
-    let closure = || -> Result<Vec<NvidiaGpu>, NvmlError> {
+pub fn get_nvidia_gpus() -> Vec<GpuInfo> {
+    let closure = || -> Result<Vec<GpuInfo>, NvmlError> {
         let nvml = get_nvml().ok_or(NvmlError::Unknown)?;
         let num_gpus = nvml.device_count()?;
         let driver_version = nvml.sys_driver_version()?;
@@ -52,11 +41,11 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaGpu> {
         let mut gpus = Vec::with_capacity(num_gpus as usize);
         for i in 0..num_gpus {
             let device = nvml.device_by_index(i)?;
-            gpus.push(NvidiaGpu {
+            gpus.push(GpuInfo {
                 name: device.name()?,
                 index: i as u64,
                 total_memory: device.memory_info()?.total / 1024 / 1024, // bytes to MiB
-                vendor: super::Vendor::NVIDIA,
+                vendor: Vendor::NVIDIA,
                 uuid: {
                     let mut uuid = device.uuid()?;
                     if uuid.starts_with("GPU-") {
@@ -65,9 +54,11 @@ pub fn get_nvidia_gpus() -> Vec<NvidiaGpu> {
                     uuid
                 },
                 driver_version: driver_version.clone(),
-                compute_capability: {
-                    let cc = device.cuda_compute_capability()?;
-                    format!("{}.{}", cc.major, cc.minor)
+                additional_info: GpuAdditionalInfo::Nvidia {
+                    compute_capability: {
+                        let cc = device.cuda_compute_capability()?;
+                        format!("{}.{}", cc.major, cc.minor)
+                    },
                 },
             });
         }

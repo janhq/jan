@@ -1,14 +1,15 @@
-use super::vulkan;
+use super::{GpuInfo, GpuUsage};
 
-impl vulkan::VulkanGpu {
+impl GpuInfo {
     #[cfg(not(target_os = "linux"))]
     #[cfg(not(target_os = "windows"))]
-    pub fn get_usage_amd(&self) -> super::GpuUsage {
+    pub fn get_usage_amd(&self) -> GpuUsage {
         self.get_usage_unsupported()
     }
 
     #[cfg(target_os = "linux")]
-    pub fn get_usage_amd(&self) -> super::GpuUsage {
+    pub fn get_usage_amd(&self) -> GpuUsage {
+        use super::GpuAdditionalInfo;
         use std::fs;
         use std::path::Path;
 
@@ -24,11 +25,19 @@ impl vulkan::VulkanGpu {
             }
 
             // match device_id from Vulkan info
-            let device_id = fs::read_to_string(format!("{}/device", device_path))
+            let this_device_id = fs::read_to_string(format!("{}/device", device_path))
                 .map(|s| u32::from_str_radix(s.trim(), 16).unwrap_or(0))
                 .unwrap_or(0);
-            if device_id != self.device_id {
-                continue;
+
+            match self.additional_info {
+                GpuAdditionalInfo::Vulkan { device_id, .. } => {
+                    if this_device_id != device_id {
+                        continue;
+                    }
+                }
+                _ => {
+                    continue;
+                }
             }
 
             let read_mem = |path: &str| -> u64 {
@@ -38,22 +47,18 @@ impl vulkan::VulkanGpu {
                     / 1024
                     / 1024 // Convert bytes to MiB
             };
-            return super::GpuUsage {
+            return GpuUsage {
                 uuid: self.uuid.clone(),
                 total_memory: read_mem(&format!("{}/mem_info_vram_total", device_path)),
                 used_memory: read_mem(&format!("{}/mem_info_vram_used", device_path)),
             };
         }
 
-        super::GpuUsage {
-            uuid: self.uuid.clone(),
-            used_memory: 0,
-            total_memory: 0,
-        }
+        this.get_usage_unsupported()
     }
 
     #[cfg(target_os = "windows")]
-    pub fn get_usage_amd(&self) -> super::GpuUsage {
+    pub fn get_usage_amd(&self) -> GpuUsage {
         use std::collections::HashMap;
 
         let memory_usage_map = windows_impl::get_gpu_usage().unwrap_or_else(|_| {
@@ -62,7 +67,7 @@ impl vulkan::VulkanGpu {
         });
 
         match memory_usage_map.get(&self.name) {
-            Some(&used_memory) => super::GpuUsage {
+            Some(&used_memory) => GpuUsage {
                 uuid: self.uuid.clone(),
                 used_memory: used_memory as u64,
                 total_memory: self.total_memory,

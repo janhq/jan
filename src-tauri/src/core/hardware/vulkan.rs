@@ -1,35 +1,5 @@
+use super::{GpuAdditionalInfo, GpuInfo, Vendor};
 use ash::{vk, Entry};
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct VulkanGpu {
-    pub name: String,
-    pub index: u64,
-    pub total_memory: u64,
-    pub vendor: super::Vendor,
-    pub uuid: String,
-    pub driver_version: String,
-    // Vulkan-specific info
-    pub device_type: String,
-    pub api_version: String,
-    pub device_id: u32,
-}
-
-impl VulkanGpu {
-    pub fn get_usage(&self) -> super::GpuUsage {
-        match self.vendor {
-            super::Vendor::AMD => self.get_usage_amd(),
-            _ => self.get_usage_unsupported(),
-        }
-    }
-
-    pub fn get_usage_unsupported(&self) -> super::GpuUsage {
-        super::GpuUsage {
-            uuid: self.uuid.clone(),
-            used_memory: 0,
-            total_memory: 0,
-        }
-    }
-}
 
 fn parse_uuid(bytes: &[u8; 16]) -> String {
     format!(
@@ -57,7 +27,7 @@ fn parse_uuid(bytes: &[u8; 16]) -> String {
     )
 }
 
-pub fn get_vulkan_gpus(lib_path: &str) -> Vec<VulkanGpu> {
+pub fn get_vulkan_gpus(lib_path: &str) -> Vec<GpuInfo> {
     match get_vulkan_gpus_internal(lib_path) {
         Ok(gpus) => gpus,
         Err(e) => {
@@ -74,7 +44,7 @@ fn parse_c_string(buf: &[i8]) -> String {
         .to_string()
 }
 
-fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<VulkanGpu>, Box<dyn std::error::Error>> {
+fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<GpuInfo>, Box<dyn std::error::Error>> {
     let entry = if lib_path.is_empty() {
         unsafe { Entry::load()? }
     } else {
@@ -117,7 +87,7 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<VulkanGpu>, Box<dyn st
             continue;
         }
 
-        let device_info = VulkanGpu {
+        let device_info = GpuInfo {
             name: parse_c_string(&props.device_name),
             index: i as u64, // do we need this?
             total_memory: unsafe { instance.get_physical_device_memory_properties(*device) }
@@ -126,17 +96,19 @@ fn get_vulkan_gpus_internal(lib_path: &str) -> Result<Vec<VulkanGpu>, Box<dyn st
                 .filter(|heap| heap.flags.contains(vk::MemoryHeapFlags::DEVICE_LOCAL))
                 .map(|heap| heap.size / (1024 * 1024))
                 .sum(),
-            vendor: super::Vendor::from_vendor_id(props.vendor_id),
+            vendor: Vendor::from_vendor_id(props.vendor_id),
             uuid: parse_uuid(&id_props.device_uuid),
-            device_type: format!("{:?}", props.device_type),
-            device_id: props.device_id,
             driver_version: parse_c_string(&driver_props.driver_info),
-            api_version: format!(
-                "{}.{}.{}",
-                vk::api_version_major(props.api_version),
-                vk::api_version_minor(props.api_version),
-                vk::api_version_patch(props.api_version)
-            ),
+            additional_info: GpuAdditionalInfo::Vulkan {
+                device_type: format!("{:?}", props.device_type),
+                device_id: props.device_id,
+                api_version: format!(
+                    "{}.{}.{}",
+                    vk::api_version_major(props.api_version),
+                    vk::api_version_minor(props.api_version),
+                    vk::api_version_patch(props.api_version)
+                ),
+            },
         };
         device_info_list.push(device_info);
     }
