@@ -60,7 +60,8 @@ function RootLayout() {
   const router = useRouterState()
   const isLocalAPIServerLogsRoute =
     router.location.pathname === route.localApiServerlogs ||
-    router.location.pathname === route.systemMonitor
+    router.location.pathname === route.systemMonitor ||
+    router.location.pathname === route.appLogs
 
   return (
     <Fragment>

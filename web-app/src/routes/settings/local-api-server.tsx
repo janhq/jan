@@ -12,6 +12,8 @@ import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
+import { windowKey } from '@/constants/windows'
+import { IconLogs } from '@tabler/icons-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -63,7 +65,7 @@ function LocalAPIServer() {
     try {
       // Check if logs window already exists
       const existingWindow = await WebviewWindow.getByLabel(
-        'logs-window-local-api-server'
+        windowKey.logsWindowLocalApiServer
       )
 
       if (existingWindow) {
@@ -72,14 +74,17 @@ function LocalAPIServer() {
         console.log('Focused existing logs window')
       } else {
         // Create a new logs window using Tauri v2 WebviewWindow API
-        const logsWindow = new WebviewWindow('logs-window-local-api-server', {
-          url: '/local-api-server/logs',
-          title: 'Local API server Logs - Jan',
-          width: 800,
-          height: 600,
-          resizable: true,
-          center: true,
-        })
+        const logsWindow = new WebviewWindow(
+          windowKey.logsWindowLocalApiServer,
+          {
+            url: route.localApiServerlogs,
+            title: 'Local API server Logs - Jan',
+            width: 800,
+            height: 600,
+            resizable: true,
+            center: true,
+          }
+        )
 
         // Listen for window creation
         logsWindow.once('tauri://created', () => {
@@ -131,8 +136,15 @@ function LocalAPIServer() {
                 title="Server Logs"
                 description="View detailed logs of the local API server"
                 actions={
-                  <Button variant="link" size="sm" onClick={handleOpenLogs}>
-                    Open Logs
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={handleOpenLogs}
+                    title="Server Logs"
+                  >
+                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                      <IconLogs size={18} className="text-main-view-fg/50" />
+                    </div>
                   </Button>
                 }
               />

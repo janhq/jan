@@ -31,6 +31,7 @@ import {
 import { getHardwareInfo } from '@/services/hardware'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { formatMegaBytes } from '@/lib/utils'
+import { windowKey } from '@/constants/windows'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.hardware as any)({
@@ -167,7 +168,7 @@ function Hardware() {
     try {
       // Check if system monitor window already exists
       const existingWindow = await WebviewWindow.getByLabel(
-        'system-monitor-window'
+        windowKey.systemMonitorWindow
       )
 
       if (existingWindow) {
@@ -176,7 +177,7 @@ function Hardware() {
         console.log('Focused existing system monitor window')
       } else {
         // Create a new system monitor window
-        const monitorWindow = new WebviewWindow('system-monitor-window', {
+        const monitorWindow = new WebviewWindow(windowKey.systemMonitorWindow, {
           url: route.systemMonitor,
           title: 'System Monitor - Jan',
           width: 900,

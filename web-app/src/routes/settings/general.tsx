@@ -26,7 +26,9 @@ import {
   getJanDataFolder,
   relocateJanDataFolder,
 } from '@/services/app'
-import { IconFolder } from '@tabler/icons-react'
+import { IconFolder, IconLogs } from '@tabler/icons-react'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { windowKey } from '@/constants/windows'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -52,6 +54,43 @@ function General() {
     await factoryReset()
   }
 
+  const handleOpenLogs = async () => {
+    try {
+      // Check if logs window already exists
+      const existingWindow = await WebviewWindow.getByLabel(
+        windowKey.logsAppWindow
+      )
+
+      if (existingWindow) {
+        // If window exists, focus it
+        await existingWindow.setFocus()
+        console.log('Focused existing logs window')
+      } else {
+        // Create a new logs window using Tauri v2 WebviewWindow API
+        const logsWindow = new WebviewWindow(windowKey.logsAppWindow, {
+          url: route.appLogs,
+          title: 'App Logs - Jan',
+          width: 800,
+          height: 600,
+          resizable: true,
+          center: true,
+        })
+
+        // Listen for window creation
+        logsWindow.once('tauri://created', () => {
+          console.log('Logs window created')
+        })
+
+        // Listen for window errors
+        logsWindow.once('tauri://error', (e) => {
+          console.error('Error creating logs window:', e)
+        })
+      }
+    } catch (error) {
+      console.error('Failed to open logs window:', error)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -66,9 +105,7 @@ function General() {
               <CardItem
                 title="App Version"
                 actions={
-                  <>
-                    <span className="text-main-view-fg/80">v{VERSION}</span>
-                  </>
+                  <span className="text-main-view-fg/80">v{VERSION}</span>
                 }
               />
               <CardItem
@@ -110,6 +147,7 @@ function General() {
                     variant="link"
                     size="sm"
                     className="hover:no-underline"
+                    title="App Data Folder"
                     onClick={async () => {
                       const selectedPath = await open({
                         multiple: false,
@@ -137,10 +175,20 @@ function General() {
                 title={t('settings.dataFolder.appLogs', {
                   ns: 'settings',
                 })}
-                description={t('settings.dataFolder.appLogsDesc', {
-                  ns: 'settings',
-                })}
-                actions={<></>}
+                description="View detailed logs of the App"
+                actions={
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={handleOpenLogs}
+                    title="App Logs"
+                  >
+                    {/* Open Logs */}
+                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                      <IconLogs size={18} className="text-main-view-fg/50" />
+                    </div>
+                  </Button>
+                }
               />
             </Card>
 
