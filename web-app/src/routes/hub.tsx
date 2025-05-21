@@ -19,6 +19,7 @@ import {
 import { downloadModel } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
+import HeaderPage from '@/containers/HeaderPage'
 
 type ModelProps = {
   model: {
@@ -160,44 +161,46 @@ function Hub() {
   return (
     <div className="flex h-full w-full">
       <div className="flex flex-col h-full w-full">
-        <div className="px-4 py-3 border-b border-main-view-fg/5 h-10 flex items-center justify-between relative z-20">
-          <div className="flex items-center gap-2">
-            <IconSearch className="text-main-view-fg/60" size={14} />
-            <input
-              placeholder="Search models..."
-              value={searchValue}
-              onChange={handleSearchChange}
-              className="w-full focus:outline-none"
-            />
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger>
-              <span
-                title="Edit Theme"
-                className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-              >
-                {
-                  sortOptions.find((option) => option.value === sortSelected)
-                    ?.name
-                }
-              </span>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="bottom" align="end">
-              {sortOptions.map((option) => (
-                <DropdownMenuItem
-                  className={cn(
-                    'cursor-pointer my-0.5',
-                    sortSelected === option.value && 'bg-main-view-fg/5'
-                  )}
-                  key={option.value}
-                  onClick={() => setSortSelected(option.value)}
+        <HeaderPage>
+          <div className="pr-4 py-3 border-b border-main-view-fg/5 h-10 w-full flex items-center justify-between relative z-20 ">
+            <div className="flex items-center gap-2">
+              <IconSearch className="text-main-view-fg/60" size={14} />
+              <input
+                placeholder="Search models..."
+                value={searchValue}
+                onChange={handleSearchChange}
+                className="w-full focus:outline-none"
+              />
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger>
+                <span
+                  title="Edit Theme"
+                  className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
                 >
-                  {option.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+                  {
+                    sortOptions.find((option) => option.value === sortSelected)
+                      ?.name
+                  }
+                </span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side="bottom" align="end">
+                {sortOptions.map((option) => (
+                  <DropdownMenuItem
+                    className={cn(
+                      'cursor-pointer my-0.5',
+                      sortSelected === option.value && 'bg-main-view-fg/5'
+                    )}
+                    key={option.value}
+                    onClick={() => setSortSelected(option.value)}
+                  >
+                    {option.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </HeaderPage>
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
             {loading ? (
