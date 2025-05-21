@@ -294,7 +294,7 @@ function Hub() {
                       </div>
                       {expandedModels[model.id] && model.models.length > 0 && (
                         <div className="mt-5">
-                          {model.models.slice(1).map((variant) => (
+                          {model.models.map((variant) => (
                             <CardItem
                               key={variant.id}
                               title={variant.id}
