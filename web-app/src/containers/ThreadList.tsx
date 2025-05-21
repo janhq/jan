@@ -80,7 +80,13 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     }
   }
 
-  const [title, setTitle] = useState(thread.title || 'New Thread')
+  const plainTitleForRename = useMemo(() => {
+    // Basic HTML stripping for simple span tags.
+    // If thread.title is undefined or null, treat as empty string before replace.
+    return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '');
+  }, [thread.title]);
+
+  const [title, setTitle] = useState(plainTitleForRename || 'New Thread');
 
   return (
     <div
@@ -96,9 +102,10 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
       )}
     >
       <div className="py-1 pr-2 truncate">
-        <span className="text-left-panel-fg/90">
-          {thread.title || 'New Thread'}
-        </span>
+        <span
+          className="text-left-panel-fg/90"
+          dangerouslySetInnerHTML={{ __html: thread.title || 'New Thread' }}
+        />
       </div>
       <div className="flex items-center">
         <DropdownMenu
@@ -141,7 +148,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
               onOpenChange={(open) => {
                 if (!open) {
                   setOpenDropdown(false)
-                  setTitle(thread.title)
+                  setTitle(plainTitleForRename || 'New Thread');
                 }
               }}
             >
