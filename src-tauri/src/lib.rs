@@ -123,7 +123,7 @@ async fn update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
         let mut downloaded = 0;
 
         // alternatively we could also call update.download() and update.install() separately
-        log::info!("Has update");
+        log::info!("Has update {} {} {}", update.version, update.current_version, update.download_url);;
         update
             .download_and_install(
                 |chunk_length, content_length| {
@@ -139,7 +139,7 @@ async fn update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
         log::info!("update installed");
         app.restart();
     } else {
-        log::info!("Cannot parse");
+        log::info!("Cannot parse or update is not available");
     }
 
     Ok(())
