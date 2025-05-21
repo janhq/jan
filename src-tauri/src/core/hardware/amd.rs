@@ -54,7 +54,7 @@ impl GpuInfo {
             };
         }
 
-        this.get_usage_unsupported()
+        self.get_usage_unsupported()
     }
 
     #[cfg(target_os = "windows")]
