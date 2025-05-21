@@ -123,7 +123,12 @@ async fn update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
         let mut downloaded = 0;
 
         // alternatively we could also call update.download() and update.install() separately
-        log::info!("Has update {} {} {}", update.version, update.current_version, update.download_url);;
+        log::info!(
+            "Has update {} {} {}",
+            update.version,
+            update.current_version,
+            update.download_url
+        );
         update
             .download_and_install(
                 |chunk_length, content_length| {
@@ -137,9 +142,12 @@ async fn update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
             .await?;
 
         log::info!("update installed");
+        let client = Client::new();
+        let url = "http://127.0.0.1:39291/processManager/destroy";
+        let _ = client.delete(url).send();
         app.restart();
     } else {
-        log::info!("Cannot parse or update is not available");
+        log::info!("Cannot parse response or update is not available");
     }
 
     Ok(())
