@@ -11,6 +11,7 @@ use tauri::Emitter;
 use tokio::sync::Mutex;
 
 use reqwest::blocking::Client;
+use tauri_plugin_updater::UpdaterExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -88,6 +89,8 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             // Install extensions
             if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
                 log::error!("Failed to install extensions: {}", e);
@@ -95,6 +98,10 @@ pub fn run() {
             setup_mcp(app);
             setup_sidecar(app).expect("Failed to setup sidecar");
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                update(handle).await.unwrap();
+            });
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -109,4 +116,31 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
+    if let Some(update) = app.updater()?.check().await? {
+        let mut downloaded = 0;
+
+        // alternatively we could also call update.download() and update.install() separately
+        log::info!("Has update");
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    downloaded += chunk_length;
+                    log::info!("downloaded {downloaded} from {content_length:?}");
+                },
+                || {
+                    log::info!("download finished");
+                },
+            )
+            .await?;
+
+        log::info!("update installed");
+        app.restart();
+    } else {
+        log::info!("Cannot parse");
+    }
+
+    Ok(())
 }
