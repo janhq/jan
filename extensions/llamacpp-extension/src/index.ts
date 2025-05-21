@@ -62,6 +62,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
 
+  private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
   private activeRequests: Map<string, AbortController> = new Map()
@@ -69,6 +70,8 @@ export default class llamacpp_extension extends AIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
     this.registerSettings(SETTINGS)
+
+    this.downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
 
     // Initialize models base path - assuming this would be retrieved from settings
     this.modelsBasePath = await joinPath([
@@ -83,7 +86,24 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async pull(opts: pullOptions): Promise<pullResult> {
-    throw new Error('method not implemented yet')
+    const modelId = opts.modelId
+    const taskId = `${this.provider}:${modelId}`  // prepand provider name to avoid name collision
+    let parts = modelId.split(":")
+
+    // cortexso format
+    if (parts.length == 2) {
+      const modelName = parts[0]
+      const branch = parts[1]
+      const saveDir = `models/cortex.so/${modelName}/${branch}`
+      await this.downloadManager.downloadHfRepo(`cortexso/${modelName}`, saveDir, taskId, branch)
+    } else if (parts.length == 3) {
+      const author = parts[0]
+      const modelName = parts[1]
+      const file = parts[2]
+      const url = `https://huggingface.co/${author}/${modelName}/resolve/main/${file}`
+      const savePath = `models/huggingface.co/${author}/${modelName}/${file}`
+      await this.downloadManager.downloadFile(url, savePath, taskId)
+    }
   }
 
   override async load(opts: loadOptions): Promise<sessionInfo> {
@@ -347,7 +367,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async abortPull(opts: abortPullOptions): Promise<abortPullResult> {
-    throw new Error('method not implemented yet')
+    // prepand provider name to avoid name collision
+    const taskId = `${this.provider}:${opts.modelId}`
+    await this.downloadManager.cancelDownload(taskId)
   }
 
   // Optional method for direct client access
