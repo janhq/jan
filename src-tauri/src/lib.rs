@@ -98,10 +98,11 @@ pub fn run() {
             setup_mcp(app);
             setup_sidecar(app).expect("Failed to setup sidecar");
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                update(handle).await.unwrap();
-            });
+            // TODO(any) need to wire up with frontend 
+            // let handle = app.handle().clone();
+            // tauri::async_runtime::spawn(async move {
+            //     update(handle).await.unwrap();
+            // });
             Ok(())
         })
         .on_window_event(|window, event| match event {
