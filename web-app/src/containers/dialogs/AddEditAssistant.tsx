@@ -250,45 +250,6 @@ export default function AddEditAssistant({
             </div>
           </div>
 
-          {/* <div className="space-y-2">
-            <label className="text-sm mb-2 inline-block">Emoji Avatar</label>
-            <div className="flex items-center gap-2">
-              <div className="border rounded-md p-2 w-12 h-12 flex items-center justify-center text-2xl">
-                {avatar || '😊'}
-              </div>
-              <div className="relative">
-                <Button
-                  onClick={() =>
-                    document
-                      .getElementById('emoji-picker-container')
-                      ?.classList.toggle('hidden')
-                  }
-                >
-                  Choose Emoji
-                </Button>
-                <div
-                  id="emoji-picker-container"
-                  className="absolute z-50 mt-1 hidden"
-                >
-                  <EmojiPicker
-                    open={true}
-                    theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
-                    autoFocusSearch
-                    previewConfig={{ showPreview: false }}
-                    onEmojiClick={(emojiData: EmojiClickData) => {
-                      setAvatar(emojiData.emoji)
-                      document
-                        .getElementById('emoji-picker-container')
-                        ?.classList.add('hidden')
-                    }}
-                    width={300}
-                    height={400}
-                  />
-                </div>
-              </div>
-            </div>
-          </div> */}
-
           <div className="space-y-2">
             <label className="text-sm mb-2 inline-block">
               Description (optional)
