@@ -47,6 +47,7 @@ pub fn run() {
             core::cmd::stop_server,
             core::cmd::read_logs,
             core::cmd::handle_app_update,
+            core::cmd::change_app_data_folder,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,

@@ -1,23 +1,22 @@
-import { ExtensionManager } from '@/lib/extension'
+export {}
 
-type Language = 'en' | 'id' | 'vn'
 declare module 'react-syntax-highlighter-virtualized-renderer'
 
 type AppCore = {
   api: APIs
   extensionManager: ExtensionManager | undefined
 }
+
 declare global {
+  declare const IS_TAURI: boolean
+  declare const IS_MACOS: boolean
+  declare const IS_WINDOWS: boolean
+  declare const IS_LINUX: boolean
+  declare const IS_IOS: boolean
+  declare const IS_ANDROID: boolean
+  declare const PLATFORM: string
+  declare const VERSION: string
   interface Window {
     core: AppCore | undefined
   }
-
-  let IS_TAURI: boolean
-  let IS_MACOS: boolean
-  let IS_WINDOWS: boolean
-  let IS_LINUX: boolean
-  let IS_IOS: boolean
-  let IS_ANDROID: boolean
-  let PLATFORM: string
-  let VERSION: string
 }

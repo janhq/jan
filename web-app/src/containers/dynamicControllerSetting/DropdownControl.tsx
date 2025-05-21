@@ -8,8 +8,8 @@ import {
 // Dropdown component
 type DropdownControlProps = {
   value: string
-  options?: Array<{ value: string; name: string }>
-  onChange: (value: string) => void
+  options?: Array<{ value: number | string; name: string }>
+  onChange: (value: number | string) => void
 }
 
 export function DropdownControl({

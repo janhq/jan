@@ -5,7 +5,7 @@ type ControllerProps = {
   value?: string | boolean | number
   placeholder?: string
   type?: string
-  options?: Array<{ value: string; name: string }>
+  options?: Array<{ value: number | string; name: string }>
   input_actions?: string[]
 }
 
@@ -16,7 +16,7 @@ type ProviderSetting = {
   key: string
   title: string
   description: string
-  controller_type: 'input' | 'checkbox' | 'dropdown' | 'slider'
+  controller_type: 'input' | 'checkbox' | 'dropdown' | 'slider' | string
   controller_props: ControllerProps
 }
 
@@ -31,7 +31,7 @@ type Model = {
   description?: string
   format?: string
   capabilities?: string[]
-  settings?: Record<string, unknown>
+  settings?: Record<string, ProviderSetting>
 }
 
 /**

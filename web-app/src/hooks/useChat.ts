@@ -37,7 +37,7 @@ export const useChat = () => {
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
   }, [selectedProvider, getProviderByName])
-  
+
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()
     if (!currentThread) {
@@ -78,7 +78,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(provider.provider, selectedModel.id).catch(
+          await startModel(provider, selectedModel.id).catch(
             console.error
           )
           updateLoadingModel(false)

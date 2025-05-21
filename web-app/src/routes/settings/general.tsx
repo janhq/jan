@@ -21,7 +21,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import { factoryReset, getJanDataFolder } from '@/services/app'
+import {
+  factoryReset,
+  getJanDataFolder,
+  relocateJanDataFolder,
+} from '@/services/app'
 import { IconFolder } from '@tabler/icons-react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -115,6 +119,8 @@ function General() {
                       if (selectedPath === janDataFolder) return
                       if (selectedPath !== null) {
                         setJanDataFolder(selectedPath)
+                        await relocateJanDataFolder(selectedPath)
+                        window.core?.api?.relaunch()
                         // TODO: we need function to move everything into new folder selectedPath
                         // eg like this
                         // await window.core?.api?.moveDataFolder(selectedPath)

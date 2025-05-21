@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { useTranslation } from 'react-i18next'
 import { Input } from '@/components/ui/input'
 import { EyeOff, Eye } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { configurePullOptions } from '@/services/models'
 
@@ -42,13 +42,36 @@ function HTTPSProxy() {
     setProxyUrl,
   } = useProxyConfig()
 
-  useEffect(() => {
-    if (proxyUrl && !proxyEnabled) {
-      setProxyEnabled(true)
-    } else if (!proxyUrl && proxyEnabled) {
-      setProxyEnabled(false)
-    }
-  }, [proxyEnabled, proxyUrl, setProxyEnabled])
+  const toggleProxy = useCallback(
+    (checked: boolean) => {
+      setProxyEnabled(checked)
+      configurePullOptions({
+        proxyUrl,
+        proxyEnabled: checked,
+        proxyUsername,
+        proxyPassword,
+        proxyIgnoreSSL,
+        verifyProxySSL,
+        verifyProxyHostSSL,
+        verifyPeerSSL,
+        verifyHostSSL,
+        noProxy,
+      })
+    },
+    [
+      noProxy,
+      proxyEnabled,
+      proxyIgnoreSSL,
+      proxyPassword,
+      proxyUrl,
+      proxyUsername,
+      setProxyEnabled,
+      verifyHostSSL,
+      verifyPeerSSL,
+      verifyProxyHostSSL,
+      verifyProxySSL,
+    ]
+  )
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -89,7 +112,19 @@ function HTTPSProxy() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* Proxy Configuration */}
-            <Card title="Proxy Configuration">
+            <Card
+              header={
+                <div className="flex items-center justify-between">
+                  <h1 className="text-main-view-fg font-medium text-base mb-2">
+                    Proxy
+                  </h1>
+                  <Switch
+                    checked={proxyEnabled}
+                    onCheckedChange={toggleProxy}
+                  />
+                </div>
+              }
+            >
               <CardItem
                 title="Proxy URL"
                 className="block"

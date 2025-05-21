@@ -3,11 +3,9 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 
 type LeftPanelStoreState = {
-  // @ts-ignore
   currentLanguage: Language
   spellCheckChatInput: boolean
   setSpellCheckChatInput: (value: boolean) => void
-  // @ts-ignore
   setCurrentLanguage: (value: Language) => void
 }
 
