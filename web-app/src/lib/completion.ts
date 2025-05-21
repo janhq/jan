@@ -166,7 +166,7 @@ export const startModel = async (
       settings: Object.fromEntries(
         Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
           key,
-          value.controller_props.value, // assuming each setting is { value: ... }
+          value.controller_props?.value, // assuming each setting is { value: ... }
         ])
       ),
     })
