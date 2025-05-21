@@ -6,7 +6,7 @@ import { parseLogLine, readLogs } from '@/services/app'
 import { listen } from '@tauri-apps/api/event'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute(route.localApiServerlogs as any)({
+export const Route = createFileRoute(route.appLogs as any)({
   component: LogsViewer,
 })
 
