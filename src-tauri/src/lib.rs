@@ -11,7 +11,6 @@ use tauri::Emitter;
 use tokio::sync::Mutex;
 
 use reqwest::blocking::Client;
-use tauri_plugin_updater::UpdaterExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -47,6 +46,7 @@ pub fn run() {
             core::cmd::start_server,
             core::cmd::stop_server,
             core::cmd::read_logs,
+            core::cmd::handle_app_update,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
@@ -101,7 +101,7 @@ pub fn run() {
             // TODO(any) need to wire up with frontend 
             // let handle = app.handle().clone();
             // tauri::async_runtime::spawn(async move {
-            //     update(handle).await.unwrap();
+            //     handle_app_update(handle).await.unwrap();
             // });
             Ok(())
         })
@@ -117,39 +117,4 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-async fn update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
-    if let Some(update) = app.updater()?.check().await? {
-        let mut downloaded = 0;
-
-        // alternatively we could also call update.download() and update.install() separately
-        log::info!(
-            "Has update {} {} {}",
-            update.version,
-            update.current_version,
-            update.download_url
-        );
-        update
-            .download_and_install(
-                |chunk_length, content_length| {
-                    downloaded += chunk_length;
-                    log::info!("downloaded {downloaded} from {content_length:?}");
-                },
-                || {
-                    log::info!("download finished");
-                },
-            )
-            .await?;
-
-        log::info!("update installed");
-        let client = Client::new();
-        let url = "http://127.0.0.1:39291/processManager/destroy";
-        let _ = client.delete(url).send();
-        app.restart();
-    } else {
-        log::info!("Cannot parse response or update is not available");
-    }
-
-    Ok(())
 }

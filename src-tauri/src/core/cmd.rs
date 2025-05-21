@@ -1,6 +1,8 @@
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_updater::UpdaterExt;
 
 use super::{server, setup, state::AppState};
 
@@ -316,4 +318,40 @@ pub async fn read_logs(app: AppHandle) -> Result<String, String> {
     } else {
         Err(format!("Log file not found"))
     }
+}
+
+#[tauri::command]
+pub async fn handle_app_update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
+    if let Some(update) = app.updater()?.check().await? {
+        let mut downloaded = 0;
+
+        // alternatively we could also call update.download() and update.install() separately
+        log::info!(
+            "Has update {} {} {}",
+            update.version,
+            update.current_version,
+            update.download_url
+        );
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    downloaded += chunk_length;
+                    log::info!("downloaded {downloaded} from {content_length:?}");
+                },
+                || {
+                    log::info!("download finished");
+                },
+            )
+            .await?;
+
+        log::info!("update installed");
+        let client = Client::new();
+        let url = "http://127.0.0.1:39291/processManager/destroy";
+        let _ = client.delete(url).send();
+        app.restart();
+    } else {
+        log::info!("Cannot parse response or update is not available");
+    }
+
+    Ok(())
 }
