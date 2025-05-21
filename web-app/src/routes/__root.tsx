@@ -18,9 +18,6 @@ export const Route = createRootRoute({
 const AppLayout = () => {
   return (
     <Fragment>
-      <ExtensionProvider>
-        <DataProvider />
-      </ExtensionProvider>
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
@@ -62,13 +59,17 @@ const LogsLayout = () => {
 function RootLayout() {
   const router = useRouterState()
   const isLocalAPIServerLogsRoute =
-    router.location.pathname === route.localApiServerlogs
+    router.location.pathname === route.localApiServerlogs ||
+    router.location.pathname === route.systemMonitor
 
   return (
     <Fragment>
       <ThemeProvider />
       <AppearanceProvider />
       <ToasterProvider />
+      <ExtensionProvider>
+        <DataProvider />
+      </ExtensionProvider>
       {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
       {/* <TanStackRouterDevtools position="bottom-right" /> */}
     </Fragment>

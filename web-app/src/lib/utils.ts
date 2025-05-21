@@ -1,4 +1,4 @@
-import { clsx, type ClassValue } from 'clsx'
+import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
 export function cn(...inputs: ClassValue[]) {
@@ -130,5 +130,15 @@ export const toGigabytes = (
     )
   } else {
     return input + (options?.hideUnit ? '' : 'B')
+  }
+}
+
+export function formatMegaBytes(mb: number) {
+  const tb = mb / (1024 * 1024)
+  if (tb >= 1) {
+    return `${tb.toFixed(2)} TB`
+  } else {
+    const gb = mb / 1024
+    return `${gb.toFixed(2)} GB`
   }
 }

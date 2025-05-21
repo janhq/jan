@@ -162,7 +162,7 @@ export const useThreads = create<ThreadState>()(
           id: ulid(),
           title: title ?? 'New Thread',
           model,
-          order: 1,
+          // order: 1,
           updated: Date.now() / 1000,
           assistants: assistant ? [assistant] : [],
         }
