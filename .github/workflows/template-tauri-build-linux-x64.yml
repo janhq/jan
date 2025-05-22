@@ -146,6 +146,7 @@ jobs:
            wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O ./appimagetool
           chmod +x ./appimagetool
           if [ "${{ inputs.channel }}" != "stable" ]; then
+            ls ./src-tauri/target/release/bundle/appimage/
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/bin/bun
             cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/engines
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir $(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage)
