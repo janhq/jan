@@ -99,7 +99,9 @@ export const useChat = () => {
         while (
           !isCompleted &&
           !abortController.signal.aborted &&
-          attempts < 5
+
+          // TODO: Max attempts can be set in the provider settings later
+          attempts < 10
         ) {
           attempts += 1
           const completion = await sendCompletion(
