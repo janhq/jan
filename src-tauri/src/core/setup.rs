@@ -228,7 +228,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         sidecar_command = sidecar_command.env("PATH", {
-            let app_data_dir = app.app_handle().path().app_data_dir().unwrap();
+            let app_data_dir = get_jan_data_folder_path(app.handle().clone());
             let dest = app_data_dir.to_str().unwrap();
             let path = std::env::var("PATH").unwrap_or_default();
             format!("{}{}{}", path, std::path::MAIN_SEPARATOR, dest)
@@ -238,7 +238,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         sidecar_command = sidecar_command.env("LD_LIBRARY_PATH", {
-            let app_data_dir = app.app_handle().path().app_data_dir().unwrap();
+            let app_data_dir = get_jan_data_folder_path(app.handle().clone());
             let dest = app_data_dir.to_str().unwrap();
             let ld_library_path = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
             format!("{}{}{}", ld_library_path, std::path::MAIN_SEPARATOR, dest)
