@@ -244,7 +244,7 @@ export const stopModel = async (model: string, provider?: string) => {
       id: model,
     })
   } catch (error) {
-    console.error('Failed to get active models:', error)
+    console.error('Failed to stop model:', error)
     return []
   }
 }
