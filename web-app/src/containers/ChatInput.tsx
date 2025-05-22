@@ -272,7 +272,7 @@ const ChatInput = ({
               <Button
                 variant="destructive"
                 size="icon"
-                onClick={() => stopStreaming(streamingContent.thread_id)}
+                onClick={() => stopStreaming(currentThreadId ?? streamingContent.thread_id)}
               >
                 <IconPlayerStopFilled />
               </Button>

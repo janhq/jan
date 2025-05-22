@@ -33,7 +33,7 @@ export const useChat = () => {
   const { getCurrentThread: retrieveThread, createThread } = useThreads()
   const { updateStreamingContent, updateLoadingModel, setAbortController } =
     useAppState()
-  const { addMessage } = useMessages()
+  const { getMessages, addMessage } = useMessages()
   const router = useRouter()
 
   const provider = useMemo(() => {
@@ -73,6 +73,7 @@ export const useChat = () => {
 
       resetTokenSpeed()
       if (!activeThread || !provider) return
+      const messages = getMessages(activeThread.id)
 
       updateStreamingContent(emptyThreadContent)
       addMessage(newUserThreadContent(activeThread.id, message))
@@ -84,7 +85,7 @@ export const useChat = () => {
           updateLoadingModel(false)
         }
 
-        const builder = new CompletionMessagesBuilder()
+        const builder = new CompletionMessagesBuilder(messages)
         if (currentAssistant?.instructions?.length > 0)
           builder.addSystemMessage(currentAssistant?.instructions || '')
         // REMARK: Would it possible to not attach the entire message history to the request?
@@ -94,7 +95,7 @@ export const useChat = () => {
         let isCompleted = false
         const abortController = new AbortController()
         setAbortController(activeThread.id, abortController)
-        while (!isCompleted) {
+        while (!isCompleted || abortController.signal.aborted) {
           const completion = await sendCompletion(
             activeThread,
             provider,
@@ -163,6 +164,7 @@ export const useChat = () => {
       getCurrentThread,
       resetTokenSpeed,
       provider,
+      getMessages,
       updateStreamingContent,
       addMessage,
       setPrompt,
