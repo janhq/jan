@@ -96,10 +96,8 @@ pub fn run() {
             if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
                 log::error!("Failed to install extensions: {}", e);
             }
-            setup_mcp(app);
-            log::info!("Starting to setup sidecar");
+            setup_mcp(app);            
             setup_sidecar(app).expect("Failed to setup sidecar");
-            log::info!("Sidecar setup completed successfully");
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
             // TODO(any) need to wire up with frontend 
             // let handle = app.handle().clone();
