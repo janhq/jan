@@ -132,37 +132,44 @@ function SystemMonitor() {
         <h2 className="text-base font-semibold text-main-view-fg mb-4">
           Running Models
         </h2>
-        <div className="flex flex-col gap-4">
-          {activeModels.map((model) => (
-            <div className="bg-main-view-fg/3 rounded-lg p-4" key={model.id}>
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold text-main-view-fg">
-                  {model.id}
-                </span>
-              </div>
-              <div className="flex flex-col gap-2 mt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-main-view-fg/70">Provider</span>
-                  <span className="text-main-view-fg">llama.cpp</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-main-view-fg/70">Uptime</span>
-                  <span className="text-main-view-fg">
-                    {formatDuration(model.start_time)}
+        {activeModels.length === 0 && (
+          <div className="text-center text-main-view-fg/50 py-4">
+            No models are currently running
+          </div>
+        )}
+        {activeModels.length > 0 && (
+          <div className="flex flex-col gap-4">
+            {activeModels.map((model) => (
+              <div className="bg-main-view-fg/3 rounded-lg p-4" key={model.id}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-semibold text-main-view-fg">
+                    {model.id}
                   </span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-main-view-fg/70">Status</span>
-                  <span className="text-main-view-fg">
-                    <div className="bg-green-500/20 px-1 font-bold py-0.5 rounded text-green-700 text-xs">
-                      Running
-                    </div>
-                  </span>
+                <div className="flex flex-col gap-2 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-main-view-fg/70">Provider</span>
+                    <span className="text-main-view-fg">llama.cpp</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-main-view-fg/70">Uptime</span>
+                    <span className="text-main-view-fg">
+                      {formatDuration(model.start_time)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-main-view-fg/70">Status</span>
+                    <span className="text-main-view-fg">
+                      <div className="bg-green-500/20 px-1 font-bold py-0.5 rounded text-green-700 text-xs">
+                        Running
+                      </div>
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Active GPUs Section */}
