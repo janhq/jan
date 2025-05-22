@@ -154,9 +154,10 @@ export const useChat = () => {
           `Error sending message: ${error && typeof error === 'object' && 'message' in error ? error.message : error}`
         )
         console.error('Error sending message:', error)
+      } finally {
+        updateLoadingModel(false)
+        updateStreamingContent(undefined)
       }
-      updateLoadingModel(false)
-      updateStreamingContent(undefined)
     },
     [
       getCurrentThread,
