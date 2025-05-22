@@ -259,7 +259,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                     let ld_path_env = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
                     format!("{}{}{}", ld_path_env, std::path::MAIN_SEPARATOR, dest)
                 });
-            }            
+            }
             cmd
         };
 
