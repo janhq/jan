@@ -137,6 +137,12 @@ function MCPServers() {
 
   useEffect(() => {
     getConnectedServers().then(setConnectedServers)
+
+    const intervalId = setInterval(() => {
+      getConnectedServers().then(setConnectedServers)
+    }, 5000)
+
+    return () => clearInterval(intervalId)
   }, [setConnectedServers])
 
   return (

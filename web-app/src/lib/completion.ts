@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core'
 import {
   ChatCompletionMessageParam,
   ChatCompletionTool,
+  CompletionResponse,
   CompletionResponseChunk,
   models,
   StreamCompletionResponse,
@@ -111,8 +112,9 @@ export const sendCompletion = async (
   provider: ModelProvider,
   messages: ChatCompletionMessageParam[],
   abortController: AbortController,
-  tools: MCPTool[] = []
-): Promise<StreamCompletionResponse | undefined> => {
+  tools: MCPTool[] = [],
+  stream: boolean = true
+): Promise<StreamCompletionResponse | CompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 
   let providerName = provider.provider as unknown as keyof typeof models
@@ -127,20 +129,35 @@ export const sendCompletion = async (
   })
 
   // TODO: Add message history
-  const completion = await tokenJS.chat.completions.create(
-    {
-      stream: true,
-      provider: providerName,
-      model: thread.model?.id,
-      messages,
-      tools: normalizeTools(tools),
-      tool_choice: tools.length ? 'auto' : undefined,
-    },
-    {
-      signal: abortController.signal,
-    }
-  )
+  const completion = stream
+    ? await tokenJS.chat.completions.create(
+        {
+          stream: true,
+          provider: providerName,
+          model: thread.model?.id,
+          messages,
+          tools: normalizeTools(tools),
+          tool_choice: tools.length ? 'auto' : undefined,
+        },
+        {
+          signal: abortController.signal,
+        }
+      )
+    : await tokenJS.chat.completions.create({
+        stream: false,
+        provider: providerName,
+        model: thread.model?.id,
+        messages,
+        tools: normalizeTools(tools),
+        tool_choice: tools.length ? 'auto' : undefined,
+      })
   return completion
+}
+
+export const isCompletionResponse = (
+  response: StreamCompletionResponse | CompletionResponse
+): response is CompletionResponse => {
+  return 'choices' in response
 }
 
 /**

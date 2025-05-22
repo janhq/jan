@@ -10,6 +10,7 @@ import { route } from '@/constants/routes'
 import {
   emptyThreadContent,
   extractToolCall,
+  isCompletionResponse,
   newAssistantThreadContent,
   newUserThreadContent,
   postMessageProcessing,
@@ -19,6 +20,7 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
+import { toast } from 'sonner'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -78,9 +80,7 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(provider, selectedModel.id).catch(
-            console.error
-          )
+          await startModel(provider, selectedModel.id).catch(console.error)
           updateLoadingModel(false)
         }
 
@@ -100,29 +100,38 @@ export const useChat = () => {
             provider,
             builder.getMessages(),
             abortController,
-            tools
+            tools,
+            // TODO: replace it with according provider setting later on
+            selectedProvider === 'llama.cpp' && tools.length > 0 ? false : true
           )
 
           if (!completion) throw new Error('No completion received')
           let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
-          for await (const part of completion) {
-            const delta = part.choices[0]?.delta?.content || ''
-            if (part.choices[0]?.delta?.tool_calls) {
-              extractToolCall(part, currentCall, toolCalls)
+          if (isCompletionResponse(completion)) {
+            accumulatedText = completion.choices[0]?.message?.content || ''
+            if (completion.choices[0]?.message?.tool_calls) {
+              toolCalls.push(...completion.choices[0].message.tool_calls)
             }
-            if (delta) {
-              accumulatedText += delta
-              // Create a new object each time to avoid reference issues
-              // Use a timeout to prevent React from batching updates too quickly
-              const currentContent = newAssistantThreadContent(
-                activeThread.id,
-                accumulatedText
-              )
-              updateStreamingContent(currentContent)
-              updateTokenSpeed(currentContent)
-              await new Promise((resolve) => setTimeout(resolve, 0))
+          } else {
+            for await (const part of completion) {
+              const delta = part.choices[0]?.delta?.content || ''
+              if (part.choices[0]?.delta?.tool_calls) {
+                extractToolCall(part, currentCall, toolCalls)
+              }
+              if (delta) {
+                accumulatedText += delta
+                // Create a new object each time to avoid reference issues
+                // Use a timeout to prevent React from batching updates too quickly
+                const currentContent = newAssistantThreadContent(
+                  activeThread.id,
+                  accumulatedText
+                )
+                updateStreamingContent(currentContent)
+                updateTokenSpeed(currentContent)
+                await new Promise((resolve) => setTimeout(resolve, 0))
+              }
             }
           }
           // Create a final content object for adding to the thread
@@ -141,9 +150,14 @@ export const useChat = () => {
           isCompleted = !toolCalls.length
         }
       } catch (error) {
+        toast.error(
+          `Error sending message: ${error && typeof error === 'object' && 'message' in error ? error.message : error}`
+        )
         console.error('Error sending message:', error)
+      } finally {
+        updateLoadingModel(false)
+        updateStreamingContent(undefined)
       }
-      updateStreamingContent(undefined)
     },
     [
       getCurrentThread,
@@ -157,6 +171,7 @@ export const useChat = () => {
       setAbortController,
       updateLoadingModel,
       tools,
+      selectedProvider,
       updateTokenSpeed,
     ]
   )

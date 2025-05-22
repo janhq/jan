@@ -116,10 +116,13 @@ export const ThreadContent = memo(
       // Only regenerate assistant message is allowed
       deleteMessage(item.thread_id, item.id)
       const threadMessages = getMessages(item.thread_id)
-      const lastMessage = threadMessages[threadMessages.length - 1]
-      if (!lastMessage) return
-      deleteMessage(lastMessage.thread_id, lastMessage.id)
-      sendMessage(lastMessage.content?.[0]?.text?.value || '')
+      let toSendMessage = threadMessages.pop()
+      while (toSendMessage && toSendMessage?.role !== 'user') {
+        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
+        toSendMessage = threadMessages.pop()
+      }
+      if (toSendMessage)
+        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
     }, [deleteMessage, getMessages, item, sendMessage])
 
     const editMessage = useCallback(
