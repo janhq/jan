@@ -20,6 +20,7 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
+import { toast } from 'sonner'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -149,8 +150,10 @@ export const useChat = () => {
           isCompleted = !toolCalls.length
         }
       } catch (error) {
+        toast.error(`Error sending message: ${error}`)
         console.error('Error sending message:', error)
       }
+      updateLoadingModel(false)
       updateStreamingContent(undefined)
     },
     [
