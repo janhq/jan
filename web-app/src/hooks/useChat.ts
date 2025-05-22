@@ -74,14 +74,17 @@ export const useChat = () => {
       resetTokenSpeed()
       if (!activeThread || !provider) return
       const messages = getMessages(activeThread.id)
-
+      const abortController = new AbortController()
+      setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       addMessage(newUserThreadContent(activeThread.id, message))
       setPrompt('')
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(provider, selectedModel.id).catch(console.error)
+          await startModel(provider, selectedModel.id, abortController).catch(
+            console.error
+          )
           updateLoadingModel(false)
         }
 
@@ -93,13 +96,11 @@ export const useChat = () => {
         builder.addUserMessage(message)
 
         let isCompleted = false
-        const abortController = new AbortController()
-        setAbortController(activeThread.id, abortController)
+
         let attempts = 0
         while (
           !isCompleted &&
           !abortController.signal.aborted &&
-
           // TODO: Max attempts can be set in the provider settings later
           attempts < 10
         ) {
