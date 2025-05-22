@@ -94,4 +94,12 @@
     @apply font-bold;
     color: color-mix(in srgb, currentColor 80%, white 20%);
   }
+  .epr-main {
+    input {
+      @apply border !border-main-view-fg/10 !h-9 !text-sm !bg-main-view;
+    }
+    input:focus {
+      @apply !bg-main-view;
+    }
+  }
 }

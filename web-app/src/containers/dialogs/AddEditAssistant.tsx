@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IconPlus, IconTrash, IconChevronDown } from '@tabler/icons-react'
+import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
 
 import { Textarea } from '@/components/ui/textarea'
 
@@ -18,6 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useTheme } from '@/hooks/useTheme'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -43,9 +45,32 @@ export default function AddEditAssistant({
   const [instructions, setInstructions] = useState(
     initialData?.instructions || ''
   )
+  const { isDark } = useTheme()
   const [paramsKeys, setParamsKeys] = useState<string[]>([''])
   const [paramsValues, setParamsValues] = useState<unknown[]>([''])
   const [paramsTypes, setParamsTypes] = useState<string[]>(['string'])
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const emojiPickerRef = useRef<HTMLDivElement>(null)
+
+  // Handle click outside emoji picker
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node)
+      ) {
+        setShowEmojiPicker(false)
+      }
+    }
+
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showEmojiPicker])
 
   // Reset form when modal opens/closes or editing key changes
   useEffect(() => {
@@ -189,25 +214,40 @@ export default function AddEditAssistant({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
-          <div className="space-y-2">
-            <label className="text-sm mb-2 inline-block">Name</label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Enter name"
-              autoFocus
-            />
-          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <label className="text-sm mb-2 inline-block">Emoji</label>
+              <div
+                className="border rounded-sm p-2 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
+                onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              >
+                {avatar || '😊'}
+              </div>
+              <div className="relative" ref={emojiPickerRef}>
+                <EmojiPicker
+                  open={showEmojiPicker}
+                  theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
+                  className="!absolute !z-40 !overflow-y-auto top-2"
+                  height={350}
+                  lazyLoadEmojis
+                  previewConfig={{ showPreview: false }}
+                  onEmojiClick={(emojiData: EmojiClickData) => {
+                    setAvatar(emojiData.emoji)
+                    setShowEmojiPicker(false)
+                  }}
+                />
+              </div>
+            </div>
 
-          <div className="space-y-2">
-            <label className="text-sm mb-2 inline-block">
-              Avatar (optional)
-            </label>
-            <Input
-              value={avatar || ''}
-              onChange={(e) => setAvatar(e.target.value)}
-              placeholder="Enter avatar URL"
-            />
+            <div className="space-y-2 w-full">
+              <label className="text-sm mb-2 inline-block">Name</label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Enter name"
+                autoFocus
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

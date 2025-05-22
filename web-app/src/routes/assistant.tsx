@@ -67,6 +67,9 @@ function Assistant() {
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-base font-medium text-main-view-fg/80">
+                  {assistant.avatar && (
+                    <span className="mr-1">{assistant.avatar}</span>
+                  )}
                   {assistant.name}
                 </h3>
                 <div className="flex items-center gap-0.5">
