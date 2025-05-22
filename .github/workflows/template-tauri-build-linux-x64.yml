@@ -149,6 +149,7 @@ jobs:
             ls ./src-tauri/target/release/bundle/appimage/
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/bin/bun
             mkdir -p ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/engines
+            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/
             cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir/usr/lib/Jan-${{ inputs.channel }}/binaries/engines
             APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep .AppImage | head -1)
             echo $APP_IMAGE
@@ -157,6 +158,7 @@ jobs:
           else
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
             mkdir -p ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/engines
+            cp -f ./src-tauri/binaries/*.so* ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/
             cp -rf ./src-tauri/binaries/engines ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/engines
             APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
             echo $APP_IMAGE
