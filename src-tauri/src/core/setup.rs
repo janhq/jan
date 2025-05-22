@@ -3,13 +3,15 @@ use std::{
     fs::{self, File},
     io::Read,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use tar::Archive;
 use tauri::{App, Emitter, Listener, Manager};
-use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
+use tokio::sync::Mutex; // Using tokio::sync::Mutex
+use tokio::time::{sleep, Duration};
 
 // MCP
 use super::{
@@ -204,65 +206,194 @@ pub fn setup_mcp(app: &App) {
 }
 
 pub fn setup_sidecar(app: &App) -> Result<(), String> {
-    // Setup sidecar
-
-    let app_state = app.state::<AppState>();
-    let app_data_dir = get_jan_data_folder_path(app.handle().clone());
-    let mut sidecar_command = app.shell().sidecar("cortex-server").unwrap().args([
-        "--start-server",
-        "--port",
-        "39291",
-        "--config_file_path",
-        app_data_dir.join(".janrc").to_str().unwrap(),
-        "--data_folder_path",
-        app_data_dir.to_str().unwrap(),
-        "--cors",
-        "ON",
-        "--allowed_origins",
-        "http://localhost:3000,http://localhost:1420,tauri://localhost,http://tauri.localhost",
-        "config",
-        "--api_keys",
-        app_state.inner().app_token.as_deref().unwrap_or(""),
-    ]);
-
-    #[cfg(target_os = "windows")]
-    {
-        sidecar_command = sidecar_command.env("PATH", {
-            let app_data_dir = app.app_handle().path().app_data_dir().unwrap();
-            let dest = app_data_dir.to_str().unwrap();
-            let path = std::env::var("PATH").unwrap_or_default();
-            format!("{}{}{}", path, std::path::MAIN_SEPARATOR, dest)
-        });
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        sidecar_command = sidecar_command.env("LD_LIBRARY_PATH", {
-            let app_data_dir = app.app_handle().path().app_data_dir().unwrap();
-            let dest = app_data_dir.to_str().unwrap();
-            let ld_library_path = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
-            format!("{}{}{}", ld_library_path, std::path::MAIN_SEPARATOR, dest)
-        });
-    }
-
-    let (mut rx, _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
-    let child = Arc::new(Mutex::new(Some(_child)));
-    let child_clone = child.clone();
-
+    let app_handle = app.handle().clone();
     tauri::async_runtime::spawn(async move {
-        // read events such as stdout
-        while let Some(event) = rx.recv().await {
-            if let CommandEvent::Stdout(line_bytes) = event {
-                let line = String::from_utf8_lossy(&line_bytes);
-                log::info!("Outputs: {:?}", line)
-            }
-        }
-    });
+        const MAX_RESTARTS: u32 = 5;
+        const RESTART_DELAY_MS: u64 = 5000;
 
-    app.handle().listen("kill-sidecar", move |_| {
-        let mut child_guard = child_clone.lock().unwrap();
-        if let Some(actual_child) = child_guard.take() {
-            actual_child.kill().unwrap();
+        let app_state = app_handle.state::<AppState>();
+        let cortex_restart_count_state = app_state.cortex_restart_count.clone();
+        let app_data_dir = get_jan_data_folder_path(app_handle.clone());
+
+        let sidecar_command_builder = || {
+            let mut cmd = app_handle
+                .shell()
+                .sidecar("cortex-server")
+                .expect("Failed to get sidecar command")
+                .args([
+                    "--start-server",
+                    "--port",
+                    "39291",
+                    "--config_file_path",
+                    app_data_dir.join(".janrc").to_str().unwrap(),
+                    "--data_folder_path",
+                    app_data_dir.to_str().unwrap(),
+                    "--cors",
+                    "ON",
+                    "--allowed_origins",
+                    "http://localhost:3000,http://localhost:1420,tauri://localhost,http://tauri.localhost",
+                    "config",
+                    "--api_keys",
+                    app_state.inner().app_token.as_deref().unwrap_or(""),
+                ]);
+
+            #[cfg(target_os = "windows")]
+            {
+                cmd = cmd.env("PATH", {
+                    let current_app_data_dir = app_handle.path().app_data_dir().unwrap();
+                    let dest = current_app_data_dir.to_str().unwrap();
+                    let path_env = std::env::var("PATH").unwrap_or_default();
+                    format!("{}{}{}", path_env, std::path::MAIN_SEPARATOR, dest)
+                });
+            }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                cmd = cmd.env("LD_LIBRARY_PATH", {
+                    let current_app_data_dir = app_handle.path().app_data_dir().unwrap();
+                    let dest = current_app_data_dir.to_str().unwrap();
+                    let ld_path_env = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
+                    format!("{}{}{}", ld_path_env, std::path::MAIN_SEPARATOR, dest)
+                });
+            }
+            cmd
+        };
+
+        let child_process: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
+
+        let child_process_clone_for_kill = child_process.clone();
+        app_handle.listen("kill-sidecar", move |_event| {
+            let child_to_kill_arc = child_process_clone_for_kill.clone();
+            tauri::async_runtime::spawn(async move {
+                log::info!("Received kill-sidecar event (processing async).");
+                if let Some(child) = child_to_kill_arc.lock().await.take() {
+                    log::info!("Attempting to kill sidecar process...");
+                    if let Err(e) = child.kill() {
+                        log::error!("Failed to kill sidecar process: {}", e);
+                    } else {
+                        log::info!("Sidecar process killed successfully via event.");
+                    }
+                } else {
+                    log::warn!("Kill event received, but no active sidecar process found to kill.");
+                }
+            });
+        });
+
+        loop {
+            let current_restart_count = *cortex_restart_count_state.lock().await;
+            if current_restart_count >= MAX_RESTARTS {
+                log::error!(
+                    "Cortex server reached maximum restart attempts ({}). Giving up.",
+                    current_restart_count
+                );
+                if let Err(e) = app_handle.emit("cortex_max_restarts_reached", ()) {
+                    log::error!("Failed to emit cortex_max_restarts_reached event: {}", e);
+                }
+                break;
+            }
+
+            log::info!(
+                "Spawning cortex-server (Attempt {}/{})",
+                current_restart_count + 1,
+                MAX_RESTARTS
+            );
+
+            let current_command = sidecar_command_builder();
+            match current_command.spawn() {
+                Ok((mut rx, child_instance)) => {
+                    log::info!(
+                        "Cortex server spawned successfully. PID: {:?}",
+                        child_instance.pid()
+                    );
+                    *child_process.lock().await = Some(child_instance);
+
+                    {
+                        let mut count = cortex_restart_count_state.lock().await;
+                        if *count > 0 {
+                            log::info!(
+                                "Cortex server started successfully, resetting restart count from {} to 0.",
+                                *count
+                            );
+                            *count = 0;
+                        }
+                    }
+
+                    let mut process_terminated_unexpectedly = false;
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            CommandEvent::Stdout(line_bytes) => {
+                                log::info!(
+                                    "[Cortex STDOUT]: {}",
+                                    String::from_utf8_lossy(&line_bytes)
+                                );
+                            }
+                            CommandEvent::Stderr(line_bytes) => {
+                                log::error!(
+                                    "[Cortex STDERR]: {}",
+                                    String::from_utf8_lossy(&line_bytes)
+                                );
+                            }
+                            CommandEvent::Error(message) => {
+                                log::error!("[Cortex ERROR]: {}", message);
+                                process_terminated_unexpectedly = true;
+                                break;
+                            }
+                            CommandEvent::Terminated(payload) => {
+                                log::info!(
+                                    "[Cortex Terminated]: Signal {:?}, Code {:?}",
+                                    payload.signal,
+                                    payload.code
+                                );
+                                if child_process.lock().await.is_some() {
+                                    if payload.code.map_or(true, |c| c != 0) {
+                                        process_terminated_unexpectedly = true;
+                                    }
+                                }
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if child_process.lock().await.is_some() {
+                        *child_process.lock().await = None;
+                        log::info!("Cleared child process lock after termination.");
+                    }
+
+                    if process_terminated_unexpectedly {
+                        log::warn!("Cortex server terminated unexpectedly.");
+                        let mut count = cortex_restart_count_state.lock().await;
+                        *count += 1;
+                        log::info!(
+                            "Waiting {}ms before attempting restart {}/{}...",
+                            RESTART_DELAY_MS,
+                            *count,
+                            MAX_RESTARTS
+                        );
+                        drop(count);
+                        sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
+                        continue;
+                    } else {
+                        log::info!(
+                            "Cortex server terminated normally or was killed. Not restarting."
+                        );
+                        break;
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to spawn cortex-server: {}", e);
+                    let mut count = cortex_restart_count_state.lock().await;
+                    *count += 1;
+                    log::info!(
+                        "Waiting {}ms before attempting restart {}/{} due to spawn failure...",
+                        RESTART_DELAY_MS,
+                        *count,
+                        MAX_RESTARTS
+                    );
+                    drop(count);
+                    sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
+                }
+            }
         }
     });
     Ok(())
