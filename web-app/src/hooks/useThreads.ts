@@ -3,7 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
-import Fuse from 'fuse.js'
+import { Fzf } from 'fzf'
+import { highlightFzfMatch } from '../utils/highlight'
 type ThreadState = {
   threads: Record<string, Thread>
   currentThreadId?: string
@@ -25,19 +26,7 @@ type ThreadState = {
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
-  searchIndex: Fuse<Thread> | null
-}
-
-const fuseOptions = {
-  keys: ['title'],
-  threshold: 0.4, // Increased threshold to require more exact matches
-  includeMatches: true, // Keeping this to show where matches occur
-  ignoreLocation: true, // Consider the location of matches
-  useExtendedSearch: true, // Disable extended search for more precise matching
-  distance: 40, // Reduced edit distance for stricter fuzzy matching
-  tokenize: false, // Keep tokenization for word-level matching
-  matchAllTokens: true, // Require all tokens to match for better precision
-  findAllMatches: false, // Only find the first match to reduce noise
+  searchIndex: Fzf<Thread[]> | null
 }
 
 export const useThreads = create<ThreadState>()(
@@ -54,13 +43,14 @@ export const useThreads = create<ThreadState>()(
           })
         })
         const threadMap = threads.reduce(
-          (acc, thread) => {
+          (acc: Record<string, Thread>, thread) => {
             acc[thread.id] = thread
             return acc
-          },
-          {} as Record<string, Thread>
-        )
-        set({ threads: threadMap })
+          }, {} as Record<string, Thread>)
+        set({
+          threads: threadMap,
+          searchIndex: new Fzf<Thread[]>(Object.values(threadMap), { selector: (item: Thread) => item.title })
+        })
       },
       getFilteredThreads: (searchTerm: string) => {
         const { threads, searchIndex } = get()
@@ -71,23 +61,27 @@ export const useThreads = create<ThreadState>()(
           return Object.values(threads)
         }
 
-        const currentIndex =
-          searchIndex && searchIndex.search != undefined
-            ? searchIndex
-            : new Fuse(
-                Object.values(threads).map((item) => item),
-                fuseOptions
-              )
-
-        set({ searchIndex: currentIndex })
+        let currentIndex = searchIndex
+        if (!currentIndex) {
+          currentIndex = new Fzf<Thread[]>(
+            Object.values(threads),
+            { selector: (item: Thread) => item.title }
+          )
+          set({ searchIndex: currentIndex })
+        }
 
         // Use the index to search and return matching threads
-
-        const searchResults = currentIndex.search(searchTerm)
-        const validIds = searchResults.map((result) => result.item.id)
-        return Object.values(get().threads).filter((thread) =>
-          validIds.includes(thread.id)
-        )
+        const fzfResults = currentIndex.find(searchTerm)
+        return fzfResults.map((result: { item: Thread; positions: Set<number>  }) => {
+          const thread = result.item; // Fzf stores the original item here
+          // Ensure result.positions is an array, default to empty if undefined
+          const positions = Array.from(result.positions) || [];
+          const highlightedTitle = highlightFzfMatch(thread.title, positions);
+          return {
+            ...thread,
+            title: highlightedTitle, // Override title with highlighted version
+          };
+        });
       },
       toggleFavorite: (threadId) => {
         set((state) => {
@@ -113,7 +107,7 @@ export const useThreads = create<ThreadState>()(
           deleteThread(threadId)
           return {
             threads: remainingThreads,
-            searchIndex: new Fuse(Object.values(remainingThreads), fuseOptions),
+            searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), { selector: (item: Thread) => item.title })
           }
         })
       },
@@ -125,6 +119,7 @@ export const useThreads = create<ThreadState>()(
           })
           return {
             threads: {},
+            searchIndex: null // Or new Fzf([], {selector...})
           }
         })
       },
@@ -166,17 +161,18 @@ export const useThreads = create<ThreadState>()(
           updated: Date.now() / 1000,
           assistants: assistant ? [assistant] : [],
         }
-        set((state) => ({
-          searchIndex: new Fuse(Object.values(state.threads), fuseOptions),
-        }))
         return await createThread(newThread).then((createdThread) => {
-          set((state) => ({
-            threads: {
+          set((state) => {
+            const newThreads = {
               ...state.threads,
               [createdThread.id]: createdThread,
-            },
-            currentThreadId: createdThread.id,
-          }))
+            };
+            return {
+              threads: newThreads,
+              currentThreadId: createdThread.id,
+              searchIndex: new Fzf<Thread[]>(Object.values(newThreads), { selector: (item: Thread) => item.title }),
+            };
+          })
           return createdThread
         })
       },
@@ -224,20 +220,11 @@ export const useThreads = create<ThreadState>()(
             ...thread,
             title: newTitle,
           }
-          updateThread(updatedThread)
+          updateThread(updatedThread) // External call, order is fine
+          const newThreads = { ...state.threads, [threadId]: updatedThread };
           return {
-            threads: {
-              ...state.threads,
-              [threadId]: updatedThread,
-            },
-            // Update search index with the new title
-            searchIndex: new Fuse(
-              Object.values({
-                ...state.threads,
-                [threadId]: updatedThread,
-              }),
-              fuseOptions
-            ),
+            threads: newThreads,
+            searchIndex: new Fzf<Thread[]>(Object.values(newThreads), { selector: (item: Thread) => item.title }),
           }
         })
       },

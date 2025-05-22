@@ -88,3 +88,10 @@
     scrollbar-width: none; /* Firefox */
   }
 }
+
+@layer components {
+  .search-highlight {
+    @apply font-bold;
+    color: color-mix(in srgb, currentColor 80%, white 20%);
+  }
+}

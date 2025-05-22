@@ -118,7 +118,7 @@ const LeftPanel = () => {
             <input
               type="text"
               placeholder={t('common.search')}
-              className="w-full px-2 pl-7 py-1 bg-left-panel-fg/10 rounded text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
+              className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
