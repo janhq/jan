@@ -30,11 +30,13 @@ function SetupScreen() {
           <div className="flex gap-4 flex-col">
             <Card
               header={
-                <div>
-                  <h1 className="text-main-view-fg font-medium text-base">
-                    Setup Local Model
-                  </h1>
-                </div>
+                <Link to={route.hub}>
+                  <div>
+                    <h1 className="text-main-view-fg font-medium text-base">
+                      Set up local model
+                    </h1>
+                  </div>
+                </Link>
               }
             ></Card>
             <Card
@@ -49,7 +51,7 @@ function SetupScreen() {
                   }}
                 >
                   <h1 className="text-main-view-fg font-medium text-base">
-                    Setup Remote Provider
+                    Set up remote provider
                   </h1>
                 </Link>
               }
