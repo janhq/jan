@@ -167,7 +167,7 @@ function SystemMonitor() {
                   <div className="flex justify-between items-center">
                     <span className="text-main-view-fg/70">Uptime</span>
                     <span className="text-main-view-fg">
-                      {formatDuration(model.start_time)}
+                      {model.start_time && formatDuration(model.start_time)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
