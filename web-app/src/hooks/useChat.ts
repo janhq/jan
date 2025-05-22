@@ -95,7 +95,13 @@ export const useChat = () => {
         let isCompleted = false
         const abortController = new AbortController()
         setAbortController(activeThread.id, abortController)
-        while (!isCompleted || abortController.signal.aborted) {
+        let attempts = 0
+        while (
+          !isCompleted &&
+          !abortController.signal.aborted &&
+          attempts < 5
+        ) {
+          attempts += 1
           const completion = await sendCompletion(
             activeThread,
             provider,
@@ -144,7 +150,8 @@ export const useChat = () => {
           const updatedMessage = await postMessageProcessing(
             toolCalls,
             builder,
-            finalContent
+            finalContent,
+            abortController
           )
           addMessage(updatedMessage ?? finalContent)
 

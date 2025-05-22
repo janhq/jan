@@ -279,11 +279,13 @@ export const extractToolCall = (
 export const postMessageProcessing = async (
   calls: ChatCompletionMessageToolCall[],
   builder: CompletionMessagesBuilder,
-  message: ThreadMessage
+  message: ThreadMessage,
+  abortController: AbortController
 ) => {
   // Handle completed tool calls
   if (calls.length) {
     for (const toolCall of calls) {
+      if(abortController.signal.aborted) break
       const toolId = ulid()
       const toolCallsMetadata =
         message.metadata?.tool_calls &&
