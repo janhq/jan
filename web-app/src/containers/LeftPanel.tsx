@@ -39,7 +39,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
-import { DownloadManagement } from './DownloadManegement'
+import { DownloadManagement } from '@/containers/DownloadManegement'
 
 const mainMenus = [
   {
@@ -97,7 +97,9 @@ const LeftPanel = () => {
     <aside
       className={cn(
         'w-48 shrink-0 rounded-lg m-1.5 mr-0 text-left-panel-fg',
-        open ? 'block' : 'hidden'
+        open
+          ? 'opacity-100 visibility-visible'
+          : 'w-0 absolute -top-100 -left-100 visibility-hidden'
       )}
     >
       <div className="relative h-8">
@@ -223,8 +225,8 @@ const LeftPanel = () => {
                             <DialogHeader>
                               <DialogTitle>Delete All Threads</DialogTitle>
                               <DialogDescription>
-                                All threads will be deleted. 
-                                This action cannot be undone.
+                                All threads will be deleted. This action cannot
+                                be undone.
                               </DialogDescription>
                               <DialogFooter className="mt-2">
                                 <DialogClose asChild>

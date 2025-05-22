@@ -19,6 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             // FS commands - Deperecate soon

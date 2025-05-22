@@ -12,7 +12,7 @@ interface AssistantState {
 }
 
 export const defaultAssistant: Assistant = {
-  avatar: '',
+  avatar: '👋',
   id: 'jan',
   name: 'Jan',
   created_at: 1747029866.542,

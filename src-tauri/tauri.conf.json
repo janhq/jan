@@ -38,9 +38,9 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://registry.npmjs.org",
+        "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https:",
         "font-src": [
-          "https://fonts.gstatic.com blob: data:"
+          "https://fonts.gstatic.com blob: data: tauri://localhost/*"
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",

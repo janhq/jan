@@ -6,6 +6,7 @@ import {
   createMessage,
   deleteMessage as deleteMessageExt,
 } from '@/services/messages'
+import { useAssistant } from './useAssistant'
 
 type MessageState = {
   messages: Record<string, ThreadMessage[]>
@@ -31,7 +32,16 @@ export const useMessages = create<MessageState>()(
         }))
       },
       addMessage: (message) => {
-        createMessage(message).then((createdMessage) => {
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const newMessage = {
+          ...message,
+          created_at: message.created_at || Date.now(),
+          metadata: {
+            ...message.metadata,
+            assistant: currentAssistant,
+          },
+        }
+        createMessage(newMessage).then((createdMessage) => {
           set((state) => ({
             messages: {
               ...state.messages,

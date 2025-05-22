@@ -5,18 +5,22 @@ import {
 } from '@/components/ui/popover'
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { abortDownload } from '@/services/models'
 import { getProviders } from '@/services/providers'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
-import { IconX } from '@tabler/icons-react'
+import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 export function DownloadManagement() {
   const { setProviders } = useModelProvider()
+  const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const { downloads, updateProgress, removeDownload } = useDownloadStore()
+  const { updateState } = useAppUpdater()
   const downloadCount = useMemo(
     () => Object.keys(downloads).length,
     [downloads]
@@ -114,21 +118,36 @@ export function DownloadManagement() {
 
   return (
     <>
-      {downloadCount > 0 && (
+      {(downloadCount > 0 ||
+        (!updateState.isDownloading && updateState.downloadProgress > 0)) && (
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-          <PopoverTrigger>
-            <div className="bg-left-panel-fg/10 hover:bg-left-panel-fg/12 p-2 rounded-md my-1 relative border border-left-panel-fg/10 cursor-pointer text-left">
-              <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
-                {downloadCount}
+          <PopoverTrigger asChild>
+            {isLeftPanelOpen ? (
+              <div className="bg-left-panel-fg/10 hover:bg-left-panel-fg/12 p-2 rounded-md my-1 relative border border-left-panel-fg/10 cursor-pointer text-left">
+                <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
+                  {downloadCount}
+                </div>
+                <p className="text-left-panel-fg/80 font-medium">Downloads</p>
+                <div className="mt-2 flex items-center justify-between space-x-2">
+                  <Progress value={overallProgress * 100} />
+                  <span className="text-xs font-medium text-main-view-fg/80 shrink-0">
+                    {Math.round(overallProgress * 100)}%
+                  </span>
+                </div>
               </div>
-              <p className="text-left-panel-fg/80 font-medium">Downloads</p>
-              <div className="mt-2 flex items-center justify-between space-x-2">
-                <Progress value={overallProgress * 100} />
-                <span className="text-xs font-medium text-main-view-fg/80 shrink-0">
-                  {Math.round(overallProgress * 100)}%
-                </span>
+            ) : (
+              <div className="fixed bottom-4 left-4 z-50 size-10 bg-main-view border-2 border-main-view-fg/10 rounded-full shadow-md cursor-pointer flex items-center justify-center">
+                <div className="relative">
+                  <IconDownload
+                    className="text-main-view-fg/50 -mt-1"
+                    size={20}
+                  />
+                  <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
+                    {downloadCount}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </PopoverTrigger>
 
           <PopoverContent
@@ -143,6 +162,24 @@ export function DownloadManagement() {
                 <p className="text-xs text-main-view-fg/70">Downloading</p>
               </div>
               <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
+                {!updateState.isDownloading &&
+                  updateState.downloadProgress > 0 && (
+                    <div className="bg-main-view-fg/4 rounded-md p-2">
+                      <div className="flex items-center justify-between">
+                        <p className="truncate text-main-view-fg/80">
+                          App Update
+                        </p>
+                      </div>
+                      <Progress
+                        value={updateState.downloadProgress * 100}
+                        className="my-2"
+                      />
+                      <p className="text-main-view-fg/60 text-xs">
+                        {`${renderGB(updateState.downloadedBytes)} / ${renderGB(updateState.totalBytes)}`}{' '}
+                        GB ({Math.round(updateState.downloadProgress * 100)}%)
+                      </p>
+                    </div>
+                  )}
                 {downloadProcesses.map((download) => (
                   <div className="bg-main-view-fg/4 rounded-md p-2">
                     <div className="flex items-center justify-between">

@@ -1,6 +1,7 @@
 import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
+import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { fetchMessages } from '@/services/messages'
 import { fetchModels } from '@/services/models'
 import { getProviders } from '@/services/providers'
@@ -12,6 +13,7 @@ export function DataProvider() {
   const { setProviders } = useModelProvider()
   const { setThreads } = useThreads()
   const { setMessages } = useMessages()
+  const { checkForUpdate } = useAppUpdater()
 
   useEffect(() => {
     fetchModels().then((models) => {
@@ -30,6 +32,12 @@ export function DataProvider() {
         )
       )
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Check for app updates
+  useEffect(() => {
+    checkForUpdate()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
