@@ -15,6 +15,7 @@ const DialogAppUpdater = () => {
 
   const handleUpdate = () => {
     downloadAndInstallUpdate()
+    setRemindMeLater(true)
   }
 
   const beta = VERSION.includes('beta')
