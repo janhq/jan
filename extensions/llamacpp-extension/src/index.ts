@@ -14,8 +14,6 @@ import {
   modelInfo,
   listOptions,
   listResult,
-  pullOptions,
-  pullResult,
   loadOptions,
   sessionInfo,
   unloadOptions,
@@ -25,14 +23,17 @@ import {
   chatCompletionChunk,
   deleteOptions,
   deleteResult,
-  importOptions,
-  importResult,
-  abortPullOptions,
-  abortPullResult,
+  ImportOptions,
   chatCompletionRequest,
+  events,
 } from '@janhq/core'
 
 import { invoke } from '@tauri-apps/api/tauri'
+
+interface DownloadItem {
+  url: string
+  save_path: string
+}
 
 /**
  * Helper to convert GGUF model filename to a more structured ID/name
@@ -85,25 +86,67 @@ export default class llamacpp_extension extends AIEngine {
     throw new Error('method not implemented yet')
   }
 
-  override async pull(opts: pullOptions): Promise<pullResult> {
-    const modelId = opts.modelId
-    const taskId = `${this.provider}:${modelId}`  // prepand provider name to avoid name collision
-    let parts = modelId.split(":")
+  override async import(modelId: string, opts: ImportOptions): Promise<void> {
+    // TODO: sanitize modelId
+    const taskId = this.createDownloadTaskId(modelId)
 
-    // cortexso format
-    if (parts.length == 2) {
-      const modelName = parts[0]
-      const branch = parts[1]
-      const saveDir = `models/cortex.so/${modelName}/${branch}`
-      await this.downloadManager.downloadHfRepo(`cortexso/${modelName}`, saveDir, taskId, branch)
-    } else if (parts.length == 3) {
-      const author = parts[0]
-      const modelName = parts[1]
-      const file = parts[2]
-      const url = `https://huggingface.co/${author}/${modelName}/resolve/main/${file}`
-      const savePath = `models/huggingface.co/${author}/${modelName}/${file}`
-      await this.downloadManager.downloadFile(url, savePath, taskId)
+    // we only use these from opts
+    // opts.modelPath: URL to the model file
+    // opts.mmprojPath: URL to the mmproj file
+
+    let downloadItems: DownloadItem[] = []
+    let localImportItems: DownloadItem[] = []
+
+    const modelItem = { url: opts.modelPath, save_path: `models/${this.provider}/${modelId}/model.gguf` }
+    if (opts.modelPath.startsWith("https://")) {
+      downloadItems.push(modelItem)
+    } else {
+      localImportItems.push(modelItem)
     }
+
+    if (opts.mmprojPath) {
+      const mmprojItem = { url: opts.mmprojPath, save_path: `models/${this.provider}/${modelId}/mmproj.gguf` }
+      if (opts.mmprojPath.startsWith("https://")) {
+        downloadItems.push(mmprojItem)
+      } else {
+        localImportItems.push(mmprojItem)
+      }
+    }
+
+    if (downloadItems.length > 0) {
+      let downloadCompleted = false
+
+      try {
+        // emit download update event on progress
+        const onProgress = (transferred: number, total: number) => {
+          events.emit('onFileDownloadUpdate', {
+            modelId,
+            percent: transferred / total,
+            size: { transferred, total },
+            downloadType: 'Model',
+          })
+          downloadCompleted = transferred === total
+        }
+        await this.downloadManager.downloadFiles(downloadItems, taskId, onProgress)
+      } catch (error) {
+        console.error('Error downloading model:', modelId, opts, error)
+        events.emit('onFileDownloadError', { modelId, downloadType: 'Model' })
+        throw error
+      }
+
+      // once we reach this point, it either means download finishes or it was cancelled.
+      // if there was an error, it would have been caught above
+      const eventName = downloadCompleted ? 'onFileDownloadSuccess' : 'onFileDownloadStopped'
+      events.emit(eventName, { modelId, downloadType: 'Model' })
+    }
+
+    // TODO: handle local model import
+  }
+
+  override async abortImport(modelId: string): Promise<void> {
+    // prepand provider name to avoid name collision
+    const taskId = this.createDownloadTaskId(modelId)
+    await this.downloadManager.cancelDownload(taskId)
   }
 
   override async load(opts: loadOptions): Promise<sessionInfo> {
@@ -254,6 +297,11 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private createDownloadTaskId(modelId: string) {
+    // prepend provider to make taksId unique across providers
+    return `${this.provider}/${modelId}`
+  }
+
   private async *handleStreamingResponse(
     url: string,
     headers: HeadersInit,
@@ -360,16 +408,6 @@ export default class llamacpp_extension extends AIEngine {
 
   override async delete(opts: deleteOptions): Promise<deleteResult> {
     throw new Error('method not implemented yet')
-  }
-
-  override async import(opts: importOptions): Promise<importResult> {
-    throw new Error('method not implemented yet')
-  }
-
-  override async abortPull(opts: abortPullOptions): Promise<abortPullResult> {
-    // prepand provider name to avoid name collision
-    const taskId = `${this.provider}:${opts.modelId}`
-    await this.downloadManager.cancelDownload(taskId)
   }
 
   // Optional method for direct client access
