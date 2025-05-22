@@ -10,6 +10,7 @@ import { route } from '@/constants/routes'
 import {
   emptyThreadContent,
   extractToolCall,
+  isCompletionResponse,
   newAssistantThreadContent,
   newUserThreadContent,
   postMessageProcessing,
@@ -19,6 +20,7 @@ import {
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
+import { toast } from 'sonner'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -31,7 +33,7 @@ export const useChat = () => {
   const { getCurrentThread: retrieveThread, createThread } = useThreads()
   const { updateStreamingContent, updateLoadingModel, setAbortController } =
     useAppState()
-  const { addMessage } = useMessages()
+  const { getMessages, addMessage } = useMessages()
   const router = useRouter()
 
   const provider = useMemo(() => {
@@ -71,20 +73,22 @@ export const useChat = () => {
 
       resetTokenSpeed()
       if (!activeThread || !provider) return
-
+      const messages = getMessages(activeThread.id)
+      const abortController = new AbortController()
+      setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       addMessage(newUserThreadContent(activeThread.id, message))
       setPrompt('')
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(provider, selectedModel.id).catch(
+          await startModel(provider, selectedModel.id, abortController).catch(
             console.error
           )
           updateLoadingModel(false)
         }
 
-        const builder = new CompletionMessagesBuilder()
+        const builder = new CompletionMessagesBuilder(messages)
         if (currentAssistant?.instructions?.length > 0)
           builder.addSystemMessage(currentAssistant?.instructions || '')
         // REMARK: Would it possible to not attach the entire message history to the request?
@@ -92,37 +96,52 @@ export const useChat = () => {
         builder.addUserMessage(message)
 
         let isCompleted = false
-        const abortController = new AbortController()
-        setAbortController(activeThread.id, abortController)
-        while (!isCompleted) {
+
+        let attempts = 0
+        while (
+          !isCompleted &&
+          !abortController.signal.aborted &&
+          // TODO: Max attempts can be set in the provider settings later
+          attempts < 10
+        ) {
+          attempts += 1
           const completion = await sendCompletion(
             activeThread,
             provider,
             builder.getMessages(),
             abortController,
-            tools
+            tools,
+            // TODO: replace it with according provider setting later on
+            selectedProvider === 'llama.cpp' && tools.length > 0 ? false : true
           )
 
           if (!completion) throw new Error('No completion received')
           let accumulatedText = ''
           const currentCall: ChatCompletionMessageToolCall | null = null
           const toolCalls: ChatCompletionMessageToolCall[] = []
-          for await (const part of completion) {
-            const delta = part.choices[0]?.delta?.content || ''
-            if (part.choices[0]?.delta?.tool_calls) {
-              extractToolCall(part, currentCall, toolCalls)
+          if (isCompletionResponse(completion)) {
+            accumulatedText = completion.choices[0]?.message?.content || ''
+            if (completion.choices[0]?.message?.tool_calls) {
+              toolCalls.push(...completion.choices[0].message.tool_calls)
             }
-            if (delta) {
-              accumulatedText += delta
-              // Create a new object each time to avoid reference issues
-              // Use a timeout to prevent React from batching updates too quickly
-              const currentContent = newAssistantThreadContent(
-                activeThread.id,
-                accumulatedText
-              )
-              updateStreamingContent(currentContent)
-              updateTokenSpeed(currentContent)
-              await new Promise((resolve) => setTimeout(resolve, 0))
+          } else {
+            for await (const part of completion) {
+              const delta = part.choices[0]?.delta?.content || ''
+              if (part.choices[0]?.delta?.tool_calls) {
+                extractToolCall(part, currentCall, toolCalls)
+              }
+              if (delta) {
+                accumulatedText += delta
+                // Create a new object each time to avoid reference issues
+                // Use a timeout to prevent React from batching updates too quickly
+                const currentContent = newAssistantThreadContent(
+                  activeThread.id,
+                  accumulatedText
+                )
+                updateStreamingContent(currentContent)
+                updateTokenSpeed(currentContent)
+                await new Promise((resolve) => setTimeout(resolve, 0))
+              }
             }
           }
           // Create a final content object for adding to the thread
@@ -134,21 +153,28 @@ export const useChat = () => {
           const updatedMessage = await postMessageProcessing(
             toolCalls,
             builder,
-            finalContent
+            finalContent,
+            abortController
           )
           addMessage(updatedMessage ?? finalContent)
 
           isCompleted = !toolCalls.length
         }
       } catch (error) {
+        toast.error(
+          `Error sending message: ${error && typeof error === 'object' && 'message' in error ? error.message : error}`
+        )
         console.error('Error sending message:', error)
+      } finally {
+        updateLoadingModel(false)
+        updateStreamingContent(undefined)
       }
-      updateStreamingContent(undefined)
     },
     [
       getCurrentThread,
       resetTokenSpeed,
       provider,
+      getMessages,
       updateStreamingContent,
       addMessage,
       setPrompt,
@@ -157,6 +183,7 @@ export const useChat = () => {
       setAbortController,
       updateLoadingModel,
       tools,
+      selectedProvider,
       updateTokenSpeed,
     ]
   )

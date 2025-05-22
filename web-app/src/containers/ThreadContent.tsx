@@ -116,10 +116,13 @@ export const ThreadContent = memo(
       // Only regenerate assistant message is allowed
       deleteMessage(item.thread_id, item.id)
       const threadMessages = getMessages(item.thread_id)
-      const lastMessage = threadMessages[threadMessages.length - 1]
-      if (!lastMessage) return
-      deleteMessage(lastMessage.thread_id, lastMessage.id)
-      sendMessage(lastMessage.content?.[0]?.text?.value || '')
+      let toSendMessage = threadMessages.pop()
+      while (toSendMessage && toSendMessage?.role !== 'user') {
+        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
+        toSendMessage = threadMessages.pop()
+      }
+      if (toSendMessage)
+        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
     }, [deleteMessage, getMessages, item, sendMessage])
 
     const editMessage = useCallback(
@@ -157,7 +160,7 @@ export const ThreadContent = memo(
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <Dialog>
-                <DialogTrigger asChild>
+                <DialogTrigger>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">

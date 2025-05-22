@@ -184,27 +184,24 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       id: string
       settings?: object
       file_path?: string
-    }
+    },
+    abortController: AbortController
   ): Promise<void> {
     // Cortex will handle these settings
     const { llama_model_path, mmproj, ...settings } = model.settings ?? {}
     model.settings = settings
 
-    const controller = new AbortController()
+    const controller = abortController ?? new AbortController()
     const { signal } = controller
 
     this.abortControllers.set(model.id, controller)
 
-    const loadedModels = await this.apiInstance()
-      .then((e) => e.get('inferences/server/models'))
-      .then((e) => e.json())
-      .then((e) => (e as LoadedModelResponse).data ?? [])
-      .catch(() => [])
+    const loadedModels = await this.activeModels()
 
     console.log('Loaded models:', loadedModels)
 
     // This is to avoid loading the same model multiple times
-    if (loadedModels.some((e) => e.id === model.id)) {
+    if (loadedModels.some((e: { id: string }) => e.id === model.id)) {
       console.log(`Model ${model.id} already loaded`)
       return
     }
@@ -216,8 +213,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...extractModelLoadParams(model.settings),
             model: model.id,
             engine:
-              model.engine === "nitro" // Legacy model cache
-                ? "llama-cpp"
+              model.engine === 'nitro' // Legacy model cache
+                ? 'llama-cpp'
                 : model.engine,
             cont_batching: this.cont_batching,
             n_parallel: this.n_parallel,
@@ -251,6 +248,14 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         })
         .then()
     )
+  }
+
+  async activeModels(): Promise<(object & { id: string })[]> {
+    return await this.apiInstance()
+      .then((e) => e.get('inferences/server/models'))
+      .then((e) => e.json())
+      .then((e) => (e as LoadedModelResponse).data ?? [])
+      .catch(() => [])
   }
 
   /**
@@ -288,7 +293,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    * Subscribe to cortex.cpp websocket events
    */
   private subscribeToEvents() {
-    console.log('Subscribing to events...')
     this.socket = new WebSocket(`${CORTEX_SOCKET_URL}/events`)
 
     this.socket.addEventListener('message', (event) => {
@@ -337,13 +341,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
      * This is to handle the server segfault issue
      */
     this.socket.onclose = (event) => {
-      console.log('WebSocket closed:', event)
       // Notify app to update model running state
       events.emit(ModelEvent.OnModelStopped, {})
 
       // Reconnect to the /events websocket
       if (this.shouldReconnect) {
-        console.log(`Attempting to reconnect...`)
         setTimeout(() => this.subscribeToEvents(), 1000)
       }
     }
