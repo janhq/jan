@@ -16,11 +16,11 @@ export enum ModelCapabilities {
 }
 
 export type ActiveModel = {
-  engine: 'llama-cpp'
-  id: 'qwen3:1.7b'
-  model_size: 0
+  engine: string
+  id: string
+  model_size: number
   object: 'model'
-  ram: 0
-  start_time: 1747894023933
-  vram: 0
+  ram: number
+  start_time: number
+  vram: number
 }
