@@ -165,6 +165,7 @@ export const useChat = () => {
       setAbortController,
       updateLoadingModel,
       tools,
+      selectedProvider,
       updateTokenSpeed,
     ]
   )

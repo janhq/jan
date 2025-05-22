@@ -157,7 +157,7 @@ export const sendCompletion = async (
 export const isCompletionResponse = (
   response: StreamCompletionResponse | CompletionResponse
 ): response is CompletionResponse => {
-  return 'choices' in response // replace with actual property
+  return 'choices' in response
 }
 
 /**
