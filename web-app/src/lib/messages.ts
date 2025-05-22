@@ -1,5 +1,6 @@
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import { ThreadMessage } from '@janhq/core'
 
 /**
  * @fileoverview Helper functions for creating chat completion request.
@@ -8,8 +9,14 @@ import { ChatCompletionMessageToolCall } from 'openai/resources'
 export class CompletionMessagesBuilder {
   private messages: ChatCompletionMessageParam[] = []
 
-  constructor() {}
-
+  constructor(messages: ThreadMessage[]) {
+    this.messages = messages
+      .filter((e) => !e.metadata?.error)
+      .map<ChatCompletionMessageParam>((msg) => ({
+        role: msg.role,
+        content: msg.content[0]?.text?.value ?? '.',
+      }) as ChatCompletionMessageParam)
+  }
   /**
    * Add a system message to the messages array.
    * @param content - The content of the system message.

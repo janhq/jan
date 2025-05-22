@@ -7,8 +7,9 @@ import type { HardwareData } from '@/hooks/useHardware'
 import { route } from '@/constants/routes'
 import { formatDuration, formatMegaBytes } from '@/lib/utils'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
-import { getActiveModels } from '@/services/models'
+import { getActiveModels, stopModel } from '@/services/models'
 import { ActiveModel } from '@/types/models'
+import { Button } from '@/components/ui/button'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.systemMonitor as any)({
@@ -39,6 +40,18 @@ function SystemMonitor() {
 
     return () => clearInterval(intervalId)
   }, [setHardwareData, setActiveModels, updateCPUUsage, updateRAMAvailable])
+
+  const stopRunningModel = (modelId: string) => {
+    stopModel(modelId)
+      .then(() => {
+        setActiveModels((prevModels) =>
+          prevModels.filter((model) => model.id !== modelId)
+        )
+      })
+      .catch((error) => {
+        console.error('Error stopping model:', error)
+      })
+  }
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =
@@ -154,15 +167,18 @@ function SystemMonitor() {
                   <div className="flex justify-between items-center">
                     <span className="text-main-view-fg/70">Uptime</span>
                     <span className="text-main-view-fg">
-                      {formatDuration(model.start_time)}
+                      {model.start_time && formatDuration(model.start_time)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-main-view-fg/70">Status</span>
+                    <span className="text-main-view-fg/70">Actions</span>
                     <span className="text-main-view-fg">
-                      <div className="bg-green-500/20 px-1 font-bold py-0.5 rounded text-green-700 text-xs">
-                        Running
-                      </div>
+                      <Button
+                        variant="destructive"
+                        onClick={() => stopRunningModel(model.id)}
+                      >
+                        Stop
+                      </Button>
                     </span>
                   </div>
                 </div>

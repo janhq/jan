@@ -171,22 +171,26 @@ export const isCompletionResponse = (
  */
 export const startModel = async (
   provider: ProviderObject,
-  model: string
+  model: string,
+  abortController?: AbortController
 ): Promise<void> => {
   const providerObj = EngineManager.instance().get(
     normalizeProvider(provider.provider)
   )
   const modelObj = provider.models.find((m) => m.id === model)
   if (providerObj && modelObj)
-    return providerObj?.loadModel({
-      id: modelObj.id,
-      settings: Object.fromEntries(
-        Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
-          key,
-          value.controller_props?.value, // assuming each setting is { value: ... }
-        ])
-      ),
-    })
+    return providerObj?.loadModel(
+      {
+        id: modelObj.id,
+        settings: Object.fromEntries(
+          Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
+            key,
+            value.controller_props?.value, // assuming each setting is { value: ... }
+          ])
+        ),
+      },
+      abortController
+    )
 }
 
 /**
@@ -279,11 +283,13 @@ export const extractToolCall = (
 export const postMessageProcessing = async (
   calls: ChatCompletionMessageToolCall[],
   builder: CompletionMessagesBuilder,
-  message: ThreadMessage
+  message: ThreadMessage,
+  abortController: AbortController
 ) => {
   // Handle completed tool calls
   if (calls.length) {
     for (const toolCall of calls) {
+      if (abortController.signal.aborted) break
       const toolId = ulid()
       const toolCallsMetadata =
         message.metadata?.tool_calls &&

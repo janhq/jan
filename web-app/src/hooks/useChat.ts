@@ -33,7 +33,7 @@ export const useChat = () => {
   const { getCurrentThread: retrieveThread, createThread } = useThreads()
   const { updateStreamingContent, updateLoadingModel, setAbortController } =
     useAppState()
-  const { addMessage } = useMessages()
+  const { getMessages, addMessage } = useMessages()
   const router = useRouter()
 
   const provider = useMemo(() => {
@@ -73,18 +73,22 @@ export const useChat = () => {
 
       resetTokenSpeed()
       if (!activeThread || !provider) return
-
+      const messages = getMessages(activeThread.id)
+      const abortController = new AbortController()
+      setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       addMessage(newUserThreadContent(activeThread.id, message))
       setPrompt('')
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(provider, selectedModel.id).catch(console.error)
+          await startModel(provider, selectedModel.id, abortController).catch(
+            console.error
+          )
           updateLoadingModel(false)
         }
 
-        const builder = new CompletionMessagesBuilder()
+        const builder = new CompletionMessagesBuilder(messages)
         if (currentAssistant?.instructions?.length > 0)
           builder.addSystemMessage(currentAssistant?.instructions || '')
         // REMARK: Would it possible to not attach the entire message history to the request?
@@ -92,9 +96,15 @@ export const useChat = () => {
         builder.addUserMessage(message)
 
         let isCompleted = false
-        const abortController = new AbortController()
-        setAbortController(activeThread.id, abortController)
-        while (!isCompleted) {
+
+        let attempts = 0
+        while (
+          !isCompleted &&
+          !abortController.signal.aborted &&
+          // TODO: Max attempts can be set in the provider settings later
+          attempts < 10
+        ) {
+          attempts += 1
           const completion = await sendCompletion(
             activeThread,
             provider,
@@ -143,7 +153,8 @@ export const useChat = () => {
           const updatedMessage = await postMessageProcessing(
             toolCalls,
             builder,
-            finalContent
+            finalContent,
+            abortController
           )
           addMessage(updatedMessage ?? finalContent)
 
@@ -163,6 +174,7 @@ export const useChat = () => {
       getCurrentThread,
       resetTokenSpeed,
       provider,
+      getMessages,
       updateStreamingContent,
       addMessage,
       setPrompt,
