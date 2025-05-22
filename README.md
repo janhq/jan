@@ -256,4 +256,4 @@ Beware of scams!
 
 ## License
 
-Jan is free and open source, under the **AGPLv3** license.
+Jan is free and open source, under the **Apache 2.0** license.
