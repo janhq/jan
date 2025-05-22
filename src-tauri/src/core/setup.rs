@@ -228,8 +228,12 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         sidecar_command = sidecar_command.env("PATH", {
-            let app_data_dir = get_jan_data_folder_path(app.handle().clone());
-            let dest = app_data_dir.to_str().unwrap();
+            let exe_path = env::current_exe().expect("Failed to get current exe path");
+            let exe_parent_path = exe_path
+                .parent()
+                .expect("Executable must have a parent directory");
+            let bin_path = exe_parent_path.to_path_buf();
+            let dest = bin_path..display();
             let path = std::env::var("PATH").unwrap_or_default();
             format!("{}{}{}", path, std::path::MAIN_SEPARATOR, dest)
         });
