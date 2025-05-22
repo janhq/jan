@@ -60,7 +60,6 @@ function HTTPSProxy() {
     },
     [
       noProxy,
-      proxyEnabled,
       proxyIgnoreSSL,
       proxyPassword,
       proxyUrl,

@@ -195,16 +195,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
     this.abortControllers.set(model.id, controller)
 
-    const loadedModels = await this.apiInstance()
-      .then((e) => e.get('inferences/server/models'))
-      .then((e) => e.json())
-      .then((e) => (e as LoadedModelResponse).data ?? [])
-      .catch(() => [])
+    const loadedModels = await this.activeModels()
 
     console.log('Loaded models:', loadedModels)
 
     // This is to avoid loading the same model multiple times
-    if (loadedModels.some((e) => e.id === model.id)) {
+    if (loadedModels.some((e: { id: string }) => e.id === model.id)) {
       console.log(`Model ${model.id} already loaded`)
       return
     }
@@ -216,8 +212,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...extractModelLoadParams(model.settings),
             model: model.id,
             engine:
-              model.engine === "nitro" // Legacy model cache
-                ? "llama-cpp"
+              model.engine === 'nitro' // Legacy model cache
+                ? 'llama-cpp'
                 : model.engine,
             cont_batching: this.cont_batching,
             n_parallel: this.n_parallel,
@@ -251,6 +247,14 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         })
         .then()
     )
+  }
+
+  async activeModels(): Promise<(object & { id: string })[]> {
+    return await this.apiInstance()
+      .then((e) => e.get('inferences/server/models'))
+      .then((e) => e.json())
+      .then((e) => (e as LoadedModelResponse).data ?? [])
+      .catch(() => [])
   }
 
   /**

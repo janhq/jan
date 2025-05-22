@@ -1,5 +1,5 @@
 import { ExtensionManager } from '@/lib/extension'
-import { ExtensionTypeEnum, ModelExtension } from '@janhq/core'
+import { EngineManager, ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
 /**
@@ -201,6 +201,28 @@ export const importModel = async (
   } catch (error) {
     console.error('Failed to import model:', error)
     throw error
+  }
+}
+
+/**
+ * Gets the active models for a given provider.
+ * @param provider
+ * @returns
+ */
+export const getActiveModels = async (provider?: string) => {
+  const providerName = provider || 'cortex' // we will go down to llama.cpp extension later on
+  const extension = EngineManager.instance().get(providerName)
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    return 'activeModels' in extension &&
+      typeof extension.activeModels === 'function'
+      ? ((await extension.activeModels()) ?? [])
+      : []
+  } catch (error) {
+    console.error('Failed to get active models:', error)
+    return []
   }
 }
 
