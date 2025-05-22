@@ -157,7 +157,7 @@ export const ThreadContent = memo(
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
               <Dialog>
-                <DialogTrigger asChild>
+                <DialogTrigger>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
