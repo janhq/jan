@@ -1,12 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useHardware } from '@/hooks/useHardware'
 import { getHardwareInfo } from '@/services/hardware'
 import { Progress } from '@/components/ui/progress'
 import type { HardwareData } from '@/hooks/useHardware'
 import { route } from '@/constants/routes'
-import { formatMegaBytes } from '@/lib/utils'
+import { formatDuration, formatMegaBytes } from '@/lib/utils'
 import { IconDeviceDesktopAnalytics } from '@tabler/icons-react'
+import { getActiveModels } from '@/services/models'
+import { ActiveModel } from '@/types/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.systemMonitor as any)({
@@ -16,24 +18,27 @@ export const Route = createFileRoute(route.systemMonitor as any)({
 function SystemMonitor() {
   const { hardwareData, setHardwareData, updateCPUUsage, updateRAMAvailable } =
     useHardware()
+  const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
 
   useEffect(() => {
     // Initial data fetch
     getHardwareInfo().then((data) => {
       setHardwareData(data as unknown as HardwareData)
     })
+    getActiveModels().then(setActiveModels)
 
     // Set up interval for real-time updates
     const intervalId = setInterval(() => {
       getHardwareInfo().then((data) => {
         setHardwareData(data as unknown as HardwareData)
-        updateCPUUsage(data.cpu.usage)
-        updateRAMAvailable(data.ram.available)
+        updateCPUUsage(data.cpu?.usage)
+        updateRAMAvailable(data.ram?.available)
       })
+      getActiveModels().then(setActiveModels)
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setHardwareData, updateCPUUsage, updateRAMAvailable])
+  }, [setHardwareData, setActiveModels, updateCPUUsage, updateRAMAvailable])
 
   // Calculate RAM usage percentage
   const ramUsagePercentage =
@@ -125,31 +130,46 @@ function SystemMonitor() {
       {/* Current Active Model Section */}
       <div className="mt-6 bg-main-view-fg/2 rounded-lg p-6 shadow-sm">
         <h2 className="text-base font-semibold text-main-view-fg mb-4">
-          Current Active Model
+          Running Models
         </h2>
-        <div className="bg-main-view-fg/3 rounded-lg p-4">
-          <div className="flex justify-between items-center mb-2">
-            <span className="font-semibold text-main-view-fg">GPT-4o</span>
+        {activeModels.length === 0 && (
+          <div className="text-center text-main-view-fg/50 py-4">
+            No models are currently running
           </div>
-          <div className="flex flex-col gap-2 mt-3">
-            <div className="flex justify-between items-center">
-              <span className="text-main-view-fg/70">Provider</span>
-              <span className="text-main-view-fg">OpenAI</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-main-view-fg/70">Context Length</span>
-              <span className="text-main-view-fg">128K tokens</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-main-view-fg/70">Status</span>
-              <span className="text-main-view-fg">
-                <div className="bg-green-500/20 px-1 font-bold py-0.5 rounded text-green-700 text-xs">
-                  Running
+        )}
+        {activeModels.length > 0 && (
+          <div className="flex flex-col gap-4">
+            {activeModels.map((model) => (
+              <div className="bg-main-view-fg/3 rounded-lg p-4" key={model.id}>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="font-semibold text-main-view-fg">
+                    {model.id}
+                  </span>
                 </div>
-              </span>
-            </div>
+                <div className="flex flex-col gap-2 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-main-view-fg/70">Provider</span>
+                    <span className="text-main-view-fg">llama.cpp</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-main-view-fg/70">Uptime</span>
+                    <span className="text-main-view-fg">
+                      {formatDuration(model.start_time)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-main-view-fg/70">Status</span>
+                    <span className="text-main-view-fg">
+                      <div className="bg-green-500/20 px-1 font-bold py-0.5 rounded text-green-700 text-xs">
+                        Running
+                      </div>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-        </div>
+        )}
       </div>
 
       {/* Active GPUs Section */}
