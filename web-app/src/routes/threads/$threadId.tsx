@@ -196,6 +196,11 @@ function ThreadDetail() {
                     <ThreadContent
                       {...item}
                       isLastMessage={isLastMessage}
+                      showAssistant={
+                        item.role === 'assistant' &&
+                        (index === 0 ||
+                          messages[index - 1].role !== 'assistant')
+                      }
                       index={index}
                     />
                   </div>

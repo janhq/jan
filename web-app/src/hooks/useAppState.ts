@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
+import { useAssistant } from './useAssistant'
 
 type AppState = {
   streamingContent?: ThreadMessage
@@ -25,8 +26,19 @@ export const useAppState = create<AppState>()((set) => ({
   serverStatus: 'stopped',
   abortControllers: {},
   tokenSpeed: undefined,
-  updateStreamingContent: (content) => {
-    set({ streamingContent: content })
+  updateStreamingContent: (content: ThreadMessage | undefined) => {
+    set(() => ({
+      streamingContent: content
+        ? {
+            ...content,
+            created_at: content.created_at || Date.now(),
+            metadata: {
+              ...content.metadata,
+              assistant: useAssistant.getState().currentAssistant,
+            },
+          }
+        : undefined,
+    }))
   },
   updateLoadingModel: (loading) => {
     set({ loadingModel: loading })

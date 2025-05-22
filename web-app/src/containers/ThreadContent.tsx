@@ -31,6 +31,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { formatDate } from '@/utils/formatDate'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -67,7 +68,13 @@ const CopyButton = ({ text }: { text: string }) => {
 
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo(
-  (item: ThreadMessage & { isLastMessage?: boolean; index?: number }) => {
+  (
+    item: ThreadMessage & {
+      isLastMessage?: boolean
+      index?: number
+      showAssistant?: boolean
+    }
+  ) => {
     const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
 
     // Use useMemo to stabilize the components prop
@@ -134,6 +141,10 @@ export const ThreadContent = memo(
       'tool_calls' in item.metadata &&
       Array.isArray(item.metadata.tool_calls) &&
       item.metadata.tool_calls.length
+
+    const assistant = item.metadata?.assistant as
+      | { avatar?: React.ReactNode; name?: React.ReactNode }
+      | undefined
 
     return (
       <Fragment>
@@ -221,6 +232,25 @@ export const ThreadContent = memo(
         )}
         {item.content?.[0]?.text && item.role !== 'user' && (
           <>
+            {item.showAssistant && (
+              <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
+                <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-2">
+                  <span className="text-base">{assistant?.avatar || '👋'}</span>
+                </div>
+
+                <div className="flex flex-col">
+                  <span className="text-main-view-fg font-medium">
+                    {assistant?.name || 'Jan'}
+                  </span>
+                  {item?.created_at && (
+                    <span className="text-xs mt-0.5">
+                      {formatDate(item?.created_at)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             {reasoningSegment && (
               <ThinkingBlock
                 id={item.index ?? Number(item.id)}
