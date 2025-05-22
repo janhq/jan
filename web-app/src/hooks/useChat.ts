@@ -150,7 +150,9 @@ export const useChat = () => {
           isCompleted = !toolCalls.length
         }
       } catch (error) {
-        toast.error(`Error sending message: ${error}`)
+        toast.error(
+          `Error sending message: ${error && typeof error === 'object' && 'message' in error ? error.message : error}`
+        )
         console.error('Error sending message:', error)
       }
       updateLoadingModel(false)
