@@ -47,6 +47,7 @@ pub fn run() {
             core::cmd::start_server,
             core::cmd::stop_server,
             core::cmd::read_logs,
+            core::cmd::handle_app_update,
             core::cmd::change_app_data_folder,
             // MCP commands
             core::mcp::get_tools,
@@ -90,6 +91,8 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             // Install extensions
             if let Err(e) = setup::install_extensions(app.handle().clone(), false) {
                 log::error!("Failed to install extensions: {}", e);
@@ -97,6 +100,11 @@ pub fn run() {
             setup_mcp(app);
             setup_sidecar(app).expect("Failed to setup sidecar");
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
+            // TODO(any) need to wire up with frontend 
+            // let handle = app.handle().clone();
+            // tauri::async_runtime::spawn(async move {
+            //     handle_app_update(handle).await.unwrap();
+            // });
             Ok(())
         })
         .on_window_event(|window, event| match event {

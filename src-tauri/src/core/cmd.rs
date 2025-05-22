@@ -1,6 +1,8 @@
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf, io};
 use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_updater::UpdaterExt;
 
 use super::{server, setup, state::AppState};
 
@@ -96,7 +98,7 @@ pub fn get_jan_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> 
     }
 
     let app_configurations = get_app_configurations(app_handle);
-    log::info!("data_folder: {}", app_configurations.data_folder);
+    log::debug!("data_folder: {}", app_configurations.data_folder);
     PathBuf::from(app_configurations.data_folder)
 }
 
@@ -155,12 +157,28 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
     });
 
     let package_name = env!("CARGO_PKG_NAME");
-    log::info!("Package name: {}", package_name);
+    log::debug!("Package name: {}", package_name);
+    #[cfg(target_os = "linux")]
+    let old_data_dir = {
+        if let Some(config_path) = dirs::config_dir() {
+            config_path.join(package_name)
+        } else {
+            log::debug!("Could not determine config directory");
+            app_path
+                .parent()
+                .unwrap_or(&app_path.join("../"))
+                .join(package_name)
+        }
+    };
+
+    #[cfg(not(target_os = "linux"))]
     let old_data_dir = app_path
-        .clone()
         .parent()
         .unwrap_or(&app_path.join("../"))
         .join(package_name);
+
+    log::debug!("old_data_dir: {}", old_data_dir.display());
+
     if old_data_dir.exists() {
         return old_data_dir.join(CONFIGURATION_FILE_NAME);
     } else {
@@ -359,4 +377,40 @@ pub async fn read_logs(app: AppHandle) -> Result<String, String> {
     } else {
         Err(format!("Log file not found"))
     }
+}
+
+#[tauri::command]
+pub async fn handle_app_update(app: tauri::AppHandle) -> tauri_plugin_updater::Result<()> {
+    if let Some(update) = app.updater()?.check().await? {
+        let mut downloaded = 0;
+
+        // alternatively we could also call update.download() and update.install() separately
+        log::info!(
+            "Has update {} {} {}",
+            update.version,
+            update.current_version,
+            update.download_url
+        );
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    downloaded += chunk_length;
+                    log::info!("downloaded {downloaded} from {content_length:?}");
+                },
+                || {
+                    log::info!("download finished");
+                },
+            )
+            .await?;
+
+        log::info!("update installed");
+        let client = Client::new();
+        let url = "http://127.0.0.1:39291/processManager/destroy";
+        let _ = client.delete(url).send();
+        app.restart();
+    } else {
+        log::info!("Cannot parse response or update is not available");
+    }
+
+    Ok(())
 }
