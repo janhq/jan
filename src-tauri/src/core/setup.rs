@@ -3,14 +3,15 @@ use std::{
     fs::{self, File},
     io::Read,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use tar::Archive;
 use tauri::{App, Emitter, Listener, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
-use tokio::time::{sleep, Duration};
 use tauri_plugin_store::StoreExt;
+use tokio::sync::Mutex; // Using tokio::sync::Mutex
+use tokio::time::{sleep, Duration};
 
 // MCP
 use super::{
@@ -214,8 +215,6 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         let cortex_restart_count_state = app_state.cortex_restart_count.clone();
         let app_data_dir = get_jan_data_folder_path(app_handle.clone());
 
-        // It's important to clone sidecar_command_builder or re-create it in the loop
-        // because `spawn()` consumes the builder.
         let sidecar_command_builder = || {
             let mut cmd = app_handle
                 .shell()
@@ -260,23 +259,24 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             cmd
         };
 
-
         let child_process: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
 
-        // Listen for kill event
         let child_process_clone_for_kill = child_process.clone();
-        app_handle.listen("kill-sidecar", move |_| {
-            log::info!("Received kill-sidecar event.");
-            if let Some(child) = child_process_clone_for_kill.lock().unwrap().take() {
-                log::info!("Attempting to kill sidecar process...");
-                if let Err(e) = child.kill() {
-                    log::error!("Failed to kill sidecar process: {}", e);
+        app_handle.listen("kill-sidecar", move |_event| {
+            let child_to_kill_arc = child_process_clone_for_kill.clone();
+            tauri::async_runtime::spawn(async move {
+                log::info!("Received kill-sidecar event (processing async).");
+                if let Some(child) = child_to_kill_arc.lock().await.take() {
+                    log::info!("Attempting to kill sidecar process...");
+                    if let Err(e) = child.kill() {
+                        log::error!("Failed to kill sidecar process: {}", e);
+                    } else {
+                        log::info!("Sidecar process killed successfully via event.");
+                    }
                 } else {
-                    log::info!("Sidecar process killed successfully via event.");
+                    log::warn!("Kill event received, but no active sidecar process found to kill.");
                 }
-            } else {
-                log::warn!("Kill event received, but no active sidecar process found to kill.");
-            }
+            });
         });
 
         loop {
@@ -300,11 +300,13 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
 
             let current_command = sidecar_command_builder();
             match current_command.spawn() {
-                Ok((mut rx, child)) => {
-                    log::info!("Cortex server spawned successfully. PID: {:?}", child.pid());
-                    *child_process.lock().unwrap() = Some(child);
+                Ok((mut rx, child_instance)) => {
+                    log::info!(
+                        "Cortex server spawned successfully. PID: {:?}",
+                        child_instance.pid()
+                    );
+                    *child_process.lock().await = Some(child_instance);
 
-                    // Reset restart count on successful spawn
                     {
                         let mut count = cortex_restart_count_state.lock().await;
                         if *count > 0 {
@@ -320,10 +322,16 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                     while let Some(event) = rx.recv().await {
                         match event {
                             CommandEvent::Stdout(line_bytes) => {
-                                log::info!("[Cortex STDOUT]: {}", String::from_utf8_lossy(&line_bytes));
+                                log::info!(
+                                    "[Cortex STDOUT]: {}",
+                                    String::from_utf8_lossy(&line_bytes)
+                                );
                             }
                             CommandEvent::Stderr(line_bytes) => {
-                                log::error!("[Cortex STDERR]: {}", String::from_utf8_lossy(&line_bytes));
+                                log::error!(
+                                    "[Cortex STDERR]: {}",
+                                    String::from_utf8_lossy(&line_bytes)
+                                );
                             }
                             CommandEvent::Error(message) => {
                                 log::error!("[Cortex ERROR]: {}", message);
@@ -331,11 +339,13 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                                 break;
                             }
                             CommandEvent::Terminated(payload) => {
-                                log::info!("[Cortex Terminated]: Signal {:?}, Code {:?}", payload.signal, payload.code);
-                                // Check if termination was intentional (e.g. via kill-sidecar event)
-                                // If child_process is None, it means it was killed intentionally.
-                                if child_process.lock().unwrap().is_some() { // Still Some, means it was not killed by our event
-                                    if payload.code.map_or(true, |c| c != 0) { // Exited with error or unknown
+                                log::info!(
+                                    "[Cortex Terminated]: Signal {:?}, Code {:?}",
+                                    payload.signal,
+                                    payload.code
+                                );
+                                if child_process.lock().await.is_some() {
+                                    if payload.code.map_or(true, |c| c != 0) {
                                         process_terminated_unexpectedly = true;
                                     }
                                 }
@@ -344,14 +354,11 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                             _ => {}
                         }
                     }
-                    
-                    // Ensure the child process is cleared if it terminated
-                    // and was not already cleared by the kill-sidecar event
-                    if child_process.lock().unwrap().is_some() {
-                        *child_process.lock().unwrap() = None;
+
+                    if child_process.lock().await.is_some() {
+                        *child_process.lock().await = None;
                         log::info!("Cleared child process lock after termination.");
                     }
-
 
                     if process_terminated_unexpectedly {
                         log::warn!("Cortex server terminated unexpectedly.");
@@ -363,13 +370,14 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                             *count,
                             MAX_RESTARTS
                         );
-                        // Drop the lock before sleeping
                         drop(count);
                         sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
-                        continue; // Restart the loop
+                        continue;
                     } else {
-                        log::info!("Cortex server terminated normally or was killed. Not restarting.");
-                        break; // Exit the loop, server stopped intentionally or successfully
+                        log::info!(
+                            "Cortex server terminated normally or was killed. Not restarting."
+                        );
+                        break;
                     }
                 }
                 Err(e) => {
@@ -382,7 +390,6 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                         *count,
                         MAX_RESTARTS
                     );
-                     // Drop the lock before sleeping
                     drop(count);
                     sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
                 }
