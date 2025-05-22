@@ -244,6 +244,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             format!("{}{}{}", ld_library_path, std::path::MAIN_SEPARATOR, dest)
         });
     }
+    log::debug!("Sidecar command: {:?}", sidecar_command);
 
     let (mut rx, _child) = sidecar_command.spawn().expect("Failed to spawn sidecar");
     let child = Arc::new(Mutex::new(Some(_child)));
