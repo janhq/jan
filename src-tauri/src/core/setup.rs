@@ -240,10 +240,14 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             #[cfg(target_os = "windows")]
             {
                 cmd = cmd.env("PATH", {
-                    let current_app_data_dir = app_handle.path().app_data_dir().unwrap();
-                    let dest = current_app_data_dir.to_str().unwrap();
-                    let path_env = std::env::var("PATH").unwrap_or_default();
-                    format!("{}{}{}", path_env, std::path::MAIN_SEPARATOR, dest)
+                    let exe_path = env::current_exe().expect("Failed to get current exe path");
+                    let exe_parent_path = exe_path
+                        .parent()
+                        .expect("Executable must have a parent directory");
+                    let bin_path = exe_parent_path.to_path_buf();
+                    let dest = bin_path.display();
+                    let path = std::env::var("PATH").unwrap_or_default();
+                    format!("{}{}{}", path, std::path::MAIN_SEPARATOR, dest)
                 });
             }
 
@@ -299,6 +303,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             );
 
             let current_command = sidecar_command_builder();
+            log::debug!("Sidecar command: {:?}", current_command);
             match current_command.spawn() {
                 Ok((mut rx, child_instance)) => {
                     log::info!(
