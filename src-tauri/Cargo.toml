@@ -46,6 +46,13 @@ futures-util = "0.3.31"
 tokio-util = "0.7.14"
 tauri-plugin-dialog = "2.2.1"
 dirs = "6.0.0"
+sysinfo = "0.34.2"
+ash = "0.38.0"
+nvml-wrapper = "0.10.0"
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8.7"
+libc = "0.2.172"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

@@ -92,7 +92,8 @@
     "resources": [
       "binaries/engines/**/*",
       "resources/themes/**/*",
-      "resources/pre-install/**/*"
+      "resources/pre-install/**/*",
+      "resources/lib/"
     ],
     "externalBin": [
       "binaries/cortex-server",

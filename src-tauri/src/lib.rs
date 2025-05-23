@@ -73,6 +73,9 @@ pub fn run() {
             core::utils::download::download_file,
             core::utils::download::download_hf_repo,
             core::utils::download::cancel_download_task,
+            // hardware
+            core::hardware::get_system_info,
+            core::hardware::get_system_usage,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
