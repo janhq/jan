@@ -48,7 +48,6 @@ pub fn run() {
             core::cmd::read_logs,
             core::cmd::handle_app_update,
             core::cmd::change_app_data_folder,
-            core::cmd::reset_cortex_restart_count,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
