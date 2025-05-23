@@ -182,9 +182,9 @@ export const ThreadContent = memo(
                 <DialogTrigger>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+                      <div className="flex outline-0 items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
                         <IconPencil size={16} />
-                      </button>
+                      </div>
                     </TooltipTrigger>
                     <TooltipContent>
                       <p>Edit</p>
@@ -331,9 +331,9 @@ export const ThreadContent = memo(
                     <DialogTrigger>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+                          <div className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
                             <IconInfoCircle size={16} />
-                          </button>
+                          </div>
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Metadata</p>
