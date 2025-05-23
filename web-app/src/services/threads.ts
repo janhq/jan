@@ -46,7 +46,15 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.createThread({
         ...thread,
-        assistants: [thread.assistants?.[0] ?? defaultAssistant],
+        assistants: [
+          {
+            ...(thread.assistants?.[0] ?? defaultAssistant),
+            model: {
+              id: thread.model?.id ?? '*',
+              engine: thread.model?.provider ?? 'llama.cpp',
+            },
+          },
+        ],
         metadata: {
           // order: 1,
         },
