@@ -68,6 +68,8 @@ pub fn run() {
             core::threads::get_thread_assistant,
             core::threads::create_thread_assistant,
             core::threads::modify_thread_assistant,
+            // generic utils
+            core::utils::write_yaml,
             // Download
             core::utils::download::download_files,
             core::utils::download::cancel_download_task,

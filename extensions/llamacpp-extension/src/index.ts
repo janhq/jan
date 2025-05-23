@@ -28,7 +28,7 @@ import {
   events,
 } from '@janhq/core'
 
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
 
 interface DownloadItem {
   url: string
@@ -90,26 +90,38 @@ export default class llamacpp_extension extends AIEngine {
     // TODO: sanitize modelId
     const taskId = this.createDownloadTaskId(modelId)
 
+    // this is relative to Jan's data folder
+    const modelDir = `models/${this.provider}/${modelId}`
+
     // we only use these from opts
     // opts.modelPath: URL to the model file
     // opts.mmprojPath: URL to the mmproj file
 
     let downloadItems: DownloadItem[] = []
-    let localImportItems: DownloadItem[] = []
+    let modelPath = opts.modelPath
+    let mmprojPath = opts.mmprojPath
 
-    const modelItem = { url: opts.modelPath, save_path: `models/${this.provider}/${modelId}/model.gguf` }
+    const modelItem = { url: opts.modelPath, save_path: `${modelDir}/model.gguf` }
     if (opts.modelPath.startsWith("https://")) {
       downloadItems.push(modelItem)
+      modelPath = modelItem.save_path
     } else {
-      localImportItems.push(modelItem)
+      // this should be absolute path
+      if (!(await fs.existsSync(modelPath))) {
+        throw new Error(`Model file not found: ${modelPath}`)
+      }
     }
 
     if (opts.mmprojPath) {
-      const mmprojItem = { url: opts.mmprojPath, save_path: `models/${this.provider}/${modelId}/mmproj.gguf` }
+      const mmprojItem = { url: opts.mmprojPath, save_path: `${modelDir}/mmproj.gguf` }
       if (opts.mmprojPath.startsWith("https://")) {
         downloadItems.push(mmprojItem)
+        mmprojPath = mmprojItem.save_path
       } else {
-        localImportItems.push(mmprojItem)
+        // this should be absolute path
+        if (!(await fs.existsSync(mmprojPath))) {
+          throw new Error(`MMProj file not found: ${mmprojPath}`)
+        }
       }
     }
 
@@ -140,7 +152,16 @@ export default class llamacpp_extension extends AIEngine {
       events.emit(eventName, { modelId, downloadType: 'Model' })
     }
 
-    // TODO: handle local model import
+    await invoke<void>(
+      'write_yaml',
+      {
+        data: {
+          model_path: modelPath,
+          mmproj_path: mmprojPath,
+        },
+        savePath: `${modelDir}/model.yml`,
+      },
+    )
   }
 
   override async abortImport(modelId: string): Promise<void> {
