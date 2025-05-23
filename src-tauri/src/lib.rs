@@ -48,7 +48,6 @@ pub fn run() {
             core::cmd::read_logs,
             core::cmd::handle_app_update,
             core::cmd::change_app_data_folder,
-            core::cmd::reset_cortex_restart_count,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
@@ -68,6 +67,8 @@ pub fn run() {
             core::threads::get_thread_assistant,
             core::threads::create_thread_assistant,
             core::threads::modify_thread_assistant,
+            // generic utils
+            core::utils::write_yaml,
             // Download
             core::utils::download::download_files,
             core::utils::download::cancel_download_task,
