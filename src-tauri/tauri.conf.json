@@ -42,7 +42,7 @@
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
-        "img-src": "'self' asset: http://asset.localhost blob: data:",
+        "img-src": "'self' asset: http://asset.localhost blob: data: https://cdn.jsdelivr.net",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
         "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost"
       },
