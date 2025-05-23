@@ -48,12 +48,11 @@ export const createThread = async (thread: Thread): Promise<Thread> => {
         ...thread,
         assistants: [
           {
+            ...(thread.assistants?.[0] ?? defaultAssistant),
             model: {
               id: thread.model?.id ?? '*',
               engine: thread.model?.provider ?? 'llama.cpp',
             },
-            id: 'jan',
-            name: 'Jan',
           },
         ],
         metadata: {
