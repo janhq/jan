@@ -98,6 +98,9 @@ export const useChat = () => {
         let isCompleted = false
 
         let attempts = 0
+        const availableTools = selectedModel?.capabilities?.includes('tools')
+          ? tools
+          : []
         while (
           !isCompleted &&
           !abortController.signal.aborted &&
@@ -110,9 +113,11 @@ export const useChat = () => {
             provider,
             builder.getMessages(),
             abortController,
-            tools,
+            availableTools,
             // TODO: replace it with according provider setting later on
-            selectedProvider === 'llama.cpp' && tools.length > 0 ? false : true
+            selectedProvider === 'llama.cpp' && availableTools.length > 0
+              ? false
+              : true
           )
 
           if (!completion) throw new Error('No completion received')

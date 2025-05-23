@@ -140,7 +140,7 @@ function MCPServers() {
 
     const intervalId = setInterval(() => {
       getConnectedServers().then(setConnectedServers)
-    }, 5000)
+    }, 3000)
 
     return () => clearInterval(intervalId)
   }, [setConnectedServers])
@@ -223,9 +223,9 @@ function MCPServers() {
                       <div className="text-sm text-main-view-fg/70">
                         <div>Command: {config.command}</div>
                         <div className="my-1 break-all">
-                          Args: {config.args.join(', ')}
+                          Args: {config?.args?.join(', ')}
                         </div>
-                        {Object.keys(config.env).length > 0 && (
+                        {config.env && Object.keys(config.env).length > 0 && (
                           <div className="break-all">
                             Env:{' '}
                             {Object.entries(config.env)

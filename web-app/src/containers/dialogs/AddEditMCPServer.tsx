@@ -118,14 +118,16 @@ export default function AddEditMCPServer({
     if (open && editingKey && initialData) {
       setServerName(editingKey)
       setCommand(initialData.command)
-      setArgs(initialData.args.length > 0 ? initialData.args : [''])
+      setArgs(initialData.args?.length > 0 ? initialData.args : [''])
 
-      // Convert env object to arrays of keys and values
-      const keys = Object.keys(initialData.env)
-      const values = keys.map((key) => initialData.env[key])
+      if (initialData.env) {
+        // Convert env object to arrays of keys and values
+        const keys = Object.keys(initialData.env)
+        const values = keys.map((key) => initialData.env[key])
 
-      setEnvKeys(keys.length > 0 ? keys : [''])
-      setEnvValues(values.length > 0 ? values : [''])
+        setEnvKeys(keys.length > 0 ? keys : [''])
+        setEnvValues(values.length > 0 ? values : [''])
+      }
     } else if (open) {
       // Add mode - reset form
       resetForm()

@@ -125,9 +125,24 @@ export const ThreadContent = memo(
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
         toSendMessage = threadMessages.pop()
       }
-      if (toSendMessage)
+      if (toSendMessage) {
+        deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
         sendMessage(toSendMessage.content?.[0]?.text?.value || '')
+      }
     }, [deleteMessage, getMessages, item, sendMessage])
+
+    const removeMessage = useCallback(() => {
+      if (item.role === 'assistant' || item.role === 'tool') {
+        const threadMessages = getMessages(item.thread_id)
+        let toSendMessage = threadMessages.pop()
+        while (toSendMessage && toSendMessage?.role !== 'user') {
+          deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
+          toSendMessage = threadMessages.pop()
+        }
+      } else {
+        deleteMessage(item.thread_id, item.id)
+      }
+    }, [deleteMessage, getMessages, item])
 
     const editMessage = useCallback(
       (messageId: string) => {
@@ -302,7 +317,7 @@ export const ThreadContent = memo(
                       <button
                         className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
                         onClick={() => {
-                          deleteMessage(item.thread_id, item.id)
+                          removeMessage()
                         }}
                       >
                         <IconTrash size={16} />

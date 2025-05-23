@@ -225,7 +225,7 @@ function Hardware() {
                 title="Name"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.os.name}
+                    {hardwareData.os?.name}
                   </span>
                 }
               />
@@ -233,7 +233,7 @@ function Hardware() {
                 title="Version"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.os.version}
+                    {hardwareData.os?.version}
                   </span>
                 }
               />
@@ -245,7 +245,7 @@ function Hardware() {
                 title="Model"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu.model}
+                    {hardwareData.cpu?.model}
                   </span>
                 }
               />
@@ -253,7 +253,7 @@ function Hardware() {
                 title="Architecture"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu.arch}
+                    {hardwareData.cpu?.arch}
                   </span>
                 }
               />
@@ -261,16 +261,16 @@ function Hardware() {
                 title="Cores"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {hardwareData.cpu.cores}
+                    {hardwareData.cpu?.cores}
                   </span>
                 }
               />
-              {hardwareData.cpu.instructions.join(', ').length > 0 && (
+              {hardwareData.cpu?.instructions.join(', ').length > 0 && (
                 <CardItem
                   title="Instructions"
                   actions={
                     <span className="text-main-view-fg/80">
-                      {hardwareData.cpu.instructions.join(', ')}
+                      {hardwareData.cpu?.instructions?.join(', ')}
                     </span>
                   }
                 />
@@ -280,11 +280,11 @@ function Hardware() {
                 actions={
                   <div className="flex items-center gap-2">
                     <Progress
-                      value={hardwareData.cpu.usage}
+                      value={hardwareData.cpu?.usage}
                       className="h-2 w-10"
                     />
                     <span className="text-main-view-fg/80">
-                      {hardwareData.cpu.usage.toFixed(2)}%
+                      {hardwareData.cpu?.usage?.toFixed(2)}%
                     </span>
                   </div>
                 }
@@ -305,7 +305,7 @@ function Hardware() {
                 title="Available RAM"
                 actions={
                   <span className="text-main-view-fg/80">
-                    {formatMegaBytes(hardwareData.ram.available)}
+                    {formatMegaBytes(hardwareData.ram?.available)}
                   </span>
                 }
               />
@@ -315,16 +315,16 @@ function Hardware() {
                   <div className="flex items-center gap-2">
                     <Progress
                       value={
-                        ((hardwareData.ram.total - hardwareData.ram.available) /
-                          hardwareData.ram.total) *
+                        ((hardwareData.ram?.total - hardwareData.ram?.available) /
+                          hardwareData.ram?.total) *
                         100
                       }
                       className="h-2 w-10"
                     />
                     <span className="text-main-view-fg/80">
                       {(
-                        ((hardwareData.ram.total - hardwareData.ram.available) /
-                          hardwareData.ram.total) *
+                        ((hardwareData.ram?.total - hardwareData.ram?.available) /
+                          hardwareData.ram?.total) *
                         100
                       ).toFixed(2)}
                       %
