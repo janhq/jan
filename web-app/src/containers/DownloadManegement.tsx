@@ -119,7 +119,7 @@ export function DownloadManagement() {
   return (
     <>
       {(downloadCount > 0 ||
-        (!updateState.isDownloading && updateState.downloadProgress > 0)) && (
+        (updateState.isDownloading && updateState.downloadProgress > 0)) && (
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
           <PopoverTrigger asChild>
             {isLeftPanelOpen ? (
@@ -142,7 +142,7 @@ export function DownloadManagement() {
                     className="text-main-view-fg/50 -mt-1"
                     size={20}
                   />
-                  <div className="bg-primary font-bold size-5 rounded-full absolute -top-2 -right-1 flex items-center justify-center text-primary-fg">
+                  <div className="bg-primary font-bold size-5 rounded-full absolute -top-4 -right-4 flex items-center justify-center text-primary-fg">
                     {downloadCount}
                   </div>
                 </div>
