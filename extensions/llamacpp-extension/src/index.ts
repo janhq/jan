@@ -88,6 +88,7 @@ export default class llamacpp_extension extends AIEngine {
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
     // TODO: sanitize modelId
+    // TODO: check if modelId already exists
     const taskId = this.createDownloadTaskId(modelId)
 
     // this is relative to Jan's data folder
@@ -151,6 +152,8 @@ export default class llamacpp_extension extends AIEngine {
       const eventName = downloadCompleted ? 'onFileDownloadSuccess' : 'onFileDownloadStopped'
       events.emit(eventName, { modelId, downloadType: 'Model' })
     }
+
+    // TODO: check if files are valid GGUF files
 
     await invoke<void>(
       'write_yaml',
