@@ -17,11 +17,11 @@ type DownloadEvent = {
 }
 
 export default class DownloadManager extends BaseExtension {
-  hf_token?: string
+  hfToken?: string
 
   async onLoad() {
     this.registerSettings(SETTINGS)
-    this.hf_token = await this.getSetting<string>(Settings.hfToken, undefined)
+    this.hfToken = await this.getSetting<string>(Settings.hfToken, undefined)
   }
 
   async onUnload() { }
@@ -76,7 +76,7 @@ export default class DownloadManager extends BaseExtension {
 
   _getHeaders() {
     return {
-      ...(this.hf_token && { Authorization: `Bearer ${this.hf_token}` })
+      ...(this.hfToken && { Authorization: `Bearer ${this.hfToken}` })
     }
   }
 }

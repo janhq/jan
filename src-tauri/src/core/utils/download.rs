@@ -186,7 +186,7 @@ async fn _download_files_internal(
         // Create parent directories if they don't exist
         if let Some(parent) = save_path.parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(err_to_string)?;
+                tokio::fs::create_dir_all(parent).await.map_err(err_to_string)?;
             }
         }
         let mut file = File::create(&save_path).await.map_err(err_to_string)?;
@@ -216,7 +216,7 @@ async fn _download_files_internal(
 
         file.flush().await.map_err(err_to_string)?;
         evt.transferred += download_delta;
-        log::info!("Finsihed downloading: {}", item.url);
+        log::info!("Finished downloading: {}", item.url);
     }
 
     app.emit(&evt_name, evt.clone()).unwrap();
