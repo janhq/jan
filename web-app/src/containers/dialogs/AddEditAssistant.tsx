@@ -20,6 +20,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
+import { teamEmoji } from '@/utils/teamEmoji'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -218,10 +220,15 @@ export default function AddEditAssistant({
             <div className="relative">
               <label className="text-sm mb-2 inline-block">Emoji</label>
               <div
-                className="border rounded-sm p-2 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
+                className="border rounded-sm p-1 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
               >
-                {avatar || '😊'}
+                <AvatarEmoji
+                  avatar={avatar}
+                  fallback="😊"
+                  imageClassName="w-5 h-5 object-contain"
+                  textClassName=""
+                />
               </div>
               <div className="relative" ref={emojiPickerRef}>
                 <EmojiPicker
@@ -229,10 +236,16 @@ export default function AddEditAssistant({
                   theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
                   className="!absolute !z-40 !overflow-y-auto top-2"
                   height={350}
+                  customEmojis={teamEmoji}
                   lazyLoadEmojis
                   previewConfig={{ showPreview: false }}
                   onEmojiClick={(emojiData: EmojiClickData) => {
-                    setAvatar(emojiData.emoji)
+                    // For custom emojis, use the imageUrl instead of the emoji name
+                    if (emojiData.isCustom && emojiData.imageUrl) {
+                      setAvatar(emojiData.imageUrl)
+                    } else {
+                      setAvatar(emojiData.emoji)
+                    }
                     setShowEmojiPicker(false)
                   }}
                 />

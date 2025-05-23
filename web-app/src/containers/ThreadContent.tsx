@@ -7,6 +7,7 @@ import {
   IconRefresh,
   IconTrash,
   IconPencil,
+  IconInfoCircle,
 } from '@tabler/icons-react'
 import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
@@ -32,6 +33,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { formatDate } from '@/utils/formatDate'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import CodeEditor from '@uiw/react-textarea-code-editor'
+import '@uiw/react-textarea-code-editor/dist.css'
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -154,7 +158,7 @@ export const ThreadContent = memo(
         {item.content?.[0]?.text && item.role === 'user' && (
           <div>
             <div className="flex justify-end w-full">
-              <div className="bg-accent text-accent-fg p-2 rounded-md inline-block">
+              <div className="bg-main-view-fg/4 text-main-view-fg p-2 rounded-md inline-block">
                 <p className="select-text">{item.content?.[0].text.value}</p>
               </div>
             </div>
@@ -237,8 +241,13 @@ export const ThreadContent = memo(
           <>
             {item.showAssistant && (
               <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
-                <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-2">
-                  <span className="text-base">{assistant?.avatar || '👋'}</span>
+                <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
+                  <AvatarEmoji
+                    avatar={assistant?.avatar}
+                    fallback="👋"
+                    imageClassName="w-6 h-6 object-contain"
+                    textClassName="text-base"
+                  />
                 </div>
 
                 <div className="flex flex-col">
@@ -303,6 +312,55 @@ export const ThreadContent = memo(
                       <p>Delete</p>
                     </TooltipContent>
                   </Tooltip>
+                  <Dialog>
+                    <DialogTrigger>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+                            <IconInfoCircle size={16} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Metadata</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Message Metadata</DialogTitle>
+                        <div className="space-y-2">
+                          <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
+                            <CodeEditor
+                              value={JSON.stringify(
+                                item.metadata || {},
+                                null,
+                                2
+                              )}
+                              language="json"
+                              readOnly
+                              style={{
+                                fontFamily: 'ui-monospace',
+                                backgroundColor: 'transparent',
+                                height: '100%',
+                              }}
+                              className="w-full h-full"
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter className="mt-2 flex items-center">
+                          <DialogClose asChild>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="hover:no-underline"
+                            >
+                              Close
+                            </Button>
+                          </DialogClose>
+                        </DialogFooter>
+                      </DialogHeader>
+                    </DialogContent>
+                  </Dialog>
 
                   {item.isLastMessage && (
                     <Tooltip>

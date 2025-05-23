@@ -16,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.assistant as any)({
@@ -67,10 +68,16 @@ function Assistant() {
             >
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-base font-medium text-main-view-fg/80">
-                  {assistant.avatar && (
-                    <span className="mr-1">{assistant.avatar}</span>
-                  )}
-                  {assistant.name}
+                  <div className="flex items-center gap-1">
+                    <span className="shrink-0 w-4 h-4 relative flex items-center justify-center">
+                      <AvatarEmoji
+                        avatar={assistant?.avatar}
+                        imageClassName="object-cover"
+                        textClassName="text-sm"
+                      />
+                    </span>
+                    <span>{assistant.name}</span>
+                  </div>
                 </h3>
                 <div className="flex items-center gap-0.5">
                   {/* <div

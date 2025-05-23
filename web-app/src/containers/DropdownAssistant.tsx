@@ -10,6 +10,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import AddEditAssistant from './dialogs/AddEditAssistant'
 import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 const DropdownAssistant = () => {
   const {
@@ -34,13 +35,21 @@ const DropdownAssistant = () => {
       <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
         <div className="flex items-center justify-between gap-1">
           <DropdownMenuTrigger asChild>
-            <button className="bg-main-view-fg/5 py-0.5 hover:bg-main-view-fg/8 px-2 rounded font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-40">
-              <span className="text-main-view-fg/80 truncate">
+            <button className="bg-main-view-fg/5 py-1 hover:bg-main-view-fg/8 px-2 rounded font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-40">
+              <div className="text-main-view-fg/80 flex items-center gap-1">
                 {selectedAssistant?.avatar && (
-                  <span className="mr-1">{selectedAssistant?.avatar}</span>
+                  <span className="shrink-0 w-4 h-4 relative flex items-center justify-center">
+                    <AvatarEmoji
+                      avatar={selectedAssistant.avatar}
+                      imageClassName="object-cover"
+                      textClassName="text-sm"
+                    />
+                  </span>
                 )}
-                {selectedAssistant?.name || 'Jan'}
-              </span>
+                <div className="truncate max-w-30">
+                  <span>{selectedAssistant?.name || 'Jan'}</span>
+                </div>
+              </div>
             </button>
           </DropdownMenuTrigger>
           <div
@@ -67,17 +76,25 @@ const DropdownAssistant = () => {
         >
           {assistants.map((assistant) => (
             <div className="relative pr-6" key={assistant.id}>
-              <DropdownMenuItem className="flex justify-between items-center">
-                <span
-                  className="truncate text-main-view-fg/70 flex-1 cursor-pointer"
+              <DropdownMenuItem asChild>
+                <div
+                  className="text-main-view-fg/70 cursor-pointer"
                   onClick={() => {
                     setCurrentAssistant(assistant)
                     updateCurrentThreadAssistant(assistant)
                   }}
                 >
-                  <span className="mr-1">{assistant?.avatar}</span>
-                  {assistant.name}
-                </span>
+                  <div className="shrink-0 relative w-4 h-4">
+                    <AvatarEmoji
+                      avatar={assistant?.avatar}
+                      imageClassName="object-cover"
+                      textClassName=""
+                    />
+                  </div>
+                  <div className="truncate text-left">
+                    <span>{assistant.name}</span>
+                  </div>
+                </div>
               </DropdownMenuItem>
               <div className="absolute top-1/2 -translate-y-1/2 right-1">
                 <div className="size-5 text-main-view-fg/50 cursor-pointer relative z-10 flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
