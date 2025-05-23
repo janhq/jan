@@ -122,6 +122,7 @@ build: check-file-counts
 	yarn build
 
 build-tauri: check-file-counts
+	yarn copy:lib
 	yarn build-tauri
 
 clean:
