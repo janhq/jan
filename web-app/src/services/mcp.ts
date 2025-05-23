@@ -12,7 +12,7 @@ export const updateMCPConfig = async (configs: string) => {
 
 /**
  * @description This function gets the MCP configuration.
- * @returns {Promise<string>} The MCP configuration.
+ * @returns {Promise<object>} The MCP configuration.
  */
 export const getMCPConfig = async () => {
   const mcpConfig = JSON.parse((await window.core?.api?.getMcpConfigs()) ?? '{}')
