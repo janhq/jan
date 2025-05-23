@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
-import { Copy, Eye, EyeOff } from 'lucide-react'
+import { Copy, Eye, EyeOff, CopyCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type InputControl = {
@@ -21,11 +21,16 @@ export function InputControl({
   inputActions = [],
 }: InputControl) {
   const [showPassword, setShowPassword] = useState(false)
+  const [isCopied, setIsCopied] = useState(false)
   const hasInputActions = inputActions && inputActions.length > 0
 
   const copyToClipboard = () => {
     if (value) {
       navigator.clipboard.writeText(value)
+      setIsCopied(true)
+      setTimeout(() => {
+        setIsCopied(false)
+      }, 1000)
     }
   }
 
@@ -65,7 +70,11 @@ export function InputControl({
             onClick={copyToClipboard}
             className="p-1 rounded hover:bg-main-view-fg/5 text-main-view-fg/70"
           >
-            <Copy size={16} />
+            {isCopied ? (
+              <CopyCheck className="text-accent" size={16} />
+            ) : (
+              <Copy size={16} />
+            )}
           </button>
         )}
       </div>
