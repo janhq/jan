@@ -214,8 +214,6 @@ function MCPServers() {
                               : 'bg-main-view-fg/50'
                           )}
                         />
-                        {/* condition here when server is running or not */}
-                        {/* <div className="size-2 rounded-full bg-main-view-fg/20" /> */}
                         <h1 className="text-main-view-fg text-base capitalize">
                           {key}
                         </h1>
@@ -224,11 +222,11 @@ function MCPServers() {
                     description={
                       <div className="text-sm text-main-view-fg/70">
                         <div>Command: {config.command}</div>
-                        <div className="my-1">
+                        <div className="my-1 break-all">
                           Args: {config.args.join(', ')}
                         </div>
                         {Object.keys(config.env).length > 0 && (
-                          <div>
+                          <div className="break-all">
                             Env:{' '}
                             {Object.entries(config.env)
                               .map(([key, value]) => `${key}=${value}`)

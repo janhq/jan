@@ -63,7 +63,7 @@ pub async fn run_mcp_commands<R: Runtime>(
                 if command.clone() == "uvx" {
                     let bun_x_path = format!("{}/uv", bin_path.display());
                     cmd = Command::new(bun_x_path);
-                    cmd.arg("tool run");
+                    cmd.arg("tool");
                     cmd.arg("run");
                 }
                 println!("Command: {cmd:#?}");

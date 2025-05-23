@@ -245,7 +245,7 @@ export const ThreadContent = memo(
                   <span className="text-main-view-fg font-medium">
                     {assistant?.name || 'Jan'}
                   </span>
-                  {item?.created_at && (
+                  {item?.created_at && item?.created_at !== 0 && (
                     <span className="text-xs mt-0.5">
                       {formatDate(item?.created_at)}
                     </span>

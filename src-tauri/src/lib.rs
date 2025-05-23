@@ -72,6 +72,9 @@ pub fn run() {
             // Download
             core::utils::download::download_files,
             core::utils::download::cancel_download_task,
+            // hardware
+            core::hardware::get_system_info,
+            core::hardware::get_system_usage,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),
@@ -101,7 +104,7 @@ pub fn run() {
             setup_mcp(app);
             setup_sidecar(app).expect("Failed to setup sidecar");
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
-            // TODO(any) need to wire up with frontend 
+            // TODO(any) need to wire up with frontend
             // let handle = app.handle().clone();
             // tauri::async_runtime::spawn(async move {
             //     handle_app_update(handle).await.unwrap();
@@ -110,11 +113,13 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
-                let client = Client::new();
-                let url = "http://127.0.0.1:39291/processManager/destroy";
-                let _ = client.delete(url).send();
+                if window.label() == "main" {
+                    let client = Client::new();
+                    let url = "http://127.0.0.1:39291/processManager/destroy";
+                    let _ = client.delete(url).send();
 
-                window.emit("kill-sidecar", ()).unwrap();
+                    window.emit("kill-sidecar", ()).unwrap();
+                }
             }
             _ => {}
         })

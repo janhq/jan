@@ -40,7 +40,7 @@
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
         "connect-src": "ipc: http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https:",
         "font-src": [
-          "https://fonts.gstatic.com blob: data: tauri://localhost/*"
+          "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
@@ -92,7 +92,8 @@
     "resources": [
       "binaries/engines/**/*",
       "resources/themes/**/*",
-      "resources/pre-install/**/*"
+      "resources/pre-install/**/*",
+      "resources/lib/"
     ],
     "externalBin": [
       "binaries/cortex-server",
@@ -107,6 +108,7 @@
       "deb": {
         "files": {
           "usr/bin/bun": "resources/bin/bun",
+          "usr/lib/Jan/binaries": "binaries/deps",
           "usr/lib/Jan/binaries/engines": "binaries/engines"
         }
       }

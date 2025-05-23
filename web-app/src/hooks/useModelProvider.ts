@@ -55,7 +55,7 @@ export const useModelProvider = create<ModelProviderState>()(
               }),
               api_key: existingProvider?.api_key || provider.api_key,
               base_url: existingProvider?.base_url || provider.base_url,
-              active: existingProvider?.active || true,
+              active: existingProvider ? existingProvider?.active : false,
             }
           })
 
