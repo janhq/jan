@@ -28,12 +28,19 @@ export const useAssistant = create<AssistantState>()(
       currentAssistant: defaultAssistant,
       addAssistant: (assistant) =>
         set({ assistants: [...get().assistants, assistant] }),
-      updateAssistant: (assistant) =>
+      updateAssistant: (assistant) => {
+        const state = get()
         set({
-          assistants: get().assistants.map((a) =>
+          assistants: state.assistants.map((a) =>
             a.id === assistant.id ? assistant : a
           ),
-        }),
+          // Update currentAssistant if it's the same assistant being updated
+          currentAssistant:
+            state.currentAssistant.id === assistant.id
+              ? assistant
+              : state.currentAssistant,
+        })
+      },
       deleteAssistant: (id) =>
         set({ assistants: get().assistants.filter((a) => a.id !== id) }),
       setCurrentAssistant: (assistant) => {
