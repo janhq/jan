@@ -6,104 +6,59 @@ export enum Settings {
   hfToken = 'hf-token',
 }
 
+interface DownloadItem {
+  url: string
+  save_path: string
+}
+
 type DownloadEvent = {
-  task_id: string
-  total_size: number
-  downloaded_size: number
-  download_type: string
-  event_type: string
+  transferred: number
+  total: number
 }
 
 export default class DownloadManager extends BaseExtension {
-  hf_token?: string
+  hfToken?: string
 
   async onLoad() {
     this.registerSettings(SETTINGS)
-    this.hf_token = await this.getSetting<string>(Settings.hfToken, undefined)
+    this.hfToken = await this.getSetting<string>(Settings.hfToken, undefined)
   }
 
   async onUnload() { }
 
-  async downloadFile(url: string, path: string, taskId: string) {
-    // relay tauri events to Jan events
-    const unlisten = await listen<DownloadEvent>('download', (event) => {
-      let payload = event.payload
-      let eventName = {
-        Updated: 'onFileDownloadUpdate',
-        Error: 'onFileDownloadError',
-        Success: 'onFileDownloadSuccess',
-        Stopped: 'onFileDownloadStopped',
-        Started: 'onFileDownloadStarted',
-      }[payload.event_type]
-
-      // remove this once event system is back in web-app
-      console.log(taskId, payload.event_type, payload.downloaded_size / payload.total_size)
-
-      events.emit(eventName, {
-        modelId: taskId,
-        percent: payload.downloaded_size / payload.total_size,
-        size: {
-          transferred: payload.downloaded_size,
-          total: payload.total_size,
-        },
-        downloadType: payload.download_type,
-      })
-    })
-
-    try {
-      await invoke<void>(
-        "download_file",
-        { url, path, taskId, headers: this._getHeaders() },
-      )
-    } catch (error) {
-      console.error("Error downloading file:", error)
-      events.emit('onFileDownloadError', {
-        modelId: url,
-        downloadType: 'Model',
-      })
-      throw error
-    } finally {
-      unlisten()
-    }
+  async downloadFile(
+    url: string,
+    savePath: string,
+    taskId: string,
+    onProgress?: (transferred: number, total: number) => void
+  ) {
+    return await this.downloadFiles(
+      [{ url, save_path: savePath }],
+      taskId,
+      onProgress
+    )
   }
 
-  async downloadHfRepo(modelId: string, saveDir: string, taskId: string, branch?: string) {
-    // relay tauri events to Jan events
-    const unlisten = await listen<DownloadEvent>('download', (event) => {
-      let payload = event.payload
-      let eventName = {
-        Updated: 'onFileDownloadUpdate',
-        Error: 'onFileDownloadError',
-        Success: 'onFileDownloadSuccess',
-        Stopped: 'onFileDownloadStopped',
-        Started: 'onFileDownloadStarted',
-      }[payload.event_type]
-
-      // remove this once event system is back in web-app
-      console.log(taskId, payload.event_type, payload.downloaded_size / payload.total_size)
-
-      events.emit(eventName, {
-        modelId: taskId,
-        percent: payload.downloaded_size / payload.total_size,
-        size: {
-          transferred: payload.downloaded_size,
-          total: payload.total_size,
-        },
-        downloadType: payload.download_type,
-      })
+  async downloadFiles(
+    items: DownloadItem[],
+    taskId: string,
+    onProgress?: (transferred: number, total: number) => void
+  ) {
+    // relay tauri events to onProgress callback
+    const unlisten = await listen<DownloadEvent>(`download-${taskId}`, (event) => {
+      if (onProgress) {
+        let payload = event.payload
+        onProgress(payload.transferred, payload.total)
+      }
     })
 
     try {
       await invoke<void>(
-        "download_hf_repo",
-        { modelId, saveDir, taskId, branch, headers: this._getHeaders() },
-    )
+        "download_files",
+        { items, taskId, headers: this._getHeaders() },
+      )
     } catch (error) {
-      console.error("Error downloading file:", error)
-      events.emit('onFileDownloadError', {
-        modelId: modelId,
-        downloadType: 'Model',
-      })
+      console.error("Error downloading task", taskId, error)
       throw error
     } finally {
       unlisten()
@@ -121,7 +76,7 @@ export default class DownloadManager extends BaseExtension {
 
   _getHeaders() {
     return {
-      ...(this.hf_token && { Authorization: `Bearer ${this.hf_token}` })
+      ...(this.hfToken && { Authorization: `Bearer ${this.hfToken}` })
     }
   }
 }
