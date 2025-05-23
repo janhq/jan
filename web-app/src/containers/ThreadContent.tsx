@@ -33,6 +33,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { formatDate } from '@/utils/formatDate'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
 
@@ -218,61 +219,21 @@ export const ThreadContent = memo(
                   </DialogHeader>
                 </DialogContent>
               </Dialog>
-              <Dialog>
-                <DialogTrigger>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
-                        <IconInfoCircle size={16} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Metadata</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Message Metadata</DialogTitle>
-                    <div className="space-y-2">
-                      <div className="border border-main-view-fg/10 rounded-md overflow-hidden h-96">
-                        <CodeEditor
-                          value={JSON.stringify(item.metadata || {}, null, 2)}
-                          language="json"
-                          readOnly
-                          style={{
-                            fontFamily: 'ui-monospace',
-                            backgroundColor: 'transparent',
-                            height: '100%',
-                          }}
-                          className="w-full h-full"
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter className="mt-2 flex items-center">
-                      <DialogClose asChild>
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="hover:no-underline"
-                        >
-                          Close
-                        </Button>
-                      </DialogClose>
-                      <Button
-                        onClick={() => {
-                          navigator.clipboard.writeText(
-                            JSON.stringify(item.metadata || {}, null, 2)
-                          )
-                          toast.success('Metadata copied to clipboard')
-                        }}
-                      >
-                        Copy JSON
-                      </Button>
-                    </DialogFooter>
-                  </DialogHeader>
-                </DialogContent>
-              </Dialog>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                    onClick={() => {
+                      deleteMessage(item.thread_id, item.id)
+                    }}
+                  >
+                    <IconTrash size={16} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Delete</p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           </div>
         )}
@@ -281,19 +242,12 @@ export const ThreadContent = memo(
             {item.showAssistant && (
               <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
                 <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
-                  {assistant &&
-                  typeof assistant?.avatar === 'string' &&
-                  assistant?.avatar?.startsWith('/images/') ? (
-                    <img
-                      src={assistant.avatar as string}
-                      alt="Custom emoji"
-                      className="w-6 h-6 object-contain"
-                    />
-                  ) : (
-                    <span className="text-base">
-                      {assistant?.avatar || '👋'}
-                    </span>
-                  )}
+                  <AvatarEmoji
+                    avatar={assistant?.avatar}
+                    fallback="👋"
+                    imageClassName="w-6 h-6 object-contain"
+                    textClassName="text-base"
+                  />
                 </div>
 
                 <div className="flex flex-col">

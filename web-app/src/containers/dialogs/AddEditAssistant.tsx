@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
 import { teamEmoji } from '@/utils/teamEmoji'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -222,15 +223,12 @@ export default function AddEditAssistant({
                 className="border rounded-sm p-1 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
               >
-                {avatar && avatar.startsWith('/images/') ? (
-                  <img
-                    src={avatar}
-                    alt="Custom emoji"
-                    className="w-5 h-5 object-contain"
-                  />
-                ) : (
-                  avatar || '😊'
-                )}
+                <AvatarEmoji
+                  avatar={avatar}
+                  fallback="😊"
+                  imageClassName="w-5 h-5 object-contain"
+                  textClassName=""
+                />
               </div>
               <div className="relative" ref={emojiPickerRef}>
                 <EmojiPicker

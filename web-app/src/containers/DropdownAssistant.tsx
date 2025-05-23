@@ -10,6 +10,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import AddEditAssistant from './dialogs/AddEditAssistant'
 import { IconCirclePlus, IconSettings } from '@tabler/icons-react'
 import { useThreads } from '@/hooks/useThreads'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 const DropdownAssistant = () => {
   const {
@@ -38,15 +39,11 @@ const DropdownAssistant = () => {
               <div className="text-main-view-fg/80 flex items-center gap-1">
                 {selectedAssistant?.avatar && (
                   <span className="shrink-0 w-4 h-4 relative flex items-center justify-center">
-                    {selectedAssistant.avatar.startsWith('/images/') ? (
-                      <img
-                        src={selectedAssistant.avatar}
-                        alt="Custom emoji"
-                        className="object-cover"
-                      />
-                    ) : (
-                      <div className="text-sm">{selectedAssistant.avatar}</div>
-                    )}
+                    <AvatarEmoji
+                      avatar={selectedAssistant.avatar}
+                      imageClassName="object-cover"
+                      textClassName="text-sm"
+                    />
                   </span>
                 )}
                 <div className="truncate max-w-30">
@@ -88,16 +85,11 @@ const DropdownAssistant = () => {
                   }}
                 >
                   <div className="shrink-0 relative w-4 h-4">
-                    {assistant?.avatar &&
-                    assistant.avatar.startsWith('/images/') ? (
-                      <img
-                        src={assistant.avatar}
-                        alt="Custom emoji"
-                        className="object-cover"
-                      />
-                    ) : (
-                      assistant?.avatar
-                    )}
+                    <AvatarEmoji
+                      avatar={assistant?.avatar}
+                      imageClassName="object-cover"
+                      textClassName=""
+                    />
                   </div>
                   <div className="truncate text-left">
                     <span>{assistant.name}</span>
