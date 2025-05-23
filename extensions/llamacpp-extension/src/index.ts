@@ -14,8 +14,6 @@ import {
   modelInfo,
   listOptions,
   listResult,
-  pullOptions,
-  pullResult,
   loadOptions,
   sessionInfo,
   unloadOptions,
@@ -25,14 +23,17 @@ import {
   chatCompletionChunk,
   deleteOptions,
   deleteResult,
-  importOptions,
-  importResult,
-  abortPullOptions,
-  abortPullResult,
+  ImportOptions,
   chatCompletionRequest,
+  events,
 } from '@janhq/core'
 
-import { invoke } from '@tauri-apps/api/tauri'
+import { invoke } from '@tauri-apps/api/core'
+
+interface DownloadItem {
+  url: string
+  save_path: string
+}
 
 /**
  * Helper to convert GGUF model filename to a more structured ID/name
@@ -62,6 +63,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
 
+  private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
   private activeRequests: Map<string, AbortController> = new Map()
@@ -69,6 +71,8 @@ export default class llamacpp_extension extends AIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
     this.registerSettings(SETTINGS)
+
+    this.downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
 
     // Initialize models base path - assuming this would be retrieved from settings
     this.modelsBasePath = await joinPath([
@@ -82,8 +86,91 @@ export default class llamacpp_extension extends AIEngine {
     throw new Error('method not implemented yet')
   }
 
-  override async pull(opts: pullOptions): Promise<pullResult> {
-    throw new Error('method not implemented yet')
+  override async import(modelId: string, opts: ImportOptions): Promise<void> {
+    // TODO: sanitize modelId
+    // TODO: check if modelId already exists
+    const taskId = this.createDownloadTaskId(modelId)
+
+    // this is relative to Jan's data folder
+    const modelDir = `models/${this.provider}/${modelId}`
+
+    // we only use these from opts
+    // opts.modelPath: URL to the model file
+    // opts.mmprojPath: URL to the mmproj file
+
+    let downloadItems: DownloadItem[] = []
+    let modelPath = opts.modelPath
+    let mmprojPath = opts.mmprojPath
+
+    const modelItem = { url: opts.modelPath, save_path: `${modelDir}/model.gguf` }
+    if (opts.modelPath.startsWith("https://")) {
+      downloadItems.push(modelItem)
+      modelPath = modelItem.save_path
+    } else {
+      // this should be absolute path
+      if (!(await fs.existsSync(modelPath))) {
+        throw new Error(`Model file not found: ${modelPath}`)
+      }
+    }
+
+    if (opts.mmprojPath) {
+      const mmprojItem = { url: opts.mmprojPath, save_path: `${modelDir}/mmproj.gguf` }
+      if (opts.mmprojPath.startsWith("https://")) {
+        downloadItems.push(mmprojItem)
+        mmprojPath = mmprojItem.save_path
+      } else {
+        // this should be absolute path
+        if (!(await fs.existsSync(mmprojPath))) {
+          throw new Error(`MMProj file not found: ${mmprojPath}`)
+        }
+      }
+    }
+
+    if (downloadItems.length > 0) {
+      let downloadCompleted = false
+
+      try {
+        // emit download update event on progress
+        const onProgress = (transferred: number, total: number) => {
+          events.emit('onFileDownloadUpdate', {
+            modelId,
+            percent: transferred / total,
+            size: { transferred, total },
+            downloadType: 'Model',
+          })
+          downloadCompleted = transferred === total
+        }
+        await this.downloadManager.downloadFiles(downloadItems, taskId, onProgress)
+      } catch (error) {
+        console.error('Error downloading model:', modelId, opts, error)
+        events.emit('onFileDownloadError', { modelId, downloadType: 'Model' })
+        throw error
+      }
+
+      // once we reach this point, it either means download finishes or it was cancelled.
+      // if there was an error, it would have been caught above
+      const eventName = downloadCompleted ? 'onFileDownloadSuccess' : 'onFileDownloadStopped'
+      events.emit(eventName, { modelId, downloadType: 'Model' })
+    }
+
+    // TODO: check if files are valid GGUF files
+
+    await invoke<void>(
+      'write_yaml',
+      {
+        data: {
+          model_path: modelPath,
+          mmproj_path: mmprojPath,
+        },
+        savePath: `${modelDir}/model.yml`,
+      },
+    )
+  }
+
+  override async abortImport(modelId: string): Promise<void> {
+    // prepand provider name to avoid name collision
+    const taskId = this.createDownloadTaskId(modelId)
+    await this.downloadManager.cancelDownload(taskId)
   }
 
   override async load(opts: loadOptions): Promise<sessionInfo> {
@@ -234,6 +321,11 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
+  private createDownloadTaskId(modelId: string) {
+    // prepend provider to make taksId unique across providers
+    return `${this.provider}/${modelId}`
+  }
+
   private async *handleStreamingResponse(
     url: string,
     headers: HeadersInit,
@@ -339,14 +431,6 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async delete(opts: deleteOptions): Promise<deleteResult> {
-    throw new Error('method not implemented yet')
-  }
-
-  override async import(opts: importOptions): Promise<importResult> {
-    throw new Error('method not implemented yet')
-  }
-
-  override async abortPull(opts: abortPullOptions): Promise<abortPullResult> {
     throw new Error('method not implemented yet')
   }
 
