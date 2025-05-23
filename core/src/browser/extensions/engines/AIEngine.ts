@@ -4,11 +4,22 @@ import { EngineManager } from './EngineManager'
 /* AIEngine class types */
 
 export interface chatCompletionRequestMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string | null
-  name?: string
-  tool_calls?: any[] // Simplified
-  tool_call_id?: string
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null | Content[]; // Content can be a string OR an array of content parts
+  name?: string;
+  tool_calls?: any[]; // Simplified tool_call_id?: string
+}
+
+export interface Content {
+  type: 'text' | 'input_image' | 'input_audio';
+  text?: string;
+  image_url?: string;
+  input_audio?: InputAudio;
+}
+
+export interface InputAudio {
+  data: string; // Base64 encoded audio data
+  format: 'mp3' | 'wav' | 'ogg' | 'flac'; // Add more formats as needed/llama-server seems to support mp3
 }
 
 export interface chatCompletionRequest {
