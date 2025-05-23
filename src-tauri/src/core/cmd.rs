@@ -284,14 +284,6 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
 }
 
 #[tauri::command]
-pub async fn reset_cortex_restart_count(state: State<'_, AppState>) -> Result<(), String> {
-    let mut count = state.cortex_restart_count.lock().await;
-    *count = 0;
-    log::info!("Cortex server restart count reset to 0.");
-    Ok(())
-}
-
-#[tauri::command]
 pub fn change_app_data_folder(
     app_handle: tauri::AppHandle,
     new_data_folder: String,

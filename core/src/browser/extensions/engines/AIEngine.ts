@@ -91,21 +91,6 @@ export interface listOptions {
 }
 export type listResult = modelInfo[]
 
-// 2. /pull
-export interface pullOptions {
-  providerId: string
-  modelId: string // Identifier for the model to pull (e.g., from a known registry)
-  downloadUrl: string // URL to download the model from
-  /** optional callback to receive download progress */
-  onProgress?: (progress: { percent: number; downloadedBytes: number; totalBytes?: number }) => void
-}
-export interface pullResult {
-  success: boolean
-  path?: string // local file path to the pulled model
-  error?: string
-  modelInfo?: modelInfo // Info of the pulled model
-}
-
 // 3. /load
 export interface loadOptions {
   modelPath: string
@@ -174,24 +159,13 @@ export interface deleteResult {
 }
 
 // 7. /import
-export interface importOptions {
-  providerId: string
-  sourcePath: string // Path to the local model file to import
-  desiredModelId?: string // Optional: if user wants to name it specifically
+export interface ImportOptions {
+  [key: string]: any
 }
+
 export interface importResult {
   success: boolean
   modelInfo?: modelInfo
-  error?: string
-}
-
-// 8. /abortPull
-export interface abortPullOptions {
-  providerId: string
-  modelId: string // The modelId whose download is to be aborted
-}
-export interface abortPullResult {
-  success: boolean
   error?: string
 }
 
@@ -224,11 +198,6 @@ export abstract class AIEngine extends BaseExtension {
   abstract list(opts: listOptions): Promise<listResult>
 
   /**
-   * Pulls/downloads a model
-   */
-  abstract pull(opts: pullOptions): Promise<pullResult>
-
-  /**
    * Loads a model into memory
    */
   abstract load(opts: loadOptions): Promise<sessionInfo>
@@ -251,12 +220,12 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Imports a model
    */
-  abstract import(opts: importOptions): Promise<importResult>
+  abstract import(modelId: string, opts: ImportOptions): Promise<void>
 
   /**
-   * Aborts an ongoing model pull
+   * Aborts an ongoing model import
    */
-  abstract abortPull(opts: abortPullOptions): Promise<abortPullResult>
+  abstract abortImport(modelId: string): Promise<void>
 
   /**
    * Optional method to get the underlying chat client

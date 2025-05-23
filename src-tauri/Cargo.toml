@@ -52,6 +52,7 @@ ash = "0.38.0"
 nvml-wrapper = "0.10.0"
 tauri-plugin-deep-link = "2"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+serde_yaml = "0.9.34"
 
 [target.'cfg(windows)'.dependencies]
 libloading = "0.8.7"

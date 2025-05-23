@@ -1,4 +1,5 @@
 pub mod download;
+pub mod extensions;
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -76,4 +77,24 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     }
     ret
 }
-pub mod extensions;
+
+#[tauri::command]
+pub fn write_yaml(
+    app: tauri::AppHandle,
+    data: serde_json::Value,
+    save_path: &str,
+) -> Result<(), String> {
+    // TODO: have an internal function to check scope
+    let jan_data_folder = get_jan_data_folder_path(app.clone());
+    let save_path = normalize_path(&jan_data_folder.join(save_path));
+    if !save_path.starts_with(&jan_data_folder) {
+        return Err(format!(
+            "Error: save path {} is not under jan_data_folder {}",
+            save_path.to_string_lossy(),
+            jan_data_folder.to_string_lossy(),
+        ));
+    }
+    let mut file = fs::File::create(&save_path).map_err(|e| e.to_string())?;
+    serde_yaml::to_writer(&mut file, &data).map_err(|e| e.to_string())?;
+    Ok(())
+}
