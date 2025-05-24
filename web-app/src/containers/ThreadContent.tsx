@@ -358,7 +358,7 @@ export const ThreadContent = memo(
                                 backgroundColor: 'transparent',
                                 height: '100%',
                               }}
-                              className="w-full h-full"
+                              className="w-full h-full !text-sm"
                             />
                           </div>
                         </div>

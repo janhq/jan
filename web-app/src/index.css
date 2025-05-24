@@ -22,6 +22,7 @@
   --color-destructive-fg: var(--app-destructive-fg);
 
   /* Font scale based on --font-size-base */
+  --text-xs: calc(var(--font-size-base) * 0.75); /* ~12px */
   --text-sm: calc(var(--font-size-base) * 0.875); /* ~14px */
   --text-base: var(--font-size-base); /* ~16px */
   --text-lg: calc(var(--font-size-base) * 1.125); /* ~18px */

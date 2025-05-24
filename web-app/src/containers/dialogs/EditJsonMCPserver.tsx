@@ -73,7 +73,7 @@ export default function EditJsonMCPserver({
                 fontFamily: 'ui-monospace',
                 backgroundColor: 'transparent',
               }}
-              className="w-full "
+              className="w-full !text-sm "
             />
           </div>
           {error && <div className="text-destructive text-sm">{error}</div>}
