@@ -97,17 +97,14 @@ export const useChat = () => {
 
         let isCompleted = false
 
-        let attempts = 0
-        const availableTools = selectedModel?.capabilities?.includes('tools')
+        let availableTools = selectedModel?.capabilities?.includes('tools')
           ? tools
           : []
         while (
           !isCompleted &&
-          !abortController.signal.aborted &&
+          !abortController.signal.aborted
           // TODO: Max attempts can be set in the provider settings later
-          attempts < 10
         ) {
-          attempts += 1
           const completion = await sendCompletion(
             activeThread,
             provider,
@@ -164,6 +161,7 @@ export const useChat = () => {
           addMessage(updatedMessage ?? finalContent)
 
           isCompleted = !toolCalls.length
+          availableTools = []
         }
       } catch (error) {
         toast.error(
