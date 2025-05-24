@@ -40,6 +40,10 @@ const menuSettings = [
     title: 'Extensions',
     route: route.settings.extensions,
   },
+  {
+    title: 'About',
+    route: route.settings.about,
+  },
 ]
 
 const SettingsMenu = () => {
