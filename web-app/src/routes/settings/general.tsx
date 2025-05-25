@@ -26,7 +26,13 @@ import {
   getJanDataFolder,
   relocateJanDataFolder,
 } from '@/services/app'
-import { IconFolder, IconLogs } from '@tabler/icons-react'
+import {
+  IconBrandDiscord,
+  IconBrandGithub,
+  IconExternalLink,
+  IconFolder,
+  IconLogs,
+} from '@tabler/icons-react'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { windowKey } from '@/constants/windows'
 
@@ -246,6 +252,120 @@ function General() {
                       </DialogHeader>
                     </DialogContent>
                   </Dialog>
+                }
+              />
+            </Card>
+
+            {/* Resources */}
+            <Card title="Resources">
+              <CardItem
+                title="Documentation"
+                description="Learn how to use Jan and explore its features"
+                actions={
+                  <a
+                    href="https://jan.ai/docs"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>View Docs</span>
+                      <IconExternalLink size={14} />
+                    </div>
+                  </a>
+                }
+              />
+              <CardItem
+                title="Release Notes"
+                description="See what's new in the latest version"
+                actions={
+                  <a
+                    href="https://github.com/janhq/jan/releases"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>View Releases</span>
+                      <IconExternalLink size={14} />
+                    </div>
+                  </a>
+                }
+              />
+            </Card>
+
+            {/* Community */}
+            <Card title="Community">
+              <CardItem
+                title="GitHub"
+                description="Contribute to Jan's development"
+                actions={
+                  <a
+                    href="https://github.com/janhq/jan"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                      <IconBrandGithub
+                        size={18}
+                        className="text-main-view-fg/50"
+                      />
+                    </div>
+                  </a>
+                }
+              />
+              <CardItem
+                title="Discord"
+                description="Join our community for support and discussions"
+                actions={
+                  <a
+                    href="https://discord.com/invite/FTk2MvZwJH"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                      <IconBrandDiscord
+                        size={18}
+                        className="text-main-view-fg/50"
+                      />
+                    </div>
+                  </a>
+                }
+              />
+            </Card>
+
+            {/* Support */}
+            <Card title="Support">
+              <CardItem
+                title="Report an Issue"
+                description="Found a bug? Let us know on GitHub"
+                actions={
+                  <a
+                    href="https://github.com/janhq/jan/issues/new"
+                    target="_blank"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>Report Issue</span>
+                      <IconExternalLink size={14} />
+                    </div>
+                  </a>
+                }
+              />
+            </Card>
+
+            {/* Credits */}
+            <Card title="Credits">
+              <CardItem
+                align="start"
+                description={
+                  <div className="text-main-view-fg/70 -mt-2">
+                    <p>
+                      Jan is built with ❤️ by the Jan team and contributors from
+                      around the world.
+                    </p>
+                    <p className="mt-2">
+                      Special thanks to all our open-source dependencies and the
+                      amazing AI community.
+                    </p>
+                  </div>
                 }
               />
             </Card>
