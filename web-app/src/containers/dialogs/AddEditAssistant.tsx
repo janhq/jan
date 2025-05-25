@@ -22,6 +22,7 @@ import {
 import { useTheme } from '@/hooks/useTheme'
 import { teamEmoji } from '@/utils/teamEmoji'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { useTranslation } from 'react-i18next'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -207,6 +208,8 @@ export default function AddEditAssistant({
     resetForm()
   }
 
+  const { t } = useTranslation()
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -253,7 +256,9 @@ export default function AddEditAssistant({
             </div>
 
             <div className="space-y-2 w-full">
-              <label className="text-sm mb-2 inline-block">Name</label>
+              <label className="text-sm mb-2 inline-block">
+                {t(`common.name`)}
+              </label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
