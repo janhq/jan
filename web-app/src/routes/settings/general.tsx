@@ -313,7 +313,7 @@ function General() {
                 actions={
                   <a
                     href="https://discord.com/invite/FTk2MvZwJH"
-                    target="_blank"
+                    target="_blank" rel="noopener noreferrer"
                   >
                     <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
                       <IconBrandDiscord
