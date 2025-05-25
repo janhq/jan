@@ -5,6 +5,8 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from 'react-i18next'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import posthog from 'posthog-js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.privacy as any)({
@@ -13,6 +15,7 @@ export const Route = createFileRoute(route.settings.privacy as any)({
 
 function Privacy() {
   const { t } = useTranslation()
+  const { setProductAnalytic, productAnalytic } = useAnalytic()
 
   return (
     <div className="flex flex-col h-full">
@@ -30,7 +33,17 @@ function Privacy() {
                     Analytics
                   </h1>
                   <div className="flex items-center gap-2">
-                    <Switch />
+                    <Switch
+                      checked={productAnalytic}
+                      onCheckedChange={(state) => {
+                        if (state) {
+                          posthog.opt_in_capturing()
+                        } else {
+                          posthog.opt_out_capturing()
+                        }
+                        setProductAnalytic(state)
+                      }}
+                    />
                   </div>
                 </div>
               }

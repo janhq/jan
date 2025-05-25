@@ -12,14 +12,20 @@ import { DataProvider } from '@/providers/DataProvider'
 import { route } from '@/constants/routes'
 import { ExtensionProvider } from '@/providers/ExtensionProvider'
 import { ToasterProvider } from '@/providers/ToasterProvider'
+import { useAnalytic } from '@/hooks/useAnalytic'
+import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
+import { AnalyticProvider } from '@/providers/AnalyticProvider'
 
 export const Route = createRootRoute({
   component: RootLayout,
 })
 
 const AppLayout = () => {
+  const { productAnalyticPrompt } = useAnalytic()
+
   return (
     <Fragment>
+      <AnalyticProvider />
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
         {/* Fake absolute panel top to enable window drag */}
@@ -37,6 +43,7 @@ const AppLayout = () => {
           </div>
         </div>
       </main>
+      {productAnalyticPrompt && <PromptAnalytic />}
     </Fragment>
   )
 }

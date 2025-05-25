@@ -16,6 +16,8 @@ declare global {
   declare const IS_ANDROID: boolean
   declare const PLATFORM: string
   declare const VERSION: string
+  declare const POSTHOG_KEY: string
+  declare const POSTHOG_HOST: string
   interface Window {
     core: AppCore | undefined
   }
