@@ -26,7 +26,6 @@ import { Route as SettingsHardwareImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralImport } from './routes/settings/general'
 import { Route as SettingsExtensionsImport } from './routes/settings/extensions'
 import { Route as SettingsAppearanceImport } from './routes/settings/appearance'
-import { Route as SettingsAboutImport } from './routes/settings/about'
 import { Route as LocalApiServerLogsImport } from './routes/local-api-server/logs'
 import { Route as SettingsProvidersProviderNameImport } from './routes/settings/providers/$providerName'
 
@@ -122,12 +121,6 @@ const SettingsAppearanceRoute = SettingsAppearanceImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const SettingsAboutRoute = SettingsAboutImport.update({
-  id: '/settings/about',
-  path: '/settings/about',
-  getParentRoute: () => rootRoute,
-} as any)
-
 const LocalApiServerLogsRoute = LocalApiServerLogsImport.update({
   id: '/local-api-server/logs',
   path: '/local-api-server/logs',
@@ -185,13 +178,6 @@ declare module '@tanstack/react-router' {
       path: '/local-api-server/logs'
       fullPath: '/local-api-server/logs'
       preLoaderRoute: typeof LocalApiServerLogsImport
-      parentRoute: typeof rootRoute
-    }
-    '/settings/about': {
-      id: '/settings/about'
-      path: '/settings/about'
-      fullPath: '/settings/about'
-      preLoaderRoute: typeof SettingsAboutImport
       parentRoute: typeof rootRoute
     }
     '/settings/appearance': {
@@ -283,7 +269,6 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
-  '/settings/about': typeof SettingsAboutRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -304,7 +289,6 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
-  '/settings/about': typeof SettingsAboutRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -326,7 +310,6 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
-  '/settings/about': typeof SettingsAboutRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -349,7 +332,6 @@ export interface FileRouteTypes {
     | '/logs'
     | '/system-monitor'
     | '/local-api-server/logs'
-    | '/settings/about'
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
@@ -369,7 +351,6 @@ export interface FileRouteTypes {
     | '/logs'
     | '/system-monitor'
     | '/local-api-server/logs'
-    | '/settings/about'
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
@@ -389,7 +370,6 @@ export interface FileRouteTypes {
     | '/logs'
     | '/system-monitor'
     | '/local-api-server/logs'
-    | '/settings/about'
     | '/settings/appearance'
     | '/settings/extensions'
     | '/settings/general'
@@ -411,7 +391,6 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
-  SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -432,7 +411,6 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
-  SettingsAboutRoute: SettingsAboutRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
@@ -462,7 +440,6 @@ export const routeTree = rootRoute
         "/logs",
         "/system-monitor",
         "/local-api-server/logs",
-        "/settings/about",
         "/settings/appearance",
         "/settings/extensions",
         "/settings/general",
@@ -493,9 +470,6 @@ export const routeTree = rootRoute
     },
     "/local-api-server/logs": {
       "filePath": "local-api-server/logs.tsx"
-    },
-    "/settings/about": {
-      "filePath": "settings/about.tsx"
     },
     "/settings/appearance": {
       "filePath": "settings/appearance.tsx"
