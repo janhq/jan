@@ -27,15 +27,14 @@ export const useAnalytic = () => {
   }
 }
 
-export type ProductAnalyticPrompState = {
+export type ProductAnalyticPromptState = {
   productAnalyticPrompt: boolean
   setProductAnalyticPrompt: (value: boolean) => void
 }
 
-export const useProductAnalyticPrompt = create<ProductAnalyticPrompState>()(
+export const useProductAnalyticPrompt = create<ProductAnalyticPromptState>()(
   persist(
     (set) => {
-      // Initialize isDark based on OS preference if theme is auto
       const initialState = {
         productAnalyticPrompt: true,
         setProductAnalyticPrompt: async (value: boolean) => {
@@ -60,7 +59,6 @@ export type ProductAnalyticState = {
 export const useProductAnalytic = create<ProductAnalyticState>()(
   persist(
     (set) => {
-      // Initialize isDark based on OS preference if theme is auto
       const initialState = {
         productAnalytic: false,
         setProductAnalytic: async (value: boolean) => {
