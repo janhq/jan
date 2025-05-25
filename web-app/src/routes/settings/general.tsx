@@ -297,7 +297,7 @@ function General() {
                 title="GitHub"
                 description="Contribute to Jan's development"
                 actions={
-                  <a href="https://github.com/janhq/jan" target="_blank">
+                  <a href="https://github.com/janhq/jan" target="_blank" rel="noopener noreferrer">
                     <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
                       <IconBrandGithub
                         size={18}
