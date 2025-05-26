@@ -158,17 +158,6 @@ export interface chatOptions {
 // Output for /chat will be Promise<ChatCompletion> for non-streaming
 // or Promise<AsyncIterable<ChatCompletionChunk>> for streaming
 
-// 6. /delete
-export interface deleteOptions {
-  providerId: string
-  modelId: string // The ID of the model to delete (implies finding its path)
-  modelPath?: string // Optionally, direct path can be provided
-}
-export interface deleteResult {
-  success: boolean
-  error?: string
-}
-
 // 7. /import
 export interface ImportOptions {
   [key: string]: any
@@ -226,7 +215,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Deletes a model
    */
-  abstract delete(opts: deleteOptions): Promise<deleteResult>
+  abstract delete(modelId: string): Promise<void>
 
   /**
    * Imports a model
