@@ -2,7 +2,14 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
-import { useState, useMemo, useEffect, ChangeEvent, useCallback } from 'react'
+import {
+  useState,
+  useMemo,
+  useEffect,
+  ChangeEvent,
+  useCallback,
+  useRef,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
@@ -16,10 +23,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { downloadModel } from '@/services/models'
+import { addModelSource, downloadModel } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
+import { Loader } from 'lucide-react'
 
 type ModelProps = {
   model: {
@@ -46,6 +54,10 @@ function Hub() {
   const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
+  )
+  const [isSearching, setIsSearching] = useState(false)
+  const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
   )
 
   const toggleModelExpansion = (modelId: string) => {
@@ -87,7 +99,26 @@ function Hub() {
   }, [fetchSources])
 
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setIsSearching(false)
     setSearchValue(e.target.value)
+    if (addModelSourceTimeoutRef.current) {
+      clearTimeout(addModelSourceTimeoutRef.current)
+    }
+    if (
+      e.target.value.length &&
+      (e.target.value.includes('/') || e.target.value.startsWith('http'))
+    ) {
+      setIsSearching(true)
+      addModelSourceTimeoutRef.current = setTimeout(() => {
+        addModelSource(e.target.value)
+          .then(() => {
+            fetchSources()
+          })
+          .finally(() => {
+            setIsSearching(false)
+          })
+      }, 500)
+    }
   }
 
   const { downloads } = useDownloadStore()
@@ -163,10 +194,14 @@ function Hub() {
       <div className="flex flex-col h-full w-full">
         <HeaderPage>
           <div className="pr-4 py-3 border-b border-main-view-fg/5 h-10 w-full flex items-center justify-between relative z-20 ">
-            <div className="flex items-center gap-2 w-full pr-4">
-              <IconSearch className="text-main-view-fg/60" size={14} />
+            <div className="flex items-center gap-2 w-full">
+              {isSearching ? (
+                <Loader className="size-4 animate-spin text-main-view-fg/60" />
+              ) : (
+                <IconSearch className="text-main-view-fg/60" size={14} />
+              )}
               <input
-                placeholder="Search models..."
+                placeholder="Search for models on Hugging Face..."
                 value={searchValue}
                 onChange={handleSearchChange}
                 className="w-full focus:outline-none"
@@ -223,11 +258,13 @@ function Hub() {
                       header={
                         <div className="flex items-center justify-between gap-x-2">
                           <Link
-                            to={`https://huggingface.co/${model.id}` as string}
+                            to={
+                              `https://huggingface.co/${model.metadata?.id}` as string
+                            }
                             target="_blank"
                           >
                             <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
-                              {extractModelName(model.id) || ''}
+                              {extractModelName(model.metadata?.id) || ''}
                             </h1>
                           </Link>
                           <div className="shrink-0 space-x-3 flex items-center">
@@ -241,6 +278,8 @@ function Hub() {
                     >
                       <div className="line-clamp-2 mt-3 text-main-view-fg/60">
                         <RenderMarkdown
+                          enableRawHtml={true}
+                          className="select-none"
                           components={{
                             a: ({ ...props }) => (
                               <a
@@ -251,7 +290,8 @@ function Hub() {
                             ),
                           }}
                           content={
-                            extractDescription(model.metadata.description) || ''
+                            extractDescription(model.metadata?.description) ||
+                            ''
                           }
                         />
                       </div>
@@ -303,7 +343,6 @@ function Hub() {
                               title={variant.id}
                               actions={
                                 <div className="flex items-center gap-2">
-                                  {/* {defaultVariant && <>test</>} */}
                                   <p className="text-main-view-fg/70 font-medium text-xs">
                                     {toGigabytes(variant.size)}
                                   </p>

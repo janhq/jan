@@ -36,7 +36,7 @@ export function CardItem({
       )}
     >
       <div className="space-y-1.5">
-        <h1 className="font-medium">{title}</h1>
+        <h1 className="font-medium line-clamp-1">{title}</h1>
         {description && (
           <span className="text-main-view-fg/70 leading-normal">
             {description}
