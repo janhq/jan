@@ -1,6 +1,3 @@
-import DropdownModelProvider from './DropdownModelProvider'
-import HeaderPage from './HeaderPage'
-
 import { Card } from './Card'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Link } from '@tanstack/react-router'
@@ -13,9 +10,6 @@ function SetupScreen() {
 
   return (
     <div className="flex h-full flex-col flex-justify-center">
-      <HeaderPage>
-        <DropdownModelProvider />
-      </HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-4/6 mx-auto">
           <div className="mb-8 text-left">
