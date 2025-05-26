@@ -50,11 +50,18 @@ pub fn exists_sync<R: Runtime>(
     Ok(path.exists())
 }
 
+#[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStat {
+    pub is_directory: bool,
+    pub size: u64,
+}
+
 #[tauri::command]
 pub fn file_stat<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     args: String,
-) -> Result<String, String> {
+) -> Result<FileStat, String> {
     if args.is_empty() {
         return Err("file_stat error: Invalid argument".to_string());
     }
@@ -62,13 +69,9 @@ pub fn file_stat<R: Runtime>(
     let path = resolve_path(app_handle, &args);
     let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
     let is_directory = metadata.is_dir();
-    let file_size = if is_directory { 0 } else { metadata.len() };
-    // return { isDirectory, fileSize } object
-    let result = format!(
-        "{{\"isDirectory\": {}, \"fileSize\": {}}}",
-        is_directory, file_size
-    );
-    Ok(result)
+    let size = if is_directory { 0 } else { metadata.len() };
+    let file_stat = FileStat { is_directory, size };
+    Ok(file_stat)
 }
 
 #[tauri::command]
