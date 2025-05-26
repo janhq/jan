@@ -68,7 +68,8 @@ pub async fn load_llama_model(
     log::info!("Attempting to launch server at path: {:?}", server_path);
     log::info!("Using arguments: {:?}", args);
 
-    if !server_path.exists() {
+    let server_path_buf = PathBuf::from(&server_path);
+    if !server_path_buf.exists() {
         log::error!(
             "Server binary not found at expected path: {:?}",
             server_path
