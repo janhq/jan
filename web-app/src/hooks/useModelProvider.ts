@@ -6,6 +6,7 @@ type ModelProviderState = {
   providers: ModelProvider[]
   selectedProvider: string
   selectedModel: Model | null
+  getModelBy: (modelId: string) => Model | undefined
   setProviders: (providers: ModelProvider[]) => void
   getProviderByName: (providerName: string) => ModelProvider | undefined
   updateProvider: (providerName: string, data: Partial<ModelProvider>) => void
@@ -24,6 +25,13 @@ export const useModelProvider = create<ModelProviderState>()(
       providers: [],
       selectedProvider: 'llama.cpp',
       selectedModel: null,
+      getModelBy: (modelId: string) => {
+        const provider = get().providers.find(
+          (provider) => provider.provider === get().selectedProvider
+        )
+        if (!provider) return undefined
+        return provider.models.find((model) => model.id === modelId)
+      },
       setProviders: (providers) =>
         set((state) => {
           const existingProviders = state.providers

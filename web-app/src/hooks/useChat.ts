@@ -180,14 +180,14 @@ export const useChat = () => {
       resetTokenSpeed,
       provider,
       getMessages,
+      setAbortController,
       updateStreamingContent,
       addMessage,
       setPrompt,
       selectedModel,
-      currentAssistant?.instructions,
-      setAbortController,
-      updateLoadingModel,
+      currentAssistant,
       tools,
+      updateLoadingModel,
       updateTokenSpeed,
     ]
   )

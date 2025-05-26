@@ -25,6 +25,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
     providers,
     getProviderByName,
     selectModelProvider,
+    getModelBy,
     selectedProvider,
     selectedModel,
   } = useModelProvider()
@@ -52,8 +53,11 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
     }
   }, [selectedProvider, selectedModel])
 
-  if (!providers.length) return null
+  const currentModel = selectedModel?.id
+    ? getModelBy(selectedModel?.id)
+    : undefined
 
+  if (!providers.length) return null
 
   const provider = getProviderByName(selectedProvider)
 
@@ -81,9 +85,9 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
               </span>
             </button>
           </DropdownMenuTrigger>
-          {selectedModel && (
+          {currentModel && (
             <ModelSetting
-              model={selectedModel as Model}
+              model={currentModel as Model}
               provider={provider as ProviderObject}
             />
           )}
