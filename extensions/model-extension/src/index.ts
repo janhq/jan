@@ -297,7 +297,6 @@ export default class JanModelExtension extends ModelExtension {
    * @param model
    */
   async addSource(source: string): Promise<any> {
-    // Normalize source URL
     return this.apiInstance().then((api) =>
       api.post('v1/models/sources', {
         json: {
