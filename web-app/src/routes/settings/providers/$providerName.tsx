@@ -300,7 +300,7 @@ function ProviderDetail() {
                           </div>
                         }
                         actions={
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
                             <DialogEditModel
                               provider={provider}
                               modelId={model.id}

@@ -13,12 +13,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { updateModel } from '@/services/models'
 import { ModelSettingParams } from '@janhq/core'
 
-// import {
-//   HoverCard,
-//   HoverCardContent,
-//   HoverCardTrigger,
-// } from '@/components/ui/hover-card'
-
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
@@ -91,10 +85,10 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
             const config = value as ProviderSetting
             return (
               <div key={key} className="space-y-2">
-                <div className="flex flex-col">
+                <div className="flex items-start justify-between gap-8">
                   <div className="space-y-1 mb-2">
                     <h3 className="font-medium">{config.title}</h3>
-                    <p className="text-main-view-fg/60 text-xs">
+                    <p className="text-main-view-fg/70 text-xs">
                       {config.description}
                     </p>
                   </div>
@@ -109,38 +103,6 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
                     }}
                     onChange={(newValue) => handleSettingChange(key, newValue)}
                   />
-                  {/* <div className="mt-2">
-                    <HoverCard openDelay={200}>
-                      <HoverCardTrigger asChild>
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label htmlFor={config.key}>{config.title}</label>
-                          </div>
-                          <DynamicControllerSetting
-                            key={config.key}
-                            title={config.title}
-                            description={config.description}
-                            controllerType={config.controller_type}
-                            controllerProps={{
-                              ...config.controller_props,
-                              value: value,
-                            }}
-                            onChange={(newValue) =>
-                              handleSettingChange(key, newValue)
-                            }
-                          />
-                        </div>
-                      </HoverCardTrigger>
-                      <HoverCardContent
-                        align="start"
-                        className="w-[260px] text-sm"
-                        side="left"
-                        sideOffset={24}
-                      >
-                        {config.description}
-                      </HoverCardContent>
-                    </HoverCard>
-                  </div> */}
                 </div>
               </div>
             )
