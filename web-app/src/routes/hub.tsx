@@ -278,6 +278,8 @@ function Hub() {
                     >
                       <div className="line-clamp-2 mt-3 text-main-view-fg/60">
                         <RenderMarkdown
+                          enableRawHtml={true}
+                          className="select-none"
                           components={{
                             a: ({ ...props }) => (
                               <a
@@ -340,7 +342,6 @@ function Hub() {
                               title={variant.id}
                               actions={
                                 <div className="flex items-center gap-2">
-                                  {/* {defaultVariant && <>test</>} */}
                                   <p className="text-main-view-fg/70 font-medium text-xs">
                                     {toGigabytes(variant.size)}
                                   </p>

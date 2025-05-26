@@ -14,15 +14,18 @@ import { cn } from '@/lib/utils'
 import { useCodeblock } from '@/hooks/useCodeblock'
 import 'katex/dist/katex.min.css'
 import { IconCopy, IconCopyCheck } from '@tabler/icons-react'
+import rehypeRaw from 'rehype-raw'
 
 interface MarkdownProps {
   content: string
   className?: string
   components?: Components
+  enableRawHtml?: boolean
 }
 
 function RenderMarkdownComponent({
   content,
+  enableRawHtml,
   className,
   components,
 }: MarkdownProps) {
@@ -147,7 +150,9 @@ function RenderMarkdownComponent({
   }, [])
 
   // Memoize the rehypePlugins to prevent unnecessary re-renders
-  const rehypePlugins = useMemo(() => [rehypeKatex], [])
+  const rehypePlugins = useMemo(() => {
+    return enableRawHtml ? [rehypeKatex, rehypeRaw] : [rehypeKatex]
+  }, [enableRawHtml])
 
   // Merge custom components with default components
   const mergedComponents = useMemo(
