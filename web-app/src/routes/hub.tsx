@@ -104,13 +104,12 @@ function Hub() {
     if (addModelSourceTimeoutRef.current) {
       clearTimeout(addModelSourceTimeoutRef.current)
     }
-    if (
-      e.target.value.length &&
-      (e.target.value.includes('/') || e.target.value.startsWith('http'))
-    ) {
+    // normalize the search query
+    const query = e.target.value.trim()
+    if (query.length && (query.includes('/') || query.startsWith('http'))) {
       setIsSearching(true)
       addModelSourceTimeoutRef.current = setTimeout(() => {
-        addModelSource(e.target.value)
+        addModelSource(query)
           .then(() => {
             fetchSources()
           })
@@ -197,7 +196,7 @@ function Hub() {
             <div className="flex items-center gap-2 w-full pr-4">
               <IconSearch className="text-main-view-fg/60" size={14} />
               <input
-                placeholder="Search models..."
+                placeholder="Search for models on Hugging Face..."
                 value={searchValue}
                 onChange={handleSearchChange}
                 className="w-full focus:outline-none"
