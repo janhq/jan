@@ -21,8 +21,6 @@ import {
   chatOptions,
   chatCompletion,
   chatCompletionChunk,
-  deleteOptions,
-  deleteResult,
   ImportOptions,
   chatCompletionRequest,
   events,
@@ -33,6 +31,11 @@ import { invoke } from '@tauri-apps/api/core'
 interface DownloadItem {
   url: string
   save_path: string
+}
+
+interface ModelConfig {
+  model_path: string
+  mmproj_path?: string
 }
 
 /**
@@ -59,6 +62,15 @@ function parseGGUFFileName(filename: string): {
  * The class provides methods for initializing and stopping a model, and for making inference requests.
  * It also subscribes to events emitted by the @janhq/core package and handles new message requests.
  */
+
+// Folder structure for downloaded models:
+// <Jan's data folder>/models/llamacpp/<modelId>
+//  - model.yml (required)
+//  - model.gguf (optional, present if downloaded from URL)
+//  - mmproj.gguf (optional, present if mmproj exists and it was downloaded from URL)
+//
+// Contents of model.yml can be found in ModelConfig interface
+
 export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
@@ -155,15 +167,10 @@ export default class llamacpp_extension extends AIEngine {
 
     // TODO: check if files are valid GGUF files
 
+    const modelConfig = { model_path: modelPath, mmproj_path: mmprojPath } as ModelConfig
     await invoke<void>(
       'write_yaml',
-      {
-        data: {
-          model_path: modelPath,
-          mmproj_path: mmprojPath,
-        },
-        savePath: `${modelDir}/model.yml`,
-      },
+      { data: modelConfig, savePath: `${modelDir}/model.yml` },
     )
   }
 
@@ -430,8 +437,14 @@ export default class llamacpp_extension extends AIEngine {
     return (await response.json()) as chatCompletion
   }
 
-  override async delete(opts: deleteOptions): Promise<deleteResult> {
-    throw new Error('method not implemented yet')
+  override async delete(modelId: string): Promise<void> {
+    const modelDir = await joinPath([this.modelsBasePath, this.provider, modelId])
+
+    if (!(await fs.existsSync(await joinPath([modelDir, 'model.yml'])))) {
+      throw new Error(`Model ${modelId} does not exist`)
+    }
+
+    await fs.rm(modelDir)
   }
 
   // Optional method for direct client access
