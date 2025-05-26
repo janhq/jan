@@ -94,7 +94,25 @@ pub fn write_yaml(
             jan_data_folder.to_string_lossy(),
         ));
     }
-    let mut file = fs::File::create(&save_path).map_err(|e| e.to_string())?;
-    serde_yaml::to_writer(&mut file, &data).map_err(|e| e.to_string())?;
+    let file = fs::File::create(&save_path).map_err(|e| e.to_string())?;
+    let mut writer = std::io::BufWriter::new(file);
+    serde_yaml::to_writer(&mut writer, &data).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn read_yaml(app: tauri::AppHandle, path: &str) -> Result<serde_json::Value, String> {
+    let jan_data_folder = get_jan_data_folder_path(app.clone());
+    let path = normalize_path(&jan_data_folder.join(path));
+    if !path.starts_with(&jan_data_folder) {
+        return Err(format!(
+            "Error: path {} is not under jan_data_folder {}",
+            path.to_string_lossy(),
+            jan_data_folder.to_string_lossy(),
+        ));
+    }
+    let file = fs::File::open(&path).map_err(|e| e.to_string())?;
+    let reader = std::io::BufReader::new(file);
+    let data: serde_json::Value = serde_yaml::from_reader(reader).map_err(|e| e.to_string())?;
+    Ok(data)
 }
