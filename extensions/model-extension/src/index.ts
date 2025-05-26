@@ -298,11 +298,10 @@ export default class JanModelExtension extends ModelExtension {
    */
   async addSource(source: string): Promise<any> {
     // Normalize source URL
-    const query = source.replace('https://huggingface.co/', '')
     return this.apiInstance().then((api) =>
       api.post('v1/models/sources', {
         json: {
-          source: query,
+          source,
         },
       })
     )
