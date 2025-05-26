@@ -261,7 +261,10 @@ export const extractToolCall = (
       currentCall = calls[index]
 
       // Append to function name or arguments if they exist in this chunk
-      if (deltaToolCalls[0]?.function?.name) {
+      if (
+        deltaToolCalls[0]?.function?.name &&
+        currentCall!.function.name !== deltaToolCalls[0]?.function?.name
+      ) {
         currentCall!.function.name += deltaToolCalls[0].function.name
       }
 

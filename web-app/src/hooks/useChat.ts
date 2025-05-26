@@ -112,9 +112,9 @@ export const useChat = () => {
             abortController,
             availableTools,
             // TODO: replace it with according provider setting later on
-            selectedProvider === 'llama.cpp' && availableTools.length > 0
-              ? false
-              : true
+            // selectedProvider === 'llama.cpp' && availableTools.length > 0
+            //   ? false
+            //   : true
           )
 
           if (!completion) throw new Error('No completion received')
@@ -186,7 +186,6 @@ export const useChat = () => {
       setAbortController,
       updateLoadingModel,
       tools,
-      selectedProvider,
       updateTokenSpeed,
     ]
   )
