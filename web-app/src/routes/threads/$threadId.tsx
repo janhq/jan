@@ -181,7 +181,7 @@ function ThreadDetail() {
             'flex flex-col h-full w-full overflow-auto px-4 pt-4 pb-3'
           )}
         >
-          <div className="max-w-none w-4/6 mx-auto">
+          <div className="w-4/6 mx-auto flex max-w-full flex-col grow">
             {messages &&
               messages.map((item, index) => {
                 // Only pass isLastMessage to the last message in the array

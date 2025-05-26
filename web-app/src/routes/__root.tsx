@@ -15,6 +15,8 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useAnalytic } from '@/hooks/useAnalytic'
 import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
+import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { cn } from '@/lib/utils'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -22,6 +24,7 @@ export const Route = createRootRoute({
 
 const AppLayout = () => {
   const { productAnalyticPrompt } = useAnalytic()
+  const { open: isLeftPanelOpen } = useLeftPanel()
 
   return (
     <Fragment>
@@ -36,7 +39,12 @@ const AppLayout = () => {
           <LeftPanel />
 
           {/* Main content panel */}
-          <div className="h-full flex w-full p-1">
+          <div
+            className={cn(
+              'h-full flex w-full p-1',
+              isLeftPanelOpen && 'w-[calc(100%-192px)]'
+            )}
+          >
             <div className="bg-main-view text-main-view-fg border border-main-view-fg/5 w-full rounded-lg overflow-hidden">
               <Outlet />
             </div>
