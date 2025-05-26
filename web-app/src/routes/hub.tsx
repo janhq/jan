@@ -98,6 +98,14 @@ function Hub() {
     fetchSources()
   }, [fetchSources])
 
+  useEffect(() => {
+    return () => {
+      if (addModelSourceTimeoutRef.current) {
+        clearTimeout(addModelSourceTimeoutRef.current)
+      }
+    }
+  }, [])
+
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
     // normalize the search query
