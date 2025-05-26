@@ -37,33 +37,6 @@ impl serde::Serialize for ServerError {
 
 type ServerResult<T> = Result<T, ServerError>;
 
-// --- Helper function to find the server binary ---
-// -- TODO: Adjust extension engine paths
-// engine: static llama-server build (CUDA, VULKAN, SYCL, etc)
-fn get_server_path(app_handle: &AppHandle) -> ServerResult<PathBuf> {
-    let binary_name = if cfg!(windows) {
-        "llama-server.exe"
-    } else {
-        "llama-server"
-    };
-    let relative_path = PathBuf::from("engines").join(binary_name); // TODO: ADJUST THIS PATH
-
-    app_handle
-        .path()
-        .resolve(relative_path, BaseDirectory::Resource)
-        .map_err(|e| ServerError::ResourcePathError(e.to_string()))
-    // .ok_or_else(|| {
-    //     ServerError::BinaryNotFound(format!(
-    //         "Could not resolve resource path for '{}'",
-    //         if cfg!(windows) {
-    //             "engines/llama-server.exe"
-    //         } else {
-    //             "engines/llama-server"
-    //         } // TODO: ADJUST THIS PATH
-    //     ))
-    // })
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub session_id: String,       // opaque handle for unload/chat
@@ -82,6 +55,7 @@ pub struct UnloadResult {
 pub async fn load_llama_model(
     app_handle: AppHandle,      // Get the AppHandle
     state: State<'_, AppState>, // Access the shared state
+    server_path: String,
     args: Vec<String>,          // Arguments from the frontend
 ) -> ServerResult<SessionInfo> {
     let mut process_lock = state.llama_server_process.lock().await;
@@ -91,7 +65,6 @@ pub async fn load_llama_model(
         return Err(ServerError::AlreadyRunning);
     }
 
-    let server_path = get_server_path(&app_handle)?;
     log::info!("Attempting to launch server at path: {:?}", server_path);
     log::info!("Using arguments: {:?}", args);
 
