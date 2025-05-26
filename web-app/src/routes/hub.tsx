@@ -98,37 +98,19 @@ function Hub() {
     fetchSources()
   }, [fetchSources])
 
-  useEffect(() => {
-    return () => {
-      if (addModelSourceTimeoutRef.current) {
-        clearTimeout(addModelSourceTimeoutRef.current)
-      }
-    }
-  }, [])
-
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
-    // normalize the search query
-    let query = e.target.value
-    // Remove domain if present (e.g., https://huggingface.co/user/model -> user/model)
-    if (query.startsWith('http')) {
-      try {
-        const url = new URL(query)
-        // Only keep the path, remove leading slash
-        query = url.pathname.replace(/^\/+/, '')
-      } catch {
-        // If not a valid URL, leave as is
-      }
-    }
-    setSearchValue(query)
+    setSearchValue(e.target.value)
     if (addModelSourceTimeoutRef.current) {
       clearTimeout(addModelSourceTimeoutRef.current)
     }
-
-    if (query.length && (query.includes('/') || query.startsWith('http'))) {
+    if (
+      e.target.value.length &&
+      (e.target.value.includes('/') || e.target.value.startsWith('http'))
+    ) {
       setIsSearching(true)
       addModelSourceTimeoutRef.current = setTimeout(() => {
-        addModelSource(query)
+        addModelSource(e.target.value)
           .then(() => {
             fetchSources()
           })
@@ -212,8 +194,12 @@ function Hub() {
       <div className="flex flex-col h-full w-full">
         <HeaderPage>
           <div className="pr-4 py-3 border-b border-main-view-fg/5 h-10 w-full flex items-center justify-between relative z-20 ">
-            <div className="flex items-center gap-2 w-full pr-4">
-              <IconSearch className="text-main-view-fg/60" size={14} />
+            <div className="flex items-center gap-2 w-full">
+              {isSearching ? (
+                <Loader className="size-4 animate-spin text-main-view-fg/60" />
+              ) : (
+                <IconSearch className="text-main-view-fg/60" size={14} />
+              )}
               <input
                 placeholder="Search for models on Hugging Face..."
                 value={searchValue}
