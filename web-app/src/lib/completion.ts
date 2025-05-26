@@ -248,7 +248,7 @@ export const extractToolCall = (
     // Create new tool call if this is the first chunk for it
     if (!calls[index]) {
       calls[index] = {
-        id: deltaToolCalls[0]?.id || '',
+        id: deltaToolCalls[0]?.id || ulid(),
         function: {
           name: deltaToolCalls[0]?.function?.name || '',
           arguments: deltaToolCalls[0]?.function?.arguments || '',
