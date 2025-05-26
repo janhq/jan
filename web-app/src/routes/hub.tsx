@@ -2,7 +2,14 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
-import { useState, useMemo, useEffect, ChangeEvent, useCallback } from 'react'
+import {
+  useState,
+  useMemo,
+  useEffect,
+  ChangeEvent,
+  useCallback,
+  useRef,
+} from 'react'
 import { Button } from '@/components/ui/button'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
@@ -16,10 +23,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { downloadModel } from '@/services/models'
+import { addModelSource, downloadModel } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
+import { Loader } from 'lucide-react'
 
 type ModelProps = {
   model: {
@@ -46,6 +54,10 @@ function Hub() {
   const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
+  )
+  const [isSearching, setIsSearching] = useState(false)
+  const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
   )
 
   const toggleModelExpansion = (modelId: string) => {
@@ -87,7 +99,26 @@ function Hub() {
   }, [fetchSources])
 
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setIsSearching(false)
     setSearchValue(e.target.value)
+    if (addModelSourceTimeoutRef.current) {
+      clearTimeout(addModelSourceTimeoutRef.current)
+    }
+    if (
+      e.target.value.length &&
+      (e.target.value.includes('/') || e.target.value.startsWith('http'))
+    ) {
+      setIsSearching(true)
+      addModelSourceTimeoutRef.current = setTimeout(() => {
+        addModelSource(e.target.value)
+          .then(() => {
+            fetchSources()
+          })
+          .finally(() => {
+            setIsSearching(false)
+          })
+      }, 500)
+    }
   }
 
   const { downloads } = useDownloadStore()
