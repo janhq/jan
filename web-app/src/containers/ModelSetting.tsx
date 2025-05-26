@@ -57,11 +57,19 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
         models: updatedModels,
       })
 
+      const params = Object.entries(updatedModel.settings).reduce(
+        (acc, [key, value]) => {
+          const rawVal = value.controller_props?.value
+          const num = parseFloat(rawVal as string)
+          acc[key] = !isNaN(num) ? num : rawVal
+          return acc
+        },
+        {} as Record<string, unknown>
+      ) as ModelSettingParams
       updateModel({
         id: model.id,
-        settings: Object.entries(updatedModel.settings).map(([key, value]) => ({
-          [key]: value.controller_props?.value,
-        })) as ModelSettingParams,
+        settings: params,
+        ...(params as unknown as object),
       })
     }
   }
@@ -75,7 +83,7 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
       </SheetTrigger>
       <SheetContent className="h-[calc(100%-8px)] top-1 right-1 rounded-e-md overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Model Setting {model.id}</SheetTitle>
+          <SheetTitle>Model Settings - {model.id}</SheetTitle>
           <SheetDescription>
             Configure model settings to optimize performance and behavior.
           </SheetDescription>
