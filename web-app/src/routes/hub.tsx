@@ -100,12 +100,23 @@ function Hub() {
 
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setIsSearching(false)
-    setSearchValue(e.target.value)
+    // normalize the search query
+    let query = e.target.value
+    // Remove domain if present (e.g., https://huggingface.co/user/model -> user/model)
+    if (query.startsWith('http')) {
+      try {
+        const url = new URL(query)
+        // Only keep the path, remove leading slash
+        query = url.pathname.replace(/^\/+/, '')
+      } catch {
+        // If not a valid URL, leave as is
+      }
+    }
+    setSearchValue(query)
     if (addModelSourceTimeoutRef.current) {
       clearTimeout(addModelSourceTimeoutRef.current)
     }
-    // normalize the search query
-    const query = e.target.value.trim()
+
     if (query.length && (query.includes('/') || query.startsWith('http'))) {
       setIsSearching(true)
       addModelSourceTimeoutRef.current = setTimeout(() => {
