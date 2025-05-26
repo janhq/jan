@@ -347,6 +347,9 @@ export default class llamacpp_extension extends AIEngine {
     if (opts.rope_freq_scale !== undefined) {
       args.push('--rope-freq-scale', String(opts.rope_freq_scale))
     }
+    if (opts.reasoning_budget !== undefined) {
+        args.push('--reasoning-budget', String(opts.reasoning_budget))
+    }
     console.log('Calling Tauri command llama_load with args:', args)
 
     try {
