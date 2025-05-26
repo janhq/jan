@@ -163,7 +163,7 @@ function Hub() {
       <div className="flex flex-col h-full w-full">
         <HeaderPage>
           <div className="pr-4 py-3 border-b border-main-view-fg/5 h-10 w-full flex items-center justify-between relative z-20 ">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full pr-4">
               <IconSearch className="text-main-view-fg/60" size={14} />
               <input
                 placeholder="Search models..."
