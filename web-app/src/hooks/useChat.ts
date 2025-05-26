@@ -110,7 +110,9 @@ export const useChat = () => {
             provider,
             builder.getMessages(),
             abortController,
-            availableTools
+            availableTools,
+            currentAssistant.parameters?.stream === false ? false : true,
+            currentAssistant.parameters as unknown as Record<string, object>
             // TODO: replace it with according provider setting later on
             // selectedProvider === 'llama.cpp' && availableTools.length > 0
             //   ? false

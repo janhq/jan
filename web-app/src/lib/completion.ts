@@ -113,7 +113,8 @@ export const sendCompletion = async (
   messages: ChatCompletionMessageParam[],
   abortController: AbortController,
   tools: MCPTool[] = [],
-  stream: boolean = true
+  stream: boolean = true,
+  params: Record<string, object> = {}
 ): Promise<StreamCompletionResponse | CompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 
@@ -138,6 +139,7 @@ export const sendCompletion = async (
           messages,
           tools: normalizeTools(tools),
           tool_choice: tools.length ? 'auto' : undefined,
+          ...params,
         },
         {
           signal: abortController.signal,
@@ -150,6 +152,7 @@ export const sendCompletion = async (
         messages,
         tools: normalizeTools(tools),
         tool_choice: tools.length ? 'auto' : undefined,
+        ...params,
       })
   return completion
 }
