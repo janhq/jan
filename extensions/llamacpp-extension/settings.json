@@ -447,5 +447,18 @@
       "placeholder": "path/to/schema.json",
       "type": "text"
     }
+  },
+  {
+    "key": "reasoning_budget",
+    "title": "controls the amount of thinking allowed; currently only one of: -1 for unrestricted thinking budget, or 0 to disable thinking (default: -1)",
+    "description": "Mirostat target entropy (tau).",
+    "controllerType": "input",
+    "controllerProps": {
+        "value": 0,
+        "options": [
+           { "value": -1, "name": "unrestricted thinking budget" },
+           { "value": 0, "name": "disable thinking" }
+     ]
+    }
   }
 ]
