@@ -54,7 +54,6 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
 
   if (!providers.length) return null
 
-  console.log(selectedModel)
 
   const provider = getProviderByName(selectedProvider)
 
