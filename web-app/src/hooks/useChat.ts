@@ -88,11 +88,11 @@ export const useChat = () => {
           updateLoadingModel(false)
         }
 
-        const builder = new CompletionMessagesBuilder(messages)
-        if (currentAssistant?.instructions?.length > 0)
-          builder.addSystemMessage(currentAssistant?.instructions || '')
-        // REMARK: Would it possible to not attach the entire message history to the request?
-        // TODO: If not amend messages history here
+        const builder = new CompletionMessagesBuilder(
+          messages,
+          currentAssistant?.instructions
+        )
+
         builder.addUserMessage(message)
 
         let isCompleted = false
@@ -110,7 +110,7 @@ export const useChat = () => {
             provider,
             builder.getMessages(),
             abortController,
-            availableTools,
+            availableTools
             // TODO: replace it with according provider setting later on
             // selectedProvider === 'llama.cpp' && availableTools.length > 0
             //   ? false

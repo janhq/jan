@@ -9,29 +9,27 @@ import { ThreadMessage } from '@janhq/core'
 export class CompletionMessagesBuilder {
   private messages: ChatCompletionMessageParam[] = []
 
-  constructor(messages: ThreadMessage[]) {
-    this.messages = messages
-      .filter((e) => !e.metadata?.error)
-      .map<ChatCompletionMessageParam>(
-        (msg) =>
-          ({
-            role: msg.role,
-            content:
-              msg.role === 'assistant'
-                ? this.normalizeContent(msg.content[0]?.text?.value ?? '.')
-                : msg.content[0]?.text?.value ?? '.',
-          }) as ChatCompletionMessageParam
-      )
-  }
-  /**
-   * Add a system message to the messages array.
-   * @param content - The content of the system message.
-   */
-  addSystemMessage(content: string) {
-    this.messages.push({
-      role: 'system',
-      content: content,
-    })
+  constructor(messages: ThreadMessage[], systemInstruction?: string) {
+    if (systemInstruction) {
+      this.messages.push({
+        role: 'system',
+        content: systemInstruction,
+      })
+    }
+    this.messages.push(
+      ...messages
+        .filter((e) => !e.metadata?.error)
+        .map<ChatCompletionMessageParam>(
+          (msg) =>
+            ({
+              role: msg.role,
+              content:
+                msg.role === 'assistant'
+                  ? this.normalizeContent(msg.content[0]?.text?.value ?? '.')
+                  : (msg.content[0]?.text?.value ?? '.'),
+            }) as ChatCompletionMessageParam
+        )
+    )
   }
 
   /**
