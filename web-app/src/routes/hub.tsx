@@ -94,8 +94,6 @@ function Hub() {
       : sortedModels
   }, [searchValue, sortedModels])
 
-  console.log(filteredModels)
-
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
@@ -261,12 +259,12 @@ function Hub() {
                         <div className="flex items-center justify-between gap-x-2">
                           <Link
                             to={
-                              `https://huggingface.co/${model.metadata.id}` as string
+                              `https://huggingface.co/${model.metadata?.id}` as string
                             }
                             target="_blank"
                           >
                             <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
-                              {extractModelName(model.metadata.id) || ''}
+                              {extractModelName(model.metadata?.id) || ''}
                             </h1>
                           </Link>
                           <div className="shrink-0 space-x-3 flex items-center">
@@ -292,7 +290,8 @@ function Hub() {
                             ),
                           }}
                           content={
-                            extractDescription(model.metadata.description) || ''
+                            extractDescription(model.metadata?.description) ||
+                            ''
                           }
                         />
                       </div>
