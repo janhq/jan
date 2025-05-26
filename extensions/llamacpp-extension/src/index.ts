@@ -12,8 +12,6 @@ import {
   fs,
   joinPath,
   modelInfo,
-  listOptions,
-  listResult,
   loadOptions,
   sessionInfo,
   unloadOptions,
@@ -94,8 +92,55 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   // Implement the required LocalProvider interface methods
-  override async list(opts: listOptions): Promise<listResult> {
-    throw new Error('method not implemented yet')
+  override async list(): Promise<modelInfo[]> {
+    const modelsDir = await joinPath([this.modelsBasePath, this.provider])
+    if (!(await fs.existsSync(modelsDir))) {
+      return []
+    }
+
+    let modelIds: string[] = []
+
+    // DFS
+    let stack = [modelsDir]
+    while (stack.length > 0) {
+      const currentDir = stack.pop()
+
+      // check if model.yml exists
+      const modelConfigPath = await joinPath([currentDir, 'model.yml'])
+      if (await fs.existsSync(modelConfigPath)) {
+        // +1 to remove the leading slash
+        // NOTE: this does not handle Windows path \\
+        modelIds.push(currentDir.slice(modelsDir.length + 1))
+        continue
+      }
+
+      // otherwise, look into subdirectories
+      const children = await fs.readdirSync(currentDir)
+      for (const child of children) {
+        // NOTE: currently fs.fileStat() output is a string
+        // TODO: fix this in core
+        // skip files
+        const dirInfo = await fs.fileStat(child).then(JSON.parse)
+        if (!dirInfo.isDirectory) {
+          continue
+        }
+
+        stack.push(child)
+      }
+    }
+
+    const modelInfos = modelIds.map((modelId) => {
+      return {
+        id: modelId,
+        name: modelId, // TODO: parse name from model.yml
+        quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
+        providerId: this.provider,
+        port: 0, // port is not known until the model is loaded
+        sizeBytes: 0, // TODO: cache this in model.yml and read from it
+      }
+    })
+
+    return modelInfos
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
