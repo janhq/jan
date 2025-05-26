@@ -34,6 +34,9 @@ interface DownloadItem {
 interface ModelConfig {
   model_path: string
   mmproj_path?: string
+  name: string // user-friendly
+  // some model info that we cache upon import
+  size_bytes: number
 }
 
 /**
@@ -143,23 +146,32 @@ export default class llamacpp_extension extends AIEngine {
       }
     }
 
-    const modelInfos = modelIds.map((modelId) => {
-      return {
+    let modelInfos: modelInfo[] = []
+    for (const modelId of modelIds) {
+      const path = await joinPath([this.modelsBasePath, this.provider, modelId, 'model.yml'])
+      const modelConfig = await invoke<ModelConfig>('read_yaml', { path })
+
+      const modelInfo = {
         id: modelId,
-        name: modelId, // TODO: parse name from model.yml
+        name: modelConfig.name ?? modelId,
         quant_type: undefined, // TODO: parse quantization type from model.yml or model.gguf
         providerId: this.provider,
         port: 0, // port is not known until the model is loaded
-        sizeBytes: 0, // TODO: cache this in model.yml and read from it
-      }
-    })
+        sizeBytes: modelConfig.size_bytes ?? 0,
+      } as modelInfo
+      modelInfos.push(modelInfo)
+    }
 
     return modelInfos
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
     // TODO: sanitize modelId
-    // TODO: check if modelId already exists
+    let configPath = await joinPath([this.modelsBasePath, this.provider, modelId, 'model.yml'])
+    if (await fs.existsSync(configPath)) {
+      throw new Error(`Model ${modelId} already exists`)
+    }
+
     const taskId = this.createDownloadTaskId(modelId)
 
     // this is relative to Jan's data folder
@@ -225,8 +237,22 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // TODO: check if files are valid GGUF files
+    // NOTE: modelPath and mmprojPath can be either relative to Jan's data folder (if they are downloaded)
+    // or absolute paths (if they are provided as local files)
+    const janDataFolderPath = await getJanDataFolderPath()
+    let size_bytes = (await fs.fileStat(await joinPath([janDataFolderPath, modelPath]))).size
+    if (mmprojPath) {
+      size_bytes += (await fs.fileStat(await joinPath([janDataFolderPath, mmprojPath]))).size
+    }
 
-    const modelConfig = { model_path: modelPath, mmproj_path: mmprojPath } as ModelConfig
+    // TODO: add name as import() argument
+    // TODO: add updateModelConfig() method
+    const modelConfig = {
+      model_path: modelPath,
+      mmproj_path: mmprojPath,
+      name: modelId,
+      size_bytes,
+    } as ModelConfig
     await invoke<void>(
       'write_yaml',
       { data: modelConfig, savePath: `${modelDir}/model.yml` },
@@ -346,7 +372,7 @@ export default class llamacpp_extension extends AIEngine {
       args.push('--rope-freq-scale', String(opts.rope_freq_scale))
     }
     if (opts.reasoning_budget !== undefined) {
-        args.push('--reasoning-budget', String(opts.reasoning_budget))
+      args.push('--reasoning-budget', String(opts.reasoning_budget))
     }
     console.log('Calling Tauri command llama_load with args:', args)
 
