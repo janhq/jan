@@ -260,7 +260,9 @@ function Hub() {
                       header={
                         <div className="flex items-center justify-between gap-x-2">
                           <Link
-                            to={`https://huggingface.co/${model.id}` as string}
+                            to={
+                              `https://huggingface.co/${model.metadata.id}` as string
+                            }
                             target="_blank"
                           >
                             <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
