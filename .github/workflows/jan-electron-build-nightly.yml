@@ -12,8 +12,6 @@ on:
           - none
           - aws-s3
         default: none
-  pull_request_review:
-    types: [submitted]
   pull_request:
     branches:
       - release/**
@@ -190,28 +188,28 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
 
-  comment-pr-build-url:
-    needs: [
-      build-tauri-macos,
-      build-tauri-windows-x64,
-      build-tauri-linux-x64,
-      get-update-version,
-      set-public-provider,
-      sync-temp-to-latest
-    ]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_review'
-    steps:
-      - name: Set up GitHub CLI
-        run: |
-          curl -sSL https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.tar.gz | tar xz
-          sudo cp gh_2.33.0_linux_amd64/bin/gh /usr/local/bin/
+  # comment-pr-build-url:
+  #   needs: [
+  #     build-tauri-macos,
+  #     build-tauri-windows-x64,
+  #     build-tauri-linux-x64,
+  #     get-update-version,
+  #     set-public-provider,
+  #     sync-temp-to-latest
+  #   ]
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request_review'
+  #   steps:
+  #     - name: Set up GitHub CLI
+  #       run: |
+  #         curl -sSL https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.tar.gz | tar xz
+  #         sudo cp gh_2.33.0_linux_amd64/bin/gh /usr/local/bin/
 
-      - name: Comment build URL on PR
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_URL=${{ github.event.pull_request.html_url }}
-          RUN_ID=${{ github.run_id }}
-          COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
-          gh pr comment $PR_URL --body "$COMMENT"
+  #     - name: Comment build URL on PR
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         PR_URL=${{ github.event.pull_request.html_url }}
+  #         RUN_ID=${{ github.run_id }}
+  #         COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
+  #         gh pr comment $PR_URL --body "$COMMENT"
