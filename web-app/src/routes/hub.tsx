@@ -94,6 +94,8 @@ function Hub() {
       : sortedModels
   }, [searchValue, sortedModels])
 
+  console.log(filteredModels)
+
   useEffect(() => {
     fetchSources()
   }, [fetchSources])
@@ -262,7 +264,7 @@ function Hub() {
                             target="_blank"
                           >
                             <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
-                              {extractModelName(model.id) || ''}
+                              {extractModelName(model.metadata.id) || ''}
                             </h1>
                           </Link>
                           <div className="shrink-0 space-x-3 flex items-center">
