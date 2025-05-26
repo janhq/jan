@@ -76,7 +76,7 @@ export default class llamacpp_extension extends AIEngine {
   private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
-  private enginesPath!: string
+  private enginesBasePath!: string
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -90,7 +90,7 @@ export default class llamacpp_extension extends AIEngine {
       'models',
     ])
 
-    this.enginesPath = await joinPath([await getJanDataFolderPath(), 'llamacpp', 'engines'])
+    this.enginesBasePath = await joinPath([await getJanDataFolderPath(), 'engines'])
   }
 
   override async onUnload(): Promise<void> {
@@ -347,11 +347,11 @@ export default class llamacpp_extension extends AIEngine {
     if (opts.rope_freq_scale !== undefined) {
       args.push('--rope-freq-scale', String(opts.rope_freq_scale))
     }
-    console.log('Calling Tauri command load with args:', args)
+    console.log('Calling Tauri command llama_load with args:', args)
 
     try {
       const sInfo = await invoke<sessionInfo>('load_llama_model', {
-        server_path: this.enginesPath,
+        server_path: this.enginesBasePath,
         args: args,
       })
 
