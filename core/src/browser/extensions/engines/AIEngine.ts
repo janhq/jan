@@ -97,9 +97,6 @@ export interface modelInfo {
 }
 
 // 1. /list
-export interface listOptions {
-  providerId: string // To specify which provider if a central manager calls this
-}
 export type listResult = modelInfo[]
 
 // 3. /load
@@ -195,7 +192,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Lists available models
    */
-  abstract list(opts: listOptions): Promise<listResult>
+  abstract list(): Promise<listResult>
 
   /**
    * Loads a model into memory
