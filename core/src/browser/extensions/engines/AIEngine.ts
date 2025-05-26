@@ -126,6 +126,7 @@ export interface loadOptions {
   rope_scale?: number
   rope_freq_base?: number
   rope_freq_scale?: number
+  reasoning_budget?: number
 }
 
 export interface sessionInfo {
