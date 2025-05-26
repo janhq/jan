@@ -101,11 +101,11 @@ export default class llamacpp_extension extends AIEngine {
       } catch (error) {
         console.error(`Failed to unload session ${sessionId}:`, error);
       }
+    }
+
+    // Clear the sessions map
+    this.activeSessions.clear();
   }
-  
-  // Clear the sessions map
-  this.activeSessions.clear();
-}
 
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
@@ -133,10 +133,8 @@ export default class llamacpp_extension extends AIEngine {
       // otherwise, look into subdirectories
       const children = await fs.readdirSync(currentDir)
       for (const child of children) {
-        // NOTE: currently fs.fileStat() output is a string
-        // TODO: fix this in core
         // skip files
-        const dirInfo = await fs.fileStat(child).then(JSON.parse)
+        const dirInfo = await fs.fileStat(child)
         if (!dirInfo.isDirectory) {
           continue
         }
