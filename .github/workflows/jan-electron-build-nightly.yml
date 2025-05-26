@@ -12,8 +12,6 @@ on:
           - none
           - aws-s3
         default: none
-  pull_request_review:
-    types: [submitted]
   pull_request:
     branches:
       - release/**
