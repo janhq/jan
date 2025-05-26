@@ -9,23 +9,27 @@ import { ThreadMessage } from '@janhq/core'
 export class CompletionMessagesBuilder {
   private messages: ChatCompletionMessageParam[] = []
 
-  constructor(messages: ThreadMessage[]) {
-    this.messages = messages
-      .filter((e) => !e.metadata?.error)
-      .map<ChatCompletionMessageParam>((msg) => ({
-        role: msg.role,
-        content: msg.content[0]?.text?.value ?? '.',
-      }) as ChatCompletionMessageParam)
-  }
-  /**
-   * Add a system message to the messages array.
-   * @param content - The content of the system message.
-   */
-  addSystemMessage(content: string) {
-    this.messages.push({
-      role: 'system',
-      content: content,
-    })
+  constructor(messages: ThreadMessage[], systemInstruction?: string) {
+    if (systemInstruction) {
+      this.messages.push({
+        role: 'system',
+        content: systemInstruction,
+      })
+    }
+    this.messages.push(
+      ...messages
+        .filter((e) => !e.metadata?.error)
+        .map<ChatCompletionMessageParam>(
+          (msg) =>
+            ({
+              role: msg.role,
+              content:
+                msg.role === 'assistant'
+                  ? this.normalizeContent(msg.content[0]?.text?.value ?? '.')
+                  : (msg.content[0]?.text?.value ?? '.'),
+            }) as ChatCompletionMessageParam
+        )
+    )
   }
 
   /**
@@ -52,7 +56,7 @@ export class CompletionMessagesBuilder {
   ) {
     this.messages.push({
       role: 'assistant',
-      content: content,
+      content: this.normalizeContent(content),
       refusal: refusal,
       tool_calls: calls,
     })
@@ -77,5 +81,23 @@ export class CompletionMessagesBuilder {
    */
   getMessages(): ChatCompletionMessageParam[] {
     return this.messages
+  }
+
+  /**
+   * Normalize the content of a message by removing reasoning content.
+   * This is useful to ensure that reasoning content does not get sent to the model.
+   * @param content
+   * @returns
+   */
+  private normalizeContent = (content: string): string => {
+    // Reasoning content should not be sent to the model
+    if (content.includes('<think>')) {
+      const match = content.match(/<think>([\s\S]*?)<\/think>/)
+      if (match?.index !== undefined) {
+        const splitIndex = match.index + match[0].length
+        content = content.slice(splitIndex).trim()
+      }
+    }
+    return content
   }
 }

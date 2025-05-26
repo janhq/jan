@@ -88,36 +88,35 @@ export const useChat = () => {
           updateLoadingModel(false)
         }
 
-        const builder = new CompletionMessagesBuilder(messages)
-        if (currentAssistant?.instructions?.length > 0)
-          builder.addSystemMessage(currentAssistant?.instructions || '')
-        // REMARK: Would it possible to not attach the entire message history to the request?
-        // TODO: If not amend messages history here
+        const builder = new CompletionMessagesBuilder(
+          messages,
+          currentAssistant?.instructions
+        )
+
         builder.addUserMessage(message)
 
         let isCompleted = false
 
-        let attempts = 0
-        const availableTools = selectedModel?.capabilities?.includes('tools')
+        let availableTools = selectedModel?.capabilities?.includes('tools')
           ? tools
           : []
         while (
           !isCompleted &&
-          !abortController.signal.aborted &&
+          !abortController.signal.aborted
           // TODO: Max attempts can be set in the provider settings later
-          attempts < 10
         ) {
-          attempts += 1
           const completion = await sendCompletion(
             activeThread,
             provider,
             builder.getMessages(),
             abortController,
             availableTools,
+            currentAssistant.parameters?.stream === false ? false : true,
+            currentAssistant.parameters as unknown as Record<string, object>
             // TODO: replace it with according provider setting later on
-            selectedProvider === 'llama.cpp' && availableTools.length > 0
-              ? false
-              : true
+            // selectedProvider === 'llama.cpp' && availableTools.length > 0
+            //   ? false
+            //   : true
           )
 
           if (!completion) throw new Error('No completion received')
@@ -164,6 +163,7 @@ export const useChat = () => {
           addMessage(updatedMessage ?? finalContent)
 
           isCompleted = !toolCalls.length
+          availableTools = []
         }
       } catch (error) {
         toast.error(
@@ -188,7 +188,6 @@ export const useChat = () => {
       setAbortController,
       updateLoadingModel,
       tools,
-      selectedProvider,
       updateTokenSpeed,
     ]
   )

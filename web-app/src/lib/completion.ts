@@ -113,7 +113,8 @@ export const sendCompletion = async (
   messages: ChatCompletionMessageParam[],
   abortController: AbortController,
   tools: MCPTool[] = [],
-  stream: boolean = true
+  stream: boolean = true,
+  params: Record<string, object> = {}
 ): Promise<StreamCompletionResponse | CompletionResponse | undefined> => {
   if (!thread?.model?.id || !provider) return undefined
 
@@ -138,6 +139,7 @@ export const sendCompletion = async (
           messages,
           tools: normalizeTools(tools),
           tool_choice: tools.length ? 'auto' : undefined,
+          ...params,
         },
         {
           signal: abortController.signal,
@@ -150,6 +152,7 @@ export const sendCompletion = async (
         messages,
         tools: normalizeTools(tools),
         tool_choice: tools.length ? 'auto' : undefined,
+        ...params,
       })
   return completion
 }
@@ -248,7 +251,7 @@ export const extractToolCall = (
     // Create new tool call if this is the first chunk for it
     if (!calls[index]) {
       calls[index] = {
-        id: deltaToolCalls[0]?.id || '',
+        id: deltaToolCalls[0]?.id || ulid(),
         function: {
           name: deltaToolCalls[0]?.function?.name || '',
           arguments: deltaToolCalls[0]?.function?.arguments || '',
@@ -261,7 +264,10 @@ export const extractToolCall = (
       currentCall = calls[index]
 
       // Append to function name or arguments if they exist in this chunk
-      if (deltaToolCalls[0]?.function?.name) {
+      if (
+        deltaToolCalls[0]?.function?.name &&
+        currentCall!.function.name !== deltaToolCalls[0]?.function?.name
+      ) {
         currentCall!.function.name += deltaToolCalls[0].function.name
       }
 

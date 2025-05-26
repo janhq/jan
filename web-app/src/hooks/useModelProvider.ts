@@ -58,9 +58,13 @@ export const useModelProvider = create<ModelProviderState>()(
               active: existingProvider ? existingProvider?.active : true,
             }
           })
-
           return {
-            providers: updatedProviders,
+            providers: [
+              ...updatedProviders,
+              ...existingProviders.filter(
+                (e) => !updatedProviders.some((p) => p.provider === e.provider)
+              ),
+            ],
           }
         }),
       updateProvider: (providerName, data) => {
