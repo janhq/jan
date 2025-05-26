@@ -76,7 +76,7 @@ export default class llamacpp_extension extends AIEngine {
   private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
-  private activeRequests: Map<string, AbortController> = new Map()
+  private enginesPath!: string
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -89,7 +89,23 @@ export default class llamacpp_extension extends AIEngine {
       await getJanDataFolderPath(),
       'models',
     ])
+
+    this.enginesPath = await joinPath([await getJanDataFolderPath(), 'llamacpp', 'engines'])
   }
+
+  override async onUnload(): Promise<void> {
+    // Terminate all active sessions
+    for (const [sessionId, _] of this.activeSessions) {
+      try {
+        await this.unload(sessionId);
+      } catch (error) {
+        console.error(`Failed to unload session ${sessionId}:`, error);
+      }
+  }
+  
+  // Clear the sessions map
+  this.activeSessions.clear();
+}
 
   // Implement the required LocalProvider interface methods
   override async list(): Promise<modelInfo[]> {
@@ -335,6 +351,7 @@ export default class llamacpp_extension extends AIEngine {
 
     try {
       const sInfo = await invoke<sessionInfo>('load_llama_model', {
+        server_path: this.enginesPath,
         args: args,
       })
 
@@ -348,17 +365,17 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  override async unload(opts: unloadOptions): Promise<unloadResult> {
+  override async unload(sessionId: string): Promise<unloadResult> {
     try {
       // Pass the PID as the session_id
       const result = await invoke<unloadResult>('unload_llama_model', {
-        session_id: opts.sessionId, // Using PID as session ID
+        session_id: sessionId, // Using PID as session ID
       })
 
       // If successful, remove from active sessions
       if (result.success) {
-        this.activeSessions.delete(opts.sessionId)
-        console.log(`Successfully unloaded model with PID ${opts.sessionId}`)
+        this.activeSessions.delete(sessionId)
+        console.log(`Successfully unloaded model with PID ${sessionId}`)
       } else {
         console.warn(`Failed to unload model: ${result.error}`)
       }
@@ -495,9 +512,5 @@ export default class llamacpp_extension extends AIEngine {
   // Optional method for direct client access
   override getChatClient(sessionId: string): any {
     throw new Error('method not implemented yet')
-  }
-
-  onUnload(): void {
-    throw new Error('Method not implemented.')
   }
 }
