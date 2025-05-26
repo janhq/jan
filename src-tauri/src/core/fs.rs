@@ -54,7 +54,7 @@ pub fn exists_sync<R: Runtime>(
 #[serde(rename_all = "camelCase")]
 pub struct FileStat {
     pub is_directory: bool,
-    pub file_size: u64,
+    pub size: u64,
 }
 
 #[tauri::command]
@@ -69,11 +69,8 @@ pub fn file_stat<R: Runtime>(
     let path = resolve_path(app_handle, &args);
     let metadata = fs::metadata(&path).map_err(|e| e.to_string())?;
     let is_directory = metadata.is_dir();
-    let file_size = if is_directory { 0 } else { metadata.len() };
-    let file_stat = FileStat {
-        is_directory,
-        file_size,
-    };
+    let size = if is_directory { 0 } else { metadata.len() };
+    let file_stat = FileStat { is_directory, size };
     Ok(file_stat)
 }
 
