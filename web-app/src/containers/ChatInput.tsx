@@ -73,6 +73,9 @@ const ChatInput = ({
       setMessage('Please select a model to start chatting.')
       return
     }
+    if (!prompt.trim()) {
+      return
+    }
     setMessage('')
     sendMessage(prompt)
   }
@@ -351,7 +354,7 @@ const ChatInput = ({
                 setRows(Math.min(newRows, maxRows))
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && prompt) {
+                if (e.key === 'Enter' && !e.shiftKey && prompt.trim()) {
                   e.preventDefault()
                   // Submit the message when Enter is pressed without Shift
                   handleSendMesage(prompt)
@@ -463,9 +466,9 @@ const ChatInput = ({
               </Button>
             ) : (
               <Button
-                variant={!prompt ? null : 'default'}
+                variant={!prompt.trim() ? null : 'default'}
                 size="icon"
-                disabled={!prompt}
+                disabled={!prompt.trim()}
                 onClick={() => handleSendMesage(prompt)}
               >
                 {streamingContent ? (
