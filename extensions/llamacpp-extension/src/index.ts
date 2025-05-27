@@ -28,7 +28,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 type EngineSettings = {
   n_gpu_layers: number;
-  n_ctx: number;
+  n_ctx: number;  // not in SETTINGS
   threads: number;
   threads_batch: number;
   ctx_size: number;
@@ -306,113 +306,49 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(opts: loadOptions): Promise<sessionInfo> {
     const args: string[] = []
+    const settings = this.settings
 
     // disable llama-server webui
     args.push('--no-webui')
 
     // model option is required
+    // TODO: llama.cpp extension lookup model path based on modelId
     args.push('-m', opts.modelPath)
     args.push('--port', String(opts.port || 8080)) // Default port if not specified
-
-    if (opts.n_gpu_layers === undefined) {
-      // in case of CPU only build, this option will be ignored
-      args.push('-ngl', '99')
-    } else {
-      args.push('-ngl', String(opts.n_gpu_layers))
-    }
 
     if (opts.n_ctx !== undefined) {
       args.push('-c', String(opts.n_ctx))
     }
 
     // Add remaining options from the interface
-    if (opts.threads !== undefined) {
-      args.push('--threads', String(opts.threads))
-    }
-
-    if (opts.threads_batch !== undefined) {
-      args.push('--threads-batch', String(opts.threads_batch))
-    }
-
-    if (opts.ctx_size !== undefined) {
-      args.push('--ctx-size', String(opts.ctx_size))
-    }
-
-    if (opts.n_predict !== undefined) {
-      args.push('--n-predict', String(opts.n_predict))
-    }
-
-    if (opts.batch_size !== undefined) {
-      args.push('--batch-size', String(opts.batch_size))
-    }
-
-    if (opts.ubatch_size !== undefined) {
-      args.push('--ubatch-size', String(opts.ubatch_size))
-    }
-
-    if (opts.device !== undefined) {
-      args.push('--device', opts.device)
-    }
-
-    if (opts.split_mode !== undefined) {
-      args.push('--split-mode', opts.split_mode)
-    }
-
-    if (opts.main_gpu !== undefined) {
-      args.push('--main-gpu', String(opts.main_gpu))
-    }
+    if (settings.n_gpu_layers > 0) args.push('-ngl', String(settings.n_gpu_layers))
+    if (settings.threads > 0) args.push('--threads', String(settings.threads))
+    if (settings.threads_batch > 0) args.push('--threads-batch', String(settings.threads_batch))
+    if (settings.ctx_size > 0) args.push('--ctx-size', String(settings.ctx_size))
+    if (settings.n_predict > 0) args.push('--n-predict', String(settings.n_predict))
+    if (settings.batch_size > 0) args.push('--batch-size', String(settings.batch_size))
+    if (settings.ubatch_size > 0) args.push('--ubatch-size', String(settings.ubatch_size))
+    if (settings.device.length > 0) args.push('--device', settings.device)
+    if (settings.split_mode.length > 0) args.push('--split-mode', settings.split_mode)
+    if (settings.main_gpu !== undefined) args.push('--main-gpu', String(settings.main_gpu))
 
     // Boolean flags
-    if (opts.flash_attn === true) {
-      args.push('--flash-attn')
-    }
+    if (settings.flash_attn) args.push('--flash-attn')
+    if (settings.cont_batching) args.push('--cont-batching')
+    if (settings.no_mmap) args.push('--no-mmap')
+    if (settings.mlock) args.push('--mlock')
+    if (settings.no_kv_offload) args.push('--no-kv-offload')
 
-    if (opts.cont_batching === true) {
-      args.push('--cont-batching')
-    }
+    args.push('--cache-type-k', settings.cache_type_k)
+    args.push('--cache-type-v', settings.cache_type_v)
+    args.push('--defrag-thold', String(settings.defrag_thold))
 
-    if (opts.no_mmap === true) {
-      args.push('--no-mmap')
-    }
+    args.push('--rope-scaling', settings.rope_scaling)
+    args.push('--rope-scale', String(settings.rope_scale))
+    args.push('--rope-freq-base', String(settings.rope_freq_base))
+    args.push('--rope-freq-scale', String(settings.rope_freq_scale))
+    args.push('--reasoning-budget', String(settings.reasoning_budget))
 
-    if (opts.mlock === true) {
-      args.push('--mlock')
-    }
-
-    if (opts.no_kv_offload === true) {
-      args.push('--no-kv-offload')
-    }
-
-    if (opts.cache_type_k !== undefined) {
-      args.push('--cache-type-k', opts.cache_type_k)
-    }
-
-    if (opts.cache_type_v !== undefined) {
-      args.push('--cache-type-v', opts.cache_type_v)
-    }
-
-    if (opts.defrag_thold !== undefined) {
-      args.push('--defrag-thold', String(opts.defrag_thold))
-    }
-
-    if (opts.rope_scaling !== undefined) {
-      args.push('--rope-scaling', opts.rope_scaling)
-    }
-
-    if (opts.rope_scale !== undefined) {
-      args.push('--rope-scale', String(opts.rope_scale))
-    }
-
-    if (opts.rope_freq_base !== undefined) {
-      args.push('--rope-freq-base', String(opts.rope_freq_base))
-    }
-
-    if (opts.rope_freq_scale !== undefined) {
-      args.push('--rope-freq-scale', String(opts.rope_freq_scale))
-    }
-    if (opts.reasoning_budget !== undefined) {
-      args.push('--reasoning-budget', String(opts.reasoning_budget))
-    }
     console.log('Calling Tauri command llama_load with args:', args)
 
     try {

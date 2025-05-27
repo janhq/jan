@@ -103,30 +103,7 @@ export type listResult = modelInfo[]
 export interface loadOptions {
   modelPath: string
   port?: number
-  n_gpu_layers?: number
   n_ctx?: number
-  threads?: number
-  threads_batch?: number
-  ctx_size?: number
-  n_predict?: number
-  batch_size?: number
-  ubatch_size?: number
-  device?: string
-  split_mode?: string
-  main_gpu?: number
-  flash_attn?: boolean
-  cont_batching?: boolean
-  no_mmap?: boolean
-  mlock?: boolean
-  no_kv_offload?: boolean
-  cache_type_k?: string
-  cache_type_v?: string
-  defrag_thold?: number
-  rope_scaling?: string
-  rope_scale?: number
-  rope_freq_base?: number
-  rope_freq_scale?: number
-  reasoning_budget?: number
 }
 
 export interface sessionInfo {
