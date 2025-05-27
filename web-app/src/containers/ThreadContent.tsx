@@ -132,7 +132,7 @@ export const ThreadContent = memo(
     }, [deleteMessage, getMessages, item, sendMessage])
 
     const removeMessage = useCallback(() => {
-      if (item.index && (item.role === 'assistant' || item.role === 'tool')) {
+      if (item.index !== undefined && (item.role === 'assistant' || item.role === 'tool')) {
         const threadMessages = getMessages(item.thread_id).slice(
           0,
           item.index + 1
