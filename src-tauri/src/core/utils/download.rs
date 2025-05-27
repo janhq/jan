@@ -182,12 +182,21 @@ async fn _download_files_internal(
             }
         }
 
-        let tmp_save_path = save_path.with_extension("tmp");
-        let url_save_path = save_path.with_extension("url");
+        let current_extension = save_path.extension().unwrap_or_default().to_string_lossy();
+        let append_extension = |ext: &str| {
+            if current_extension.is_empty() {
+                ext.to_string()
+            } else {
+                format!("{}.{}", current_extension, ext)
+            }
+        };
+        let tmp_save_path = save_path.with_extension(append_extension("tmp"));
+        let url_save_path = save_path.with_extension(append_extension("url"));
+
         let mut resume = tmp_save_path.exists()
             && tokio::fs::read_to_string(&url_save_path)
                 .await
-                .map(|url| url == item.url) // check we resume the same URL
+                .map(|url| url == item.url) // check if we resume the same URL
                 .unwrap_or(false);
 
         tokio::fs::write(&url_save_path, item.url.clone())
