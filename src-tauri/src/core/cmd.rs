@@ -185,13 +185,20 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
-    return app_handle
-        .path()
-        .app_data_dir()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string();
+    let mut path = app_handle.path().data_dir().unwrap();
+
+    let app_name = std::env::var("APP_NAME")
+        .unwrap_or_else(|_| app_handle.config().product_name.clone().unwrap());
+    path.push(app_name);
+    path.push("data");
+
+    let mut path_str = path.to_str().unwrap().to_string();
+
+    if let Some(stripped) = path.to_str().unwrap().to_string().strip_suffix(".ai.app") {
+        path_str = stripped.to_string();
+    }
+
+    path_str
 }
 
 #[tauri::command]
@@ -275,10 +282,10 @@ pub fn get_active_extensions(app: AppHandle) -> Vec<serde_json::Value> {
                 vec![]
             }
         },
-        Err(error) => { 
+        Err(error) => {
             log::error!("Failed to read extensions.json: {}", error);
             vec![]
-        },
+        }
     };
     return contents;
 }
