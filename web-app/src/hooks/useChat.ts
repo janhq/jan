@@ -25,6 +25,7 @@ import { getTools } from '@/services/mcp'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { stopModel } from '@/services/models'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -174,6 +175,17 @@ export const useChat = () => {
               }
             }
           }
+          // TODO: Remove this check when integrating new llama.cpp extension
+          if (
+            accumulatedText.length === 0 &&
+            toolCalls.length === 0 &&
+            activeThread.model?.id &&
+            provider.provider === 'llama.cpp'
+          ) {
+            await stopModel(activeThread.model.id, 'cortex')
+            throw new Error('No response received from the model')
+          }
+
           // Create a final content object for adding to the thread
           const finalContent = newAssistantThreadContent(
             activeThread.id,
