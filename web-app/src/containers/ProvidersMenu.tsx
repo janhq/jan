@@ -1,6 +1,6 @@
 import { route } from '@/constants/routes'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import { useNavigate, useMatches, Link } from '@tanstack/react-router'
 import { IconArrowLeft, IconCirclePlus } from '@tabler/icons-react'
 import {
@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { useCallback, useState } from 'react'
 import { openAIProviderSettings } from '@/mock/data'
+import ProvidersAvatar from '@/containers/ProvidersAvatar'
 
 const ProvidersMenu = ({
   stepSetupRemoteProvider,
@@ -85,11 +86,7 @@ const ProvidersMenu = ({
                   })
                 }
               >
-                <img
-                  src={getProviderLogo(provider.provider)}
-                  alt={`${provider.provider} - Logo`}
-                  className="size-4"
-                />
+                <ProvidersAvatar provider={provider} />
                 <span className="capitalize">
                   {getProviderTitle(provider.provider)}
                 </span>
@@ -104,10 +101,8 @@ const ProvidersMenu = ({
               className="bg-main-view flex cursor-pointer px-4 my-1.5 items-center gap-1.5  text-main-view-fg/80"
               onClick={() => {}}
             >
-              <IconCirclePlus size={16} />
-              <span className="capitalize">
-                Add Provider
-              </span>
+              <IconCirclePlus size={18} />
+              <span className="capitalize">Add Provider</span>
             </div>
           </DialogTrigger>
           <DialogContent>
