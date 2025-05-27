@@ -111,9 +111,10 @@ function RenderMarkdownComponent({
               language={language}
               showLineNumbers={showLineNumbers}
               wrapLines={true}
-              lineProps={{
-                style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
-              }}
+              // Temporary comment we try calculate main area width on __root
+              // lineProps={{
+              //   style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
+              // }}
               customStyle={{
                 margin: 0,
                 padding: '8px',

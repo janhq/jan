@@ -33,7 +33,10 @@ const ThinkingBlock = ({ id, text }: Props) => {
   if (!text.replace(/<\/?think>/g, '').trim()) return null
 
   return (
-    <div className="mx-auto w-full cursor-pointer" onClick={handleClick}>
+    <div
+      className="mx-auto w-full cursor-pointer break-words"
+      onClick={handleClick}
+    >
       <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2">
         <div className="flex items-center gap-3">
           {loading && (

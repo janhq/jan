@@ -171,10 +171,12 @@ export const ThreadContent = memo(
     return (
       <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
-          <div>
-            <div className="flex justify-end w-full">
-              <div className="bg-main-view-fg/4 text-main-view-fg p-2 rounded-md inline-block">
-                <p className="select-text">{item.content?.[0].text.value}</p>
+          <div className="w-full">
+            <div className="flex justify-end w-full text-start break-words whitespace-normal">
+              <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[70%]">
+                <div className="whitespace-pre-wrap select-text">
+                  {item.content?.[0].text.value}
+                </div>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
