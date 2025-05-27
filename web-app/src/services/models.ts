@@ -194,7 +194,12 @@ export const importModel = async (
     if (!path) throw new Error('No file selected')
 
     // Extract filename from path to use as model ID if not provided
-    const defaultModelId = path.split(/[/\\]/).pop()?.replace(/ /g, '-') || path
+    const defaultModelId =
+      path
+        .split(/[/\\]/)
+        .pop()
+        ?.replace(/ /g, '-')
+        .replace(/\.gguf$/i, '') || path
     const modelIdToUse = modelId || defaultModelId
 
     return await extension.importModel(modelIdToUse, path, provider)
