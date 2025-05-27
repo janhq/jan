@@ -173,28 +173,77 @@ async fn _download_files_internal(
             ));
         }
 
-        log::info!("Started downloading: {}", item.url);
-        let resp = client.get(&item.url).send().await.map_err(err_to_string)?;
-        if !resp.status().is_success() {
-            return Err(format!(
-                "Failed to download: HTTP status {}, {}",
-                resp.status(),
-                resp.text().await.unwrap_or_default()
-            ));
-        }
-
         // Create parent directories if they don't exist
         if let Some(parent) = save_path.parent() {
             if !parent.exists() {
-                tokio::fs::create_dir_all(parent).await.map_err(err_to_string)?;
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(err_to_string)?;
             }
         }
-        let mut file = File::create(&save_path).await.map_err(err_to_string)?;
+
+        let current_extension = save_path.extension().unwrap_or_default().to_string_lossy();
+        let append_extension = |ext: &str| {
+            if current_extension.is_empty() {
+                ext.to_string()
+            } else {
+                format!("{}.{}", current_extension, ext)
+            }
+        };
+        let tmp_save_path = save_path.with_extension(append_extension("tmp"));
+        let url_save_path = save_path.with_extension(append_extension("url"));
+
+        let mut resume = tmp_save_path.exists()
+            && tokio::fs::read_to_string(&url_save_path)
+                .await
+                .map(|url| url == item.url) // check if we resume the same URL
+                .unwrap_or(false);
+
+        tokio::fs::write(&url_save_path, item.url.clone())
+            .await
+            .map_err(err_to_string)?;
+
+        log::info!("Started downloading: {}", item.url);
+        let mut download_delta = 0u64;
+        let resp = if resume {
+            let downloaded_size = tmp_save_path.metadata().map_err(err_to_string)?.len();
+            match _get_maybe_resume(&client, &item.url, downloaded_size).await {
+                Ok(resp) => {
+                    log::info!(
+                        "Resume download: {}, already downloaded {} bytes",
+                        item.url,
+                        downloaded_size
+                    );
+                    download_delta += downloaded_size;
+                    resp
+                }
+                Err(e) => {
+                    // fallback to normal download
+                    log::warn!("Failed to resume download: {}", e);
+                    resume = false;
+                    _get_maybe_resume(&client, &item.url, 0).await?
+                }
+            }
+        } else {
+            _get_maybe_resume(&client, &item.url, 0).await?
+        };
+        let mut stream = resp.bytes_stream();
+
+        let file = if resume {
+            // resume download, append to existing file
+            tokio::fs::OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&tmp_save_path)
+                .await
+                .map_err(err_to_string)?
+        } else {
+            // start new download, create a new file
+            File::create(&tmp_save_path).await.map_err(err_to_string)?
+        };
+        let mut writer = tokio::io::BufWriter::new(file);
 
         // write chunk to file
-        let mut stream = resp.bytes_stream();
-        let mut download_delta = 0u64;
-
         while let Some(chunk) = stream.next().await {
             if cancel_token.is_cancelled() {
                 log::info!("Download cancelled for task: {}", task_id);
@@ -203,22 +252,63 @@ async fn _download_files_internal(
             }
 
             let chunk = chunk.map_err(err_to_string)?;
-            file.write_all(&chunk).await.map_err(err_to_string)?;
+            writer.write_all(&chunk).await.map_err(err_to_string)?;
             download_delta += chunk.len() as u64;
 
-            // only update every 1MB
-            if download_delta >= 1024 * 1024 {
+            // only update every 10 MB
+            if download_delta >= 10 * 1024 * 1024 {
                 evt.transferred += download_delta;
                 app.emit(&evt_name, evt.clone()).unwrap();
                 download_delta = 0u64;
             }
         }
 
-        file.flush().await.map_err(err_to_string)?;
+        writer.flush().await.map_err(err_to_string)?;
         evt.transferred += download_delta;
+
+        // rename tmp file to final file
+        tokio::fs::rename(&tmp_save_path, &save_path)
+            .await
+            .map_err(err_to_string)?;
+        tokio::fs::remove_file(&url_save_path)
+            .await
+            .map_err(err_to_string)?;
         log::info!("Finished downloading: {}", item.url);
     }
 
     app.emit(&evt_name, evt.clone()).unwrap();
     Ok(())
+}
+
+async fn _get_maybe_resume(
+    client: &reqwest::Client,
+    url: &str,
+    start_bytes: u64,
+) -> Result<reqwest::Response, String> {
+    if start_bytes > 0 {
+        let resp = client
+            .get(url)
+            .header("Range", format!("bytes={}-", start_bytes))
+            .send()
+            .await
+            .map_err(err_to_string)?;
+        if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+            return Err(format!(
+                "Failed to resume download: HTTP status {}, {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+        Ok(resp)
+    } else {
+        let resp = client.get(url).send().await.map_err(err_to_string)?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "Failed to download: HTTP status {}, {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            ));
+        }
+        Ok(resp)
+    }
 }
