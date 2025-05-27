@@ -144,6 +144,7 @@ export const ThreadContent = memo(
         while (toSendMessage && toSendMessage?.role !== 'user') {
           deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
           toSendMessage = threadMessages.pop()
+          // Only delete messages that are tool calls
           if (
             toSendMessage &&
             toSendMessage.role === 'assistant' &&
