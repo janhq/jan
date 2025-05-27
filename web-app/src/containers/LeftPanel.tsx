@@ -133,7 +133,12 @@ const LeftPanel = () => {
         )}
       </div>
 
-      <div className="flex flex-col justify-between h-[calc(100%-32px)] mt-0">
+      <div
+        className={cn(
+          'flex flex-col justify-between mt-0',
+          IS_MACOS ? 'h-[calc(100%-32px)]' : 'h-[calc(100%-42px)]'
+        )}
+      >
         <div className="flex flex-col justify-between h-full">
           {IS_MACOS && (
             <div className="relative mb-4 mx-1 mt-1">
