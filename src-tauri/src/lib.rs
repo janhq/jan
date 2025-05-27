@@ -5,6 +5,7 @@ use core::{
     state::{generate_app_token, AppState},
     utils::download::DownloadManagerState,
 };
+
 use std::{collections::HashMap, sync::Arc};
 
 use tauri::Emitter;
