@@ -100,7 +100,7 @@ export default class llamacpp_extension extends AIEngine {
         const backends = await listBackends()
         item.controllerProps = {
           value: backends[0] || '',
-          options: backends.map((b) => ({ label: b, value: b })),
+          options: backends.map((b) => ({ value: b, name: b })),
         }
       }
     }

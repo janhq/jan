@@ -5,12 +5,8 @@
     "description": "Backend for llama.cpp",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "layer",
-      "options": [
-        { "value": "none", "name": "None" },
-        { "value": "layer", "name": "Layer" },
-        { "value": "row", "name": "Row" }
-      ]
+      "value": "",
+      "options": []
     }
   },
   {
