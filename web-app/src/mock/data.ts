@@ -306,7 +306,7 @@ export const mockModelProvider = [
   {
     active: true,
     api_key: '',
-    base_url: 'https://api.mistral.ai/v1',
+    base_url: 'https://api.mistral.ai',
     explore_models_url:
       'https://docs.mistral.ai/getting-started/models/models_overview/',
     provider: 'mistral',
@@ -331,8 +331,8 @@ export const mockModelProvider = [
           'The base endpoint to use. See the [Mistral documentation](https://docs.mistral.ai/getting-started/models/models_overview/) for more information.',
         controller_type: 'input',
         controller_props: {
-          placeholder: 'https://api.mistral.ai/v1',
-          value: 'https://api.mistral.ai/v1',
+          placeholder: 'https://api.mistral.ai',
+          value: 'https://api.mistral.ai',
         },
       },
     ],
