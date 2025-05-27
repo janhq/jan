@@ -71,9 +71,11 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
               title={displayModel}
               className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-38"
             >
-              <div className="shrink-0">
-                <ProvidersAvatar provider={provider as ProviderObject} />
-              </div>
+              {provider && (
+                <div className="shrink-0">
+                  <ProvidersAvatar provider={provider} />
+                </div>
+              )}
               <span
                 className={cn(
                   'text-main-view-fg/80 truncate leading-normal',
@@ -84,11 +86,8 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
               </span>
             </button>
           </DropdownMenuTrigger>
-          {currentModel?.settings && (
-            <ModelSetting
-              model={currentModel as Model}
-              provider={provider as ProviderObject}
-            />
+          {currentModel?.settings && provider && (
+            <ModelSetting model={currentModel as Model} provider={provider} />
           )}
         </div>
         <DropdownMenuContent
