@@ -132,12 +132,25 @@ export const ThreadContent = memo(
     }, [deleteMessage, getMessages, item, sendMessage])
 
     const removeMessage = useCallback(() => {
-      if (item.role === 'assistant' || item.role === 'tool') {
-        const threadMessages = getMessages(item.thread_id)
+      if (
+        item.index !== undefined &&
+        (item.role === 'assistant' || item.role === 'tool')
+      ) {
+        const threadMessages = getMessages(item.thread_id).slice(
+          0,
+          item.index + 1
+        )
         let toSendMessage = threadMessages.pop()
         while (toSendMessage && toSendMessage?.role !== 'user') {
           deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
           toSendMessage = threadMessages.pop()
+          // Stop deletion when encountering an assistant message that isn’t a tool call
+          if (
+            toSendMessage &&
+            toSendMessage.role === 'assistant' &&
+            !('tool_calls' in (toSendMessage.metadata ?? {}))
+          )
+            break
         }
       } else {
         deleteMessage(item.thread_id, item.id)

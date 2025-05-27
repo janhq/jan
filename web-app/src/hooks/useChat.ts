@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
@@ -21,24 +21,50 @@ import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
 import { useAssistant } from './useAssistant'
 import { toast } from 'sonner'
+import { getTools } from '@/services/mcp'
+import { MCPTool } from '@/types/completion'
+import { listen } from '@tauri-apps/api/event'
+import { SystemEvent } from '@/types/events'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
-  const { tools, updateTokenSpeed, resetTokenSpeed } = useAppState()
+  const {
+    tools,
+    updateTokenSpeed,
+    resetTokenSpeed,
+    updateTools,
+    updateStreamingContent,
+    updateLoadingModel,
+    setAbortController,
+  } = useAppState()
   const { currentAssistant } = useAssistant()
 
   const { getProviderByName, selectedModel, selectedProvider } =
     useModelProvider()
 
   const { getCurrentThread: retrieveThread, createThread } = useThreads()
-  const { updateStreamingContent, updateLoadingModel, setAbortController } =
-    useAppState()
   const { getMessages, addMessage } = useMessages()
   const router = useRouter()
 
   const provider = useMemo(() => {
     return getProviderByName(selectedProvider)
   }, [selectedProvider, getProviderByName])
+
+  useEffect(() => {
+    function setTools() {
+      getTools().then((data: MCPTool[]) => {
+        updateTools(data)
+      })
+    }
+    setTools()
+
+    let unsubscribe = () => {}
+    listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
+      // Unsubscribe from the event when the component unmounts
+      unsubscribe = unsub
+    })
+    return unsubscribe
+  }, [updateTools])
 
   const getCurrentThread = useCallback(async () => {
     let currentThread = retrieveThread()

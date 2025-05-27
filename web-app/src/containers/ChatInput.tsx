@@ -24,10 +24,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppState } from '@/hooks/useAppState'
 import { MovingBorder } from './MovingBorder'
-import { MCPTool } from '@/types/completion'
-import { listen } from '@tauri-apps/api/event'
-import { SystemEvent } from '@/types/events'
-import { getTools } from '@/services/mcp'
 import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
@@ -46,8 +42,7 @@ const ChatInput = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, updateTools, abortControllers, loadingModel } =
-    useAppState()
+  const { streamingContent, abortControllers, loadingModel } = useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
@@ -101,22 +96,6 @@ const ChatInput = ({
       document.removeEventListener('focusout', handleFocusOut)
     }
   }, [])
-
-  useEffect(() => {
-    function setTools() {
-      getTools().then((data: MCPTool[]) => {
-        updateTools(data)
-      })
-    }
-    setTools()
-
-    let unsubscribe = () => {}
-    listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
-      // Unsubscribe from the event when the component unmounts
-      unsubscribe = unsub
-    })
-    return unsubscribe
-  }, [updateTools])
 
   // Focus when component mounts
   useEffect(() => {
