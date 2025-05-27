@@ -132,8 +132,11 @@ export const ThreadContent = memo(
     }, [deleteMessage, getMessages, item, sendMessage])
 
     const removeMessage = useCallback(() => {
-      if (item.role === 'assistant' || item.role === 'tool') {
-        const threadMessages = getMessages(item.thread_id)
+      if (item.index && (item.role === 'assistant' || item.role === 'tool')) {
+        const threadMessages = getMessages(item.thread_id).slice(
+          0,
+          item.index + 1
+        )
         let toSendMessage = threadMessages.pop()
         while (toSendMessage && toSendMessage?.role !== 'user') {
           deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')

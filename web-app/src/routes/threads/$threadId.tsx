@@ -199,7 +199,11 @@ function ThreadDetail() {
                       showAssistant={
                         item.role === 'assistant' &&
                         (index === 0 ||
-                          messages[index - 1].role !== 'assistant')
+                          messages[index - 1]?.role !== 'assistant' ||
+                          !(
+                            messages[index - 1]?.metadata &&
+                            'tool_calls' in (messages[index - 1].metadata ?? {})
+                          ))
                       }
                       index={index}
                     />
