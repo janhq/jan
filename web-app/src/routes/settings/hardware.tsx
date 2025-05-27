@@ -268,7 +268,7 @@ function Hardware() {
               {hardwareData.cpu?.instructions.join(', ').length > 0 && (
                 <CardItem
                   title="Instructions"
-                  column={hardwareData.cpu?.instructions.join(', ').length > 6}
+                  column={hardwareData.cpu?.instructions.length > 6}
                   actions={
                     <span className="text-main-view-fg/80 break-words">
                       {hardwareData.cpu?.instructions?.join(', ')}
