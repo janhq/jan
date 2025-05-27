@@ -21,7 +21,7 @@ import {
   chatCompletionRequest,
   events,
 } from '@janhq/core'
-import { listBackends, downloadBackend } from './backend'
+import { listSupportedBackends, downloadBackend } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
@@ -98,7 +98,7 @@ export default class llamacpp_extension extends AIEngine {
     // update backend settings
     for (let item of settings) {
       if (item.key === 'backend') {
-        const backends = await listBackends()
+        const backends = await listSupportedBackends()
         item.controllerProps = {
           value: backends[0] || '',
           options: backends.map((b) => ({ value: b, name: b })),

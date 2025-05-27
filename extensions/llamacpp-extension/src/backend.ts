@@ -4,12 +4,13 @@ import {
   joinPath,
   events,
 } from '@janhq/core'
+import { invoke } from '@tauri-apps/api/core'
 
 // folder structure
 // <Jan's data folder>/llamacpp/backends/<backend_name>/<backend_version>
 
 // what should be available to the user for selection?
-export async function listBackends(): Promise<string[]> {
+export async function listSupportedBackends(): Promise<string[]> {
   const sysInfo = await window.core.api.getSystemInfo()
   const os_type = sysInfo.os_type
   const arch = sysInfo.cpu.arch
@@ -70,12 +71,12 @@ export async function isBackendInstalled(backend: string): Promise<boolean> {
 
 export async function downloadBackend(backend: string, version: string): Promise<void> {
   const janDataFolderPath = await getJanDataFolderPath()
-  const backendPath = await joinPath([janDataFolderPath, 'llamacpp', 'backends', backend])
+  const backendPath = await joinPath([janDataFolderPath, 'llamacpp', 'backends', backend, version])
 
   const downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
   const url = `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`
-  const savePath = await joinPath([backendPath, version, 'backend.tar.gz'])
-  const taskId = `llamacpp-${version}-${backend}`
+  const savePath = await joinPath([backendPath, 'backend.tar.gz'])
+  const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
   let downloadCompleted = false
@@ -94,19 +95,21 @@ export async function downloadBackend(backend: string, version: string): Promise
         downloadCompleted = transferred === total
       }
     )
+
+    // once we reach this point, it either means download finishes or it was cancelled.
+    // if there was an error, it would have been caught above
+    if (!downloadCompleted) {
+      events.emit('onFileDownloadStopped', { modelId: taskId, downloadType })
+      return
+    }
+
+    await invoke('decompress', { path: savePath, outputDir: backendPath })
+    await fs.rm(savePath)
+
+    events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
   } catch (error) {
     console.error(`Failed to download backend ${backend}:`, error)
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
     throw error
   }
-
-  // once we reach this point, it either means download finishes or it was cancelled.
-  // if there was an error, it would have been caught above
-  if (!downloadCompleted) {
-    events.emit('onFileDownloadStopped', { modelId: taskId, downloadType })
-    return
-  }
-
-  // extract the downloaded tar.gz file
-  events.emit('onFileDownloadSuccess', { modelId: taskId, downloadType })
 }
