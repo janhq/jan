@@ -25,6 +25,7 @@ import { listSupportedBackends, downloadBackend } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
+  backend: string;
   n_gpu_layers: number;
   ctx_size: number;
   threads: number;
@@ -143,6 +144,19 @@ export default class llamacpp_extension extends AIEngine {
 
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
+
+    if (key === 'backend') {
+      // If backend changes, we need to re-download the backend
+      const version = 'b5509' // hardcode for now
+      // TODO: check if it's already downloaded
+      downloadBackend(value as string, version)
+        .then(() => {
+          console.log(`Backend ${value} downloaded successfully.`);
+        })
+        .catch((error) => {
+          console.error(`Failed to download backend ${value}:`, error);
+        });
+    }
   }
 
   private async generateApiKey(modelId: string): Promise<string> {
