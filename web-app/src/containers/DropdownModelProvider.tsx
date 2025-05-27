@@ -85,7 +85,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
               </span>
             </button>
           </DropdownMenuTrigger>
-          {currentModel && (
+          {currentModel?.settings && (
             <ModelSetting
               model={currentModel as Model}
               provider={provider as ProviderObject}
