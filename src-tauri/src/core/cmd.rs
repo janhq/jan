@@ -185,10 +185,8 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
 
 #[tauri::command]
 pub fn default_data_folder_path<R: Runtime>(app_handle: tauri::AppHandle<R>) -> String {
-    let mut path = app_handle.path().app_data_dir().unwrap();
+    let mut path = app_handle.path().data_dir().unwrap();
 
-    path.pop(); // Remove the last path component (default to jan.ai.app) path.
-                // Use process env APP_NAME or default to app's product name (e.g. Jan, Jan-beta, etc.)
     let app_name = std::env::var("APP_NAME")
         .unwrap_or_else(|_| app_handle.config().product_name.clone().unwrap());
     path.push(app_name);
