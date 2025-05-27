@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
+import { useAppState } from '@/hooks/useAppState'
 
 interface Props {
   text: string
@@ -26,7 +27,8 @@ const useThinkingStore = create<ThinkingBlockState>((set) => ({
 
 const ThinkingBlock = ({ id, text }: Props) => {
   const { thinkingState, toggleState } = useThinkingStore()
-  const loading = !text.includes('</think>')
+  const { streamingContent } = useAppState()
+  const loading = !text.includes('</think>') && streamingContent
   const isExpanded = thinkingState[id] ?? false
   const handleClick = () => toggleState(id)
 
