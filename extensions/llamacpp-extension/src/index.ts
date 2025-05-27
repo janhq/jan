@@ -21,7 +21,7 @@ import {
   chatCompletionRequest,
   events,
 } from '@janhq/core'
-
+import { listBackends } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
@@ -91,7 +91,21 @@ export default class llamacpp_extension extends AIEngine {
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
-    this.registerSettings(SETTINGS)
+
+    let settings = structuredClone(SETTINGS)
+
+    // update backend settings
+    for (let item of settings) {
+      if (item.key === 'backend') {
+        const backends = await listBackends()
+        item.controllerProps = {
+          value: backends[0] || '',
+          options: backends.map((b) => ({ label: b, value: b })),
+        }
+      }
+    }
+
+    this.registerSettings(settings)
 
     let config = {}
     for (const item of SETTINGS) {
