@@ -7,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import { useEffect, useState } from 'react'
 import Capabilities from './Capabilities'
 import { IconSettings } from '@tabler/icons-react'
@@ -15,6 +15,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
+import ProvidersAvatar from '@/containers/ProvidersAvatar'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -64,17 +65,15 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   return (
     <>
       <DropdownMenu>
-        <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm">
+        <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px]">
           <DropdownMenuTrigger asChild>
             <button
               title={displayModel}
               className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 max-w-38"
             >
-              <img
-                src={getProviderLogo(selectedProvider as string)}
-                alt={`${selectedProvider} - Logo`}
-                className="size-4"
-              />
+              <div className="shrink-0">
+                <ProvidersAvatar provider={provider as ProviderObject} />
+              </div>
               <span
                 className={cn(
                   'text-main-view-fg/80 truncate leading-normal',
@@ -85,7 +84,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
               </span>
             </button>
           </DropdownMenuTrigger>
-          {currentModel && (
+          {currentModel?.settings && (
             <ModelSetting
               model={currentModel as Model}
               provider={provider as ProviderObject}
@@ -96,6 +95,8 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
           className="w-60 max-h-[320px]"
           side="bottom"
           align="start"
+          sideOffset={10}
+          alignOffset={-8}
         >
           <DropdownMenuGroup>
             {providers.map((provider, index) => {
@@ -111,11 +112,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                 >
                   <div className="flex items-center justify-between">
                     <DropdownMenuLabel className="flex items-center gap-1.5">
-                      <img
-                        src={getProviderLogo(provider.provider)}
-                        alt={`${provider.provider} - Logo`}
-                        className="size-4"
-                      />
+                      <ProvidersAvatar provider={provider} />
                       <span className="capitalize truncate text-sm">
                         {getProviderTitle(provider.provider)}
                       </span>

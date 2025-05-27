@@ -56,9 +56,13 @@ function Hub() {
     {}
   )
   const [isSearching, setIsSearching] = useState(false)
+  const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
+
+  const { getProviderByName } = useModelProvider()
+  const llamaProvider = getProviderByName('llama.cpp')
 
   const toggleModelExpansion = (modelId: string) => {
     setExpandedModels((prev) => ({
@@ -83,16 +87,29 @@ function Hub() {
 
   // Filtered models
   const filteredModels = useMemo(() => {
-    // Apply additional filters here if needed
-    return searchValue.length
-      ? sortedModels?.filter((e) =>
-          fuzzySearch(
-            searchValue.replace(/\s+/g, '').toLowerCase(),
-            e.id.toLowerCase()
-          )
+    let filtered = sortedModels
+
+    // Apply search filter
+    if (searchValue.length) {
+      filtered = filtered?.filter((e) =>
+        fuzzySearch(
+          searchValue.replace(/\s+/g, '').toLowerCase(),
+          e.id.toLowerCase()
         )
-      : sortedModels
-  }, [searchValue, sortedModels])
+      )
+    }
+
+    // Apply downloaded filter
+    if (showOnlyDownloaded) {
+      filtered = filtered?.filter((model) =>
+        model.models.some((variant) =>
+          llamaProvider?.models.some((m: { id: string }) => m.id === variant.id)
+        )
+      )
+    }
+
+    return filtered
+  }, [searchValue, sortedModels, showOnlyDownloaded, llamaProvider?.models])
 
   useEffect(() => {
     fetchSources()
@@ -134,9 +151,6 @@ function Hub() {
       })),
     [downloads]
   )
-
-  const { getProviderByName } = useModelProvider()
-  const llamaProvider = getProviderByName('llama.cpp')
 
   const navigate = useNavigate()
 
@@ -207,33 +221,45 @@ function Hub() {
                 className="w-full focus:outline-none"
               />
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger>
-                <span
-                  title="Edit Theme"
-                  className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-                >
-                  {
-                    sortOptions.find((option) => option.value === sortSelected)
-                      ?.name
-                  }
-                </span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side="bottom" align="end">
-                {sortOptions.map((option) => (
-                  <DropdownMenuItem
-                    className={cn(
-                      'cursor-pointer my-0.5',
-                      sortSelected === option.value && 'bg-main-view-fg/5'
-                    )}
-                    key={option.value}
-                    onClick={() => setSortSelected(option.value)}
+            <div className="flex items-center gap-2 shrink-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger>
+                  <span
+                    title="Edit Theme"
+                    className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
                   >
-                    {option.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                    {
+                      sortOptions.find(
+                        (option) => option.value === sortSelected
+                      )?.name
+                    }
+                  </span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="bottom" align="end">
+                  {sortOptions.map((option) => (
+                    <DropdownMenuItem
+                      className={cn(
+                        'cursor-pointer my-0.5',
+                        sortSelected === option.value && 'bg-main-view-fg/5'
+                      )}
+                      key={option.value}
+                      onClick={() => setSortSelected(option.value)}
+                    >
+                      {option.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={showOnlyDownloaded}
+                  onCheckedChange={setShowOnlyDownloaded}
+                />
+                <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+                  Downloaded
+                </span>
+              </div>
+            </div>
           </div>
         </HeaderPage>
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">

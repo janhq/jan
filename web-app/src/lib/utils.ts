@@ -29,8 +29,10 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/gemini.svg'
     case 'deepseek':
       return '/images/model-provider/deepseek.svg'
-    default:
+    case 'openai':
       return '/images/model-provider/openai.svg'
+    default:
+      return undefined
   }
 }
 
@@ -148,27 +150,27 @@ export function isDev() {
 }
 
 export function formatDuration(startTime: number, endTime?: number): string {
-  const end = endTime || Date.now();
-  const durationMs = end - startTime;
-  
+  const end = endTime || Date.now()
+  const durationMs = end - startTime
+
   if (durationMs < 0) {
-    return "Invalid duration (start time is in the future)";
+    return 'Invalid duration (start time is in the future)'
   }
-  
-  const seconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  
+
+  const seconds = Math.floor(durationMs / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
   if (days > 0) {
-    return `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`;
+    return `${days}d ${hours % 24}h ${minutes % 60}m ${seconds % 60}s`
   } else if (hours > 0) {
-    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`
   } else if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
+    return `${minutes}m ${seconds % 60}s`
   } else if (seconds > 0) {
-    return `${seconds}s`;
+    return `${seconds}s`
   } else {
-    return `${durationMs}ms`;
+    return `${durationMs}ms`
   }
 }
