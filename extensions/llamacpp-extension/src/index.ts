@@ -26,6 +26,33 @@ import {
 
 import { invoke } from '@tauri-apps/api/core'
 
+type EngineSettings = {
+  n_gpu_layers: number;
+  n_ctx: number;
+  threads: number;
+  threads_batch: number;
+  ctx_size: number;
+  n_predict: number;
+  batch_size: number;
+  ubatch_size: number;
+  device: string;
+  split_mode: string;
+  main_gpu: number;
+  flash_attn: boolean;
+  cont_batching: boolean;
+  no_mmap: boolean;
+  mlock: boolean;
+  no_kv_offload: boolean;
+  cache_type_k: string;
+  cache_type_v: string;
+  defrag_thold: number;
+  rope_scaling: string;
+  rope_scale: number;
+  rope_freq_base: number;
+  rope_freq_scale: number;
+  reasoning_budget: number;
+}
+
 interface DownloadItem {
   url: string
   save_path: string
@@ -76,6 +103,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
 
+  private settings: EngineSettings
   private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
@@ -84,6 +112,13 @@ export default class llamacpp_extension extends AIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
     this.registerSettings(SETTINGS)
+
+    let settings = {}
+    for (const item of SETTINGS) {
+      const defaultValue = item.controllerProps.value
+      settings[item.key] = this.getSetting<typeof defaultValue>(item.key, defaultValue)
+    }
+    this.settings = settings as EngineSettings
 
     this.downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
 
@@ -108,6 +143,10 @@ export default class llamacpp_extension extends AIEngine {
 
     // Clear the sessions map
     this.activeSessions.clear();
+  }
+
+  onSettingUpdate<T>(key: string, value: T): void {
+    this.settings[key] = value
   }
 
   // Implement the required LocalProvider interface methods
