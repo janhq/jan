@@ -279,7 +279,7 @@ function General() {
                 description="See what's new in the latest version"
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/releases"
+                    href="https://github.com/menloresearch/jan/releases"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -299,7 +299,7 @@ function General() {
                 description="Contribute to Jan's development"
                 actions={
                   <a
-                    href="https://github.com/janhq/jan"
+                    href="https://github.com/menloresearch/jan"
                     target="_blank"
                     rel="noopener noreferrer"
                   >
@@ -339,7 +339,7 @@ function General() {
                 description="Found a bug? Let us know on GitHub"
                 actions={
                   <a
-                    href="https://github.com/janhq/jan/issues/new"
+                    href="https://github.com/menloresearch/jan/issues/new"
                     target="_blank"
                   >
                     <div className="flex items-center gap-1">
