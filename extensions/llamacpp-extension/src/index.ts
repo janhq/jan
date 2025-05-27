@@ -21,7 +21,7 @@ import {
   chatCompletionRequest,
   events,
 } from '@janhq/core'
-import { listBackends } from './backend'
+import { listBackends, downloadBackend } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
@@ -83,7 +83,8 @@ export default class llamacpp_extension extends AIEngine {
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
-  private downloadManager: any
+  private downloadManager
+  private downloadBackend  // for testing
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
   private enginesBasePath!: string
@@ -106,6 +107,7 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     this.registerSettings(settings)
+    this.downloadBackend = downloadBackend
 
     let config = {}
     for (const item of SETTINGS) {
