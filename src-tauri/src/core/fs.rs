@@ -12,8 +12,17 @@ pub fn rm<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Res
     }
 
     let path = resolve_path(app_handle, &args[0]);
-    fs::remove_dir_all(&path).map_err(|e| e.to_string())
+    if path.is_file() {
+        fs::remove_file(&path).map_err(|e| e.to_string())?;
+    } else if path.is_dir() {
+        fs::remove_dir_all(&path).map_err(|e| e.to_string())?;
+    } else {
+        return Err("rm error: Path does not exist".to_string());
+    }
+
+    Ok(())
 }
+
 #[tauri::command]
 pub fn mkdir<R: Runtime>(app_handle: tauri::AppHandle<R>, args: Vec<String>) -> Result<(), String> {
     if args.is_empty() || args[0].is_empty() {
@@ -37,6 +46,7 @@ pub fn join_path<R: Runtime>(
     let joined_path = path.join(args[1..].join("/"));
     Ok(joined_path.to_string_lossy().to_string())
 }
+
 #[tauri::command]
 pub fn exists_sync<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
