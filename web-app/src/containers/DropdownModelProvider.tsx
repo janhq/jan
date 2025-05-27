@@ -65,7 +65,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   return (
     <>
       <DropdownMenu>
-        <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm">
+        <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px]">
           <DropdownMenuTrigger asChild>
             <button
               title={displayModel}
@@ -96,6 +96,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
           side="bottom"
           align="start"
           sideOffset={10}
+          alignOffset={-8}
         >
           <DropdownMenuGroup>
             {providers.map((provider, index) => {
