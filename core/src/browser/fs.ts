@@ -4,7 +4,7 @@ import { FileStat } from '../types'
  * Writes data to a file at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the file is written successfully.
  */
-const writeFileSync = (...args: any[]) => globalThis.core.api?.writeFileSync(...args)
+const writeFileSync = (...args: any[]) => globalThis.core.api?.writeFileSync({ args })
 
 /**
  * Writes blob data to a file at the specified path.

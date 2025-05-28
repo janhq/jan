@@ -52,7 +52,6 @@
       "value": true
     }
   },
-
   {
     "key": "caching_enabled",
     "title": "Caching",

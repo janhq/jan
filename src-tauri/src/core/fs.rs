@@ -98,6 +98,20 @@ pub fn read_file_sync<R: Runtime>(
 }
 
 #[tauri::command]
+pub fn write_file_sync<R: Runtime>(
+    app_handle: tauri::AppHandle<R>,
+    args: Vec<String>,
+) -> Result<(), String> {
+    if args.len() < 2 || args[0].is_empty() || args[1].is_empty() {
+        return Err("write_file_sync error: Invalid argument".to_string());
+    }
+
+    let path = resolve_path(app_handle, &args[0]);
+    let content = &args[1];
+    fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn readdir_sync<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     args: Vec<String>,

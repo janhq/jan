@@ -10,6 +10,8 @@ import { ModelManager } from '@janhq/core'
 import { useEffect } from 'react'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { getMCPConfig } from '@/services/mcp'
+import { useAssistant } from '@/hooks/useAssistant'
+import { getAssistants } from '@/services/assistants'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
@@ -17,6 +19,7 @@ export function DataProvider() {
   const { setMessages } = useMessages()
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
+  const { setAssistants } = useAssistant()
 
   useEffect(() => {
     fetchModels().then((models) => {
@@ -24,6 +27,9 @@ export function DataProvider() {
       getProviders().then(setProviders)
     })
     getMCPConfig().then((data) => setServers(data.mcpServers ?? []))
+    getAssistants().then((data) =>
+      setAssistants((data as unknown as Assistant[]) ?? [])
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

@@ -161,7 +161,12 @@ export const deleteModel = async (id: string) => {
   if (!extension) throw new Error('Model extension not found')
 
   try {
-    return await extension.deleteModel(id)
+    return await extension.deleteModel(id).then(() => {
+      // TODO: This should be removed when we integrate new llama.cpp extension
+      if (id.includes(':')) {
+        extension.addSource(`cortexso/${id.split(':')[0]}`)
+      }
+    })
   } catch (error) {
     console.error('Failed to delete model:', error)
     throw error

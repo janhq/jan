@@ -30,6 +30,7 @@ pub fn run() {
             core::fs::read_file_sync,
             core::fs::rm,
             core::fs::file_stat,
+            core::fs::write_file_sync,
             // App commands
             core::cmd::get_themes,
             core::cmd::get_app_configurations,
