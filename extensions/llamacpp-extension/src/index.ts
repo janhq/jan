@@ -26,6 +26,33 @@ import {
 
 import { invoke } from '@tauri-apps/api/core'
 
+type LlamacppConfig = {
+  n_gpu_layers: number;
+  n_ctx: number;  // not in SETTINGS
+  threads: number;
+  threads_batch: number;
+  ctx_size: number;
+  n_predict: number;
+  batch_size: number;
+  ubatch_size: number;
+  device: string;
+  split_mode: string;
+  main_gpu: number;
+  flash_attn: boolean;
+  cont_batching: boolean;
+  no_mmap: boolean;
+  mlock: boolean;
+  no_kv_offload: boolean;
+  cache_type_k: string;
+  cache_type_v: string;
+  defrag_thold: number;
+  rope_scaling: string;
+  rope_scale: number;
+  rope_freq_base: number;
+  rope_freq_scale: number;
+  reasoning_budget: number;
+}
+
 interface DownloadItem {
   url: string
   save_path: string
@@ -76,6 +103,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
 
+  private config: LlamacppConfig
   private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
@@ -84,6 +112,13 @@ export default class llamacpp_extension extends AIEngine {
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
     this.registerSettings(SETTINGS)
+
+    let config = {}
+    for (const item of SETTINGS) {
+      const defaultValue = item.controllerProps.value
+      config[item.key] = this.getSetting<typeof defaultValue>(item.key, defaultValue)
+    }
+    this.config = config as LlamacppConfig
 
     this.downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
 
@@ -108,6 +143,10 @@ export default class llamacpp_extension extends AIEngine {
 
     // Clear the sessions map
     this.activeSessions.clear();
+  }
+
+  onSettingUpdate<T>(key: string, value: T): void {
+    this.config[key] = value
   }
 
   // Implement the required LocalProvider interface methods
@@ -267,113 +306,49 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(opts: loadOptions): Promise<sessionInfo> {
     const args: string[] = []
+    const cfg = this.config
 
     // disable llama-server webui
     args.push('--no-webui')
 
     // model option is required
+    // TODO: llama.cpp extension lookup model path based on modelId
     args.push('-m', opts.modelPath)
     args.push('--port', String(opts.port || 8080)) // Default port if not specified
-
-    if (opts.n_gpu_layers === undefined) {
-      // in case of CPU only build, this option will be ignored
-      args.push('-ngl', '99')
-    } else {
-      args.push('-ngl', String(opts.n_gpu_layers))
-    }
 
     if (opts.n_ctx !== undefined) {
       args.push('-c', String(opts.n_ctx))
     }
 
     // Add remaining options from the interface
-    if (opts.threads !== undefined) {
-      args.push('--threads', String(opts.threads))
-    }
-
-    if (opts.threads_batch !== undefined) {
-      args.push('--threads-batch', String(opts.threads_batch))
-    }
-
-    if (opts.ctx_size !== undefined) {
-      args.push('--ctx-size', String(opts.ctx_size))
-    }
-
-    if (opts.n_predict !== undefined) {
-      args.push('--n-predict', String(opts.n_predict))
-    }
-
-    if (opts.batch_size !== undefined) {
-      args.push('--batch-size', String(opts.batch_size))
-    }
-
-    if (opts.ubatch_size !== undefined) {
-      args.push('--ubatch-size', String(opts.ubatch_size))
-    }
-
-    if (opts.device !== undefined) {
-      args.push('--device', opts.device)
-    }
-
-    if (opts.split_mode !== undefined) {
-      args.push('--split-mode', opts.split_mode)
-    }
-
-    if (opts.main_gpu !== undefined) {
-      args.push('--main-gpu', String(opts.main_gpu))
-    }
+    if (cfg.n_gpu_layers > 0) args.push('-ngl', String(cfg.n_gpu_layers))
+    if (cfg.threads > 0) args.push('--threads', String(cfg.threads))
+    if (cfg.threads_batch > 0) args.push('--threads-batch', String(cfg.threads_batch))
+    if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
+    if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
+    if (cfg.batch_size > 0) args.push('--batch-size', String(cfg.batch_size))
+    if (cfg.ubatch_size > 0) args.push('--ubatch-size', String(cfg.ubatch_size))
+    if (cfg.device.length > 0) args.push('--device', cfg.device)
+    if (cfg.split_mode.length > 0) args.push('--split-mode', cfg.split_mode)
+    if (cfg.main_gpu !== undefined) args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
-    if (opts.flash_attn === true) {
-      args.push('--flash-attn')
-    }
+    if (cfg.flash_attn) args.push('--flash-attn')
+    if (cfg.cont_batching) args.push('--cont-batching')
+    if (cfg.no_mmap) args.push('--no-mmap')
+    if (cfg.mlock) args.push('--mlock')
+    if (cfg.no_kv_offload) args.push('--no-kv-offload')
 
-    if (opts.cont_batching === true) {
-      args.push('--cont-batching')
-    }
+    args.push('--cache-type-k', cfg.cache_type_k)
+    args.push('--cache-type-v', cfg.cache_type_v)
+    args.push('--defrag-thold', String(cfg.defrag_thold))
 
-    if (opts.no_mmap === true) {
-      args.push('--no-mmap')
-    }
+    args.push('--rope-scaling', cfg.rope_scaling)
+    args.push('--rope-scale', String(cfg.rope_scale))
+    args.push('--rope-freq-base', String(cfg.rope_freq_base))
+    args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
+    args.push('--reasoning-budget', String(cfg.reasoning_budget))
 
-    if (opts.mlock === true) {
-      args.push('--mlock')
-    }
-
-    if (opts.no_kv_offload === true) {
-      args.push('--no-kv-offload')
-    }
-
-    if (opts.cache_type_k !== undefined) {
-      args.push('--cache-type-k', opts.cache_type_k)
-    }
-
-    if (opts.cache_type_v !== undefined) {
-      args.push('--cache-type-v', opts.cache_type_v)
-    }
-
-    if (opts.defrag_thold !== undefined) {
-      args.push('--defrag-thold', String(opts.defrag_thold))
-    }
-
-    if (opts.rope_scaling !== undefined) {
-      args.push('--rope-scaling', opts.rope_scaling)
-    }
-
-    if (opts.rope_scale !== undefined) {
-      args.push('--rope-scale', String(opts.rope_scale))
-    }
-
-    if (opts.rope_freq_base !== undefined) {
-      args.push('--rope-freq-base', String(opts.rope_freq_base))
-    }
-
-    if (opts.rope_freq_scale !== undefined) {
-      args.push('--rope-freq-scale', String(opts.rope_freq_scale))
-    }
-    if (opts.reasoning_budget !== undefined) {
-      args.push('--reasoning-budget', String(opts.reasoning_budget))
-    }
     console.log('Calling Tauri command llama_load with args:', args)
 
     try {
