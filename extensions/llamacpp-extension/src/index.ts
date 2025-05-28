@@ -26,7 +26,7 @@ import {
 
 import { invoke } from '@tauri-apps/api/core'
 
-type EngineSettings = {
+type LlamacppConfig = {
   n_gpu_layers: number;
   n_ctx: number;  // not in SETTINGS
   threads: number;
@@ -103,7 +103,7 @@ export default class llamacpp_extension extends AIEngine {
   provider: string = 'llamacpp'
   readonly providerId: string = 'llamacpp'
 
-  private settings: EngineSettings
+  private config: LlamacppConfig
   private downloadManager
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
@@ -113,12 +113,12 @@ export default class llamacpp_extension extends AIEngine {
     super.onLoad() // Calls registerEngine() from AIEngine
     this.registerSettings(SETTINGS)
 
-    let settings = {}
+    let config = {}
     for (const item of SETTINGS) {
       const defaultValue = item.controllerProps.value
-      settings[item.key] = this.getSetting<typeof defaultValue>(item.key, defaultValue)
+      config[item.key] = this.getSetting<typeof defaultValue>(item.key, defaultValue)
     }
-    this.settings = settings as EngineSettings
+    this.config = config as LlamacppConfig
 
     this.downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
 
@@ -146,7 +146,7 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    this.settings[key] = value
+    this.config[key] = value
   }
 
   // Implement the required LocalProvider interface methods
@@ -306,7 +306,7 @@ export default class llamacpp_extension extends AIEngine {
 
   override async load(opts: loadOptions): Promise<sessionInfo> {
     const args: string[] = []
-    const settings = this.settings
+    const cfg = this.config
 
     // disable llama-server webui
     args.push('--no-webui')
@@ -321,33 +321,33 @@ export default class llamacpp_extension extends AIEngine {
     }
 
     // Add remaining options from the interface
-    if (settings.n_gpu_layers > 0) args.push('-ngl', String(settings.n_gpu_layers))
-    if (settings.threads > 0) args.push('--threads', String(settings.threads))
-    if (settings.threads_batch > 0) args.push('--threads-batch', String(settings.threads_batch))
-    if (settings.ctx_size > 0) args.push('--ctx-size', String(settings.ctx_size))
-    if (settings.n_predict > 0) args.push('--n-predict', String(settings.n_predict))
-    if (settings.batch_size > 0) args.push('--batch-size', String(settings.batch_size))
-    if (settings.ubatch_size > 0) args.push('--ubatch-size', String(settings.ubatch_size))
-    if (settings.device.length > 0) args.push('--device', settings.device)
-    if (settings.split_mode.length > 0) args.push('--split-mode', settings.split_mode)
-    if (settings.main_gpu !== undefined) args.push('--main-gpu', String(settings.main_gpu))
+    if (cfg.n_gpu_layers > 0) args.push('-ngl', String(cfg.n_gpu_layers))
+    if (cfg.threads > 0) args.push('--threads', String(cfg.threads))
+    if (cfg.threads_batch > 0) args.push('--threads-batch', String(cfg.threads_batch))
+    if (cfg.ctx_size > 0) args.push('--ctx-size', String(cfg.ctx_size))
+    if (cfg.n_predict > 0) args.push('--n-predict', String(cfg.n_predict))
+    if (cfg.batch_size > 0) args.push('--batch-size', String(cfg.batch_size))
+    if (cfg.ubatch_size > 0) args.push('--ubatch-size', String(cfg.ubatch_size))
+    if (cfg.device.length > 0) args.push('--device', cfg.device)
+    if (cfg.split_mode.length > 0) args.push('--split-mode', cfg.split_mode)
+    if (cfg.main_gpu !== undefined) args.push('--main-gpu', String(cfg.main_gpu))
 
     // Boolean flags
-    if (settings.flash_attn) args.push('--flash-attn')
-    if (settings.cont_batching) args.push('--cont-batching')
-    if (settings.no_mmap) args.push('--no-mmap')
-    if (settings.mlock) args.push('--mlock')
-    if (settings.no_kv_offload) args.push('--no-kv-offload')
+    if (cfg.flash_attn) args.push('--flash-attn')
+    if (cfg.cont_batching) args.push('--cont-batching')
+    if (cfg.no_mmap) args.push('--no-mmap')
+    if (cfg.mlock) args.push('--mlock')
+    if (cfg.no_kv_offload) args.push('--no-kv-offload')
 
-    args.push('--cache-type-k', settings.cache_type_k)
-    args.push('--cache-type-v', settings.cache_type_v)
-    args.push('--defrag-thold', String(settings.defrag_thold))
+    args.push('--cache-type-k', cfg.cache_type_k)
+    args.push('--cache-type-v', cfg.cache_type_v)
+    args.push('--defrag-thold', String(cfg.defrag_thold))
 
-    args.push('--rope-scaling', settings.rope_scaling)
-    args.push('--rope-scale', String(settings.rope_scale))
-    args.push('--rope-freq-base', String(settings.rope_freq_base))
-    args.push('--rope-freq-scale', String(settings.rope_freq_scale))
-    args.push('--reasoning-budget', String(settings.reasoning_budget))
+    args.push('--rope-scaling', cfg.rope_scaling)
+    args.push('--rope-scale', String(cfg.rope_scale))
+    args.push('--rope-freq-base', String(cfg.rope_freq_base))
+    args.push('--rope-freq-scale', String(cfg.rope_freq_scale))
+    args.push('--reasoning-budget', String(cfg.reasoning_budget))
 
     console.log('Calling Tauri command llama_load with args:', args)
 
