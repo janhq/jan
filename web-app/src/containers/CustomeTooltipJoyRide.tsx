@@ -37,7 +37,11 @@ export function CustomTooltipJoyRide(props: TooltipRenderProps) {
         )}
       >
         {step.showSkipButton && (
-          <Button variant="link" className="px-0" {...skipProps}>
+          <Button
+            variant="link"
+            className="px-0 text-main-view-fg/70"
+            {...skipProps}
+          >
             {skipProps.title}
           </Button>
         )}
@@ -45,7 +49,7 @@ export function CustomTooltipJoyRide(props: TooltipRenderProps) {
           {index > 0 && (
             <Button
               variant="link"
-              className="px-0 text-main-view-fg/60"
+              className="px-0 text-main-view-fg/70"
               {...backProps}
             >
               {backProps.title}

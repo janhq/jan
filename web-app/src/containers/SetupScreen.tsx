@@ -2,6 +2,7 @@ import { Card } from './Card'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import HeaderPage from './HeaderPage'
 
 function SetupScreen() {
   const { providers } = useModelProvider()
@@ -10,6 +11,7 @@ function SetupScreen() {
 
   return (
     <div className="flex h-full flex-col flex-justify-center">
+      <HeaderPage></HeaderPage>
       <div className="h-full px-8 overflow-y-auto flex flex-col gap-2 justify-center ">
         <div className="w-4/6 mx-auto">
           <div className="mb-8 text-left">

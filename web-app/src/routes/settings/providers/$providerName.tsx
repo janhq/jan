@@ -94,7 +94,7 @@ function ProviderDetail() {
         tooltipComponent={CustomTooltipJoyRide}
         spotlightPadding={0}
         continuous={true}
-        showSkipButton={false}
+        showSkipButton={true}
         hideCloseButton={true}
         spotlightClicks={true}
         disableOverlayClose={true}
