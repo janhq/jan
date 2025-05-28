@@ -99,6 +99,8 @@ export default class llamacpp_extension extends AIEngine {
     // update backend settings
     for (let item of settings) {
       if (item.key === 'backend') {
+        // NOTE: is there a race condition between when tauri IPC is available
+        // and when the extension is loaded?
         const backends = await listSupportedBackends()
         console.log('Available backends:', backends)
         item.controllerProps = {
