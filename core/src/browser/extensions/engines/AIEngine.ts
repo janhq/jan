@@ -103,7 +103,6 @@ export type listResult = modelInfo[]
 export interface loadOptions {
   modelPath: string
   port?: number
-  n_ctx?: number
 }
 
 export interface sessionInfo {

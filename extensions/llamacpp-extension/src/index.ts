@@ -14,9 +14,7 @@ import {
   modelInfo,
   loadOptions,
   sessionInfo,
-  unloadOptions,
   unloadResult,
-  chatOptions,
   chatCompletion,
   chatCompletionChunk,
   ImportOptions,
@@ -316,7 +314,7 @@ export default class llamacpp_extension extends AIEngine {
     args.push('--port', String(opts.port || 8080)) // Default port if not specified
 
     if (opts.n_ctx !== undefined) {
-      args.push('-c', String(opts.n_ctx))
+      args.push('-c', String(cfg.ctx_size))
     }
 
     // Add remaining options from the interface
