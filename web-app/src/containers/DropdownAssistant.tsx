@@ -94,8 +94,8 @@ const DropdownAssistant = () => {
                       textClassName=""
                     />
                   </div>
-                  <div className="truncate text-left">
-                    <span>{assistant.name}</span>
+                  <div className="text-left">
+                    <span className="line-clamp-1">{assistant.name}</span>
                   </div>
                 </div>
               </DropdownMenuItem>
