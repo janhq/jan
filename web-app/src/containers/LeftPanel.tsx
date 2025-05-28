@@ -102,7 +102,7 @@ const LeftPanel = () => {
           : 'w-0 absolute -top-100 -left-100 visibility-hidden'
       )}
     >
-      <div className="relative h-8">
+      <div className="relative h-10">
         <button
           className="absolute top-1/2 right-0 -translate-y-1/2 z-20"
           onClick={() => setLeftPanel(!open)}
@@ -111,11 +111,8 @@ const LeftPanel = () => {
             <IconLayoutSidebar size={18} className="text-left-panel-fg" />
           </div>
         </button>
-      </div>
-
-      <div className="flex flex-col justify-between h-[calc(100%-32px)] mt-0">
-        <div className="flex flex-col justify-between h-full">
-          <div className="relative mb-4 mx-1 mt-2">
+        {!IS_MACOS && (
+          <div className="relative top-1.5 mb-4 mx-1 mt-1 w-[calc(100%-32px)] z-50">
             <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
             <input
               type="text"
@@ -133,6 +130,31 @@ const LeftPanel = () => {
               </button>
             )}
           </div>
+        )}
+      </div>
+
+      <div className="flex flex-col justify-between h-[calc(100%-42px)] mt-0">
+        <div className="flex flex-col justify-between h-full">
+          {IS_MACOS && (
+            <div className="relative mb-4 mx-1 mt-1">
+              <IconSearch className="absolute size-4 top-1/2 left-2 -translate-y-1/2 text-left-panel-fg/50" />
+              <input
+                type="text"
+                placeholder={t('common.search')}
+                className="w-full pl-7 pr-8 py-1 bg-left-panel-fg/10 rounded text-left-panel-fg focus:outline-none focus:ring-1 focus:ring-left-panel-fg/10"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              {searchTerm && (
+                <button
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-left-panel-fg/70 hover:text-left-panel-fg"
+                  onClick={() => setSearchTerm('')}
+                >
+                  <IconX size={14} />
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex flex-col w-full h-full overflow-hidden">
             <div className="h-full overflow-y-auto overflow-x-hidden">
               {favoritedThreads.length > 0 && (

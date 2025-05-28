@@ -206,7 +206,9 @@ function SystemMonitor() {
                     <span className="font-semibold text-main-view-fg">
                       {gpu.name}
                     </span>
-                    <div className="bg-green-500/20">Active</div>
+                    <div className="bg-green-500/20 px-2 py-1 rounded-sm">
+                      Active
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2 mt-3">
                     <div className="flex justify-between items-center">
@@ -238,18 +240,7 @@ function SystemMonitor() {
                           ((gpu.total_vram - gpu.free_vram) / gpu.total_vram) *
                           100
                         }
-                        className={`h-2 w-full ${
-                          ((gpu.total_vram - gpu.free_vram) / gpu.total_vram) *
-                            100 >
-                          80
-                            ? 'bg-red-500/30'
-                            : ((gpu.total_vram - gpu.free_vram) /
-                                  gpu.total_vram) *
-                                  100 >
-                                50
-                              ? 'bg-yellow-500/30'
-                              : 'bg-green-500/30'
-                        }`}
+                        className="h-2 w-full"
                       />
                     </div>
                   </div>

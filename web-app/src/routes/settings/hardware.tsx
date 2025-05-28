@@ -268,8 +268,9 @@ function Hardware() {
               {hardwareData.cpu?.instructions.join(', ').length > 0 && (
                 <CardItem
                   title="Instructions"
+                  column={hardwareData.cpu?.instructions.length > 6}
                   actions={
-                    <span className="text-main-view-fg/80">
+                    <span className="text-main-view-fg/80 break-words">
                       {hardwareData.cpu?.instructions?.join(', ')}
                     </span>
                   }
@@ -315,7 +316,8 @@ function Hardware() {
                   <div className="flex items-center gap-2">
                     <Progress
                       value={
-                        ((hardwareData.ram?.total - hardwareData.ram?.available) /
+                        ((hardwareData.ram?.total -
+                          hardwareData.ram?.available) /
                           hardwareData.ram?.total) *
                         100
                       }
@@ -323,7 +325,8 @@ function Hardware() {
                     />
                     <span className="text-main-view-fg/80">
                       {(
-                        ((hardwareData.ram?.total - hardwareData.ram?.available) /
+                        ((hardwareData.ram?.total -
+                          hardwareData.ram?.available) /
                           hardwareData.ram?.total) *
                         100
                       ).toFixed(2)}

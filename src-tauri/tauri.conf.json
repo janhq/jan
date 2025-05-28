@@ -29,7 +29,7 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "windowEffects": {
-          "effects": ["fullScreenUI", "mica", "blur", "acrylic"],
+          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
           "state": "active",
           "radius": 8
         }
@@ -50,9 +50,7 @@
         "enable": true,
         "scope": {
           "requireLiteralLeadingDot": false,
-          "allow": [
-            "**/*"
-          ]
+          "allow": ["**/*"]
         }
       }
     }
@@ -74,13 +72,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "app",
-      "dmg",
-      "deb",
-      "appimage"
-    ],
+    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
     "createUpdaterArtifacts": false,
     "icon": [
       "icons/32x32.png",
