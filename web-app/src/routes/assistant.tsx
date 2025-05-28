@@ -76,7 +76,7 @@ function Assistant() {
                         textClassName="text-sm"
                       />
                     </span>
-                    <span>{assistant.name}</span>
+                    <span className="line-clamp-1">{assistant.name}</span>
                   </div>
                 </h3>
                 <div className="flex items-center gap-0.5">

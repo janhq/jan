@@ -8,10 +8,16 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { IconPlus, IconTrash, IconChevronDown } from '@tabler/icons-react'
+import {
+  IconPlus,
+  IconTrash,
+  IconChevronDown,
+  IconMoodSmile,
+} from '@tabler/icons-react'
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
 
 import { Textarea } from '@/components/ui/textarea'
+import { paramsSettings } from '@/lib/predefinedParams'
 
 import {
   DropdownMenu,
@@ -23,6 +29,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { teamEmoji } from '@/utils/teamEmoji'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -228,7 +235,9 @@ export default function AddEditAssistant({
               >
                 <AvatarEmoji
                   avatar={avatar}
-                  fallback="😊"
+                  fallback={
+                    <IconMoodSmile size={18} className="text-main-view-fg/50" />
+                  }
                   imageClassName="w-5 h-5 object-contain"
                   textClassName=""
                 />
@@ -289,6 +298,63 @@ export default function AddEditAssistant({
               className="resize-none"
               rows={4}
             />
+          </div>
+
+          <div className="space-y-2 my-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm">Predefined Parameters</label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(paramsSettings).map(([key, setting]) => (
+                <div
+                  key={key}
+                  onClick={() => {
+                    // Check if parameter already exists
+                    const existingIndex = paramsKeys.findIndex(
+                      (k) => k === setting.key
+                    )
+                    if (existingIndex === -1) {
+                      // Add new parameter
+                      const newKeys = [...paramsKeys]
+                      const newValues = [...paramsValues]
+                      const newTypes = [...paramsTypes]
+
+                      // If the last param is empty, replace it, otherwise add new
+                      if (paramsKeys[paramsKeys.length - 1] === '') {
+                        newKeys[newKeys.length - 1] = setting.key
+                        newValues[newValues.length - 1] = setting.value
+                        newTypes[newTypes.length - 1] =
+                          typeof setting.value === 'boolean'
+                            ? 'boolean'
+                            : typeof setting.value === 'number'
+                              ? 'number'
+                              : 'string'
+                      } else {
+                        newKeys.push(setting.key)
+                        newValues.push(setting.value)
+                        newTypes.push(
+                          typeof setting.value === 'boolean'
+                            ? 'boolean'
+                            : typeof setting.value === 'number'
+                              ? 'number'
+                              : 'string'
+                        )
+                      }
+
+                      setParamsKeys(newKeys)
+                      setParamsValues(newValues)
+                      setParamsTypes(newTypes)
+                    }
+                  }}
+                  className={cn(
+                    'text-xs bg-main-view-fg/10 py-1 px-2 rounded-sm cursor-pointer',
+                    paramsKeys.includes(setting.key) && 'opacity-50'
+                  )}
+                >
+                  {setting.title}
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-2">
