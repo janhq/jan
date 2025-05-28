@@ -65,9 +65,12 @@ export async function listSupportedBackends(): Promise<string[]> {
   return backends
 }
 
-export async function isBackendInstalled(backend: string): Promise<boolean> {
+export async function isBackendInstalled(backend: string, version: string): Promise<boolean> {
+  const sysInfo = await window.core.api.getSystemInfo()
+  const exe_name = sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
+
   const janDataFolderPath = await getJanDataFolderPath()
-  const backendPath = await joinPath([janDataFolderPath, 'llamacpp', 'backends', backend])
+  const backendPath = await joinPath([janDataFolderPath, 'llamacpp', 'backends', backend, version, 'build', 'bin', exe_name])
   return await fs.existsSync(backendPath)
 }
 

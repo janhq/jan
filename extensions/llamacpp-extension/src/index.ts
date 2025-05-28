@@ -21,7 +21,7 @@ import {
   chatCompletionRequest,
   events,
 } from '@janhq/core'
-import { listSupportedBackends, downloadBackend } from './backend'
+import { listSupportedBackends, downloadBackend, isBackendInstalled } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
@@ -103,10 +103,7 @@ export default class llamacpp_extension extends AIEngine {
         // and when the extension is loaded?
         const backends = await listSupportedBackends()
         console.log('Available backends:', backends)
-        item.controllerProps = {
-          value: backends[0] || '',
-          options: backends.map((b) => ({ value: b, name: b })),
-        }
+        item.controllerProps.options = backends.map((b) => ({ value: b, name: b }))
       }
     }
 
@@ -149,10 +146,10 @@ export default class llamacpp_extension extends AIEngine {
     this.config[key] = value
 
     if (key === 'backend') {
-      // If backend changes, we need to re-download the backend
       const version = 'b5509' // hardcode for now
-      // TODO: check if it's already downloaded
-      downloadBackend(value as string, version)
+      if (!isBackendInstalled(value as string, version)) {
+        downloadBackend(value as string, version)
+      }
     }
   }
 
