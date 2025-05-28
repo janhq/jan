@@ -1,6 +1,14 @@
 import { Assistant, AssistantExtension, fs, joinPath } from '@janhq/core'
 export default class JanAssistantExtension extends AssistantExtension {
-  async onLoad() {}
+  async onLoad() {
+    if (!(await fs.existsSync('file://assistants'))) {
+      await fs.mkdir('file://assistants')
+    }
+    const assistants = await this.getAssistants()
+    if (assistants.length === 0) {
+      await this.createAssistant(this.defaultAssistant)
+    }
+  }
 
   /**
    * Called when the extension is unloaded.
@@ -8,16 +16,17 @@ export default class JanAssistantExtension extends AssistantExtension {
   onUnload(): void {}
 
   async getAssistants(): Promise<Assistant[]> {
-    if (!fs.existsSync('file://assistants')) return [this.defaultAssistant]
+    if (!(await fs.existsSync('file://assistants')))
+      return [this.defaultAssistant]
     const assistants = await fs.readdirSync('file://assistants')
     const assistantsData: Assistant[] = []
     for (const assistant of assistants) {
-      const assistantPath = joinPath([
+      const assistantPath = await joinPath([
         'file://assistants',
         assistant,
         'assistant.json',
       ])
-      if (!fs.existsSync(assistantPath)) {
+      if (!(await fs.existsSync(assistantPath))) {
         console.warn(`Assistant file not found: ${assistantPath}`)
         continue
       }
@@ -32,24 +41,28 @@ export default class JanAssistantExtension extends AssistantExtension {
   }
 
   async createAssistant(assistant: Assistant): Promise<void> {
-    const assistantPath = joinPath([
+    const assistantPath = await joinPath([
       'file://assistants',
       assistant.id,
       'assistant.json',
     ])
-    if (!fs.existsSync('file://assistants')) {
-      await fs.mkdir('file://assistants')
+    if (
+      !(await fs.existsSync(
+        await joinPath(['file://assistants', assistant.id])
+      ))
+    ) {
+      await fs.mkdir(await joinPath(['file://assistants', assistant.id]))
     }
     await fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
   }
 
   async deleteAssistant(assistant: Assistant): Promise<void> {
-    const assistantPath = joinPath([
+    const assistantPath = await joinPath([
       'file://assistants',
       assistant.id,
       'assistant.json',
     ])
-    if (fs.existsSync(assistantPath)) {
+    if (await fs.existsSync(assistantPath)) {
       await fs.unlinkSync(assistantPath)
     }
   }

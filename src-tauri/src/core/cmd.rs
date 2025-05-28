@@ -156,7 +156,6 @@ pub fn get_configuration_file_path<R: Runtime>(app_handle: tauri::AppHandle<R>) 
     });
 
     let package_name = env!("CARGO_PKG_NAME");
-    log::debug!("Package name: {}", package_name);
     #[cfg(target_os = "linux")]
     let old_data_dir = {
         if let Some(config_path) = dirs::config_dir() {
