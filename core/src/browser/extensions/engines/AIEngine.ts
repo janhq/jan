@@ -110,6 +110,7 @@ export interface sessionInfo {
   port: number // llama-server output port (corrected from portid)
   modelName: string, //name of the model
   modelPath: string // path of the loaded model
+  api_key: string
 }
 
 // 4. /unload

@@ -23,6 +23,7 @@ import {
 } from '@janhq/core'
 
 import { invoke } from '@tauri-apps/api/core'
+import { createHmac } from 'crypto'
 
 type LlamacppConfig = {
   n_gpu_layers: number;
@@ -83,10 +84,11 @@ export default class llamacpp_extension extends AIEngine {
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
-  private downloadManager
+  private downloadManager: any
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
   private enginesBasePath!: string
+  private apiSecret: string = "Jan"
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
@@ -126,6 +128,11 @@ export default class llamacpp_extension extends AIEngine {
 
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
+  }
+
+  private generateApiKey(modelId: string): string {
+    const hash = createHmac('sha256', this.apiSecret).update(modelId).digest("base64")
+    return hash
   }
 
   // Implement the required LocalProvider interface methods
@@ -289,6 +296,9 @@ export default class llamacpp_extension extends AIEngine {
 
     // disable llama-server webui
     args.push('--no-webui')
+    // update key for security; TODO: (qnixsynapse) Make it more secure
+    const api_key = this.generateApiKey(opts.modelPath)
+    args.push(`--api-key ${api_key}`)
 
     // model option is required
     // TODO: llama.cpp extension lookup model path based on modelId
@@ -456,7 +466,7 @@ export default class llamacpp_extension extends AIEngine {
     const url = `${baseUrl}/chat/completions`
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer test-k`,
+      'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
     const body = JSON.stringify(opts)

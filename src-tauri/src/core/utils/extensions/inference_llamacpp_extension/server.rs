@@ -42,6 +42,7 @@ pub struct SessionInfo {
     pub session_id: String,       // opaque handle for unload/chat
     pub port: u16,                // llama-server output port
     pub model_path: String,       // path of the loaded model
+    pub api_key: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -85,7 +86,8 @@ pub async fn load_llama_model(
     // Configure the command to run the server
     let mut command = Command::new(server_path);
 
-    let model_path = args[0].replace("-m", "");
+    let model_path = args[2].replace("-m", "");
+    let api_key = args[1].replace("--api-key", "")
     command.args(args);
 
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
@@ -110,6 +112,7 @@ pub async fn load_llama_model(
         session_id: pid,  // Use PID as session ID
         port,
         model_path,
+        api_key,
     };
 
     Ok(session_info)
