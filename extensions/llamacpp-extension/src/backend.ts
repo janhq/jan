@@ -36,13 +36,15 @@ export async function listSupportedBackends(): Promise<string[]> {
 
   // NOTE: menloresearch's tags for llama.cpp builds are a bit different
   // TODO: fetch versions from the server?
+  // TODO: select CUDA version based on driver version
+  // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
   if (key == 'windows-x86_64') {
     // NOTE: if a machine supports AVX2, should we include noavx and avx?
     backends.push('win-noavx-x64')
     if (supportsAvx) backends.push('win-avx-x64')
     if (supportsAvx2) backends.push('win-avx2-x64')
     if (supportsAvx512) backends.push('win-avx512-x64')
-    if (supportsCuda) backends.push('win-cu11.7-x64', 'win-cu12.0-x64')
+    if (supportsCuda) backends.push('win-avx2-cuda-cu11.7-x64', 'win-avx2-cuda-cu12.0-x64')
     if (supportsVulkan) backends.push('win-vulkan-x64')
   }
   else if (key == 'linux-x86_64') {
@@ -50,7 +52,7 @@ export async function listSupportedBackends(): Promise<string[]> {
     if (supportsAvx) backends.push('linux-avx-x64')
     if (supportsAvx2) backends.push('linux-avx2-x64')
     if (supportsAvx512) backends.push('linux-avx512-x64')
-    if (supportsCuda) backends.push('linux-cu11.7-x64', 'linux-cu12.0-x64')
+    if (supportsCuda) backends.push('linux-avx2-cuda-cu11.7-x64', 'linux-avx2-cuda-cu12.0-x64')
     if (supportsVulkan) backends.push('linux-vulkan-x64')
   }
   else if (key === 'macos-x86_64') {

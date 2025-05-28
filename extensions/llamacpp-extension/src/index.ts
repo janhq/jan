@@ -100,6 +100,7 @@ export default class llamacpp_extension extends AIEngine {
     for (let item of settings) {
       if (item.key === 'backend') {
         const backends = await listSupportedBackends()
+        console.log('Available backends:', backends)
         item.controllerProps = {
           value: backends[0] || '',
           options: backends.map((b) => ({ value: b, name: b })),
