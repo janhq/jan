@@ -46,8 +46,8 @@ export default class JanModelExtension extends ModelExtension {
       prefixUrl: CORTEX_API_URL,
       headers: apiKey
         ? {
-            Authorization: `Bearer ${apiKey}`,
-          }
+          Authorization: `Bearer ${apiKey}`,
+        }
         : {},
       retry: 10,
     })
@@ -87,7 +87,7 @@ export default class JanModelExtension extends ModelExtension {
    * Called when the extension is unloaded.
    * @override
    */
-  async onUnload() {}
+  async onUnload() { }
 
   // BEGIN: - Public API
   /**
@@ -192,12 +192,12 @@ export default class JanModelExtension extends ModelExtension {
             model.sources?.[0]?.url.startsWith('http') ||
               !(await fs.existsSync(model.sources?.[0]?.url))
               ? await joinPath([
-                  await dirName(model.file_path),
-                  model.sources?.[0]?.filename ??
-                    model.settings?.llama_model_path ??
-                    model.sources?.[0]?.url.split('/').pop() ??
-                    model.id,
-                ]) // Copied models
+                await dirName(model.file_path),
+                model.sources?.[0]?.filename ??
+                model.settings?.llama_model_path ??
+                model.sources?.[0]?.url.split('/').pop() ??
+                model.id,
+              ]) // Copied models
               : model.sources?.[0]?.url, // Symlink models,
             model.name
           )
@@ -288,6 +288,7 @@ export default class JanModelExtension extends ModelExtension {
    * @param model
    */
   async getSources(): Promise<ModelSource[]> {
+    return []
     const sources = await this.apiInstance()
       .then((api) => api.get('v1/models/sources').json<Data<ModelSource>>())
       .then((e) => (typeof e === 'object' ? (e.data as ModelSource[]) : []))
@@ -304,6 +305,7 @@ export default class JanModelExtension extends ModelExtension {
    * @param model
    */
   async addSource(source: string): Promise<any> {
+    return
     return this.apiInstance().then((api) =>
       api.post('v1/models/sources', {
         json: {
@@ -353,6 +355,7 @@ export default class JanModelExtension extends ModelExtension {
    * @returns
    */
   async fetchModels(): Promise<Model[]> {
+    return []
     return this.apiInstance()
       .then((api) => api.get('v1/models?limit=-1').json<Data<Model>>())
       .then((e) =>
@@ -393,7 +396,7 @@ export default class JanModelExtension extends ModelExtension {
     [key: string]: any
   }): Promise<void> {
     return this.apiInstance()
-      .then((api) => api.patch('v1/configs', { json: body }).then(() => {}))
+      .then((api) => api.patch('v1/configs', { json: body }).then(() => { }))
       .catch((e) => console.debug(e))
   }
 
@@ -401,6 +404,7 @@ export default class JanModelExtension extends ModelExtension {
    * Fetch models from cortex.so
    */
   fetchModelsHub = async () => {
+    return
     const models = await this.fetchModels()
 
     defaultModelSources.forEach((model) => {

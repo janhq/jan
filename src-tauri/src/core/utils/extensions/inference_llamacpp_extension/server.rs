@@ -87,7 +87,7 @@ pub async fn load_llama_model(
     let mut command = Command::new(server_path);
 
     let model_path = args[2].replace("-m", "");
-    let api_key = args[1].replace("--api-key", "")
+    let api_key = args[1].replace("--api-key", "");
     command.args(args);
 
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
