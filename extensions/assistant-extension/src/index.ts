@@ -46,12 +46,9 @@ export default class JanAssistantExtension extends AssistantExtension {
       assistant.id,
       'assistant.json',
     ])
-    if (
-      !(await fs.existsSync(
-        await joinPath(['file://assistants', assistant.id])
-      ))
-    ) {
-      await fs.mkdir(await joinPath(['file://assistants', assistant.id]))
+    const assistantFolder = await joinPath(['file://assistants', assistant.id])
+    if (!(await fs.existsSync(assistantFolder))) {
+      await fs.mkdir(assistantFolder)
     }
     await fs.writeFileSync(assistantPath, JSON.stringify(assistant, null, 2))
   }
