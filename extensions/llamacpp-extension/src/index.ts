@@ -23,7 +23,7 @@ import {
 } from '@janhq/core'
 
 import { invoke } from '@tauri-apps/api/core'
-import { createHmac } from 'crypto'
+// import { createHmac } from 'crypto'
 
 type LlamacppConfig = {
   n_gpu_layers: number;
@@ -131,8 +131,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private generateApiKey(modelId: string): string {
-    const hash = createHmac('sha256', this.apiSecret).update(modelId).digest("base64")
-    return hash
+    return ''
+    // const hash = createHmac('sha256', this.apiSecret).update(modelId).digest("base64")
+    // return hash
   }
 
   // Implement the required LocalProvider interface methods

@@ -39,8 +39,8 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
       prefixUrl: API_URL,
       headers: apiKey
         ? {
-            Authorization: `Bearer ${apiKey}`,
-          }
+          Authorization: `Bearer ${apiKey}`,
+        }
         : {},
       retry: 10,
     })
@@ -53,7 +53,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
     // Symlink Engines Directory
     await executeOnMain(NODE, 'symlinkEngines')
     // Update default local engine
-    this.updateDefaultEngine()
+    // this.updateDefaultEngine()
 
     // Migrate
     this.migrate()
@@ -62,12 +62,13 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
   /**
    * Called when the extension is unloaded.
    */
-  onUnload() {}
+  onUnload() { }
 
   /**
    * @returns A Promise that resolves to an object of list engines.
    */
   async getEngines(): Promise<Engines> {
+    return {}
     return this.apiInstance().then((api) =>
       api
         .get('v1/engines')
@@ -96,6 +97,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @returns A Promise that resolves to an array of installed engine.
    */
   async getInstalledEngines(name: string): Promise<EngineVariant[]> {
+    return []
     return this.apiInstance().then((api) =>
       api
         .get(`v1/engines/${name}`)
@@ -225,7 +227,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
           },
         })
         .then((e) => e)
-        .then(() => {})
+        .then(() => { })
     )
   }
 
@@ -341,7 +343,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
       events.emit(EngineEvent.OnEngineUpdate, {})
       await Promise.all(
         DEFAULT_REMOTE_MODELS.map((data: Model) =>
-          this.addRemoteModel(data).catch(() => {})
+          this.addRemoteModel(data).catch(() => { })
         )
       )
       events.emit(ModelEvent.OnModelsUpdate, { fetch: true })
