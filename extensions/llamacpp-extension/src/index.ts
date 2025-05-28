@@ -28,10 +28,9 @@ import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
   n_gpu_layers: number;
-  n_ctx: number;  // not in SETTINGS
+  ctx_size: number;
   threads: number;
   threads_batch: number;
-  ctx_size: number;
   n_predict: number;
   batch_size: number;
   ubatch_size: number;
