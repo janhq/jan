@@ -161,7 +161,11 @@ export const deleteModel = async (id: string) => {
   if (!extension) throw new Error('Model extension not found')
 
   try {
-    return await extension.deleteModel(id).then(() => extension.addSource(id))
+    return await extension.deleteModel(id).then(() => {
+      if (id.includes(':')) {
+        extension.addSource('cortexso' + id.split(':')[0])
+      }
+    })
   } catch (error) {
     console.error('Failed to delete model:', error)
     throw error
