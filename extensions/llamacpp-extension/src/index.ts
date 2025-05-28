@@ -63,24 +63,6 @@ interface ModelConfig {
   size_bytes: number
 }
 
-/**
- * Helper to convert GGUF model filename to a more structured ID/name
- * Example: "mistral-7b-instruct-v0.2.Q4_K_M.gguf" -> { baseModelId: "mistral-7b-instruct-v0.2", quant: "Q4_K_M" }
- **/
-function parseGGUFFileName(filename: string): {
-  baseModelId: string
-  quant?: string
-} {
-  const nameWithoutExt = filename.replace(/\.gguf$/i, '')
-  // Try to split by common quantization patterns (e.g., .Q4_K_M, -IQ2_XS)
-  const match = nameWithoutExt.match(
-    /^(.*?)[-_]([QqIiFf]\w{1,3}_\w{1,3}|[Qq]\d+_[KkSsMmXxLl\d]+|[IiQq]\d+_[XxSsMm]+|[Qq]\d+)$/
-  )
-  if (match && match[1] && match[2]) {
-    return { baseModelId: match[1], quant: match[2] }
-  }
-  return { baseModelId: nameWithoutExt }
-}
 
 /**
  * A class that implements the InferenceExtension interface from the @janhq/core package.
