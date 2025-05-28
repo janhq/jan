@@ -337,6 +337,27 @@ function Hardware() {
               />
             </Card>
 
+            {/* Vulkan Settings */}
+            <Card title="Vulkan">
+              <CardItem
+                title="Enable Vulkan"
+                description="Enable Vulkan API for GPU acceleration"
+                actions={
+                  <div className="flex items-center gap-4">
+                    <Switch
+                    // checked={hardwareData.vulkan}
+                    // onCheckedChange={(checked) => {
+                    //   setHardwareData({
+                    //     ...hardwareData,
+                    //     vulkan: checked,
+                    //   })
+                    // }}
+                    />
+                  </div>
+                }
+              />
+            </Card>
+
             {/* GPU Information */}
             <Card title="GPUs">
               {hardwareData.gpus.length > 0 ? (
