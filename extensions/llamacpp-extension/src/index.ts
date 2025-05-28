@@ -153,12 +153,6 @@ export default class llamacpp_extension extends AIEngine {
       const version = 'b5509' // hardcode for now
       // TODO: check if it's already downloaded
       downloadBackend(value as string, version)
-        .then(() => {
-          console.log(`Backend ${value} downloaded successfully.`);
-        })
-        .catch((error) => {
-          console.error(`Failed to download backend ${value}:`, error);
-        });
     }
   }
 
