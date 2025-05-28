@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
 import { useTranslation } from 'react-i18next'
 import { useHardware } from '@/hooks/useHardware'
+import { useVulkan } from '@/hooks/useVulkan'
 import type { GPU, HardwareData } from '@/hooks/useHardware'
 import { useEffect } from 'react'
 import {
@@ -122,6 +123,7 @@ function Hardware() {
     updateRAMAvailable,
     reorderGPUs,
   } = useHardware()
+  const { vulkanEnabled, setVulkanEnabled } = useVulkan()
 
   useEffect(() => {
     getHardwareInfo().then((data) =>
@@ -345,13 +347,10 @@ function Hardware() {
                 actions={
                   <div className="flex items-center gap-4">
                     <Switch
-                    // checked={hardwareData.vulkan}
-                    // onCheckedChange={(checked) => {
-                    //   setHardwareData({
-                    //     ...hardwareData,
-                    //     vulkan: checked,
-                    //   })
-                    // }}
+                      checked={vulkanEnabled}
+                      onCheckedChange={(checked) => {
+                        setVulkanEnabled(checked)
+                      }}
                     />
                   </div>
                 }
