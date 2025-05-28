@@ -1,4 +1,5 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { createAssistant } from '@/services/assistants'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -26,8 +27,12 @@ export const useAssistant = create<AssistantState>()(
     (set, get) => ({
       assistants: [defaultAssistant],
       currentAssistant: defaultAssistant,
-      addAssistant: (assistant) =>
-        set({ assistants: [...get().assistants, assistant] }),
+      addAssistant: (assistant) => {
+        set({ assistants: [...get().assistants, assistant] })
+        // createAssistant(assistant).catch((error) => {
+        //   console.error('Failed to create assistant:', error)
+        // })
+      },
       updateAssistant: (assistant) => {
         const state = get()
         set({
