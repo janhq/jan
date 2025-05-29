@@ -50,6 +50,9 @@ sysinfo = "0.34.2"
 ash = "0.38.0"
 nvml-wrapper = "0.10.0"
 serde_yaml = "0.9.34"
+hmac = "0.12.1"
+sha2 = "0.10.9"
+base64 = "0.22.1"
 
 [target.'cfg(windows)'.dependencies]
 libloading = "0.8.7"
