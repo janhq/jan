@@ -23,7 +23,6 @@ import {
 } from '@janhq/core'
 
 import { invoke } from '@tauri-apps/api/core'
-// import { createHmac } from 'crypto'
 
 type LlamacppConfig = {
   n_gpu_layers: number;
@@ -130,10 +129,12 @@ export default class llamacpp_extension extends AIEngine {
     this.config[key] = value
   }
 
-  private generateApiKey(modelId: string): string {
-    return ''
-    // const hash = createHmac('sha256', this.apiSecret).update(modelId).digest("base64")
-    // return hash
+  private async generateApiKey(modelId: string): Promise<string> {
+    const hash = await invoke<string>('generate_api_key', {
+        modelId: modelId,
+        apiSecret: this.apiSecret
+    })
+    return hash
   }
 
   // Implement the required LocalProvider interface methods
@@ -304,6 +305,7 @@ export default class llamacpp_extension extends AIEngine {
     // model option is required
     // TODO: llama.cpp extension lookup model path based on modelId
     args.push('-m', opts.modelPath)
+    args.push('-a', opts.modelId)
     args.push('--port', String(opts.port || 8080)) // Default port if not specified
 
     if (cfg.ctx_size !== undefined) {

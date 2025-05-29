@@ -101,6 +101,7 @@ export type listResult = modelInfo[]
 
 // 3. /load
 export interface loadOptions {
+  modelId: string
   modelPath: string
   port?: number
 }
