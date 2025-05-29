@@ -107,21 +107,21 @@ function ProviderDetail() {
   const handleStartModel = (modelId: string) => {
     // Add model to loading state
     setLoadingModels((prev) => [...prev, modelId])
-
-    startModel(modelId)
-      .then(() => {
-        setActiveModels((prevModels) => [
-          ...prevModels,
-          { id: modelId } as ActiveModel,
-        ])
-      })
-      .catch((error) => {
-        console.error('Error starting model:', error)
-      })
-      .finally(() => {
-        // Remove model from loading state
-        setLoadingModels((prev) => prev.filter((id) => id !== modelId))
-      })
+    if (provider)
+      startModel(provider, modelId)
+        .then(() => {
+          setActiveModels((prevModels) => [
+            ...prevModels,
+            { id: modelId } as ActiveModel,
+          ])
+        })
+        .catch((error) => {
+          console.error('Error starting model:', error)
+        })
+        .finally(() => {
+          // Remove model from loading state
+          setLoadingModels((prev) => prev.filter((id) => id !== modelId))
+        })
   }
 
   const handleStopModel = (modelId: string) => {
