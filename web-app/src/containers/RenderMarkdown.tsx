@@ -166,7 +166,7 @@ function RenderMarkdownComponent({
 
   // Render the markdown content
   return (
-    <div className={cn('markdown select-text', className)}>
+    <div className={cn('markdown break-words select-text', className)}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
