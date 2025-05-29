@@ -103,6 +103,7 @@ export type listResult = modelInfo[]
 export interface loadOptions {
   modelId: string
   modelPath: string
+  mmprojPath?: string
   port?: number
 }
 
@@ -181,7 +182,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Unloads a model from memory
    */
-  abstract unload(opts: unloadOptions): Promise<unloadResult>
+  abstract unload(sessionId: string): Promise<unloadResult>
 
   /**
    * Sends a chat request to the model
