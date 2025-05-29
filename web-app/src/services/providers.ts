@@ -102,6 +102,60 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
 }
 
 /**
+ * Fetches models from a provider's API endpoint
+ * @param provider The provider object containing base_url and api_key
+ * @returns Promise<string[]> Array of model IDs
+ */
+export const fetchModelsFromProvider = async (
+  provider: ModelProvider
+): Promise<string[]> => {
+  if (!provider.base_url || !provider.api_key) {
+    throw new Error('Provider must have base_url and api_key configured')
+  }
+
+  try {
+    const response = await fetch(`${provider.base_url}/models`, {
+      method: 'GET',
+      headers: {
+        'x-api-key': provider.api_key,
+        'Authorization': `Bearer ${provider.api_key}`,
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to fetch models: ${response.status} ${response.statusText}`
+      )
+    }
+
+    const data = await response.json()
+
+    // Handle different response formats that providers might use
+    if (data.data && Array.isArray(data.data)) {
+      // OpenAI format: { data: [{ id: "model-id" }, ...] }
+      return data.data.map((model: { id: string }) => model.id).filter(Boolean)
+    } else if (Array.isArray(data)) {
+      // Direct array format: ["model-id1", "model-id2", ...]
+      return data.filter(Boolean)
+    } else if (data.models && Array.isArray(data.models)) {
+      // Alternative format: { models: [...] }
+      return data.models
+        .map((model: string | { id: string }) =>
+          typeof model === 'string' ? model : model.id
+        )
+        .filter(Boolean)
+    } else {
+      console.warn('Unexpected response format from provider API:', data)
+      return []
+    }
+  } catch (error) {
+    console.error('Error fetching models from provider:', error)
+    throw error
+  }
+}
+
+/**
  * Update the settings of a provider extension.
  * TODO: Later on we don't retrieve this using provider name
  * @param providerName

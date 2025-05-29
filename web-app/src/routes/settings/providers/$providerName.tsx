@@ -30,9 +30,9 @@ import Joyride, { CallBackProps, STATUS } from 'react-joyride'
 import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
-import { updateSettings } from '@/services/providers'
+import { updateSettings, fetchModelsFromProvider } from '@/services/providers'
 import { Button } from '@/components/ui/button'
-import { IconFolderPlus, IconLoader } from '@tabler/icons-react'
+import { IconFolderPlus, IconLoader, IconRefresh } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
 import { ActiveModel } from '@/types/models'
@@ -76,6 +76,7 @@ function ProviderDetail() {
   const { step } = useSearch({ from: Route.id })
   const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
   const [loadingModels, setLoadingModels] = useState<string[]>([])
+  const [refreshingModels, setRefreshingModels] = useState(false)
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
@@ -101,6 +102,61 @@ function ProviderDetail() {
       navigate({
         to: route.home,
       })
+    }
+  }
+
+  const handleRefreshModels = async () => {
+    if (!provider || !provider.base_url) {
+      toast.error('Refresh Models', {
+        description:
+          'Provider must have base URL and API key configured to fetch models.',
+      })
+      return
+    }
+
+    setRefreshingModels(true)
+    try {
+      const modelIds = await fetchModelsFromProvider(provider)
+
+      // Create new models from the fetched IDs
+      const newModels: Model[] = modelIds.map((id) => ({
+        id,
+        model: id,
+        name: id,
+        capabilities: ['completion'], // Default capability
+        version: '1.0',
+      }))
+
+      // Filter out models that already exist
+      const existingModelIds = provider.models.map((m) => m.id)
+      const modelsToAdd = newModels.filter(
+        (model) => !existingModelIds.includes(model.id)
+      )
+
+      if (modelsToAdd.length > 0) {
+        // Update the provider with new models
+        const updatedModels = [...provider.models, ...modelsToAdd]
+        updateProvider(providerName, {
+          ...provider,
+          models: updatedModels,
+        })
+
+        toast.success('Refresh Models', {
+          description: `Added ${modelsToAdd.length} new model(s) from ${provider.provider}.`,
+        })
+      } else {
+        toast.success('Refresh Models', {
+          description:
+            'No new models found. All available models are already added.',
+        })
+      }
+    } catch (error) {
+      console.error('Failed to refresh models:', error)
+      toast.error('Refresh Models', {
+        description: `Failed to fetch models from ${provider.provider}. Please check your API key and base URL.`,
+      })
+    } finally {
+      setRefreshingModels(false)
     }
   }
 
@@ -292,7 +348,33 @@ function ProviderDetail() {
                     </h1>
                     <div className="flex items-center gap-2">
                       {provider && provider.provider !== 'llama.cpp' && (
-                        <DialogAddModel provider={provider} />
+                        <>
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="hover:no-underline"
+                            onClick={handleRefreshModels}
+                            disabled={refreshingModels}
+                          >
+                            <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                              {refreshingModels ? (
+                                <IconLoader
+                                  size={18}
+                                  className="text-main-view-fg/50 animate-spin"
+                                />
+                              ) : (
+                                <IconRefresh
+                                  size={18}
+                                  className="text-main-view-fg/50"
+                                />
+                              )}
+                              <span className="text-main-view-fg/70">
+                                {refreshingModels ? 'Refreshing...' : 'Refresh'}
+                              </span>
+                            </div>
+                          </Button>
+                          <DialogAddModel provider={provider} />
+                        </>
                       )}
                       {provider && provider.provider === 'llama.cpp' && (
                         <Button
