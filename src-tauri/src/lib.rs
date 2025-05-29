@@ -91,6 +91,7 @@ pub fn run() {
             // llama-cpp extension
             core::utils::extensions::inference_llamacpp_extension::server::load_llama_model,
             core::utils::extensions::inference_llamacpp_extension::server::unload_llama_model,
+            core::utils::extensions::inference_llamacpp_extension::server::generate_api_key,
         ])
         .manage(AppState {
             app_token: Some(generate_app_token()),

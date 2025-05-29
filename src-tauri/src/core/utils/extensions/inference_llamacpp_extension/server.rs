@@ -1,24 +1,25 @@
 use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
-use tauri::path::BaseDirectory;
-use tauri::{AppHandle, Manager, State}; // Import Manager trait
+use tauri::{AppHandle, State}; // Import Manager trait
 use tokio::process::Command;
 use uuid::Uuid;
 use thiserror;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use base64::{Engine as _, engine::general_purpose};
 
 use crate::core::state::AppState;
 
+type HmacSha256 = Hmac<Sha256>;
 // Error type for server commands
 #[derive(Debug, thiserror::Error)]
-pub enum ServerError {
+pub enum serverError {
     #[error("Server is already running")]
     AlreadyRunning,
   //  #[error("Server is not running")]
   //  NotRunning,
     #[error("Failed to locate server binary: {0}")]
     BinaryNotFound(String),
-    #[error("Failed to determine resource path: {0}")]
-    ResourcePathError(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Jan API error: {0}")]
@@ -26,7 +27,7 @@ pub enum ServerError {
 }
 
 // impl serialization for tauri
-impl serde::Serialize for ServerError {
+impl serde::Serialize for serverError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -35,18 +36,19 @@ impl serde::Serialize for ServerError {
     }
 }
 
-type ServerResult<T> = Result<T, ServerError>;
+type ServerResult<T> = Result<T, serverError>;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SessionInfo {
-    pub session_id: String,       // opaque handle for unload/chat
-    pub port: u16,                // llama-server output port
-    pub model_path: String,       // path of the loaded model
-    pub api_key: String,
+pub struct sessionInfo {
+    pub pid: String,       // opaque handle for unload/chat
+    pub port: u16, // llama-server output port
+    pub modelId: String,
+    pub modelPath: String,       // path of the loaded model
+    pub apiKey: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct UnloadResult {
+pub struct unloadResult {
     success: bool,
     error: Option<String>,
 }
@@ -54,40 +56,41 @@ pub struct UnloadResult {
 // --- Load Command ---
 #[tauri::command]
 pub async fn load_llama_model(
-    app_handle: AppHandle,      // Get the AppHandle
+    _app_handle: AppHandle,      // Get the AppHandle
     state: State<'_, AppState>, // Access the shared state
-    server_path: String,
+    engineBasePath: String,
     args: Vec<String>,          // Arguments from the frontend
-) -> ServerResult<SessionInfo> {
+) -> ServerResult<sessionInfo> {
     let mut process_lock = state.llama_server_process.lock().await;
 
     if process_lock.is_some() {
         log::warn!("Attempted to load server, but it's already running.");
-        return Err(ServerError::AlreadyRunning);
+        return Err(serverError::AlreadyRunning);
     }
 
-    log::info!("Attempting to launch server at path: {:?}", server_path);
+    log::info!("Attempting to launch server at path: {:?}", engineBasePath);
     log::info!("Using arguments: {:?}", args);
 
-    let server_path_buf = PathBuf::from(&server_path);
+    let server_path_buf = PathBuf::from(&engineBasePath);
     if !server_path_buf.exists() {
         log::error!(
             "Server binary not found at expected path: {:?}",
-            server_path
+            engineBasePath
         );
-        return Err(ServerError::BinaryNotFound(format!(
+        return Err(serverError::BinaryNotFound(format!(
             "Binary not found at {:?}",
-            server_path
+            engineBasePath
         )));
     }
 
     let port = 8080; // Default port
 
     // Configure the command to run the server
-    let mut command = Command::new(server_path);
+    let mut command = Command::new(engineBasePath);
 
-    let model_path = args[2].replace("-m", "");
-    let api_key = args[1].replace("--api-key", "");
+    let modelPath = args[2].replace("-m", "");
+    let apiKey = args[1].replace("--api-key", "");
+    let modelId = args[3].replace("-a", "");
     command.args(args);
 
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
@@ -95,7 +98,7 @@ pub async fn load_llama_model(
     // command.stderr(Stdio::piped());
 
     // Spawn the child process
-    let child = command.spawn().map_err(ServerError::Io)?;
+    let child = command.spawn().map_err(serverError::Io)?;
 
     // Get the PID to use as session ID
     let pid = child.id().map(|id| id.to_string()).unwrap_or_else(|| {
@@ -108,11 +111,12 @@ pub async fn load_llama_model(
     // Store the child process handle in the state
     *process_lock = Some(child);
 
-    let session_info = SessionInfo {
-        session_id: pid,  // Use PID as session ID
+    let session_info = sessionInfo {
+        pid,
         port,
-        model_path,
-        api_key,
+        modelId,
+        modelPath,
+        apiKey,
     };
 
     Ok(session_info)
@@ -120,7 +124,7 @@ pub async fn load_llama_model(
 
 // --- Unload Command ---
 #[tauri::command]
-pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) -> ServerResult<UnloadResult> {
+pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) -> ServerResult<unloadResult> {
     let mut process_lock = state.llama_server_process.lock().await;
     // Take the child process out of the Option, leaving None in its place
     if let Some(mut child) = process_lock.take() {
@@ -138,7 +142,7 @@ pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) 
                 process_pid
             );
 
-            return Ok(UnloadResult {
+            return Ok(unloadResult {
                 success: false,
                 error: Some(format!("Session ID mismatch: provided {} doesn't match process {}", 
                     session_id, process_pid)),
@@ -155,7 +159,7 @@ pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) 
             Ok(_) => {
                 log::info!("Server process termination signal sent successfully");
 
-                Ok(UnloadResult {
+                Ok(unloadResult {
                     success: true,
                     error: None,
                 })
@@ -164,7 +168,7 @@ pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) 
                 log::error!("Failed to kill server process: {}", e);
 
                 // Return formatted error
-                Ok(UnloadResult {
+                Ok(unloadResult {
                     success: false,
                     error: Some(format!("Failed to kill server process: {}", e)),
                 })
@@ -175,10 +179,23 @@ pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) 
 
         // If no process is running but client thinks there is, 
         // still report success since the end state is what they wanted
-        Ok(UnloadResult {
+        Ok(unloadResult {
             success: true,
             error: None,
         })
     }
+}
+
+// crypto
+#[allow(clippy::camel_case_variables)]
+#[tauri::command]
+pub fn generate_api_key(modelId: String, apiSecret: String) -> Result<String, String> {
+    let mut mac = HmacSha256::new_from_slice(apiSecret.as_bytes())
+        .map_err(|e| format!("Invalid key length: {}", e))?;
+    mac.update(modelId.as_bytes());
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+    let hash = general_purpose::STANDARD.encode(code_bytes);
+    Ok(hash)
 }
 

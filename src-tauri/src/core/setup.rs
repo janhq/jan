@@ -10,6 +10,8 @@ use tauri_plugin_store::StoreExt;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
                                     // MCP
+
+// MCP
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
