@@ -77,7 +77,21 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
             ? (model.capabilities as string[])
             : [ModelCapabilities.COMPLETION],
         provider: providerName,
-        settings: modelSettings ,
+        settings: Object.values(modelSettings).reduce(
+          (acc, setting) => {
+            acc[setting.key] = {
+              ...setting,
+              controller_props: {
+                ...setting.controller_props,
+                value: model[
+                  setting.key as keyof typeof model
+                ] as unknown as keyof typeof setting.controller_props.value,
+              },
+            }
+            return acc
+          },
+          {} as Record<string, ProviderSetting>
+        ),
       })),
     }
     runtimeProviders.push(provider)
