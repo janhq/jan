@@ -137,7 +137,8 @@ export interface chatOptions {
 
 // 7. /import
 export interface ImportOptions {
-  [key: string]: any
+  modelPath: string
+  mmprojPath: string
 }
 
 export interface importResult {
