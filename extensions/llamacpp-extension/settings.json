@@ -1,5 +1,15 @@
 [
   {
+    "key": "backend",
+    "title": "Backend",
+    "description": "Backend for llama.cpp",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "none",
+      "options": []
+    }
+  },
+  {
     "key": "threads",
     "title": "Threads",
     "description": "Number of threads to use during generation (-1 for logical cores).",
