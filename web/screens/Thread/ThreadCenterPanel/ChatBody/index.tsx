@@ -23,32 +23,12 @@ import {
 
 const ChatConfigurator = memo(() => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
-  const currentThread = useAtomValue(activeThreadAtom)
-
-  const [current, setCurrent] = useState<ThreadMessage[]>([])
   const loadModelError = useAtomValue(loadModelErrorAtom)
-
-  const isMessagesIdentificial = (
-    arr1: ThreadMessage[],
-    arr2: ThreadMessage[]
-  ): boolean => {
-    if (arr1.length !== arr2.length) return false
-    return arr1.every((item, index) => item.id === arr2[index].id)
-  }
-
-  useEffect(() => {
-    if (
-      !isMessagesIdentificial(messages, current) ||
-      messages.some((e) => e.thread_id !== currentThread?.id)
-    ) {
-      setCurrent(messages)
-    }
-  }, [messages, current, loadModelError, currentThread])
 
   if (!messages.length) return <EmptyThread />
   return (
     <div className="flex h-full w-full flex-col">
-      <ChatBody loadModelError={loadModelError} messages={current} />
+      <ChatBody loadModelError={loadModelError} messages={messages} />
     </div>
   )
 })

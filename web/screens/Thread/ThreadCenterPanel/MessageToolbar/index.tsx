@@ -92,24 +92,22 @@ const MessageToolbar = ({ message }: { message: ThreadMessage }) => {
   return (
     <div className="flex flex-row items-center">
       <div className="flex gap-1 bg-[hsla(var(--app-bg))]">
-        {message.role === ChatCompletionRole.User &&
-          message.content[0]?.type === ContentType.Text &&
-          !isBlockingSend && (
-            <div
-              className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
-              onClick={onEditClick}
-            >
-              <Tooltip
-                trigger={
-                  <PencilIcon
-                    size={14}
-                    className="text-[hsla(var(--text-secondary))]"
-                  />
-                }
-                content="Edit"
-              />
-            </div>
-          )}
+        {message.content[0]?.type === ContentType.Text && !isBlockingSend && (
+          <div
+            className="cursor-pointer rounded-lg border border-[hsla(var(--app-border))] p-2"
+            onClick={onEditClick}
+          >
+            <Tooltip
+              trigger={
+                <PencilIcon
+                  size={14}
+                  className="text-[hsla(var(--text-secondary))]"
+                />
+              }
+              content="Edit"
+            />
+          </div>
+        )}
 
         {message.id === messages[messages.length - 1]?.id &&
           !messages[messages.length - 1]?.metadata?.error &&

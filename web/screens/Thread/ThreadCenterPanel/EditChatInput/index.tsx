@@ -1,12 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 
-import {
-  ConversationalExtension,
-  ExtensionTypeEnum,
-  MessageStatus,
-  ThreadMessage,
-} from '@janhq/core'
+import { MessageStatus, ThreadMessage } from '@janhq/core'
 
 import { TextArea, Button, Modal, ModalClose } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
@@ -16,10 +11,6 @@ import { twMerge } from 'tailwind-merge'
 import { editPromptAtom } from '@/containers/Providers/Jotai'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
-
-import useSendChatMessage from '@/hooks/useSendChatMessage'
-
-import { extensionManager } from '@/extension'
 
 import {
   editMessageAtom,
@@ -42,7 +33,6 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const messages = useAtomValue(getCurrentChatMessagesAtom)
 
   const [editPrompt, setEditPrompt] = useAtom(editPromptAtom)
-  const { sendChatMessage } = useSendChatMessage()
   const setMessages = useSetAtom(setConvoMessagesAtom)
   const activeThreadId = useAtomValue(getActiveThreadIdAtom)
   const spellCheck = useAtomValue(spellCheckAtom)
@@ -80,18 +70,24 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
   const sendEditMessage = async () => {
     setEditMessage('')
     const messageIdx = messages.findIndex((msg) => msg.id === message.id)
-    const newMessages = messages.slice(0, messageIdx)
-    const toDeleteMessages = messages.slice(messageIdx)
+
+    if (messageIdx === -1) {
+      console.error('Message to edit not found')
+      return
+    }
+
+    // Create a new messages array with the updated message
+    const updatedMessages = messages.map((msg, index) => {
+      if (index === messageIdx) {
+        const newMsg = JSON.parse(JSON.stringify(msg))
+        newMsg.content[0].text.value = editPrompt
+        return newMsg
+      }
+      return msg
+    })
+
     const threadId = messages[0].thread_id
-    await Promise.all(
-      toDeleteMessages.map(async (message) =>
-        extensionManager
-          .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
-          ?.deleteMessage(message.thread_id, message.id)
-      )
-    ).catch(console.error)
-    setMessages(threadId, newMessages)
-    sendChatMessage(editPrompt, false, newMessages)
+    setMessages(threadId, updatedMessages)
   }
 
   const onKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

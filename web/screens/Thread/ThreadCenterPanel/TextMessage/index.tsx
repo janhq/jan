@@ -38,11 +38,8 @@ const MessageContainer: React.FC<
   const chatWidth = useAtomValue(chatWidthAtom)
   const selectedModel = useAtomValue(selectedModelAtom)
 
-  const text = useMemo(
-    () =>
-      props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? '',
-    [props.content]
-  )
+  const text =
+    props.content.find((e) => e.type === ContentType.Text)?.text?.value ?? ''
 
   const { reasoningSegment, textSegment } = useMemo(() => {
     const isThinking = text.includes('<think>') && !text.includes('</think>')
