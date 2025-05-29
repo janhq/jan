@@ -37,10 +37,10 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
 
   return (
     <div
-      className="mx-auto w-full cursor-pointer mt-4 break-words"
+      className="mx-auto w-full cursor-pointer break-words"
       onClick={handleClick}
     >
-      <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
+      <div className="rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
         <div className="flex items-center gap-3 p-2">
           {loading && (
             <Loader className="size-4 animate-spin text-main-view-fg/60" />
