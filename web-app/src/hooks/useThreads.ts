@@ -46,10 +46,14 @@ export const useThreads = create<ThreadState>()(
           (acc: Record<string, Thread>, thread) => {
             acc[thread.id] = thread
             return acc
-          }, {} as Record<string, Thread>)
+          },
+          {} as Record<string, Thread>
+        )
         set({
           threads: threadMap,
-          searchIndex: new Fzf<Thread[]>(Object.values(threadMap), { selector: (item: Thread) => item.title })
+          searchIndex: new Fzf<Thread[]>(Object.values(threadMap), {
+            selector: (item: Thread) => item.title,
+          }),
         })
       },
       getFilteredThreads: (searchTerm: string) => {
@@ -63,25 +67,26 @@ export const useThreads = create<ThreadState>()(
 
         let currentIndex = searchIndex
         if (!currentIndex) {
-          currentIndex = new Fzf<Thread[]>(
-            Object.values(threads),
-            { selector: (item: Thread) => item.title }
-          )
+          currentIndex = new Fzf<Thread[]>(Object.values(threads), {
+            selector: (item: Thread) => item.title,
+          })
           set({ searchIndex: currentIndex })
         }
 
         // Use the index to search and return matching threads
         const fzfResults = currentIndex.find(searchTerm)
-        return fzfResults.map((result: { item: Thread; positions: Set<number>  }) => {
-          const thread = result.item; // Fzf stores the original item here
-          // Ensure result.positions is an array, default to empty if undefined
-          const positions = Array.from(result.positions) || [];
-          const highlightedTitle = highlightFzfMatch(thread.title, positions);
-          return {
-            ...thread,
-            title: highlightedTitle, // Override title with highlighted version
-          };
-        });
+        return fzfResults.map(
+          (result: { item: Thread; positions: Set<number> }) => {
+            const thread = result.item // Fzf stores the original item here
+            // Ensure result.positions is an array, default to empty if undefined
+            const positions = Array.from(result.positions) || []
+            const highlightedTitle = highlightFzfMatch(thread.title, positions)
+            return {
+              ...thread,
+              title: highlightedTitle, // Override title with highlighted version
+            }
+          }
+        )
       },
       toggleFavorite: (threadId) => {
         set((state) => {
@@ -107,7 +112,9 @@ export const useThreads = create<ThreadState>()(
           deleteThread(threadId)
           return {
             threads: remainingThreads,
-            searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), { selector: (item: Thread) => item.title })
+            searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
+              selector: (item: Thread) => item.title,
+            }),
           }
         })
       },
@@ -119,7 +126,7 @@ export const useThreads = create<ThreadState>()(
           })
           return {
             threads: {},
-            searchIndex: null // Or new Fzf([], {selector...})
+            searchIndex: null, // Or new Fzf([], {selector...})
           }
         })
       },
@@ -157,21 +164,24 @@ export const useThreads = create<ThreadState>()(
           id: ulid(),
           title: title ?? 'New Thread',
           model,
-          // order: 1,
+          order: 1, // Will be set properly by setThreads
           updated: Date.now() / 1000,
           assistants: assistant ? [assistant] : [],
         }
         return await createThread(newThread).then((createdThread) => {
           set((state) => {
-            const newThreads = {
-              ...state.threads,
-              [createdThread.id]: createdThread,
-            };
+            // Get all existing threads as an array
+            const existingThreads = Object.values(state.threads)
+
+            // Create new array with the new thread at the beginning
+            const reorderedThreads = [createdThread, ...existingThreads]
+
+            // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
+            get().setThreads(reorderedThreads)
+
             return {
-              threads: newThreads,
               currentThreadId: createdThread.id,
-              searchIndex: new Fzf<Thread[]>(Object.values(newThreads), { selector: (item: Thread) => item.title }),
-            };
+            }
           })
           return createdThread
         })
@@ -221,10 +231,12 @@ export const useThreads = create<ThreadState>()(
             title: newTitle,
           }
           updateThread(updatedThread) // External call, order is fine
-          const newThreads = { ...state.threads, [threadId]: updatedThread };
+          const newThreads = { ...state.threads, [threadId]: updatedThread }
           return {
             threads: newThreads,
-            searchIndex: new Fzf<Thread[]>(Object.values(newThreads), { selector: (item: Thread) => item.title }),
+            searchIndex: new Fzf<Thread[]>(Object.values(newThreads), {
+              selector: (item: Thread) => item.title,
+            }),
           }
         })
       },
