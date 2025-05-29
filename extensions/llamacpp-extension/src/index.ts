@@ -21,10 +21,11 @@ import {
   chatCompletionRequest,
   events,
 } from '@janhq/core'
-
+import { listSupportedBackends, downloadBackend, isBackendInstalled } from './backend'
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
+  backend: string;
   n_gpu_layers: number;
   ctx_size: number;
   threads: number;
@@ -83,7 +84,8 @@ export default class llamacpp_extension extends AIEngine {
   readonly providerId: string = 'llamacpp'
 
   private config: LlamacppConfig
-  private downloadManager: any
+  private downloadManager
+  private downloadBackend  // for testing
   private activeSessions: Map<string, sessionInfo> = new Map()
   private modelsBasePath!: string
   private enginesBasePath!: string
@@ -91,7 +93,26 @@ export default class llamacpp_extension extends AIEngine {
 
   override async onLoad(): Promise<void> {
     super.onLoad() // Calls registerEngine() from AIEngine
-    this.registerSettings(SETTINGS)
+
+    let settings = structuredClone(SETTINGS)
+
+    // update backend settings
+    for (let item of settings) {
+      if (item.key === 'backend') {
+        // NOTE: is there a race condition between when tauri IPC is available
+        // and when the extension is loaded?
+        const backends = await listSupportedBackends()
+        console.log('Available backends:', backends)
+        item.controllerProps.options = backends.map((b) => {
+          const { version, backend } = b
+          const key = `${version}-${backend}`
+          return { value: key, name: key }
+        })
+      }
+    }
+
+    this.registerSettings(settings)
+    this.downloadBackend = downloadBackend
 
     let config = {}
     for (const item of SETTINGS) {
@@ -127,6 +148,21 @@ export default class llamacpp_extension extends AIEngine {
 
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
+
+    if (key === 'backend') {
+      const valueStr = value as string
+      const idx = valueStr.indexOf('-')
+      const version = valueStr.slice(0, idx)
+      const backend = valueStr.slice(idx + 1)
+
+      const closure = async () => {
+        const isInstalled = await isBackendInstalled(backend, version)
+        if (!isInstalled) {
+          await downloadBackend(backend, version)
+        }
+      }
+      closure()
+    }
   }
 
   private async generateApiKey(modelId: string): Promise<string> {

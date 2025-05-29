@@ -82,6 +82,7 @@ pub fn run() {
             // generic utils
             core::utils::write_yaml,
             core::utils::read_yaml,
+            core::utils::decompress,
             // Download
             core::utils::download::download_files,
             core::utils::download::cancel_download_task,
