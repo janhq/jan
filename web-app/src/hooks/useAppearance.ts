@@ -54,11 +54,11 @@ const defaultAppPrimaryBgColor: RgbaColor = { r: 219, g: 88, b: 44, a: 1 }
 const defaultLightAppPrimaryBgColor: RgbaColor = { r: 219, g: 88, b: 44, a: 1 }
 const defaultAppAccentBgColor: RgbaColor = { r: 45, g: 120, b: 220, a: 1 }
 const defaultLightAppAccentBgColor: RgbaColor = { r: 45, g: 120, b: 220, a: 1 }
-const defaultAppDestructiveBgColor: RgbaColor = { r: 220, g: 45, b: 45, a: 1 }
+const defaultAppDestructiveBgColor: RgbaColor = { r: 144, g: 60, b: 60, a: 1 }
 const defaultLightAppDestructiveBgColor: RgbaColor = {
-  r: 220,
-  g: 45,
-  b: 45,
+  r: 217,
+  g: 95,
+  b: 95,
   a: 1,
 }
 const defaultDarkLeftPanelTextColor: string = '#FFF'

@@ -29,7 +29,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { teamEmoji } from '@/utils/teamEmoji'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from 'react-i18next'
-import { cn } from '@/lib/utils'
+import { cn, isDev } from '@/lib/utils'
 
 interface AddEditAssistantProps {
   open: boolean
@@ -235,12 +235,10 @@ export default function AddEditAssistant({
               >
                 <AvatarEmoji
                   avatar={avatar}
-                  fallback={
-                    <IconMoodSmile size={18} className="text-main-view-fg/50" />
-                  }
                   imageClassName="w-5 h-5 object-contain"
                   textClassName=""
                 />
+                <IconMoodSmile size={18} className="text-main-view-fg/50" />
               </div>
               <div className="relative" ref={emojiPickerRef}>
                 <EmojiPicker
@@ -248,7 +246,7 @@ export default function AddEditAssistant({
                   theme={isDark ? ('dark' as Theme) : ('light' as Theme)}
                   className="!absolute !z-40 !overflow-y-auto top-2"
                   height={350}
-                  customEmojis={teamEmoji}
+                  customEmojis={isDev() ? teamEmoji : []}
                   lazyLoadEmojis
                   previewConfig={{ showPreview: false }}
                   onEmojiClick={(emojiData: EmojiClickData) => {

@@ -260,6 +260,29 @@ export const stopModel = async (model: string, provider?: string) => {
 }
 
 /**
+ * Start a model for a given provider.
+ * @param model
+ * @param provider
+ * @returns
+ */
+export const startModel = async (model: string, provider?: string) => {
+  const providerName = provider || 'cortex' // we will go down to llama.cpp extension later on
+  const extension = EngineManager.instance().get(providerName)
+
+  if (!extension) throw new Error('Model extension not found')
+
+  try {
+    return await extension.loadModel({
+      model,
+      id: model,
+    })
+  } catch (error) {
+    console.error('Failed to start model:', error)
+    return []
+  }
+}
+
+/**
  * Configures the proxy options for model downloads.
  * @param param0
  */

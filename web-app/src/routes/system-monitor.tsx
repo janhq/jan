@@ -175,6 +175,7 @@ function SystemMonitor() {
                     <span className="text-main-view-fg">
                       <Button
                         variant="destructive"
+                        size="sm"
                         onClick={() => stopRunningModel(model.id)}
                       >
                         Stop
