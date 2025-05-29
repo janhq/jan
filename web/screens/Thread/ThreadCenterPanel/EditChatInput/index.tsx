@@ -22,6 +22,7 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
 } from '@/helpers/atoms/Thread.atom'
+import { clone } from 'lodash'
 
 type Props = {
   message: ThreadMessage
@@ -79,8 +80,8 @@ const EditChatInput: React.FC<Props> = ({ message }) => {
     // Create a new messages array with the updated message
     const updatedMessages = messages.map((msg, index) => {
       if (index === messageIdx) {
-        const newMsg = JSON.parse(JSON.stringify(msg))
-        newMsg.content[0].text.value = editPrompt
+        const newMsg = clone(msg)
+        newMsg.content[0].text!.value = editPrompt
         return newMsg
       }
       return msg
