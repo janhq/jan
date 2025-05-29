@@ -128,6 +128,16 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
             jan_data_folder.to_string_lossy(),
         ));
     }
+
+    let output_dir_buf = normalize_path(&jan_data_folder.join(output_dir));
+    if !output_dir_buf.starts_with(&jan_data_folder) {
+        return Err(format!(
+            "Error: output directory {} is not under jan_data_folder {}",
+            output_dir_buf.to_string_lossy(),
+            jan_data_folder.to_string_lossy(),
+        ));
+    }
+
     let file = fs::File::open(&path_buf).map_err(|e| e.to_string())?;
     if path.ends_with(".tar.gz") {
         let tar = flate2::read::GzDecoder::new(file);
