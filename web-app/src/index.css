@@ -75,6 +75,10 @@
   a {
     @apply !text-accent;
   }
+
+  ::-ms-reveal {
+    display: none;
+  }
 }
 
 @layer utilities {
