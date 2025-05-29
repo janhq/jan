@@ -103,7 +103,11 @@ export default class llamacpp_extension extends AIEngine {
         // and when the extension is loaded?
         const backends = await listSupportedBackends()
         console.log('Available backends:', backends)
-        item.controllerProps.options = backends.map((b) => ({ value: b, name: b }))
+        item.controllerProps.options = backends.map((b) => {
+          const { version, backend } = b
+          const key = `${version}-${backend}`
+          return { value: key, name: key }
+        })
       }
     }
 
@@ -146,10 +150,18 @@ export default class llamacpp_extension extends AIEngine {
     this.config[key] = value
 
     if (key === 'backend') {
-      const version = 'b5509' // hardcode for now
-      if (!isBackendInstalled(value as string, version)) {
-        downloadBackend(value as string, version)
+      const valueStr = value as string
+      const idx = valueStr.indexOf('-')
+      const version = valueStr.slice(0, idx)
+      const backend = valueStr.slice(idx + 1)
+
+      const closure = async () => {
+        const isInstalled = await isBackendInstalled(backend, version)
+        if (!isInstalled) {
+          await downloadBackend(backend, version)
+        }
       }
+      closure()
     }
   }
 

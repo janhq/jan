@@ -10,12 +10,12 @@ import { invoke } from '@tauri-apps/api/core'
 // <Jan's data folder>/llamacpp/backends/<backend_name>/<backend_version>
 
 // what should be available to the user for selection?
-export async function listSupportedBackends(): Promise<string[]> {
+export async function listSupportedBackends(): Promise<{ version: string, backend: string }[]> {
   const sysInfo = await window.core.api.getSystemInfo()
   const os_type = sysInfo.os_type
   const arch = sysInfo.cpu.arch
 
-  const key = `${os_type}-${arch}`
+  const sysType = `${os_type}-${arch}`
   let backends = []
 
   let supportsAvx = 'avx' in sysInfo.cpu.extensions
@@ -38,7 +38,7 @@ export async function listSupportedBackends(): Promise<string[]> {
   // TODO: fetch versions from the server?
   // TODO: select CUDA version based on driver version
   // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
-  if (key == 'windows-x86_64') {
+  if (sysType == 'windows-x86_64') {
     // NOTE: if a machine supports AVX2, should we include noavx and avx?
     backends.push('win-noavx-x64')
     if (supportsAvx) backends.push('win-avx-x64')
@@ -47,7 +47,7 @@ export async function listSupportedBackends(): Promise<string[]> {
     if (supportsCuda) backends.push('win-avx2-cuda-cu11.7-x64', 'win-avx2-cuda-cu12.0-x64')
     if (supportsVulkan) backends.push('win-vulkan-x64')
   }
-  else if (key == 'linux-x86_64') {
+  else if (sysType == 'linux-x86_64') {
     backends.push('linux-noavx-x64')
     if (supportsAvx) backends.push('linux-avx-x64')
     if (supportsAvx2) backends.push('linux-avx2-x64')
@@ -55,14 +55,37 @@ export async function listSupportedBackends(): Promise<string[]> {
     if (supportsCuda) backends.push('linux-avx2-cuda-cu11.7-x64', 'linux-avx2-cuda-cu12.0-x64')
     if (supportsVulkan) backends.push('linux-vulkan-x64')
   }
-  else if (key === 'macos-x86_64') {
+  else if (sysType === 'macos-x86_64') {
     backends.push('macos-x64')
   }
-  else if (key === 'macos-aarch64') {
+  else if (sysType === 'macos-aarch64') {
     backends.push('macos-arm64')
   }
 
-  return backends
+  const releases = await _fetchGithubReleases('menloresearch', 'llama.cpp')
+  releases.sort((a, b) => b.tag_name.localeCompare(a.tag_name))
+  releases.splice(10) // keep only the latest 10 releases
+
+  let backendVersions = []
+  for (const release of releases) {
+    const version = release.tag_name
+    const prefix = `llama-${version}-bin-`
+
+    // NOTE: there is checksum.yml. we can also download it to verify the download
+    for (const asset of release.assets) {
+      const name = asset.name
+      if (!name.startsWith(prefix)) {
+        continue
+      }
+
+      const backend = name.replace(prefix, '').replace('.tar.gz', '')
+      if (backends.includes(backend)) {
+        backendVersions.push({ version, backend })
+      }
+    }
+  }
+
+  return backendVersions
 }
 
 export async function isBackendInstalled(backend: string, version: string): Promise<boolean> {
@@ -71,7 +94,8 @@ export async function isBackendInstalled(backend: string, version: string): Prom
 
   const janDataFolderPath = await getJanDataFolderPath()
   const backendPath = await joinPath([janDataFolderPath, 'llamacpp', 'backends', backend, version, 'build', 'bin', exe_name])
-  return await fs.existsSync(backendPath)
+  const result = await fs.existsSync(backendPath)
+  return result
 }
 
 export async function downloadBackend(backend: string, version: string): Promise<void> {
@@ -84,6 +108,7 @@ export async function downloadBackend(backend: string, version: string): Promise
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
+  console.log(`Downloading backend ${backend} version ${version} from ${url} to ${savePath}`)
   let downloadCompleted = false
   try {
     await downloadManager.downloadFile(
@@ -117,4 +142,17 @@ export async function downloadBackend(backend: string, version: string): Promise
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
     throw error
   }
+}
+
+async function _fetchGithubReleases(
+  owner: string,
+  repo: string,
+): Promise<any[]> {
+  // by default, it's per_page=30 and page=1 -> the latest 30 releases
+  const url = `https://api.github.com/repos/${owner}/${repo}/releases`
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch releases from ${url}: ${response.statusText}`)
+  }
+  return response.json()
 }
