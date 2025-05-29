@@ -79,13 +79,14 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         provider: providerName,
         settings: Object.values(modelSettings).reduce(
           (acc, setting) => {
+            const value = model[
+              setting.key as keyof typeof model
+            ] as keyof typeof setting.controller_props.value
             acc[setting.key] = {
               ...setting,
               controller_props: {
                 ...setting.controller_props,
-                value: model[
-                  setting.key as keyof typeof model
-                ] as unknown as keyof typeof setting.controller_props.value,
+                value: value ?? setting.controller_props.value,
               },
             }
             return acc
