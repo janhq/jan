@@ -306,7 +306,7 @@ export default class llamacpp_extension extends AIEngine {
     args.push('-m', opts.modelPath)
     args.push('--port', String(opts.port || 8080)) // Default port if not specified
 
-    if (opts.n_ctx !== undefined) {
+    if (cfg.ctx_size !== undefined) {
       args.push('-c', String(cfg.ctx_size))
     }
 
