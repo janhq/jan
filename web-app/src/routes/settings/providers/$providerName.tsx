@@ -356,7 +356,35 @@ function ProviderDetail() {
                       </h1>
                       <div className="flex items-center gap-2">
                         {provider && provider.provider !== 'llama.cpp' && (
-                          <DialogAddModel provider={provider} />
+                          <>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="hover:no-underline"
+                              onClick={handleRefreshModels}
+                              disabled={refreshingModels}
+                            >
+                              <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                                {refreshingModels ? (
+                                  <IconLoader
+                                    size={18}
+                                    className="text-main-view-fg/50 animate-spin"
+                                  />
+                                ) : (
+                                  <IconRefresh
+                                    size={18}
+                                    className="text-main-view-fg/50"
+                                  />
+                                )}
+                                <span className="text-main-view-fg/70">
+                                  {refreshingModels
+                                    ? 'Refreshing...'
+                                    : 'Refresh'}
+                                </span>
+                              </div>
+                            </Button>
+                            <DialogAddModel provider={provider} />
+                          </>
                         )}
                         {provider && provider.provider === 'llama.cpp' && (
                           <Button
