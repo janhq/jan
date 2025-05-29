@@ -83,10 +83,10 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
   const plainTitleForRename = useMemo(() => {
     // Basic HTML stripping for simple span tags.
     // If thread.title is undefined or null, treat as empty string before replace.
-    return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '');
-  }, [thread.title]);
+    return (thread.title || '').replace(/<span[^>]*>|<\/span>/g, '')
+  }, [thread.title])
 
-  const [title, setTitle] = useState(plainTitleForRename || 'New Thread');
+  const [title, setTitle] = useState(plainTitleForRename || 'New Thread')
 
   return (
     <div
@@ -148,7 +148,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
               onOpenChange={(open) => {
                 if (!open) {
                   setOpenDropdown(false)
-                  setTitle(plainTitleForRename || 'New Thread');
+                  setTitle(plainTitleForRename || 'New Thread')
                 }
               }}
             >
@@ -268,9 +268,14 @@ function ThreadList({ threads }: ThreadListProps) {
 
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
-      if (a.order && b.order) return a.order - b.order
-
-      // Later on top
+      // If both have order, sort by order (ascending, so lower order comes first)
+      if (a.order != null && b.order != null) {
+        return a.order - b.order
+      }
+      // If only one has order, prioritize the one with order (order comes first)
+      if (a.order != null) return -1
+      if (b.order != null) return 1
+      // If neither has order, sort by updated time (newer threads first)
       return (b.updated || 0) - (a.updated || 0)
     })
   }, [threads])
@@ -293,17 +298,25 @@ function ThreadList({ threads }: ThreadListProps) {
         const { active, over } = event
         if (active.id !== over?.id && over) {
           // Access Global State
-          const allThreadsMap = useThreads.getState().threads;
-          const allThreadsArray = Object.values(allThreadsMap);
+          const allThreadsMap = useThreads.getState().threads
+          const allThreadsArray = Object.values(allThreadsMap)
 
           // Calculate Global Indices
-          const oldIndexInGlobal = allThreadsArray.findIndex((t) => t.id === active.id);
-          const newIndexInGlobal = allThreadsArray.findIndex((t) => t.id === over.id);
+          const oldIndexInGlobal = allThreadsArray.findIndex(
+            (t) => t.id === active.id
+          )
+          const newIndexInGlobal = allThreadsArray.findIndex(
+            (t) => t.id === over.id
+          )
 
           // Reorder Globally and Update State
           if (oldIndexInGlobal !== -1 && newIndexInGlobal !== -1) {
-            const reorderedGlobalThreads = arrayMove(allThreadsArray, oldIndexInGlobal, newIndexInGlobal);
-            setThreads(reorderedGlobalThreads);
+            const reorderedGlobalThreads = arrayMove(
+              allThreadsArray,
+              oldIndexInGlobal,
+              newIndexInGlobal
+            )
+            setThreads(reorderedGlobalThreads)
           }
         }
       }}

@@ -1,6 +1,6 @@
 import { useMessages } from '@/hooks/useMessages'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useThreads } from '@/hooks/useThreads'
+
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { fetchMessages } from '@/services/messages'
 import { fetchModels } from '@/services/models'
@@ -15,7 +15,7 @@ import { getAssistants } from '@/services/assistants'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
-  const { setThreads } = useThreads()
+
   const { setMessages } = useMessages()
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
@@ -35,7 +35,6 @@ export function DataProvider() {
 
   useEffect(() => {
     fetchThreads().then((threads) => {
-      setThreads(threads)
       threads.forEach((thread) =>
         fetchMessages(thread.id).then((messages) =>
           setMessages(thread.id, messages)
