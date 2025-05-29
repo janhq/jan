@@ -1,5 +1,14 @@
 [
   {
+    "key": "auto_unload_models",
+    "title": "Auto-Unload Old Models",
+    "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
     "key": "cont_batching",
     "title": "Continuous Batching",
     "description": "Allows processing prompts in parallel with text generation, which usually improves performance.",

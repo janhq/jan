@@ -37,6 +37,7 @@ enum Settings {
   use_mmap = 'use_mmap',
   cpu_threads = 'cpu_threads',
   huggingfaceToken = 'hugging-face-access-token',
+  auto_unload_models = 'auto_unload_models',
 }
 
 type LoadedModelResponse = { data: { engine: string; id: string }[] }
@@ -61,7 +62,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   use_mmap: boolean = true
   cache_type: string = 'f16'
   cpu_threads?: number
-
+  auto_unload_models: boolean = true
   /**
    * The URL for making inference requests.
    */
@@ -126,6 +127,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
     this.cache_type = await this.getSetting<string>(Settings.cache_type, 'f16')
+    this.auto_unload_models = await this.getSetting<boolean>(
+      Settings.auto_unload_models,
+      true
+    )
     const threads_number = Number(
       await this.getSetting<string>(Settings.cpu_threads, '')
     )
@@ -176,6 +181,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
     } else if (key === Settings.huggingfaceToken) {
       this.updateCortexConfig({ huggingface_token: value })
+    } else if (key === Settings.auto_unload_models) {
+      this.auto_unload_models = value as boolean
     }
   }
 
@@ -205,7 +212,15 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       console.log(`Model ${model.id} already loaded`)
       return
     }
-
+    if (this.auto_unload_models) {
+      // Unload the last used model if it is not the same as the current one
+      for (const lastUsedModel of loadedModels) {
+        if (lastUsedModel.id !== model.id) {
+          console.log(`Unloading last used model: ${lastUsedModel.id}`)
+          await this.unloadModel(lastUsedModel as Model)
+        }
+      }
+    }
     return await this.apiInstance().then((api) =>
       api
         .post('v1/models/start', {

@@ -341,7 +341,7 @@ export const postMessageProcessing = async (
       }
       builder.addToolMessage(result.content[0]?.text ?? '', toolCall.id)
       // update message metadata
-      return message
     }
+    return message
   }
 }
