@@ -1,11 +1,11 @@
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env, sync::Arc, time::Duration};
 
 use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::{Map, Value};
+use std::fs;
 use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::{process::Command, sync::Mutex};
-use std::{fs};
+use tokio::{process::Command, sync::Mutex, time::timeout};
 
 use super::{cmd::get_jan_data_folder_path, state::AppState};
 
@@ -13,6 +13,8 @@ const DEFAULT_MCP_CONFIG: &str = r#"{
     "mcpServers": {}
 }"#;
 
+// Timeout for MCP tool calls (30 seconds)
+const MCP_TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs MCP commands by reading configuration from a JSON file and initializing servers
 ///
@@ -202,8 +204,18 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> 
     let mut all_tools: Vec<Tool> = Vec::new();
 
     for (_, service) in servers.iter() {
-        // List tools
-        let tools = service.list_all_tools().await.map_err(|e| e.to_string())?;
+        // List tools with timeout
+        let tools_future = service.list_all_tools();
+        let tools = match timeout(MCP_TOOL_CALL_TIMEOUT, tools_future).await {
+            Ok(result) => result.map_err(|e| e.to_string())?,
+            Err(_) => {
+                log::warn!(
+                    "Listing tools timed out after {} seconds",
+                    MCP_TOOL_CALL_TIMEOUT.as_secs()
+                );
+                continue; // Skip this server and continue with others
+            }
+        };
 
         for tool in tools {
             all_tools.push(tool);
@@ -240,13 +252,22 @@ pub async fn call_tool(
     for (_, service) in servers.iter() {
         if let Ok(tools) = service.list_all_tools().await {
             if tools.iter().any(|t| t.name == tool_name) {
-                return service
-                    .call_tool(CallToolRequestParam {
-                        name: tool_name.into(),
-                        arguments,
-                    })
-                    .await
-                    .map_err(|e| e.to_string());
+                println!("Found tool {} in server", tool_name);
+
+                // Call the tool with timeout
+                let tool_call = service.call_tool(CallToolRequestParam {
+                    name: tool_name.clone().into(),
+                    arguments,
+                });
+
+                return match timeout(MCP_TOOL_CALL_TIMEOUT, tool_call).await {
+                    Ok(result) => result.map_err(|e| e.to_string()),
+                    Err(_) => Err(format!(
+                        "Tool call '{}' timed out after {} seconds",
+                        tool_name,
+                        MCP_TOOL_CALL_TIMEOUT.as_secs()
+                    )),
+                };
             }
         }
     }
