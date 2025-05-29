@@ -126,11 +126,9 @@ export const useChat = () => {
         let availableTools = selectedModel?.capabilities?.includes('tools')
           ? tools
           : []
-        while (
-          !isCompleted &&
-          !abortController.signal.aborted
-          // TODO: Max attempts can be set in the provider settings later
-        ) {
+        // TODO: Later replaced by Agent setup?
+        const followUpWithToolUse = true
+        while (!isCompleted && !abortController.signal.aborted) {
           const completion = await sendCompletion(
             activeThread,
             provider,
@@ -200,7 +198,8 @@ export const useChat = () => {
           addMessage(updatedMessage ?? finalContent)
 
           isCompleted = !toolCalls.length
-          availableTools = []
+          // Do not create agent loop if there is no need for it
+          if (!followUpWithToolUse) availableTools = []
         }
       } catch (error) {
         toast.error(
