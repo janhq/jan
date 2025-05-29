@@ -240,264 +240,293 @@ function ProviderDetail() {
                 />
               </div>
 
-              {/* Settings */}
-              <Card>
-                {provider?.settings.map((setting, settingIndex) => {
-                  // Use the DynamicController component
-                  const actionComponent = (
-                    <div className="mt-2">
-                      <DynamicControllerSetting
-                        controllerType={setting.controller_type}
-                        controllerProps={setting.controller_props}
-                        className={cn(
-                          setting.key === 'api-key' &&
-                            'third-step-setup-remote-provider'
-                        )}
-                        onChange={(newValue) => {
-                          if (provider) {
-                            const newSettings = [...provider.settings]
-                            // Handle different value types by forcing the type
-                            // Use type assertion to bypass type checking
+              <div
+                className={cn(
+                  'flex flex-col gap-3',
+                  provider &&
+                    provider.provider === 'llama.cpp' &&
+                    'flex-col-reverse'
+                )}
+              >
+                {/* Settings */}
+                <Card>
+                  {provider?.settings.map((setting, settingIndex) => {
+                    // Use the DynamicController component
+                    const actionComponent = (
+                      <div className="mt-2">
+                        <DynamicControllerSetting
+                          controllerType={setting.controller_type}
+                          controllerProps={setting.controller_props}
+                          className={cn(
+                            setting.key === 'api-key' &&
+                              'third-step-setup-remote-provider'
+                          )}
+                          onChange={(newValue) => {
+                            if (provider) {
+                              const newSettings = [...provider.settings]
+                              // Handle different value types by forcing the type
+                              // Use type assertion to bypass type checking
 
-                            ;(
-                              newSettings[settingIndex].controller_props as {
-                                value: string | boolean | number
+                              ;(
+                                newSettings[settingIndex].controller_props as {
+                                  value: string | boolean | number
+                                }
+                              ).value = newValue
+
+                              // Create update object with updated settings
+                              const updateObj: Partial<ModelProvider> = {
+                                settings: newSettings,
                               }
-                            ).value = newValue
-
-                            // Create update object with updated settings
-                            const updateObj: Partial<ModelProvider> = {
-                              settings: newSettings,
-                            }
-                            // Check if this is an API key or base URL setting and update the corresponding top-level field
-                            const settingKey = setting.key
-                            if (
-                              settingKey === 'api-key' &&
-                              typeof newValue === 'string'
-                            ) {
-                              updateObj.api_key = newValue
-                            } else if (
-                              settingKey === 'base-url' &&
-                              typeof newValue === 'string'
-                            ) {
-                              updateObj.base_url = newValue
-                            }
-                            updateSettings(
-                              providerName,
-                              updateObj.settings ?? []
-                            )
-                            updateProvider(providerName, {
-                              ...provider,
-                              ...updateObj,
-                            })
-                          }
-                        }}
-                      />
-                    </div>
-                  )
-
-                  return (
-                    <CardItem
-                      key={settingIndex}
-                      title={setting.title}
-                      column={
-                        setting.controller_type === 'input' &&
-                        setting.controller_props.type !== 'number'
-                          ? true
-                          : false
-                      }
-                      description={
-                        <RenderMarkdown
-                          className="![>p]:text-main-view-fg/70 select-none"
-                          content={setting.description}
-                          components={{
-                            // Make links open in a new tab
-                            a: ({ ...props }) => {
-                              return (
-                                <a
-                                  {...props}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className={cn(
-                                    setting.key === 'api-key' &&
-                                      'second-step-setup-remote-provider'
-                                  )}
-                                />
+                              // Check if this is an API key or base URL setting and update the corresponding top-level field
+                              const settingKey = setting.key
+                              if (
+                                settingKey === 'api-key' &&
+                                typeof newValue === 'string'
+                              ) {
+                                updateObj.api_key = newValue
+                              } else if (
+                                settingKey === 'base-url' &&
+                                typeof newValue === 'string'
+                              ) {
+                                updateObj.base_url = newValue
+                              }
+                              updateSettings(
+                                providerName,
+                                updateObj.settings ?? []
                               )
-                            },
-                            p: ({ ...props }) => (
-                              <p {...props} className="!mb-0" />
-                            ),
+                              updateProvider(providerName, {
+                                ...provider,
+                                ...updateObj,
+                              })
+                            }
                           }}
                         />
-                      }
-                      actions={actionComponent}
-                    />
-                  )
-                })}
+                      </div>
+                    )
 
-                <DeleteProvider provider={provider} />
-              </Card>
+                    return (
+                      <CardItem
+                        key={settingIndex}
+                        title={setting.title}
+                        column={
+                          setting.controller_type === 'input' &&
+                          setting.controller_props.type !== 'number'
+                            ? true
+                            : false
+                        }
+                        description={
+                          <RenderMarkdown
+                            className="![>p]:text-main-view-fg/70 select-none"
+                            content={setting.description}
+                            components={{
+                              // Make links open in a new tab
+                              a: ({ ...props }) => {
+                                return (
+                                  <a
+                                    {...props}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={cn(
+                                      setting.key === 'api-key' &&
+                                        'second-step-setup-remote-provider'
+                                    )}
+                                  />
+                                )
+                              },
+                              p: ({ ...props }) => (
+                                <p {...props} className="!mb-0" />
+                              ),
+                            }}
+                          />
+                        }
+                        actions={actionComponent}
+                      />
+                    )
+                  })}
 
-              {/* Models */}
-              <Card
-                header={
-                  <div className="flex items-center justify-between mb-4">
-                    <h1 className="text-main-view-fg font-medium text-base">
-                      Models
-                    </h1>
-                    <div className="flex items-center gap-2">
-                      {provider && provider.provider !== 'llama.cpp' && (
-                        <>
+                  <DeleteProvider provider={provider} />
+                </Card>
+
+                {/* Models */}
+                <Card
+                  header={
+                    <div className="flex items-center justify-between mb-4">
+                      <h1 className="text-main-view-fg font-medium text-base">
+                        Models
+                      </h1>
+                      <div className="flex items-center gap-2">
+                        {provider && provider.provider !== 'llama.cpp' && (
+                          <>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="hover:no-underline"
+                              onClick={handleRefreshModels}
+                              disabled={refreshingModels}
+                            >
+                              <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                                {refreshingModels ? (
+                                  <IconLoader
+                                    size={18}
+                                    className="text-main-view-fg/50 animate-spin"
+                                  />
+                                ) : (
+                                  <IconRefresh
+                                    size={18}
+                                    className="text-main-view-fg/50"
+                                  />
+                                )}
+                                <span className="text-main-view-fg/70">
+                                  {refreshingModels
+                                    ? 'Refreshing...'
+                                    : 'Refresh'}
+                                </span>
+                              </div>
+                            </Button>
+                            <DialogAddModel provider={provider} />
+                          </>
+                        )}
+                        {provider && provider.provider === 'llama.cpp' && (
                           <Button
                             variant="link"
                             size="sm"
                             className="hover:no-underline"
-                            onClick={handleRefreshModels}
-                            disabled={refreshingModels}
+                            onClick={async () => {
+                              const selectedFile = await open({
+                                multiple: false,
+                                directory: false,
+                                filters: [
+                                  {
+                                    name: 'GGUF',
+                                    extensions: ['gguf'],
+                                  },
+                                ],
+                              })
+
+                              if (selectedFile) {
+                                try {
+                                  await importModel(selectedFile)
+                                } catch (error) {
+                                  console.error(
+                                    'Failed to import model:',
+                                    error
+                                  )
+                                } finally {
+                                  // Refresh the provider to update the models list
+                                  getProviders().then(setProviders)
+                                  toast.success('Import Model', {
+                                    id: `import-model-${provider.provider}`,
+                                    description: `Model ${provider.provider} has been imported successfully.`,
+                                  })
+                                }
+                              }
+                            }}
                           >
-                            <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
-                              {refreshingModels ? (
-                                <IconLoader
-                                  size={18}
-                                  className="text-main-view-fg/50 animate-spin"
-                                />
-                              ) : (
-                                <IconRefresh
-                                  size={18}
-                                  className="text-main-view-fg/50"
-                                />
-                              )}
+                            <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1.5 py-1 gap-1 -mr-2">
+                              <IconFolderPlus
+                                size={18}
+                                className="text-main-view-fg/50"
+                              />
                               <span className="text-main-view-fg/70">
-                                {refreshingModels ? 'Refreshing...' : 'Refresh'}
+                                Import
                               </span>
                             </div>
                           </Button>
-                          <DialogAddModel provider={provider} />
-                        </>
-                      )}
-                      {provider && provider.provider === 'llama.cpp' && (
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="hover:no-underline"
-                          onClick={async () => {
-                            const selectedFile = await open({
-                              multiple: false,
-                              directory: false,
-                              filters: [
-                                {
-                                  name: 'GGUF',
-                                  extensions: ['gguf'],
-                                },
-                              ],
-                            })
-
-                            if (selectedFile) {
-                              try {
-                                await importModel(selectedFile)
-                              } catch (error) {
-                                console.error('Failed to import model:', error)
-                              } finally {
-                                // Refresh the provider to update the models list
-                                getProviders().then(setProviders)
-                                toast.success('Import Model', {
-                                  id: `import-model-${provider.provider}`,
-                                  description: `Model ${provider.provider} has been imported successfully.`,
-                                })
-                              }
-                            }
-                          }}
-                        >
-                          <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
-                            <IconFolderPlus
-                              size={18}
-                              className="text-main-view-fg/50"
-                            />
-                            <span className="text-main-view-fg/70">Import</span>
-                          </div>
-                        </Button>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                }
-              >
-                {provider?.models.length ? (
-                  provider?.models.map((model, modelIndex) => {
-                    const capabilities = model.capabilities || []
-                    return (
-                      <CardItem
-                        key={modelIndex}
-                        title={
-                          <div className="flex items-center gap-2">
-                            <h1 className="font-medium">{model.id}</h1>
-                            <Capabilities capabilities={capabilities} />
-                          </div>
-                        }
-                        actions={
-                          <div className="flex items-center gap-1">
-                            {provider && provider.provider === 'llama.cpp' && (
-                              <div className="mr-1">
-                                {activeModels.some(
-                                  (activeModel) => activeModel.id === model.id
-                                ) ? (
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() => handleStopModel(model.id)}
-                                  >
-                                    Stop
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    disabled={loadingModels.includes(model.id)}
-                                    onClick={() => handleStartModel(model.id)}
-                                  >
-                                    {loadingModels.includes(model.id) ? (
-                                      <div className="flex items-center gap-2">
-                                        <IconLoader
-                                          size={16}
-                                          className="animate-spin"
-                                        />
-                                      </div>
+                  }
+                >
+                  {provider?.models.length ? (
+                    provider?.models.map((model, modelIndex) => {
+                      const capabilities = model.capabilities || []
+                      return (
+                        <CardItem
+                          key={modelIndex}
+                          title={
+                            <div className="flex items-center gap-2">
+                              <h1 className="font-medium">{model.id}</h1>
+                              <Capabilities capabilities={capabilities} />
+                            </div>
+                          }
+                          actions={
+                            <div className="flex items-center gap-1">
+                              <DialogEditModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {model.settings && (
+                                <ModelSetting
+                                  provider={provider}
+                                  model={model}
+                                />
+                              )}
+                              <DialogDeleteModel
+                                provider={provider}
+                                modelId={model.id}
+                              />
+                              {provider &&
+                                provider.provider === 'llama.cpp' && (
+                                  <div className="ml-2">
+                                    {activeModels.some(
+                                      (activeModel) =>
+                                        activeModel.id === model.id
+                                    ) ? (
+                                      <Button
+                                        size="sm"
+                                        variant="destructive"
+                                        onClick={() =>
+                                          handleStopModel(model.id)
+                                        }
+                                      >
+                                        Stop
+                                      </Button>
                                     ) : (
-                                      'Start'
+                                      <Button
+                                        size="sm"
+                                        disabled={loadingModels.includes(
+                                          model.id
+                                        )}
+                                        onClick={() =>
+                                          handleStartModel(model.id)
+                                        }
+                                      >
+                                        {loadingModels.includes(model.id) ? (
+                                          <div className="flex items-center gap-2">
+                                            <IconLoader
+                                              size={16}
+                                              className="animate-spin"
+                                            />
+                                          </div>
+                                        ) : (
+                                          'Start'
+                                        )}
+                                      </Button>
                                     )}
-                                  </Button>
+                                  </div>
                                 )}
-                              </div>
-                            )}
-                            <DialogEditModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
-                            {model.settings && (
-                              <ModelSetting provider={provider} model={model} />
-                            )}
-                            <DialogDeleteModel
-                              provider={provider}
-                              modelId={model.id}
-                            />
-                          </div>
-                        }
-                      />
-                    )
-                  })
-                ) : (
-                  <div className="-mt-2">
-                    <div className="flex items-center gap-2 text-left-panel-fg/80">
-                      <h6 className="font-medium text-base">No model found</h6>
+                            </div>
+                          }
+                        />
+                      )
+                    })
+                  ) : (
+                    <div className="-mt-2">
+                      <div className="flex items-center gap-2 text-left-panel-fg/80">
+                        <h6 className="font-medium text-base">
+                          No model found
+                        </h6>
+                      </div>
+                      <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
+                        Available models will be listed here. If you don't have
+                        any models yet, visit the&nbsp;
+                        <Link to={route.hub}>Hub</Link>
+                        &nbsp;to download.
+                      </p>
                     </div>
-                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      Available models will be listed here. If you don't have
-                      any models yet, visit the&nbsp;
-                      <Link to={route.hub}>Hub</Link>
-                      &nbsp;to download.
-                    </p>
-                  </div>
-                )}
-              </Card>
+                  )}
+                </Card>
+              </div>
             </div>
           </div>
         </div>
