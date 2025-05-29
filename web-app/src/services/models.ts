@@ -1,4 +1,5 @@
 import { ExtensionManager } from '@/lib/extension'
+import { normalizeProvider } from '@/lib/models'
 import { EngineManager, ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
@@ -257,6 +258,38 @@ export const stopModel = async (model: string, provider?: string) => {
     console.error('Failed to stop model:', error)
     return []
   }
+}
+
+/**
+ * @fileoverview Helper function to start a model.
+ * This function loads the model from the provider.
+ * Provider's chat function will handle loading the model.
+ * @param provider
+ * @param model
+ * @returns
+ */
+export const startModel = async (
+  provider: ProviderObject,
+  model: string,
+  abortController?: AbortController
+): Promise<void> => {
+  const providerObj = EngineManager.instance().get(
+    normalizeProvider(provider.provider)
+  )
+  const modelObj = provider.models.find((m) => m.id === model)
+  if (providerObj && modelObj)
+    return providerObj?.loadModel(
+      {
+        id: modelObj.id,
+        settings: Object.fromEntries(
+          Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
+            key,
+            value.controller_props?.value, // assuming each setting is { value: ... }
+          ])
+        ),
+      },
+      abortController
+    )
 }
 
 /**

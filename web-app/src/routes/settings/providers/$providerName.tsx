@@ -5,7 +5,12 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
 import { Switch } from '@/components/ui/switch'
 import { open } from '@tauri-apps/plugin-dialog'
-import { importModel } from '@/services/models'
+import {
+  getActiveModels,
+  importModel,
+  startModel,
+  stopModel,
+} from '@/services/models'
 import {
   createFileRoute,
   Link,
@@ -27,9 +32,11 @@ import { route } from '@/constants/routes'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { updateSettings } from '@/services/providers'
 import { Button } from '@/components/ui/button'
-import { IconFolderPlus } from '@tabler/icons-react'
+import { IconFolderPlus, IconLoader } from '@tabler/icons-react'
 import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
+import { ActiveModel } from '@/types/models'
+import { useEffect, useState } from 'react'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -67,11 +74,25 @@ const steps = [
 
 function ProviderDetail() {
   const { step } = useSearch({ from: Route.id })
+  const [activeModels, setActiveModels] = useState<ActiveModel[]>([])
+  const [loadingModels, setLoadingModels] = useState<string[]>([])
   const { providerName } = useParams({ from: Route.id })
   const { getProviderByName, setProviders, updateProvider } = useModelProvider()
   const provider = getProviderByName(providerName)
   const isSetup = step === 'setup_remote_provider'
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Initial data fetch
+    getActiveModels().then(setActiveModels)
+
+    // Set up interval for real-time updates
+    const intervalId = setInterval(() => {
+      getActiveModels().then(setActiveModels)
+    }, 5000)
+
+    return () => clearInterval(intervalId)
+  }, [setActiveModels])
 
   const handleJoyrideCallback = (data: CallBackProps) => {
     const { status } = data
@@ -81,6 +102,38 @@ function ProviderDetail() {
         to: route.home,
       })
     }
+  }
+
+  const handleStartModel = (modelId: string) => {
+    // Add model to loading state
+    setLoadingModels((prev) => [...prev, modelId])
+    if (provider)
+      startModel(provider, modelId)
+        .then(() => {
+          setActiveModels((prevModels) => [
+            ...prevModels,
+            { id: modelId } as ActiveModel,
+          ])
+        })
+        .catch((error) => {
+          console.error('Error starting model:', error)
+        })
+        .finally(() => {
+          // Remove model from loading state
+          setLoadingModels((prev) => prev.filter((id) => id !== modelId))
+        })
+  }
+
+  const handleStopModel = (modelId: string) => {
+    stopModel(modelId)
+      .then(() => {
+        setActiveModels((prevModels) =>
+          prevModels.filter((model) => model.id !== modelId)
+        )
+      })
+      .catch((error) => {
+        console.error('Error stopping model:', error)
+      })
   }
 
   return (
@@ -301,6 +354,38 @@ function ProviderDetail() {
                         }
                         actions={
                           <div className="flex items-center gap-1">
+                            {provider && provider.provider === 'llama.cpp' && (
+                              <div className="mr-1">
+                                {activeModels.some(
+                                  (activeModel) => activeModel.id === model.id
+                                ) ? (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => handleStopModel(model.id)}
+                                  >
+                                    Stop
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    disabled={loadingModels.includes(model.id)}
+                                    onClick={() => handleStartModel(model.id)}
+                                  >
+                                    {loadingModels.includes(model.id) ? (
+                                      <div className="flex items-center gap-2">
+                                        <IconLoader
+                                          size={16}
+                                          className="animate-spin"
+                                        />
+                                      </div>
+                                    ) : (
+                                      'Start'
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            )}
                             <DialogEditModel
                               provider={provider}
                               modelId={model.id}
@@ -323,7 +408,7 @@ function ProviderDetail() {
                       <h6 className="font-medium text-base">No model found</h6>
                     </div>
                     <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      Available models will be listed here. If you don’t have
+                      Available models will be listed here. If you don't have
                       any models yet, visit the&nbsp;
                       <Link to={route.hub}>Hub</Link>
                       &nbsp;to download.

@@ -15,7 +15,6 @@ import {
   newUserThreadContent,
   postMessageProcessing,
   sendCompletion,
-  startModel,
 } from '@/lib/completion'
 import { CompletionMessagesBuilder } from '@/lib/messages'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
@@ -25,7 +24,7 @@ import { getTools } from '@/services/mcp'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
-import { stopModel } from '@/services/models'
+import { stopModel, startModel } from '@/services/models'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()

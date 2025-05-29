@@ -19,7 +19,6 @@ interface AvatarEmojiProps {
 
 export const AvatarEmoji: React.FC<AvatarEmojiProps> = ({
   avatar,
-  fallback = '👋',
   imageClassName = 'w-5 h-5 object-contain',
   textClassName = 'text-base',
 }) => {
@@ -27,5 +26,5 @@ export const AvatarEmoji: React.FC<AvatarEmojiProps> = ({
     return <img src={avatar} alt="Custom avatar" className={imageClassName} />
   }
 
-  return <span className={textClassName}>{avatar || fallback}</span>
+  return <span className={textClassName}>{avatar}</span>
 }

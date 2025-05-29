@@ -164,39 +164,6 @@ export const isCompletionResponse = (
 }
 
 /**
- * @fileoverview Helper function to start a model.
- * This function loads the model from the provider.
- * @deprecated This function is deprecated and will be removed in the future.
- * Provider's chat function will handle loading the model.
- * @param provider
- * @param model
- * @returns
- */
-export const startModel = async (
-  provider: ProviderObject,
-  model: string,
-  abortController?: AbortController
-): Promise<void> => {
-  const providerObj = EngineManager.instance().get(
-    normalizeProvider(provider.provider)
-  )
-  const modelObj = provider.models.find((m) => m.id === model)
-  if (providerObj && modelObj)
-    return providerObj?.loadModel(
-      {
-        id: modelObj.id,
-        settings: Object.fromEntries(
-          Object.entries(modelObj.settings ?? {}).map(([key, value]) => [
-            key,
-            value.controller_props?.value, // assuming each setting is { value: ... }
-          ])
-        ),
-      },
-      abortController
-    )
-}
-
-/**
  * @fileoverview Helper function to stop a model.
  * This function unloads the model from the provider.
  * @param provider
