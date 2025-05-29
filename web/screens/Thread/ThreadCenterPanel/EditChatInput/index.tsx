@@ -6,6 +6,7 @@ import { MessageStatus, ThreadMessage } from '@janhq/core'
 import { TextArea, Button, Modal, ModalClose } from '@janhq/joi'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 
+import { clone } from 'lodash'
 import { twMerge } from 'tailwind-merge'
 
 import { editPromptAtom } from '@/containers/Providers/Jotai'
@@ -22,7 +23,6 @@ import {
   activeThreadAtom,
   getActiveThreadIdAtom,
 } from '@/helpers/atoms/Thread.atom'
-import { clone } from 'lodash'
 
 type Props = {
   message: ThreadMessage
