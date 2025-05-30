@@ -98,22 +98,22 @@ export async function downloadBackend(backend: string, version: string): Promise
   ]
 
   // also download CUDA runtime + cuBLAS + cuBLASLt if needed
-  if (backend.includes('cu11.7') && (await _isCudaInstalled('11.7'))) {
+  if (backend.includes('cu11.7') && !(await _isCudaInstalled('11.7'))) {
     downloadItems.push({
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([llamacppPath, 'lib', 'cuda.tar.gz']),
+      save_path: await joinPath([llamacppPath, 'lib', 'cuda11.tar.gz']),
     })
-  } else if (backend.includes('cu12.0') && (await _isCudaInstalled('12.0'))) {
+  } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
     downloadItems.push({
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([llamacppPath, 'lib', 'cuda.tar.gz']),
+      save_path: await joinPath([llamacppPath, 'lib', 'cuda12.tar.gz']),
     })
   }
 
   const taskId = `llamacpp-${version}-${backend}`.replace(/\./g, '-')
   const downloadType = 'Engine'
 
-  console.log(`Downloading backend ${backend} version ${version}: ${downloadItems}`)
+  console.log(`Downloading backend ${backend} version ${version}: ${JSON.stringify(downloadItems)}`)
   let downloadCompleted = false
   try {
     const onProgress = (transferred: number, total: number) => {
