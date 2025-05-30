@@ -21,12 +21,14 @@ interface MarkdownProps {
   className?: string
   components?: Components
   enableRawHtml?: boolean
+  isUser?: boolean
 }
 
 function RenderMarkdownComponent({
   content,
   enableRawHtml,
   className,
+  isUser,
   components,
 }: MarkdownProps) {
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
@@ -71,7 +73,7 @@ function RenderMarkdownComponent({
 
         const shouldVirtualize = code.split('\n').length > 300
 
-        return !isInline ? (
+        return !isInline && !isUser ? (
           <div className="relative overflow-hidden border rounded-md border-main-view-fg/2">
             <div className="flex items-center justify-between px-4 py-2 bg-main-view/10">
               <span className="font-medium text-xs font-sans">
@@ -135,9 +137,7 @@ function RenderMarkdownComponent({
             </SyntaxHighlighter>
           </div>
         ) : (
-          <code className={className} {...props}>
-            {children}
-          </code>
+          <code className={cn(className)}>{children}</code>
         )
       },
     }),

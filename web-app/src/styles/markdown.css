@@ -41,6 +41,10 @@
   p {
     line-height: 1.6;
     margin-bottom: 1em;
+
+    &:last-child {
+      margin-bottom: 0;
+    }
   }
 
   strong {
@@ -103,17 +107,17 @@
   /* Code */
   code {
     font-family: monospace;
-    @apply bg-main-view-fg/10 text-main-view-fg;
+    @apply bg-main-view-fg/6 text-main-view-fg;
     padding: 0.2em 0.4em;
     border-radius: 3px;
   }
 
   pre {
     font-family: monospace;
-    @apply bg-main-view-fg/10 text-main-view-fg;
+    @apply bg-main-view-fg/6 text-main-view-fg;
     overflow-x: auto;
     border-radius: 8px;
-    margin-bottom: 1em;
+    margin-bottom: 8px;
   }
 
   pre code {
