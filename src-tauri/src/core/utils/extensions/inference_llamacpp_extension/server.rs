@@ -83,7 +83,13 @@ pub async fn load_llama_model(
         )));
     }
 
-    let port = 8080; // Default port
+    let port = args
+        .iter()
+        .position(|arg| arg == "--port")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_default();
+
     let modelPath = args
         .iter()
         .position(|arg| arg == "-m")
