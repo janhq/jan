@@ -185,10 +185,14 @@ export const ThreadContent = memo(
       <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
           <div className="w-full">
-            <div className="flex justify-end w-full text-start break-words whitespace-normal">
-              <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[70%]">
-                <div className="whitespace-pre-wrap select-text">
-                  {item.content?.[0].text.value}
+            <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
+              <div className="bg-main-view-fg/4 relative text-main-view-fg p-2 rounded-md inline-block max-w-[80%] ">
+                <div className="select-text">
+                  <RenderMarkdown
+                    content={item.content?.[0].text.value}
+                    components={linkComponents}
+                    isUser
+                  />
                 </div>
               </div>
             </div>
@@ -274,7 +278,6 @@ export const ThreadContent = memo(
                 <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
                   <AvatarEmoji
                     avatar={assistant?.avatar}
-                    fallback="👋"
                     imageClassName="w-6 h-6 object-contain"
                     textClassName="text-base"
                   />
