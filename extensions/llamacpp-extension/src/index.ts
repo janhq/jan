@@ -167,8 +167,8 @@ export default class llamacpp_extension extends AIEngine {
 
   private async generateApiKey(modelId: string): Promise<string> {
     const hash = await invoke<string>('generate_api_key', {
-        modelId: modelId,
-        apiSecret: this.apiSecret
+      modelId: modelId,
+      apiSecret: this.apiSecret
     })
     return hash
   }
@@ -229,7 +229,19 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async import(modelId: string, opts: ImportOptions): Promise<void> {
-    // TODO: sanitize modelId
+    const isValidModelId = (id: string) => {
+      // only allow alphanumeric, underscore, hyphen, and dot characters in modelId
+      if (!/^[a-zA-Z0-9/_\-\.]+$/.test(id)) return false
+
+      // check for empty parts or path traversal
+      const parts = id.split('/')
+      return parts.every(s => s !== '' && s !== '.' && s !== '..')
+    }
+
+    if (!isValidModelId(modelId)) {
+      throw new Error(`Invalid modelId: ${modelId}. Only alphanumeric and / _ - . characters are allowed.`)
+    }
+
     let configPath = await joinPath([this.modelsBasePath, this.provider, modelId, 'model.yml'])
     if (await fs.existsSync(configPath)) {
       throw new Error(`Model ${modelId} already exists`)
@@ -344,7 +356,7 @@ export default class llamacpp_extension extends AIEngine {
     args.push('-a', opts.modelId)
     args.push('--port', String(opts.port || 8080)) // Default port if not specified
     if (opts.mmprojPath) {
-        args.push('--mmproj', opts.mmprojPath)
+      args.push('--mmproj', opts.mmprojPath)
     }
 
     if (cfg.ctx_size !== undefined) {
