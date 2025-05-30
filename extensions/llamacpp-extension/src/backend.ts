@@ -175,17 +175,16 @@ async function _getSupportedFeatures() {
 
   // TODO: HIP and SYCL
   for (const gpuInfo of sysInfo.gpus) {
+    const driverVersion = gpuInfo.driver_version
+
     if (gpuInfo.nvidiaInfo?.compute_capability) {
-      if (gpuInfo.driver_version.localeCompare(minCuda11DriverVersion) >= 0) {
+      if (compareVersions(driverVersion, minCuda11DriverVersion) >= 0)
         features.cuda11 = true
-      }
-      if (gpuInfo.driver_version.localeCompare(minCuda12DriverVersion) >= 0) {
+      if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
-      }
     }
-    if (gpuInfo.vulkanInfo?.api_version) {
-      features.vulkan = true
-    }
+
+    if (gpuInfo.vulkanInfo?.api_version) features.vulkan = true
   }
 
   return features
@@ -224,4 +223,18 @@ async function _isCudaInstalled(version: string): Promise<boolean> {
   const janDataFolderPath = await getJanDataFolderPath()
   const cudartPath = await joinPath([janDataFolderPath, 'llamacpp', 'lib', libname])
   return await fs.existsSync(cudartPath)
+}
+
+function compareVersions(a: string, b: string): number {
+  const aParts = a.split('.').map(Number);
+  const bParts = b.split('.').map(Number);
+  const len = Math.max(aParts.length, bParts.length);
+
+  for (let i = 0; i < len; i++) {
+    const x = aParts[i] || 0;
+    const y = bParts[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
 }
