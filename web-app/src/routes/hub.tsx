@@ -91,11 +91,18 @@ function Hub() {
 
     // Apply search filter
     if (searchValue.length) {
-      filtered = filtered?.filter((e) =>
-        fuzzySearch(
-          searchValue.replace(/\s+/g, '').toLowerCase(),
-          e.id.toLowerCase()
-        )
+      filtered = filtered?.filter(
+        (e) =>
+          fuzzySearch(
+            searchValue.replace(/\s+/g, '').toLowerCase(),
+            e.id.toLowerCase()
+          ) ||
+          e.models.some((model) =>
+            fuzzySearch(
+              searchValue.replace(/\s+/g, '').toLowerCase(),
+              model.id.toLowerCase()
+            )
+          )
       )
     }
 
