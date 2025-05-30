@@ -105,7 +105,7 @@ export async function downloadBackend(backend: string, version: string): Promise
     })
   } else if (backend.includes('cu12.0') && (await _isCudaInstalled('12.0'))) {
     downloadItems.push({
-      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu12.4-x64.tar.gz`,
+      url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu12.0-x64.tar.gz`,
       save_path: await joinPath([llamacppPath, 'lib', 'cuda.tar.gz']),
     })
   }
