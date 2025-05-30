@@ -117,7 +117,7 @@ export default class llamacpp_extension extends AIEngine {
     let config = {}
     for (const item of SETTINGS) {
       const defaultValue = item.controllerProps.value
-      config[item.key] = this.getSetting<typeof defaultValue>(item.key, defaultValue)
+      config[item.key] = await this.getSetting<typeof defaultValue>(item.key, defaultValue)
     }
     this.config = config as LlamacppConfig
 
