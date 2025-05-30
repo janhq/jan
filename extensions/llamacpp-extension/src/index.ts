@@ -478,7 +478,7 @@ export default class llamacpp_extension extends AIEngine {
       const sInfo = await invoke<sessionInfo>('load_llama_model', { backendPath, args })
 
       // Store the session info for later use
-      this.activeSessions.set(sInfo.sessionId, sInfo)
+      this.activeSessions.set(sInfo.pid, sInfo)
 
       return sInfo
     } catch (error) {
@@ -487,17 +487,22 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  override async unload(sessionId: string): Promise<unloadResult> {
+  override async unload(modelId: string): Promise<unloadResult> {
+    const sInfo: sessionInfo = this.findSessionByModel(modelId)
+    if (!sInfo) {
+      throw new Error(`No active session found for model: ${modelId}`)
+    }
+    const pid = sInfo.pid
     try {
       // Pass the PID as the session_id
       const result = await invoke<unloadResult>('unload_llama_model', {
-        sessionId, // Using PID as session ID
+        pid
       })
 
       // If successful, remove from active sessions
       if (result.success) {
-        this.activeSessions.delete(sessionId)
-        console.log(`Successfully unloaded model with PID ${sessionId}`)
+        this.activeSessions.delete(pid)
+        console.log(`Successfully unloaded model with PID ${pid}`)
       } else {
         console.warn(`Failed to unload model: ${result.error}`)
       }
@@ -577,13 +582,9 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private findSessionByModel(modelName: string): sessionInfo | undefined {
-    for (const [, session] of this.activeSessions) {
-      if (session.modelName === modelName) {
-        return session
-      }
-    }
-    return undefined
+  private findSessionByModel(modelId: string): sessionInfo | undefined {
+      return Array.from(this.activeSessions.values())
+    .find(session => session.modelId === modelId);
   }
 
   override async chat(
@@ -595,9 +596,10 @@ export default class llamacpp_extension extends AIEngine {
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
+    console.log(`Using api-key: ${sessionInfo.apiKey}`)
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sessionInfo.api_key}`,
+      'Authorization': `Bearer ${sessionInfo.apiKey}`,
     }
 
     const body = JSON.stringify(opts)
