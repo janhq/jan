@@ -5,12 +5,12 @@ on:
       ref:
         required: true
         type: string
-        default: "refs/heads/main"
+        default: 'refs/heads/main'
       public_provider:
         required: true
         type: string
         default: none
-        description: "none: build only, github: build and publish to github, aws s3: build and publish to aws s3"
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
       new_version:
         required: true
         type: string
@@ -18,7 +18,7 @@ on:
       cortex_api_port:
         required: false
         type: string
-        default: ""
+        default: ''
       upload_url:
         required: false
         type: string
@@ -181,8 +181,8 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: auto
-          AWS_EC2_METADATA_DISABLED: "true"
-          AWS_MAX_ATTEMPTS: "5"
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_MAX_ATTEMPTS: '5'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           # CORTEX_API_PORT: ${{ inputs.cortex_api_port }}
@@ -243,8 +243,8 @@ jobs:
           cd ./src-tauri/target/release/bundle/nsis
 
           # Upload for electron updater for nightly
-          #aws s3 cp ./latest.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest.yml
-          #aws s3 cp ./beta.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta.yml
+          aws s3 cp ./latest.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest.yml
+          aws s3 cp ./beta.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta.yml
 
           # Upload for tauri updater
           aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
@@ -253,7 +253,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
-          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       ## Upload to github release for stable release
       - name: Upload release assert if public provider is github

@@ -18,7 +18,7 @@ on:
       cortex_api_port:
         required: false
         type: string
-        default: ""
+        default: ''
       upload_url:
         required: false
         type: string
@@ -172,7 +172,7 @@ jobs:
             echo $APP_IMAGE
             rm -f $APP_IMAGE
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $APP_IMAGE
-          fi          
+          fi
 
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -259,8 +259,8 @@ jobs:
           cd ./src-tauri/target/release/bundle
 
           # Upload for electron updater for nightly
-          # aws s3 cp ./latest-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-linux.yml
-          # aws s3 cp ./beta-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-linux.yml
+          aws s3 cp ./latest-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-linux.yml
+          aws s3 cp ./beta-linux.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-linux.yml
 
           # Upload for tauri updater
           aws s3 cp ./appimage/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_amd64.AppImage
@@ -271,7 +271,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
-          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       ## Upload to github release for stable release
       - name: Upload release assert if public provider is github

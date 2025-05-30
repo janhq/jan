@@ -18,7 +18,7 @@ on:
       cortex_api_port:
         required: false
         type: string
-        default: ""
+        default: ''
       upload_url:
         required: false
         type: string
@@ -88,8 +88,8 @@ jobs:
       - name: Install ctoml
         run: |
           cargo install ctoml
-      
-      - name: Create bun and uv universal 
+
+      - name: Create bun and uv universal
         run: |
           mkdir -p ./src-tauri/resources/bin/
           cd ./src-tauri/resources/bin/
@@ -101,7 +101,7 @@ jobs:
           cp -f bun-darwin-aarch64/bun bun-aarch64-apple-darwin 
           cp -f bun-darwin-x64/bun bun-x86_64-apple-darwin
           cp -f bun-universal-apple-darwin bun
-          
+
           curl -L -o uv-x86_64.tar.gz https://github.com/astral-sh/uv/releases/download/0.6.17/uv-x86_64-apple-darwin.tar.gz
           curl -L -o uv-arm64.tar.gz https://github.com/astral-sh/uv/releases/download/0.6.17/uv-aarch64-apple-darwin.tar.gz
           tar -xzf uv-x86_64.tar.gz
@@ -157,7 +157,7 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.CODE_SIGN_P12_BASE64 }}
           p12-password: ${{ secrets.CODE_SIGN_P12_PASSWORD }}
-      
+
       - name: Build app
         run: |
           rustup target add x86_64-apple-darwin
@@ -187,7 +187,6 @@ jobs:
           name: jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.dmg
           path: |
             ./src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-
 
       ## create zip file and latest-mac.yml for mac electron auto updater
       - name: create zip file and latest-mac.yml for mac electron auto updater
@@ -241,10 +240,10 @@ jobs:
           cd ./src-tauri/target/universal-apple-darwin/release/bundle
 
           # Upload for electron updater for nightly
-          #aws s3 cp ./macos/latest-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-mac.yml
-          #aws s3 cp ./macos/beta-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-mac.yml
-          #aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-          #aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig
+          aws s3 cp ./macos/latest-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-mac.yml
+          aws s3 cp ./macos/beta-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-mac.yml
+          aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
+          aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig
 
           # Upload for tauri updater
           aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg
@@ -254,7 +253,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
-          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       ## Upload to github release for stable release
       - name: Upload release assert if public provider is github
