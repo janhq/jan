@@ -28,7 +28,7 @@ function ThreadDetail() {
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const lastScrollTopRef = useRef(0)
-  const { currentThreadId, getThreadById, setCurrentThreadId } = useThreads()
+  const { currentThreadId, setCurrentThreadId } = useThreads()
   const { setCurrentAssistant, assistants } = useAssistant()
   const { setMessages } = useMessages()
   const { streamingContent } = useAppState()
@@ -39,10 +39,8 @@ function ThreadDetail() {
     }))
   )
 
-  const thread = useMemo(
-    () => getThreadById(threadId),
-    [threadId, getThreadById]
-  )
+  // Subscribe directly to the thread data to ensure updates when model changes
+  const thread = useThreads(useShallow((state) => state.threads[threadId]))
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isFirstRender = useRef(true)
   const messagesCount = useMemo(() => messages?.length ?? 0, [messages])
