@@ -41,7 +41,7 @@ type ServerResult<T> = Result<T, serverError>;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct sessionInfo {
     pub pid: String, // opaque handle for unload/chat
-    pub port: u16,   // llama-server output port
+    pub port: String,   // llama-server output port
     pub modelId: String,
     pub modelPath: String, // path of the loaded model
     pub apiKey: String,
@@ -147,7 +147,7 @@ pub async fn load_llama_model(
 // --- Unload Command ---
 #[tauri::command]
 pub async fn unload_llama_model(
-    session_id: String,
+    pid: String,
     state: State<'_, AppState>,
 ) -> ServerResult<unloadResult> {
     let mut process_lock = state.llama_server_process.lock().await;
@@ -157,13 +157,13 @@ pub async fn unload_llama_model(
         let process_pid = child.id().map(|pid| pid.to_string()).unwrap_or_default();
 
         // Check if the session_id matches the PID
-        if session_id != process_pid && !session_id.is_empty() && !process_pid.is_empty() {
+        if pid != process_pid && !pid.is_empty() && !process_pid.is_empty() {
             // Put the process back in the lock since we're not killing it
             *process_lock = Some(child);
 
             log::warn!(
                 "Session ID mismatch: provided {} vs process {}",
-                session_id,
+                pid,
                 process_pid
             );
 
@@ -171,7 +171,7 @@ pub async fn unload_llama_model(
                 success: false,
                 error: Some(format!(
                     "Session ID mismatch: provided {} doesn't match process {}",
-                    session_id, process_pid
+                    pid, process_pid
                 )),
             });
         }

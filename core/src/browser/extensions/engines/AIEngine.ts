@@ -108,11 +108,11 @@ export interface loadOptions {
 }
 
 export interface sessionInfo {
-  sessionId: string // opaque handle for unload/chat
+  pid: string // opaque handle for unload/chat
   port: number // llama-server output port (corrected from portid)
-  modelName: string, //name of the model
+  modelId: string, //name of the model
   modelPath: string // path of the loaded model
-  api_key: string
+  apiKey: string
 }
 
 // 4. /unload
