@@ -1,8 +1,8 @@
 [
   {
-    "key": "backend",
-    "title": "Backend",
-    "description": "Backend for llama.cpp",
+    "key": "version_backend",
+    "title": "Version & Backend",
+    "description": "Version and Backend for llama.cpp",
     "controllerType": "dropdown",
     "controllerProps": {
       "value": "none",

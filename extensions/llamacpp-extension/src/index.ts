@@ -29,7 +29,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 
 type LlamacppConfig = {
-  backend: string
+  version_backend: string
   n_gpu_layers: number
   ctx_size: number
   threads: number
@@ -100,14 +100,14 @@ export default class llamacpp_extension extends AIEngine {
 
     // update backend settings
     for (let item of settings) {
-      if (item.key === 'backend') {
+      if (item.key === 'version_backend') {
         // NOTE: is there a race condition between when tauri IPC is available
         // and when the extension is loaded?
-        const backends = await listSupportedBackends()
-        console.log('Available backends:', backends)
-        item.controllerProps.options = backends.map((b) => {
+        const version_backends = await listSupportedBackends()
+        console.log('Available version/backends:', version_backends)
+        item.controllerProps.options = version_backends.map((b) => {
           const { version, backend } = b
-          const key = `${version}-${backend}`
+          const key = `${version}/${backend}`
           return { value: key, name: key }
         })
       }
@@ -156,9 +156,7 @@ export default class llamacpp_extension extends AIEngine {
 
     if (key === 'backend') {
       const valueStr = value as string
-      const idx = valueStr.indexOf('-')
-      const version = valueStr.slice(0, idx)
-      const backend = valueStr.slice(idx + 1)
+      const [version, backend] = valueStr.split('/')
 
       const closure = async () => {
         const isInstalled = await isBackendInstalled(backend, version)
@@ -391,11 +389,19 @@ export default class llamacpp_extension extends AIEngine {
     const args: string[] = []
     const cfg = this.config
     const sysInfo = await window.core.api.getSystemInfo()
-    const [backend, version] = cfg.backend.split('-')
+    const [version, backend] = cfg.version_backend.split('/')
+    if (!version || !backend) {
+      // TODO: sometimes version_backend is not set correctly. to investigate
+      throw new Error(
+        `Invalid version/backend format: ${cfg.version_backend}. Expected format: <version>/<backend>`
+      )
+    }
+
     const exe_name =
       sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
+    const janDataFolderPath = await getJanDataFolderPath()
     const backendPath = await joinPath([
-      await getJanDataFolderPath(),
+      janDataFolderPath,
       'llamacpp',
       'backends',
       backend,
@@ -404,30 +410,30 @@ export default class llamacpp_extension extends AIEngine {
       'bin',
       exe_name,
     ])
-    const modelPath = await joinPath([
+    const modelConfigPath = await joinPath([
       this.modelsBasePath,
       this.provider,
       modelId,
+      'model.yml',
     ])
-    const modelConfigPath = await joinPath([modelPath, 'model.yml'])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', {
-      modelConfigPath,
-    })
+    const modelConfig = await invoke<ModelConfig>('read_yaml', { path: modelConfigPath })
     const port = await this.getRandomPort()
 
     // disable llama-server webui
     args.push('--no-webui')
     // update key for security; TODO: (qnixsynapse) Make it more secure
     const api_key = await this.generateApiKey(modelId)
-    args.push(`--api-key ${api_key}`)
+    args.push('--api-key', api_key)
 
     // model option is required
-    // TODO: llama.cpp extension lookup model path based on modelId
-    args.push('-m', modelConfig.model_path)
+    // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
+    const modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
+    args.push('-m', modelPath)
     args.push('-a', modelId)
-    args.push('--port', String(port)) // Default port if not specified
+    args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
-      args.push('--mmproj', modelConfig.mmproj_path)
+      const mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
+      args.push('--mmproj', mmprojPath)
     }
 
     if (cfg.ctx_size !== undefined) {
@@ -468,10 +474,7 @@ export default class llamacpp_extension extends AIEngine {
     console.log('Calling Tauri command llama_load with args:', args)
 
     try {
-      const sInfo = await invoke<sessionInfo>('load_llama_model', {
-        backendPath: backendPath,
-        args: args,
-      })
+      const sInfo = await invoke<sessionInfo>('load_llama_model', { backendPath, args })
 
       // Store the session info for later use
       this.activeSessions.set(sInfo.sessionId, sInfo)
