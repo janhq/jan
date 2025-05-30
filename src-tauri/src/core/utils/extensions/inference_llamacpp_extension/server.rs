@@ -58,7 +58,7 @@ pub struct unloadResult {
 pub async fn load_llama_model(
     _app_handle: AppHandle,      // Get the AppHandle
     state: State<'_, AppState>, // Access the shared state
-    engineBasePath: String,
+    backendPath: String,
     args: Vec<String>,          // Arguments from the frontend
 ) -> ServerResult<sessionInfo> {
     let mut process_lock = state.llama_server_process.lock().await;
