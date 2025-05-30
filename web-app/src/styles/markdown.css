@@ -129,7 +129,6 @@
 
   /* Tables */
   table {
-    width: max-content;
     border-collapse: collapse;
     margin-bottom: 1em;
     border-spacing: 0;
