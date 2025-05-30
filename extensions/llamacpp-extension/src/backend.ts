@@ -154,9 +154,9 @@ export async function downloadBackend(backend: string, version: string): Promise
 async function _getSupportedFeatures() {
   const sysInfo = await window.core.api.getSystemInfo()
   const features = {
-    avx: 'avx' in sysInfo.cpu.extensions,
-    avx2: 'avx2' in sysInfo.cpu.extensions,
-    avx512: 'avx512_f' in sysInfo.cpu.extensions,
+    avx: sysInfo.cpu.extensions.includes('avx'),
+    avx2: sysInfo.cpu.extensions.includes('avx2'),
+    avx512: sysInfo.cpu.extensions.includes('avx512'),
     cuda11: false,
     cuda12: false,
     vulkan: false,
@@ -177,14 +177,14 @@ async function _getSupportedFeatures() {
   for (const gpuInfo of sysInfo.gpus) {
     const driverVersion = gpuInfo.driver_version
 
-    if (gpuInfo.nvidiaInfo?.compute_capability) {
+    if (gpuInfo.nvidia_info?.compute_capability) {
       if (compareVersions(driverVersion, minCuda11DriverVersion) >= 0)
         features.cuda11 = true
       if (compareVersions(driverVersion, minCuda12DriverVersion) >= 0)
         features.cuda12 = true
     }
 
-    if (gpuInfo.vulkanInfo?.api_version) features.vulkan = true
+    if (gpuInfo.vulkan_info?.api_version) features.vulkan = true
   }
 
   return features
