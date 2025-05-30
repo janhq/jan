@@ -1,12 +1,12 @@
+use base64::{engine::general_purpose, Engine as _};
+use hmac::{Hmac, Mac};
+use serde::{Deserialize, Serialize};
+use sha2::Sha256;
 use std::path::PathBuf;
-use serde::{Serialize, Deserialize};
 use tauri::{AppHandle, State}; // Import Manager trait
+use thiserror;
 use tokio::process::Command;
 use uuid::Uuid;
-use thiserror;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use base64::{Engine as _, engine::general_purpose};
 
 use crate::core::state::AppState;
 
@@ -16,8 +16,8 @@ type HmacSha256 = Hmac<Sha256>;
 pub enum serverError {
     #[error("Server is already running")]
     AlreadyRunning,
-  //  #[error("Server is not running")]
-  //  NotRunning,
+    //  #[error("Server is not running")]
+    //  NotRunning,
     #[error("Failed to locate server binary: {0}")]
     BinaryNotFound(String),
     #[error("IO error: {0}")]
@@ -40,10 +40,10 @@ type ServerResult<T> = Result<T, serverError>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct sessionInfo {
-    pub pid: String,       // opaque handle for unload/chat
-    pub port: u16, // llama-server output port
+    pub pid: String, // opaque handle for unload/chat
+    pub port: u16,   // llama-server output port
     pub modelId: String,
-    pub modelPath: String,       // path of the loaded model
+    pub modelPath: String, // path of the loaded model
     pub apiKey: String,
 }
 
@@ -56,10 +56,10 @@ pub struct unloadResult {
 // --- Load Command ---
 #[tauri::command]
 pub async fn load_llama_model(
-    _app_handle: AppHandle,      // Get the AppHandle
+    _app_handle: AppHandle,     // Get the AppHandle
     state: State<'_, AppState>, // Access the shared state
-    backendPath: String,
-    args: Vec<String>,          // Arguments from the frontend
+    backend_path: &str,
+    args: Vec<String>, // Arguments from the frontend
 ) -> ServerResult<sessionInfo> {
     let mut process_lock = state.llama_server_process.lock().await;
 
@@ -68,25 +68,25 @@ pub async fn load_llama_model(
         return Err(serverError::AlreadyRunning);
     }
 
-    log::info!("Attempting to launch server at path: {:?}", engineBasePath);
+    log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using arguments: {:?}", args);
 
-    let server_path_buf = PathBuf::from(&engineBasePath);
+    let server_path_buf = PathBuf::from(backend_path);
     if !server_path_buf.exists() {
         log::error!(
             "Server binary not found at expected path: {:?}",
-            engineBasePath
+            backend_path
         );
         return Err(serverError::BinaryNotFound(format!(
             "Binary not found at {:?}",
-            engineBasePath
+            backend_path
         )));
     }
 
     let port = 8080; // Default port
 
     // Configure the command to run the server
-    let mut command = Command::new(engineBasePath);
+    let mut command = Command::new(backend_path);
 
     let modelPath = args[2].replace("-m", "");
     let apiKey = args[1].replace("--api-key", "");
@@ -124,7 +124,10 @@ pub async fn load_llama_model(
 
 // --- Unload Command ---
 #[tauri::command]
-pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) -> ServerResult<unloadResult> {
+pub async fn unload_llama_model(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> ServerResult<unloadResult> {
     let mut process_lock = state.llama_server_process.lock().await;
     // Take the child process out of the Option, leaving None in its place
     if let Some(mut child) = process_lock.take() {
@@ -144,8 +147,10 @@ pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) 
 
             return Ok(unloadResult {
                 success: false,
-                error: Some(format!("Session ID mismatch: provided {} doesn't match process {}", 
-                    session_id, process_pid)),
+                error: Some(format!(
+                    "Session ID mismatch: provided {} doesn't match process {}",
+                    session_id, process_pid
+                )),
             });
         }
 
@@ -177,7 +182,7 @@ pub async fn unload_llama_model(session_id: String, state: State<'_, AppState>) 
     } else {
         log::warn!("Attempted to unload server, but no process was running");
 
-        // If no process is running but client thinks there is, 
+        // If no process is running but client thinks there is,
         // still report success since the end state is what they wanted
         Ok(unloadResult {
             success: true,
@@ -198,4 +203,3 @@ pub fn generate_api_key(modelId: String, apiSecret: String) -> Result<String, St
     let hash = general_purpose::STANDARD.encode(code_bytes);
     Ok(hash)
 }
-
