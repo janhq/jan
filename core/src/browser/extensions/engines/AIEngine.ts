@@ -178,7 +178,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Loads a model into memory
    */
-  abstract load(opts: loadOptions): Promise<sessionInfo>
+  abstract load(modelId: string): Promise<sessionInfo>
 
   /**
    * Unloads a model from memory
