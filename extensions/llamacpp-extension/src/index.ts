@@ -359,6 +359,7 @@ export default class llamacpp_extension extends AIEngine {
       name: modelId,
       size_bytes,
     } as ModelConfig
+    await fs.mkdir(await joinPath([janDataFolderPath, modelDir]))
     await invoke<void>('write_yaml', {
       data: modelConfig,
       savePath: `${modelDir}/model.yml`,
