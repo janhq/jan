@@ -84,13 +84,29 @@ pub async fn load_llama_model(
     }
 
     let port = 8080; // Default port
+    let modelPath = args
+        .iter()
+        .position(|arg| arg == "-m")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_default();
+
+    let apiKey = args
+        .iter()
+        .position(|arg| arg == "--api-key")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_default();
+
+    let modelId = args
+        .iter()
+        .position(|arg| arg == "-a")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_default();
 
     // Configure the command to run the server
     let mut command = Command::new(backend_path);
-
-    let modelPath = args[2].replace("-m", "");
-    let apiKey = args[1].replace("--api-key", "");
-    let modelId = args[3].replace("-a", "");
     command.args(args);
 
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
@@ -192,7 +208,6 @@ pub async fn unload_llama_model(
 }
 
 // crypto
-#[allow(clippy::camel_case_variables)]
 #[tauri::command]
 pub fn generate_api_key(modelId: String, apiSecret: String) -> Result<String, String> {
     let mut mac = HmacSha256::new_from_slice(apiSecret.as_bytes())

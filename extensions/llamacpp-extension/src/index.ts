@@ -491,7 +491,7 @@ export default class llamacpp_extension extends AIEngine {
     try {
       // Pass the PID as the session_id
       const result = await invoke<unloadResult>('unload_llama_model', {
-        session_id: sessionId, // Using PID as session ID
+        sessionId, // Using PID as session ID
       })
 
       // If successful, remove from active sessions
