@@ -15,45 +15,31 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
   const os_type = sysInfo.os_type
   const arch = sysInfo.cpu.arch
 
+  const features = await _getSupportedFeatures()
   const sysType = `${os_type}-${arch}`
   let backends = []
-
-  let supportsAvx = 'avx' in sysInfo.cpu.extensions
-  let supportsAvx2 = 'avx2' in sysInfo.cpu.extensions
-  let supportsAvx512 = 'avx512_f' in sysInfo.cpu.extensions
-
-  // TODO: HIP and SYCL
-  let supportsCuda = false
-  let supportsVulkan = false
-  for (const gpuInfo of sysInfo.gpus) {
-    if (gpuInfo.nvidiaInfo?.compute_capability) {
-      supportsCuda = true
-    }
-    if (gpuInfo.vulkanInfo?.api_version) {
-      supportsVulkan = true
-    }
-  }
 
   // NOTE: menloresearch's tags for llama.cpp builds are a bit different
   // TODO: fetch versions from the server?
   // TODO: select CUDA version based on driver version
-  // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
   if (sysType == 'windows-x86_64') {
     // NOTE: if a machine supports AVX2, should we include noavx and avx?
     backends.push('win-noavx-x64')
-    if (supportsAvx) backends.push('win-avx-x64')
-    if (supportsAvx2) backends.push('win-avx2-x64')
-    if (supportsAvx512) backends.push('win-avx512-x64')
-    if (supportsCuda) backends.push('win-avx2-cuda-cu11.7-x64', 'win-avx2-cuda-cu12.0-x64')
-    if (supportsVulkan) backends.push('win-vulkan-x64')
+    if (features.avx) backends.push('win-avx-x64')
+    if (features.avx2) backends.push('win-avx2-x64')
+    if (features.avx512) backends.push('win-avx512-x64')
+    if (features.cuda11) backends.push('win-avx2-cuda-cu11.7-x64')
+    if (features.cuda12) backends.push('win-avx2-cuda-cu12.0-x64')
+    if (features.vulkan) backends.push('win-vulkan-x64')
   }
   else if (sysType == 'linux-x86_64') {
     backends.push('linux-noavx-x64')
-    if (supportsAvx) backends.push('linux-avx-x64')
-    if (supportsAvx2) backends.push('linux-avx2-x64')
-    if (supportsAvx512) backends.push('linux-avx512-x64')
-    if (supportsCuda) backends.push('linux-avx2-cuda-cu11.7-x64', 'linux-avx2-cuda-cu12.0-x64')
-    if (supportsVulkan) backends.push('linux-vulkan-x64')
+    if (features.avx) backends.push('linux-avx-x64')
+    if (features.avx2) backends.push('linux-avx2-x64')
+    if (features.avx512) backends.push('linux-avx512-x64')
+    if (features.cuda11) backends.push('linux-avx2-cuda-cu11.7-x64')
+    if (features.cuda12) backends.push('linux-avx2-cuda-cu12.0-x64')
+    if (features.vulkan) backends.push('linux-vulkan-x64')
   }
   else if (sysType === 'macos-x86_64') {
     backends.push('macos-x64')
@@ -163,6 +149,46 @@ export async function downloadBackend(backend: string, version: string): Promise
     events.emit('onFileDownloadError', { modelId: taskId, downloadType })
     throw error
   }
+}
+
+async function _getSupportedFeatures() {
+  const sysInfo = await window.core.api.getSystemInfo()
+  const features = {
+    avx: 'avx' in sysInfo.cpu.extensions,
+    avx2: 'avx2' in sysInfo.cpu.extensions,
+    avx512: 'avx512_f' in sysInfo.cpu.extensions,
+    cuda11: false,
+    cuda12: false,
+    vulkan: false,
+  }
+
+  // https://docs.nvidia.com/deploy/cuda-compatibility/#cuda-11-and-later-defaults-to-minor-version-compatibility
+  let minCuda11DriverVersion
+  let minCuda12DriverVersion
+  if (sysInfo.os_type === 'linux') {
+    minCuda11DriverVersion = '450.80.02'
+    minCuda12DriverVersion = '525.60.13'
+  } else if (sysInfo.os_type === 'windows') {
+    minCuda11DriverVersion = '452.39'
+    minCuda12DriverVersion = '527.41'
+  }
+
+  // TODO: HIP and SYCL
+  for (const gpuInfo of sysInfo.gpus) {
+    if (gpuInfo.nvidiaInfo?.compute_capability) {
+      if (gpuInfo.driver_version.localeCompare(minCuda11DriverVersion) >= 0) {
+        features.cuda11 = true
+      }
+      if (gpuInfo.driver_version.localeCompare(minCuda12DriverVersion) >= 0) {
+        features.cuda12 = true
+      }
+    }
+    if (gpuInfo.vulkanInfo?.api_version) {
+      features.vulkan = true
+    }
+  }
+
+  return features
 }
 
 async function _fetchGithubReleases(
