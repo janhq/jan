@@ -8,29 +8,33 @@ import { invoke } from '@tauri-apps/api/core'
  */
 export const migrateData = async () => {
   if (!localStorage.getItem('migration_completed')) {
-    const oldData = await invoke('get_legacy_browser_data')
-    for (const [key, value] of Object.entries(
-      oldData as unknown as Record<string, string>
-    )) {
-      if (value !== null && value !== undefined) {
-        if (Object.keys(useLocalApiServer.getState()).includes(key)) {
-          useLocalApiServer.setState({
-            ...useLocalApiServer.getState(),
-            [key]: value.replace(/"/g, ''),
-          })
-        } else if (Object.keys(useProxyConfig.getState()).includes(key)) {
-          useProxyConfig.setState({
-            ...useProxyConfig.getState(),
-            [key]: value.replace(/"/g, ''),
-          })
-        } else if (Object.keys(useProductAnalytic.getState()).includes(key)) {
-          useProductAnalytic.setState({
-            ...useProductAnalytic.getState(),
-            [key]: value.replace(/"/g, ''),
-          })
+    try {
+      const oldData = await invoke('get_legacy_browser_data')
+      for (const [key, value] of Object.entries(
+        oldData as unknown as Record<string, string>
+      )) {
+        if (value !== null && value !== undefined) {
+          if (Object.keys(useLocalApiServer.getState()).includes(key)) {
+            useLocalApiServer.setState({
+              ...useLocalApiServer.getState(),
+              [key]: value.replace(/"/g, ''),
+            })
+          } else if (Object.keys(useProxyConfig.getState()).includes(key)) {
+            useProxyConfig.setState({
+              ...useProxyConfig.getState(),
+              [key]: value.replace(/"/g, ''),
+            })
+          } else if (Object.keys(useProductAnalytic.getState()).includes(key)) {
+            useProductAnalytic.setState({
+              ...useProductAnalytic.getState(),
+              [key]: value.replace(/"/g, ''),
+            })
+          }
         }
       }
+    } catch (error) {
+      console.error('Migration failed:', error)
+      localStorage.setItem('migration_completed', 'true')
     }
-    localStorage.setItem('migration_completed', 'true')
   }
 }
