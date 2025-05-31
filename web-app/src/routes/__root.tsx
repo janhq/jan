@@ -17,6 +17,7 @@ import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
+import ToolApproval from '@/containers/dialogs/ToolApproval'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -92,6 +93,7 @@ function RootLayout() {
       {isLocalAPIServerLogsRoute ? <LogsLayout /> : <AppLayout />}
       {/* <TanStackRouterDevtools position="bottom-right" /> */}
       <CortexFailureDialog />
+      <ToolApproval />
     </Fragment>
   )
 }

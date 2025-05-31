@@ -26,6 +26,8 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { stopModel, startModel } from '@/services/models'
 
+import { useToolApproval } from '@/hooks/useToolApproval'
+
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
   const {
@@ -38,6 +40,8 @@ export const useChat = () => {
     setAbortController,
   } = useAppState()
   const { currentAssistant } = useAssistant()
+
+  const { approvedTools, showApprovalModal } = useToolApproval()
 
   const { getProviderByName, selectedModel, selectedProvider } =
     useModelProvider()
@@ -193,7 +197,9 @@ export const useChat = () => {
             toolCalls,
             builder,
             finalContent,
-            abortController
+            abortController,
+            approvedTools,
+            showApprovalModal
           )
           addMessage(updatedMessage ?? finalContent)
 
@@ -225,6 +231,8 @@ export const useChat = () => {
       tools,
       updateLoadingModel,
       updateTokenSpeed,
+      approvedTools,
+      showApprovalModal,
     ]
   )
 
