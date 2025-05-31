@@ -97,10 +97,7 @@ const ProvidersMenu = ({
 
         <Dialog>
           <DialogTrigger asChild>
-            <div
-              className="bg-main-view flex cursor-pointer px-4 my-1.5 items-center gap-1.5  text-main-view-fg/80"
-              onClick={() => {}}
-            >
+            <div className="bg-main-view flex cursor-pointer px-4 my-1.5 items-center gap-1.5  text-main-view-fg/80">
               <IconCirclePlus size={18} />
               <span className="capitalize">Add Provider</span>
             </div>
