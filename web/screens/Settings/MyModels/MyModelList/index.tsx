@@ -1,9 +1,10 @@
 import { memo, useState } from 'react'
 
-import { Model } from '@janhq/core'
+import { Model, openFileExplorer } from '@janhq/core'
 import { Badge, Button, Tooltip, useClickOutside } from '@janhq/joi'
 import { useAtom } from 'jotai'
 import {
+  FolderIcon,
   MoreVerticalIcon,
   PlayIcon,
   StopCircleIcon,
@@ -13,7 +14,6 @@ import { twMerge } from 'tailwind-merge'
 
 import { useActiveModel } from '@/hooks/useActiveModel'
 import useDeleteModel from '@/hooks/useDeleteModel'
-
 import { useGetEngines } from '@/hooks/useEngineManagement'
 
 import { toGigabytes } from '@/utils/converter'
@@ -170,6 +170,24 @@ const MyModelList = ({ model }: Props) => {
                         </span>
                       }
                     />
+                    <div
+                      className="flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]"
+                      onClick={() => {
+                        // open model location
+                        const location = model.files?.[0]
+                        if (location) {
+                          const tokens = location.split('/')
+                          const path = tokens
+                            .slice(0, tokens.length - 1)
+                            .join('/')
+                          // Use openFileExplorer from @janhq/core to open the folder
+                          openFileExplorer(path)
+                        }
+                      }}
+                    >
+                      <FolderIcon size={16} />
+                      <span className="text-bold">Open Model Location</span>
+                    </div>
                     <div
                       className={twMerge(
                         'flex cursor-pointer items-center space-x-2 px-4 py-2 hover:bg-[hsla(var(--dropdown-menu-hover-bg))]',
