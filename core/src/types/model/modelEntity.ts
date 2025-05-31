@@ -106,6 +106,10 @@ export type Model = {
    * The model engine.
    */
   engine: InferenceEngine
+  /**
+   * The local files for imported models.
+   */
+  files?: string[]
 }
 
 // Represents metadata associated with a model
