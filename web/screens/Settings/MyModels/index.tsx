@@ -4,7 +4,7 @@ import { useDropzone } from 'react-dropzone'
 
 import Image from 'next/image'
 
-import { InferenceEngine } from '@janhq/core'
+import { InferenceEngine, joinPath, openFileExplorer } from '@janhq/core'
 
 import { Button, ScrollArea } from '@janhq/joi'
 
@@ -12,6 +12,7 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import {
   ChevronDownIcon,
   ChevronUpIcon,
+  FolderIcon,
   UploadCloudIcon,
   UploadIcon,
 } from 'lucide-react'
@@ -41,16 +42,19 @@ import {
   showEngineListModelAtom,
 } from '@/helpers/atoms/Model.atom'
 import { showScrollBarAtom } from '@/helpers/atoms/Setting.atom'
+import { janDataFolderPathAtom } from '@/helpers/atoms/AppConfig.atom'
 
 const MyModels = () => {
   const downloadedModels = useAtomValue(downloadedModelsAtom)
   const setImportModelStage = useSetAtom(setImportModelStageAtom)
+  const janDataFolder = useAtomValue(janDataFolderPathAtom)
   const { onDropModels } = useDropModelBinaries()
   const [searchText, setSearchText] = useState('')
   const [showEngineListModel, setShowEngineListModel] = useAtom(
     showEngineListModelAtom
   )
   const showScrollBar = useAtomValue(showScrollBarAtom)
+  const [modelFolder, setModelFolder] = useState('')
 
   const { engines } = useGetEngines()
 
@@ -58,7 +62,7 @@ const MyModels = () => {
     (engine: string) =>
       Object.values(engines ?? {})
         .flat()
-        .find((e) => e.name === engine)?.type === 'local' || false,
+        .find((e) => e.engine === engine)?.type === 'local' || false,
     [engines]
   )
 
@@ -123,6 +127,18 @@ const MyModels = () => {
     ])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setShowEngineListModel, engines])
+
+  useEffect(() => {
+    const getModelPath = async () => {
+      const modelPath = await joinPath([janDataFolder, 'models', 'imported'])
+      setModelFolder(modelPath)
+    }
+    getModelPath()
+  }, [janDataFolder])
+
+  const onOpenModelFolderClick = () => {
+    openFileExplorer(modelFolder)
+  }
 
   return (
     <div {...getRootProps()} className="h-full w-full">
@@ -210,6 +226,18 @@ const MyModels = () => {
                             engine={engine}
                             isConfigured={isConfigured(engine)}
                           />
+                        )}
+                        {isLocalEngine(engine) && (
+                          <Button
+                            title="Open Jan Imported Models Folder"
+                            theme="icon"
+                            onClick={() => onOpenModelFolderClick()}
+                          >
+                            <FolderIcon
+                              size={14}
+                              className="text-[hsla(var(--text-secondary))]"
+                            />
+                          </Button>
                         )}
                         {!showModel ? (
                           <Button theme="icon" onClick={onClickChevron}>
