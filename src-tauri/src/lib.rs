@@ -51,6 +51,7 @@ pub fn run() {
             core::cmd::handle_app_update,
             core::cmd::change_app_data_folder,
             core::cmd::reset_cortex_restart_count,
+            core::migration::get_legacy_browser_data,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,

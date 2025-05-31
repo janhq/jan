@@ -12,6 +12,7 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { getMCPConfig } from '@/services/mcp'
 import { useAssistant } from '@/hooks/useAssistant'
 import { getAssistants } from '@/services/assistants'
+import { migrateData } from '@/utils/migration'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
@@ -30,6 +31,7 @@ export function DataProvider() {
     getAssistants().then((data) =>
       setAssistants((data as unknown as Assistant[]) ?? [])
     )
+    migrateData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

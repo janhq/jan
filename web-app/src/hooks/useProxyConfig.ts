@@ -52,7 +52,7 @@ export const useProxyConfig = create<ProxyConfigState>()(
       setNoProxy: (noProxy) => set({ noProxy }),
     }),
     {
-      name: localStorageKey.settingLocalApiServer,
+      name: localStorageKey.settingProxyConfig,
       storage: createJSONStorage(() => localStorage),
     }
   )
