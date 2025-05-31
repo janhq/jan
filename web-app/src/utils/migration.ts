@@ -34,7 +34,7 @@ export const migrateData = async () => {
       }
     } catch (error) {
       console.error('Migration failed:', error)
-      localStorage.setItem('migration_completed', 'true')
     }
+    localStorage.setItem('migration_completed', 'true')
   }
 }
