@@ -267,7 +267,7 @@ jobs:
           asset_name: latest.yml
           asset_content_type: text/yaml
 
-      - name: Upload release assert if public provider is github
+      - name: Upload release asset if public provider is github
         if: inputs.channel == 'beta'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
