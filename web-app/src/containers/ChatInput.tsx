@@ -41,6 +41,7 @@ const ChatInput = ({
   model,
   className,
   showSpeedToken = true,
+  initialMessage,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
@@ -434,7 +435,7 @@ const ChatInput = ({
 
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
-                    <DropdownToolsAvailable>
+                    <DropdownToolsAvailable initialMessage={initialMessage}>
                       {(isOpen, toolsCount) => (
                         <div
                           className={cn(

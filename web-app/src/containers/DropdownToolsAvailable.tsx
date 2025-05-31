@@ -12,6 +12,7 @@ import { getTools } from '@/services/mcp'
 import { MCPTool } from '@/types/completion'
 
 import { useThreads } from '@/hooks/useThreads'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
 
 import React from 'react'
 
@@ -22,46 +23,94 @@ interface DropdownToolsAvailableProps {
 
 export default function DropdownToolsAvailable({
   children,
+  initialMessage = false,
 }: DropdownToolsAvailableProps) {
   const [tools, setTools] = useState<MCPTool[]>([])
-  const [loading, setLoading] = useState(true)
-
   const [isOpen, setIsOpen] = useState(false)
   const { getCurrentThread } = useThreads()
+  const {
+    isToolAvailable,
+    setToolAvailableForThread,
+    setDefaultAvailableTools,
+    initializeThreadTools,
+    getAvailableToolsForThread,
+    getDefaultAvailableTools,
+  } = useToolAvailable()
 
   const currentThread = getCurrentThread()
-  const threadId = currentThread?.id || '*'
 
   useEffect(() => {
     const fetchTools = async () => {
       try {
-        setLoading(true)
         const availableTools = await getTools()
         setTools(availableTools)
+
+        // If this is for the initial message (index page) and no defaults are set,
+        // initialize with all tools as default
+        if (
+          initialMessage &&
+          getDefaultAvailableTools().length === 0 &&
+          availableTools.length > 0
+        ) {
+          setDefaultAvailableTools(availableTools.map((tool) => tool.name))
+        }
       } catch (error) {
         console.error('Failed to fetch tools:', error)
         setTools([])
-      } finally {
-        setLoading(false)
       }
     }
 
-    // Always fetch tools, even without a threadId (for index page)
+    // Only fetch tools once when component mounts
     fetchTools()
-  }, [threadId])
+  }, [initialMessage, setDefaultAvailableTools, getDefaultAvailableTools])
 
-  const renderTrigger = () => children(isOpen, tools.length)
+  // Separate effect for thread initialization - only when we have tools and a new thread
+  useEffect(() => {
+    if (tools.length > 0 && currentThread?.id) {
+      initializeThreadTools(currentThread.id, tools)
+    }
+  }, [currentThread?.id, tools, initializeThreadTools])
 
-  if (loading) {
-    return (
-      <DropdownMenu onOpenChange={setIsOpen}>
-        <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-w-64">
-          <DropdownMenuItem disabled>Loading tools...</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    )
+  const handleToolToggle = (toolName: string, checked: boolean) => {
+    if (initialMessage) {
+      // Update default tools for new threads/index page
+      const currentDefaults = getDefaultAvailableTools()
+      if (checked) {
+        if (!currentDefaults.includes(toolName)) {
+          setDefaultAvailableTools([...currentDefaults, toolName])
+        }
+      } else {
+        setDefaultAvailableTools(
+          currentDefaults.filter((name) => name !== toolName)
+        )
+      }
+    } else if (currentThread?.id) {
+      // Update tools for specific thread
+      setToolAvailableForThread(currentThread.id, toolName, checked)
+    }
   }
+
+  const isToolChecked = (toolName: string): boolean => {
+    if (initialMessage) {
+      // Use default tools for index page
+      return getDefaultAvailableTools().includes(toolName)
+    } else if (currentThread?.id) {
+      // Use thread-specific tools
+      return isToolAvailable(currentThread.id, toolName)
+    }
+    return false
+  }
+
+  const getEnabledToolsCount = (): number => {
+    if (initialMessage) {
+      return getDefaultAvailableTools().length
+    } else if (currentThread?.id) {
+      return getAvailableToolsForThread(currentThread.id).length
+    }
+    return 0
+  }
+
+  const renderTrigger = () => children(isOpen, getEnabledToolsCount())
 
   if (tools.length === 0) {
     return (
@@ -78,14 +127,18 @@ export default function DropdownToolsAvailable({
     <DropdownMenu onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
 
-      <DropdownMenuContent align="start" className="max-w-64">
-        <DropdownMenuLabel className="flex items-center gap-2">
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        className="max-w-64 max-h-64 "
+      >
+        <DropdownMenuLabel className="flex items-center gap-2 sticky -top-1 z-10 bg-main-view px-4 pl-2 py-2">
           Available Tools
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-
-        <div className="max-h-64 overflow-y-auto">
+        <div>
           {tools.map((tool) => {
+            const isChecked = isToolChecked(tool.name)
             return (
               <div
                 key={tool.name}
@@ -104,7 +157,12 @@ export default function DropdownToolsAvailable({
                           </p>
                         )}
                       </div>
-                      <Switch checked={true} />
+                      <Switch
+                        checked={isChecked}
+                        onCheckedChange={(checked) =>
+                          handleToolToggle(tool.name, checked)
+                        }
+                      />
                     </div>
                   </div>
                 </div>
