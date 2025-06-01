@@ -13,4 +13,5 @@ export const localStorageKey = {
   productAnalytic: 'productAnalytic',
   toolApproval: 'tool-approval',
   toolAvailability: 'tool-availability',
+  mcpGlobalPermissions: 'mcp-global-permissions',
 }

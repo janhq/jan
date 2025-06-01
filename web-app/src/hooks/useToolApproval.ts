@@ -12,6 +12,8 @@ export type ToolApprovalModalProps = {
 type ToolApprovalState = {
   // Track approved tools per thread
   approvedTools: Record<string, string[]> // threadId -> toolNames[]
+  // Global MCP permission toggle
+  allowAllMCPPermissions: boolean
   // Modal state
   isModalOpen: boolean
   modalProps: ToolApprovalModalProps | null
@@ -22,12 +24,14 @@ type ToolApprovalState = {
   showApprovalModal: (toolName: string, threadId: string) => Promise<boolean>
   closeModal: () => void
   setModalOpen: (open: boolean) => void
+  setAllowAllMCPPermissions: (allow: boolean) => void
 }
 
 export const useToolApproval = create<ToolApprovalState>()(
   persist(
     (set, get) => ({
       approvedTools: {},
+      allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
 
@@ -85,12 +89,19 @@ export const useToolApproval = create<ToolApprovalState>()(
           get().closeModal()
         }
       },
+
+      setAllowAllMCPPermissions: (allow: boolean) => {
+        set({ allowAllMCPPermissions: allow })
+      },
     }),
     {
       name: localStorageKey.toolApproval,
       storage: createJSONStorage(() => localStorage),
-      // Only persist approved tools, not modal state
-      partialize: (state) => ({ approvedTools: state.approvedTools }),
+      // Only persist approved tools and global permission setting, not modal state
+      partialize: (state) => ({
+        approvedTools: state.approvedTools,
+        allowAllMCPPermissions: state.allowAllMCPPermissions,
+      }),
     }
   )
 )

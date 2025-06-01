@@ -42,7 +42,8 @@ export const useChat = () => {
   } = useAppState()
   const { currentAssistant } = useAssistant()
 
-  const { approvedTools, showApprovalModal } = useToolApproval()
+  const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
+    useToolApproval()
   const { getAvailableToolsForThread } = useToolAvailable()
 
   const { getProviderByName, selectedModel, selectedProvider } =
@@ -208,7 +209,8 @@ export const useChat = () => {
             finalContent,
             abortController,
             approvedTools,
-            showApprovalModal
+            allowAllMCPPermissions ? undefined : showApprovalModal,
+            allowAllMCPPermissions
           )
           addMessage(updatedMessage ?? finalContent)
 
@@ -243,6 +245,7 @@ export const useChat = () => {
       approvedTools,
       showApprovalModal,
       getAvailableToolsForThread,
+      allowAllMCPPermissions,
     ]
   )
 

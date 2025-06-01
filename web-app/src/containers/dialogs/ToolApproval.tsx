@@ -33,7 +33,7 @@ export default function ToolApproval() {
 
   return (
     <Dialog open={isModalOpen} onOpenChange={setModalOpen}>
-      <DialogContent>
+      <DialogContent showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-start gap-3">
             <div className="shrink-0">
