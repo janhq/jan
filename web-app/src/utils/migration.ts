@@ -61,7 +61,7 @@ export const migrateData = async () => {
               return e
             })
             if (provider) {
-              useModelProvider.getState().updateProvider(key, {
+              useModelProvider.getState().updateProvider(providerName, {
                 ...provider,
                 settings: settings ?? [],
               })
