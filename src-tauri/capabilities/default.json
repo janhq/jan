@@ -2,13 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": [
-    "main"
-  ],
+  "windows": ["main"],
   "remote": {
-    "urls": [
-      "http://*"
-    ]
+    "urls": ["http://*"]
   },
   "permissions": [
     "core:default",
@@ -19,6 +15,7 @@
     "core:app:allow-set-app-theme",
     "core:window:allow-set-focus",
     "os:default",
+    "opener:default",
     "log:default",
     "updater:default",
     "dialog:default",
