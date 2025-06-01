@@ -48,9 +48,9 @@ pub fn run() {
             core::cmd::start_server,
             core::cmd::stop_server,
             core::cmd::read_logs,
-            core::cmd::handle_app_update,
             core::cmd::change_app_data_folder,
             core::cmd::reset_cortex_restart_count,
+            core::migration::get_legacy_browser_data,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
@@ -106,11 +106,6 @@ pub fn run() {
             setup_mcp(app);
             setup_sidecar(app).expect("Failed to setup sidecar");
             setup_engine_binaries(app).expect("Failed to setup engine binaries");
-            // TODO(any) need to wire up with frontend
-            // let handle = app.handle().clone();
-            // tauri::async_runtime::spawn(async move {
-            //     handle_app_update(handle).await.unwrap();
-            // });
             Ok(())
         })
         .on_window_event(|window, event| match event {
