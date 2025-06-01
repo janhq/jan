@@ -1,6 +1,9 @@
 import { useProductAnalytic } from '@/hooks/useAnalytic'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
+import { ExtensionManager } from '@/lib/extension'
+import { EngineManagementExtension, ExtensionTypeEnum } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 
 /**
@@ -9,6 +12,7 @@ import { invoke } from '@tauri-apps/api/core'
 export const migrateData = async () => {
   if (!localStorage.getItem('migration_completed')) {
     try {
+      // Migrate local storage data
       const oldData = await invoke('get_legacy_browser_data')
       for (const [key, value] of Object.entries(
         oldData as unknown as Record<string, string>
@@ -32,9 +36,41 @@ export const migrateData = async () => {
           }
         }
       }
+      // Migrate provider configurations
+      const engines = await ExtensionManager.getInstance()
+        .get<EngineManagementExtension>(ExtensionTypeEnum.Engine)
+        ?.getEngines()
+      if (engines) {
+        for (const [key, value] of Object.entries(engines)) {
+          const providerName = key.replace('google_gemini', 'gemini')
+          const engine = value[0] as
+            | {
+                api_key?: string
+                url?: string
+                engine?: string
+              }
+            | undefined
+          if (engine && 'api_key' in engine) {
+            const provider = useModelProvider
+              .getState()
+              .getProviderByName(providerName)
+            const settings = provider?.settings.map((e) => {
+              if (e.key === 'api-key')
+                e.controller_props.value = (engine.api_key as string) ?? ''
+              return e
+            })
+            if (provider) {
+              useModelProvider.getState().updateProvider(key, {
+                ...provider,
+                settings: settings ?? [],
+              })
+            }
+          }
+        }
+      }
+      localStorage.setItem('migration_completed', 'true')
     } catch (error) {
       console.error('Migration failed:', error)
     }
-    localStorage.setItem('migration_completed', 'true')
   }
 }
