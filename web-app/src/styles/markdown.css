@@ -1,6 +1,16 @@
 .markdown {
   @apply text-inherit;
 
+  &.is-user {
+    p {
+      line-height: 1.6;
+      margin-bottom: 1em;
+      &:first-child {
+        margin-bottom: 0;
+      }
+    }
+  }
+
   /* Headings */
   :is(h1, h2, h3, h4, h5, h6) {
     font-weight: 600;
@@ -41,10 +51,6 @@
   p {
     line-height: 1.6;
     margin-bottom: 1em;
-
-    &:last-child {
-      margin-bottom: 0;
-    }
   }
 
   strong {
@@ -198,4 +204,7 @@
     opacity: 0.2;
     margin: 2em 0;
   }
+}
+[data-tool-call-block] + [data-tool-call-block] {
+  margin-top: 16px;
 }

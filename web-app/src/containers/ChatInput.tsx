@@ -27,22 +27,27 @@ import { MovingBorder } from './MovingBorder'
 import { useChat } from '@/hooks/useChat'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
+import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
+import { getConnectedServers } from '@/services/mcp'
 
 type ChatInputProps = {
   className?: string
   showSpeedToken?: boolean
   model?: ThreadModel
+  initialMessage?: boolean
 }
 
 const ChatInput = ({
   model,
   className,
   showSpeedToken = true,
+  initialMessage,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
-  const { streamingContent, abortControllers, loadingModel } = useAppState()
+  const { streamingContent, abortControllers, loadingModel, tools } =
+    useAppState()
   const { prompt, setPrompt } = usePrompt()
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
@@ -62,6 +67,30 @@ const ChatInput = ({
       dataUrl: string
     }>
   >([])
+  const [connectedServers, setConnectedServers] = useState<string[]>([])
+
+  // Check for connected MCP servers
+  useEffect(() => {
+    const checkConnectedServers = async () => {
+      try {
+        const servers = await getConnectedServers()
+        setConnectedServers(servers)
+      } catch (error) {
+        console.error('Failed to get connected servers:', error)
+        setConnectedServers([])
+      }
+    }
+
+    checkConnectedServers()
+
+    // Poll for connected servers every 3 seconds
+    const intervalId = setInterval(checkConnectedServers, 3000)
+
+    return () => clearInterval(intervalId)
+  }, [])
+
+  // Check if there are active MCP servers
+  const hasActiveMCPServers = connectedServers.length > 0 || tools.length > 0
 
   const handleSendMesage = (prompt: string) => {
     if (!selectedModel) {
@@ -404,11 +433,31 @@ const ChatInput = ({
                   </div>
                 )}
 
-                {selectedModel?.capabilities?.includes('tools') && (
-                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                    <IconTool size={18} className="text-main-view-fg/50" />
-                  </div>
-                )}
+                {selectedModel?.capabilities?.includes('tools') &&
+                  hasActiveMCPServers && (
+                    <DropdownToolsAvailable initialMessage={initialMessage}>
+                      {(isOpen, toolsCount) => (
+                        <div
+                          className={cn(
+                            'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                            isOpen && 'bg-main-view-fg/10'
+                          )}
+                        >
+                          <IconTool
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                          {toolsCount > 0 && (
+                            <div className="absolute -top-1 -right-1.5 bg-accent text-accent-fg text-xs rounded-full size-4 flex items-center justify-center font-medium">
+                              <span className="leading-0">
+                                {toolsCount > 99 ? '99+' : toolsCount}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </DropdownToolsAvailable>
+                  )}
 
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">

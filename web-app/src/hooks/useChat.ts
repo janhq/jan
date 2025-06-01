@@ -26,6 +26,9 @@ import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
 import { stopModel, startModel } from '@/services/models'
 
+import { useToolApproval } from '@/hooks/useToolApproval'
+import { useToolAvailable } from '@/hooks/useToolAvailable'
+
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
   const {
@@ -38,6 +41,10 @@ export const useChat = () => {
     setAbortController,
   } = useAppState()
   const { currentAssistant } = useAssistant()
+
+  const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
+    useToolApproval()
+  const { getAvailableToolsForThread } = useToolAvailable()
 
   const { getProviderByName, selectedModel, selectedProvider } =
     useModelProvider()
@@ -123,9 +130,16 @@ export const useChat = () => {
 
         let isCompleted = false
 
+        // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
-          ? tools
+          ? tools.filter((tool) => {
+              const availableToolNames = getAvailableToolsForThread(
+                activeThread.id
+              )
+              return availableToolNames.includes(tool.name)
+            })
           : []
+
         // TODO: Later replaced by Agent setup?
         const followUpWithToolUse = true
         while (!isCompleted && !abortController.signal.aborted) {
@@ -193,7 +207,10 @@ export const useChat = () => {
             toolCalls,
             builder,
             finalContent,
-            abortController
+            abortController,
+            approvedTools,
+            allowAllMCPPermissions ? undefined : showApprovalModal,
+            allowAllMCPPermissions
           )
           addMessage(updatedMessage ?? finalContent)
 
@@ -225,6 +242,10 @@ export const useChat = () => {
       tools,
       updateLoadingModel,
       updateTokenSpeed,
+      approvedTools,
+      showApprovalModal,
+      getAvailableToolsForThread,
+      allowAllMCPPermissions,
     ]
   )
 

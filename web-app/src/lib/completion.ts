@@ -252,12 +252,18 @@ export const extractToolCall = (
  * @param builder
  * @param message
  * @param content
+ * @param approvedTools - Record of approved tools per thread
+ * @param showModal - Function to show approval modal, returns true if approved
+ * @param allowAllMCPPermissions - Global setting to allow all MCP permissions without modal
  */
 export const postMessageProcessing = async (
   calls: ChatCompletionMessageToolCall[],
   builder: CompletionMessagesBuilder,
   message: ThreadMessage,
-  abortController: AbortController
+  abortController: AbortController,
+  approvedTools: Record<string, string[]> = {},
+  showModal?: (toolName: string, threadId: string) => Promise<boolean>,
+  allowAllMCPPermissions: boolean = false
 ) => {
   // Handle completed tool calls
   if (calls.length) {
@@ -284,12 +290,30 @@ export const postMessageProcessing = async (
         ],
       }
 
-      const result = await callTool({
-        toolName: toolCall.function.name,
-        arguments: toolCall.function.arguments.length
-          ? JSON.parse(toolCall.function.arguments)
-          : {},
-      })
+      // Check if tool is approved or show modal for approval
+      const approved =
+        allowAllMCPPermissions ||
+        approvedTools[message.thread_id]?.includes(toolCall.function.name) ||
+        (showModal
+          ? await showModal(toolCall.function.name, message.thread_id)
+          : true)
+
+      const result = approved
+        ? await callTool({
+            toolName: toolCall.function.name,
+            arguments: toolCall.function.arguments.length
+              ? JSON.parse(toolCall.function.arguments)
+              : {},
+          })
+        : {
+            content: [
+              {
+                type: 'text',
+                text: 'The user has chosen to disallow the tool call.',
+              },
+            ],
+          }
+
       if ('error' in result && result.error) break
 
       message.metadata = {

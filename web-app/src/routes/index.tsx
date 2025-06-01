@@ -64,7 +64,11 @@ function Index() {
             </p>
           </div>
           <div className="flex-1 shrink-0">
-            <ChatInput showSpeedToken={false} model={selectedModel} />
+            <ChatInput
+              showSpeedToken={false}
+              model={selectedModel}
+              initialMessage={true}
+            />
           </div>
         </div>
       </div>

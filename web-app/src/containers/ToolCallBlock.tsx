@@ -39,6 +39,7 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
     <div
       className="mx-auto w-full cursor-pointer break-words"
       onClick={handleClick}
+      data-tool-call-block={id}
     >
       <div className="rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
         <div className="flex items-center gap-3 p-2">
