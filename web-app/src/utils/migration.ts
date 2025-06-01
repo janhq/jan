@@ -3,6 +3,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { ExtensionManager } from '@/lib/extension'
+import { configurePullOptions } from '@/services/models'
 import { EngineManagementExtension, ExtensionTypeEnum } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -69,6 +70,7 @@ export const migrateData = async () => {
         }
       }
       localStorage.setItem('migration_completed', 'true')
+      configurePullOptions(useProxyConfig.getState())
     } catch (error) {
       console.error('Migration failed:', error)
     }
