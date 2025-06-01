@@ -39,6 +39,7 @@ import {
 } from '@tabler/icons-react'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { windowKey } from '@/constants/windows'
+import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -140,11 +141,23 @@ function General() {
 
   const confirmDataFolderChange = async () => {
     if (selectedNewPath) {
-      setJanDataFolder(selectedNewPath)
-      await relocateJanDataFolder(selectedNewPath)
-      window.core?.api?.relaunch()
-      setSelectedNewPath(null)
-      setIsDialogOpen(false)
+      try {
+        setJanDataFolder(selectedNewPath)
+        await relocateJanDataFolder(selectedNewPath)
+        // Only relaunch if relocation was successful
+        window.core?.api?.relaunch()
+        setSelectedNewPath(null)
+        setIsDialogOpen(false)
+      } catch (error) {
+        console.error('Failed to relocate data folder:', error)
+        // Revert the data folder path on error
+        const originalPath = await getJanDataFolder()
+        setJanDataFolder(originalPath)
+
+        toast.error(
+          'Failed to relocate data folder. Please try again or choose a different location.'
+        )
+      }
     }
   }
 
