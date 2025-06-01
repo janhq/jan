@@ -168,9 +168,9 @@ export default class llamacpp_extension extends AIEngine {
     }
   }
 
-  private async generateApiKey(modelId: string): Promise<string> {
+  private async generateApiKey(modelId: string, port: string): Promise<string> {
     const hash = await invoke<string>('generate_api_key', {
-      modelId: modelId,
+      modelId: modelId + port,
       apiSecret: this.apiSecret,
     })
     return hash
@@ -371,6 +371,7 @@ export default class llamacpp_extension extends AIEngine {
     const taskId = this.createDownloadTaskId(modelId)
     await this.downloadManager.cancelDownload(taskId)
   }
+
   /**
    * Function to find a random port
    */
@@ -417,23 +418,30 @@ export default class llamacpp_extension extends AIEngine {
       modelId,
       'model.yml',
     ])
-    const modelConfig = await invoke<ModelConfig>('read_yaml', { path: modelConfigPath })
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: modelConfigPath,
+    })
     const port = await this.getRandomPort()
 
     // disable llama-server webui
     args.push('--no-webui')
-    // update key for security; TODO: (qnixsynapse) Make it more secure
-    const api_key = await this.generateApiKey(modelId)
+    const api_key = await this.generateApiKey(modelId, String(port))
     args.push('--api-key', api_key)
 
     // model option is required
     // NOTE: model_path and mmproj_path can be either relative to Jan's data folder or absolute path
-    const modelPath = await joinPath([janDataFolderPath, modelConfig.model_path])
+    const modelPath = await joinPath([
+      janDataFolderPath,
+      modelConfig.model_path,
+    ])
     args.push('-m', modelPath)
     args.push('-a', modelId)
     args.push('--port', String(port))
     if (modelConfig.mmproj_path) {
-      const mmprojPath = await joinPath([janDataFolderPath, modelConfig.mmproj_path])
+      const mmprojPath = await joinPath([
+        janDataFolderPath,
+        modelConfig.mmproj_path,
+      ])
       args.push('--mmproj', mmprojPath)
     }
 
@@ -475,7 +483,10 @@ export default class llamacpp_extension extends AIEngine {
     console.log('Calling Tauri command llama_load with args:', args)
 
     try {
-      const sInfo = await invoke<sessionInfo>('load_llama_model', { backendPath, args })
+      const sInfo = await invoke<sessionInfo>('load_llama_model', {
+        backendPath,
+        args,
+      })
 
       // Store the session info for later use
       this.activeSessions.set(sInfo.pid, sInfo)
@@ -496,7 +507,7 @@ export default class llamacpp_extension extends AIEngine {
     try {
       // Pass the PID as the session_id
       const result = await invoke<unloadResult>('unload_llama_model', {
-        pid
+        pid,
       })
 
       // If successful, remove from active sessions
@@ -583,8 +594,9 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   private findSessionByModel(modelId: string): sessionInfo | undefined {
-      return Array.from(this.activeSessions.values())
-    .find(session => session.modelId === modelId);
+    return Array.from(this.activeSessions.values()).find(
+      (session) => session.modelId === modelId
+    )
   }
 
   override async chat(
@@ -596,7 +608,6 @@ export default class llamacpp_extension extends AIEngine {
     }
     const baseUrl = `http://localhost:${sessionInfo.port}/v1`
     const url = `${baseUrl}/chat/completions`
-    console.log(`Using api-key: ${sessionInfo.apiKey}`)
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${sessionInfo.apiKey}`,
