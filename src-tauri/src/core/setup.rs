@@ -259,12 +259,8 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             #[cfg(not(target_os = "windows"))]
             {
                 cmd = cmd.env("LD_LIBRARY_PATH", {
-                    let current_app_data_dir = app_handle
-                        .path()
-                        .resource_dir()
-                        .unwrap()
-                        .join("binaries")
-                        .join("deps");
+                    let current_app_data_dir =
+                        app_handle.path().resource_dir().unwrap().join("binaries");
                     let dest = current_app_data_dir.to_str().unwrap();
                     let ld_path_env = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
                     format!("{}{}{}", ld_path_env, ":", dest)
