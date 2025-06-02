@@ -1,4 +1,10 @@
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import {
+  createFileRoute,
+  Link,
+  useNavigate,
+  useSearch,
+} from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
@@ -37,10 +43,15 @@ type ModelProps = {
     }[]
   }
 }
+type SearchParams = {
+  repo: string
+}
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.hub as any)({
   component: Hub,
+  validateSearch: (search: Record<string, unknown>): SearchParams => ({
+    repo: search.repo as SearchParams['repo'],
+  }),
 })
 
 const sortOptions = [
@@ -50,6 +61,7 @@ const sortOptions = [
 
 function Hub() {
   const { sources, fetchSources, loading } = useModelSources()
+  const search = useSearch({ from: route.hub as any })
   const [searchValue, setSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
@@ -70,6 +82,22 @@ function Hub() {
       [modelId]: !prev[modelId],
     }))
   }
+
+  useEffect(() => {
+    if (search.repo) {
+      setSearchValue(search.repo || '')
+      setIsSearching(true)
+      addModelSourceTimeoutRef.current = setTimeout(() => {
+        addModelSource(search.repo)
+          .then(() => {
+            fetchSources()
+          })
+          .finally(() => {
+            setIsSearching(false)
+          })
+      }, 500)
+    }
+  }, [fetchSources, search])
 
   // Sorting functionality
   const sortedModels = useMemo(() => {
