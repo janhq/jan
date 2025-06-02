@@ -6,6 +6,12 @@ import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { ArrowRight } from 'lucide-react'
 import {
   IconPaperclip,
@@ -401,7 +407,7 @@ const ChatInput = ({
 
                 {/* File attachment - always available */}
                 <div
-                  className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
+                  className="h-6 hidden p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
                   onClick={handleAttachmentClick}
                 >
                   <IconPaperclip size={18} className="text-main-view-fg/50" />
@@ -419,56 +425,109 @@ const ChatInput = ({
               </div> */}
 
                 {selectedModel?.capabilities?.includes('vision') && (
-                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                    <IconEye size={18} className="text-main-view-fg/50" />
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                          <IconEye size={18} className="text-main-view-fg/50" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Vision</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
 
                 {selectedModel?.capabilities?.includes('embeddings') && (
-                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                    <IconCodeCircle2
-                      size={18}
-                      className="text-main-view-fg/50"
-                    />
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                          <IconCodeCircle2
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Embeddings</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
 
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
-                    <DropdownToolsAvailable initialMessage={initialMessage}>
-                      {(isOpen, toolsCount) => (
-                        <div
-                          className={cn(
-                            'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                            isOpen && 'bg-main-view-fg/10'
-                          )}
-                        >
-                          <IconTool
-                            size={18}
-                            className="text-main-view-fg/50"
-                          />
-                          {toolsCount > 0 && (
-                            <div className="absolute -top-1 -right-1.5 bg-accent text-accent-fg text-xs rounded-full size-4 flex items-center justify-center font-medium">
-                              <span className="leading-0">
-                                {toolsCount > 99 ? '99+' : toolsCount}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </DropdownToolsAvailable>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownToolsAvailable
+                            initialMessage={initialMessage}
+                          >
+                            {(isOpen, toolsCount) => (
+                              <div
+                                className={cn(
+                                  'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                  isOpen && 'bg-main-view-fg/10'
+                                )}
+                              >
+                                <IconTool
+                                  size={18}
+                                  className="text-main-view-fg/50"
+                                />
+                                {toolsCount > 0 && (
+                                  <div className="absolute -top-1 -right-1.5 bg-accent text-accent-fg text-xs rounded-full size-4 flex items-center justify-center font-medium">
+                                    <span className="leading-0">
+                                      {toolsCount > 99 ? '99+' : toolsCount}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </DropdownToolsAvailable>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Tools</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
 
                 {selectedModel?.capabilities?.includes('web_search') && (
-                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                    <IconWorld size={18} className="text-main-view-fg/50" />
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                          <IconWorld
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Web Search</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
 
                 {selectedModel?.capabilities?.includes('reasoning') && (
-                  <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
-                    <IconAtom size={18} className="text-main-view-fg/50" />
-                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
+                          <IconAtom
+                            size={18}
+                            className="text-main-view-fg/50"
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Reasoning</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 )}
               </div>
 
