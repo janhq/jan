@@ -16,38 +16,38 @@ export function ColorPickerAppBgColor() {
       r: 20,
       g: 20,
       b: 20,
-      a: 0.4,
+      a: IS_LINUX || !IS_TAURI ? 1 : 0.4,
     },
     {
       r: 250,
       g: 250,
       b: 250,
-      a: 0.4,
+      a: IS_LINUX || !IS_TAURI ? 1 : 0.4,
     },
     {
       r: 70,
       g: 79,
       b: 229,
-      a: 0.5,
+      a: IS_LINUX || !IS_TAURI ? 1 : 0.5,
     },
     {
       r: 238,
       g: 130,
       b: 238,
-      a: 0.5,
+      a: IS_LINUX || !IS_TAURI ? 1 : 0.5,
     },
 
     {
       r: 255,
       g: 99,
       b: 71,
-      a: 0.5,
+      a: IS_LINUX || !IS_TAURI ? 1 : 0.5,
     },
     {
       r: 255,
       g: 165,
       b: 0,
-      a: 0.5,
+      a: IS_LINUX || !IS_TAURI ? 1 : 0.5,
     },
   ]
 
@@ -64,7 +64,7 @@ export function ColorPickerAppBgColor() {
             key={i}
             className={cn(
               'size-4 rounded-full border border-main-view-fg/20',
-              isSelected && 'ring-2 ring-blue-500 border-none'
+              isSelected && 'ring-2 ring-accent border-none'
             )}
             onClick={() => {
               setAppBgColor(item)
