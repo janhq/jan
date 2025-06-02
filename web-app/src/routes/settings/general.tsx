@@ -10,6 +10,8 @@ import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
 
 import {
   Dialog,
@@ -32,19 +34,35 @@ import {
   IconExternalLink,
   IconFolder,
   IconLogs,
+  IconCopy,
+  IconCopyCheck,
 } from '@tabler/icons-react'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { windowKey } from '@/constants/windows'
+import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
   component: General,
 })
 
+const openFileTitle = (): string => {
+  if (IS_MACOS) {
+    return 'Show in Finder'
+  } else if (IS_WINDOWS) {
+    return 'Show in File Explorer'
+  } else {
+    return 'Open Containing Folder'
+  }
+}
+
 function General() {
   const { t } = useTranslation()
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
+  const [isCopied, setIsCopied] = useState(false)
+  const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -97,6 +115,52 @@ function General() {
     }
   }
 
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000) // Reset after 2 seconds
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error)
+    }
+  }
+
+  const handleDataFolderChange = async () => {
+    const selectedPath = await open({
+      multiple: false,
+      directory: true,
+      defaultPath: janDataFolder,
+    })
+
+    if (selectedPath === janDataFolder) return
+    if (selectedPath !== null) {
+      setSelectedNewPath(selectedPath)
+      setIsDialogOpen(true)
+    }
+  }
+
+  const confirmDataFolderChange = async () => {
+    if (selectedNewPath) {
+      try {
+        setJanDataFolder(selectedNewPath)
+        await relocateJanDataFolder(selectedNewPath)
+        // Only relaunch if relocation was successful
+        window.core?.api?.relaunch()
+        setSelectedNewPath(null)
+        setIsDialogOpen(false)
+      } catch (error) {
+        console.error('Failed to relocate data folder:', error)
+        // Revert the data folder path on error
+        const originalPath = await getJanDataFolder()
+        setJanDataFolder(originalPath)
+
+        toast.error(
+          'Failed to relocate data folder. Please try again or choose a different location.'
+        )
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -133,42 +197,71 @@ function General() {
                       {t('settings.dataFolder.appDataDesc', {
                         ns: 'settings',
                       })}
+                      &nbsp;
                     </span>
-                    <span
-                      title={janDataFolder}
-                      className="bg-main-view-fg/10 text-xs mt-1 px-1 py-0.5 rounded-sm text-main-view-fg/80 line-clamp-1"
-                    >
-                      {janDataFolder}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        title={janDataFolder}
+                        className="bg-main-view-fg/10 text-xs px-1 py-0.5 rounded-sm text-main-view-fg/80"
+                      >
+                        {janDataFolder}
+                      </span>
+                      <button
+                        onClick={() =>
+                          janDataFolder && copyToClipboard(janDataFolder)
+                        }
+                        className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
+                        title={isCopied ? 'Copied!' : 'Copy path'}
+                      >
+                        {isCopied ? (
+                          <div className="flex items-center gap-1">
+                            <IconCopyCheck size={12} className="text-accent" />
+                            <span className="text-xs leading-0">Copied</span>
+                          </div>
+                        ) : (
+                          <IconCopy
+                            size={12}
+                            className="text-main-view-fg/50"
+                          />
+                        )}
+                      </button>
+                    </div>
                   </>
                 }
                 actions={
-                  <Button
-                    variant="link"
-                    size="sm"
-                    className="hover:no-underline"
-                    title="App Data Folder"
-                    onClick={async () => {
-                      const selectedPath = await open({
-                        multiple: false,
-                        directory: true,
-                        defaultPath: janDataFolder,
-                      })
-                      if (selectedPath === janDataFolder) return
-                      if (selectedPath !== null) {
-                        setJanDataFolder(selectedPath)
-                        await relocateJanDataFolder(selectedPath)
-                        window.core?.api?.relaunch()
-                        // TODO: we need function to move everything into new folder selectedPath
-                        // eg like this
-                        // await window.core?.api?.moveDataFolder(selectedPath)
-                      }
-                    }}
-                  >
-                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-                      <IconFolder size={18} className="text-main-view-fg/50" />
-                    </div>
-                  </Button>
+                  <>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      title="App Data Folder"
+                      onClick={handleDataFolderChange}
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconFolder
+                          size={12}
+                          className="text-main-view-fg/50"
+                        />
+                        <span>Change Location</span>
+                      </div>
+                    </Button>
+                    {selectedNewPath && (
+                      <ChangeDataFolderLocation
+                        currentPath={janDataFolder || ''}
+                        newPath={selectedNewPath}
+                        onConfirm={confirmDataFolderChange}
+                        open={isDialogOpen}
+                        onOpenChange={(open) => {
+                          setIsDialogOpen(open)
+                          if (!open) {
+                            setSelectedNewPath(null)
+                          }
+                        }}
+                      >
+                        <div />
+                      </ChangeDataFolderLocation>
+                    )}
+                  </>
                 }
               />
               <CardItem
@@ -177,17 +270,47 @@ function General() {
                 })}
                 description="View detailed logs of the App"
                 actions={
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={handleOpenLogs}
-                    title="App Logs"
-                  >
-                    {/* Open Logs */}
-                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
-                      <IconLogs size={18} className="text-main-view-fg/50" />
-                    </div>
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={handleOpenLogs}
+                      title="App Logs"
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconLogs size={12} className="text-main-view-fg/50" />
+                        <span>Open Logs</span>
+                      </div>
+                    </Button>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0"
+                      onClick={async () => {
+                        if (janDataFolder) {
+                          try {
+                            const logsPath = `${janDataFolder}/logs`
+                            await revealItemInDir(logsPath)
+                          } catch (error) {
+                            console.error(
+                              'Failed to reveal logs folder:',
+                              error
+                            )
+                          }
+                        }
+                      }}
+                      title="Reveal logs folder in file explorer"
+                    >
+                      <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                        <IconFolder
+                          size={12}
+                          className="text-main-view-fg/50"
+                        />
+                        <span>{openFileTitle()}</span>
+                      </div>
+                    </Button>
+                  </div>
                 }
               />
             </Card>

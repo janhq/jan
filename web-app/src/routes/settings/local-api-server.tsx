@@ -140,11 +140,13 @@ function LocalAPIServer() {
                   <Button
                     variant="link"
                     size="sm"
+                    className="p-0"
                     onClick={handleOpenLogs}
                     title="Server Logs"
                   >
-                    <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+                    <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                       <IconLogs size={18} className="text-main-view-fg/50" />
+                      <span>Open Logs</span>
                     </div>
                   </Button>
                 }
