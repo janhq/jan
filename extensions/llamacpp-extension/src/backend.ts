@@ -7,7 +7,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 
 // folder structure
-// <Jan's data folder>/llamacpp/backends/<backend_name>/<backend_version>
+// <Jan's data folder>/llamacpp/backends/<backend_version>/<backend_type>
 
 // what should be available to the user for selection?
 export async function listSupportedBackends(): Promise<{ version: string, backend: string }[]> {
@@ -74,26 +74,38 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
   return backendVersions
 }
 
-export async function isBackendInstalled(backend: string, version: string): Promise<boolean> {
+export async function getBackendDir(backend: string, version: string): Promise<string> {
+  const janDataFolderPath = await getJanDataFolderPath()
+  const backendDir = await joinPath([janDataFolderPath, 'llamacpp', 'backends', version, backend])
+  return backendDir
+}
+
+export async function getBackendExePath(backend: string, version: string): Promise<string> {
   const sysInfo = await window.core.api.getSystemInfo()
   const exe_name = sysInfo.os_type === 'windows' ? 'llama-server.exe' : 'llama-server'
+  const backendDir = await getBackendDir(backend, version)
+  const exePath = await joinPath([backendDir, 'build', 'bin', exe_name])
+  return exePath
+}
 
-  const janDataFolderPath = await getJanDataFolderPath()
-  const backendPath = await joinPath([janDataFolderPath, 'llamacpp', 'backends', backend, version, 'build', 'bin', exe_name])
-  const result = await fs.existsSync(backendPath)
+export async function isBackendInstalled(backend: string, version: string): Promise<boolean> {
+  const exePath = await getBackendExePath(backend, version)
+  const result = await fs.existsSync(exePath)
   return result
 }
 
 export async function downloadBackend(backend: string, version: string): Promise<void> {
   const janDataFolderPath = await getJanDataFolderPath()
   const llamacppPath = await joinPath([janDataFolderPath, 'llamacpp'])
+  const backendDir = await getBackendDir(backend, version)
+  const libDir = await joinPath([llamacppPath, 'lib'])
 
   const downloadManager = window.core.extensionManager.getByName('@janhq/download-extension')
 
   const downloadItems = [
     {
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/llama-${version}-bin-${backend}.tar.gz`,
-      save_path: await joinPath([llamacppPath, 'backends', backend, version, 'backend.tar.gz']),
+      save_path: await joinPath([backendDir, 'backend.tar.gz']),
     }
   ]
 
@@ -101,12 +113,12 @@ export async function downloadBackend(backend: string, version: string): Promise
   if (backend.includes('cu11.7') && !(await _isCudaInstalled('11.7'))) {
     downloadItems.push({
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu11.7-x64.tar.gz`,
-      save_path: await joinPath([llamacppPath, 'lib', 'cuda11.tar.gz']),
+      save_path: await joinPath([libDir, 'cuda11.tar.gz']),
     })
   } else if (backend.includes('cu12.0') && !(await _isCudaInstalled('12.0'))) {
     downloadItems.push({
       url: `https://github.com/menloresearch/llama.cpp/releases/download/${version}/cudart-llama-bin-linux-cu12.0-x64.tar.gz`,
-      save_path: await joinPath([llamacppPath, 'lib', 'cuda12.tar.gz']),
+      save_path: await joinPath([libDir, 'cuda12.tar.gz']),
     })
   }
 
