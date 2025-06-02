@@ -28,21 +28,10 @@ impl CpuStaticInfo {
             .unwrap_or("unknown")
             .to_string();
 
-        // cortex only returns amd64, arm64, or Unsupported
-        // TODO: find how Jan uses this value, if we can use
-        // std::env::consts::ARCH directly
-        let arch = match std::env::consts::ARCH {
-            "x86" => "amd64",
-            "x86_64" => "amd64",
-            "arm" => "arm64",
-            "aarch64" => "arm64",
-            _ => "Unsupported",
-        };
-
         CpuStaticInfo {
             name,
             core_count: System::physical_core_count().unwrap_or(0),
-            arch: arch.to_string(),
+            arch: std::env::consts::ARCH.to_string(),
             extensions: CpuStaticInfo::get_extensions(),
         }
     }
@@ -220,7 +209,8 @@ impl GpuInfo {
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct SystemInfo {
     cpu: CpuStaticInfo,
-    os: String,
+    os_type: String,
+    os_name: String,
     total_memory: u64,
     gpus: Vec<GpuInfo>,
 }
@@ -293,9 +283,21 @@ pub fn get_system_info<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> SystemInf
                 }
             }
 
+            let os_type = if cfg!(target_os = "windows") {
+                "windows"
+            } else if cfg!(target_os = "macos") {
+                "macos"
+            } else if cfg!(target_os = "linux") {
+                "linux"
+            } else {
+                "unknown"
+            };
+            let os_name = System::long_os_version().unwrap_or("Unknown".to_string());
+
             SystemInfo {
                 cpu: CpuStaticInfo::new(),
-                os: System::long_os_version().unwrap_or("Unknown".to_string()),
+                os_type: os_type.to_string(),
+                os_name,
                 total_memory: system.total_memory() / 1024 / 1024, // bytes to MiB
                 gpus: gpu_map.into_values().collect(),
             }
