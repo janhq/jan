@@ -7,7 +7,7 @@ set ENGINE_DOWNLOAD_GGML_URL=https://github.com/ggml-org/llama.cpp/releases/down
 set CUDA_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%
 @REM set SUBFOLDERS=windows-amd64-noavx-cuda-12-0 windows-amd64-noavx-cuda-11-7 windows-amd64-avx2-cuda-12-0 windows-amd64-avx2-cuda-11-7 windows-amd64-noavx windows-amd64-avx windows-amd64-avx2 windows-amd64-avx512 windows-amd64-vulkan
 set BIN_PATH="./"
-set DOWNLOAD_TOOL=..\..\extensions\inference-cortex-extension\node_modules\.bin\download
+set DOWNLOAD_TOOL=..\..\node_modules\.bin\download
 
 @REM Download llama.cpp binaries
 call %DOWNLOAD_TOOL% -e --strip 1 -o %BIN_PATH% https://github.com/menloresearch/cortex.cpp/releases/download/v%CORTEX_VERSION%/cortex-%CORTEX_VERSION%-windows-amd64.tar.gz
