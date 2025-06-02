@@ -27,11 +27,11 @@ import { SquarePen, Pencil, Ellipsis, Paintbrush, Trash2 } from 'lucide-react'
 Jan organizes your AI conversations into threads, making it easy to track and revisit your interactions. This guide will help you effectively manage your chat history.
 
 ## Creating New Thread
-1. Click **New Thread** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon at the left of Jan top navigation
+1. Click **New Chat** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon on the bottom left of Jan
 2. Select your preferred model in **Model Selector** in input field & start chatting
 
 <br/>
-![Create New Thread](./_assets/threads-02.png)
+![Create New Thread](./_assets/threads-new-chat.png)
 
 ## View Threads History
 
@@ -40,34 +40,26 @@ Jan organizes your AI conversations into threads, making it easy to track and re
 - View **Thread List**, scroll through your threads history
 - Click any thread to open the full conversation
 
+## Favorites and Recents
+
+Jan helps you quickly access important and recent conversations with **Favorites** and **Recents** in the left sidebar:
+
+- **Favorites**: Pin threads you use often for instant access. Click the star icon in the context menu next to any thread to add or remove it from Favorites.
+- **Recents**: See your most recently accessed threads for quick navigation.
+
 <br/>
-![View Threads](./_assets/threads-01.png)
+![Favorites and Recents](./_assets/threads-favorites-and-recents.png)
 
-
+*Screenshot: The left sidebar showing Favorites and Recents sections for easy thread management.*
 
 ## Edit Thread Title
 1. Navigate to the **Thread** that you want to edit title in left sidebar
 2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Select <Pencil width={16} height={16} style={{display:"inline"}}/> **Edit Title** 
+3. Select <Pencil width={16} height={16} style={{display:"inline"}}/> **Rename** 
 4. Add new title & save
 
 <br/>
-![Edit Thread](./_assets/threads-03.png)
-
-## Clean Thread
-
-To remove all messages while keeping the thread & its settings:
-
-1. Navigate to the **Thread** that you want to clean in left sidebar
-2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Select <Paintbrush width={16} height={16} style={{display:"inline"}}/> **Clean Thread** 
-
-<Callout type="info">
-This will delete all messages in the thread while preserving thread settings
-</Callout>
-
-<br/>
-![Clean Thread](./_assets/threads-04.png)
+![Context Menu](./_assets/threads-context-menu.png)
 
 
 ## Delete Thread
@@ -79,15 +71,14 @@ When you want to completely remove a thread:
 
 1. Navigate to the **Thread** that you want to delete in left sidebar
 2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete Thread** 
+3. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete** 
 
 
 <br/>
-![Delete Thread](./_assets/threads-05.png)
+![Delete Thread](./_assets/threads-context-menu.png)
 
 ### Delete all threads at once
 
-In case you need to remove all threads at once, you'll need to manually delete the `threads` folder:
-1. Open [Jan Data Folder](docs/settings#access-the-jan-data-folder)
-2. Delete the `threads` folder
-3. Restart Jan
+In case you need to remove all threads at once:
+1. Hover on the `Recents` category and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+2. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete All** 

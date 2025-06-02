@@ -77,7 +77,7 @@ const menus = [
       },
       {
         menu: 'LinkedIn',
-        path: 'https://www.linkedin.com/company/homebrewltd',
+        path: 'https://www.linkedin.com/company/menloresearch',
         external: true,
       },
     ],

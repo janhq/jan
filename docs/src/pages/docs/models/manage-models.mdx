@@ -48,14 +48,16 @@ Jan will indicate if a model might be **Slow on your device** or **Not enough RA
 ![Download Model](../_assets/model-management-01.png)
 <br/>
 
-#### 2. Import from [Hugging Face](https://huggingface.co/) 
-You can import GGUF models directly from [Hugging Face](https://huggingface.co/):
+#### 2. Import from [Hugging Face](https://huggingface.co/)
+You can import GGUF models directly from Hugging Face:
+
+**Note:** Some models require a Hugging Face Access Token. Enter your token in **Settings > Model Providers > Hugging Face** before importing.
 
 ##### Option A: Import in Jan
 1. Visit [Hugging Face Models](https://huggingface.co/models).
 2. Find a GGUF model you want to use
 3. Copy the **model ID** (e.g., TheBloke/Mistral-7B-v0.1-GGUF) or its **URL**
-4. In Jan, paste the model ID/URL to **Search** bar in **Hub** or in  **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
+4. In Jan, paste the model ID/URL to the **Search** bar in **Hub**
 5. Select your preferred quantized version to download
 
 <br/>
@@ -90,13 +92,12 @@ Deep linking won't work for models requiring API tokens or usage agreements. You
 
 #### 3. Import Local Files
 If you already have GGUF model files on your computer:
-1. In Jan, go to **Hub** or **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
-2. Click **Import Model**
-3. Select your **GGUF** file(s)
-4. Choose how you want to import:
+1. In Jan, go to **Settings > Model Providers > Llama.cpp**
+2. Click **Import** and select your GGUF file(s)
+3. Choose how you want to import:
   - **Link Files:** Creates symbolic links to your model files (saves space)
   - **Duplicate:** Makes a copy of model files in Jan's directory
-5. Click **Import** to complete
+4. Click **Import** to complete
 
 <Callout type="warning">
 You need to own your **model configurations**, use at your own risk. Misconfigurations may result in lower quality or unexpected outputs. 
@@ -190,7 +191,7 @@ Modify model parameters under the settings array. Key fields to configure:
 </Steps>
 
 ### Delete Models
-1. Go to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models**
+1. Go to **Settings > Model Providers > Llama.cpp**
 2. Find the model you want to remove
 3. Select the three dots <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to it and select **Delete Model**
 

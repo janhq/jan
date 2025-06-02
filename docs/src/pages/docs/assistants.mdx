@@ -1,6 +1,6 @@
 ---
 title: Assistants
-description: A step-by-step guide on customizing your assistant.
+description: A step-by-step guide on customizing and managing your assistants.
 keywords:
   [
     Jan,
@@ -20,47 +20,72 @@ keywords:
 import { Callout, Steps } from 'nextra/components'
 
 # Assistants
-Assistant is a configuration profile that determines how the AI should behave and respond to your inputs. It consists of:
-- A set of instructions that guide the AI's behavior
-- Model settings for AI responses
-- Tool configurations (like [knowlegde retrieval](/docs/tools/retrieval) settings)
 
-Currently, Jan comes with a single default Assistant named **Jan**, which is used across all your threads. We're working on the ability to create and switch between multiple assistants. 
+Jan allows you to manage multiple Assistants, each with its own configuration profile that determines how the AI should behave and respond to your inputs. You can add, edit, or delete assistants, and customize their instructions and settings.
 
-## Set Assistant Instructions
-By modifying assistant instructions, you can customize how Jan understands and responds to your queries, what context it should consider, and how it should format its responses.
+![Assistants UI Overview](./_assets/assistants-ui-overview.png)
 
-1. In any **Thread**, click the **Assistant** tab in the **right sidebar**
-2. Enter your custom instructions in **Instructions** input field
-3. Your instructions will be applied to the current thread right after you click out of the instruction field .
+*Screenshot: The Assistants management page, where you can view, add, edit, or delete assistants. Each assistant has a name, description, and can be customized for different tasks.*
 
-![Set Instructions](./_assets/quick-start-02.png)
+## Accessing the Assistants Page
 
-**Best Practices for Instructions:**
-- Be clear and specific about the desired behavior
-- Include any consistent preferences for formatting, tone, or style
+1. Open Jan and look at the left sidebar.
+2. Click on the **Assistants** tab (see highlighted section in the screenshot above).
+3. The main panel will display all your current assistants
 
-**Examples:**
+## Managing Assistants
+
+- **Add a New Assistant**: Click the `+` button in the Assistants panel to create a new assistant profile.
+- **Edit an Assistant**: Click the pencil (✏️) icon on any assistant card to update its name, description, or instructions.
+- **Delete an Assistant**: Click the trash (🗑️) icon to remove an assistant you no longer need.
+
+## Customizing Assistant Instructions
+
+Each assistant can have its own set of instructions to guide its behavior. For example:
+
 ```
-Act as a software development mentor focused on Python and JavaScript. 
+Act as a software development mentor focused on Python and JavaScript.
 Provide detailed explanations with code examples when relevant.
 Use markdown formatting for code blocks.
 ```
+
+Or:
+
 ```
 Respond in a casual, friendly tone. Keep explanations brief and use simple language.
 Provide examples when explaining complex topics.
 ```
 
+## Best Practices
+- Be clear and specific about the desired behavior for each assistant.
+- Include preferences for formatting, tone, or style.
+- Use different assistants for different tasks (e.g., translation, travel planning, financial advice).
 
-## Apply Instructions to New Threads
-You can save Assistant instructions to be automatically applied to all new threads:
+---
 
-1. In any **Thread**, click the **Assistant** tab in the **right sidebar**
-2. Toggle the **Save instructions for new threads** slider 
-3. When enabled, all **new threads** will use these instructions as their default, old threads are not affected
+*Note: The ability to create, edit, and delete assistants is available in the Assistants tab. Each assistant can be tailored for a specific use case, making Jan a flexible and powerful tool for your needs.*
 
-<br/>
+## Switching and Managing Assistants in Chat
 
-![Assistant Slider](./_assets/assistant-01.png)
+You can quickly switch between assistants, or create and edit them, directly from the Chat screen using the assistant dropdown menu at the top:
 
-<br/>
+![Assistant Dropdown](./_assets/assistant-dropdown.png)
+
+- Click the assistant name (e.g., "Travel Planner") at the top of the Chat screen to open the dropdown menu.
+- The dropdown lists all your assistants. Click any assistant to switch to it for the current chat session.
+- To create a new assistant, select **Create Assistant** at the bottom of the dropdown. This opens the Add Assistant dialog:
+
+![Add Assistant Dialog](./_assets/assistant-add-dialog.png)
+
+- To edit an existing assistant, click the gear (⚙️) icon next to its name in the dropdown. This opens the Edit Assistant dialog:
+
+![Edit Assistant Dialog](./_assets/assistant-edit-dialog.png)
+
+### Add/Edit Assistant Dialogs
+- Set an emoji and name for your assistant.
+- Optionally add a description.
+- Enter detailed instructions to guide the assistant's behavior.
+- Adjust predefined parameters (like Temperature, Top P, etc.) or add custom parameters as needed.
+- Click **Save** to apply your changes.
+
+This workflow allows you to seamlessly manage and switch between assistants while chatting, making it easy to tailor Jan to your needs in real time.

@@ -26,7 +26,7 @@
   "models": "Models",
   "tools": "Tools",
   "assistants": "Assistants",
-  "threads": "Threads",
+  "threads": "Chats",
   "settings": "Settings",
   "api-server": "Local API Server",
   "inference-engines": {

@@ -26,49 +26,106 @@ import { Settings, EllipsisVertical, Plus, FolderOpen, Pencil } from 'lucide-rea
 
 # Settings
 
-This guide explains how to customize your Jan application settings.
-To access **Settings**, click <Settings width={16} height={16} style={{display:"inline"}}/> icon in the bottom left corner of Jan.
+This guide explains how to customize your Jan application settings. To access **Settings**, click <Settings width={16} height={16} style={{display:"inline"}}/> icon in the bottom left corner of Jan.
 
-## My models
+## Navigation Overview
 
-Here's at **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **My Models** you can manage all your installed AI models:
+The Settings sidebar includes:
+- **General**
+- **Appearance**
+- **Privacy**
+- **Model Providers**
+- **Shortcuts**
+- **Hardware**
+- **MCP Servers**
+- **Local API Server**
+- **HTTPS Proxy**
+- **Extensions**
 
-### Manage Downloaded Models
+## Appearance
 
-**1. Import Models:** You can import model here as how you can do in **Hub**
-  - Option 1: Import from [Hugging Face](/docs/models/manage-models#option-a-import-in-jan) by entering model Hugging Face URL in **Search** bar
-  - Option 2: [Import local files](/docs/models/manage-models#option-a-import-in-jan)
+Customize Jan's look and feel:
+- **Theme:**
+  - Dark
+  - Light
+  - System (follows OS preference)
+- **Font Size:**
+  - Small
+  - Medium
+  - Large
+  - Extra Large
+- **Color Customization:**
+  - Window background, main view, primary, accent, destructive (choose from palette)
 
-<br/>
-![Import from HF](./_assets/model-management-04.png)
-<br/>
+## Model Management
+
+Manage your installed AI models in **Settings** > **Model Providers** or **My Models**:
+
+### Import Models
+- **From Hugging Face:**
+  - Enter a model's Hugging Face URL or ID in the search bar.
+  - **Note:** Some models require a Hugging Face Access Token. Enter your token in **Settings > Model Providers > Hugging Face**.
+- **From Local Files:**
+  - Click **Import Model** and select your GGUF files.
+
+### Remove Models
+- Click the three dots <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> next to a model and select **Delete**.
+
+### Start Models
+- Click the three dots <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> next to a model and select **Start**.
+
+### Hugging Face Access Token
+To download models from Hugging Face that require authentication:
+1. Get your token from [Hugging Face Tokens](https://huggingface.co/docs/hub/en/security-tokens)
+2. Enter it in **Settings > Model Providers > Hugging Face**
+
+## Model Settings (Gear Icon)
+
+Click the gear icon next to a model to configure advanced settings:
+- **Context Size**: Maximum prompt context length
+- **GPU Layers**: Number of model layers to offload to GPU
+- **Temperature**: Controls randomness (higher = more random)
+- **Top K**: Top-K sampling
+- **Top P**: Top-P sampling
+- **Min P**: Minimum probability for token selection
+- **Repeat Last N**: Number of tokens to consider for repeat penalty
+- **Repeat Penalty**: Penalize repeating token sequences
+- **Presence Penalty**: Penalize alpha presence
+
+_See [Model Parameters](/docs/models/model-parameters) for detailed explanations._
+
+## Model Capabilities (Edit Button)
+
+Click the edit button next to a model to toggle capabilities:
+- **Vision**: Enable image input/output
+- **Tools**: Enable advanced tools (web search, file ops, code)
+- **Embeddings**: Enable embedding generation
+- **Web Search**: Allow model to search the web
+- **Reasoning**: Enable advanced reasoning features
 
 
 **2. Remove Models**: Use the same instructions in [Delete Local Models](/docs/models/manage-models#delete-models)
 
-<br/>
-![Remove Model](./_assets/model-management-05.png)
-<br/>
+## Shortcuts
 
+See and customize keyboard shortcuts for navigation, chat, and thread management.
 
-**3. Start Models**
-1. Choose the model you want to start
-2. Click **three dots** <EllipsisVertical width={16} height={16} style={{display:"inline"}}/> icon next to the model
-3. Select **Start Model**
+## Hardware
 
-<br/>
-![Start Model](./_assets/settings-02.png)
-<br/>
+Monitor and manage system resources:
+- **CPU, RAM, GPU**: View usage and specs
+- **GPU Acceleration**: Enable/disable and configure GPU settings
 
+## MCP Servers, Local API Server, HTTPS Proxy, Extensions
 
-### Manage Cloud Models
+- **MCP Servers**: Add/edit servers for advanced integrations
+- **Local API Server**: Configure OpenAI-compatible local HTTP server
+- **HTTPS Proxy**: Set up proxy for secure connections
+- **Extensions**: Manage and configure Jan extensions
 
-1. To install cloud models, click the **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next your preferred providers (e.g., Anthropic, OpenAI, Groq), and add **API Key** to use. See [detailed instructions](/docs/remote-models/openai) for each provider.
-2. Once a provider is installed, you can use its models & manage its settings by clicking on the **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) icon next to it.
+## Factory Reset
 
-<br/>
-![Manage Cloud Provider](./_assets/settings-03.png)
-<br/>
+Restore Jan to its initial state (erases all data and models). Use only if necessary.
 
 ## Preferences
 
