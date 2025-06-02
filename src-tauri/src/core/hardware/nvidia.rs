@@ -10,9 +10,28 @@ pub struct NvidiaInfo {
     pub compute_capability: String,
 }
 
-// NvmlError doesn't implement Copy, so we have to store an Option in OnceLock
 fn get_nvml() -> Option<&'static Nvml> {
-    NVML.get_or_init(|| Nvml::init().ok()).as_ref()
+    NVML.get_or_init(|| {
+        let result = Nvml::init().or_else(|e| {
+            // fallback
+            if cfg!(target_os = "linux") {
+                let lib_path = std::ffi::OsStr::new("libnvidia-ml.so.1");
+                Nvml::builder().lib_path(lib_path).init()
+            } else {
+                Err(e)
+            }
+        });
+
+        // NvmlError doesn't implement Copy, so we have to store an Option in OnceLock
+        match result {
+            Ok(nvml) => Some(nvml),
+            Err(e) => {
+                log::error!("Unable to initialize NVML: {}", e);
+                None
+            }
+        }
+    })
+    .as_ref()
 }
 
 impl GpuInfo {
