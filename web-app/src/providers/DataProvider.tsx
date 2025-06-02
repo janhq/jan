@@ -28,9 +28,16 @@ export function DataProvider() {
       getProviders().then(setProviders)
     })
     getMCPConfig().then((data) => setServers(data.mcpServers ?? []))
-    getAssistants().then((data) =>
-      setAssistants((data as unknown as Assistant[]) ?? [])
-    )
+    getAssistants()
+      .then((data) => {
+        // Only update assistants if we have valid data
+        if (data && Array.isArray(data) && data.length > 0) {
+          setAssistants(data as unknown as Assistant[])
+        }
+      })
+      .catch((error) => {
+        console.warn('Failed to load assistants, keeping default:', error)
+      })
     migrateData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

@@ -6,9 +6,16 @@ import { Assistant, AssistantExtension, ExtensionTypeEnum } from '@janhq/core'
  * @returns A promise that resolves to the assistants.
  */
 export const getAssistants = async () => {
-  return ExtensionManager.getInstance()
-    .get<AssistantExtension>(ExtensionTypeEnum.Assistant)
-    ?.getAssistants()
+  const extension = ExtensionManager.getInstance().get<AssistantExtension>(
+    ExtensionTypeEnum.Assistant
+  )
+
+  if (!extension) {
+    console.warn('AssistantExtension not found')
+    return null
+  }
+
+  return extension.getAssistants()
 }
 
 /**
