@@ -8,6 +8,7 @@ import { Card, CardItem } from '@/containers/Card'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
@@ -59,10 +60,12 @@ const openFileTitle = (): string => {
 function General() {
   const { t } = useTranslation()
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
+  const { checkForUpdate } = useAppUpdater()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -161,6 +164,22 @@ function General() {
     }
   }
 
+  const handleCheckForUpdate = async () => {
+    setIsCheckingUpdate(true)
+    try {
+      const update = await checkForUpdate()
+      if (!update) {
+        toast.success('You are using the latest version of Jan!')
+      }
+      // If update is available, the AppUpdater dialog will automatically show
+    } catch (error) {
+      console.error('Failed to check for updates:', error)
+      toast.error('Failed to check for updates. Please try again later.')
+    } finally {
+      setIsCheckingUpdate(false)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -175,7 +194,26 @@ function General() {
               <CardItem
                 title="App Version"
                 actions={
-                  <span className="text-main-view-fg/80">v{VERSION}</span>
+                  <span className="text-main-view-fg/80 font-medium">
+                    v{VERSION}
+                  </span>
+                }
+              />
+              <CardItem
+                title="Check for Updates"
+                description="Check if a newer version of Jan is available"
+                actions={
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0"
+                    onClick={handleCheckForUpdate}
+                    disabled={isCheckingUpdate}
+                  >
+                    <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
+                      {isCheckingUpdate ? 'Checking...' : 'Check for Updates'}
+                    </div>
+                  </Button>
                 }
               />
               <CardItem
