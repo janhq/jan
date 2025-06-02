@@ -34,7 +34,7 @@ const DialogAppUpdater = () => {
   return (
     <>
       {updateState.isUpdateAvailable && (
-        <div className="fixed z-50 w-[400px] bottom-2 right-2 bg-main-view text-main-view-fg flex items-center justify-center border border-main-view-fg/10 rounded-lg shadow-md">
+        <div className="fixed z-50 w-[400px] bottom-3 right-3 bg-main-view text-main-view-fg flex items-center justify-center border border-main-view-fg/10 rounded-lg shadow-md">
           <div className="px-0 py-4">
             <div className="px-4">
               <div className="flex items-start gap-2">
