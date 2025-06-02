@@ -87,9 +87,7 @@ const ProvidersMenu = ({
                 }
               >
                 <ProvidersAvatar provider={provider} />
-                <span className="capitalize">
-                  {getProviderTitle(provider.provider)}
-                </span>
+                <span>{getProviderTitle(provider.provider)}</span>
               </div>
             </div>
           )
@@ -99,7 +97,7 @@ const ProvidersMenu = ({
           <DialogTrigger asChild>
             <div className="bg-main-view flex cursor-pointer px-4 my-1.5 items-center gap-1.5  text-main-view-fg/80">
               <IconCirclePlus size={18} />
-              <span className="capitalize">Add Provider</span>
+              <span>Add Provider</span>
             </div>
           </DialogTrigger>
           <DialogContent>
