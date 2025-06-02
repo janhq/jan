@@ -154,7 +154,7 @@ export default class llamacpp_extension extends AIEngine {
   onSettingUpdate<T>(key: string, value: T): void {
     this.config[key] = value
 
-    if (key === 'backend') {
+    if (key === 'version_backend') {
       const valueStr = value as string
       const [version, backend] = valueStr.split('/')
 
