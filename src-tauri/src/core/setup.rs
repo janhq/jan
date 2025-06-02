@@ -225,7 +225,6 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 .shell()
                 .sidecar("cortex-server")
                 .expect("Failed to get sidecar command")
-                .current_dir(app_handle.path().resource_dir().unwrap().join("binaries"))
                 .args([
                     "--start-server",
                     "--port",
@@ -242,6 +241,10 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                     "--api_keys",
                     app_state.inner().app_token.as_deref().unwrap_or(""),
                 ]);
+            #[cfg(target_os = "windows")]
+            {
+                cmd = cmd.current_dir(app_handle.path().resource_dir().unwrap());
+            }
 
             #[cfg(not(target_os = "windows"))]
             {
