@@ -77,25 +77,6 @@ export class App implements Processor {
     return appConfiguration()
   }
 
-  /**
-   * Get themes from the app data folder.
-   * @returns
-   */
-  getThemes() {
-    const themesPath = join(getJanDataFolderPath(), 'themes')
-    return readdirSync(themesPath)
-  }
-
-  /**
-   * Read theme.json
-   * @param theme
-   * @returns
-   */
-  readTheme({ theme }: { theme: string }) {
-    const themePath = join(getJanDataFolderPath(), 'themes', theme, 'theme.json')
-    return readFileSync(themePath, { encoding: 'utf-8' })
-  }
-
   async updateAppConfiguration(args: any) {
     await updateAppConfiguration(args)
   }

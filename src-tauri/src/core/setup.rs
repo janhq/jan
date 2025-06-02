@@ -428,7 +428,7 @@ pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
     // Copy engine binaries to app_data
     let app_data_dir = get_jan_data_folder_path(app.handle().clone());
     let binaries_dir = app.handle().path().resource_dir().unwrap().join("binaries");
-    let themes_dir = app
+    let resources_dir = app
         .handle()
         .path()
         .resource_dir()
@@ -438,8 +438,8 @@ pub fn setup_engine_binaries(app: &App) -> Result<(), String> {
     if let Err(e) = copy_dir_all(binaries_dir, app_data_dir.clone()) {
         log::error!("Failed to copy binaries: {}", e);
     }
-    if let Err(e) = copy_dir_all(themes_dir, app_data_dir.clone()) {
-        log::error!("Failed to copy themes: {}", e);
+    if let Err(e) = copy_dir_all(resources_dir, app_data_dir.clone()) {
+        log::error!("Failed to copy resources: {}", e);
     }
     Ok(())
 }

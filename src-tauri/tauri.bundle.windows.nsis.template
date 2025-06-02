@@ -633,7 +633,6 @@ Section Install
     CreateDirectory "$INSTDIR\binaries\engines"
     CreateDirectory "$INSTDIR\resources"
     CreateDirectory "$INSTDIR\resources\pre-install"
-    CreateDirectory "$INSTDIR\resources\themes"
     SetOutPath "$INSTDIR\binaries\engines"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\binaries\engines\"
     SetOutPath $INSTDIR
@@ -650,8 +649,6 @@ Section Install
     File /a "/oname=vulkan-1.dll" "D:\a\jan\jan\src-tauri\binaries\vulkan-1.dll"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
-    SetOutPath "$INSTDIR\resources\themes"
-    File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\themes\"
     SetOutPath $INSTDIR
 
   ; Copy external binaries
@@ -781,10 +778,6 @@ Section Uninstall
     Delete "$INSTDIR\resources\pre-install\janhq-hardware-management-extension-1.0.0.tgz"
     Delete "$INSTDIR\resources\pre-install\janhq-inference-cortex-extension-1.0.25.tgz"
     Delete "$INSTDIR\resources\pre-install\janhq-model-extension-1.0.36.tgz"
-    Delete "$INSTDIR\resources\themes\dark-dimmed\theme.json"
-    Delete "$INSTDIR\resources\themes\joi-dark\theme.json"
-    Delete "$INSTDIR\resources\themes\joi-light\theme.json"
-    Delete "$INSTDIR\resources\themes\night-blue\theme.json"
 
   ; Delete external binaries
     Delete "$INSTDIR\cortex-server.exe"
@@ -799,13 +792,8 @@ Section Uninstall
   ; Delete uninstaller
   Delete "$INSTDIR\uninstall.exe"
 
-  RMDir /REBOOTOK "$INSTDIR\resources\themes\dark-dimmed"
-  RMDir /REBOOTOK "$INSTDIR\resources\themes\joi-dark"
-  RMDir /REBOOTOK "$INSTDIR\resources\themes\joi-light"
-  RMDir /REBOOTOK "$INSTDIR\resources\themes\night-blue"
   RMDir /r /REBOOTOK "$INSTDIR\binaries\engines"
   RMDir /REBOOTOK "$INSTDIR\resources\pre-install"
-  RMDir /REBOOTOK "$INSTDIR\resources\themes"
   RMDir /r /REBOOTOK "$INSTDIR\binaries"
   RMDir /r /REBOOTOK "$INSTDIR\resources"
   RMDir /r "$INSTDIR"
