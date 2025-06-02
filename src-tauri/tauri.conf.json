@@ -83,7 +83,6 @@
     ],
     "resources": [
       "binaries/engines/**/*",
-      "resources/themes/**/*",
       "resources/pre-install/**/*",
       "resources/lib/"
     ],

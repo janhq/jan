@@ -90,7 +90,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             Authorization: `Bearer ${apiKey}`,
           }
         : {},
-      retry: 10,
+      retry: 4,
     })
     return this.api
   }
@@ -256,6 +256,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       api
         .post('v1/models/stop', {
           json: { model: model.id },
+          retry: {
+            limit: 0,
+          },
         })
         .json()
         .finally(() => {

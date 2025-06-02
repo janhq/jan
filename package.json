@@ -18,7 +18,7 @@
     "install:cortex:linux:darwin": "cd src-tauri/binaries && ./download.sh",
     "install:cortex:win32": "cd src-tauri/binaries && download.bat",
     "install:cortex": "run-script-os",
-    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"themes/**\" \"src-tauri/resources/themes\"",
+    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
     "copy:lib": "run-script-os",
     "copy:lib:linux": "cpx \"./lib/linux/*.so\" \"./src-tauri/resources/lib/\"",
     "copy:lib:win32": "cpx \"./lib/windows/*.dll\" \"./src-tauri/resources/lib/\"",
@@ -56,6 +56,6 @@
   },
   "packageManager": "yarn@4.5.3",
   "dependencies": {
-    "@tanstack/router": "0.0.1-beta.53"
+    "download-cli": "^1.1.1"
   }
 }

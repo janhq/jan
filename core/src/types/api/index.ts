@@ -40,7 +40,7 @@ export enum NativeRoute {
 /**
  * App Route APIs
  * @description Enum of all the routes exposed by the app
-*/
+ */
 export enum AppRoute {
   getAppConfigurations = 'getAppConfigurations',
   updateAppConfiguration = 'updateAppConfiguration',
@@ -51,8 +51,6 @@ export enum AppRoute {
   log = 'log',
   systemInformation = 'systemInformation',
   showToast = 'showToast',
-  getThemes = 'getThemes',
-  readTheme = 'readTheme'
 }
 
 export enum AppEvent {
@@ -150,10 +148,7 @@ export const CoreRoutes = [
 ]
 
 export const APIRoutes = [...CoreRoutes, ...Object.values(NativeRoute)]
-export const APIEvents = [
-  ...Object.values(AppEvent),
-  ...Object.values(DownloadEvent),
-]
+export const APIEvents = [...Object.values(AppEvent), ...Object.values(DownloadEvent)]
 export type PayloadType = {
   messages: ChatCompletionMessage[]
   model: string

@@ -33,7 +33,6 @@ pub fn run() {
             core::fs::file_stat,
             core::fs::write_file_sync,
             // App commands
-            core::cmd::get_themes,
             core::cmd::get_app_configurations,
             core::cmd::get_active_extensions,
             core::cmd::get_user_home_path,
@@ -44,7 +43,6 @@ pub fn run() {
             core::cmd::open_app_directory,
             core::cmd::open_file_explorer,
             core::cmd::install_extensions,
-            core::cmd::read_theme,
             core::cmd::app_token,
             core::cmd::start_server,
             core::cmd::stop_server,
