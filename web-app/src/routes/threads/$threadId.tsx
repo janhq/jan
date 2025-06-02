@@ -27,6 +27,7 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isAtBottom, setIsAtBottom] = useState(true)
+  const [hasScrollbar, setHasScrollbar] = useState(false)
   const lastScrollTopRef = useRef(0)
   const { currentThreadId, setCurrentThreadId } = useThreads()
   const { setCurrentAssistant, assistants } = useAssistant()
@@ -44,6 +45,19 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isFirstRender = useRef(true)
   const messagesCount = useMemo(() => messages?.length ?? 0, [messages])
+
+  // Function to check scroll position and scrollbar presence
+  const checkScrollState = () => {
+    const scrollContainer = scrollContainerRef.current
+    if (!scrollContainer) return
+
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainer
+    const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10
+    const hasScroll = scrollHeight > clientHeight
+
+    setIsAtBottom(isBottom)
+    setHasScrollbar(hasScroll)
+  }
 
   useEffect(() => {
     if (currentThreadId !== threadId) {
@@ -86,6 +100,7 @@ function ThreadDetail() {
       scrollToBottom()
       setIsAtBottom(true)
       setIsUserScrolling(false)
+      checkScrollState()
       return
     }
   }, [])
@@ -96,6 +111,7 @@ function ThreadDetail() {
     scrollToBottom()
     setIsAtBottom(true)
     setIsUserScrolling(false)
+    checkScrollState()
   }, [threadId])
 
   // Single useEffect for all auto-scrolling logic
@@ -108,6 +124,13 @@ function ThreadDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streamingContent, isUserScrolling, messagesCount])
+
+  useEffect(() => {
+    if (streamingContent) {
+      const interval = setInterval(checkScrollState, 100)
+      return () => clearInterval(interval)
+    }
+  }, [streamingContent])
 
   const scrollToBottom = (smooth = false) => {
     if (scrollContainerRef.current) {
@@ -123,12 +146,14 @@ function ThreadDetail() {
     const { scrollTop, scrollHeight, clientHeight } = target
     // Use a small tolerance to better detect when we're at the bottom
     const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10
+    const hasScroll = scrollHeight > clientHeight
 
     // Detect if this is a user-initiated scroll
     if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
       setIsUserScrolling(!isBottom)
     }
     setIsAtBottom(isBottom)
+    setHasScrollbar(hasScroll)
     lastScrollTopRef.current = scrollTop
   }
 
@@ -138,12 +163,14 @@ function ThreadDetail() {
     const { scrollTop, scrollHeight, clientHeight } = target
     // Use a small tolerance to better detect when we're at the bottom
     const isBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10
+    const hasScroll = scrollHeight > clientHeight
 
     // Detect if this is a user-initiated scroll
     if (Math.abs(scrollTop - lastScrollTopRef.current) > 10) {
       setIsUserScrolling(!isBottom)
     }
     setIsAtBottom(isBottom)
+    setHasScrollbar(hasScroll)
     lastScrollTopRef.current = scrollTop
   }
 
@@ -215,7 +242,7 @@ function ThreadDetail() {
           <div
             className={cn(
               'from-main-view/20 bg-gradient-to-b to-main-view absolute z-0 -top-6 h-8 py-1 flex w-full justify-center backdrop-blur pointer-events-none opacity-0 visibility-hidden',
-              !isAtBottom && 'visibility-visible opacity-100'
+              !isAtBottom && hasScrollbar && 'visibility-visible opacity-100'
             )}
           >
             <div
