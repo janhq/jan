@@ -24,19 +24,36 @@ export const useAppUpdater = () => {
   const checkForUpdate = useCallback(async () => {
     try {
       if (!isDev()) {
+        // Production mode - use actual Tauri updater
         const update = await check()
+
         if (update) {
           setUpdateState((prev) => ({
             ...prev,
             isUpdateAvailable: true,
             updateInfo: update,
           }))
+          console.log('Update available:', update.version)
           return update
+        } else {
+          // No update available - reset state
+          setUpdateState((prev) => ({
+            ...prev,
+            isUpdateAvailable: false,
+            updateInfo: null,
+          }))
+
+          return null
         }
       }
-      return null
     } catch (error) {
       console.error('Error checking for updates:', error)
+      // Reset state on error
+      setUpdateState((prev) => ({
+        ...prev,
+        isUpdateAvailable: false,
+        updateInfo: null,
+      }))
       return null
     }
   }, [])

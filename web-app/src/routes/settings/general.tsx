@@ -41,6 +41,7 @@ import {
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
+import { isDev } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -167,9 +168,11 @@ function General() {
   const handleCheckForUpdate = async () => {
     setIsCheckingUpdate(true)
     try {
+      if (isDev())
+        return toast.info('You are running a development version of Jan!')
       const update = await checkForUpdate()
       if (!update) {
-        toast.success('You are using the latest version of Jan!')
+        toast.info('You are using the latest version of Jan!')
       }
       // If update is available, the AppUpdater dialog will automatically show
     } catch (error) {

@@ -56,8 +56,7 @@ export function DataProvider() {
   // Check for app updates
   useEffect(() => {
     checkForUpdate()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [checkForUpdate])
 
   return null
 }

@@ -9,7 +9,8 @@ import { RenderMarkdown } from '../RenderMarkdown'
 import { isDev } from '@/lib/utils'
 
 const DialogAppUpdater = () => {
-  const { updateState, downloadAndInstallUpdate } = useAppUpdater()
+  const { updateState, downloadAndInstallUpdate, checkForUpdate } =
+    useAppUpdater()
   const [showReleaseNotes, setShowReleaseNotes] = useState(false)
   const [remindMeLater, setRemindMeLater] = useState(false)
 
@@ -28,6 +29,11 @@ const DialogAppUpdater = () => {
       fetchLatestRelease(beta ? true : false)
     }
   }, [beta, fetchLatestRelease])
+
+  // Check for updates when component mounts
+  useEffect(() => {
+    checkForUpdate()
+  }, [checkForUpdate])
 
   if (remindMeLater) return null
 
