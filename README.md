@@ -206,7 +206,7 @@ Contributions are welcome! Please read the [CONTRIBUTING.md](CONTRIBUTING.md) fi
 1. **Clone the repository and prepare:**
 
    ```bash
-   git clone https://github.com/menloresearch/jan
+   git clone --depth 1 https://github.com/menloresearch/jan
    cd jan
    git checkout -b DESIRED_BRANCH
    ```
