@@ -17,6 +17,8 @@ import { Button } from '@/components/ui/button'
 import { useCallback, useState } from 'react'
 import { openAIProviderSettings } from '@/mock/data'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import cloneDeep from 'lodash/cloneDeep'
+import { toast } from 'sonner'
 
 const ProvidersMenu = ({
   stepSetupRemoteProvider,
@@ -28,14 +30,21 @@ const ProvidersMenu = ({
   const matches = useMatches()
   const [name, setName] = useState('')
   const createProvider = useCallback(() => {
-    addProvider({
+    if (providers.some((e) => e.provider === name)) {
+      toast.error(
+        `Provider with name "${name}" already exists. Please choose a different name.`
+      )
+      return
+    }
+    const newProvider = {
       provider: name,
       active: true,
       models: [],
-      settings: openAIProviderSettings as ProviderSetting[],
+      settings: cloneDeep(openAIProviderSettings) as ProviderSetting[],
       api_key: '',
       base_url: 'https://api.openai.com/v1',
-    })
+    }
+    addProvider(newProvider)
     setTimeout(() => {
       navigate({
         to: route.settings.providers,
@@ -44,7 +53,7 @@ const ProvidersMenu = ({
         },
       })
     }, 0)
-  }, [name, addProvider, navigate])
+  }, [providers, name, addProvider, navigate])
 
   return (
     <div className="w-44 py-2 border-r border-main-view-fg/5 pb-10 overflow-y-auto">
