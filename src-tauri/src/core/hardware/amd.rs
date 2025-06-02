@@ -20,40 +20,58 @@ impl GpuInfo {
             }
         };
 
-        for card_idx in 0.. {
-            let device_path = format!("/sys/class/drm/card{}/device", card_idx);
-            if !Path::new(&device_path).exists() {
-                break;
-            }
+        let closure = || -> Result<GpuUsage, Box<dyn std::error::Error>> {
+            for subdir in fs::read_dir("/sys/class/drm")? {
+                let device_path = subdir?.path().join("device");
 
-            // Check if this is an AMD GPU by looking for amdgpu directory
-            if !Path::new(&format!("{}/driver/module/drivers/pci:amdgpu", device_path)).exists() {
-                continue;
-            }
+                // Check if this is an AMD GPU by looking for amdgpu directory
+                if !device_path
+                    .join("driver/module/drivers/pci:amdgpu")
+                    .exists()
+                {
+                    continue;
+                }
 
-            // match device_id from Vulkan info
-            let this_device_id = fs::read_to_string(format!("{}/device", device_path))
-                .map(|s| u32::from_str_radix(s.trim(), 16).unwrap_or(0))
-                .unwrap_or(0);
-            if this_device_id != device_id {
-                continue;
-            }
+                // match device_id from Vulkan info
+                let this_device_id_str = fs::read_to_string(device_path.join("device"))?;
+                let this_device_id = u32::from_str_radix(
+                    this_device_id_str
+                        .strip_prefix("0x")
+                        .unwrap_or(&this_device_id_str)
+                        .trim(),
+                    16,
+                )?;
+                if this_device_id != device_id {
+                    continue;
+                }
 
-            let read_mem = |path: &str| -> u64 {
-                fs::read_to_string(path)
-                    .map(|content| content.trim().parse::<u64>().unwrap_or(0))
-                    .unwrap_or(0)
-                    / 1024
-                    / 1024 // Convert bytes to MiB
-            };
-            return GpuUsage {
-                uuid: self.uuid.clone(),
-                total_memory: read_mem(&format!("{}/mem_info_vram_total", device_path)),
-                used_memory: read_mem(&format!("{}/mem_info_vram_used", device_path)),
-            };
+                let read_mem = |path: &Path| -> u64 {
+                    fs::read_to_string(path)
+                        .map(|content| content.trim().parse::<u64>().unwrap_or(0))
+                        .unwrap_or(0)
+                        / 1024
+                        / 1024 // Convert bytes to MiB
+                };
+                return Ok(GpuUsage {
+                    uuid: self.uuid.clone(),
+                    total_memory: read_mem(&device_path.join("mem_info_vram_total")),
+                    used_memory: read_mem(&device_path.join("mem_info_vram_used")),
+                });
+            }
+            Err(format!("GPU not found").into())
+        };
+
+        match closure() {
+            Ok(usage) => usage,
+            Err(e) => {
+                log::error!(
+                    "Failed to get memory usage for AMD GPU {:#x}: {}",
+                    device_id,
+                    e
+                );
+                self.get_usage_unsupported()
+            }
         }
-
-        self.get_usage_unsupported()
     }
 
     #[cfg(target_os = "windows")]
