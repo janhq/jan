@@ -462,30 +462,32 @@ const ChatInput = ({
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <DropdownToolsAvailable
-                            initialMessage={initialMessage}
-                          >
-                            {(isOpen, toolsCount) => (
-                              <div
-                                className={cn(
-                                  'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                  isOpen && 'bg-main-view-fg/10'
-                                )}
-                              >
-                                <IconTool
-                                  size={18}
-                                  className="text-main-view-fg/50"
-                                />
-                                {toolsCount > 0 && (
-                                  <div className="absolute -top-1 -right-1.5 bg-accent text-accent-fg text-xs rounded-full size-4 flex items-center justify-center font-medium">
-                                    <span className="leading-0">
-                                      {toolsCount > 99 ? '99+' : toolsCount}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </DropdownToolsAvailable>
+                          <div>
+                            <DropdownToolsAvailable
+                              initialMessage={initialMessage}
+                            >
+                              {(isOpen, toolsCount) => (
+                                <div
+                                  className={cn(
+                                    'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                    isOpen && 'bg-main-view-fg/10'
+                                  )}
+                                >
+                                  <IconTool
+                                    size={18}
+                                    className="text-main-view-fg/50"
+                                  />
+                                  {toolsCount > 0 && (
+                                    <div className="absolute -top-1 -right-1.5 bg-accent text-accent-fg text-xs rounded-full size-4 flex items-center justify-center font-medium">
+                                      <span className="leading-0">
+                                        {toolsCount > 99 ? '99+' : toolsCount}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </DropdownToolsAvailable>
+                          </div>
                         </TooltipTrigger>
                         <TooltipContent>
                           <p>Tools</p>
