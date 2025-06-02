@@ -82,9 +82,9 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "binaries/engines/**/*",
       "resources/pre-install/**/*",
-      "resources/lib/"
+      "resources/lib/",
+      "binaries/**/*"
     ],
     "externalBin": [
       "binaries/cortex-server",

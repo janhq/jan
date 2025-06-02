@@ -225,6 +225,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 .shell()
                 .sidecar("cortex-server")
                 .expect("Failed to get sidecar command")
+                .current_dir(app_handle.path().resource_dir().unwrap().join("binaries"))
                 .args([
                     "--start-server",
                     "--port",
@@ -241,20 +242,6 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                     "--api_keys",
                     app_state.inner().app_token.as_deref().unwrap_or(""),
                 ]);
-
-            #[cfg(target_os = "windows")]
-            {
-                cmd = cmd.env("PATH", {
-                    let exe_path = env::current_exe().expect("Failed to get current exe path");
-                    let exe_parent_path = exe_path
-                        .parent()
-                        .expect("Executable must have a parent directory");
-                    let bin_path = exe_parent_path.to_path_buf();
-                    let dest = bin_path.display();
-                    let path = std::env::var("PATH").unwrap_or_default();
-                    format!("{}{}{}", path, std::path::MAIN_SEPARATOR, dest)
-                });
-            }
 
             #[cfg(not(target_os = "windows"))]
             {
