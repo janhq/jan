@@ -139,11 +139,11 @@ export default class llamacpp_extension extends AIEngine {
 
   override async onUnload(): Promise<void> {
     // Terminate all active sessions
-    for (const [sessionId, _] of this.activeSessions) {
+    for (const [_, sInfo] of this.activeSessions) {
       try {
-        await this.unload(sessionId)
+        await this.unload(sInfo.modelId)
       } catch (error) {
-        console.error(`Failed to unload session ${sessionId}:`, error)
+        console.error(`Failed to unload model ${sInfo.modelId}:`, error)
       }
     }
 
