@@ -35,6 +35,22 @@ export function AppearanceProvider() {
     // Apply font size
     document.documentElement.style.setProperty('--font-size-base', fontSize)
 
+    // Hide alpha slider when IS_LINUX || !IS_TAURI
+    const shouldHideAlpha = IS_LINUX || !IS_TAURI
+    let alphaStyleElement = document.getElementById('alpha-slider-style')
+
+    if (shouldHideAlpha) {
+      if (!alphaStyleElement) {
+        alphaStyleElement = document.createElement('style')
+        alphaStyleElement.id = 'alpha-slider-style'
+        document.head.appendChild(alphaStyleElement)
+      }
+      alphaStyleElement.textContent =
+        '.react-colorful__alpha { display: none !important; }'
+    } else if (alphaStyleElement) {
+      alphaStyleElement.remove()
+    }
+
     // Apply app background color
     // Import culori functions dynamically to avoid SSR issues
     import('culori').then(({ rgb, oklch, formatCss }) => {
@@ -44,7 +60,7 @@ export function AppearanceProvider() {
         r: appBgColor.r / 255,
         g: appBgColor.g / 255,
         b: appBgColor.b / 255,
-        alpha: appBgColor.a,
+        alpha: IS_LINUX || !IS_TAURI ? 1 : appBgColor.a,
       })
 
       const culoriRgbMainView = rgb({

@@ -40,8 +40,18 @@ export const fontSizeOptions = [
 
 // Default appearance settings
 const defaultFontSize: FontSize = '15px'
-const defaultAppBgColor: RgbaColor = { r: 0, g: 0, b: 0, a: 0.4 }
-const defaultLightAppBgColor: RgbaColor = { r: 255, g: 255, b: 255, a: 0.4 }
+const defaultAppBgColor: RgbaColor = {
+  r: 0,
+  g: 0,
+  b: 0,
+  a: IS_LINUX || !IS_TAURI ? 1 : 0.4,
+}
+const defaultLightAppBgColor: RgbaColor = {
+  r: 255,
+  g: 255,
+  b: 255,
+  a: IS_LINUX || !IS_TAURI ? 1 : 0.4,
+}
 const defaultAppMainViewBgColor: RgbaColor = { r: 25, g: 25, b: 25, a: 1 }
 const defaultLightAppMainViewBgColor: RgbaColor = {
   r: 250,
