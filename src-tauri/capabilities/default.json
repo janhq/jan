@@ -19,6 +19,7 @@
     "log:default",
     "updater:default",
     "dialog:default",
+    "deep-link:default",
     "core:webview:allow-create-webview-window",
     {
       "identifier": "http:default",

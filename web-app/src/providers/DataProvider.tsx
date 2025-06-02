@@ -13,6 +13,12 @@ import { getMCPConfig } from '@/services/mcp'
 import { useAssistant } from '@/hooks/useAssistant'
 import { getAssistants } from '@/services/assistants'
 import { migrateData } from '@/utils/migration'
+import {
+  onOpenUrl,
+  getCurrent as getCurrentDeepLinkUrls,
+} from '@tauri-apps/plugin-deep-link'
+import { useNavigate } from '@tanstack/react-router'
+import { route } from '@/constants/routes'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
@@ -21,6 +27,7 @@ export function DataProvider() {
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
   const { setAssistants } = useAssistant()
+  const navigate = useNavigate()
 
   useEffect(() => {
     fetchModels().then((models) => {
@@ -39,6 +46,8 @@ export function DataProvider() {
         console.warn('Failed to load assistants, keeping default:', error)
       })
     migrateData()
+    getCurrentDeepLinkUrls().then(handleDeepLink)
+    onOpenUrl(handleDeepLink)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -57,6 +66,28 @@ export function DataProvider() {
   useEffect(() => {
     checkForUpdate()
   }, [checkForUpdate])
+
+  const handleDeepLink = (urls: string[] | null) => {
+    if (!urls) return
+    console.log('Received deeplink:', urls)
+    const deeplink = urls[0]
+    if (deeplink) {
+      const url = new URL(deeplink)
+      const params = url.pathname.split('/').filter((str) => str.length > 0)
+
+      if (params.length < 3) return undefined
+      // const action = params[0]
+      // const provider = params[1]
+      const resource = params.slice(1).join('/')
+      // return { action, provider, resource }
+      navigate({
+        to: route.hub,
+        search: {
+          repo: resource,
+        },
+      })
+    }
+  }
 
   return null
 }
