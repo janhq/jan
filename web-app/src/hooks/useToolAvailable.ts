@@ -6,7 +6,7 @@ import { MCPTool } from '@/types/completion'
 type ToolDisabledState = {
   // Track disabled tools per thread
   disabledTools: Record<string, string[]> // threadId -> toolNames[]
-  // Global default available tools (for new threads/index page)
+  // Global default disabled tools (for new threads/index page)
   defaultDisabledTools: string[]
 
   // Actions
