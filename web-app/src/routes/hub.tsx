@@ -29,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { addModelSource, downloadModel } from '@/services/models'
+import { addModelSource, downloadModel, fetchModelHub } from '@/services/models'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { Progress } from '@/components/ui/progress'
 import HeaderPage from '@/containers/HeaderPage'
@@ -82,6 +82,9 @@ function Hub() {
       [modelId]: !prev[modelId],
     }))
   }
+  useEffect(() => {
+    fetchModelHub().then(fetchSources)
+  }, [fetchSources])
 
   useEffect(() => {
     if (search.repo) {

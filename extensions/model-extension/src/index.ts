@@ -401,15 +401,17 @@ export default class JanModelExtension extends ModelExtension {
         api
           .get('v1/models/hub?author=cortexso&tag=cortex.cpp')
           .json<Data<string>>()
-          .then((e) => {
-            e.data?.forEach((model) => {
-              if (
-                !models.some(
-                  (e) => 'modelSource' in e && e.modelSource === model
+          .then(async (e) => {
+            await Promise.all(
+              e.data?.map((model) => {
+                if (
+                  !models.some(
+                    (e) => 'modelSource' in e && e.modelSource === model
+                  )
                 )
-              )
-                this.addSource(model).catch((e) => console.debug(e))
-            })
+                  return this.addSource(model).catch((e) => console.debug(e))
+              })
+            )
           })
       )
       .catch((e) => console.debug(e))
