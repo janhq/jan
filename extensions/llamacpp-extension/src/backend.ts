@@ -17,35 +17,43 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
 
   const features = await _getSupportedFeatures()
   const sysType = `${os_type}-${arch}`
-  let backends = []
+  let supportedBackends = []
 
   // NOTE: menloresearch's tags for llama.cpp builds are a bit different
   // TODO: fetch versions from the server?
   // TODO: select CUDA version based on driver version
   if (sysType == 'windows-x86_64') {
     // NOTE: if a machine supports AVX2, should we include noavx and avx?
-    backends.push('win-noavx-x64')
-    if (features.avx) backends.push('win-avx-x64')
-    if (features.avx2) backends.push('win-avx2-x64')
-    if (features.avx512) backends.push('win-avx512-x64')
-    if (features.cuda11) backends.push('win-avx2-cuda-cu11.7-x64')
-    if (features.cuda12) backends.push('win-avx2-cuda-cu12.0-x64')
-    if (features.vulkan) backends.push('win-vulkan-x64')
+    supportedBackends.push('win-noavx-x64')
+    if (features.avx) supportedBackends.push('win-avx-x64')
+    if (features.avx2) supportedBackends.push('win-avx2-x64')
+    if (features.avx512) supportedBackends.push('win-avx512-x64')
+    if (features.cuda11) supportedBackends.push('win-avx2-cuda-cu11.7-x64')
+    if (features.cuda12) supportedBackends.push('win-avx2-cuda-cu12.0-x64')
+    if (features.vulkan) supportedBackends.push('win-vulkan-x64')
+  }
+  // not available yet, placeholder for future
+  else if (sysType == 'windows-aarch64') {
+    supportedBackends.push('win-arm64')
   }
   else if (sysType == 'linux-x86_64') {
-    backends.push('linux-noavx-x64')
-    if (features.avx) backends.push('linux-avx-x64')
-    if (features.avx2) backends.push('linux-avx2-x64')
-    if (features.avx512) backends.push('linux-avx512-x64')
-    if (features.cuda11) backends.push('linux-avx2-cuda-cu11.7-x64')
-    if (features.cuda12) backends.push('linux-avx2-cuda-cu12.0-x64')
-    if (features.vulkan) backends.push('linux-vulkan-x64')
+    supportedBackends.push('linux-noavx-x64')
+    if (features.avx) supportedBackends.push('linux-avx-x64')
+    if (features.avx2) supportedBackends.push('linux-avx2-x64')
+    if (features.avx512) supportedBackends.push('linux-avx512-x64')
+    if (features.cuda11) supportedBackends.push('linux-avx2-cuda-cu11.7-x64')
+    if (features.cuda12) supportedBackends.push('linux-avx2-cuda-cu12.0-x64')
+    if (features.vulkan) supportedBackends.push('linux-vulkan-x64')
+  }
+  // not available yet, placeholder for future
+  else if (sysType === 'linux-aarch64') {
+    supportedBackends.push('linux-arm64')
   }
   else if (sysType === 'macos-x86_64') {
-    backends.push('macos-x64')
+    supportedBackends.push('macos-x64')
   }
   else if (sysType === 'macos-aarch64') {
-    backends.push('macos-arm64')
+    supportedBackends.push('macos-arm64')
   }
 
   const releases = await _fetchGithubReleases('menloresearch', 'llama.cpp')
@@ -65,7 +73,7 @@ export async function listSupportedBackends(): Promise<{ version: string, backen
       }
 
       const backend = name.replace(prefix, '').replace('.tar.gz', '')
-      if (backends.includes(backend)) {
+      if (supportedBackends.includes(backend)) {
         backendVersions.push({ version, backend })
       }
     }
