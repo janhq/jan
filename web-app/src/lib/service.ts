@@ -6,6 +6,7 @@ import {
 } from '@janhq/core'
 import { invoke, InvokeArgs } from '@tauri-apps/api/core'
 import { ExtensionManager } from './extension'
+import { useVulkan } from '@/hooks/useVulkan'
 
 export const AppRoutes = [
   'installExtensions',
@@ -54,7 +55,7 @@ export const systemInformation = async () => {
 
   const gpuSettingInfo = {
     gpus: hardwareInfo.gpus.filter((gpu) => gpu.total_vram > 0),
-    vulkan: false,
+    vulkan: useVulkan.getState().vulkanEnabled,
     cpu: hardwareInfo.cpu,
   }
 

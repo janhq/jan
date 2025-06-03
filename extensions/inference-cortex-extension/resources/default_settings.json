@@ -58,7 +58,7 @@
     "description": "Optimizes memory usage and speeds up model inference using an efficient attention implementation.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": true
+      "value": false
     }
   },
   {

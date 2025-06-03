@@ -271,8 +271,16 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * This is to use built-in engine variant in case there is no default engine set
    */
   async updateDefaultEngine() {
+    const systemInfo = await systemInformation()
     try {
       const variant = await this.getDefaultEngineVariant('llama-cpp')
+      if (
+        (systemInfo.gpuSetting.vulkan && !variant.variant.includes('vulkan')) ||
+        (systemInfo.gpuSetting.vulkan === false &&
+          variant.variant.includes('vulkan'))
+      ) {
+        throw new EngineError('Switch engine.')
+      }
       const installedEngines = await this.getInstalledEngines('llama-cpp')
       if (
         !installedEngines.some(
@@ -289,7 +297,6 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
         (error instanceof HTTPError && error.response.status === 400) ||
         error instanceof EngineError
       ) {
-        const systemInfo = await systemInformation()
         const variant = await engineVariant(systemInfo.gpuSetting)
         // TODO: Use correct provider name when moving to llama.cpp extension
         await this.setDefaultEngineVariant('llama-cpp', {
