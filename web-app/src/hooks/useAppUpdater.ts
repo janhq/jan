@@ -1,6 +1,7 @@
 import { isDev } from '@/lib/utils'
 import { check, Update } from '@tauri-apps/plugin-updater'
 import { useState, useCallback } from 'react'
+import { events, AppEvent } from '@janhq/core'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -40,7 +41,7 @@ export const useAppUpdater = () => {
         if (update) {
           setUpdateState((prev) => ({
             ...prev,
-            isUpdateAvailable: true,
+            isUpdateAvailable: false,
             updateInfo: update,
           }))
           console.log('Update available:', update.version)
@@ -55,6 +56,13 @@ export const useAppUpdater = () => {
 
           return null
         }
+      } else {
+        setUpdateState((prev) => ({
+          ...prev,
+          isUpdateAvailable: true,
+          updateInfo: null,
+        }))
+        return null
       }
     } catch (error) {
       console.error('Error checking for updates:', error)
@@ -96,6 +104,13 @@ export const useAppUpdater = () => {
               totalBytes: contentLength,
             }))
             console.log(`Started downloading ${contentLength} bytes`)
+
+            // Emit app update download started event
+            events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+              progress: 0,
+              downloadedBytes: 0,
+              totalBytes: contentLength,
+            })
             break
           case 'Progress': {
             downloaded += event.data.chunkLength
@@ -106,6 +121,13 @@ export const useAppUpdater = () => {
               downloadedBytes: downloaded,
             }))
             console.log(`Downloaded ${downloaded} from ${contentLength}`)
+
+            // Emit app update download progress event
+            events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+              progress: progress,
+              downloadedBytes: downloaded,
+              totalBytes: contentLength,
+            })
             break
           }
           case 'Finished':
@@ -115,6 +137,9 @@ export const useAppUpdater = () => {
               isDownloading: false,
               downloadProgress: 1,
             }))
+
+            // Emit app update download success event
+            events.emit(AppEvent.onAppUpdateDownloadSuccess, {})
             break
         }
       })
@@ -126,6 +151,11 @@ export const useAppUpdater = () => {
         ...prev,
         isDownloading: false,
       }))
+
+      // Emit app update download error event
+      events.emit(AppEvent.onAppUpdateDownloadError, {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }, [updateState.updateInfo])
 
