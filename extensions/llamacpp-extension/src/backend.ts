@@ -240,6 +240,13 @@ async function _isCudaInstalled(version: string): Promise<boolean> {
   }
 
   const libname = libnameLookup[key]
+
+  // check from system libraries first
+  // TODO: need to check for CuBLAS and CuBLASLt as well
+  if (await invoke<boolean>('is_library_available', { library: libname }))
+    return true
+
+  // check for libraries shipped with Jan's llama.cpp extension
   const janDataFolderPath = await getJanDataFolderPath()
   const cudartPath = await joinPath([janDataFolderPath, 'llamacpp', 'lib', libname])
   return await fs.existsSync(cudartPath)
