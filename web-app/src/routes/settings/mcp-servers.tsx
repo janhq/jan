@@ -159,7 +159,7 @@ function MCPServers() {
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <Card
               header={
-                <div className="flex flex-col">
+                <div className="flex flex-col mb-4">
                   <div className="flex items-center justify-between">
                     <h1 className="text-main-view-fg font-medium text-base">
                       MCP Servers
@@ -197,35 +197,21 @@ function MCPServers() {
                   </p>
                 </div>
               }
-            />
-
-            {/* Global MCP Permission Toggle */}
-            <Card
-              header={
-                <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <h1 className="text-main-view-fg font-medium text-base">
-                      Allow All MCP Tool Permissions
-                    </h1>
-                    <p className="text-sm text-main-view-fg/70">
-                      When enabled, all MCP tool calls will be automatically
-                      approved without showing permission dialogs.
-                      <span className="font-semibold text-main-view-fg">
-                        {' '}
-                        Use with caution
-                      </span>{' '}
-                      - only enable this if you trust all your MCP servers.
-                    </p>
-                  </div>
+            >
+              <CardItem
+                title="Allow All MCP Tool Permissions"
+                description="When enabled, all MCP tool calls will be automatically
+                      approved without showing permission dialogs."
+                actions={
                   <div className="flex-shrink-0 ml-4">
                     <Switch
                       checked={allowAllMCPPermissions}
                       onCheckedChange={setAllowAllMCPPermissions}
                     />
                   </div>
-                </div>
-              }
-            />
+                }
+              />
+            </Card>
 
             {Object.keys(mcpServers).length === 0 ? (
               <div className="py-4 text-center font-medium text-main-view-fg/50">
