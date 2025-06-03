@@ -9,10 +9,13 @@ import { RenderMarkdown } from '../RenderMarkdown'
 import { isDev } from '@/lib/utils'
 
 const DialogAppUpdater = () => {
-  const { updateState, downloadAndInstallUpdate, checkForUpdate } =
-    useAppUpdater()
+  const {
+    updateState,
+    downloadAndInstallUpdate,
+    checkForUpdate,
+    setRemindMeLater,
+  } = useAppUpdater()
   const [showReleaseNotes, setShowReleaseNotes] = useState(false)
-  const [remindMeLater, setRemindMeLater] = useState(false)
 
   const handleUpdate = () => {
     downloadAndInstallUpdate()
@@ -35,7 +38,7 @@ const DialogAppUpdater = () => {
     checkForUpdate()
   }, [checkForUpdate])
 
-  if (remindMeLater) return null
+  if (updateState.remindMeLater) return null
 
   return (
     <>

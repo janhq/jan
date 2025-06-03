@@ -1,6 +1,7 @@
 import { isDev } from '@/lib/utils'
 import { check, Update } from '@tauri-apps/plugin-updater'
 import { useState, useCallback } from 'react'
+import { events, AppEvent } from '@janhq/core'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -9,6 +10,7 @@ export interface UpdateState {
   downloadProgress: number
   downloadedBytes: number
   totalBytes: number
+  remindMeLater: boolean
 }
 
 export const useAppUpdater = () => {
@@ -19,10 +21,19 @@ export const useAppUpdater = () => {
     downloadProgress: 0,
     downloadedBytes: 0,
     totalBytes: 0,
+    remindMeLater: false,
   })
 
-  const checkForUpdate = useCallback(async () => {
+  const checkForUpdate = useCallback(async (resetRemindMeLater = false) => {
     try {
+      // Reset remindMeLater if requested (e.g., when called from settings)
+      if (resetRemindMeLater) {
+        setUpdateState((prev) => ({
+          ...prev,
+          remindMeLater: false,
+        }))
+      }
+
       if (!isDev()) {
         // Production mode - use actual Tauri updater
         const update = await check()
@@ -45,6 +56,13 @@ export const useAppUpdater = () => {
 
           return null
         }
+      } else {
+        setUpdateState((prev) => ({
+          ...prev,
+          isUpdateAvailable: false,
+          updateInfo: null,
+        }))
+        return null
       }
     } catch (error) {
       console.error('Error checking for updates:', error)
@@ -56,6 +74,13 @@ export const useAppUpdater = () => {
       }))
       return null
     }
+  }, [])
+
+  const setRemindMeLater = useCallback((remind: boolean) => {
+    setUpdateState((prev) => ({
+      ...prev,
+      remindMeLater: remind,
+    }))
   }, [])
 
   const downloadAndInstallUpdate = useCallback(async () => {
@@ -79,6 +104,13 @@ export const useAppUpdater = () => {
               totalBytes: contentLength,
             }))
             console.log(`Started downloading ${contentLength} bytes`)
+
+            // Emit app update download started event
+            events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+              progress: 0,
+              downloadedBytes: 0,
+              totalBytes: contentLength,
+            })
             break
           case 'Progress': {
             downloaded += event.data.chunkLength
@@ -89,6 +121,13 @@ export const useAppUpdater = () => {
               downloadedBytes: downloaded,
             }))
             console.log(`Downloaded ${downloaded} from ${contentLength}`)
+
+            // Emit app update download progress event
+            events.emit(AppEvent.onAppUpdateDownloadUpdate, {
+              progress: progress,
+              downloadedBytes: downloaded,
+              totalBytes: contentLength,
+            })
             break
           }
           case 'Finished':
@@ -98,9 +137,14 @@ export const useAppUpdater = () => {
               isDownloading: false,
               downloadProgress: 1,
             }))
+
+            // Emit app update download success event
+            events.emit(AppEvent.onAppUpdateDownloadSuccess, {})
             break
         }
       })
+
+      await window.core?.api?.relaunch()
 
       console.log('Update installed')
     } catch (error) {
@@ -109,6 +153,11 @@ export const useAppUpdater = () => {
         ...prev,
         isDownloading: false,
       }))
+
+      // Emit app update download error event
+      events.emit(AppEvent.onAppUpdateDownloadError, {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }, [updateState.updateInfo])
 
@@ -116,5 +165,6 @@ export const useAppUpdater = () => {
     updateState,
     checkForUpdate,
     downloadAndInstallUpdate,
+    setRemindMeLater,
   }
 }

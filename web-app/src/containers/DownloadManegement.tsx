@@ -10,7 +10,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { abortDownload } from '@/services/models'
 import { getProviders } from '@/services/providers'
-import { DownloadEvent, DownloadState, events } from '@janhq/core'
+import { DownloadEvent, DownloadState, events, AppEvent } from '@janhq/core'
 import { IconDownload, IconX } from '@tabler/icons-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -21,10 +21,67 @@ export function DownloadManagement() {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
   const { downloads, updateProgress, removeDownload } = useDownloadStore()
   const { updateState } = useAppUpdater()
-  const downloadCount = useMemo(
-    () => Object.keys(downloads).length,
-    [downloads]
+
+  const [appUpdateState, setAppUpdateState] = useState({
+    isDownloading: false,
+    downloadProgress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+  })
+
+  useEffect(() => {
+    setAppUpdateState({
+      isDownloading: updateState.isDownloading,
+      downloadProgress: updateState.downloadProgress,
+      downloadedBytes: updateState.downloadedBytes,
+      totalBytes: updateState.totalBytes,
+    })
+  }, [updateState])
+
+  const onAppUpdateDownloadUpdate = useCallback(
+    (data: {
+      progress?: number
+      downloadedBytes?: number
+      totalBytes?: number
+    }) => {
+      setAppUpdateState((prev) => ({
+        ...prev,
+        isDownloading: true,
+        downloadProgress: data.progress || 0,
+        downloadedBytes: data.downloadedBytes || 0,
+        totalBytes: data.totalBytes || 0,
+      }))
+    },
+    []
   )
+
+  const onAppUpdateDownloadSuccess = useCallback(() => {
+    setAppUpdateState((prev) => ({
+      ...prev,
+      isDownloading: false,
+      downloadProgress: 1,
+    }))
+    toast.success('App Update Downloaded', {
+      description: 'The app update has been downloaded successfully.',
+    })
+  }, [])
+
+  const onAppUpdateDownloadError = useCallback(() => {
+    setAppUpdateState((prev) => ({
+      ...prev,
+      isDownloading: false,
+    }))
+    toast.error('App Update Download Failed', {
+      description: 'Failed to download the app update. Please try again.',
+    })
+  }, [])
+
+  const downloadCount = useMemo(() => {
+    const modelDownloads = Object.keys(downloads).length
+    const appUpdateDownload = appUpdateState.isDownloading ? 1 : 0
+    const total = modelDownloads + appUpdateDownload
+    return total
+  }, [downloads, appUpdateState.isDownloading])
   const downloadProcesses = useMemo(
     () =>
       Object.values(downloads).map((download) => ({
@@ -38,14 +95,31 @@ export function DownloadManagement() {
   )
 
   const overallProgress = useMemo(() => {
-    const total = downloadProcesses.reduce((acc, download) => {
+    const modelTotal = downloadProcesses.reduce((acc, download) => {
       return acc + download.total
     }, 0)
-    const current = downloadProcesses.reduce((acc, download) => {
+    const modelCurrent = downloadProcesses.reduce((acc, download) => {
       return acc + download.current
     }, 0)
+
+    // Include app update progress in overall calculation
+    const appUpdateTotal = appUpdateState.isDownloading
+      ? appUpdateState.totalBytes
+      : 0
+    const appUpdateCurrent = appUpdateState.isDownloading
+      ? appUpdateState.downloadedBytes
+      : 0
+
+    const total = modelTotal + appUpdateTotal
+    const current = modelCurrent + appUpdateCurrent
+
     return total > 0 ? current / total : 0
-  }, [downloadProcesses])
+  }, [
+    downloadProcesses,
+    appUpdateState.isDownloading,
+    appUpdateState.totalBytes,
+    appUpdateState.downloadedBytes,
+  ])
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
@@ -97,18 +171,34 @@ export function DownloadManagement() {
     events.on(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
     events.on(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
 
+    // Register app update event listeners
+    events.on(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
+    events.on(AppEvent.onAppUpdateDownloadSuccess, onAppUpdateDownloadSuccess)
+    events.on(AppEvent.onAppUpdateDownloadError, onAppUpdateDownloadError)
+
     return () => {
       console.debug('DownloadListener: unregistering event listeners...')
       events.off(DownloadEvent.onFileDownloadUpdate, onFileDownloadUpdate)
       events.off(DownloadEvent.onFileDownloadError, onFileDownloadError)
       events.off(DownloadEvent.onFileDownloadSuccess, onFileDownloadSuccess)
       events.off(DownloadEvent.onFileDownloadStopped, onFileDownloadStopped)
+
+      // Unregister app update event listeners
+      events.off(AppEvent.onAppUpdateDownloadUpdate, onAppUpdateDownloadUpdate)
+      events.off(
+        AppEvent.onAppUpdateDownloadSuccess,
+        onAppUpdateDownloadSuccess
+      )
+      events.off(AppEvent.onAppUpdateDownloadError, onAppUpdateDownloadError)
     }
   }, [
     onFileDownloadUpdate,
     onFileDownloadError,
     onFileDownloadSuccess,
     onFileDownloadStopped,
+    onAppUpdateDownloadUpdate,
+    onAppUpdateDownloadSuccess,
+    onAppUpdateDownloadError,
   ])
 
   function renderGB(bytes: number): string {
@@ -118,8 +208,7 @@ export function DownloadManagement() {
 
   return (
     <>
-      {(downloadCount > 0 ||
-        (updateState.isDownloading && updateState.downloadProgress > 0)) && (
+      {downloadCount > 0 && (
         <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
           <PopoverTrigger asChild>
             {isLeftPanelOpen ? (
@@ -162,24 +251,23 @@ export function DownloadManagement() {
                 <p className="text-xs text-main-view-fg/70">Downloading</p>
               </div>
               <div className="p-2 max-h-[300px] overflow-y-auto space-y-2">
-                {!updateState.isDownloading &&
-                  updateState.downloadProgress > 0 && (
-                    <div className="bg-main-view-fg/4 rounded-md p-2">
-                      <div className="flex items-center justify-between">
-                        <p className="truncate text-main-view-fg/80">
-                          App Update
-                        </p>
-                      </div>
-                      <Progress
-                        value={updateState.downloadProgress * 100}
-                        className="my-2"
-                      />
-                      <p className="text-main-view-fg/60 text-xs">
-                        {`${renderGB(updateState.downloadedBytes)} / ${renderGB(updateState.totalBytes)}`}{' '}
-                        GB ({Math.round(updateState.downloadProgress * 100)}%)
+                {appUpdateState.isDownloading && (
+                  <div className="bg-main-view-fg/4 rounded-md p-2">
+                    <div className="flex items-center justify-between">
+                      <p className="truncate text-main-view-fg/80">
+                        App Update
                       </p>
                     </div>
-                  )}
+                    <Progress
+                      value={appUpdateState.downloadProgress * 100}
+                      className="my-2"
+                    />
+                    <p className="text-main-view-fg/60 text-xs">
+                      {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
+                      GB ({Math.round(appUpdateState.downloadProgress * 100)}%)
+                    </p>
+                  </div>
+                )}
                 {downloadProcesses.map((download) => (
                   <div className="bg-main-view-fg/4 rounded-md p-2">
                     <div className="flex items-center justify-between">

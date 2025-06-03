@@ -63,7 +63,7 @@ const openFileTitle = (): string => {
 function General() {
   const { t } = useTranslation()
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
-  const { checkForUpdate } = useAppUpdater()
+  const { checkForUpdate, setRemindMeLater } = useAppUpdater()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -181,10 +181,11 @@ function General() {
 
   const handleCheckForUpdate = async () => {
     setIsCheckingUpdate(true)
+    setRemindMeLater(false)
     try {
       if (isDev())
         return toast.info('You are running a development version of Jan!')
-      const update = await checkForUpdate()
+      const update = await checkForUpdate(true)
       if (!update) {
         toast.info('You are using the latest version of Jan!')
       }
