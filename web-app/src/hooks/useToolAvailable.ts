@@ -4,7 +4,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { MCPTool } from '@/types/completion'
 
 type ToolDisabledState = {
-  // Track available tools per thread
+  // Track disabled tools per thread
   disabledTools: Record<string, string[]> // threadId -> toolNames[]
   // Global default available tools (for new threads/index page)
   defaultDisabledTools: string[]
