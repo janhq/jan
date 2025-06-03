@@ -144,6 +144,8 @@ export const useAppUpdater = () => {
         }
       })
 
+      await window.core?.api?.relaunch()
+
       console.log('Update installed')
     } catch (error) {
       console.error('Error downloading update:', error)
