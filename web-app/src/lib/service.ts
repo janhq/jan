@@ -33,6 +33,10 @@ export const AppRoutes = [
   'getSystemUsage',
   'saveFile',
   'extractTextFromFile',
+  'getRagEmbeddingConfig',
+  'updateRagEmbeddingConfig',
+  'getRagChunkingConfig',
+  'updateRagChunkingConfig',
 ]
 // Define API routes based on different route types
 export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({

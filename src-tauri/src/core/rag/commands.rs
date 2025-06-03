@@ -3,6 +3,8 @@ use crate::core::state::AppState;
 use serde_json::Value;
 use std::collections::HashMap;
 use super::system::{get_rag_system_with_app, initialize_rag_system_with_app};
+use super::types::ChunkingConfig;
+use crate::core::cmd::{get_app_configurations, update_app_configuration, EmbeddingConfig};
 
 #[tauri::command]
 pub async fn initialize_rag_system_cmd<R: Runtime>(
@@ -188,5 +190,79 @@ pub async fn rag_reset_database<R: Runtime>(
     match rag_system_guard.reset_database().await {
         Ok(_) => Ok("RAG database reset successfully".to_string()),
         Err(e) => Err(format!("Failed to reset RAG database: {}", e))
+    }
+}
+
+#[tauri::command]
+pub async fn get_rag_embedding_config(
+    app_handle: AppHandle,
+    _state: State<'_, AppState>,
+) -> Result<String, String> {
+    let app_config = get_app_configurations(app_handle);
+    let result = serde_json::json!({
+        "embedding_config": app_config.embedding_config
+    });
+    Ok(result.to_string())
+}
+
+#[tauri::command]
+pub async fn update_rag_embedding_config(
+    app_handle: AppHandle,
+    _state: State<'_, AppState>,
+    embedding_config: EmbeddingConfig,
+) -> Result<String, String> {
+    let mut app_config = get_app_configurations(app_handle.clone());
+    
+    // Update embedding config
+    app_config.embedding_config = embedding_config;
+    
+    // Save configuration
+    match update_app_configuration(app_handle, app_config).await {
+        Ok(_) => {
+            let result = serde_json::json!({
+                "status": "success",
+                "message": "Embedding configuration updated successfully"
+            });
+            Ok(result.to_string())
+        }
+        Err(e) => Err(format!("Failed to update embedding configuration: {}", e))
+    }
+}
+
+#[tauri::command]
+pub async fn get_rag_chunking_config(
+    app_handle: AppHandle,
+    _state: State<'_, AppState>,
+) -> Result<String, String> {
+    let _rag_system_state = get_rag_system_with_app(app_handle).await;
+    let _rag_system_guard = _rag_system_state.lock().await;
+    
+    // For now, return default chunking config
+    // TODO: Store chunking config in app configuration
+    let chunking_config = ChunkingConfig::default();
+    let result = serde_json::json!({
+        "chunking_config": chunking_config
+    });
+    Ok(result.to_string())
+}
+
+#[tauri::command]
+pub async fn update_rag_chunking_config(
+    app_handle: AppHandle,
+    _state: State<'_, AppState>,
+    chunking_config: ChunkingConfig,
+) -> Result<String, String> {
+    let rag_system_state = get_rag_system_with_app(app_handle).await;
+    let rag_system_guard = rag_system_state.lock().await;
+    
+    match rag_system_guard.update_chunking_config(chunking_config).await {
+        Ok(_) => {
+            let result = serde_json::json!({
+                "status": "success",
+                "message": "Chunking configuration updated successfully"
+            });
+            Ok(result.to_string())
+        }
+        Err(e) => Err(format!("Failed to update chunking configuration: {}", e))
     }
 }

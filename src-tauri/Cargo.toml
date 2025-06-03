@@ -80,3 +80,7 @@ tauri-plugin-single-instance = { version = "2.0.0", features = ["deep-link"] }
 
 [lints.clippy]
 all = "warn"  # or "deny" if you want errors instead of warnings
+
+[profile.dev]
+opt-level = 0
+incremental = true

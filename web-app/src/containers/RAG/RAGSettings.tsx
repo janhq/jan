@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card } from '@/containers/Card'
 import {
   Dialog,
@@ -12,12 +13,63 @@ import {
 import { useRAGDocuments } from '@/hooks/useRAG'
 import { useRAGDocumentOperations } from '@/hooks/useRAGDocumentOperations'
 import { useRAGDocumentFilters } from '@/hooks/useRAGDocumentFilters'
+import { useRAGConfig, type EmbeddingConfig, type ChunkingConfig } from '@/hooks/useRAGConfig'
 
 const RAGSettings = () => {
   const { documents: ragDocuments } = useRAGDocuments()
   const { clearAllDocuments, operationLoading } = useRAGDocumentOperations()
   const { stats } = useRAGDocumentFilters({ documents: ragDocuments })
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  
+  // Use RAG configuration hook
+  const {
+    embeddingConfig,
+    chunkingConfig,
+    embeddingLoading,
+    chunkingLoading,
+    loadConfigurations,
+    updateEmbeddingConfig,
+    updateChunkingConfig,
+  } = useRAGConfig()
+
+  // Local state for form inputs
+  const [localEmbeddingConfig, setLocalEmbeddingConfig] = useState<EmbeddingConfig>({
+    base_url: 'http://localhost:6333',
+    api_key: '',
+    model: 'text-embedding-3-small',
+    dimensions: 1536,
+    batch_size: 10
+  })
+  
+  const [localChunkingConfig, setLocalChunkingConfig] = useState<ChunkingConfig>({
+    chunk_size: 1000,
+    overlap: 100
+  })
+
+  // Load configurations on mount and update local state when configs change
+  useEffect(() => {
+    loadConfigurations()
+  }, [loadConfigurations])
+
+  useEffect(() => {
+    if (embeddingConfig) {
+      setLocalEmbeddingConfig(embeddingConfig)
+    }
+  }, [embeddingConfig])
+
+  useEffect(() => {
+    if (chunkingConfig) {
+      setLocalChunkingConfig(chunkingConfig)
+    }
+  }, [chunkingConfig])
+
+  const handleUpdateEmbeddingConfig = async () => {
+    await updateEmbeddingConfig(localEmbeddingConfig)
+  }
+
+  const handleUpdateChunkingConfig = async () => {
+    await updateChunkingConfig(localChunkingConfig)
+  }
 
   const handleClearAllData = async () => {
     setClearDialogOpen(false)
@@ -47,6 +99,110 @@ const RAGSettings = () => {
           <div className="flex justify-between">
             <span>Chunks:</span>
             <span className="font-mono">{stats.indexedChunks}</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Embedding Configuration */}
+      <Card>
+        <h3 className="text-lg font-semibold mb-4">Embedding Configuration</h3>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Base URL</label>
+              <Input
+                value={localEmbeddingConfig.base_url}
+                onChange={(e) => setLocalEmbeddingConfig(prev => ({ ...prev, base_url: e.target.value }))}
+                placeholder="http://localhost:6333"
+                className="bg-main-view border-main-view-fg/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">API Key (Optional)</label>
+              <Input
+                type="password"
+                value={localEmbeddingConfig.api_key || ''}
+                onChange={(e) => setLocalEmbeddingConfig(prev => ({ ...prev, api_key: e.target.value }))}
+                placeholder="Your API key"
+                className="bg-main-view border-main-view-fg/10"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Model</label>
+              <Input
+                value={localEmbeddingConfig.model}
+                onChange={(e) => setLocalEmbeddingConfig(prev => ({ ...prev, model: e.target.value }))}
+                placeholder="text-embedding-3-small"
+                className="bg-main-view border-main-view-fg/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Dimensions</label>
+              <Input
+                type="number"
+                value={localEmbeddingConfig.dimensions}
+                onChange={(e) => setLocalEmbeddingConfig(prev => ({ ...prev, dimensions: parseInt(e.target.value) || 1536 }))}
+                className="bg-main-view border-main-view-fg/10"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Batch Size</label>
+              <Input
+                type="number"
+                value={localEmbeddingConfig.batch_size}
+                onChange={(e) => setLocalEmbeddingConfig(prev => ({ ...prev, batch_size: parseInt(e.target.value) || 10 }))}
+                className="bg-main-view border-main-view-fg/10"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              onClick={handleUpdateEmbeddingConfig}
+              disabled={embeddingLoading}
+              size="sm"
+            >
+              {embeddingLoading ? 'Updating...' : 'Update Embedding Config'}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* Chunking Configuration */}
+      <Card>
+        <h3 className="text-lg font-semibold mb-4">Text Chunking Configuration</h3>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Chunk Size</label>
+              <Input
+                type="number"
+                value={localChunkingConfig.chunk_size}
+                onChange={(e) => setLocalChunkingConfig(prev => ({ ...prev, chunk_size: parseInt(e.target.value) || 1000 }))}
+                className="bg-main-view border-main-view-fg/10"
+              />
+              <p className="text-xs text-main-view-fg/60">Maximum number of characters per chunk</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Overlap</label>
+              <Input
+                type="number"
+                value={localChunkingConfig.overlap}
+                onChange={(e) => setLocalChunkingConfig(prev => ({ ...prev, overlap: parseInt(e.target.value) || 100 }))}
+                className="bg-main-view border-main-view-fg/10"
+              />
+              <p className="text-xs text-main-view-fg/60">Number of overlapping characters between chunks</p>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              onClick={handleUpdateChunkingConfig}
+              disabled={chunkingLoading}
+              size="sm"
+            >
+              {chunkingLoading ? 'Updating...' : 'Update Chunking Config'}
+            </Button>
           </div>
         </div>
       </Card>
