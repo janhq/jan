@@ -10,7 +10,9 @@ import { ModelManager } from '@janhq/core'
 import { useEffect } from 'react'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { getMCPConfig } from '@/services/mcp'
-import { useAssistant } from '@/hooks/useAssistant'
+import {
+  useAssistant,
+} from '@/hooks/useAssistant'
 import { getAssistants } from '@/services/assistants'
 import { migrateData } from '@/utils/migration'
 import {

@@ -12,12 +12,14 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as SystemMonitorImport } from './routes/system-monitor'
+import { Route as RagDocumentsImport } from './routes/rag-documents'
 import { Route as LogsImport } from './routes/logs'
 import { Route as HubImport } from './routes/hub'
 import { Route as AssistantImport } from './routes/assistant'
 import { Route as IndexImport } from './routes/index'
 import { Route as ThreadsThreadIdImport } from './routes/threads/$threadId'
 import { Route as SettingsShortcutsImport } from './routes/settings/shortcuts'
+import { Route as SettingsRagImport } from './routes/settings/rag'
 import { Route as SettingsPrivacyImport } from './routes/settings/privacy'
 import { Route as SettingsMcpServersImport } from './routes/settings/mcp-servers'
 import { Route as SettingsLocalApiServerImport } from './routes/settings/local-api-server'
@@ -34,6 +36,12 @@ import { Route as SettingsProvidersProviderNameImport } from './routes/settings/
 const SystemMonitorRoute = SystemMonitorImport.update({
   id: '/system-monitor',
   path: '/system-monitor',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const RagDocumentsRoute = RagDocumentsImport.update({
+  id: '/rag-documents',
+  path: '/rag-documents',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -70,6 +78,12 @@ const ThreadsThreadIdRoute = ThreadsThreadIdImport.update({
 const SettingsShortcutsRoute = SettingsShortcutsImport.update({
   id: '/settings/shortcuts',
   path: '/settings/shortcuts',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const SettingsRagRoute = SettingsRagImport.update({
+  id: '/settings/rag',
+  path: '/settings/rag',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -166,6 +180,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogsImport
       parentRoute: typeof rootRoute
     }
+    '/rag-documents': {
+      id: '/rag-documents'
+      path: '/rag-documents'
+      fullPath: '/rag-documents'
+      preLoaderRoute: typeof RagDocumentsImport
+      parentRoute: typeof rootRoute
+    }
     '/system-monitor': {
       id: '/system-monitor'
       path: '/system-monitor'
@@ -236,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsPrivacyImport
       parentRoute: typeof rootRoute
     }
+    '/settings/rag': {
+      id: '/settings/rag'
+      path: '/settings/rag'
+      fullPath: '/settings/rag'
+      preLoaderRoute: typeof SettingsRagImport
+      parentRoute: typeof rootRoute
+    }
     '/settings/shortcuts': {
       id: '/settings/shortcuts'
       path: '/settings/shortcuts'
@@ -267,6 +295,7 @@ export interface FileRoutesByFullPath {
   '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
   '/logs': typeof LogsRoute
+  '/rag-documents': typeof RagDocumentsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -277,6 +306,7 @@ export interface FileRoutesByFullPath {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/rag': typeof SettingsRagRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -287,6 +317,7 @@ export interface FileRoutesByTo {
   '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
   '/logs': typeof LogsRoute
+  '/rag-documents': typeof RagDocumentsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -297,6 +328,7 @@ export interface FileRoutesByTo {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/rag': typeof SettingsRagRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -308,6 +340,7 @@ export interface FileRoutesById {
   '/assistant': typeof AssistantRoute
   '/hub': typeof HubRoute
   '/logs': typeof LogsRoute
+  '/rag-documents': typeof RagDocumentsRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -318,6 +351,7 @@ export interface FileRoutesById {
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
   '/settings/mcp-servers': typeof SettingsMcpServersRoute
   '/settings/privacy': typeof SettingsPrivacyRoute
+  '/settings/rag': typeof SettingsRagRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/settings/providers/$providerName': typeof SettingsProvidersProviderNameRoute
@@ -330,6 +364,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/hub'
     | '/logs'
+    | '/rag-documents'
     | '/system-monitor'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -340,6 +375,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/rag'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/settings/providers/$providerName'
@@ -349,6 +385,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/hub'
     | '/logs'
+    | '/rag-documents'
     | '/system-monitor'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -359,6 +396,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/rag'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/settings/providers/$providerName'
@@ -368,6 +406,7 @@ export interface FileRouteTypes {
     | '/assistant'
     | '/hub'
     | '/logs'
+    | '/rag-documents'
     | '/system-monitor'
     | '/local-api-server/logs'
     | '/settings/appearance'
@@ -378,6 +417,7 @@ export interface FileRouteTypes {
     | '/settings/local-api-server'
     | '/settings/mcp-servers'
     | '/settings/privacy'
+    | '/settings/rag'
     | '/settings/shortcuts'
     | '/threads/$threadId'
     | '/settings/providers/$providerName'
@@ -389,6 +429,7 @@ export interface RootRouteChildren {
   AssistantRoute: typeof AssistantRoute
   HubRoute: typeof HubRoute
   LogsRoute: typeof LogsRoute
+  RagDocumentsRoute: typeof RagDocumentsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -399,6 +440,7 @@ export interface RootRouteChildren {
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
   SettingsMcpServersRoute: typeof SettingsMcpServersRoute
   SettingsPrivacyRoute: typeof SettingsPrivacyRoute
+  SettingsRagRoute: typeof SettingsRagRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   SettingsProvidersProviderNameRoute: typeof SettingsProvidersProviderNameRoute
@@ -409,6 +451,7 @@ const rootRouteChildren: RootRouteChildren = {
   AssistantRoute: AssistantRoute,
   HubRoute: HubRoute,
   LogsRoute: LogsRoute,
+  RagDocumentsRoute: RagDocumentsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
@@ -419,6 +462,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,
   SettingsMcpServersRoute: SettingsMcpServersRoute,
   SettingsPrivacyRoute: SettingsPrivacyRoute,
+  SettingsRagRoute: SettingsRagRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   SettingsProvidersProviderNameRoute: SettingsProvidersProviderNameRoute,
@@ -438,6 +482,7 @@ export const routeTree = rootRoute
         "/assistant",
         "/hub",
         "/logs",
+        "/rag-documents",
         "/system-monitor",
         "/local-api-server/logs",
         "/settings/appearance",
@@ -448,6 +493,7 @@ export const routeTree = rootRoute
         "/settings/local-api-server",
         "/settings/mcp-servers",
         "/settings/privacy",
+        "/settings/rag",
         "/settings/shortcuts",
         "/threads/$threadId",
         "/settings/providers/$providerName"
@@ -464,6 +510,9 @@ export const routeTree = rootRoute
     },
     "/logs": {
       "filePath": "logs.tsx"
+    },
+    "/rag-documents": {
+      "filePath": "rag-documents.tsx"
     },
     "/system-monitor": {
       "filePath": "system-monitor.tsx"
@@ -494,6 +543,9 @@ export const routeTree = rootRoute
     },
     "/settings/privacy": {
       "filePath": "settings/privacy.tsx"
+    },
+    "/settings/rag": {
+      "filePath": "settings/rag.tsx"
     },
     "/settings/shortcuts": {
       "filePath": "settings/shortcuts.tsx"

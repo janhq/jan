@@ -107,7 +107,8 @@ const ChatInput = ({
       return
     }
     setMessage('')
-    sendMessage(prompt)
+    sendMessage(prompt, uploadedFiles)
+    setUploadedFiles([]) // Clear uploaded files after sending
   }
 
   useEffect(() => {
@@ -185,6 +186,33 @@ const ChatInput = ({
         return 'image/png'
       case 'pdf':
         return 'application/pdf'
+      case 'txt':
+        return 'text/plain'
+      case 'md':
+        return 'text/markdown'
+      case 'json':
+        return 'application/json'
+      case 'js':
+        return 'text/javascript'
+      case 'ts':
+        return 'text/typescript'
+      case 'py':
+        return 'text/x-python'
+      case 'html':
+        return 'text/html'
+      case 'css':
+        return 'text/css'
+      case 'csv':
+        return 'text/csv'
+      case 'docx':
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      case 'rs':
+        return 'text/x-rust'
+      case 'xml':
+        return 'application/xml'
+      case 'yaml':
+      case 'yml':
+        return 'application/x-yaml'
       default:
         return ''
     }
@@ -224,11 +252,24 @@ const ChatInput = ({
           'image/jpeg',
           'image/png',
           'application/pdf',
+          'text/plain',
+          'text/markdown',
+          'application/json',
+          'text/javascript',
+          'text/typescript',
+          'text/x-python',
+          'text/html',
+          'text/css',
+          'text/csv',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'text/x-rust',
+          'application/xml',
+          'application/x-yaml',
         ]
 
         if (!allowedTypes.includes(actualType)) {
           setMessage(
-            `File is not supported. Only JPEG, JPG, PNG, and PDF files are allowed.`
+            `File is not supported. Supported file types: images (JPG, PNG), documents (PDF, DOCX), text files (TXT, MD, CSV), code files (JS, TS, PY, RS, HTML, CSS), and data files (JSON, XML, YAML).`
           )
           // Reset file input to allow re-uploading
           if (fileInputRef.current) {
@@ -311,7 +352,7 @@ const ChatInput = ({
                 {uploadedFiles.map((file, index) => {
                   return (
                     <div
-                      key={index}
+                      key={`file-${file.name}-${index}`}
                       className={cn(
                         'relative border border-main-view-fg/5 rounded-lg',
                         file.type.startsWith('image/') ? 'size-14' : 'h-14 '

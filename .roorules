@@ -1,0 +1,7 @@
+# Project Information
+
+- **src-tauri**: is a <type>backend</type> (Rust backend with Tauri framework).
+  - Uses <language>Rust</language> and the <framework>Tauri</framework>.
+
+- **web-app**: is a <type>frontend</type> (React webview that attached to Tauri).
+  - Uses <language>JavaScript/TypeScript</language> and <framework>React</framework>.

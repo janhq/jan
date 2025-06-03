@@ -58,6 +58,8 @@ pub fn run() {
             core::cmd::change_app_data_folder,
             core::cmd::reset_cortex_restart_count,
             core::migration::get_legacy_browser_data,
+            core::cmd::extract_text_from_file,
+            core::cmd::save_file,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
@@ -65,6 +67,17 @@ pub fn run() {
             core::mcp::get_connected_servers,
             core::mcp::save_mcp_configs,
             core::mcp::get_mcp_configs,
+            core::mcp::get_mcp_server_status,
+            core::mcp::health_check_mcp_servers,
+            // RAG commands
+            core::rag::commands::initialize_rag_system_cmd,
+            core::rag::commands::rag_add_data_source,
+            core::rag::commands::rag_list_data_sources,
+            core::rag::commands::rag_remove_data_source,
+            core::rag::commands::rag_query_documents,
+            core::rag::commands::rag_clean_all_data_sources,
+            core::rag::commands::rag_reset_database,
+            core::rag::commands::get_rag_status,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,

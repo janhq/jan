@@ -16,6 +16,7 @@ use tokio::time::{sleep, Duration};
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
+    rag::initialize_rag_system,
     state::AppState,
 };
 
@@ -199,14 +200,75 @@ fn extract_extension_manifest<R: Read>(
 pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>().inner();
     let servers = state.mcp_servers.clone();
-    let app_handle: tauri::AppHandle = app.handle().clone();
+    let app_handle_for_rag: tauri::AppHandle = app.handle().clone();
+    let app_handle_for_mcp: tauri::AppHandle = app.handle().clone();
+    
+    // Initialize built-in RAG system
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = run_mcp_commands(&app_handle, servers).await {
+        log::info!("Initializing built-in RAG system...");
+        
+        // Initialize the RAG system with app handle to use proper configuration
+        match crate::core::rag::initialize_rag_system_with_app(app_handle_for_rag.clone()).await {
+            Ok(_) => {
+                log::info!("Built-in RAG system initialized successfully with app configuration");
+                
+                // Emit RAG ready event
+                if let Err(e) = app_handle_for_rag.emit("rag-ready", "RAG system initialized") {
+                    log::error!("Failed to emit rag-ready event: {}", e);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to initialize RAG system: {}", e);
+            }
+        }
+    });
+    
+    // Start MCP servers
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = run_mcp_commands(&app_handle_for_mcp, servers.clone()).await {
             log::error!("Failed to run mcp commands: {}", e);
         }
-        app_handle
-            .emit("mcp-update", "MCP servers updated")
+        app_handle_for_mcp
+            .emit("mcp-update", "MCP servers started")
             .unwrap();
+    });
+    
+    // Setup periodic health checks
+    setup_mcp_health_monitoring(app);
+}
+
+pub fn setup_mcp_health_monitoring(app: &App) {
+    let app_handle = app.handle().clone();
+    
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30)); // Check every 30 seconds
+        
+        loop {
+            interval.tick().await;
+            
+            let app_state = app_handle.state::<AppState>();
+            let servers = app_state.mcp_servers.clone();
+            let servers_map = servers.lock().await;
+            
+            for (name, service) in servers_map.iter() {
+                match service.list_all_tools().await {
+                    Ok(_) => {
+                        log::debug!("Health check passed for MCP server: {}", name);
+                    }
+                    Err(e) => {
+                        log::error!("Health check failed for MCP server {}: {}", name, e);
+                        
+                        // Emit health check failure event
+                        if let Err(emit_err) = app_handle.emit("mcp-health-check-failed", serde_json::json!({
+                            "server": name,
+                            "error": e.to_string()
+                        })) {
+                            log::error!("Failed to emit health check failure event: {}", emit_err);
+                        }
+                    }
+                }
+            }
+        }
     });
 }
 
