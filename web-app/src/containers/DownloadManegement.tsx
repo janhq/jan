@@ -80,12 +80,6 @@ export function DownloadManagement() {
     const modelDownloads = Object.keys(downloads).length
     const appUpdateDownload = appUpdateState.isDownloading ? 1 : 0
     const total = modelDownloads + appUpdateDownload
-    console.log('📊 Download count:', {
-      modelDownloads,
-      appUpdateDownload,
-      total,
-      isDownloading: appUpdateState.isDownloading,
-    })
     return total
   }, [downloads, appUpdateState.isDownloading])
   const downloadProcesses = useMemo(
