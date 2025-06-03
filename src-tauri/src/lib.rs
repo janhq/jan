@@ -83,6 +83,7 @@ pub fn run() {
             core::utils::write_yaml,
             core::utils::read_yaml,
             core::utils::decompress,
+            core::utils::is_library_available,
             // Download
             core::utils::download::download_files,
             core::utils::download::cancel_download_task,

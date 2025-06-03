@@ -56,9 +56,9 @@ serde_yaml = "0.9.34"
 hmac = "0.12.1"
 sha2 = "0.10.9"
 base64 = "0.22.1"
+libloading = "0.8.7"
 
 [target.'cfg(windows)'.dependencies]
-libloading = "0.8.7"
 libc = "0.2.172"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
