@@ -352,7 +352,7 @@ function Hardware() {
                         setVulkanEnabled(checked)
                         setTimeout(() => {
                           window.location.reload()
-                        }, 500) // Reload after 1 second to apply changes
+                        }, 500) // Reload after 500ms to apply changes
                       }}
                     />
                   </div>
