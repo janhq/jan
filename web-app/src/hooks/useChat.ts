@@ -44,12 +44,16 @@ export const useChat = () => {
 
   const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
     useToolApproval()
-  const { getAvailableToolsForThread } = useToolAvailable()
+  const { getDisabledToolsForThread } = useToolAvailable()
 
   const { getProviderByName, selectedModel, selectedProvider } =
     useModelProvider()
 
-  const { getCurrentThread: retrieveThread, createThread, updateThreadTimestamp } = useThreads()
+  const {
+    getCurrentThread: retrieveThread,
+    createThread,
+    updateThreadTimestamp,
+  } = useThreads()
   const { getMessages, addMessage } = useMessages()
   const router = useRouter()
 
@@ -65,7 +69,7 @@ export const useChat = () => {
     }
     setTools()
 
-    let unsubscribe = () => { }
+    let unsubscribe = () => {}
     listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
@@ -134,11 +138,9 @@ export const useChat = () => {
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
           ? tools.filter((tool) => {
-            const availableToolNames = getAvailableToolsForThread(
-              activeThread.id
-            )
-            return availableToolNames.includes(tool.name)
-          })
+              const disabledTools = getDisabledToolsForThread(activeThread.id)
+              return !disabledTools.includes(tool.name)
+            })
           : []
 
         // TODO: Later replaced by Agent setup?
@@ -247,7 +249,7 @@ export const useChat = () => {
       updateTokenSpeed,
       approvedTools,
       showApprovalModal,
-      getAvailableToolsForThread,
+      getDisabledToolsForThread,
       allowAllMCPPermissions,
     ]
   )

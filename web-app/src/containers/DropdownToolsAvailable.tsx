@@ -8,13 +8,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
-import { getTools } from '@/services/mcp'
-import { MCPTool } from '@/types/completion'
 
 import { useThreads } from '@/hooks/useThreads'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 
 import React from 'react'
+import { useAppState } from '@/hooks/useAppState'
 
 interface DropdownToolsAvailableProps {
   children: (isOpen: boolean, toolsCount: number) => React.ReactNode
@@ -25,44 +24,19 @@ export default function DropdownToolsAvailable({
   children,
   initialMessage = false,
 }: DropdownToolsAvailableProps) {
-  const [tools, setTools] = useState<MCPTool[]>([])
+  const { tools } = useAppState()
   const [isOpen, setIsOpen] = useState(false)
   const { getCurrentThread } = useThreads()
   const {
-    isToolAvailable,
-    setToolAvailableForThread,
-    setDefaultAvailableTools,
+    isToolDisabled,
+    setToolDisabledForThread,
+    setDefaultDisabledTools,
     initializeThreadTools,
-    getAvailableToolsForThread,
-    getDefaultAvailableTools,
+    getDisabledToolsForThread,
+    getDefaultDisabledTools,
   } = useToolAvailable()
 
   const currentThread = getCurrentThread()
-
-  useEffect(() => {
-    const fetchTools = async () => {
-      try {
-        const availableTools = await getTools()
-        setTools(availableTools)
-
-        // If this is for the initial message (index page) and no defaults are set,
-        // initialize with all tools as default
-        if (
-          initialMessage &&
-          getDefaultAvailableTools().length === 0 &&
-          availableTools.length > 0
-        ) {
-          setDefaultAvailableTools(availableTools.map((tool) => tool.name))
-        }
-      } catch (error) {
-        console.error('Failed to fetch tools:', error)
-        setTools([])
-      }
-    }
-
-    // Only fetch tools once when component mounts
-    fetchTools()
-  }, [initialMessage, setDefaultAvailableTools, getDefaultAvailableTools])
 
   // Separate effect for thread initialization - only when we have tools and a new thread
   useEffect(() => {
@@ -74,40 +48,38 @@ export default function DropdownToolsAvailable({
   const handleToolToggle = (toolName: string, checked: boolean) => {
     if (initialMessage) {
       // Update default tools for new threads/index page
-      const currentDefaults = getDefaultAvailableTools()
+      const currentDefaults = getDefaultDisabledTools()
       if (checked) {
-        if (!currentDefaults.includes(toolName)) {
-          setDefaultAvailableTools([...currentDefaults, toolName])
-        }
-      } else {
-        setDefaultAvailableTools(
+        setDefaultDisabledTools(
           currentDefaults.filter((name) => name !== toolName)
         )
+      } else {
+        setDefaultDisabledTools([...currentDefaults, toolName])
       }
     } else if (currentThread?.id) {
       // Update tools for specific thread
-      setToolAvailableForThread(currentThread.id, toolName, checked)
+      setToolDisabledForThread(currentThread.id, toolName, checked)
     }
   }
 
   const isToolChecked = (toolName: string): boolean => {
     if (initialMessage) {
       // Use default tools for index page
-      return getDefaultAvailableTools().includes(toolName)
+      return !getDefaultDisabledTools().includes(toolName)
     } else if (currentThread?.id) {
       // Use thread-specific tools
-      return isToolAvailable(currentThread.id, toolName)
+      return !isToolDisabled(currentThread.id, toolName)
     }
     return false
   }
 
   const getEnabledToolsCount = (): number => {
-    if (initialMessage) {
-      return getDefaultAvailableTools().length
-    } else if (currentThread?.id) {
-      return getAvailableToolsForThread(currentThread.id).length
-    }
-    return 0
+    const disabledTools = initialMessage
+      ? getDefaultDisabledTools()
+      : currentThread?.id
+        ? getDisabledToolsForThread(currentThread.id)
+        : []
+    return tools.filter((tool) => !disabledTools.includes(tool.name)).length
   }
 
   const renderTrigger = () => children(isOpen, getEnabledToolsCount())

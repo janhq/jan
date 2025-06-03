@@ -3,102 +3,100 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { MCPTool } from '@/types/completion'
 
-type ToolAvailableState = {
-  // Track available tools per thread
-  availableTools: Record<string, string[]> // threadId -> toolNames[]
-  // Global default available tools (for new threads/index page)
-  defaultAvailableTools: string[]
+type ToolDisabledState = {
+  // Track disabled tools per thread
+  disabledTools: Record<string, string[]> // threadId -> toolNames[]
+  // Global default disabled tools (for new threads/index page)
+  defaultDisabledTools: string[]
 
   // Actions
-  setToolAvailableForThread: (
+  setToolDisabledForThread: (
     threadId: string,
     toolName: string,
     available: boolean
   ) => void
-  isToolAvailable: (threadId: string, toolName: string) => boolean
-  getAvailableToolsForThread: (threadId: string) => string[]
-  setDefaultAvailableTools: (toolNames: string[]) => void
-  getDefaultAvailableTools: () => string[]
+  isToolDisabled: (threadId: string, toolName: string) => boolean
+  getDisabledToolsForThread: (threadId: string) => string[]
+  setDefaultDisabledTools: (toolNames: string[]) => void
+  getDefaultDisabledTools: () => string[]
   // Initialize thread tools from default or existing thread settings
   initializeThreadTools: (threadId: string, allTools: MCPTool[]) => void
 }
 
-export const useToolAvailable = create<ToolAvailableState>()(
+export const useToolAvailable = create<ToolDisabledState>()(
   persist(
     (set, get) => ({
-      availableTools: {},
-      defaultAvailableTools: [],
+      disabledTools: {},
+      defaultDisabledTools: [],
 
-      setToolAvailableForThread: (
+      setToolDisabledForThread: (
         threadId: string,
         toolName: string,
         available: boolean
       ) => {
         set((state) => {
-          const currentTools = state.availableTools[threadId] || []
+          const currentTools = state.disabledTools[threadId] || []
           let updatedTools: string[]
 
           if (available) {
-            // Add tool if not already present
-            updatedTools = currentTools.includes(toolName)
-              ? currentTools
-              : [...currentTools, toolName]
+            // Remove disabled tool
+            updatedTools = [...currentTools.filter((tool) => tool !== toolName)]
           } else {
-            // Remove tool
-            updatedTools = currentTools.filter((tool) => tool !== toolName)
+            // Disable tool
+            updatedTools = [...currentTools, toolName]
           }
 
           return {
-            availableTools: {
-              ...state.availableTools,
+            disabledTools: {
+              ...state.disabledTools,
               [threadId]: updatedTools,
             },
           }
         })
       },
 
-      isToolAvailable: (threadId: string, toolName: string) => {
+      isToolDisabled: (threadId: string, toolName: string) => {
         const state = get()
         // If no thread-specific settings, use default
-        if (!state.availableTools[threadId]) {
-          return state.defaultAvailableTools.includes(toolName)
+        if (!state.disabledTools[threadId]) {
+          return state.defaultDisabledTools.includes(toolName)
         }
-        return state.availableTools[threadId]?.includes(toolName) || false
+        return state.disabledTools[threadId]?.includes(toolName) || false
       },
 
-      getAvailableToolsForThread: (threadId: string) => {
+      getDisabledToolsForThread: (threadId: string) => {
         const state = get()
         // If no thread-specific settings, use default
-        if (!state.availableTools[threadId]) {
-          return state.defaultAvailableTools
+        if (!state.disabledTools[threadId]) {
+          return state.defaultDisabledTools
         }
-        return state.availableTools[threadId] || []
+        return state.disabledTools[threadId] || []
       },
 
-      setDefaultAvailableTools: (toolNames: string[]) => {
-        set({ defaultAvailableTools: toolNames })
+      setDefaultDisabledTools: (toolNames: string[]) => {
+        set({ defaultDisabledTools: toolNames })
       },
 
-      getDefaultAvailableTools: () => {
-        return get().defaultAvailableTools
+      getDefaultDisabledTools: () => {
+        return get().defaultDisabledTools
       },
 
       initializeThreadTools: (threadId: string, allTools: MCPTool[]) => {
         const state = get()
         // If thread already has settings, don't override
-        if (state.availableTools[threadId]) {
+        if (state.disabledTools[threadId]) {
           return
         }
 
         // Initialize with default tools only
         // Don't auto-enable all tools if defaults are explicitly empty
-        const initialTools = state.defaultAvailableTools.filter((toolName) =>
+        const initialTools = state.defaultDisabledTools.filter((toolName) =>
           allTools.some((tool) => tool.name === toolName)
         )
 
         set((currentState) => ({
-          availableTools: {
-            ...currentState.availableTools,
+          disabledTools: {
+            ...currentState.disabledTools,
             [threadId]: initialTools,
           },
         }))
@@ -109,8 +107,8 @@ export const useToolAvailable = create<ToolAvailableState>()(
       storage: createJSONStorage(() => localStorage),
       // Persist all state
       partialize: (state) => ({
-        availableTools: state.availableTools,
-        defaultAvailableTools: state.defaultAvailableTools,
+        disabledTools: state.disabledTools,
+        defaultDisabledTools: state.defaultDisabledTools,
       }),
     }
   )
