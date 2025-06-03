@@ -31,6 +31,8 @@ export const AppRoutes = [
   'changeAppDataFolder',
   'getSystemInfo',
   'getSystemUsage',
+  'saveFile',
+  'extractTextFromFile',
 ]
 // Define API routes based on different route types
 export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({

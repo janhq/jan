@@ -40,6 +40,10 @@ const menuSettings = [
     title: 'Extensions',
     route: route.settings.extensions,
   },
+  {
+    title: 'RAG',
+    route: route.settings.rag,
+  },
 ]
 
 const SettingsMenu = () => {

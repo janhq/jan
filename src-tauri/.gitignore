@@ -5,3 +5,4 @@
 binaries
 !binaries/download.sh
 !binaries/download.bat
+rag/lancedb/
