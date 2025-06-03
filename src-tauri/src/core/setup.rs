@@ -212,16 +212,17 @@ pub fn setup_mcp(app: &App) {
 
 pub fn setup_sidecar(app: &App) -> Result<(), String> {
     let app_handle = app.handle().clone();
+    let app_handle_for_spawn = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         const MAX_RESTARTS: u32 = 5;
         const RESTART_DELAY_MS: u64 = 5000;
 
-        let app_state = app_handle.state::<AppState>();
+        let app_state = app_handle_for_spawn.state::<AppState>();
         let cortex_restart_count_state = app_state.cortex_restart_count.clone();
-        let app_data_dir = get_jan_data_folder_path(app_handle.clone());
+        let app_data_dir = get_jan_data_folder_path(app_handle_for_spawn.clone());
 
         let sidecar_command_builder = || {
-            let mut cmd = app_handle
+            let mut cmd = app_handle_for_spawn
                 .shell()
                 .sidecar("cortex-server")
                 .expect("Failed to get sidecar command")
@@ -243,14 +244,17 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 ]);
             #[cfg(target_os = "windows")]
             {
-                cmd = cmd.current_dir(app_handle.path().resource_dir().unwrap());
+                cmd = cmd.current_dir(app_handle_for_spawn.path().resource_dir().unwrap());
             }
 
             #[cfg(not(target_os = "windows"))]
             {
                 cmd = cmd.env("LD_LIBRARY_PATH", {
-                    let current_app_data_dir =
-                        app_handle.path().resource_dir().unwrap().join("binaries");
+                    let current_app_data_dir = app_handle_for_spawn
+                        .path()
+                        .resource_dir()
+                        .unwrap()
+                        .join("binaries");
                     let dest = current_app_data_dir.to_str().unwrap();
                     let ld_path_env = std::env::var("LD_LIBRARY_PATH").unwrap_or_default();
                     format!("{}{}{}", ld_path_env, ":", dest)
@@ -262,9 +266,15 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         let child_process: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
 
         let child_process_clone_for_kill = child_process.clone();
+        let app_handle_for_kill = app_handle.clone();
         app_handle.listen("kill-sidecar", move |_event| {
+            let app_handle = app_handle_for_kill.clone();
             let child_to_kill_arc = child_process_clone_for_kill.clone();
             tauri::async_runtime::spawn(async move {
+                let app_state = app_handle.state::<AppState>();
+                let mut count = app_state.cortex_restart_count.lock().await;
+                *count = 5;
+                drop(count);
                 log::info!("Received kill-sidecar event (processing async).");
                 if let Some(child) = child_to_kill_arc.lock().await.take() {
                     log::info!("Attempting to kill sidecar process...");
@@ -286,7 +296,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                     "Cortex server reached maximum restart attempts ({}). Giving up.",
                     current_restart_count
                 );
-                if let Err(e) = app_handle.emit("cortex_max_restarts_reached", ()) {
+                if let Err(e) = app_handle_for_spawn.emit("cortex_max_restarts_reached", ()) {
                     log::error!("Failed to emit cortex_max_restarts_reached event: {}", e);
                 }
                 break;

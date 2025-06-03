@@ -316,6 +316,12 @@ pub fn change_app_data_folder(
             new_data_folder_path
         );
 
+        // Check if this is a parent directory to avoid infinite recursion
+        if new_data_folder_path.starts_with(&current_data_folder) {
+            return Err(
+                "New data folder cannot be a subdirectory of the current data folder".to_string(),
+            );
+        }
         copy_dir_recursive(&current_data_folder, &new_data_folder_path)
             .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
     } else {

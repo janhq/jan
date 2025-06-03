@@ -1,5 +1,7 @@
 import { AppConfiguration, fs } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
+import { emit } from '@tauri-apps/api/event'
+import { stopAllModels } from './models'
 
 /**
  * @description This function is used to reset the app to its factory settings.
@@ -7,11 +9,16 @@ import { invoke } from '@tauri-apps/api/core'
  * @returns {Promise<void>}
  */
 export const factoryReset = async () => {
-  const janDataFolderPath = await getJanDataFolder()
-  if (janDataFolderPath) await fs.rm(janDataFolderPath)
-  window.localStorage.clear()
-  await window.core?.api?.installExtensions()
-  await window.core?.api?.relaunch()
+  // Kill background processes and remove data folder
+  await stopAllModels()
+  emit('kill-sidecar')
+  setTimeout(async () => {
+    const janDataFolderPath = await getJanDataFolder()
+    if (janDataFolderPath) await fs.rm(janDataFolderPath)
+    window.localStorage.clear()
+    await window.core?.api?.installExtensions()
+    await window.core?.api?.relaunch()
+  }, 1000)
 }
 
 /**
@@ -71,5 +78,5 @@ export const getJanDataFolder = async (): Promise<string | undefined> => {
  * @param path The new path for the Jan data folder
  */
 export const relocateJanDataFolder = async (path: string) => {
-  window.core?.api?.changeAppDataFolder({ newDataFolder: path })
+  await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
 }

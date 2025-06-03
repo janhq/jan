@@ -270,7 +270,13 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
 
   async activeModels(): Promise<(object & { id: string })[]> {
     return await this.apiInstance()
-      .then((e) => e.get('inferences/server/models'))
+      .then((e) =>
+        e.get('inferences/server/models', {
+          retry: {
+            limit: 0, // Do not retry
+          },
+        })
+      )
       .then((e) => e.json())
       .then((e) => (e as LoadedModelResponse).data ?? [])
       .catch(() => [])

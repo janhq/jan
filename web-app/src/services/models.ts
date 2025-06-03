@@ -261,6 +261,18 @@ export const stopModel = async (model: string, provider?: string) => {
 }
 
 /**
+ * Stops all active models.
+ * @returns
+ */
+export const stopAllModels = async () => {
+  const models = await getActiveModels()
+  if (models)
+    await Promise.all(
+      models.map((model: { id: string }) => stopModel(model.id))
+    )
+}
+
+/**
  * @fileoverview Helper function to start a model.
  * This function loads the model from the provider.
  * Provider's chat function will handle loading the model.

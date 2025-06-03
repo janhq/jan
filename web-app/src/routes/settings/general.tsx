@@ -42,6 +42,8 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
+import { emit } from '@tauri-apps/api/event'
+import { stopAllModels } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -146,12 +148,24 @@ function General() {
   const confirmDataFolderChange = async () => {
     if (selectedNewPath) {
       try {
-        setJanDataFolder(selectedNewPath)
-        await relocateJanDataFolder(selectedNewPath)
-        // Only relaunch if relocation was successful
-        window.core?.api?.relaunch()
-        setSelectedNewPath(null)
-        setIsDialogOpen(false)
+        await stopAllModels()
+        emit('kill-sidecar')
+        setTimeout(async () => {
+          try {
+            await relocateJanDataFolder(selectedNewPath)
+            setJanDataFolder(selectedNewPath)
+            // Only relaunch if relocation was successful
+            window.core?.api?.relaunch()
+            setSelectedNewPath(null)
+            setIsDialogOpen(false)
+          } catch (error) {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : 'Failed to relocate Jan data folder'
+            )
+          }
+        }, 1000)
       } catch (error) {
         console.error('Failed to relocate data folder:', error)
         // Revert the data folder path on error
