@@ -9,6 +9,7 @@ export interface UpdateState {
   downloadProgress: number
   downloadedBytes: number
   totalBytes: number
+  remindMeLater: boolean
 }
 
 export const useAppUpdater = () => {
@@ -19,10 +20,19 @@ export const useAppUpdater = () => {
     downloadProgress: 0,
     downloadedBytes: 0,
     totalBytes: 0,
+    remindMeLater: false,
   })
 
-  const checkForUpdate = useCallback(async () => {
+  const checkForUpdate = useCallback(async (resetRemindMeLater = false) => {
     try {
+      // Reset remindMeLater if requested (e.g., when called from settings)
+      if (resetRemindMeLater) {
+        setUpdateState((prev) => ({
+          ...prev,
+          remindMeLater: false,
+        }))
+      }
+
       if (!isDev()) {
         // Production mode - use actual Tauri updater
         const update = await check()
@@ -56,6 +66,13 @@ export const useAppUpdater = () => {
       }))
       return null
     }
+  }, [])
+
+  const setRemindMeLater = useCallback((remind: boolean) => {
+    setUpdateState((prev) => ({
+      ...prev,
+      remindMeLater: remind,
+    }))
   }, [])
 
   const downloadAndInstallUpdate = useCallback(async () => {
@@ -116,5 +133,6 @@ export const useAppUpdater = () => {
     updateState,
     checkForUpdate,
     downloadAndInstallUpdate,
+    setRemindMeLater,
   }
 }

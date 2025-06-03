@@ -184,7 +184,7 @@ function General() {
     try {
       if (isDev())
         return toast.info('You are running a development version of Jan!')
-      const update = await checkForUpdate()
+      const update = await checkForUpdate(true)
       if (!update) {
         toast.info('You are using the latest version of Jan!')
       }
