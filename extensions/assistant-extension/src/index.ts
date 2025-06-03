@@ -60,7 +60,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       'assistant.json',
     ])
     if (await fs.existsSync(assistantPath)) {
-      await fs.unlinkSync(assistantPath)
+      await fs.rm(assistantPath)
     }
   }
 
