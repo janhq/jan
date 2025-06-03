@@ -275,13 +275,15 @@ export const ThreadContent = memo(
           <>
             {item.showAssistant && (
               <div className="flex items-center gap-2 mb-3 text-main-view-fg/60">
-                <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
-                  <AvatarEmoji
-                    avatar={assistant?.avatar}
-                    imageClassName="w-6 h-6 object-contain"
-                    textClassName="text-base"
-                  />
-                </div>
+                {assistant?.avatar && (
+                  <div className="flex items-center gap-2 size-8 rounded-md justify-center border border-main-view-fg/10 bg-main-view-fg/5 p-1">
+                    <AvatarEmoji
+                      avatar={assistant?.avatar}
+                      imageClassName="w-6 h-6 object-contain"
+                      textClassName="text-base"
+                    />
+                  </div>
+                )}
 
                 <div className="flex flex-col">
                   <span className="text-main-view-fg font-medium">

@@ -69,26 +69,19 @@ function Assistant() {
               <div className="flex items-center justify-between gap-2">
                 <h3 className="text-base font-medium text-main-view-fg/80">
                   <div className="flex items-center gap-1">
-                    <span className="shrink-0 w-4 h-4 relative flex items-center justify-center">
-                      <AvatarEmoji
-                        avatar={assistant?.avatar}
-                        imageClassName="object-cover"
-                        textClassName="text-sm"
-                      />
-                    </span>
+                    {assistant?.avatar && (
+                      <span className="shrink-0 w-4 h-4 relative flex items-center justify-center">
+                        <AvatarEmoji
+                          avatar={assistant?.avatar}
+                          imageClassName="object-cover"
+                          textClassName="text-sm"
+                        />
+                      </span>
+                    )}
                     <span className="line-clamp-1">{assistant.name}</span>
                   </div>
                 </h3>
                 <div className="flex items-center gap-0.5">
-                  {/* <div
-                    className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                    title="Edit Assistant in JSON"
-                  >
-                    <IconCodeCircle
-                      size={18}
-                      className="text-main-view-fg/50"
-                    />
-                  </div> */}
                   <div
                     className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                     title="Edit Assistant"
