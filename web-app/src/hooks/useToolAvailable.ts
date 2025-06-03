@@ -107,7 +107,7 @@ export const useToolAvailable = create<ToolDisabledState>()(
       storage: createJSONStorage(() => localStorage),
       // Persist all state
       partialize: (state) => ({
-        availableTools: state.disabledTools,
+        disabledTools: state.disabledTools,
         defaultDisabledTools: state.defaultDisabledTools,
       }),
     }
