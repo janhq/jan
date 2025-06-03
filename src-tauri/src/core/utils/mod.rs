@@ -151,3 +151,15 @@ pub fn decompress(app: tauri::AppHandle, path: &str, output_dir: &str) -> Result
 
     Ok(())
 }
+
+// check if a system library is available
+#[tauri::command]
+pub fn is_library_available(library: &str) -> bool {
+    match unsafe { libloading::Library::new(library) } {
+        Ok(_) => true,
+        Err(e) => {
+            log::info!("Library {} is not available: {}", library, e);
+            false
+        }
+    }
+}
