@@ -26,6 +26,7 @@ type ThreadState = {
   updateCurrentThreadModel: (model: ThreadModel) => void
   getFilteredThreads: (searchTerm: string) => Thread[]
   updateCurrentThreadAssistant: (assistant: Assistant) => void
+  updateThreadTimestamp: (threadId: string) => void
   searchIndex: Fzf<Thread[]> | null
 }
 
@@ -164,7 +165,7 @@ export const useThreads = create<ThreadState>()(
           id: ulid(),
           title: title ?? 'New Thread',
           model,
-          order: 1, // Will be set properly by setThreads
+          // order: 1, // Will be set properly by setThreads
           updated: Date.now() / 1000,
           assistants: assistant ? [assistant] : [],
         }
@@ -243,6 +244,62 @@ export const useThreads = create<ThreadState>()(
       getCurrentThread: () => {
         const { currentThreadId, threads } = get()
         return currentThreadId ? threads[currentThreadId] : undefined
+      },
+      updateThreadTimestamp: (threadId) => {
+        set((state) => {
+          const thread = state.threads[threadId]
+          if (!thread) return state
+          
+          // If the thread is already at order 1, just update the timestamp
+          if (thread.order === 1) {
+            const updatedThread = {
+              ...thread,
+              updated: Date.now() / 1000,
+            }
+            updateThread(updatedThread)
+            
+            return {
+              threads: {
+                ...state.threads,
+                [threadId]: updatedThread,
+              },
+            }
+          }
+          
+          // Update the thread with new timestamp and set it to order 1 (top)
+          const updatedThread = {
+            ...thread,
+            updated: Date.now() / 1000,
+            order: 1,
+          }
+          
+          // Update all other threads to increment their order by 1
+          const updatedThreads = { ...state.threads }
+          Object.keys(updatedThreads).forEach(id => {
+            if (id !== threadId) {
+              const otherThread = updatedThreads[id]
+              updatedThreads[id] = {
+                ...otherThread,
+                order: (otherThread.order || 1) + 1,
+              }
+              // Update the backend for other threads
+              updateThread(updatedThreads[id])
+            }
+          })
+          
+          // Set the updated thread
+          updatedThreads[threadId] = updatedThread
+          
+          // Update the backend for the main thread
+          updateThread(updatedThread)
+          
+          return {
+            threads: updatedThreads,
+            searchIndex: new Fzf<Thread[]>(Object.values(updatedThreads), {
+              selector: (item: Thread) => item.title,
+            }),
+          }
+        })
       },
     }),
     {

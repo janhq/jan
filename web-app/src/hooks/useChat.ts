@@ -49,7 +49,7 @@ export const useChat = () => {
   const { getProviderByName, selectedModel, selectedProvider } =
     useModelProvider()
 
-  const { getCurrentThread: retrieveThread, createThread } = useThreads()
+  const { getCurrentThread: retrieveThread, createThread, updateThreadTimestamp } = useThreads()
   const { getMessages, addMessage } = useMessages()
   const router = useRouter()
 
@@ -65,7 +65,7 @@ export const useChat = () => {
     }
     setTools()
 
-    let unsubscribe = () => {}
+    let unsubscribe = () => { }
     listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
@@ -111,6 +111,7 @@ export const useChat = () => {
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
       addMessage(newUserThreadContent(activeThread.id, message))
+      updateThreadTimestamp(activeThread.id)
       setPrompt('')
       try {
         if (selectedModel?.id) {
@@ -133,11 +134,11 @@ export const useChat = () => {
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
           ? tools.filter((tool) => {
-              const availableToolNames = getAvailableToolsForThread(
-                activeThread.id
-              )
-              return availableToolNames.includes(tool.name)
-            })
+            const availableToolNames = getAvailableToolsForThread(
+              activeThread.id
+            )
+            return availableToolNames.includes(tool.name)
+          })
           : []
 
         // TODO: Later replaced by Agent setup?
@@ -213,6 +214,7 @@ export const useChat = () => {
             allowAllMCPPermissions
           )
           addMessage(updatedMessage ?? finalContent)
+          updateThreadTimestamp(activeThread.id)
 
           isCompleted = !toolCalls.length
           // Do not create agent loop if there is no need for it
@@ -236,6 +238,7 @@ export const useChat = () => {
       setAbortController,
       updateStreamingContent,
       addMessage,
+      updateThreadTimestamp,
       setPrompt,
       selectedModel,
       currentAssistant,
