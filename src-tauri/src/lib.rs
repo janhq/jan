@@ -80,6 +80,10 @@ pub fn run() {
             core::rag::commands::rag_clean_all_data_sources,
             core::rag::commands::rag_reset_database,
             core::rag::commands::get_rag_status,
+            core::rag::commands::get_rag_embedding_config,
+            core::rag::commands::update_rag_embedding_config,
+            core::rag::commands::get_rag_chunking_config,
+            core::rag::commands::update_rag_chunking_config,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,

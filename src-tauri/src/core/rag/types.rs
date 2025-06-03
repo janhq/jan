@@ -45,7 +45,7 @@ pub struct QueryResult {
 }
 
 /// Configuration for text chunking
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ChunkingConfig {
     pub chunk_size: usize,
     pub overlap: usize,
