@@ -266,7 +266,10 @@ export const stopModel = async (model: string, provider?: string) => {
  */
 export const stopAllModels = async () => {
   const models = await getActiveModels()
-  if (models) await models.map((model: { id: string }) => stopModel(model.id))
+  if (models)
+    await Promise.all(
+      models.map((model: { id: string }) => stopModel(model.id))
+    )
 }
 
 /**
