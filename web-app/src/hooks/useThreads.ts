@@ -66,7 +66,7 @@ export const useThreads = create<ThreadState>()(
         }
 
         let currentIndex = searchIndex
-        if (!currentIndex) {
+        if (!currentIndex?.find) {
           currentIndex = new Fzf<Thread[]>(Object.values(threads), {
             selector: (item: Thread) => item.title,
           })
