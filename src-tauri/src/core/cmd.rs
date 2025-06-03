@@ -278,7 +278,10 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
         if file_type.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            fs::copy(&src_path, &dst_path)?;
+            match fs::copy(&src_path, &dst_path) {
+                Ok(_) => log::info!("Copied {:?} to {:?}", src_path, dst_path),
+                Err(e) => log::error!("Failed to copy {:?} to {:?}: {}", src_path, dst_path, e),
+            }
         }
     }
 

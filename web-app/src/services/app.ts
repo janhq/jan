@@ -71,5 +71,5 @@ export const getJanDataFolder = async (): Promise<string | undefined> => {
  * @param path The new path for the Jan data folder
  */
 export const relocateJanDataFolder = async (path: string) => {
-  window.core?.api?.changeAppDataFolder({ newDataFolder: path })
+  await window.core?.api?.changeAppDataFolder({ newDataFolder: path })
 }
