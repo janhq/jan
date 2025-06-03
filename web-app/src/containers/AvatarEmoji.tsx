@@ -12,7 +12,6 @@ const isCustomImageAvatar = (avatar: React.ReactNode): avatar is string => {
  */
 interface AvatarEmojiProps {
   avatar?: React.ReactNode
-  fallback?: React.ReactNode
   imageClassName?: string
   textClassName?: string
 }
@@ -22,6 +21,7 @@ export const AvatarEmoji: React.FC<AvatarEmojiProps> = ({
   imageClassName = 'w-5 h-5 object-contain',
   textClassName = 'text-base',
 }) => {
+  if (!avatar) return null
   if (isCustomImageAvatar(avatar)) {
     return <img src={avatar} alt="Custom avatar" className={imageClassName} />
   }

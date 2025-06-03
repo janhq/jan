@@ -87,13 +87,16 @@ const DropdownAssistant = () => {
                     updateCurrentThreadAssistant(assistant)
                   }}
                 >
-                  <div className="shrink-0 relative w-4 h-4">
-                    <AvatarEmoji
-                      avatar={assistant?.avatar}
-                      imageClassName="object-cover"
-                      textClassName=""
-                    />
-                  </div>
+                  {assistant?.avatar && (
+                    <div className="shrink-0 relative w-4 h-4">
+                      <AvatarEmoji
+                        avatar={assistant?.avatar}
+                        imageClassName="object-cover"
+                        textClassName=""
+                      />
+                    </div>
+                  )}
+
                   <div className="text-left">
                     <span className="line-clamp-1">{assistant.name}</span>
                   </div>
