@@ -26,6 +26,8 @@ export const migrateData = async () => {
           ?.getEngines()
         if (engines && attempts < 10) {
           resolve(true)
+        } else if (attempts >= 10) {
+          resolve(false)
         } else {
           attempts += 1
           setTimeout(checkExtensionManager, 1000)
