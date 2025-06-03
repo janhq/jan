@@ -41,7 +41,7 @@ export const useAppUpdater = () => {
         if (update) {
           setUpdateState((prev) => ({
             ...prev,
-            isUpdateAvailable: false,
+            isUpdateAvailable: true,
             updateInfo: update,
           }))
           console.log('Update available:', update.version)
@@ -59,7 +59,7 @@ export const useAppUpdater = () => {
       } else {
         setUpdateState((prev) => ({
           ...prev,
-          isUpdateAvailable: true,
+          isUpdateAvailable: false,
           updateInfo: null,
         }))
         return null
