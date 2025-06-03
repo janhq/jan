@@ -1,15 +1,10 @@
-import { useProductAnalytic } from '@/hooks/useAnalytic'
-import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { ExtensionManager } from '@/lib/extension'
-import { configurePullOptions } from '@/services/models'
 import {
   EngineManagementExtension,
   Engines,
   ExtensionTypeEnum,
 } from '@janhq/core'
-import { invoke } from '@tauri-apps/api/core'
 
 /**
  * Migrates legacy browser data to new browser session.
@@ -36,32 +31,7 @@ export const migrateData = async () => {
       checkExtensionManager()
     })
     try {
-      // Migrate local storage data
-      const oldData = await invoke('get_legacy_browser_data')
-      for (const [key, value] of Object.entries(
-        oldData as unknown as Record<string, string>
-      )) {
-        if (value !== null && value !== undefined) {
-          if (Object.keys(useLocalApiServer.getState()).includes(key)) {
-            useLocalApiServer.setState({
-              ...useLocalApiServer.getState(),
-              [key]: value.replace(/"/g, ''),
-            })
-          } else if (Object.keys(useProxyConfig.getState()).includes(key)) {
-            useProxyConfig.setState({
-              ...useProxyConfig.getState(),
-              [key]: value.replace(/"/g, ''),
-            })
-          } else if (Object.keys(useProductAnalytic.getState()).includes(key)) {
-            useProductAnalytic.setState({
-              ...useProductAnalytic.getState(),
-              [key]: value.replace(/"/g, ''),
-            })
-          }
-        }
-      }
       // Migrate provider configurations
-
       if (engines) {
         for (const [key, value] of Object.entries(engines)) {
           const providerName = key.replace('google_gemini', 'gemini')
@@ -91,7 +61,6 @@ export const migrateData = async () => {
         }
       }
       localStorage.setItem('migration_completed', 'true')
-      configurePullOptions(useProxyConfig.getState())
     } catch (error) {
       console.error('Migration failed:', error)
     }
