@@ -15,14 +15,15 @@ use reqwest::blocking::Client;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
-        #[cfg(desktop)]
+    #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
         }));
     }
-    builder.plugin(tauri_plugin_os::init())
+    builder
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -57,7 +58,6 @@ pub fn run() {
             core::cmd::read_logs,
             core::cmd::change_app_data_folder,
             core::cmd::reset_cortex_restart_count,
-            core::migration::get_legacy_browser_data,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
