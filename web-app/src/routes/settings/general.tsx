@@ -149,14 +149,22 @@ function General() {
     if (selectedNewPath) {
       try {
         await stopAllModels()
-        setJanDataFolder(selectedNewPath)
         emit('kill-sidecar')
         setTimeout(async () => {
-          await relocateJanDataFolder(selectedNewPath)
-          // Only relaunch if relocation was successful
-          window.core?.api?.relaunch()
-          setSelectedNewPath(null)
-          setIsDialogOpen(false)
+          try {
+            await relocateJanDataFolder(selectedNewPath)
+            setJanDataFolder(selectedNewPath)
+            // Only relaunch if relocation was successful
+            window.core?.api?.relaunch()
+            setSelectedNewPath(null)
+            setIsDialogOpen(false)
+          } catch (error) {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : 'Failed to relocate Jan data folder'
+            )
+          }
         }, 1000)
       } catch (error) {
         console.error('Failed to relocate data folder:', error)
