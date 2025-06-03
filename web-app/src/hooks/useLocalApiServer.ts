@@ -21,6 +21,11 @@ type LocalApiServerState = {
   // Verbose server logs
   verboseLogs: boolean
   setVerboseLogs: (value: boolean) => void
+  // Trusted hosts
+  trustedHosts: string[]
+  addTrustedHost: (host: string) => void
+  removeTrustedHost: (host: string) => void
+  setTrustedHosts: (hosts: string[]) => void
 }
 
 export const useLocalApiServer = create<LocalApiServerState>()(
@@ -38,6 +43,16 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       setCorsEnabled: (value) => set({ corsEnabled: value }),
       verboseLogs: true,
       setVerboseLogs: (value) => set({ verboseLogs: value }),
+      trustedHosts: [],
+      addTrustedHost: (host) =>
+        set((state) => ({
+          trustedHosts: [...state.trustedHosts, host],
+        })),
+      removeTrustedHost: (host) =>
+        set((state) => ({
+          trustedHosts: state.trustedHosts.filter((h) => h !== host),
+        })),
+      setTrustedHosts: (hosts) => set({ trustedHosts: hosts }),
     }),
     {
       name: localStorageKey.settingLocalApiServer,

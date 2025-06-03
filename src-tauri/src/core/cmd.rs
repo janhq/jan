@@ -347,8 +347,10 @@ pub async fn start_server(
     host: String,
     port: u16,
     prefix: String,
+    trusted_hosts: Vec<String>,
 ) -> Result<bool, String> {
-    server::start_server(host, port, prefix, app_token(app.state()).unwrap())
+    let auth_token = app.state::<AppState>().app_token.clone().unwrap_or_default();
+    server::start_server(host, port, prefix, auth_token, trusted_hosts)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)
