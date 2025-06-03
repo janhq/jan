@@ -3,7 +3,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::path::PathBuf;
-use tauri::{AppHandle, State}; // Import Manager trait
+use tauri::State; // Import Manager trait
 use thiserror;
 use tokio::process::Command;
 use uuid::Uuid;
@@ -40,8 +40,8 @@ type ServerResult<T> = Result<T, serverError>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct sessionInfo {
-    pub pid: String, // opaque handle for unload/chat
-    pub port: String,   // llama-server output port
+    pub pid: String,  // opaque handle for unload/chat
+    pub port: String, // llama-server output port
     pub modelId: String,
     pub modelPath: String, // path of the loaded model
     pub apiKey: String,
@@ -56,9 +56,9 @@ pub struct unloadResult {
 // --- Load Command ---
 #[tauri::command]
 pub async fn load_llama_model(
-    _app_handle: AppHandle,     // Get the AppHandle
     state: State<'_, AppState>, // Access the shared state
     backend_path: &str,
+    library_path: Option<&str>,
     args: Vec<String>, // Arguments from the frontend
 ) -> ServerResult<sessionInfo> {
     let mut process_lock = state.llama_server_process.lock().await;
@@ -114,6 +114,24 @@ pub async fn load_llama_model(
     // Configure the command to run the server
     let mut command = Command::new(backend_path);
     command.args(args);
+
+    if let Some(lib_path) = library_path {
+        if cfg!(target_os = "linux") {
+            let new_lib_path = match std::env::var("LD_LIBRARY_PATH") {
+                Ok(path) => format!("{}:{}", path, lib_path),
+                Err(_) => lib_path.to_string(),
+            };
+            command.env("LD_LIBRARY_PATH", new_lib_path);
+        } else if cfg!(target_os = "windows") {
+            let new_path = match std::env::var("PATH") {
+                Ok(path) => format!("{};{}", path, lib_path),
+                Err(_) => lib_path.to_string(),
+            };
+            command.env("PATH", new_path);
+        } else {
+            log::warn!("Library path setting is not supported on this OS");
+        }
+    }
 
     // Optional: Redirect stdio if needed (e.g., for logging within Jan)
     // command.stdout(Stdio::piped());

@@ -457,6 +457,7 @@ export default class llamacpp_extension extends AIEngine {
       // TODO: add LIBRARY_PATH
       const sInfo = await invoke<sessionInfo>('load_llama_model', {
         backendPath: await getBackendExePath(backend, version),
+        libraryPath: await joinPath([this.providerPath, 'lib']),
         args,
       })
 
