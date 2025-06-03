@@ -278,10 +278,7 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
         if file_type.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            match fs::copy(&src_path, &dst_path) {
-                Ok(_) => log::info!("Copied {:?} to {:?}", src_path, dst_path),
-                Err(e) => log::error!("Failed to copy {:?} to {:?}: {}", src_path, dst_path, e),
-            }
+            fs::copy(&src_path, &dst_path)?;
         }
     }
 
@@ -321,7 +318,9 @@ pub fn change_app_data_folder(
 
         // Check if this is a parent directory to avoid infinite recursion
         if new_data_folder_path.starts_with(&current_data_folder) {
-            return Err("New data folder cannot be a subdirectory of the current data folder".to_string());
+            return Err(
+                "New data folder cannot be a subdirectory of the current data folder".to_string(),
+            );
         }
         copy_dir_recursive(&current_data_folder, &new_data_folder_path)
             .map_err(|e| format!("Failed to copy data to new folder: {}", e))?;
