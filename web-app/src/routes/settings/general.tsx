@@ -43,7 +43,7 @@ import { windowKey } from '@/constants/windows'
 import { toast } from 'sonner'
 import { isDev } from '@/lib/utils'
 import { emit } from '@tauri-apps/api/event'
-import { stopAllModels, stopModel } from '@/services/models'
+import { stopAllModels } from '@/services/models'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
