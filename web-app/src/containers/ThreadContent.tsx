@@ -36,6 +36,29 @@ import { formatDate } from '@/utils/formatDate'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
+import SourceCitation from '@/containers/RAG/SourceCitation'
+
+interface RAGSource {
+  filename: string
+  path: string
+  similarity_score: number
+  document_id: string
+  chunk_order?: number
+  // Enhanced properties for rich RAG data
+  chunk_id?: string
+  source_id?: string
+  text_chunk?: string
+  distance?: number
+  original_document_path?: string
+  document_type?: string
+  source_info?: {
+    name: string
+    type: string
+    status: string
+    added_at: string
+  }
+  query_timestamp?: string
+}
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -179,6 +202,72 @@ export const ThreadContent = memo(
       Array.isArray(item.metadata.tool_calls) &&
       item.metadata.tool_calls.length
 
+    // Extract RAG sources from tool calls
+    const ragSources = useMemo((): RAGSource[] | null => {
+      if (!isToolCalls || !item.metadata?.tool_calls) return null
+
+      try {
+        for (const toolCall of item.metadata.tool_calls as ToolCall[]) {
+          // Only parse tool calls for RAG query documents
+          if (
+            toolCall.tool?.function?.name === 'rag_query_documents' &&
+            toolCall.response
+          ) {
+            const parsedResponse = JSON.parse(
+              (
+                (toolCall.response as Record<string, unknown>)
+                  .content as Array<{ type: string; text: string }>
+              )[0].text
+            )
+
+            console.log("Parsed RAG response:", parsedResponse)
+
+            if (parsedResponse.retrieved_contexts) {
+              return parsedResponse.retrieved_contexts.map(
+                (context: {
+                  chunk_id: string
+                  document_id: string
+                  text_chunk?: string
+                  similarity_score: number
+                  distance?: number
+                  metadata?: {
+                    original_document_path?: string
+                    document_type?: string
+                    chunk_order?: number
+                    source_id?: string
+                  }
+                }): RAGSource => {
+                  // Extract filename from the original document path
+                  const originalPath = context.metadata?.original_document_path || ''
+                  const filename = originalPath ? originalPath.split('/').pop() || 'Unknown' : 'Unknown'
+                  
+                  return {
+                    filename,
+                    path: originalPath,
+                    similarity_score: context.similarity_score || 0,
+                    document_id: context.document_id,
+                    chunk_order: context.metadata?.chunk_order,
+                    // Enhanced rich data
+                    chunk_id: context.chunk_id,
+                    source_id: context.metadata?.source_id,
+                    text_chunk: context.text_chunk,
+                    distance: context.distance,
+                    original_document_path: originalPath,
+                    document_type: context.metadata?.document_type,
+                    source_info: undefined, // No source_info available in this response format
+                    query_timestamp: parsedResponse.query_timestamp,
+                  }
+                }
+              )
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing RAG sources:', error)
+      }
+      return null
+    }, [isToolCalls, item.metadata?.tool_calls])
+
     const assistant = item.metadata?.assistant as
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
@@ -315,6 +404,36 @@ export const ThreadContent = memo(
               content={textSegment.replace('</think>', '')}
               components={linkComponents}
             />
+
+            {/* RAG Context Indicator and Source Citations */}
+            {ragSources && ragSources.length > 0 && (
+              <div className="mt-3 mb-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-main-view-fg/60">
+                    {ragSources.length} source
+                    {ragSources.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="flex space-x-2">
+                  {ragSources.map((source: RAGSource, index: number) => (
+                    <SourceCitation
+                      key={`${source.document_id}-${index}`}
+                      filename={source.filename}
+                      score={source.similarity_score}
+                      chunkOrder={source.chunk_order}
+                      documentId={source.document_id}
+                      originalPath={source.original_document_path}
+                      documentType={source.document_type}
+                      textChunk={source.text_chunk}
+                      distance={source.distance}
+                      sourceInfo={source.source_info}
+                      queryTimestamp={source.query_timestamp}
+                      className="w-full"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {isToolCalls && item.metadata?.tool_calls ? (
               <>

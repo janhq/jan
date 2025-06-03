@@ -1,5 +1,6 @@
 import { ChatCompletionMessageParam } from 'token.js'
 import { ChatCompletionMessageToolCall } from 'openai/resources'
+import { ChatCompletionContentPart } from 'openai/resources/chat/completions'
 import { ThreadMessage } from '@janhq/core'
 
 /**
@@ -72,6 +73,42 @@ export class CompletionMessagesBuilder {
       role: 'tool',
       content: content,
       tool_call_id: toolCallId,
+    })
+  }
+
+  /**
+   * Add a user message with file content to the messages array.
+   * @param textContent - The text content of the message.
+   * @param file_data - The base64 encoded file data (optional).
+   * @param file_id - The ID of an uploaded file (optional).
+   * @param filename - The name of the file (optional).
+   */
+  addFileContent(
+    textContent: string,
+    { file_data, file_id, filename }: {
+      file_data?: string;
+      file_id?: string;
+      filename?: string;
+    }
+  ) {
+    const fileContent: ChatCompletionContentPart.File = {
+      type: 'file',
+      file: {
+        ...(file_data && { file_data }),
+        ...(file_id && { file_id }),
+        ...(filename && { filename }),
+      },
+    }
+
+    this.messages.push({
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: textContent,
+        },
+        fileContent,
+      ],
     })
   }
 

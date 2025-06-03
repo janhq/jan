@@ -13,6 +13,7 @@ import {
   IconX,
   IconSearch,
   IconClipboardSmileFilled,
+  IconFileText,
 } from '@tabler/icons-react'
 import { route } from '@/constants/routes'
 import ThreadList from './ThreadList'
@@ -56,6 +57,11 @@ const mainMenus = [
     title: 'common.hub',
     icon: IconAppsFilled,
     route: route.hub,
+  },
+  {
+    title: 'RAG Documents',
+    icon: IconFileText,
+    route: route.ragDocuments,
   },
   {
     title: 'common.settings',
@@ -293,15 +299,15 @@ const LeftPanel = () => {
 
               {Object.keys(threads).length === 0 && !searchTerm && (
                 <>
-                  <div className="px-1 mt-2">
-                    <div className="flex items-center gap-1 text-left-panel-fg/80">
-                      <IconMessageFilled size={18} />
-                      <h6 className="font-medium text-base">No threads yet</h6>
-                    </div>
-                    <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
-                      Start a new conversation to see your thread history here.
-                    </p>
+                <div className="px-1 mt-2">
+                  <div className="flex items-center gap-1 text-left-panel-fg/80">
+                    <IconMessageFilled size={18} />
+                    <h6 className="font-medium text-base">No threads yet</h6>
                   </div>
+                  <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
+                    Start a new conversation to see your thread history here.
+                  </p>
+                </div>
                 </>
               )}
 
