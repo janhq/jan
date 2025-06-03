@@ -12,6 +12,21 @@ import { invoke } from '@tauri-apps/api/core'
  */
 export const migrateData = async () => {
   if (!localStorage.getItem('migration_completed')) {
+    // Wait for the extension manager to be ready
+    await new Promise((resolve) => {
+      const checkExtensionManager = () => {
+        if (
+          ExtensionManager.getInstance().get<EngineManagementExtension>(
+            ExtensionTypeEnum.Engine
+          )
+        ) {
+          resolve(true)
+        } else {
+          setTimeout(checkExtensionManager, 500)
+        }
+      }
+      checkExtensionManager()
+    })
     try {
       // Migrate local storage data
       const oldData = await invoke('get_legacy_browser_data')
