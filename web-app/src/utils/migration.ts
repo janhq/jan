@@ -4,7 +4,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { ExtensionManager } from '@/lib/extension'
 import { configurePullOptions } from '@/services/models'
-import { EngineManagementExtension, ExtensionTypeEnum } from '@janhq/core'
+import {
+  EngineManagementExtension,
+  Engines,
+  ExtensionTypeEnum,
+} from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 
 /**
@@ -12,6 +16,25 @@ import { invoke } from '@tauri-apps/api/core'
  */
 export const migrateData = async () => {
   if (!localStorage.getItem('migration_completed')) {
+    let engines: Engines | undefined
+    // Wait for the extension manager to be ready
+    let attempts = 0
+    await new Promise((resolve) => {
+      const checkExtensionManager = async () => {
+        engines = await ExtensionManager.getInstance()
+          .get<EngineManagementExtension>(ExtensionTypeEnum.Engine)
+          ?.getEngines()
+        if (engines && attempts < 10) {
+          resolve(true)
+        } else if (attempts >= 10) {
+          resolve(false)
+        } else {
+          attempts += 1
+          setTimeout(checkExtensionManager, 1000)
+        }
+      }
+      checkExtensionManager()
+    })
     try {
       // Migrate local storage data
       const oldData = await invoke('get_legacy_browser_data')
@@ -38,9 +61,7 @@ export const migrateData = async () => {
         }
       }
       // Migrate provider configurations
-      const engines = await ExtensionManager.getInstance()
-        .get<EngineManagementExtension>(ExtensionTypeEnum.Engine)
-        ?.getEngines()
+
       if (engines) {
         for (const [key, value] of Object.entries(engines)) {
           const providerName = key.replace('google_gemini', 'gemini')
