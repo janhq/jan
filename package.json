@@ -10,7 +10,7 @@
   "scripts": {
     "lint": "yarn workspace @janhq/web-app lint",
     "dev": "yarn dev:tauri",
-    "build": "yarn build:web && yarn build:tauri",
+    "build": "yarn build:web && yarn build:tauri --verbose",
     "test": "yarn workspace @janhq/web-app test",
     "test:coverage": "yarn workspace @janhq/web-app test",
     "dev:web": "yarn workspace @janhq/web-app dev",
