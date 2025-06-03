@@ -45,7 +45,9 @@ const os = (settings?: GpuSetting): string => {
  * @param settings
  * @returns
  */
-const cudaVersion = (settings?: GpuSetting): 'cu12.0' | 'cu11.7' | undefined => {
+const cudaVersion = (
+  settings?: GpuSetting
+): 'cu12.0' | 'cu11.7' | undefined => {
   return settings.gpus?.some((gpu) => gpu.version.includes('12'))
     ? 'cu12.0'
     : 'cu11.7'
@@ -70,9 +72,9 @@ export const engineVariant = async (
   const runMode = gpuRunMode(gpuSetting)
   // Only Nvidia GPUs have addition_information set and activated by default
   let engineVariant =
-    !gpuSetting?.vulkan ||
-    !gpuSetting.gpus?.length ||
-    gpuSetting.gpus.some((e) => e.additional_information && e.activated)
+    !gpuSetting?.vulkan &&
+    (!gpuSetting.gpus?.length ||
+      gpuSetting.gpus.some((e) => e.additional_information && e.activated))
       ? [
           platform,
           ...(runMode === RunMode.Cuda

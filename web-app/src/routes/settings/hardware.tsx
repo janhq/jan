@@ -350,6 +350,9 @@ function Hardware() {
                       checked={vulkanEnabled}
                       onCheckedChange={(checked) => {
                         setVulkanEnabled(checked)
+                        setTimeout(() => {
+                          window.location.reload()
+                        }, 500) // Reload after 1 second to apply changes
                       }}
                     />
                   </div>
