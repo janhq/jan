@@ -38,6 +38,8 @@ const DialogAppUpdater = () => {
     checkForUpdate()
   }, [checkForUpdate])
 
+  console.log(updateState, 'updateState')
+
   if (updateState.remindMeLater) return null
 
   return (

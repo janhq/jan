@@ -42,6 +42,7 @@ export const useAppUpdater = () => {
           setUpdateState((prev) => ({
             ...prev,
             isUpdateAvailable: true,
+            remindMeLater: false,
             updateInfo: update,
           }))
           console.log('Update available:', update.version)
