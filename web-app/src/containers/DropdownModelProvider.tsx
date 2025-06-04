@@ -1,5 +1,9 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
 import Capabilities from './Capabilities'
@@ -34,7 +38,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   const [displayModel, setDisplayModel] = useState<string>('')
   const { updateCurrentThreadModel } = useThreads()
   const navigate = useNavigate()
-  
+
   // Search state
   const [open, setOpen] = useState(false)
   const [searchValue, setSearchValue] = useState('')
@@ -82,10 +86,10 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   // Create searchable items from all models
   const searchableItems = useMemo(() => {
     const items: SearchableModel[] = []
-    
+
     providers.forEach((provider) => {
       if (!provider.active) return
-      
+
       provider.models.forEach((modelItem) => {
         // Skip models that require API key but don't have one (except llama.cpp)
         if (provider.provider !== 'llama.cpp' && !provider.api_key?.length) {
@@ -95,9 +99,10 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')
         const providerTitle = getProviderTitle(provider.provider)
-        
+
         // Create search string with model id, provider, and capabilities
-        const searchStr = `${modelItem.id} ${providerTitle} ${provider.provider} ${capabilitiesString}`.toLowerCase()
+        const searchStr =
+          `${modelItem.id} ${providerTitle} ${provider.provider} ${capabilitiesString}`.toLowerCase()
 
         items.push({
           provider,
@@ -128,7 +133,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   // Group filtered items by provider
   const groupedItems = useMemo(() => {
     const groups: Record<string, SearchableModel[]> = {}
-    
+
     filteredItems.forEach((item) => {
       const providerKey = item.provider.provider
       if (!groups[providerKey]) {
@@ -140,17 +145,25 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
     return groups
   }, [filteredItems])
 
-  const handleSelect = useCallback((searchableModel: SearchableModel) => {
-    selectModelProvider(searchableModel.provider.provider, searchableModel.model.id)
-    updateCurrentThreadModel({
-      id: searchableModel.model.id,
-      provider: searchableModel.provider.provider,
-    })
-    setSearchValue('')
-    setOpen(false)
-  }, [selectModelProvider, updateCurrentThreadModel])
+  const handleSelect = useCallback(
+    (searchableModel: SearchableModel) => {
+      selectModelProvider(
+        searchableModel.provider.provider,
+        searchableModel.model.id
+      )
+      updateCurrentThreadModel({
+        id: searchableModel.model.id,
+        provider: searchableModel.provider.provider,
+      })
+      setSearchValue('')
+      setOpen(false)
+    },
+    [selectModelProvider, updateCurrentThreadModel]
+  )
 
-  const currentModel = selectedModel?.id ? getModelBy(selectedModel?.id) : undefined
+  const currentModel = selectedModel?.id
+    ? getModelBy(selectedModel?.id)
+    : undefined
 
   if (!providers.length) return null
 
@@ -184,7 +197,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
             <ModelSetting model={currentModel as Model} provider={provider} />
           )}
         </div>
-        
+
         <PopoverContent
           className="w-80 p-0 max-h-[400px] overflow-hidden"
           side="bottom"
@@ -194,16 +207,16 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
         >
           <div className="flex flex-col w-full">
             {/* Search input */}
-            <div className="relative p-3 border-b border-main-view-fg/10">
+            <div className="relative px-2 py-1.5 border-b border-main-view-fg/10">
               <input
                 ref={searchInputRef}
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
                 placeholder="Search models..."
-                className="w-full h-8 px-3 py-1 text-sm bg-main-view border border-main-view-fg/10 rounded-md text-main-view-fg placeholder:text-main-view-fg/40 focus:outline-none focus:ring-1 focus:ring-main-view-fg/20"
+                className="text-sm font-normal outline-0"
               />
               {searchValue.length > 0 && (
-                <div className="absolute right-5 top-0 bottom-0 flex items-center justify-center">
+                <div className="absolute right-2 top-0 bottom-0 flex items-center justify-center">
                   <IconX
                     size={16}
                     className="text-main-view-fg/50 hover:text-main-view-fg cursor-pointer"
@@ -222,7 +235,9 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
               ) : (
                 <div className="py-1">
                   {Object.entries(groupedItems).map(([providerKey, models]) => {
-                    const providerInfo = providers.find(p => p.provider === providerKey)
+                    const providerInfo = providers.find(
+                      (p) => p.provider === providerKey
+                    )
                     if (!providerInfo) return null
 
                     return (
@@ -258,9 +273,12 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
 
                         {/* Models for this provider */}
                         {models.map((searchableModel) => {
-                          const isSelected = selectedModel?.id === searchableModel.model.id && 
-                                           selectedProvider === searchableModel.provider.provider
-                          const capabilities = searchableModel.model.capabilities || []
+                          const isSelected =
+                            selectedModel?.id === searchableModel.model.id &&
+                            selectedProvider ===
+                              searchableModel.provider.provider
+                          const capabilities =
+                            searchableModel.model.capabilities || []
 
                           return (
                             <div
@@ -277,7 +295,10 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                                   {searchableModel.model.id}
                                 </span>
                                 {isSelected && (
-                                  <IconCheck size={16} className="text-accent shrink-0" />
+                                  <IconCheck
+                                    size={16}
+                                    className="text-accent shrink-0"
+                                  />
                                 )}
                                 <div className="flex-1"></div>
                                 {capabilities.length > 0 && (
