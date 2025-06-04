@@ -19,6 +19,7 @@ struct ProxyConfig {
     upstream: String,
     prefix: String,
     auth_token: String,
+    trusted_hosts: Vec<String>,
 }
 
 /// Removes a prefix from a path, ensuring proper formatting
@@ -68,6 +69,22 @@ async fn proxy_request(
 ) -> Result<Response<Body>, hyper::Error> {
     let original_path = req.uri().path();
     let path = get_destination_path(original_path, &config.prefix);
+
+    // Verify Host header
+    if let Some(host) = req.headers().get(hyper::header::HOST) {
+        let host_str = host.to_str().unwrap_or("");
+        if !is_valid_host(host_str, &config.trusted_hosts) {
+            return Ok(Response::builder()
+                .status(StatusCode::FORBIDDEN)
+                .body(Body::from("Invalid host header"))
+                .unwrap());
+        }
+    } else {
+        return Ok(Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Body::from("Missing host header"))
+            .unwrap());
+    }
 
     // Block access to /configs endpoint
     if path.contains("/configs") {
@@ -129,12 +146,29 @@ async fn proxy_request(
     }
 }
 
+// Validates if the host header is allowed
+fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
+    if host.is_empty() {
+        return false;
+    }
+
+    let host_without_port = if host.starts_with('[') { host.split(']').next().unwrap_or(host).trim_start_matches('[') } else { host.split(':').next().unwrap_or(host) };
+    let default_valid_hosts = ["localhost", "127.0.0.1"];
+
+    if default_valid_hosts.iter().any(|&valid| host_without_port.to_lowercase() == valid.to_lowercase()) {
+        return true;
+    }
+    
+    trusted_hosts.iter().any(|valid| host_without_port.to_lowercase() == valid.to_lowercase())
+}
+
 /// Starts the proxy server
 pub async fn start_server(
     host: String,
     port: u16,
     prefix: String,
     auth_token: String,
+    trusted_hosts: Vec<String>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Check if server is already running
     let mut handle_guard = SERVER_HANDLE.lock().await;
@@ -152,6 +186,7 @@ pub async fn start_server(
         upstream: "http://127.0.0.1:39291".to_string(),
         prefix,
         auth_token,
+        trusted_hosts,
     };
 
     // Create HTTP client

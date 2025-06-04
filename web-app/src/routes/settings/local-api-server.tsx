@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next'
 import { ServerHostSwitcher } from '@/containers/ServerHostSwitcher'
 import { PortInput } from '@/containers/PortInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
+import { TrustedHostsInput } from '@/containers/TrustedHostsInput'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
@@ -31,6 +32,7 @@ function LocalAPIServer() {
     serverHost,
     serverPort,
     apiPrefix,
+    trustedHosts,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
@@ -43,6 +45,7 @@ function LocalAPIServer() {
           host: serverHost,
           port: serverPort,
           prefix: apiPrefix,
+          trustedHosts,
           isCorsEnabled: corsEnabled,
           isVerboseEnabled: verboseLogs,
         })
@@ -178,6 +181,14 @@ function LocalAPIServer() {
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 actions={<ApiPrefixInput />}
+              />
+              <CardItem
+                title="Trusted Hosts"
+                description="Add trusted hosts that can access the API server"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
+                actions={<TrustedHostsInput />}
               />
             </Card>
 
