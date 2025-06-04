@@ -20,6 +20,7 @@ struct ProxyConfig {
     prefix: String,
     auth_token: String,
     trusted_hosts: Vec<String>,
+    api_key: String,
 }
 
 /// Removes a prefix from a path, ensuring proper formatting
@@ -86,6 +87,25 @@ async fn proxy_request(
             .unwrap());
     }
 
+    if !config.api_key.is_empty() {
+        if let Some(authorization) = req.headers().get(hyper::header::AUTHORIZATION) {
+            let auth_str = authorization.to_str().unwrap_or("");
+
+            if auth_str.strip_prefix("Bearer ") != Some(config.api_key.as_str())
+            {
+                return Ok(Response::builder()
+                    .status(StatusCode::UNAUTHORIZED)
+                    .body(Body::from("Invalid or missing authorization token"))
+                    .unwrap());
+            }
+        } else {
+            return Ok(Response::builder()
+                .status(StatusCode::UNAUTHORIZED)
+                .body(Body::from("Missing authorization header"))
+                .unwrap());
+        }
+    }
+
     // Block access to /configs endpoint
     if path.contains("/configs") {
         return Ok(Response::builder()
@@ -102,8 +122,8 @@ async fn proxy_request(
 
     // Copy original headers
     for (name, value) in req.headers() {
-        if name != hyper::header::HOST {
-            // Skip host header
+        // Skip host & authorization header
+        if name != hyper::header::HOST && name != hyper::header::AUTHORIZATION {
             outbound_req = outbound_req.header(name, value);
         }
     }
@@ -152,14 +172,26 @@ fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
         return false;
     }
 
-    let host_without_port = if host.starts_with('[') { host.split(']').next().unwrap_or(host).trim_start_matches('[') } else { host.split(':').next().unwrap_or(host) };
+    let host_without_port = if host.starts_with('[') {
+        host.split(']')
+            .next()
+            .unwrap_or(host)
+            .trim_start_matches('[')
+    } else {
+        host.split(':').next().unwrap_or(host)
+    };
     let default_valid_hosts = ["localhost", "127.0.0.1"];
 
-    if default_valid_hosts.iter().any(|&valid| host_without_port.to_lowercase() == valid.to_lowercase()) {
+    if default_valid_hosts
+        .iter()
+        .any(|&valid| host_without_port.to_lowercase() == valid.to_lowercase())
+    {
         return true;
     }
-    
-    trusted_hosts.iter().any(|valid| host_without_port.to_lowercase() == valid.to_lowercase())
+
+    trusted_hosts
+        .iter()
+        .any(|valid| host_without_port.to_lowercase() == valid.to_lowercase())
 }
 
 /// Starts the proxy server
@@ -168,6 +200,7 @@ pub async fn start_server(
     port: u16,
     prefix: String,
     auth_token: String,
+    api_key: String,
     trusted_hosts: Vec<String>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Check if server is already running
@@ -186,6 +219,7 @@ pub async fn start_server(
         upstream: "http://127.0.0.1:39291".to_string(),
         prefix,
         auth_token,
+        api_key,
         trusted_hosts,
     };
 

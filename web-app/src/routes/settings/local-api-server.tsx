@@ -16,6 +16,8 @@ import { useAppState } from '@/hooks/useAppState'
 import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import { ApiKeyInput } from '@/containers/ApiKeyInput'
+import { useState } from 'react'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -32,12 +34,30 @@ function LocalAPIServer() {
     serverHost,
     serverPort,
     apiPrefix,
+    apiKey,
     trustedHosts,
   } = useLocalApiServer()
 
   const { serverStatus, setServerStatus } = useAppState()
+  const [showApiKeyError, setShowApiKeyError] = useState(false)
+  const [isApiKeyEmpty, setIsApiKeyEmpty] = useState(
+    !apiKey || apiKey.toString().trim().length === 0
+  )
+
+  const handleApiKeyValidation = (isValid: boolean) => {
+    setIsApiKeyEmpty(!isValid)
+  }
 
   const toggleAPIServer = async () => {
+    // Validate API key before starting server
+    if (serverStatus === 'stopped') {
+      if (!apiKey || apiKey.toString().trim().length === 0) {
+        setShowApiKeyError(true)
+        return
+      }
+      setShowApiKeyError(false)
+    }
+
     setServerStatus('pending')
     if (serverStatus === 'stopped') {
       window.core?.api
@@ -45,12 +65,17 @@ function LocalAPIServer() {
           host: serverHost,
           port: serverPort,
           prefix: apiPrefix,
+          apiKey,
           trustedHosts,
           isCorsEnabled: corsEnabled,
           isVerboseEnabled: verboseLogs,
         })
         .then(() => {
           setServerStatus('running')
+        })
+        .catch((error: unknown) => {
+          console.error('Error starting server:', error)
+          setServerStatus('stopped')
         })
     } else {
       window.core?.api
@@ -181,6 +206,20 @@ function LocalAPIServer() {
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 actions={<ApiPrefixInput />}
+              />
+              <CardItem
+                title="API Key"
+                description="Authenticate requests with an API key"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none',
+                  isApiKeyEmpty && showApiKeyError && 'pb-6'
+                )}
+                actions={
+                  <ApiKeyInput
+                    showError={showApiKeyError}
+                    onValidationChange={handleApiKeyValidation}
+                  />
+                }
               />
               <CardItem
                 title="Trusted Hosts"
