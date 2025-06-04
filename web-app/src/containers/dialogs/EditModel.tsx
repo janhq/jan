@@ -7,6 +7,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   IconPencil,
@@ -162,13 +167,19 @@ export const DialogEditModel = ({
                 <IconEye className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Vision</span>
               </div>
-              <Switch
-                id="vision-capability"
-                checked={capabilities.vision}
-                onCheckedChange={(checked) =>
-                  handleCapabilityChange('vision', checked)
-                }
-              />
+              <Tooltip>
+                <TooltipTrigger>
+                  <Switch
+                    id="vision-capability"
+                    checked={capabilities.vision}
+                    disabled={true}
+                    onCheckedChange={(checked) =>
+                      handleCapabilityChange('vision', checked)
+                    }
+                  />
+                </TooltipTrigger>
+                <TooltipContent>Not available yet</TooltipContent>
+              </Tooltip>
             </div>
 
             <div className="flex items-center justify-between">
@@ -176,13 +187,19 @@ export const DialogEditModel = ({
                 <IconCodeCircle2 className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Embeddings</span>
               </div>
-              <Switch
-                id="embedding-capability"
-                checked={capabilities.embeddings}
-                onCheckedChange={(checked) =>
-                  handleCapabilityChange('embeddings', checked)
-                }
-              />
+              <Tooltip>
+                <TooltipTrigger>
+                  <Switch
+                    id="embedding-capability"
+                    disabled={true}
+                    checked={capabilities.embeddings}
+                    onCheckedChange={(checked) =>
+                      handleCapabilityChange('embeddings', checked)
+                    }
+                  />
+                </TooltipTrigger>
+                <TooltipContent>Not available yet</TooltipContent>
+              </Tooltip>
             </div>
 
             {/* <div className="flex items-center justify-between">
