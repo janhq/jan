@@ -242,9 +242,18 @@ async function _isCudaInstalled(version: string): Promise<boolean> {
   const libname = libnameLookup[key]
 
   // check from system libraries first
-  // TODO: need to check for CuBLAS and CuBLASLt as well
-  if (await invoke<boolean>('is_library_available', { library: libname }))
-    return true
+  // TODO: might need to check for CuBLAS and CuBLASLt as well
+  if (os_type === 'linux') {
+    // not sure why libloading cannot find library from name alone
+    // using full path here
+    const libPath = `/usr/local/cuda/lib64/${libname}`
+    if (await invoke<boolean>('is_library_available', { library: libPath }))
+      return true
+  } else if (os_type === 'windows') {
+    // TODO: test this on Windows
+    if (await invoke<boolean>('is_library_available', { library: libname }))
+      return true
+  }
 
   // check for libraries shipped with Jan's llama.cpp extension
   const janDataFolderPath = await getJanDataFolderPath()
