@@ -100,7 +100,28 @@ export const ThreadContent = memo(
       }),
       []
     )
-    const image = useMemo(() => item.content?.[0]?.image_url, [item])
+    const imageUrls = useMemo(() => {
+      if (!item.content) return []
+      return item.content
+        .filter(
+          (content) => content.type === 'image_url' && content.image_url?.url
+        )
+        .map((content) => content.image_url)
+        .filter(Boolean)
+    }, [item.content])
+
+    const attachedFiles = useMemo(() => {
+      if (!item.metadata?.files || !Array.isArray(item.metadata.files))
+        return []
+      // Filter out image files from the file list since they're displayed as images
+      return (
+        item.metadata.files as Array<{
+          name: string
+          type: string
+          size: number
+        }>
+      ).filter((file) => !file.type.startsWith('image/'))
+    }, [item.metadata])
     const { streamingContent } = useAppState()
 
     const text = useMemo(
@@ -217,6 +238,36 @@ export const ThreadContent = memo(
                     isUser
                   />
                 </div>
+
+                {/* Display uploaded images */}
+                {imageUrls.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {imageUrls.map((image, index) => (
+                      <div key={index} className="flex flex-col">
+                        <img
+                          src={image?.url}
+                          alt={image?.detail || `Uploaded image ${index + 1}`}
+                          className="max-w-[200px] max-h-[200px] object-contain rounded-md cursor-pointer hover:opacity-80 transition-opacity"
+                          onClick={() => window.open(image?.url, '_blank')}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Display file information */}
+                {attachedFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {attachedFiles.map((file, index) => (
+                      <div
+                        key={index}
+                        className="text-xs text-main-view-fg/60 bg-main-view-fg/5 px-2 py-1 rounded"
+                      >
+                        📎 {file.name} ({(file.size / 1024).toFixed(1)} KB)
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 text-main-view-fg/60 text-xs mt-2">
@@ -456,15 +507,19 @@ export const ThreadContent = memo(
             )}
           </>
         )}
+        {/* Legacy single image display - keeping for backward compatibility */}
 
-        {item.type === 'image_url' && image && (
+        {item.type === 'image_url' && item.content?.[0]?.image_url && (
           <div>
             <img
-              src={image.url}
-              alt={image.detail || 'Thread image'}
+              src={item.content[0].image_url.url}
+              alt={item.content[0].image_url.detail || 'Thread image'}
               className="max-w-full rounded-md"
+              style={{ maxHeight: '400px', objectFit: 'contain' }}
             />
-            {image.detail && <p className="text-sm mt-1">{image.detail}</p>}
+            {item.content[0].image_url.detail && (
+              <p className="text-sm mt-1">{item.content[0].image_url.detail}</p>
+            )}
           </div>
         )}
         {item.contextOverflowModal && item.contextOverflowModal}

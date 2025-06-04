@@ -2,6 +2,7 @@ import {
   ContentType,
   ChatCompletionRole,
   ThreadMessage,
+  ThreadContent,
   MessageStatus,
   EngineManager,
   ModelManager,
@@ -50,9 +51,73 @@ export const newUserThreadContent = (
   object: 'thread.message',
   thread_id: threadId,
   status: MessageStatus.Ready,
-  created_at: 0,
+  created_at: Date.now(),
   completed_at: 0,
 })
+
+/**
+ * Create a new user thread content with files (images, documents, etc.)
+ * @param threadId - The thread ID
+ * @param content - The text content
+ * @param files - Array of uploaded files
+ * @returns ThreadMessage with mixed content
+ */
+export const newUserThreadContentWithFiles = (
+  threadId: string,
+  content: string,
+  files: Array<{
+    name: string
+    type: string
+    size: number
+    base64: string
+    dataUrl: string
+  }>
+): ThreadMessage => {
+  const threadContent: ThreadContent[] = [
+    {
+      type: ContentType.Text,
+      text: {
+        value: content,
+        annotations: [],
+      },
+    },
+  ]
+
+  // Add file content to the thread content
+  files.forEach(file => {
+    if (file.type.startsWith('image/')) {
+      // Add image content
+      threadContent.push({
+        type: ContentType.Image,
+        image_url: {
+          url: file.dataUrl,
+          detail: 'auto',
+        },
+      })
+    }
+    // For non-image files, we could add them as text descriptions
+    // or store them in metadata for future file handling
+  })
+
+  return {
+    type: files.some(f => f.type.startsWith('image/')) ? 'image_url' : 'text',
+    role: ChatCompletionRole.User,
+    content: threadContent,
+    id: ulid(),
+    object: 'thread.message',
+    thread_id: threadId,
+    status: MessageStatus.Ready,
+    created_at: Date.now(),
+    completed_at: 0,
+    metadata: {
+      files: files.map(file => ({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      }))
+    }
+  }
+}
 /**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects

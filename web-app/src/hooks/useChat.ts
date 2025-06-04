@@ -13,6 +13,7 @@ import {
   isCompletionResponse,
   newAssistantThreadContent,
   newUserThreadContent,
+  newUserThreadContentWithFiles,
   postMessageProcessing,
   sendCompletion,
 } from '@/lib/completion'
@@ -76,7 +77,7 @@ export const useChat = () => {
     }
     setTools()
 
-    let unsubscribe = () => {}
+    let unsubscribe = () => { }
     listen(SystemEvent.MCP_UPDATE, setTools).then((unsub) => {
       // Unsubscribe from the event when the component unmounts
       unsubscribe = unsub
@@ -198,11 +199,11 @@ export const useChat = () => {
       const settingIndex = provider.settings.findIndex(
         (s) => s.key === settingKey
       )
-      ;(
-        newSettings[settingIndex].controller_props as {
-          value: string | boolean | number
-        }
-      ).value = true
+        ; (
+          newSettings[settingIndex].controller_props as {
+            value: string | boolean | number
+          }
+        ).value = true
 
       // Create update object with updated settings
       const updateObj: Partial<ModelProvider> = {
@@ -226,6 +227,13 @@ export const useChat = () => {
     async (
       message: string,
       showModal?: () => Promise<unknown>,
+      uploadedFiles?: Array<{
+        name: string
+        type: string
+        size: number
+        base64: string
+        dataUrl: string
+      }>,
       troubleshooting = true
     ) => {
       const activeThread = await getCurrentThread()
@@ -239,9 +247,14 @@ export const useChat = () => {
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
-      // Do not add new message on retry
-      if (troubleshooting)
-        addMessage(newUserThreadContent(activeThread.id, message))
+      // Create user message with files if available
+      if (uploadedFiles && uploadedFiles.length > 0) {
+        addMessage(newUserThreadContentWithFiles(activeThread.id, message, uploadedFiles))
+      } else {
+        // Do not add new message on retry
+        if (troubleshooting)
+          addMessage(newUserThreadContent(activeThread.id, message))
+      }
       updateThreadTimestamp(activeThread.id)
       setPrompt('')
       try {
@@ -260,16 +273,25 @@ export const useChat = () => {
           currentAssistant?.instructions
         )
 
-        builder.addUserMessage(message)
+        // Enhanced: Support for uploaded files with automatic image and audio detection
+        if (uploadedFiles && uploadedFiles.length > 0) {
+          // Use enhanced method that automatically detects and processes:
+          // - Images: Uses OpenAI's ChatCompletionContentPartImage with detail control
+          // - Audio: Uses OpenAI's ChatCompletionContentPartInputAudio (wav/mp3)
+          // - Other files: Falls back to regular file handling
+          builder.addUploadedFiles(message, uploadedFiles)
+        } else {
+          builder.addUserMessage(message)
+        }
 
         let isCompleted = false
 
         // Filter tools based on model capabilities and available tools for this thread
         let availableTools = selectedModel?.capabilities?.includes('tools')
           ? tools.filter((tool) => {
-              const disabledTools = getDisabledToolsForThread(activeThread.id)
-              return !disabledTools.includes(tool.name)
-            })
+            const disabledTools = getDisabledToolsForThread(activeThread.id)
+            return !disabledTools.includes(tool.name)
+          })
           : []
 
         // TODO: Later replaced by Agent setup?

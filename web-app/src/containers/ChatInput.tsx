@@ -1,7 +1,7 @@
 'use client'
 
 import TextareaAutosize from 'react-textarea-autosize'
-import { cn, toGigabytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -36,6 +36,12 @@ import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
 import { stopAllModels } from '@/services/models'
 import { useOutOfContextPromiseModal } from './dialogs/OutOfContextDialog'
+import {
+  processFiles,
+  processClipboardImages,
+  type SupportedFileType,
+} from '@/utils/fileUtils'
+import FileDisplay from '@/components/FileDisplay'
 
 type ChatInputProps = {
   className?: string
@@ -64,15 +70,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const [message, setMessage] = useState('')
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
-  const [uploadedFiles, setUploadedFiles] = useState<
-    Array<{
-      name: string
-      type: string
-      size: number
-      base64: string
-      dataUrl: string
-    }>
-  >([])
+  const [uploadedFiles, setUploadedFiles] = useState<SupportedFileType[]>([])
   const [connectedServers, setConnectedServers] = useState<string[]>([])
 
   // Check for connected MCP servers
@@ -107,7 +105,14 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
       return
     }
     setMessage('')
-    sendMessage(prompt, showModal)
+    // Pass uploadedFiles to sendMessage for enhanced media processing
+    sendMessage(
+      prompt,
+      showModal,
+      uploadedFiles.length > 0 ? uploadedFiles : undefined
+    )
+    // Clear uploaded files after sending
+    setUploadedFiles([])
   }
 
   useEffect(() => {
@@ -182,107 +187,49 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
     )
   }
 
-  const getFileTypeFromExtension = (fileName: string): string => {
-    const extension = fileName.toLowerCase().split('.').pop()
-    switch (extension) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg'
-      case 'png':
-        return 'image/png'
-      case 'pdf':
-        return 'application/pdf'
-      default:
-        return ''
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    try {
+      const newFiles = await processFiles(files)
+      setUploadedFiles((prev) => [...prev, ...newFiles])
+      setMessage('') // Clear any previous error messages
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Failed to process files'
+      )
+    } finally {
+      // Reset file input and focus textarea
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      if (textareaRef.current) {
+        textareaRef.current.focus()
+      }
     }
   }
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const clipboardData = e.clipboardData
+    if (!clipboardData) return
 
-    if (files && files.length > 0) {
-      const maxSize = 10 * 1024 * 1024 // 10MB in bytes
-      const newFiles: Array<{
-        name: string
-        type: string
-        size: number
-        base64: string
-        dataUrl: string
-      }> = []
+    try {
+      const newFiles = await processClipboardImages(clipboardData)
 
-      Array.from(files).forEach((file) => {
-        // Check file size
-        if (file.size > maxSize) {
-          setMessage(`File is too large. Maximum size is 10MB.`)
-          // Reset file input to allow re-uploading
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-          }
-          return
-        }
-
-        // Get file type - use extension as fallback if MIME type is incorrect
-        const detectedType = file.type || getFileTypeFromExtension(file.name)
-        const actualType = getFileTypeFromExtension(file.name) || detectedType
-
-        // Check file type
-        const allowedTypes = [
-          'image/jpg',
-          'image/jpeg',
-          'image/png',
-          'application/pdf',
-        ]
-
-        if (!allowedTypes.includes(actualType)) {
-          setMessage(
-            `File is not supported. Only JPEG, JPG, PNG, and PDF files are allowed.`
-          )
-          // Reset file input to allow re-uploading
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-          }
-          return
-        }
-
-        const reader = new FileReader()
-        reader.onload = () => {
-          const result = reader.result
-          if (typeof result === 'string') {
-            const base64String = result.split(',')[1]
-            const fileData = {
-              name: file.name,
-              size: file.size,
-              type: actualType,
-              base64: base64String,
-              dataUrl: result,
-            }
-            newFiles.push(fileData)
-            // Update state
-            if (
-              newFiles.length ===
-              Array.from(files).filter((f) => {
-                const fType = getFileTypeFromExtension(f.name) || f.type
-                return f.size <= maxSize && allowedTypes.includes(fType)
-              }).length
-            ) {
-              setUploadedFiles((prev) => {
-                const updated = [...prev, ...newFiles]
-                return updated
-              })
-              // Reset the file input value to allow re-uploading the same file
-              if (fileInputRef.current) {
-                fileInputRef.current.value = ''
-                setMessage('')
-              }
-            }
-          }
-        }
-        reader.readAsDataURL(file)
-      })
-    }
-
-    if (textareaRef.current) {
-      textareaRef.current.focus()
+      if (newFiles.length > 0) {
+        // Prevent default paste behavior only if we found images
+        e.preventDefault()
+        setUploadedFiles((prev) => [...prev, ...newFiles])
+        setMessage('') // Clear any previous error messages
+      }
+    } catch (error) {
+      e.preventDefault() // Prevent paste if there was an error processing images
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Failed to process pasted images'
+      )
     }
   }
 
@@ -313,54 +260,10 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               isFocused && 'ring-1 ring-main-view-fg/10'
             )}
           >
-            {uploadedFiles.length > 0 && (
-              <div className="flex gap-3 items-center p-2 pb-0">
-                {uploadedFiles.map((file, index) => {
-                  return (
-                    <div
-                      key={index}
-                      className={cn(
-                        'relative border border-main-view-fg/5 rounded-lg',
-                        file.type.startsWith('image/') ? 'size-14' : 'h-14 '
-                      )}
-                    >
-                      {file.type.startsWith('image/') && (
-                        <img
-                          className="object-cover w-full h-full rounded-lg"
-                          src={file.dataUrl}
-                          alt={`${file.name} - ${index}`}
-                        />
-                      )}
-                      {file.type === 'application/pdf' && (
-                        <div className="bg-main-view-fg/4 h-full rounded-lg p-2 max-w-[400px] pr-4">
-                          <div className="flex gap-2 items-center justify-center h-full">
-                            <div className="size-10 rounded-md bg-main-view shrink-0 flex items-center justify-center">
-                              <span className="uppercase font-bold">
-                                {file.name.split('.').pop()}
-                              </span>
-                            </div>
-                            <div className="truncate">
-                              <h6 className="truncate mb-0.5 text-main-view-fg/80">
-                                {file.name}
-                              </h6>
-                              <p className="text-xs text-main-view-fg/70">
-                                {toGigabytes(file.size)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                      <div
-                        className="absolute -top-1 -right-2.5 bg-destructive size-5 flex rounded-full items-center justify-center cursor-pointer"
-                        onClick={() => handleRemoveFile(index)}
-                      >
-                        <IconX className="text-destructive-fg" size={16} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+            <FileDisplay
+              files={uploadedFiles}
+              onRemoveFile={handleRemoveFile}
+            />
             <TextareaAutosize
               ref={textareaRef}
               disabled={Boolean(streamingContent)}
@@ -382,6 +285,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
+              onPaste={handlePaste}
               placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
@@ -415,18 +319,33 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   />
                 )}
                 {/* File attachment - always available */}
-                <div
-                  className="h-6 hidden p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
-                  onClick={handleAttachmentClick}
-                >
-                  <IconPaperclip size={18} className="text-main-view-fg/50" />
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                </div>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer"
+                        onClick={handleAttachmentClick}
+                      >
+                        <IconPaperclip
+                          size={18}
+                          className="text-main-view-fg/50"
+                        />
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          className="hidden"
+                          onChange={handleFileChange}
+                          multiple
+                          accept="image/*,audio/*,.pdf,.doc,.docx,.txt"
+                        />
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Upload Files (Images, Audio, Documents)</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
