@@ -38,13 +38,23 @@ const DialogAppUpdater = () => {
     checkForUpdate()
   }, [checkForUpdate])
 
-  console.log(updateState, 'updateState')
+  const [appUpdateState, setAppUpdateState] = useState({
+    remindMeLater: false,
+    isUpdateAvailable: false,
+  })
 
-  if (updateState.remindMeLater) return null
+  useEffect(() => {
+    setAppUpdateState({
+      remindMeLater: updateState.remindMeLater,
+      isUpdateAvailable: updateState.isUpdateAvailable,
+    })
+  }, [updateState])
+
+  if (appUpdateState.remindMeLater) return null
 
   return (
     <>
-      {updateState.isUpdateAvailable && (
+      {appUpdateState.isUpdateAvailable && (
         <div className="fixed z-50 w-[400px] bottom-3 right-3 bg-main-view text-main-view-fg flex items-center justify-center border border-main-view-fg/10 rounded-lg shadow-md">
           <div className="px-0 py-4">
             <div className="px-4">
