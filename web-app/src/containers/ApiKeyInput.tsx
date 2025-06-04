@@ -1,21 +1,59 @@
 import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 
-export function ApiKeyInput() {
+interface ApiKeyInputProps {
+  showError?: boolean
+  onValidationChange?: (isValid: boolean) => void
+}
+
+export function ApiKeyInput({
+  showError = false,
+  onValidationChange,
+}: ApiKeyInputProps) {
   const { apiKey, setApiKey } = useLocalApiServer()
   const [inputValue, setInputValue] = useState(apiKey.toString())
   const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState('')
+
+  const validateApiKey = (value: string) => {
+    if (!value || value.trim().length === 0) {
+      setError('API Key is required')
+      onValidationChange?.(false)
+      return false
+    }
+    setError('')
+    onValidationChange?.(true)
+    return true
+  }
+
+  useEffect(() => {
+    if (showError) {
+      validateApiKey(inputValue)
+    }
+  }, [showError, inputValue])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setInputValue(value)
+
+    // Clear error when user starts typing
+    if (error && value.trim().length > 0) {
+      setError('')
+      onValidationChange?.(true)
+    }
   }
 
   const handleBlur = () => {
     setApiKey(inputValue)
+    // Validate on blur if showError is true
+    if (showError) {
+      validateApiKey(inputValue)
+    }
   }
+
+  const hasError = error && showError
 
   return (
     <div className="relative w-full">
@@ -24,7 +62,11 @@ export function ApiKeyInput() {
         value={inputValue}
         onChange={handleChange}
         onBlur={handleBlur}
-        className="w-full h-8 text-sm pr-10"
+        className={`w-full text-sm pr-10 ${
+          hasError
+            ? 'border-1 border-destructive focus:border-destructive focus:ring-destructive'
+            : ''
+        }`}
         placeholder="Enter API Key"
       />
       <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
@@ -36,6 +78,11 @@ export function ApiKeyInput() {
           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
         </button>
       </div>
+      {hasError && (
+        <p className="text-destructive text-xs mt-1 absolute -bottom-5 left-0">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
