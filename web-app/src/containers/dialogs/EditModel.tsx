@@ -7,13 +7,18 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   IconPencil,
   IconEye,
   IconTool,
-  IconWorld,
-  IconAtom,
+  // IconWorld,
+  // IconAtom,
   IconCodeCircle2,
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
@@ -145,20 +150,6 @@ export const DialogEditModel = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <IconEye className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Vision</span>
-              </div>
-              <Switch
-                id="vision-capability"
-                checked={capabilities.vision}
-                onCheckedChange={(checked) =>
-                  handleCapabilityChange('vision', checked)
-                }
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
                 <IconTool className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Tools</span>
               </div>
@@ -173,19 +164,45 @@ export const DialogEditModel = ({
 
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <IconCodeCircle2 className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Embeddings</span>
+                <IconEye className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">Vision</span>
               </div>
-              <Switch
-                id="embedding-capability"
-                checked={capabilities.embeddings}
-                onCheckedChange={(checked) =>
-                  handleCapabilityChange('embeddings', checked)
-                }
-              />
+              <Tooltip>
+                <TooltipTrigger>
+                  <Switch
+                    id="vision-capability"
+                    checked={capabilities.vision}
+                    disabled={true}
+                    onCheckedChange={(checked) =>
+                      handleCapabilityChange('vision', checked)
+                    }
+                  />
+                </TooltipTrigger>
+                <TooltipContent>Not available yet</TooltipContent>
+              </Tooltip>
             </div>
 
             <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconCodeCircle2 className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">Embeddings</span>
+              </div>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Switch
+                    id="embedding-capability"
+                    disabled={true}
+                    checked={capabilities.embeddings}
+                    onCheckedChange={(checked) =>
+                      handleCapabilityChange('embeddings', checked)
+                    }
+                  />
+                </TooltipTrigger>
+                <TooltipContent>Not available yet</TooltipContent>
+              </Tooltip>
+            </div>
+
+            {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconWorld className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Web Search</span>
@@ -197,9 +214,9 @@ export const DialogEditModel = ({
                   handleCapabilityChange('web_search', checked)
                 }
               />
-            </div>
+            </div> */}
 
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconAtom className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Reasoning</span>
@@ -211,7 +228,7 @@ export const DialogEditModel = ({
                   handleCapabilityChange('reasoning', checked)
                 }
               />
-            </div>
+            </div> */}
           </div>
         </div>
       </DialogContent>

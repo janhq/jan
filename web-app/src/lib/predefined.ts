@@ -26,7 +26,8 @@ export const modelSettings = {
   temperature: {
     key: 'temp',
     title: 'Temperature',
-    description: 'Temperature for sampling (higher = more random).',
+    description:
+      'Temperature for sampling (higher = more random). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 0.8,
@@ -39,7 +40,8 @@ export const modelSettings = {
   top_k: {
     key: 'top_k',
     title: 'Top K',
-    description: 'Top-K sampling (0 = disabled).',
+    description:
+      'Top-K sampling (0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 40,
@@ -50,7 +52,8 @@ export const modelSettings = {
   top_p: {
     key: 'top_p',
     title: 'Top P',
-    description: 'Top-P sampling (1.0 = disabled).',
+    description:
+      'Top-P sampling (1.0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 0.9,
@@ -61,7 +64,8 @@ export const modelSettings = {
   min_p: {
     key: 'min_p',
     title: 'Min P',
-    description: 'Min-P sampling (0.0 = disabled).',
+    description:
+      'Min-P sampling (0.0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 0.1,
@@ -73,7 +77,7 @@ export const modelSettings = {
     key: 'repeat_last_n',
     title: 'Repeat Last N',
     description:
-      'Number of tokens to consider for repeat penalty (0 = disabled, -1 = ctx_size).',
+      'Number of tokens to consider for repeat penalty (0 = disabled, -1 = ctx_size). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 64,
@@ -84,7 +88,8 @@ export const modelSettings = {
   repeat_penalty: {
     key: 'repeat_penalty',
     title: 'Repeat Penalty',
-    description: 'Penalize repeating token sequences (1.0 = disabled).',
+    description:
+      'Penalize repeating token sequences (1.0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 1.0,
@@ -95,7 +100,8 @@ export const modelSettings = {
   presence_penalty: {
     key: 'presence_penalty',
     title: 'Presence Penalty',
-    description: 'Repeat alpha presence penalty (0.0 = disabled).',
+    description:
+      'Repeat alpha presence penalty (0.0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 0.0,
@@ -106,7 +112,8 @@ export const modelSettings = {
   frequency_penalty: {
     key: 'frequency_penalty',
     title: 'Frequency Penalty',
-    description: 'Repeat alpha frequency penalty (0.0 = disabled).',
+    description:
+      'Repeat alpha frequency penalty (0.0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: 0.0,
