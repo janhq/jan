@@ -1,6 +1,6 @@
 import { isDev } from '@/lib/utils'
 import { check, Update } from '@tauri-apps/plugin-updater'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
 
 export interface UpdateState {
@@ -24,64 +24,125 @@ export const useAppUpdater = () => {
     remindMeLater: false,
   })
 
-  const checkForUpdate = useCallback(async (resetRemindMeLater = false) => {
-    try {
-      // Reset remindMeLater if requested (e.g., when called from settings)
-      if (resetRemindMeLater) {
-        setUpdateState((prev) => ({
-          ...prev,
-          remindMeLater: false,
-        }))
-      }
-
-      if (!isDev()) {
-        // Production mode - use actual Tauri updater
-        const update = await check()
-
-        if (update) {
-          setUpdateState((prev) => ({
-            ...prev,
-            isUpdateAvailable: true,
-            updateInfo: update,
-          }))
-          console.log('Update available:', update.version)
-          return update
-        } else {
-          // No update available - reset state
-          setUpdateState((prev) => ({
-            ...prev,
-            isUpdateAvailable: false,
-            updateInfo: null,
-          }))
-
-          return null
-        }
-      } else {
-        setUpdateState((prev) => ({
-          ...prev,
-          isUpdateAvailable: false,
-          updateInfo: null,
-        }))
-        return null
-      }
-    } catch (error) {
-      console.error('Error checking for updates:', error)
-      // Reset state on error
+  // Listen for app update state sync events
+  useEffect(() => {
+    const handleUpdateStateSync = (newState: Partial<UpdateState>) => {
       setUpdateState((prev) => ({
         ...prev,
-        isUpdateAvailable: false,
-        updateInfo: null,
+        ...newState,
       }))
-      return null
+    }
+
+    events.on('onAppUpdateStateSync', handleUpdateStateSync)
+
+    return () => {
+      events.off('onAppUpdateStateSync', handleUpdateStateSync)
     }
   }, [])
 
-  const setRemindMeLater = useCallback((remind: boolean) => {
-    setUpdateState((prev) => ({
-      ...prev,
-      remindMeLater: remind,
-    }))
-  }, [])
+  const syncStateToOtherInstances = useCallback(
+    (partialState: Partial<UpdateState>) => {
+      // Emit event to sync state across all useAppUpdater instances
+      events.emit('onAppUpdateStateSync', partialState)
+    },
+    []
+  )
+
+  const checkForUpdate = useCallback(
+    async (resetRemindMeLater = false) => {
+      try {
+        // Reset remindMeLater if requested (e.g., when called from settings)
+        if (resetRemindMeLater) {
+          const newState = {
+            remindMeLater: false,
+          }
+          setUpdateState((prev) => ({
+            ...prev,
+            ...newState,
+          }))
+          // Sync to other instances
+          syncStateToOtherInstances(newState)
+        }
+
+        if (!isDev()) {
+          // Production mode - use actual Tauri updater
+          const update = await check()
+
+          if (update) {
+            const newState = {
+              isUpdateAvailable: true,
+              remindMeLater: false,
+              updateInfo: update,
+            }
+            setUpdateState((prev) => ({
+              ...prev,
+              ...newState,
+            }))
+            // Sync to other instances
+            syncStateToOtherInstances(newState)
+            console.log('Update available:', update.version)
+            return update
+          } else {
+            // No update available - reset state
+            const newState = {
+              isUpdateAvailable: false,
+              updateInfo: null,
+            }
+            setUpdateState((prev) => ({
+              ...prev,
+              ...newState,
+            }))
+            // Sync to other instances
+            syncStateToOtherInstances(newState)
+            return null
+          }
+        } else {
+          const newState = {
+            isUpdateAvailable: false,
+            updateInfo: null,
+            ...(resetRemindMeLater && { remindMeLater: false }),
+          }
+          setUpdateState((prev) => ({
+            ...prev,
+            ...newState,
+          }))
+          // Sync to other instances
+          syncStateToOtherInstances(newState)
+          return null
+        }
+      } catch (error) {
+        console.error('Error checking for updates:', error)
+        // Reset state on error
+        const newState = {
+          isUpdateAvailable: false,
+          updateInfo: null,
+        }
+        setUpdateState((prev) => ({
+          ...prev,
+          ...newState,
+        }))
+        // Sync to other instances
+        syncStateToOtherInstances(newState)
+        return null
+      }
+    },
+    [syncStateToOtherInstances]
+  )
+
+  const setRemindMeLater = useCallback(
+    (remind: boolean) => {
+      const newState = {
+        remindMeLater: remind,
+      }
+      setUpdateState((prev) => ({
+        ...prev,
+        ...newState,
+      }))
+      // Sync to other instances
+      syncStateToOtherInstances(newState)
+    },
+    [syncStateToOtherInstances]
+  )
 
   const downloadAndInstallUpdate = useCallback(async () => {
     if (!updateState.updateInfo) return

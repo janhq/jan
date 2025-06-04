@@ -9,7 +9,7 @@ import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { useTranslation } from 'react-i18next'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
@@ -63,7 +63,7 @@ const openFileTitle = (): string => {
 function General() {
   const { t } = useTranslation()
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
-  const { checkForUpdate, setRemindMeLater } = useAppUpdater()
+  const { checkForUpdate } = useAppUpdater()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
@@ -179,9 +179,8 @@ function General() {
     }
   }
 
-  const handleCheckForUpdate = async () => {
+  const handleCheckForUpdate = useCallback(async () => {
     setIsCheckingUpdate(true)
-    setRemindMeLater(false)
     try {
       if (isDev())
         return toast.info('You are running a development version of Jan!')
@@ -196,7 +195,7 @@ function General() {
     } finally {
       setIsCheckingUpdate(false)
     }
-  }
+  }, [setIsCheckingUpdate, checkForUpdate])
 
   return (
     <div className="flex flex-col h-full">
