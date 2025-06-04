@@ -1,8 +1,6 @@
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::{fs, io, path::PathBuf};
 use tauri::{AppHandle, Manager, Runtime, State};
-use tauri_plugin_updater::UpdaterExt;
 
 use super::{server, setup, state::AppState};
 
@@ -347,10 +345,15 @@ pub async fn start_server(
     host: String,
     port: u16,
     prefix: String,
+    api_key: String,
     trusted_hosts: Vec<String>,
 ) -> Result<bool, String> {
-    let auth_token = app.state::<AppState>().app_token.clone().unwrap_or_default();
-    server::start_server(host, port, prefix, auth_token, trusted_hosts)
+    let auth_token = app
+        .state::<AppState>()
+        .app_token
+        .clone()
+        .unwrap_or_default();
+    server::start_server(host, port, prefix, auth_token, api_key, trusted_hosts)
         .await
         .map_err(|e| e.to_string())?;
     Ok(true)

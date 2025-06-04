@@ -16,6 +16,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { windowKey } from '@/constants/windows'
 import { IconLogs } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
+import { ApiKeyInput } from '@/containers/ApiKeyInput'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -32,6 +33,7 @@ function LocalAPIServer() {
     serverHost,
     serverPort,
     apiPrefix,
+    apiKey,
     trustedHosts,
   } = useLocalApiServer()
 
@@ -45,6 +47,7 @@ function LocalAPIServer() {
           host: serverHost,
           port: serverPort,
           prefix: apiPrefix,
+          apiKey,
           trustedHosts,
           isCorsEnabled: corsEnabled,
           isVerboseEnabled: verboseLogs,
@@ -181,6 +184,14 @@ function LocalAPIServer() {
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 actions={<ApiPrefixInput />}
+              />
+              <CardItem
+                title="API Key"
+                description="Authenticate requests with an API key"
+                className={cn(
+                  isServerRunning && 'opacity-50 pointer-events-none'
+                )}
+                actions={<ApiKeyInput />}
               />
               <CardItem
                 title="Trusted Hosts"
