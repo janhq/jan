@@ -12,8 +12,8 @@ import {
   IconPencil,
   IconEye,
   IconTool,
-  IconWorld,
-  IconAtom,
+  // IconWorld,
+  // IconAtom,
   IconCodeCircle2,
 } from '@tabler/icons-react'
 import { useState, useEffect } from 'react'
@@ -145,20 +145,6 @@ export const DialogEditModel = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <IconEye className="size-4 text-main-view-fg/70" />
-                <span className="text-sm">Vision</span>
-              </div>
-              <Switch
-                id="vision-capability"
-                checked={capabilities.vision}
-                onCheckedChange={(checked) =>
-                  handleCapabilityChange('vision', checked)
-                }
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
                 <IconTool className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Tools</span>
               </div>
@@ -167,6 +153,20 @@ export const DialogEditModel = ({
                 checked={capabilities.tools}
                 onCheckedChange={(checked) =>
                   handleCapabilityChange('tools', checked)
+                }
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <IconEye className="size-4 text-main-view-fg/70" />
+                <span className="text-sm">Vision</span>
+              </div>
+              <Switch
+                id="vision-capability"
+                checked={capabilities.vision}
+                onCheckedChange={(checked) =>
+                  handleCapabilityChange('vision', checked)
                 }
               />
             </div>
@@ -185,7 +185,7 @@ export const DialogEditModel = ({
               />
             </div>
 
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconWorld className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Web Search</span>
@@ -197,9 +197,9 @@ export const DialogEditModel = ({
                   handleCapabilityChange('web_search', checked)
                 }
               />
-            </div>
+            </div> */}
 
-            <div className="flex items-center justify-between">
+            {/* <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <IconAtom className="size-4 text-main-view-fg/70" />
                 <span className="text-sm">Reasoning</span>
@@ -211,7 +211,7 @@ export const DialogEditModel = ({
                   handleCapabilityChange('reasoning', checked)
                 }
               />
-            </div>
+            </div> */}
           </div>
         </div>
       </DialogContent>
