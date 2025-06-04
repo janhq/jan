@@ -86,7 +86,6 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/themes/**/*",
       "resources/pre-install/**/*",
       "resources/lib/",
       "binaries/**/*"
