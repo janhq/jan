@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { events, AppEvent } from '@janhq/core'
 import { emit } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
+import { stopAllModels } from '@/services/models'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -157,7 +158,7 @@ export const useAppUpdater = () => {
 
       let downloaded = 0
       let contentLength = 0
-
+      await stopAllModels()
       emit(SystemEvent.KILL_SIDECAR)
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
