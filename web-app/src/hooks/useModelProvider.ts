@@ -50,9 +50,11 @@ export const useModelProvider = create<ModelProviderState>()(
               ...provider,
               models: mergedModels,
               settings: provider.settings.map((setting) => {
-                const existingSetting = existingProvider?.settings?.find(
-                  (x) => x.key === setting.key
-                )
+                const existingSetting = provider.persist
+                  ? undefined
+                  : existingProvider?.settings?.find(
+                      (x) => x.key === setting.key
+                    )
                 return {
                   ...setting,
                   controller_props: {

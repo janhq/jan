@@ -45,6 +45,7 @@ type ProviderObject = {
   base_url?: string
   settings: ProviderSetting[]
   models: Model[]
+  persist?: boolean
 }
 
 /**

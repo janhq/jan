@@ -148,6 +148,23 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     window.addEventListener('beforeunload', () => {
       this.clean()
     })
+
+    // Migrate configs
+    if (!localStorage.getItem('cortex_migration_completed')) {
+      const config = await this.getCortexConfig()
+      console.log('Start cortex.cpp migration', config)
+      if (config && config.huggingface_token) {
+        this.updateSettings([
+          {
+            key: Settings.huggingfaceToken,
+            controllerProps: {
+              value: config.huggingface_token,
+            },
+          },
+        ])
+        localStorage.setItem('cortex_migration_completed', 'true')
+      }
+    }
   }
 
   async onUnload() {
@@ -310,6 +327,16 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   }): Promise<void> {
     return this.apiInstance()
       .then((api) => api.patch('v1/configs', { json: body }).then(() => {}))
+      .catch((e) => console.debug(e))
+  }
+
+  /**
+   * Get cortex config
+   * @param body
+   */
+  private async getCortexConfig(): Promise<any> {
+    return this.apiInstance()
+      .then((api) => api.get('v1/configs').json())
       .catch((e) => console.debug(e))
   }
 

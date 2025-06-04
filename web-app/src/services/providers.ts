@@ -55,6 +55,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
       ) ?? []
     const provider: ModelProvider = {
       active: false,
+      persist: true,
       provider: providerName,
       base_url:
         'inferenceUrl' in value
