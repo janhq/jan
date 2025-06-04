@@ -61,12 +61,7 @@ pub async fn load_llama_model(
     library_path: Option<&str>,
     args: Vec<String>, // Arguments from the frontend
 ) -> ServerResult<sessionInfo> {
-    let mut process_lock = state.llama_server_process.lock().await;
-
-    if process_lock.is_some() {
-        log::warn!("Attempted to load server, but it's already running.");
-        return Err(serverError::AlreadyRunning);
-    }
+    let mut process_map = state.llama_server_process.lock().await;
 
     log::info!("Attempting to launch server at path: {:?}", backend_path);
     log::info!("Using arguments: {:?}", args);
@@ -149,7 +144,7 @@ pub async fn load_llama_model(
     log::info!("Server process started with PID: {}", pid);
 
     // Store the child process handle in the state
-    *process_lock = Some(child);
+    process_map.insert(pid.clone(), child);
 
     let session_info = sessionInfo {
         pid,
@@ -168,66 +163,41 @@ pub async fn unload_llama_model(
     pid: String,
     state: State<'_, AppState>,
 ) -> ServerResult<unloadResult> {
-    let mut process_lock = state.llama_server_process.lock().await;
-    // Take the child process out of the Option, leaving None in its place
-    if let Some(mut child) = process_lock.take() {
-        // Convert the PID to a string to compare with the session_id
-        let process_pid = child.id().map(|pid| pid.to_string()).unwrap_or_default();
+    let mut process_map = state.llama_server_process.lock().await;
+     match process_map.remove(&pid) {
+        Some(mut child) => {
+            log::info!("Attempting to terminate server process with PID: {}", pid);
 
-        // Check if the session_id matches the PID
-        if pid != process_pid && !pid.is_empty() && !process_pid.is_empty() {
-            // Put the process back in the lock since we're not killing it
-            *process_lock = Some(child);
+            match child.start_kill() {
+                Ok(_) => {
+                    log::info!("Server process termination signal sent successfully");
 
+                    Ok(unloadResult {
+                        success: true,
+                        error: None,
+                    })
+                }
+                Err(e) => {
+                    log::error!("Failed to kill server process: {}", e);
+
+                    Ok(unloadResult {
+                        success: false,
+                        error: Some(format!("Failed to kill server process: {}", e)),
+                    })
+                }
+            }
+        }
+        None => {
             log::warn!(
-                "Session ID mismatch: provided {} vs process {}",
-                pid,
-                process_pid
+                "Attempted to unload server with PID '{}', but no such process exists",
+                pid
             );
 
-            return Ok(unloadResult {
-                success: false,
-                error: Some(format!(
-                    "Session ID mismatch: provided {} doesn't match process {}",
-                    pid, process_pid
-                )),
-            });
+            Ok(unloadResult {
+                success: true,
+                error: None,
+            })
         }
-
-        log::info!(
-            "Attempting to terminate server process with PID: {:?}",
-            child.id()
-        );
-
-        // Kill the process
-        match child.start_kill() {
-            Ok(_) => {
-                log::info!("Server process termination signal sent successfully");
-
-                Ok(unloadResult {
-                    success: true,
-                    error: None,
-                })
-            }
-            Err(e) => {
-                log::error!("Failed to kill server process: {}", e);
-
-                // Return formatted error
-                Ok(unloadResult {
-                    success: false,
-                    error: Some(format!("Failed to kill server process: {}", e)),
-                })
-            }
-        }
-    } else {
-        log::warn!("Attempted to unload server, but no process was running");
-
-        // If no process is running but client thinks there is,
-        // still report success since the end state is what they wanted
-        Ok(unloadResult {
-            success: true,
-            error: None,
-        })
     }
 }
 
