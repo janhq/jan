@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useState, useEffect } from 'react'
 import { useReleaseNotes } from '@/hooks/useReleaseNotes'
 import { RenderMarkdown } from '../RenderMarkdown'
-import { isDev } from '@/lib/utils'
+import { cn, isDev } from '@/lib/utils'
 
 const DialogAppUpdater = () => {
   const {
@@ -52,10 +52,17 @@ const DialogAppUpdater = () => {
 
   if (appUpdateState.remindMeLater) return null
 
+  console.log(appUpdateState)
+  console.log(updateState)
+
   return (
     <>
       {appUpdateState.isUpdateAvailable && (
-        <div className="fixed z-50 w-[400px] bottom-3 right-3 bg-main-view text-main-view-fg flex items-center justify-center border border-main-view-fg/10 rounded-lg shadow-md">
+        <div
+          className={cn(
+            'fixed z-50 w-[400px] bottom-3 right-3 bg-main-view text-main-view-fg flex items-center justify-center border border-main-view-fg/10 rounded-lg shadow-md'
+          )}
+        >
           <div className="px-0 py-4">
             <div className="px-4">
               <div className="flex items-start gap-2">
