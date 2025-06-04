@@ -373,6 +373,10 @@ export default class llamacpp_extension extends AIEngine {
   }
 
   override async load(modelId: string): Promise<sessionInfo> {
+    const sInfo = this.findSessionByModel(modelId)
+    if (sInfo) {
+        throw new Error("Model already loaded!!")
+    }
     const args: string[] = []
     const cfg = this.config
     const [version, backend] = cfg.version_backend.split('/')

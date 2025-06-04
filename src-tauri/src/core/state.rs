@@ -19,7 +19,7 @@ pub struct AppState {
     pub mcp_active_servers: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub mcp_successfully_connected: Arc<Mutex<HashMap<String, bool>>>,
     pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
-    pub llama_server_process: Arc<Mutex<Option<Child>>>,
+    pub llama_server_process: Arc<Mutex<HashMap<String, Child>>>,
 }
 pub fn generate_app_token() -> String {
     rand::thread_rng()
