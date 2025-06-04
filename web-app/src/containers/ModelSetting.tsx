@@ -1,4 +1,5 @@
 import { IconSettings } from '@tabler/icons-react'
+import debounce from 'lodash.debounce'
 
 import {
   Sheet,
@@ -10,7 +11,7 @@ import {
 } from '@/components/ui/sheet'
 import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { updateModel } from '@/services/models'
+import { updateModel, stopModel } from '@/services/models'
 import { ModelSettingParams } from '@janhq/core'
 
 type ModelSettingProps = {
@@ -20,6 +21,11 @@ type ModelSettingProps = {
 
 export function ModelSetting({ model, provider }: ModelSettingProps) {
   const { updateProvider } = useModelProvider()
+
+  // Create a debounced version of stopModel that waits 500ms after the last call
+  const debouncedStopModel = debounce((modelId: string) => {
+    stopModel(modelId)
+  }, 500)
 
   const handleSettingChange = (
     key: string,
@@ -66,11 +72,15 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
         },
         {} as Record<string, unknown>
       ) as ModelSettingParams
+
       updateModel({
         id: model.id,
         settings: params,
         ...(params as unknown as object),
       })
+
+      // Call debounced stopModel after updating the model
+      debouncedStopModel(model.id)
     }
   }
 

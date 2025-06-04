@@ -82,9 +82,6 @@ function Hub() {
       [modelId]: !prev[modelId],
     }))
   }
-  useEffect(() => {
-    fetchModelHub().then(fetchSources)
-  }, [fetchSources])
 
   useEffect(() => {
     if (search.repo) {
@@ -150,6 +147,7 @@ function Hub() {
   }, [searchValue, sortedModels, showOnlyDownloaded, llamaProvider?.models])
 
   useEffect(() => {
+    fetchModelHub()
     fetchSources()
   }, [fetchSources])
 
