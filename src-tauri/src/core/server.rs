@@ -180,7 +180,7 @@ fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
     } else {
         host.split(':').next().unwrap_or(host)
     };
-    let default_valid_hosts = ["localhost", "127.0.0.1"];
+    let default_valid_hosts = ["localhost", "127.0.0.1", "0.0.0.0"];
 
     if default_valid_hosts
         .iter()
