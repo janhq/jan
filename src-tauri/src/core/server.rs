@@ -91,7 +91,7 @@ async fn proxy_request(
         if let Some(authorization) = req.headers().get(hyper::header::AUTHORIZATION) {
             let auth_str = authorization.to_str().unwrap_or("");
 
-            if !auth_str.starts_with("Bearer ") || auth_str != format!("Bearer {}", config.api_key)
+            if auth_str.strip_prefix("Bearer ") != Some(config.api_key.as_str())
             {
                 return Ok(Response::builder()
                     .status(StatusCode::UNAUTHORIZED)
