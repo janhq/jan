@@ -120,7 +120,7 @@ export default function DropdownToolsAvailable({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h4 className="text-sm font-medium truncate">
+                        <h4 className="text-sm font-medium line-clamp-1">
                           {tool.name}
                         </h4>
                         {tool.description && (
