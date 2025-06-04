@@ -56,7 +56,6 @@ pub fn run() {
             core::cmd::get_server_status,
             core::cmd::read_logs,
             core::cmd::change_app_data_folder,
-            core::migration::get_legacy_browser_data,
             // MCP commands
             core::mcp::get_tools,
             core::mcp::call_tool,
