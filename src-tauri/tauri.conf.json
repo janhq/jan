@@ -85,7 +85,8 @@
     "resources": [
       "resources/pre-install/**/*",
       "resources/lib/",
-      "binaries/**/*"
+      "binaries/**/*",
+      "src-tauri/resources/models/all-MiniLM-L6-v2"
     ],
     "externalBin": [
       "binaries/cortex-server",

@@ -80,6 +80,47 @@ function getPlatformArch() {
   return { bunPlatform, uvPlatform }
 }
 
+async function downloadSentenceTransformerModel() {
+  console.log('Downloading sentence-transformers/all-MiniLM-L6-v2 model...')
+  
+  const modelDir = 'src-tauri/resources/models/all-MiniLM-L6-v2'
+  const baseUrl = 'https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main'
+  
+  // Create model directory if it doesn't exist
+  try {
+    mkdirSync(modelDir, { recursive: true })
+  } catch (err) {
+    // Directory already exists
+  }
+  
+  // Define the required model files
+  const modelFiles = [
+    'config.json',
+    'tokenizer.json',
+    'modules.json',
+    'special_tokens_map.json',
+    'sentence_bert_config.json',
+    'config_sentence_transformers.json',
+    'model.safetensors'
+  ]
+  
+  // Download each file
+  for (const filename of modelFiles) {
+    const fileUrl = `${baseUrl}/${filename}`
+    const filePath = path.join(modelDir, filename)
+    
+    if (!fs.existsSync(filePath)) {
+      console.log(`Downloading ${filename}...`)
+      await download(fileUrl, filePath)
+      console.log(`✓ Downloaded ${filename}`)
+    } else {
+      console.log(`✓ ${filename} already exists, skipping`)
+    }
+  }
+  
+  console.log('✓ Sentence transformer model download completed.')
+}
+
 async function main() {
   console.log('Starting main function')
   const platform = os.platform()
@@ -218,7 +259,10 @@ async function main() {
   }
   console.log('UV downloaded.')
 
-  console.log('Downloads completed.')
+  // Download sentence transformer model
+  await downloadSentenceTransformerModel()
+
+  console.log('All downloads completed.')
 }
 
 // Ensure the downloads directory exists
