@@ -23,20 +23,53 @@ export interface InputAudio {
 }
 
 export interface chatCompletionRequest {
-  provider: string,
-  model: string // Model ID, though for local it might be implicit via sessionId
-  messages: chatCompletionRequestMessage[]
-  temperature?: number | null
-  top_p?: number | null
-  n?: number | null
-  stream?: boolean | null
-  stop?: string | string[] | null
-  max_tokens?: number
-  presence_penalty?: number | null
-  frequency_penalty?: number | null
-  logit_bias?: { [key: string]: number } | null
-  user?: string
-  // ... TODO: other OpenAI params
+  model: string; // Model ID, though for local it might be implicit via sessionInfo
+  messages: chatCompletionRequestMessage[];
+
+  // Core sampling parameters
+  temperature?: number | null;
+  dynatemp_range?: number | null;
+  dynatemp_exponent?: number | null;
+  top_k?: number | null;
+  top_p?: number | null;
+  min_p?: number | null;
+  typical_p?: number | null;
+  repeat_penalty?: number | null;
+  repeat_last_n?: number | null;
+  presence_penalty?: number | null;
+  frequency_penalty?: number | null;
+  dry_multiplier?: number | null;
+  dry_base?: number | null;
+  dry_allowed_length?: number | null;
+  dry_penalty_last_n?: number | null;
+  dry_sequence_breakers?: string[] | null;
+  xtc_probability?: number | null;
+  xtc_threshold?: number | null;
+  mirostat?: number | null; // 0 = disabled, 1 = Mirostat, 2 = Mirostat 2.0
+  mirostat_tau?: number | null;
+  mirostat_eta?: number | null;
+
+  n_predict?: number | null;
+  n_indent?: number | null;
+  n_keep?: number | null;
+  stream?: boolean | null;
+  stop?: string | string[] | null;
+  seed?: number | null; // RNG seed
+
+  // Advanced sampling
+  logit_bias?: { [key: string]: number } | null;
+  n_probs?: number | null;
+  min_keep?: number | null;
+  t_max_predict_ms?: number | null;
+  image_data?: Array<{ data: string; id: number }> | null;
+
+  // Internal/optimization parameters
+  id_slot?: number | null;
+  cache_prompt?: boolean | null;
+  return_tokens?: boolean | null;
+  samplers?: string[] | null;
+  timings_per_token?: boolean | null;
+  post_sampling_probs?: boolean | null;
 }
 
 export interface chatCompletionChunkChoiceDelta {
