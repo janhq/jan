@@ -19,6 +19,9 @@ import { Switch } from '@/components/ui/switch'
 import { twMerge } from 'tailwind-merge'
 import { getConnectedServers } from '@/services/mcp'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { listen } from '@tauri-apps/api/event'
+import { SystemEvent } from '@/types/events'
+import { toast } from 'sonner'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
@@ -153,6 +156,20 @@ function MCPServers() {
 
     return () => clearInterval(intervalId)
   }, [setConnectedServers])
+
+  useEffect(() => {
+    let unsubscribe = () => {}
+    listen(SystemEvent.MCP_ERROR, (event) => {
+      toast.error(event.payload as string, {
+        description: 'Please check the parameters according to the tutorial.',
+      })
+    }).then((unsub) => {
+      unsubscribe = unsub
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [])
 
   return (
     <div className="flex flex-col h-full">

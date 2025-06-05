@@ -1,9 +1,9 @@
-use std::{collections::HashMap, env, sync::Arc, time::Duration};
-
 use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::{Map, Value};
 use std::fs;
+use std::process::Stdio;
+use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::{process::Command, sync::Mutex, time::timeout};
 
@@ -29,7 +29,7 @@ pub async fn run_mcp_commands<R: Runtime>(
 ) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
     let app_path_str = app_path.to_str().unwrap().to_string();
-    log::info!(
+    log::trace!(
         "Load MCP configs from {}",
         app_path_str.clone() + "/mcp_config.json"
     );
@@ -40,7 +40,7 @@ pub async fn run_mcp_commands<R: Runtime>(
         .map_err(|e| format!("Failed to parse config: {}", e))?;
 
     if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
-        log::info!("MCP Servers: {server_map:#?}");
+        log::trace!("MCP Servers: {server_map:#?}");
 
         let exe_path = env::current_exe().expect("Failed to get current exe path");
         let exe_parent_path = exe_path
@@ -49,7 +49,7 @@ pub async fn run_mcp_commands<R: Runtime>(
         let bin_path = exe_parent_path.to_path_buf();
         for (name, config) in server_map {
             if let Some(false) = extract_active_status(config) {
-                log::info!("Server {name} is not active, skipping.");
+                log::trace!("Server {name} is not active, skipping.");
                 continue;
             }
             if let Some((command, args, envs)) = extract_command_args(config) {
@@ -66,7 +66,7 @@ pub async fn run_mcp_commands<R: Runtime>(
                     cmd.arg("tool");
                     cmd.arg("run");
                 }
-                println!("Command: {cmd:#?}");
+                log::trace!("Command: {cmd:#?}");
 
                 args.iter().filter_map(Value::as_str).for_each(|arg| {
                     cmd.arg(arg);
@@ -76,6 +76,18 @@ pub async fn run_mcp_commands<R: Runtime>(
                         cmd.env(k, v_str);
                     }
                 });
+
+                let log_file_path = format!("{}/logs/app.log", app_path_str);
+                let log_file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_file_path)
+                    .expect("Failed to open log file");
+                let log_file_clone = log_file
+                    .try_clone()
+                    .expect("Failed to clone log file handle");
+                cmd.stderr(Stdio::from(log_file))
+                    .stdout(Stdio::from(log_file_clone));
 
                 let process = TokioChildProcess::new(cmd);
                 match process {
@@ -91,6 +103,10 @@ pub async fn run_mcp_commands<R: Runtime>(
                                 log::info!("Server {name} started successfully.");
                             }
                             Err(e) => {
+                                let _ = app.emit(
+                                    "mcp-error",
+                                    format!("Failed to start MCP server {name}: {e}"),
+                                );
                                 log::error!("Failed to start server {name}: {e}");
                             }
                         }
@@ -108,7 +124,7 @@ pub async fn run_mcp_commands<R: Runtime>(
     for (_, service) in servers_map.iter() {
         // Initialize
         let _server_info = service.peer_info();
-        log::info!("Connected to server: {_server_info:#?}");
+        log::trace!("Connected to server: {_server_info:#?}");
         // Emit event to the frontend
         let event = format!("mcp-connected");
         let server_info: &rmcp::model::InitializeResult = service.peer_info();
@@ -121,7 +137,7 @@ pub async fn run_mcp_commands<R: Runtime>(
         // service.peer_info().server_info.name
         app.emit(&event, payload)
             .map_err(|e| format!("Failed to emit event: {}", e))?;
-        log::info!("Emitted event: {event}");
+        log::trace!("Emitted event: {event}");
     }
     Ok(())
 }
