@@ -8,7 +8,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { cn, getProviderTitle } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
 import Capabilities from './Capabilities'
-import { IconSettings, IconX, IconCheck } from '@tabler/icons-react'
+import { IconSettings, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
@@ -149,8 +149,19 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
   const groupedItems = useMemo(() => {
     const groups: Record<string, SearchableModel[]> = {}
 
+    if (!searchValue) {
+      // When not searching, show all active providers (even without models)
+      providers.forEach((provider) => {
+        if (provider.active) {
+          groups[provider.provider] = []
+        }
+      })
+    }
+
+    // Add the filtered items to their respective groups
     filteredItems.forEach((item) => {
       const providerKey = item.provider.provider
+      console.log(providerKey, 'providerKey')
       if (!groups[providerKey]) {
         groups[providerKey] = []
       }
@@ -158,7 +169,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
     })
 
     return groups
-  }, [filteredItems])
+  }, [filteredItems, providers, searchValue])
 
   const handleSelect = useCallback(
     (searchableModel: SearchableModel) => {
@@ -213,14 +224,14 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
       </div>
 
       <PopoverContent
-        className="w-80 p-0 max-h-[400px] overflow-hidden"
-        side="bottom"
+        className={cn('w-60 p-0', searchValue.length === 0 && 'h-[320px]')}
         align="start"
         sideOffset={10}
         alignOffset={-8}
-        avoidCollisions={false}
+        side={searchValue.length === 0 ? undefined : 'top'}
+        avoidCollisions={searchValue.length === 0 ? true : false}
       >
-        <div className="flex flex-col w-full">
+        <div className="flex flex-col w-full h-full">
           {/* Search input */}
           <div className="relative px-2 py-1.5 border-b border-main-view-fg/10">
             <input
@@ -253,6 +264,7 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                   const providerInfo = providers.find(
                     (p) => p.provider === providerKey
                   )
+
                   if (!providerInfo) return null
 
                   return (
@@ -287,48 +299,49 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
                       </div>
 
                       {/* Models for this provider */}
-                      {models.map((searchableModel) => {
-                        const isSelected =
-                          selectedModel?.id === searchableModel.model.id &&
-                          selectedProvider === searchableModel.provider.provider
-                        const capabilities =
-                          searchableModel.model.capabilities || []
+                      {models.length === 0 ? (
+                        // Show message when provider has no available models
+                        <></>
+                      ) : (
+                        models.map((searchableModel) => {
+                          const isSelected =
+                            selectedModel?.id === searchableModel.model.id &&
+                            selectedProvider ===
+                              searchableModel.provider.provider
+                          const capabilities =
+                            searchableModel.model.capabilities || []
 
-                        return (
-                          <div
-                            key={searchableModel.value}
-                            onClick={() => handleSelect(searchableModel)}
-                            className={cn(
-                              'mx-1 mb-1 px-2 py-1.5 rounded cursor-pointer flex items-center gap-2 transition-all duration-200',
-                              'hover:bg-main-view-fg/10',
-                              isSelected && 'bg-main-view-fg/15'
-                            )}
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span
-                                className="truncate text-main-view-fg/80 text-sm"
-                                dangerouslySetInnerHTML={{
-                                  __html:
-                                    searchableModel.highlightedId ||
-                                    searchableModel.model.id,
-                                }}
-                              />
-                              {isSelected && (
-                                <IconCheck
-                                  size={16}
-                                  className="text-accent shrink-0"
+                          return (
+                            <div
+                              key={searchableModel.value}
+                              onClick={() => handleSelect(searchableModel)}
+                              className={cn(
+                                'mx-1 mb-1 px-2 py-1.5 rounded cursor-pointer flex items-center gap-2 transition-all duration-200',
+                                'hover:bg-main-view-fg/10',
+                                isSelected && 'bg-main-view-fg/15'
+                              )}
+                            >
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <span
+                                  className="truncate text-main-view-fg/80 text-sm"
+                                  dangerouslySetInnerHTML={{
+                                    __html:
+                                      searchableModel.highlightedId ||
+                                      searchableModel.model.id,
+                                  }}
                                 />
-                              )}
-                              <div className="flex-1"></div>
-                              {capabilities.length > 0 && (
-                                <div className="flex-shrink-0">
-                                  <Capabilities capabilities={capabilities} />
-                                </div>
-                              )}
+
+                                <div className="flex-1"></div>
+                                {capabilities.length > 0 && (
+                                  <div className="flex-shrink-0 -mr-1.5">
+                                    <Capabilities capabilities={capabilities} />
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        )
-                      })}
+                          )
+                        })
+                      )}
                     </div>
                   )
                 })}
