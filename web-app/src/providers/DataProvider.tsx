@@ -12,7 +12,6 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { getMCPConfig } from '@/services/mcp'
 import { useAssistant } from '@/hooks/useAssistant'
 import { getAssistants } from '@/services/assistants'
-import { migrateData } from '@/utils/migration'
 import {
   onOpenUrl,
   getCurrent as getCurrentDeepLinkUrls,
@@ -45,7 +44,6 @@ export function DataProvider() {
       .catch((error) => {
         console.warn('Failed to load assistants, keeping default:', error)
       })
-    migrateData()
     getCurrentDeepLinkUrls().then(handleDeepLink)
     onOpenUrl(handleDeepLink)
     // eslint-disable-next-line react-hooks/exhaustive-deps

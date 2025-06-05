@@ -162,6 +162,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             },
           },
         ])
+        this.updateCortexConfig({
+          huggingface_token: config.huggingface_token,
+        })
         localStorage.setItem('cortex_migration_completed', 'true')
       }
     }
