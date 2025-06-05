@@ -7,7 +7,8 @@ import {
 } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
-import { cn, fuzzySearch, toGigabytes } from '@/lib/utils'
+import { cn, toGigabytes } from '@/lib/utils'
+import { highlightFzfMatch } from '@/utils/highlight'
 import {
   useState,
   useMemo,
@@ -16,6 +17,8 @@ import {
   useCallback,
   useRef,
 } from 'react'
+import debounce from 'lodash.debounce'
+import { Fzf } from 'fzf'
 import { Button } from '@/components/ui/button'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { Card, CardItem } from '@/containers/Card'
@@ -66,6 +69,7 @@ function Hub() {
   const { sources, fetchSources, loading } = useModelSources()
   const search = useSearch({ from: route.hub as any })
   const [searchValue, setSearchValue] = useState('')
+  const [debouncedSearchValue, setDebouncedSearchValue] = useState('')
   const [sortSelected, setSortSelected] = useState('newest')
   const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
     {}
@@ -81,6 +85,21 @@ function Hub() {
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llama.cpp')
 
+  // Debounce search for performance
+  const debouncedSetSearch = useCallback(
+    debounce((value: string) => {
+      setDebouncedSearchValue(value)
+    }, 1),
+    []
+  )
+
+  useEffect(() => {
+    debouncedSetSearch(searchValue)
+    return () => {
+      debouncedSetSearch.cancel()
+    }
+  }, [searchValue, debouncedSetSearch])
+
   const toggleModelExpansion = (modelId: string) => {
     setExpandedModels((prev) => ({
       ...prev,
@@ -90,7 +109,7 @@ function Hub() {
 
   useEffect(() => {
     if (search.repo) {
-      setSearchValue(search.repo || '')
+      setSearchValue(search.repo ?? '')
       setIsSearching(true)
       addModelSourceTimeoutRef.current = setTimeout(() => {
         addModelSource(search.repo)
@@ -118,38 +137,82 @@ function Hub() {
     })
   }, [sortSelected, sources])
 
-  // Filtered models
+  // Create searchable items for fzf
+  const searchableItems = useMemo(() => {
+    return sortedModels.map((source) => {
+      const modelName = extractModelName(source.metadata?.id) ?? source.id
+      return {
+        source,
+        modelName,
+        searchStr: `${modelName} ${source.id} ${source.metadata?.id || ''} ${source.models.map((m) => m.id).join(' ')}`,
+      }
+    })
+  }, [sortedModels])
+
+  // Use useRef to cache the Fzf instance for performance
+  const fzfInstanceRef = useRef<Fzf<typeof searchableItems> | null>(null)
+  const searchableItemsRef = useRef<typeof searchableItems>([])
+
+  // Only recreate Fzf instance when searchableItems actually change
+  useEffect(() => {
+    if (searchableItemsRef.current !== searchableItems) {
+      searchableItemsRef.current = searchableItems
+      fzfInstanceRef.current = new Fzf(searchableItems, {
+        selector: (item) => item.searchStr,
+      })
+    }
+  }, [searchableItems])
+
+  // Pre-compute downloaded model IDs for performance
+  const downloadedModelIds = useMemo(() => {
+    if (!llamaProvider?.models) return new Set<string>()
+    return new Set(llamaProvider.models.map((m: { id: string }) => m.id))
+  }, [llamaProvider?.models])
+
+  // Filtered models using fzf with performance optimizations
   const filteredModels = useMemo(() => {
     let filtered = sortedModels
 
-    // Apply search filter
-    if (searchValue.length) {
-      filtered = filtered?.filter(
-        (e) =>
-          fuzzySearch(
-            searchValue.replace(/\s+/g, '').toLowerCase(),
-            e.id.toLowerCase()
-          ) ||
-          e.models.some((model) =>
-            fuzzySearch(
-              searchValue.replace(/\s+/g, '').toLowerCase(),
-              model.id.toLowerCase()
-            )
-          )
-      )
-    }
+    // Apply search filter using fzf (debounced)
+    if (debouncedSearchValue.length && fzfInstanceRef.current) {
+      const fzfResults = fzfInstanceRef.current.find(debouncedSearchValue)
+      filtered = fzfResults.map((result: any) => {
+        // Use FZF's built-in positions for more efficient highlighting
+        const modelName = result.item.modelName
+        const positions = Array.from(result.positions ?? []) as number[]
 
-    // Apply downloaded filter
+        // Map positions to model name positions (FZF positions are for the full search string)
+        const modelNamePositions = positions.filter(
+          (pos: number) => pos < modelName.length
+        )
+
+        const highlightedModelName = highlightFzfMatch(
+          modelName,
+          modelNamePositions,
+          'text-accent'
+        )
+
+        return {
+          ...result.item.source,
+          highlightedModelName,
+        }
+      })
+    } 
+
+    // Apply downloaded filter with pre-computed Set for O(1) lookups
     if (showOnlyDownloaded) {
       filtered = filtered?.filter((model) =>
-        model.models.some((variant) =>
-          llamaProvider?.models.some((m: { id: string }) => m.id === variant.id)
-        )
+        model.models.some((variant) => downloadedModelIds.has(variant.id))
       )
     }
 
     return filtered
-  }, [searchValue, sortedModels, showOnlyDownloaded, llamaProvider?.models])
+  }, [
+    debouncedSearchValue,
+    sortedModels,
+    showOnlyDownloaded,
+    downloadedModelIds,
+  ])
 
   useEffect(() => {
     fetchModelHub()
@@ -220,7 +283,7 @@ function Hub() {
       const modelId = model.models[0]?.id
       const isDownloading = downloadProcesses.some((e) => e.id === modelId)
       const downloadProgress =
-        downloadProcesses.find((e) => e.id === modelId)?.progress || 0
+        downloadProcesses.find((e) => e.id === modelId)?.progress ?? 0
       const isDownloaded = llamaProvider?.models.some(
         (m: { id: string }) => m.id === modelId
       )
@@ -427,7 +490,7 @@ function Hub() {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col pb-2 mb-2 gap-2 ">
+                <div className="flex flex-col pb-2 mb-2 gap-2">
                   {filteredModels.map((model) => (
                     <div key={model.id}>
                       <Card
@@ -446,9 +509,15 @@ function Hub() {
                                     ? 'hub-model-card-step'
                                     : ''
                                 )}
-                              >
-                                {extractModelName(model.metadata?.id) || ''}
-                              </h1>
+                                dangerouslySetInnerHTML={{
+                                  __html:
+                                    searchValue.length &&
+                                    (model as any).highlightedModelName
+                                      ? (model as any).highlightedModelName
+                                      : extractModelName(model.metadata?.id) ||
+                                        '',
+                                }}
+                              />
                             </Link>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-main-view-fg/70 font-medium text-xs">
