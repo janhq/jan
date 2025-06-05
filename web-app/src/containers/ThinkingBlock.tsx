@@ -57,7 +57,7 @@ const ThinkingBlock = ({ id, text }: Props) => {
         </div>
 
         {isExpanded && (
-          <div className="mt-2 pl-6 text-main-view-fg/60">
+          <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
             <RenderMarkdown content={text.replace(/<\/?think>/g, '').trim()} />
           </div>
         )}
