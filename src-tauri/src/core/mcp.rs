@@ -9,7 +9,7 @@ use tokio::{process::Command, sync::Mutex, time::timeout};
 
 use super::{cmd::get_jan_data_folder_path, state::AppState};
 
-const DEFAULT_MCP_CONFIG: &str = r#"{"mcpServers":{"browsermcp":{"command":"npx","args":["@browsermcp/mcp"],"env":{},"active":false},"fetch":{"command":"uvx","args":["mcp-server-fetch"],"env":{},"active":false},"filesystem":{"command":"npx","args":["-y","/path/to/other/allowed/dir"],"env":{},"active":false},"playwright":{"command":"npx","args":["@playwright/mcp","--isolated"],"env":{},"active":false},"sequential-thinking":{"command":"npx","args":["-y","@modelcontextprotocol/server-sequential-thinking"],"env":{},"active":false},"tavily":{"command":"npx","args":["-y","tavily-mcp"],"env":{"TAVILY_API_KEY": "tvly-YOUR_API_KEY-here"},"active":false}}}"#;
+const DEFAULT_MCP_CONFIG: &str = r#"{"mcpServers":{"browsermcp":{"command":"npx","args":["@browsermcp/mcp"],"env":{},"active":false},"fetch":{"command":"uvx","args":["mcp-server-fetch"],"env":{},"active":false},"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path/to/other/allowed/dir"],"env":{},"active":false},"playwright":{"command":"npx","args":["@playwright/mcp","--isolated"],"env":{},"active":false},"sequential-thinking":{"command":"npx","args":["-y","@modelcontextprotocol/server-sequential-thinking"],"env":{},"active":false},"tavily":{"command":"npx","args":["-y","tavily-mcp"],"env":{"TAVILY_API_KEY": "tvly-YOUR_API_KEY-here"},"active":false}}}"#;
 
 // Timeout for MCP tool calls (30 seconds)
 const MCP_TOOL_CALL_TIMEOUT: Duration = Duration::from_secs(30);
