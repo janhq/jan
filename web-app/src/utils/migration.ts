@@ -33,6 +33,7 @@ export const migrateData = async () => {
     try {
       // Migrate provider configurations
       if (engines) {
+        console.log('Start migrating data:', engines)
         for (const [key, value] of Object.entries(engines)) {
           const providerName = key.replace('google_gemini', 'gemini')
           const engine = value[0] as
