@@ -15,9 +15,11 @@ import { useThreads } from '@/hooks/useThreads'
 import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Fzf } from 'fzf'
+import { localStorageKey } from '@/constants/localStorage'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
+  useLastUsedModel?: boolean
 }
 
 interface SearchableModel {
@@ -28,7 +30,32 @@ interface SearchableModel {
   highlightedId?: string
 }
 
-const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
+// Helper functions for localStorage
+const getLastUsedModel = (): { provider: string; model: string } | null => {
+  try {
+    const stored = localStorage.getItem(localStorageKey.lastUsedModel)
+    return stored ? JSON.parse(stored) : null
+  } catch (error) {
+    console.debug('Failed to get last used model from localStorage:', error)
+    return null
+  }
+}
+
+const setLastUsedModel = (provider: string, model: string) => {
+  try {
+    localStorage.setItem(
+      localStorageKey.lastUsedModel,
+      JSON.stringify({ provider, model })
+    )
+  } catch (error) {
+    console.debug('Failed to set last used model in localStorage:', error)
+  }
+}
+
+const DropdownModelProvider = ({
+  model,
+  useLastUsedModel = false,
+}: DropdownModelProviderProps) => {
   const {
     providers,
     getProviderByName,
@@ -51,11 +78,39 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
     // Auto select model when existing thread is passed
     if (model) {
       selectModelProvider(model?.provider as string, model?.id as string)
+    } else if (useLastUsedModel) {
+      // Try to use last used model only when explicitly requested (for new chat)
+      const lastUsed = getLastUsedModel()
+      if (lastUsed) {
+        // Verify the last used model still exists
+        const provider = providers.find(
+          (p) => p.provider === lastUsed.provider && p.active
+        )
+        const modelExists = provider?.models.find(
+          (m) => m.id === lastUsed.model
+        )
+
+        if (provider && modelExists) {
+          selectModelProvider(lastUsed.provider, lastUsed.model)
+        } else {
+          // Fallback to default model if last used model no longer exists
+          selectModelProvider('llama.cpp', 'llama3.2:3b')
+        }
+      } else {
+        // default model, we should add from setting
+        selectModelProvider('llama.cpp', 'llama3.2:3b')
+      }
     } else {
-      // default model, we should add from setting
+      // default model for non-new-chat contexts
       selectModelProvider('llama.cpp', 'llama3.2:3b')
     }
-  }, [model, selectModelProvider, updateCurrentThreadModel])
+  }, [
+    model,
+    selectModelProvider,
+    updateCurrentThreadModel,
+    providers,
+    useLastUsedModel,
+  ])
 
   // Update display model when selection changes
   useEffect(() => {
@@ -181,10 +236,17 @@ const DropdownModelProvider = ({ model }: DropdownModelProviderProps) => {
         id: searchableModel.model.id,
         provider: searchableModel.provider.provider,
       })
+      // Store the selected model as last used
+      if (useLastUsedModel) {
+        setLastUsedModel(
+          searchableModel.provider.provider,
+          searchableModel.model.id
+        )
+      }
       setSearchValue('')
       setOpen(false)
     },
-    [selectModelProvider, updateCurrentThreadModel]
+    [selectModelProvider, updateCurrentThreadModel, useLastUsedModel]
   )
 
   const currentModel = selectedModel?.id

@@ -402,7 +402,10 @@ const ChatInput = ({
                 {model?.provider === 'llama.cpp' && loadingModel ? (
                   <ModelLoader />
                 ) : (
-                  <DropdownModelProvider model={model} />
+                  <DropdownModelProvider
+                    model={model}
+                    useLastUsedModel={initialMessage}
+                  />
                 )}
 
                 {/* File attachment - always available */}
