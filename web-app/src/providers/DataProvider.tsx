@@ -18,6 +18,7 @@ import {
 } from '@tauri-apps/plugin-deep-link'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useThreads } from '@/hooks/useThreads'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
@@ -26,6 +27,7 @@ export function DataProvider() {
   const { checkForUpdate } = useAppUpdater()
   const { setServers } = useMCPServers()
   const { setAssistants } = useAssistant()
+  const { setThreads } = useThreads()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export function DataProvider() {
 
   useEffect(() => {
     fetchThreads().then((threads) => {
+      setThreads(threads)
       threads.forEach((thread) =>
         fetchMessages(thread.id).then((messages) =>
           setMessages(thread.id, messages)
