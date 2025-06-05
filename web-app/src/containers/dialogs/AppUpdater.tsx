@@ -52,9 +52,6 @@ const DialogAppUpdater = () => {
 
   if (appUpdateState.remindMeLater) return null
 
-  console.log(appUpdateState)
-  console.log(updateState)
-
   return (
     <>
       {appUpdateState.isUpdateAvailable && (

@@ -16,4 +16,5 @@ export const localStorageKey = {
   toolApproval: 'tool-approval',
   toolAvailability: 'tool-availability',
   mcpGlobalPermissions: 'mcp-global-permissions',
+  lastUsedModel: 'last-used-model',
 }
