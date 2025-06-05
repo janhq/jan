@@ -5,13 +5,13 @@ import { useAppState } from '@/hooks/useAppState'
 
 interface Props {
   text: string
-  id: number
+  id: string
 }
 
 // Zustand store for thinking block state
 type ThinkingBlockState = {
-  thinkingState: { [id: number]: boolean }
-  toggleState: (id: number) => void
+  thinkingState: { [id: string]: boolean }
+  toggleState: (id: string) => void
 }
 
 const useThinkingStore = create<ThinkingBlockState>((set) => ({
