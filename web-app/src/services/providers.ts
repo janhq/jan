@@ -66,14 +66,15 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
           } as Model
         })
     }
-    if (engines && Object.keys(engines).length > 0) {
-      localStorage.setItem('migration_completed', 'true')
-    }
+
     return {
       ...provider,
       models,
     }
   })
+  if (engines && Object.keys(engines).length > 0) {
+    localStorage.setItem('migration_completed', 'true')
+  }
 
   const runtimeProviders: ModelProvider[] = []
 
