@@ -19,16 +19,16 @@ export const migrateData = async () => {
         engines = await ExtensionManager.getInstance()
           .get<EngineManagementExtension>(ExtensionTypeEnum.Engine)
           ?.getEngines()
-        if (engines && attempts < 10) {
+        if (engines && attempts < 20) {
           resolve(true)
-        } else if (attempts >= 10) {
+        } else if (attempts >= 20) {
           resolve(false)
         } else {
           attempts += 1
-          setTimeout(checkExtensionManager, 1000)
+          await setTimeout(checkExtensionManager, 1000)
         }
       }
-      checkExtensionManager()
+      return checkExtensionManager()
     })
     try {
       // Migrate provider configurations
@@ -59,8 +59,8 @@ export const migrateData = async () => {
             }
           }
         }
+        localStorage.setItem('migration_completed', 'true')
       }
-      localStorage.setItem('migration_completed', 'true')
     } catch (error) {
       console.error('Migration failed:', error)
     }
