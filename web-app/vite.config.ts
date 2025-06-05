@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
         process.env.TAURI_ENV_PLATFORM?.includes('windows') ?? 'false'
       ),
       IS_LINUX: JSON.stringify(
-        process.env.TAURI_ENV_PLATFORM?.includes('unix') ?? 'false'
+        process.env.TAURI_ENV_PLATFORM?.includes('linux') ?? 'false'
       ),
       IS_IOS: JSON.stringify(
         process.env.TAURI_ENV_PLATFORM?.includes('ios') ?? 'false'

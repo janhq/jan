@@ -5,13 +5,13 @@ import { useAppState } from '@/hooks/useAppState'
 
 interface Props {
   text: string
-  id: number
+  id: string
 }
 
 // Zustand store for thinking block state
 type ThinkingBlockState = {
-  thinkingState: { [id: number]: boolean }
-  toggleState: (id: number) => void
+  thinkingState: { [id: string]: boolean }
+  toggleState: (id: string) => void
 }
 
 const useThinkingStore = create<ThinkingBlockState>((set) => ({
@@ -57,7 +57,7 @@ const ThinkingBlock = ({ id, text }: Props) => {
         </div>
 
         {isExpanded && (
-          <div className="mt-2 pl-6 text-main-view-fg/60">
+          <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
             <RenderMarkdown content={text.replace(/<\/?think>/g, '').trim()} />
           </div>
         )}
