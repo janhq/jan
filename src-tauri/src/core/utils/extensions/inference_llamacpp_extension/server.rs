@@ -13,9 +13,9 @@ use crate::core::state::AppState;
 type HmacSha256 = Hmac<Sha256>;
 // Error type for server commands
 #[derive(Debug, thiserror::Error)]
-pub enum serverError {
-    #[error("Server is already running")]
-    AlreadyRunning,
+pub enum ServerError {
+    // #[error("Server is already running")]
+    // AlreadyRunning,
     //  #[error("Server is not running")]
     //  NotRunning,
     #[error("Failed to locate server binary: {0}")]
@@ -27,7 +27,7 @@ pub enum serverError {
 }
 
 // impl serialization for tauri
-impl serde::Serialize for serverError {
+impl serde::Serialize for ServerError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -36,19 +36,19 @@ impl serde::Serialize for serverError {
     }
 }
 
-type ServerResult<T> = Result<T, serverError>;
+type ServerResult<T> = Result<T, ServerError>;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct sessionInfo {
+pub struct SessionInfo {
     pub pid: String,  // opaque handle for unload/chat
     pub port: String, // llama-server output port
-    pub modelId: String,
-    pub modelPath: String, // path of the loaded model
-    pub apiKey: String,
+    pub model_id: String,
+    pub model_path: String, // path of the loaded model
+    pub api_key: String,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
-pub struct unloadResult {
+pub struct UnloadResult {
     success: bool,
     error: Option<String>,
 }
@@ -60,7 +60,7 @@ pub async fn load_llama_model(
     backend_path: &str,
     library_path: Option<&str>,
     args: Vec<String>, // Arguments from the frontend
-) -> ServerResult<sessionInfo> {
+) -> ServerResult<SessionInfo> {
     let mut process_map = state.llama_server_process.lock().await;
 
     log::info!("Attempting to launch server at path: {:?}", backend_path);
@@ -72,7 +72,7 @@ pub async fn load_llama_model(
             "Server binary not found at expected path: {:?}",
             backend_path
         );
-        return Err(serverError::BinaryNotFound(format!(
+        return Err(ServerError::BinaryNotFound(format!(
             "Binary not found at {:?}",
             backend_path
         )));
@@ -85,21 +85,21 @@ pub async fn load_llama_model(
         .cloned()
         .unwrap_or_default();
 
-    let modelPath = args
+    let model_path = args
         .iter()
         .position(|arg| arg == "-m")
         .and_then(|i| args.get(i + 1))
         .cloned()
         .unwrap_or_default();
 
-    let apiKey = args
+    let api_key = args
         .iter()
         .position(|arg| arg == "--api-key")
         .and_then(|i| args.get(i + 1))
         .cloned()
         .unwrap_or_default();
 
-    let modelId = args
+    let model_id = args
         .iter()
         .position(|arg| arg == "-a")
         .and_then(|i| args.get(i + 1))
@@ -133,7 +133,7 @@ pub async fn load_llama_model(
     // command.stderr(Stdio::piped());
 
     // Spawn the child process
-    let child = command.spawn().map_err(serverError::Io)?;
+    let child = command.spawn().map_err(ServerError::Io)?;
 
     // Get the PID to use as session ID
     let pid = child.id().map(|id| id.to_string()).unwrap_or_else(|| {
@@ -146,12 +146,12 @@ pub async fn load_llama_model(
     // Store the child process handle in the state
     process_map.insert(pid.clone(), child);
 
-    let session_info = sessionInfo {
-        pid,
-        port,
-        modelId,
-        modelPath,
-        apiKey,
+    let session_info = SessionInfo {
+        pid: pid,
+        port: port,
+        model_id: model_id,
+        model_path: model_path,
+        api_key: api_key,
     };
 
     Ok(session_info)
@@ -162,7 +162,7 @@ pub async fn load_llama_model(
 pub async fn unload_llama_model(
     pid: String,
     state: State<'_, AppState>,
-) -> ServerResult<unloadResult> {
+) -> ServerResult<UnloadResult> {
     let mut process_map = state.llama_server_process.lock().await;
      match process_map.remove(&pid) {
         Some(mut child) => {
@@ -172,7 +172,7 @@ pub async fn unload_llama_model(
                 Ok(_) => {
                     log::info!("Server process termination signal sent successfully");
 
-                    Ok(unloadResult {
+                    Ok(UnloadResult {
                         success: true,
                         error: None,
                     })
@@ -180,7 +180,7 @@ pub async fn unload_llama_model(
                 Err(e) => {
                     log::error!("Failed to kill server process: {}", e);
 
-                    Ok(unloadResult {
+                    Ok(UnloadResult {
                         success: false,
                         error: Some(format!("Failed to kill server process: {}", e)),
                     })
@@ -193,7 +193,7 @@ pub async fn unload_llama_model(
                 pid
             );
 
-            Ok(unloadResult {
+            Ok(UnloadResult {
                 success: true,
                 error: None,
             })
@@ -203,10 +203,10 @@ pub async fn unload_llama_model(
 
 // crypto
 #[tauri::command]
-pub fn generate_api_key(modelId: String, apiSecret: String) -> Result<String, String> {
-    let mut mac = HmacSha256::new_from_slice(apiSecret.as_bytes())
+pub fn generate_api_key(model_id: String, api_secret: String) -> Result<String, String> {
+    let mut mac = HmacSha256::new_from_slice(api_secret.as_bytes())
         .map_err(|e| format!("Invalid key length: {}", e))?;
-    mac.update(modelId.as_bytes());
+    mac.update(model_id.as_bytes());
     let result = mac.finalize();
     let code_bytes = result.into_bytes();
     let hash = general_purpose::STANDARD.encode(code_bytes);

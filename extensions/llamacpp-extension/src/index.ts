@@ -460,9 +460,9 @@ export default class llamacpp_extension extends AIEngine {
     try {
       // TODO: add LIBRARY_PATH
       const sInfo = await invoke<sessionInfo>('load_llama_model', {
-        backendPath: await getBackendExePath(backend, version),
-        libraryPath: await joinPath([this.providerPath, 'lib']),
-        args,
+        backend_path: await getBackendExePath(backend, version),
+        library_path: await joinPath([this.providerPath, 'lib']),
+        args: args
       })
 
       // Store the session info for later use
@@ -484,7 +484,7 @@ export default class llamacpp_extension extends AIEngine {
     try {
       // Pass the PID as the session_id
       const result = await invoke<unloadResult>('unload_llama_model', {
-        pid,
+        pid: pid
       })
 
       // If successful, remove from active sessions
