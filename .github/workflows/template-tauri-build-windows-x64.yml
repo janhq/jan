@@ -226,7 +226,7 @@ jobs:
           echo "files:" >> latest.yml
           echo "  - url: $FILE_NAME" >> latest.yml
           echo "    sha512: $SH512_CHECKSUM" >> latest.yml
-          echo "    size: $FILE_NAME" >> latest.yml
+          echo "    size: $FILE_SIZE" >> latest.yml
           echo "path: $FILE_NAME" >> latest.yml
           echo "sha512: $SH512_CHECKSUM" >> latest.yml
           echo "releaseDate: $CURRENT_TIME" >> latest.yml
