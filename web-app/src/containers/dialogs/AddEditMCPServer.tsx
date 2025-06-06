@@ -203,22 +203,23 @@ export default function AddEditMCPServer({
     // Convert env arrays to object
     const envObj: Record<string, string> = {}
     envKeys.forEach((key, index) => {
-      if (key.trim() !== '') {
-        envObj[key] = envValues[index] || ''
+      const keyName = key.trim()
+      if (keyName !== '') {
+        envObj[keyName] = envValues[index]?.trim() || ''
       }
     })
 
     // Filter out empty args
-    const filteredArgs = args.filter((arg) => arg.trim() !== '')
+    const filteredArgs = args.map((arg) => arg.trim()).filter((arg) => arg)
 
     const config: MCPServerConfig = {
-      command,
+      command: command.trim(),
       args: filteredArgs,
       env: envObj,
     }
 
     if (serverName.trim() !== '') {
-      onSave(serverName, config)
+      onSave(serverName.trim(), config)
       onOpenChange(false)
       resetForm()
     }
