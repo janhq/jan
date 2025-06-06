@@ -219,7 +219,7 @@ jobs:
           echo "files:" >> latest-mac.yml
           echo "  - url: $FILE_NAME" >> latest-mac.yml
           echo "    sha512: $SH512_CHECKSUM" >> latest-mac.yml
-          echo "    size: $FILE_NAME" >> latest-mac.yml
+          echo "    size: $FILE_SIZE" >> latest-mac.yml
           echo "path: $FILE_NAME" >> latest-mac.yml
           echo "sha512: $SH512_CHECKSUM" >> latest-mac.yml
           echo "releaseDate: $CURRENT_TIME" >> latest-mac.yml
