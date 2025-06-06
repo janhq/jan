@@ -26,7 +26,8 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 })
 
 function MCPServers() {
-  const { mcpServers, addServer, editServer, deleteServer } = useMCPServers()
+  const { mcpServers, addServer, editServer, deleteServer, syncServers } =
+    useMCPServers()
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
 
@@ -64,17 +65,19 @@ function MCPServers() {
   const handleSaveServer = (name: string, config: MCPServerConfig) => {
     if (editingKey) {
       // Edit existing server
-      editServer(editingKey, config)
 
       // If server name changed, delete old one and add new one
       if (editingKey !== name) {
         deleteServer(editingKey)
         addServer(name, config)
+      } else {
+        editServer(editingKey, config)
       }
     } else {
       // Add new server
       addServer(name, config)
     }
+    syncServers()
   }
 
   const handleEdit = (serverKey: string) => {
@@ -90,6 +93,7 @@ function MCPServers() {
     if (serverToDelete) {
       deleteServer(serverToDelete)
       setServerToDelete(null)
+      syncServers()
     }
   }
 
@@ -126,6 +130,7 @@ function MCPServers() {
         }
       )
     }
+    syncServers()
   }
 
   const toggleServer = (serverKey: string, active: boolean) => {
@@ -135,6 +140,7 @@ function MCPServers() {
         ...(mcpServers[serverKey] as MCPServerConfig),
         active,
       })
+      syncServers()
     }
   }
 

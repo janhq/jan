@@ -24,9 +24,10 @@ type MCPServerStoreState = {
   editServer: (key: string, config: MCPServerConfig) => void
   deleteServer: (key: string) => void
   setServers: (servers: MCPServers) => void
+  syncServers: () => void
 }
 
-export const useMCPServers = create<MCPServerStoreState>()((set) => ({
+export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   open: true,
   mcpServers: {}, // Start with empty object
   loading: false,
@@ -37,7 +38,6 @@ export const useMCPServers = create<MCPServerStoreState>()((set) => ({
   addServer: (key, config) =>
     set((state) => {
       const mcpServers = { ...state.mcpServers, [key]: config }
-      updateMCPConfig(JSON.stringify({ mcpServers }))
       return { mcpServers }
     }),
 
@@ -48,13 +48,11 @@ export const useMCPServers = create<MCPServerStoreState>()((set) => ({
       if (!state.mcpServers[key]) return state
 
       const mcpServers = { ...state.mcpServers, [key]: config }
-      updateMCPConfig(JSON.stringify({ mcpServers }))
       return { mcpServers }
     }),
   setServers: (servers) =>
     set((state) => {
       const mcpServers = { ...state.mcpServers, ...servers }
-      updateMCPConfig(JSON.stringify({ mcpServers }))
       return { mcpServers }
     }),
   // Delete an MCP server by key
@@ -67,14 +65,17 @@ export const useMCPServers = create<MCPServerStoreState>()((set) => ({
       if (updatedServers[key]) {
         delete updatedServers[key]
       }
-      updateMCPConfig(
-        JSON.stringify({
-          mcpServers: updatedServers,
-        })
-      )
       return {
         mcpServers: updatedServers,
         deletedServerKeys: [...state.deletedServerKeys, key],
       }
     }),
+  syncServers: async () => {
+    const mcpServers = get().mcpServers
+    await updateMCPConfig(
+      JSON.stringify({
+        mcpServers,
+      })
+    )
+  },
 }))
