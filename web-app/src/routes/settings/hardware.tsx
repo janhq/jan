@@ -282,13 +282,17 @@ function Hardware() {
                 title="Usage"
                 actions={
                   <div className="flex items-center gap-2">
-                    <Progress
-                      value={hardwareData.cpu?.usage}
-                      className="h-2 w-10"
-                    />
-                    <span className="text-main-view-fg/80">
-                      {hardwareData.cpu?.usage?.toFixed(2)}%
-                    </span>
+                    {hardwareData.cpu?.usage > 0 && (
+                      <>
+                        <Progress
+                          value={hardwareData.cpu?.usage}
+                          className="h-2 w-10"
+                        />
+                        <span className="text-main-view-fg/80">
+                          {hardwareData.cpu?.usage?.toFixed(2)}%
+                        </span>
+                      </>
+                    )}
                   </div>
                 }
               />
@@ -316,24 +320,28 @@ function Hardware() {
                 title="Usage"
                 actions={
                   <div className="flex items-center gap-2">
-                    <Progress
-                      value={
-                        ((hardwareData.ram?.total -
-                          hardwareData.ram?.available) /
-                          hardwareData.ram?.total) *
-                        100
-                      }
-                      className="h-2 w-10"
-                    />
-                    <span className="text-main-view-fg/80">
-                      {(
-                        ((hardwareData.ram?.total -
-                          hardwareData.ram?.available) /
-                          hardwareData.ram?.total) *
-                        100
-                      ).toFixed(2)}
-                      %
-                    </span>
+                    {hardwareData.ram?.total > 0 && (
+                      <>
+                        <Progress
+                          value={
+                            ((hardwareData.ram?.total -
+                              hardwareData.ram?.available) /
+                              hardwareData.ram?.total) *
+                            100
+                          }
+                          className="h-2 w-10"
+                        />
+                        <span className="text-main-view-fg/80">
+                          {(
+                            ((hardwareData.ram?.total -
+                              hardwareData.ram?.available) /
+                              hardwareData.ram?.total) *
+                            100
+                          ).toFixed(2)}
+                          %
+                        </span>
+                      </>
+                    )}
                   </div>
                 }
               />
