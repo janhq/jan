@@ -174,7 +174,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     console.log('Clean up cortex.cpp services')
     this.shouldReconnect = false
     this.clean()
-    await executeOnMain(NODE, 'dispose')
     super.onUnload()
   }
 

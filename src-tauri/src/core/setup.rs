@@ -211,6 +211,7 @@ pub fn setup_mcp(app: &App) {
 }
 
 pub fn setup_sidecar(app: &App) -> Result<(), String> {
+    clean_up();
     let app_handle = app.handle().clone();
     let app_handle_for_spawn = app_handle.clone();
     tauri::async_runtime::spawn(async move {
@@ -225,6 +226,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             let mut cmd = app_handle_for_spawn
                 .shell()
                 .sidecar("cortex-server")
+
                 .expect("Failed to get sidecar command")
                 .args([
                     "--start-server",
@@ -408,6 +410,28 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+//
+// Clean up function to kill the sidecar process
+//
+pub fn clean_up() {
+    if cfg!(target_os = "windows") {
+        let _ = std::process::Command::new("cmd")
+            .args(["taskkill", "-f", "-im", "llama-server.exe"])
+            .output();
+        let _ = std::process::Command::new("cmd")
+            .args(["taskkill", "-f", "-im", "cortex-server.exe"])
+            .output();
+    } else {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "llama-server"])
+            .output();
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "cortex-server"])
+            .output();
+    };
+    log::info!("Clean up function executed, sidecar processes killed.");
 }
 
 fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {

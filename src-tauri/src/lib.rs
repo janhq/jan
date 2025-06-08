@@ -12,6 +12,8 @@ use tokio::sync::Mutex;
 
 use reqwest::blocking::Client;
 
+use crate::core::setup::clean_up;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -121,8 +123,8 @@ pub fn run() {
                     let client = Client::new();
                     let url = "http://127.0.0.1:39291/processManager/destroy";
                     let _ = client.delete(url).send();
-
                     window.emit("kill-sidecar", ()).unwrap();
+                    clean_up();
                 }
             }
             _ => {}
