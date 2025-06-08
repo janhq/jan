@@ -87,8 +87,8 @@ else ifeq ($(shell uname -s),Linux)
 	rm -rfv ./electron/pre-install/*.tgz
 	rm -rfv ./src-tauri/resources
 	rm -rfv ./src-tauri/target
-	rm -rfv "~/jan/extensions"
-	rm -rfv "~/.cache/jan*"
+	rm -rfv ~/.local/share/Jan/data/extensions
+	rm -rfv ~/.cache/jan*
 else
 	find . -name "node_modules" -type d -prune -exec rm -rfv '{}' +
 	find . -name ".next" -type d -exec rm -rfv '{}' +
