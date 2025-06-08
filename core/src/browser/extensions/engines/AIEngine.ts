@@ -132,28 +132,15 @@ export interface modelInfo {
 // 1. /list
 export type listResult = modelInfo[]
 
-// 3. /load
-export interface loadOptions {
-  modelId: string
-  modelPath: string
-  mmprojPath?: string
-  port?: number
-}
-
-export interface sessionInfo {
+export interface SessionInfo {
   pid: string // opaque handle for unload/chat
   port: number // llama-server output port (corrected from portid)
-  modelId: string, //name of the model
-  modelPath: string // path of the loaded model
-  apiKey: string
+  model_id: string, //name of the model
+  model_path: string // path of the loaded model
+  api_key: string
 }
 
-// 4. /unload
-export interface unloadOptions {
-  providerId: string
-  sessionId: string
-}
-export interface unloadResult {
+export interface UnloadResult {
   success: boolean
   error?: string
 }
@@ -211,12 +198,12 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Loads a model into memory
    */
-  abstract load(modelId: string): Promise<sessionInfo>
+  abstract load(modelId: string): Promise<SessionInfo>
 
   /**
    * Unloads a model from memory
    */
-  abstract unload(sessionId: string): Promise<unloadResult>
+  abstract unload(sessionId: string): Promise<UnloadResult>
 
   /**
    * Sends a chat request to the model
@@ -237,6 +224,11 @@ export abstract class AIEngine extends BaseExtension {
    * Aborts an ongoing model import
    */
   abstract abortImport(modelId: string): Promise<void>
+
+  /**
+    * Get currently loaded models
+  */
+  abstract getLoadedModels(): Promise<string[]>
 
   /**
    * Optional method to get the underlying chat client
