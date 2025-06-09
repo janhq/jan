@@ -19,6 +19,8 @@ import { Switch } from '@/components/ui/switch'
 import { twMerge } from 'tailwind-merge'
 import { getConnectedServers } from '@/services/mcp'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { toast } from 'sonner'
+import { invoke } from '@tauri-apps/api/core'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
@@ -26,8 +28,14 @@ export const Route = createFileRoute(route.settings.mcp_servers as any)({
 })
 
 function MCPServers() {
-  const { mcpServers, addServer, editServer, deleteServer, syncServers } =
-    useMCPServers()
+  const {
+    mcpServers,
+    addServer,
+    editServer,
+    deleteServer,
+    syncServers,
+    syncServersAndRestart,
+  } = useMCPServers()
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
 
@@ -77,7 +85,7 @@ function MCPServers() {
       // Add new server
       addServer(name, config)
     }
-    syncServers()
+    syncServersAndRestart()
   }
 
   const handleEdit = (serverKey: string) => {
@@ -93,7 +101,7 @@ function MCPServers() {
     if (serverToDelete) {
       deleteServer(serverToDelete)
       setServerToDelete(null)
-      syncServers()
+      syncServersAndRestart()
     }
   }
 
@@ -130,18 +138,51 @@ function MCPServers() {
         }
       )
     }
-    syncServers()
+    syncServersAndRestart()
   }
 
   const toggleServer = (serverKey: string, active: boolean) => {
-    if (serverKey) {
-      // Save single server
-      editServer(serverKey, {
-        ...(mcpServers[serverKey] as MCPServerConfig),
-        active,
-      })
-      syncServers()
-    }
+    if (serverKey)
+      if (active)
+        invoke('activate_mcp_server', {
+          name: serverKey,
+          config: {
+            ...(mcpServers[serverKey] as MCPServerConfig),
+            active,
+          },
+        })
+          .then(() => {
+            // Save single server
+            editServer(serverKey, {
+              ...(mcpServers[serverKey] as MCPServerConfig),
+              active,
+            })
+            syncServers()
+            toast.success(
+              `Server ${serverKey} is now ${active ? 'active' : 'inactive'}.`
+            )
+            getConnectedServers().then(setConnectedServers)
+          })
+          .catch((error) => {
+            toast.error(error, {
+              description:
+                'Please check the parameters according to the tutorial.',
+            })
+          })
+      else {
+        editServer(serverKey, {
+          ...(mcpServers[serverKey] as MCPServerConfig),
+          active,
+        })
+        syncServers()
+        invoke('deactivate_mcp_server', { name: serverKey })
+          .catch((error) => {
+            toast.error(`Failed to deactivate server ${serverKey}: ${error}`)
+          })
+          .finally(() => {
+            getConnectedServers().then(setConnectedServers)
+          })
+      }
   }
 
   useEffect(() => {

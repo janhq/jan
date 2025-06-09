@@ -42,7 +42,13 @@ export const parseLogLine = (line: string) => {
   const regex = /^\[(.*?)\]\[(.*?)\]\[(.*?)\]\[(.*?)\]\s(.*)$/
   const match = line.match(regex)
 
-  if (!match) return undefined // Skip invalid lines
+  if (!match)
+    return {
+      timestamp: Date.now(),
+      level: 'info' as 'info' | 'warn' | 'error' | 'debug',
+      target: 'info',
+      message: line ?? '',
+    } as LogEntry
 
   const [, date, time, target, levelRaw, message] = match
 

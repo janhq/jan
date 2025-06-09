@@ -2,8 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 
 import { useEffect, useState, useRef } from 'react'
-import { parseLogLine, readLogs } from '@/services/app'
-import { listen } from '@tauri-apps/api/event'
+import { readLogs } from '@/services/app'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.appLogs as any)({
@@ -11,48 +10,33 @@ export const Route = createFileRoute(route.appLogs as any)({
 })
 
 // Define log entry type
-interface LogEntry {
-  timestamp: string
-  level: 'info' | 'warn' | 'error' | 'debug'
-  target: string
-  message: string
-}
-
-const LOG_EVENT_NAME = 'log://log'
 
 function LogsViewer() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logsContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    readLogs().then((logData) => {
-      const logs = logData.filter(Boolean) as LogEntry[]
-      setLogs(logs)
+    let lastLogsLength = 0
+    function updateLogs() {
+      readLogs().then((logData) => {
+        let needScroll = false
+        const filteredLogs = logData.filter(Boolean) as LogEntry[]
+        if (filteredLogs.length > lastLogsLength) needScroll = true
 
-      // Scroll to bottom after initial logs are loaded
-      setTimeout(() => {
-        scrollToBottom()
-      }, 100)
-    })
-    let unsubscribe = () => {}
-    listen(LOG_EVENT_NAME, (event) => {
-      const { message } = event.payload as { message: string }
-      const log: LogEntry | undefined = parseLogLine(message)
-      if (log) {
-        setLogs((prevLogs) => {
-          const newLogs = [...prevLogs, log]
-          // Schedule scroll to bottom after state update
-          setTimeout(() => {
-            scrollToBottom()
-          }, 0)
-          return newLogs
-        })
-      }
-    }).then((unsub) => {
-      unsubscribe = unsub
-    })
+        lastLogsLength = filteredLogs.length
+        setLogs(filteredLogs)
+
+        // Scroll to bottom after initial logs are loaded
+        if (needScroll) setTimeout(() => scrollToBottom(), 100)
+      })
+    }
+    updateLogs()
+
+    // repeat action each 3s
+    const intervalId = setInterval(() => updateLogs(), 3000)
+
     return () => {
-      unsubscribe()
+      clearInterval(intervalId)
     }
   }, [])
 
@@ -81,7 +65,7 @@ function LogsViewer() {
   }
 
   // Format timestamp to be more readable
-  const formatTimestamp = (timestamp: string) => {
+  const formatTimestamp = (timestamp: string | number) => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString()
   }
