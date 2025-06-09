@@ -48,7 +48,7 @@ export const parseLogLine = (line: string) => {
       level: 'info' as 'info' | 'warn' | 'error' | 'debug',
       target: 'info',
       message: line ?? '',
-    }
+    } as LogEntry
 
   const [, date, time, target, levelRaw, message] = match
 

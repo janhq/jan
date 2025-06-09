@@ -65,6 +65,8 @@ pub fn run() {
             core::mcp::get_connected_servers,
             core::mcp::save_mcp_configs,
             core::mcp::get_mcp_configs,
+            core::mcp::activate_mcp_server,
+            core::mcp::deactivate_mcp_server,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,

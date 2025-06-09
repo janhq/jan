@@ -7,6 +7,13 @@ import { MCPTool } from '@/types/completion'
  */
 export const updateMCPConfig = async (configs: string) => {
   await window.core?.api?.saveMcpConfigs({ configs })
+}
+
+/**
+ * @description This function restarts the MCP servers.
+ * @param configs
+ */
+export const restartMCPServers = async () => {
   await window.core?.api?.restartMcpServers()
 }
 
@@ -15,7 +22,9 @@ export const updateMCPConfig = async (configs: string) => {
  * @returns {Promise<object>} The MCP configuration.
  */
 export const getMCPConfig = async () => {
-  const mcpConfig = JSON.parse((await window.core?.api?.getMcpConfigs()) ?? '{}')
+  const mcpConfig = JSON.parse(
+    (await window.core?.api?.getMcpConfigs()) ?? '{}'
+  )
   return mcpConfig
 }
 
