@@ -216,7 +216,6 @@ const DropdownModelProvider = ({
     // Add the filtered items to their respective groups
     filteredItems.forEach((item) => {
       const providerKey = item.provider.provider
-      console.log(providerKey, 'providerKey')
       if (!groups[providerKey]) {
         groups[providerKey] = []
       }

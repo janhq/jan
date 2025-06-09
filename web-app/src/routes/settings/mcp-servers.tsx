@@ -35,6 +35,7 @@ function MCPServers() {
     deleteServer,
     syncServers,
     syncServersAndRestart,
+    getServerConfig,
   } = useMCPServers()
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
@@ -56,6 +57,9 @@ function MCPServers() {
     MCPServerConfig | Record<string, MCPServerConfig> | undefined
   >(undefined)
   const [connectedServers, setConnectedServers] = useState<string[]>([])
+  const [loadingServers, setLoadingServers] = useState<{
+    [key: string]: boolean
+  }>({})
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -70,10 +74,13 @@ function MCPServers() {
     setOpen(true)
   }
 
-  const handleSaveServer = (name: string, config: MCPServerConfig) => {
+  const handleSaveServer = async (name: string, config: MCPServerConfig) => {
+    try {
+      await toggleServer(name, false)
+    } catch (error) {
+      console.error('Error deactivating server:', error)
+    }
     if (editingKey) {
-      // Edit existing server
-
       // If server name changed, delete old one and add new one
       if (editingKey !== name) {
         deleteServer(editingKey)
@@ -85,7 +92,9 @@ function MCPServers() {
       // Add new server
       addServer(name, config)
     }
-    syncServersAndRestart()
+
+    syncServers()
+    await toggleServer(name, true)
   }
 
   const handleEdit = (serverKey: string) => {
@@ -105,7 +114,7 @@ function MCPServers() {
     }
   }
 
-  const handleOpenJsonEditor = (serverKey?: string) => {
+  const handleOpenJsonEditor = async (serverKey?: string) => {
     if (serverKey) {
       // Edit single server JSON
       setJsonServerName(serverKey)
@@ -118,12 +127,19 @@ function MCPServers() {
     setJsonEditorOpen(true)
   }
 
-  const handleSaveJson = (
+  const handleSaveJson = async (
     data: MCPServerConfig | Record<string, MCPServerConfig>
   ) => {
     if (jsonServerName) {
+      try {
+        await toggleServer(jsonServerName, false)
+      } catch (error) {
+        console.error('Error deactivating server:', error)
+      }
       // Save single server
       editServer(jsonServerName, data as MCPServerConfig)
+      syncServers()
+      toggleServer(jsonServerName, true)
     } else {
       // Save all servers
       // Clear existing servers first
@@ -138,23 +154,24 @@ function MCPServers() {
         }
       )
     }
-    syncServersAndRestart()
   }
 
   const toggleServer = (serverKey: string, active: boolean) => {
-    if (serverKey)
-      if (active)
+    if (serverKey) {
+      setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
+      const config = getServerConfig(serverKey)
+      if (active && config) {
         invoke('activate_mcp_server', {
           name: serverKey,
           config: {
-            ...(mcpServers[serverKey] as MCPServerConfig),
+            ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
             active,
           },
         })
           .then(() => {
             // Save single server
             editServer(serverKey, {
-              ...(mcpServers[serverKey] as MCPServerConfig),
+              ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
               active,
             })
             syncServers()
@@ -164,25 +181,30 @@ function MCPServers() {
             getConnectedServers().then(setConnectedServers)
           })
           .catch((error) => {
+            editServer(serverKey, {
+              ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
+              active: false,
+            })
             toast.error(error, {
               description:
                 'Please check the parameters according to the tutorial.',
             })
           })
-      else {
+          .finally(() => {
+            setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
+          })
+      } else {
         editServer(serverKey, {
-          ...(mcpServers[serverKey] as MCPServerConfig),
+          ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
           active,
         })
         syncServers()
-        invoke('deactivate_mcp_server', { name: serverKey })
-          .catch((error) => {
-            toast.error(`Failed to deactivate server ${serverKey}: ${error}`)
-          })
-          .finally(() => {
-            getConnectedServers().then(setConnectedServers)
-          })
+        invoke('deactivate_mcp_server', { name: serverKey }).finally(() => {
+          getConnectedServers().then(setConnectedServers)
+          setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
+        })
       }
+    }
   }
 
   useEffect(() => {
@@ -334,7 +356,8 @@ function MCPServers() {
                         </div>
                         <div className="ml-2">
                           <Switch
-                            checked={config.active === false ? false : true}
+                            checked={config.active}
+                            loading={!!loadingServers[key]}
                             onCheckedChange={(checked) =>
                               toggleServer(key, checked)
                             }

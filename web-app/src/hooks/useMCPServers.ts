@@ -19,6 +19,7 @@ type MCPServerStoreState = {
   mcpServers: MCPServers
   loading: boolean
   deletedServerKeys: string[]
+  getServerConfig: (key: string) => MCPServerConfig | undefined
   setLeftPanel: (value: boolean) => void
   addServer: (key: string, config: MCPServerConfig) => void
   editServer: (key: string, config: MCPServerConfig) => void
@@ -34,7 +35,11 @@ export const useMCPServers = create<MCPServerStoreState>()((set, get) => ({
   loading: false,
   deletedServerKeys: [],
   setLeftPanel: (value) => set({ open: value }),
-
+  getServerConfig: (key) => {
+    const mcpServers = get().mcpServers
+    // Return the server configuration if it exists, otherwise return undefined
+    return mcpServers[key] ? mcpServers[key] : undefined
+  },
   // Add a new MCP server or update if the key already exists
   addServer: (key, config) =>
     set((state) => {
