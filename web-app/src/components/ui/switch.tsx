@@ -8,8 +8,6 @@ type SwitchProps = React.ComponentProps<typeof SwitchPrimitive.Root> & {
   loading?: boolean
 }
 function Switch({ loading, className, ...props }: SwitchProps) {
-  console.log(loading)
-
   return (
     <SwitchPrimitive.Root
       data-slot="switch"
