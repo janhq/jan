@@ -302,7 +302,7 @@ export const ThreadContent = memo(
               <ThinkingBlock
                 id={
                   item.isLastMessage
-                    ? `${item.thread_id}-last`
+                    ? `${item.thread_id}-last-${reasoningSegment.slice(0, 50).replace(/\s/g, '').slice(-10)}`
                     : `${item.thread_id}-${item.index ?? item.id}`
                 }
                 text={reasoningSegment}
