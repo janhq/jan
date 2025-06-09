@@ -33,6 +33,21 @@ cat ./tauri.conf.json.tmp
 rm $INPUT_JSON_FILE
 mv ./tauri.conf.json.tmp $INPUT_JSON_FILE
 
+# Update Info.plist if it exists
+INFO_PLIST_PATH="./src-tauri/Info.plist"
+if [ -f "$INFO_PLIST_PATH" ]; then
+    echo "Updating Info.plist..."
+    
+    # Replace jan.ai.app with jan-{channel}.ai.app
+    sed -i '' "s|jan\.ai\.app|jan-${CHANNEL}.ai.app|g" "$INFO_PLIST_PATH"
+    
+    # Replace <string>jan</string> with <string>jan-{channel}</string>
+    sed -i '' "s|<string>jan</string>|<string>jan-${CHANNEL}</string>|g" "$INFO_PLIST_PATH"
+
+    echo "Info.plist updated"
+fi
+
+cat ./src-tauri/Info.plist
 # Update the layout file
 # LAYOUT_FILE_PATH="web/app/layout.tsx"
 
