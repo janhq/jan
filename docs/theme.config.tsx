@@ -65,49 +65,6 @@ const config: DocsThemeConfig = {
       </div>
     ),
   },
-  sidebar: {
-    titleComponent: ({ type, title }) => {
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      const { asPath } = useRouter()
-      if (type === 'separator' && title === 'Switcher') {
-        return (
-          <div className="-mx-2 hidden md:block">
-            {[
-              { title: 'Jan', path: '/docs', Icon: LibraryBig },
-              {
-                title: 'Cortex',
-                path: 'https://cortex.so/docs/',
-                Icon: BrainCircuit,
-              },
-              { title: 'Integrations', path: '/integrations', Icon: Blocks },
-            ].map((item) =>
-              asPath.startsWith(item.path) ? (
-                <div
-                  key={item.path}
-                  className="group mb-3 flex flex-row items-center gap-3 nx-text-primary-800 dark:nx-text-primary-600"
-                >
-                  <item.Icon className="w-7 h-7 p-1 border  border-gray-200 dark:border-gray-700 rounded nx-bg-primary-100 dark:nx-bg-primary-400/10" />
-                  {item.title}
-                </div>
-              ) : (
-                <Link
-                  href={item.path}
-                  key={item.path}
-                  className="group mb-3 flex flex-row items-center gap-3 text-gray-500 hover:text-primary/100"
-                >
-                  <item.Icon className="w-7 h-7 p-1 border rounded border-gray-200 dark:border-gray-700" />
-                  {item.title}
-                </Link>
-              )
-            )}
-          </div>
-        )
-      }
-      return title
-    },
-    defaultMenuCollapseLevel: 1,
-    toggleButton: true,
-  },
   toc: {
     backToTop: true,
   },

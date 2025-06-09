@@ -20,32 +20,26 @@ import { Settings, Plus } from 'lucide-react'
 
 # Cohere
 
-Jan supports [Cohere](https://cohere.com/) API integration, allowing you to use Cohere's models (Command, Command-R and more) through Jan's interface.
+Jan supports [Cohere](https://cohere.com/) API integration, allowing you to use Cohere's
+models (Command, Command-R and more) through Jan's interface.
 
 ## Integrate Cohere API with Jan
 
 <Steps>
-### Step 1: Get Your API Key 
-1. Visit [Cohere Dashboard](https://dashboard.cohere.com/api-keys) and sign in 
-2. Create & copy a new API key or copy your existing one
+
+### Step 1: Get Your API Key
+1. Visit [Cohere Dashboard](https://dashboard.cohere.com/api-keys) and sign in
+2. Create a new API key and/or copy your existing one
 
 <Callout type='info'>
-Ensure your API key has sufficient credits
+Ensure your API key has sufficient credits.
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your Cohere API keys in Jan:
 
-**Through Threads:**
-1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
-2. Once the selector is poped up, choose the **Cloud** tab
-3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Cohere**
-4. Once you are directed to Cohere settings, insert your **API Key**  
-
-**Through Settings:**
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines**, select **Cohere**
-3. Insert your **API Key**  
+2. Under **Model Providers**, select **Cohere**
+3. Insert your **API Key**
 
 <br/>
 ![Cohere](../_assets/cohere.png)
@@ -53,16 +47,17 @@ There are two ways to add your Cohere API keys in Jan:
 
 ### Step 3: Start Using Cohere's Models
 
-1. In any existing **Threads** or create a new one
-2. Select a Cohere model from **model selector**
+1. Jump into any existing **Chat** or create a new one
+2. Select a Cohere model from **model selector** options
 3. Start chatting
 </Steps>
 
 ## Available Cohere Models
 
-Jan automatically includes Cohere's available models. In case you want to use a specific Cohere model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
-  - See list of available models in [Cohere Documentation](https://docs.cohere.com/v2/docs/models).
-  - The `id` property must match the model name in the list. For example, `command-nightly` or `command-light`.
+Jan automatically includes Cohere's available models. In case you want to use a specific
+Cohere model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/manage-models):
+- See list of available models in [Cohere Documentation](https://docs.cohere.com/v2/docs/models).
+- The `id` property must match the model name in the list. For example, `command-nightly` or `command-light`.
 
 ## Troubleshooting
 

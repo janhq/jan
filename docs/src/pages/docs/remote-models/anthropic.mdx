@@ -20,13 +20,15 @@ import { Settings, Plus } from 'lucide-react'
 
 # Anthropic
 
-Jan supports [Anthropic](https://anthropic.com/) API integration, allowing you to use Claude models (Claude 3, Claude 2.1, and more) through Jan's interface.
+Jan supports all of [Anthropic's models](https://anthropic.com/) via API integration, allowing
+you to chat with Claude's latest Opus, Sonnet and Haiku models.
 
 ## Integrate Anthropic API with Jan
 
 <Steps>
-### Step 1: Get Your API Key 
-1. Visit [Anthropic Console](https://console.anthropic.com/settings/keys) and sign in 
+
+### Step 1: Get Your API Key
+1. Visit [Anthropic Console](https://console.anthropic.com/settings/keys) and sign in
 2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
@@ -34,35 +36,29 @@ Ensure your API key has sufficient credits
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your Anthropic API keys in Jan:
 
-**Through Threads:**
-1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
-2. Once the selector is poped up, choose the **Cloud** tab
-3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Anthropic**
-4. Once you are directed to Anthropic settings, insert your **API Key**  
-
-**Through Settings:**
 1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines**, select **Anthropic**
-3. Insert your **API Key**  
+2. Under **Model Providers**, select **Anthropic**
+3. Insert your **API Key**
 
 <br/>
-![Anthropic](../_assets/anthropic.png)
+![Anthropic](../_assets/model-management-06.png)
 <br/>
 
 ### Step 3: Start Using Anthropic's Models
 
-1. In any existing **Threads** or create a new one
+1. In any existing **Chat** or create a new one
 2. Select an Anthropic model from **model selector**
 3. Start chatting
+
 </Steps>
 
 ## Available Anthropic Models
 
-Jan automatically includes Anthropic's available models. In case you want to use a specific Anthropic model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
-  - See list of available models in [Anthropic Models](https://docs.anthropic.com/claude/docs/models-overview).
-  - The `id` property must match the model name in the list. For example, `claude-3-opus-20240229`, `claude-3-sonnet-20240229`, or `claude-2.1`.
+Jan automatically includes Anthropic's available models. In case you want to use a specific Anthropic model
+that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/manage-models#add-models-1):
+- See list of available models in [Anthropic Models](https://docs.anthropic.com/claude/docs/models-overview).
+- The `id` property must match the model name in the list. For example, `claude-opus-4@20250514`, `claude-sonnet-4@2025051`, or `claude-3-5-haiku@20241022`.
 
 ## Troubleshooting
 
@@ -83,4 +79,5 @@ Common issues and solutions:
 - Check if you're using the correct model ID
 - Verify your Anthropic account has the necessary permissions
 
-Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [Anthropic documentation](https://docs.anthropic.com/claude/docs).
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the
+[Anthropic's documentation](https://docs.anthropic.com/claude/docs).

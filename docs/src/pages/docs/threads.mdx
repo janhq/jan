@@ -1,6 +1,6 @@
 ---
-title: Using Threads
-description: Manage your interaction with AI locally.
+title: Start Chatting
+description: Manage your interaction with AI models locally.
 keywords:
   [
     Jan,
@@ -22,56 +22,58 @@ import { Callout } from 'nextra/components'
 import { SquarePen, Pencil, Ellipsis, Paintbrush, Trash2 } from 'lucide-react'
 
 
-# Using Threads
+# Chat with a Model
 
-Jan organizes your AI conversations into threads, making it easy to track and revisit your interactions. This guide will help you effectively manage your chat history.
+Jan organizes your conversations with a model into chats or threads, making it easy to track and revisit
+your interactions. This guide will help you effectively manage your chat history.
 
-## Creating New Thread
-1. Click **New Chat** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon on the bottom left of Jan
-2. Select your preferred model in **Model Selector** in input field & start chatting
+## Creating New Conversation/Thread
+1. Click **New Chat** (<SquarePen width={16} height={16} style={{display:"inline"}}/>) icon on the
+bottom left of Jan.
+2. Select your preferred model in **Model Selector** in input field & start chatting.
 
 <br/>
 ![Create New Thread](./_assets/threads-new-chat.png)
 
-## View Threads History
+## View Your Chat History
 
-1. Once you open Jan, the default screen is **Threads**
+1. Once you open Jan, the default screen is **Chat**
 2. On the **left sidebar**, you can:
-- View **Thread List**, scroll through your threads history
-- Click any thread to open the full conversation
+  - View your **Conversations** and scroll through your history
+  - Click any chat to open the full conversation
 
 ## Favorites and Recents
 
-Jan helps you quickly access important and recent conversations with **Favorites** and **Recents** in the left sidebar:
-
-- **Favorites**: Pin threads you use often for instant access. Click the star icon in the context menu next to any thread to add or remove it from Favorites.
+Jan helps you quickly access important and recent conversations with **Favorites** and **Recents**
+in the left sidebar:
+- **Favorites**: Pin threads you use often for instant access. Click the three dots icon on the right of the
+thread and a context menu will pop up with the favorite option for you to click on.
 - **Recents**: See your most recently accessed threads for quick navigation.
 
 <br/>
 ![Favorites and Recents](./_assets/threads-favorites-and-recents.png)
 
-*Screenshot: The left sidebar showing Favorites and Recents sections for easy thread management.*
 
-## Edit Thread Title
-1. Navigate to the **Thread** that you want to edit title in left sidebar
-2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Select <Pencil width={16} height={16} style={{display:"inline"}}/> **Rename** 
+## Edit a Chat Title
+1. Navigate to the **Conversation** that you want to edit title on the sidebar to your left
+2. Hover on the conversation and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
+3. Click <Pencil width={16} height={16} style={{display:"inline"}}/> **Rename**
 4. Add new title & save
 
 <br/>
 ![Context Menu](./_assets/threads-context-menu.png)
 
-
 ## Delete Thread
+
 <Callout type="warning">
-There's no undo for thread deletion, so make sure you want to remove the thread permanently.
+There's no undo for chat deletion, so make sure you REALLY want to remove it permanently.
 </Callout>
-### Delete a specific thread
+
 When you want to completely remove a thread:
 
 1. Navigate to the **Thread** that you want to delete in left sidebar
 2. Hover on the thread and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-3. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete** 
+3. Click <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete**
 
 
 <br/>
@@ -79,6 +81,6 @@ When you want to completely remove a thread:
 
 ### Delete all threads at once
 
-In case you need to remove all threads at once:
+In case you need to remove all conversations at once:
 1. Hover on the `Recents` category and click on **three dots** (<Ellipsis width={16} height={16} style={{display:"inline"}}/>) icon
-2. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete All** 
+2. Select <Trash2 width={16} height={16} style={{display:"inline"}}/> **Delete All**

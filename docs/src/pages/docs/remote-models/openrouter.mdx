@@ -24,13 +24,19 @@ import { Settings, Plus } from 'lucide-react'
 
 ## Integrate OpenRouter with Jan
 
-[OpenRouter](https://openrouter.ai/) is a tool that gathers AI models. Developers can utilize its API to engage with diverse large language models, generative image models, and generative 3D object models with a competitive pricing.
+[OpenRouter](https://openrouter.ai/) is a tool that gathers AI model APIs and provides access to all
+via a unified API. Developers can use the API to interact with LLMs, generative image models, and
+even models that generate 3D objects, all with a competitive pricing.
 
-Jan supports OpenRouter API integration, allowing you to use models from various providers (Anthropic, Google, Meta and more) through a single API.
+Jan supports the OpenRouter API, allowing you to use models from various providers (Anthropic, Google,
+Meta and more) and helping you avoid having to get an API from all of your favorite ones.
+
+OpenRouter even offers a few free models! 🙌
 
 ## Integrate OpenRouter with Jan
 
 <Steps>
+
 ### Step 1: Get Your API Key
 1. Visit [OpenRouter](https://openrouter.ai/keys) and sign in
 2. Create & copy a new API key or copy your existing one
@@ -40,17 +46,9 @@ Ensure your API key has sufficient credits. OpenRouter credits work across all a
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your OpenRouter key in Jan:
 
-**Through Threads:**
-1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
-2. Once the selector is poped up, choose the **Cloud** tab
-3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **OpenRouter**
-4. Once you are directed to OpenRouter settings, insert your **API Key**
-
-**Through Settings:**
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines**, select **OpenRouter**
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **OpenRouter**
 3. Insert your **API Key**
 
 <br/>
@@ -59,7 +57,7 @@ There are two ways to add your OpenRouter key in Jan:
 
 ### Step 3: Start Using OpenRouter Models
 
-1. In any existing **Threads** or create a new one
+1. Pick any existing **Chat** or create a new one
 2. Select any model from **model selector** under OpenRouter
 3. Start chatting
 </Steps>
@@ -74,9 +72,9 @@ Jan automatically use your default OpenRouter's available models. For custom con
 - Available options can be found in [OpenRouter's Model Reference](https://openrouter.ai/models)
 
 **Examples of Model IDs:**
-- Claude 3 Opus: `anthropic/claude-3-opus-20240229`
-- Google Gemini Pro: `google/gemini-pro`
-- Mistral Large: `mistralai/mistral-large`
+- Claude 4 Opus: `anthropic/claude-opus-4`
+- Google Gemini 2.5 Pro: `google/gemini-2.5-pro-preview`
+- DeepSeek R1 Latest: `deepseek/deepseek-r1-0528`
 
 ## Troubleshooting
 

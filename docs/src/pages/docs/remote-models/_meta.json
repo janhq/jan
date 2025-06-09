@@ -7,41 +7,24 @@
     "title": "Cohere",
     "href": "/docs/remote-models/cohere"
   },
-  "deepseek": { 
-    "title": "DeepSeek", 
-    "href": "/docs/remote-models/deepseek"
-  },
-  "google": { 
-    "title": "Google", 
+  "google": {
+    "title": "Gemini",
     "href": "/docs/remote-models/google"
   },
-  "groq": { 
-    "title": "Groq", 
+  "groq": {
+    "title": "Groq",
     "href": "/docs/remote-models/groq"
-  },
-  "martian": {
-    "title": "Martian",
-    "href": "/docs/remote-models/martian"
   },
   "mistralai": {
     "title": "Mistral AI",
     "href": "/docs/remote-models/mistralai"
   },
-  "nvidia-nim": {
-    "title": "Nvidia",
-    "href": "/docs/remote-models/nvidia-nim"
-  },
   "openai": {
     "title": "OpenAI",
     "href": "/docs/remote-models/openai"
   },
-  "openrouter": { 
-    "title": "OpenRouter", 
+  "openrouter": {
+    "title": "OpenRouter",
     "href": "/docs/remote-models/openrouter"
-  },
-  "triton": {
-    "title": "Triton-TRT-LLM",
-    "href": "/docs/remote-models/triton",
-    "display": "hidden" 
   }
 }

@@ -25,8 +25,8 @@ Jan supports [Google](https://ai.google/get-started/our-models/) API integration
 ## Integrate Google API with Jan
 
 <Steps>
-### Step 1: Get Your API Key 
-1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey) and sign in 
+### Step 1: Get Your API Key
+1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey) and sign in
 2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
@@ -34,18 +34,10 @@ Ensure your API key has sufficient credits
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your Google API keys in Jan:
 
-**Through Threads:**
-1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
-2. Once the selector is poped up, choose the **Cloud** tab
-3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Google**
-4. Once you are directed to Google settings, insert your **API Key**  
-
-**Through Settings:**
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines**, select **Google**
-3. Insert your **API Key**  
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **Gemini**
+3. Insert your **API Key**
 
 <br/>
 ![Google](../_assets/google.png)
@@ -53,16 +45,17 @@ There are two ways to add your Google API keys in Jan:
 
 ### Step 3: Start Using Google's Models
 
-1. In any existing **Threads** or create a new one
-2. Select an Google model from **model selector**
+1. Got to any existing **Chat** or create a new one
+2. Select an Gemini model from **model selector**
 3. Start chatting
 </Steps>
 
 ## Available Google Models
 
-Jan automatically includes Google's available models like Gemini series. In case you want to use a specific Google model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
-  - See list of available models in [Google Models](https://ai.google.dev/gemini-api/docs/models/gemini).
-  - The `id` property must match the model name in the list. For example, `gemini-1.5-pro` or `gemini-2.0-flash-lite-preview`.
+Jan automatically includes Google's available models like Gemini series. In case you want to use a specific
+Gemini model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/manage-models#add-models-1):
+- See list of available models in [Google Models](https://ai.google.dev/gemini-api/docs/models/gemini).
+- The `id` property must match the model name in the list. For example, `gemini-1.5-pro` or `gemini-2.0-flash-lite-preview`.
 
 ## Troubleshooting
 

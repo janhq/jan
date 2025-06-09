@@ -21,13 +21,15 @@ import { Settings, Plus } from 'lucide-react'
 
 # Mistral AI
 
-Jan supports [Mistral AI](https://mistral.ai/) API integration, allowing you to use Mistral's powerful models (Mistral Large, Mistral Medium, Mistral Small and more) through Jan's interface.
+Jan supports all models available via the [Mistral AI](https://mistral.ai/) API, allowing you to use Mistral's
+powerful models (Mistral Large, Mistral Medium, Mistral Small and more) through Jan's interface.
 
 ## Integrate Mistral AI with Jan
 
 <Steps>
+
 ### Step 1: Get Your API Key
-1. Visit [Mistral AI Platform](https://console.mistral.ai/api-keys/) and sign in
+1. Visit the [Mistral AI Platform](https://console.mistral.ai/api-keys/) and sign in
 2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
@@ -35,17 +37,9 @@ Ensure your API key has sufficient credits
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your Mistral AI keys in Jan:
 
-**Through Threads:**
-1. In Threads, click **Model** tab in the **right sidebar** or **model selector** in input field
-2. Once the selector is poped up, choose the **Cloud** tab
-3. Click **Add** (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to **Mistral AI**
-4. Once you are directed to Mistral AI settings, insert your **API Key**
-
-**Through Settings:**
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
-2. Under **Remote Engines**, select **Mistral AI**
+1. Navigate to the **Settings** page (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **Mistral AI**
 3. Insert your **API Key**
 
 <br/>
@@ -54,16 +48,18 @@ There are two ways to add your Mistral AI keys in Jan:
 
 ### Step 3: Start Using Mistral's Models
 
-1. In any existing **Threads** or create a new one
+1. Open any existing **Chat** or create a new one
 2. Select a Mistral model from **model selector**
 3. Start chatting
 </Steps>
 
 ## Available Mistral Models
 
-Jan automatically includes Mistral's available models. In case you want to use a specific Mistral model that you cannot find in **Jan**, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
-  - See list of available models in [Mistral AI Documentation](https://docs.mistral.ai/platform/endpoints).
-  - The `id` property must match the model name in the list. For example, if you want to use Mistral Large, you must set the `id` property to `mistral-large-latest`
+Jan automatically includes Mistral's available models. In case you want to use a specific Mistral model
+that you cannot find in **Jan**, follow the instructions in [Add Cloud Models](/docs/manage-models#add-models-1):
+- See list of available models in [Mistral AI Documentation](https://docs.mistral.ai/platform/endpoints).
+- The `id` property must match the model name in the list. For example, if you want to use
+Mistral Large, you must set the `id` property to `mistral-large-latest`
 
 ## Troubleshooting
 
