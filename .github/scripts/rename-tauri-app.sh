@@ -45,9 +45,9 @@ if [ -f "$INFO_PLIST_PATH" ]; then
     sed -i '' "s|<string>jan</string>|<string>jan-${CHANNEL}</string>|g" "$INFO_PLIST_PATH"
 
     echo "Info.plist updated"
-fi
 
-cat ./src-tauri/Info.plist
+    cat ./src-tauri/Info.plist
+fi
 # Update the layout file
 # LAYOUT_FILE_PATH="web/app/layout.tsx"
 
