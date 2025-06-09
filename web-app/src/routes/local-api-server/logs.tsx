@@ -10,14 +10,6 @@ export const Route = createFileRoute(route.localApiServerlogs as any)({
   component: LogsViewer,
 })
 
-// Define log entry type
-interface LogEntry {
-  timestamp: string
-  level: 'info' | 'warn' | 'error' | 'debug'
-  target: string
-  message: string
-}
-
 const SERVER_LOG_TARGET = 'app_lib::core::server'
 const LOG_EVENT_NAME = 'log://log'
 
@@ -84,7 +76,7 @@ function LogsViewer() {
   }
 
   // Format timestamp to be more readable
-  const formatTimestamp = (timestamp: string) => {
+  const formatTimestamp = (timestamp: string | number) => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString()
   }

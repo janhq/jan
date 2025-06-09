@@ -105,6 +105,7 @@ async fn start_mcp_server<R: Runtime>(
             cmd = Command::new(bun_x_path);
             cmd.arg("x");
             cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
+            cmd.stderr(std::process::Stdio::inherit());
         }
 
         if command.clone() == "uvx" {
