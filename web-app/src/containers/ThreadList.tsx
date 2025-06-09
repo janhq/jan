@@ -103,7 +103,6 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     >
       <div className="py-1 pr-2 truncate">
         <span
-          className="text-left-panel-fg/90"
           dangerouslySetInnerHTML={{ __html: thread.title || 'New Thread' }}
         />
       </div>
