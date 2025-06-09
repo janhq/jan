@@ -1,19 +1,52 @@
 import { useAppState } from '@/hooks/useAppState'
 import { ThreadContent } from './ThreadContent'
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { useMessages } from '@/hooks/useMessages'
 
 type Props = {
   threadId: string
 }
 
+// Helper to extract <think>...</think> segment
+function extractReasoningSegment(text: string) {
+  if (!text) return ''
+  const match = text.match(/<think>([\s\S]*?)<\/think>/)
+  if (match) return match[0].trim()
+  // If only opening <think> and no closing, take everything after <think>
+  const openIdx = text.indexOf('<think>')
+  if (openIdx !== -1) return text.slice(openIdx).trim()
+  return ''
+}
+
 // Use memo with no dependencies to allow re-renders when props change
+// Avoid duplicate reasoning segments after tool calls
 export const StreamingContent = memo(({ threadId }: Props) => {
   const { streamingContent } = useAppState()
   const { getMessages } = useMessages()
   const messages = getMessages(threadId)
 
+  const streamingReasoning = useMemo(() => {
+    const text =
+      streamingContent?.content?.find((e) => e.type === 'text')?.text?.value ||
+      ''
+    return extractReasoningSegment(text)
+  }, [streamingContent])
+
+  const lastAssistant = useMemo(() => {
+    return [...messages].reverse().find((m) => m.role === 'assistant')
+  }, [messages])
+  const lastAssistantReasoning = useMemo(() => {
+    if (!lastAssistant) return ''
+    const text =
+      lastAssistant.content?.find((e) => e.type === 'text')?.text?.value || ''
+    return extractReasoningSegment(text)
+  }, [lastAssistant])
+
   if (!streamingContent || streamingContent.thread_id !== threadId) return null
+
+  if (streamingReasoning && streamingReasoning === lastAssistantReasoning) {
+    return null
+  }
 
   // Pass a new object to ThreadContent to avoid reference issues
   // The streaming content is always the last message
