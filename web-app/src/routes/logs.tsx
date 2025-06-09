@@ -19,15 +19,15 @@ function LogsViewer() {
     let lastLogsLength = 0
     function updateLogs() {
       readLogs().then((logData) => {
-        let needScrool = false
+        let needScroll = false
         const filteredLogs = logData.filter(Boolean) as LogEntry[]
-        if (filteredLogs.length > lastLogsLength) needScrool = true
+        if (filteredLogs.length > lastLogsLength) needScroll = true
 
         lastLogsLength = filteredLogs.length
         setLogs(filteredLogs)
 
         // Scroll to bottom after initial logs are loaded
-        if (needScrool) setTimeout(() => scrollToBottom(), 100)
+        if (needScroll) setTimeout(() => scrollToBottom(), 100)
       })
     }
     updateLogs()
