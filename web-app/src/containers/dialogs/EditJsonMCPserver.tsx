@@ -41,6 +41,21 @@ export default function EditJsonMCPserver({
     }
   }, [open, initialData])
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const pastedText = e.clipboardData.getData('text')
+    try {
+      const parsedJson = JSON.parse(pastedText)
+      const prettifiedJson = JSON.stringify(parsedJson, null, 2)
+      e.preventDefault()
+      setJsonContent(prettifiedJson)
+      setError(null)
+    } catch (error) {
+      e.preventDefault()
+      setError('Invalid JSON format in pasted content')
+      console.error('Paste error:', error)
+    }
+  }
+
   const handleSave = () => {
     try {
       const parsedData = JSON.parse(jsonContent)
@@ -69,6 +84,7 @@ export default function EditJsonMCPserver({
               language="json"
               placeholder="Enter JSON configuration"
               onChange={(e) => setJsonContent(e.target.value)}
+              onPaste={handlePaste}
               style={{
                 fontFamily: 'ui-monospace',
                 backgroundColor: 'transparent',
