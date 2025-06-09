@@ -1,5 +1,5 @@
 import { models as providerModels } from 'token.js'
-import { mockModelProvider } from '@/mock/data'
+import { predefinedProviders } from '@/mock/data'
 import {
   EngineManagementExtension,
   EngineManager,
@@ -17,7 +17,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         .get<EngineManagementExtension>(ExtensionTypeEnum.Engine)
         ?.getEngines()
     : {}
-  const builtinProviders = mockModelProvider.map((provider) => {
+  const builtinProviders = predefinedProviders.map((provider) => {
     let models = provider.models as Model[]
     if (Object.keys(providerModels).includes(provider.provider)) {
       const builtInModels = providerModels[

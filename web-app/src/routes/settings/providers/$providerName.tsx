@@ -37,6 +37,7 @@ import { getProviders } from '@/services/providers'
 import { toast } from 'sonner'
 import { ActiveModel } from '@/types/models'
 import { useEffect, useState } from 'react'
+import { predefinedProviders } from '@/mock/data'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/settings/providers/$providerName')({
@@ -62,7 +63,7 @@ const steps = [
     title: 'Get Your API Key',
     disableBeacon: true,
     content:
-      'Log into the provider’s dashboard to find or generate your API key.',
+      "Log into the provider's dashboard to find or generate your API key.",
   },
   {
     target: '.third-step-setup-remote-provider',
@@ -357,32 +358,36 @@ function ProviderDetail() {
                       <div className="flex items-center gap-2">
                         {provider && provider.provider !== 'llama.cpp' && (
                           <>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="hover:no-underline"
-                              onClick={handleRefreshModels}
-                              disabled={refreshingModels}
-                            >
-                              <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
-                                {refreshingModels ? (
-                                  <IconLoader
-                                    size={18}
-                                    className="text-main-view-fg/50 animate-spin"
-                                  />
-                                ) : (
-                                  <IconRefresh
-                                    size={18}
-                                    className="text-main-view-fg/50"
-                                  />
-                                )}
-                                <span className="text-main-view-fg/70">
-                                  {refreshingModels
-                                    ? 'Refreshing...'
-                                    : 'Refresh'}
-                                </span>
-                              </div>
-                            </Button>
+                            {!predefinedProviders.some(
+                              (p) => p.provider === provider.provider
+                            ) && (
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="hover:no-underline"
+                                onClick={handleRefreshModels}
+                                disabled={refreshingModels}
+                              >
+                                <div className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-1.5 py-1 gap-1">
+                                  {refreshingModels ? (
+                                    <IconLoader
+                                      size={18}
+                                      className="text-main-view-fg/50 animate-spin"
+                                    />
+                                  ) : (
+                                    <IconRefresh
+                                      size={18}
+                                      className="text-main-view-fg/50"
+                                    />
+                                  )}
+                                  <span className="text-main-view-fg/70">
+                                    {refreshingModels
+                                      ? 'Refreshing...'
+                                      : 'Refresh'}
+                                  </span>
+                                </div>
+                              </Button>
+                            )}
                             <DialogAddModel provider={provider} />
                           </>
                         )}
