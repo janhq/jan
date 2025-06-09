@@ -117,7 +117,7 @@ async fn start_mcp_server<R: Runtime>(
             cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap().to_string());
         }
         #[cfg(windows)] {
-            cmd.creation_flags(0x08000000);
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW: prevents shell window on Windows
         }
         let app_path_str = app_path.to_str().unwrap().to_string();
         let log_file_path = format!("{}/logs/app.log", app_path_str);
