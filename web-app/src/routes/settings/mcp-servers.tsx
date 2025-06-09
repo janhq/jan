@@ -56,6 +56,9 @@ function MCPServers() {
     MCPServerConfig | Record<string, MCPServerConfig> | undefined
   >(undefined)
   const [connectedServers, setConnectedServers] = useState<string[]>([])
+  const [loadingServers, setLoadingServers] = useState<{
+    [key: string]: boolean
+  }>({})
 
   const handleOpenDialog = (serverKey?: string) => {
     if (serverKey) {
@@ -142,8 +145,10 @@ function MCPServers() {
   }
 
   const toggleServer = (serverKey: string, active: boolean) => {
-    if (serverKey)
-      if (active)
+    if (serverKey) {
+      setLoadingServers((prev) => ({ ...prev, [serverKey]: true }))
+
+      if (active) {
         invoke('activate_mcp_server', {
           name: serverKey,
           config: {
@@ -169,7 +174,10 @@ function MCPServers() {
                 'Please check the parameters according to the tutorial.',
             })
           })
-      else {
+          .finally(() => {
+            setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
+          })
+      } else {
         editServer(serverKey, {
           ...(mcpServers[serverKey] as MCPServerConfig),
           active,
@@ -181,8 +189,10 @@ function MCPServers() {
           })
           .finally(() => {
             getConnectedServers().then(setConnectedServers)
+            setLoadingServers((prev) => ({ ...prev, [serverKey]: false }))
           })
       }
+    }
   }
 
   useEffect(() => {
@@ -335,6 +345,7 @@ function MCPServers() {
                         <div className="ml-2">
                           <Switch
                             checked={config.active === false ? false : true}
+                            loading={!!loadingServers[key]}
                             onCheckedChange={(checked) =>
                               toggleServer(key, checked)
                             }
