@@ -2,7 +2,6 @@ use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::{Map, Value};
 use std::fs;
-use std::process::Stdio;
 use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Runtime, State};
 use tokio::{process::Command, sync::Mutex, time::timeout};
@@ -42,108 +41,34 @@ pub async fn run_mcp_commands<R: Runtime>(
     if let Some(server_map) = mcp_servers.get("mcpServers").and_then(Value::as_object) {
         log::trace!("MCP Servers: {server_map:#?}");
 
-        let exe_path = env::current_exe().expect("Failed to get current exe path");
-        let exe_parent_path = exe_path
-            .parent()
-            .expect("Executable must have a parent directory");
-        let bin_path = exe_parent_path.to_path_buf();
         for (name, config) in server_map {
             if let Some(false) = extract_active_status(config) {
                 log::trace!("Server {name} is not active, skipping.");
                 continue;
             }
-            if let Some((command, args, envs)) = extract_command_args(config) {
-                let mut cmd = Command::new(command.clone());
-                if command.clone() == "npx" {
-                    let mut cache_dir = app_path.clone();
-                    cache_dir.push(".npx");
-                    let bun_x_path = format!("{}/bun", bin_path.display());
-                    cmd = Command::new(bun_x_path);
-                    cmd.arg("x");
-                    cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
+            match start_mcp_server(
+                app.clone(),
+                servers_state.clone(),
+                name.clone(),
+                config.clone(),
+            )
+            .await
+            {
+                Ok(_) => {
+                    log::info!("Server {name} activated successfully.");
                 }
-
-                if command.clone() == "uvx" {
-                    let mut cache_dir = app_path.clone();
-                    cache_dir.push(".uvx");
-                    let bun_x_path = format!("{}/uv", bin_path.display());
-                    cmd = Command::new(bun_x_path);
-                    cmd.arg("tool");
-                    cmd.arg("run");
-                    cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap().to_string());
-                }
-                log::trace!("Command: {cmd:#?}");
-
-                args.iter().filter_map(Value::as_str).for_each(|arg| {
-                    cmd.arg(arg);
-                });
-                envs.iter().for_each(|(k, v)| {
-                    if let Some(v_str) = v.as_str() {
-                        cmd.env(k, v_str);
-                    }
-                });
-
-                let log_file_path = format!("{}/logs/app.log", app_path_str);
-                let log_file = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_file_path)
-                    .expect("Failed to open log file");
-                let log_file_clone = log_file
-                    .try_clone()
-                    .expect("Failed to clone log file handle");
-                cmd.stderr(Stdio::inherit()).stdout(Stdio::inherit());
-
-                let process = TokioChildProcess::new(cmd);
-                match process {
-                    Ok(p) => {
-                        let service = ().serve(p).await;
-
-                        match service {
-                            Ok(running_service) => {
-                                servers_state
-                                    .lock()
-                                    .await
-                                    .insert(name.clone(), running_service);
-                                log::info!("Server {name} started successfully.");
-                            }
-                            Err(e) => {
-                                let _ = app.emit(
-                                    "mcp-error",
-                                    format!("Failed to start MCP server {name}: {e}"),
-                                );
-                                log::error!("Failed to start server {name}: {e}");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to run command {name}: {e}");
-                    }
+                Err(e) => {
+                    let _ = app.emit(
+                        "mcp-error",
+                        format!("Failed to activate MCP server {name}: {e}"),
+                    );
+                    log::error!("Failed to activate server {name}: {e}");
+                    continue; // Skip to the next server
                 }
             }
         }
     }
 
-    // Collect servers into a Vec to avoid holding the RwLockReadGuard across await points
-    let servers_map = servers_state.lock().await;
-    for (_, service) in servers_map.iter() {
-        // Initialize
-        let _server_info = service.peer_info();
-        log::trace!("Connected to server: {_server_info:#?}");
-        // Emit event to the frontend
-        let event = format!("mcp-connected");
-        let server_info: &rmcp::model::InitializeResult = service.peer_info();
-        let name = server_info.server_info.name.clone();
-        let version = server_info.server_info.version.clone();
-        let payload = serde_json::json!({
-            "name": name,
-            "version": version,
-        });
-        // service.peer_info().server_info.name
-        app.emit(&event, payload)
-            .map_err(|e| format!("Failed to emit event: {}", e))?;
-        log::trace!("Emitted event: {event}");
-    }
     Ok(())
 }
 
@@ -154,16 +79,23 @@ pub async fn activate_mcp_server<R: Runtime>(
     name: String,
     config: Value,
 ) -> Result<(), String> {
+    let servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
+        state.mcp_servers.clone();
+    start_mcp_server(app, servers, name, config).await
+}
+
+async fn start_mcp_server<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
+    name: String,
+    config: Value,
+) -> Result<(), String> {
     let app_path = get_jan_data_folder_path(app.clone());
-    let app_path_str = app_path.to_str().unwrap().to_string();
     let exe_path = env::current_exe().expect("Failed to get current exe path");
     let exe_parent_path = exe_path
         .parent()
         .expect("Executable must have a parent directory");
     let bin_path = exe_parent_path.to_path_buf();
-    let servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>> =
-        state.mcp_servers.clone();
-
     if let Some((command, args, envs)) = extract_command_args(&config) {
         let mut cmd = Command::new(command.clone());
         if command.clone() == "npx" {
@@ -195,18 +127,6 @@ pub async fn activate_mcp_server<R: Runtime>(
             }
         });
 
-        let log_file_path = format!("{}/logs/app.log", app_path_str);
-        let log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file_path);
-        // .expect("Failed to open log file");
-        let log_file_clone = log_file
-            .try_clone()
-            .expect("Failed to clone log file handle");
-        cmd.stderr(Stdio::from(log_file))
-            .stdout(Stdio::from(log_file_clone));
-
         let process = TokioChildProcess::new(cmd);
         match process {
             Ok(p) => {
@@ -214,9 +134,28 @@ pub async fn activate_mcp_server<R: Runtime>(
 
                 match service {
                     Ok(running_service) => {
+                        // Get peer info and clone the needed values before moving the service
+                        let (server_name, server_version) = {
+                            let server_info = running_service.peer_info();
+                            log::trace!("Connected to server: {server_info:#?}");
+                            (
+                                server_info.server_info.name.clone(),
+                                server_info.server_info.version.clone(),
+                            )
+                        };
+
+                        // Now move the service into the HashMap
                         servers.lock().await.insert(name.clone(), running_service);
                         log::info!("Server {name} started successfully.");
-                        // update the MCP server config
+
+                        // Emit event to the frontend
+                        let event = format!("mcp-connected");
+                        let payload = serde_json::json!({
+                            "name": server_name,
+                            "version": server_version,
+                        });
+                        app.emit(&event, payload)
+                            .map_err(|e| format!("Failed to emit event: {}", e))?;
                     }
                     Err(e) => {
                         return Err(format!("Failed to start MCP server {name}: {e}"));
@@ -233,11 +172,7 @@ pub async fn activate_mcp_server<R: Runtime>(
 }
 
 #[tauri::command]
-pub async fn deactivate_mcp_server<R: Runtime>(
-    app: AppHandle<R>,
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<(), String> {
+pub async fn deactivate_mcp_server(state: State<'_, AppState>, name: String) -> Result<(), String> {
     let servers = state.mcp_servers.clone();
     let mut servers_map = servers.lock().await;
 
