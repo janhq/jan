@@ -10,9 +10,9 @@ use tauri::{App, Emitter, Listener, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
-use tokio::sync::Mutex; // Using tokio::sync::Mutex
 use tokio::time::{sleep, Duration};
-// MCP
+use tokio::{process::Command, sync::Mutex}; // Using tokio::sync::Mutex
+                                            // MCP
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
@@ -211,6 +211,7 @@ pub fn setup_mcp(app: &App) {
 }
 
 pub fn setup_sidecar(app: &App) -> Result<(), String> {
+    clean_up();
     let app_handle = app.handle().clone();
     let app_handle_for_spawn = app_handle.clone();
     tauri::async_runtime::spawn(async move {
@@ -225,6 +226,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             let mut cmd = app_handle_for_spawn
                 .shell()
                 .sidecar("cortex-server")
+
                 .expect("Failed to get sidecar command")
                 .args([
                     "--start-server",
@@ -408,6 +410,34 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+//
+// Clean up function to kill the sidecar process
+//
+pub fn clean_up() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("taskkill")
+            .args(["-f", "-im", "llama-server.exe"])
+            .creation_flags(0x08000000)
+            .spawn();
+        let _ = std::process::Command::new("taskkill")
+            .args(["-f", "-im", "cortex-server.exe"])
+            .creation_flags(0x08000000)
+            .spawn();
+    }
+    #[cfg(unix)]
+    {
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "llama-server"])
+            .spawn();
+        let _ = std::process::Command::new("pkill")
+            .args(["-f", "cortex-server"])
+            .spawn();
+    }
+    log::info!("Clean up function executed, sidecar processes killed.");
 }
 
 fn copy_dir_all(src: PathBuf, dst: PathBuf) -> Result<(), String> {

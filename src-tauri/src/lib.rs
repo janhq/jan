@@ -10,7 +10,7 @@ use std::{collections::HashMap, sync::Arc};
 use tauri::Emitter;
 use tokio::sync::Mutex;
 
-use reqwest::blocking::Client;
+use crate::core::setup::clean_up;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -120,11 +120,8 @@ pub fn run() {
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { .. } => {
                 if window.label() == "main" {
-                    let client = Client::new();
-                    let url = "http://127.0.0.1:39291/processManager/destroy";
-                    let _ = client.delete(url).send();
-
                     window.emit("kill-sidecar", ()).unwrap();
+                    clean_up();
                 }
             }
             _ => {}
