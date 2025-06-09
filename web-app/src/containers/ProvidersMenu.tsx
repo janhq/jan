@@ -96,7 +96,9 @@ const ProvidersMenu = ({
                 }
               >
                 <ProvidersAvatar provider={provider} />
-                <span>{getProviderTitle(provider.provider)}</span>
+                <div className="truncate">
+                  <span>{getProviderTitle(provider.provider)}</span>
+                </div>
               </div>
             </div>
           )

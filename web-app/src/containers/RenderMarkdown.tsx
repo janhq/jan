@@ -80,7 +80,10 @@ function RenderMarkdownComponent({
                 {getReadableLanguageName(language)}
               </span>
               <button
-                onClick={() => handleCopy(code, codeId)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCopy(code, codeId)
+                }}
                 className="flex items-center gap-1 text-xs font-sans transition-colors cursor-pointer"
               >
                 {copiedId === codeId ? (
