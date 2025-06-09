@@ -39,7 +39,7 @@ export function ColorPickerAppMainView() {
             key={i}
             className={cn(
               'size-4 rounded-full border border-main-view-fg/20',
-              isSelected && 'ring-2 ring-blue-500 border-none'
+              isSelected && 'ring-2 ring-accent border-none'
             )}
             onClick={() => {
               setAppMainViewBgColor(item)

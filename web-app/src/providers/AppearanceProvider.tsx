@@ -60,7 +60,7 @@ export function AppearanceProvider() {
         r: appBgColor.r / 255,
         g: appBgColor.g / 255,
         b: appBgColor.b / 255,
-        alpha: IS_LINUX || !IS_TAURI ? 1 : appBgColor.a,
+        alpha: IS_WINDOWS || IS_LINUX || !IS_TAURI ? 1 : appBgColor.a,
       })
 
       const culoriRgbMainView = rgb({
