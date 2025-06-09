@@ -10,9 +10,9 @@ use tauri::{App, Emitter, Listener, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
-use tokio::sync::Mutex; // Using tokio::sync::Mutex
 use tokio::time::{sleep, Duration};
-// MCP
+use tokio::{process::Command, sync::Mutex}; // Using tokio::sync::Mutex
+                                            // MCP
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
@@ -416,21 +416,27 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
 // Clean up function to kill the sidecar process
 //
 pub fn clean_up() {
-    if cfg!(target_os = "windows") {
-        let _ = std::process::Command::new("cmd")
-            .args(["taskkill", "-f", "-im", "llama-server.exe"])
-            .output();
-        let _ = std::process::Command::new("cmd")
-            .args(["taskkill", "-f", "-im", "cortex-server.exe"])
-            .output();
-    } else {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("taskkill")
+            .args(["-f", "-im", "llama-server.exe"])
+            .creation_flags(0x08000000)
+            .spawn();
+        let _ = std::process::Command::new("taskkill")
+            .args(["-f", "-im", "cortex-server.exe"])
+            .creation_flags(0x08000000)
+            .spawn();
+    }
+    #[cfg(unix)]
+    {
         let _ = std::process::Command::new("pkill")
             .args(["-f", "llama-server"])
-            .output();
+            .spawn();
         let _ = std::process::Command::new("pkill")
             .args(["-f", "cortex-server"])
-            .output();
-    };
+            .spawn();
+    }
     log::info!("Clean up function executed, sidecar processes killed.");
 }
 
