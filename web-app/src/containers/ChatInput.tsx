@@ -64,6 +64,8 @@ const ChatInput = ({
   const { selectedModel } = useModelProvider()
   const { sendMessage } = useChat()
   const [message, setMessage] = useState('')
+  const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
+  const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<
     Array<{
       name: string
@@ -407,7 +409,6 @@ const ChatInput = ({
                     useLastUsedModel={initialMessage}
                   />
                 )}
-
                 {/* File attachment - always available */}
                 <div
                   className="h-6 hidden p-1 items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1"
@@ -421,16 +422,14 @@ const ChatInput = ({
                     onChange={handleFileChange}
                   />
                 </div>
-
                 {/* Microphone - always available - Temp Hide */}
                 {/* <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                 <IconMicrophone size={18} className="text-main-view-fg/50" />
               </div> */}
-
                 {selectedModel?.capabilities?.includes('vision') && (
                   <TooltipProvider>
                     <Tooltip>
-                      <TooltipTrigger asChild>
+                      <TooltipTrigger disabled={dropdownToolsAvailable}>
                         <div className="h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1">
                           <IconEye size={18} className="text-main-view-fg/50" />
                         </div>
@@ -441,7 +440,6 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-
                 {selectedModel?.capabilities?.includes('embeddings') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -463,32 +461,49 @@ const ChatInput = ({
                 {selectedModel?.capabilities?.includes('tools') &&
                   hasActiveMCPServers && (
                     <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div>
+                      <Tooltip
+                        open={tooltipToolsAvailable}
+                        onOpenChange={setTooltipToolsAvailable}
+                      >
+                        <TooltipTrigger
+                          asChild
+                          disabled={dropdownToolsAvailable}
+                        >
+                          <div
+                            onClick={(e) => {
+                              setDropdownToolsAvailable(false)
+                              e.stopPropagation()
+                            }}
+                          >
                             <DropdownToolsAvailable
                               initialMessage={initialMessage}
                             >
-                              {(isOpen, toolsCount) => (
-                                <div
-                                  className={cn(
-                                    'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
-                                    isOpen && 'bg-main-view-fg/10'
-                                  )}
-                                >
-                                  <IconTool
-                                    size={18}
-                                    className="text-main-view-fg/50"
-                                  />
-                                  {toolsCount > 0 && (
-                                    <div className="absolute -top-1 -right-1.5 bg-accent text-accent-fg text-xs rounded-full size-4 flex items-center justify-center font-medium">
-                                      <span className="leading-0">
-                                        {toolsCount > 99 ? '99+' : toolsCount}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                              {(isOpen, toolsCount) => {
+                                setDropdownToolsAvailable(isOpen)
+                                if (tooltipToolsAvailable && isOpen) {
+                                  setTooltipToolsAvailable(false)
+                                }
+                                return (
+                                  <div
+                                    className={cn(
+                                      'h-6 p-1 flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out gap-1 cursor-pointer relative',
+                                      isOpen && 'bg-main-view-fg/10'
+                                    )}
+                                  >
+                                    <IconTool
+                                      size={18}
+                                      className="text-main-view-fg/50"
+                                    />
+                                    {toolsCount > 0 && (
+                                      <div className="absolute -top-2 -right-2 bg-accent text-accent-fg text-xs rounded-full size-5 flex items-center justify-center font-medium">
+                                        <span className="leading-0 text-xs">
+                                          {toolsCount > 99 ? '99+' : toolsCount}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              }}
                             </DropdownToolsAvailable>
                           </div>
                         </TooltipTrigger>
@@ -498,7 +513,6 @@ const ChatInput = ({
                       </Tooltip>
                     </TooltipProvider>
                   )}
-
                 {selectedModel?.capabilities?.includes('web_search') && (
                   <TooltipProvider>
                     <Tooltip>
@@ -516,7 +530,6 @@ const ChatInput = ({
                     </Tooltip>
                   </TooltipProvider>
                 )}
-
                 {selectedModel?.capabilities?.includes('reasoning') && (
                   <TooltipProvider>
                     <Tooltip>

@@ -99,36 +99,34 @@ export default function DropdownToolsAvailable({
     <DropdownMenu onOpenChange={setIsOpen}>
       <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
 
-      <DropdownMenuContent
-        side="top"
-        align="start"
-        className="max-w-64 max-h-64 "
-      >
+      <DropdownMenuContent side="top" align="start" className="max-w-64">
         <DropdownMenuLabel className="flex items-center gap-2 sticky -top-1 z-10 bg-main-view px-4 pl-2 py-2">
           Available Tools
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <div>
+        <div className="max-h-64 overflow-y-auto">
           {tools.map((tool) => {
             const isChecked = isToolChecked(tool.name)
             return (
               <div
                 key={tool.name}
-                className="px-2 py-2 hover:bg-main-view-fg/5 rounded-sm"
+                className="py-2 hover:bg-main-view-fg/5 rounded-sm px-2 mx-auto w-full"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h4 className="text-sm font-medium line-clamp-1">
+                <div className="flex items-start justify-center gap-3">
+                  <div className="flex items-start justify-between gap-4 w-full">
+                    <div className="overflow-hidden w-full flex flex-col ">
+                      <div className="truncate">
+                        <span className="text-sm font-medium" title={tool.name}>
                           {tool.name}
-                        </h4>
-                        {tool.description && (
-                          <p className="text-xs text-main-view-fg/70 mt-1 line-clamp-2">
-                            {tool.description}
-                          </p>
-                        )}
+                        </span>
                       </div>
+                      {tool.description && (
+                        <p className="text-xs text-main-view-fg/70 mt-1 line-clamp-2">
+                          {tool.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="shrink-0 mx-auto">
                       <Switch
                         checked={isChecked}
                         onCheckedChange={(checked) =>
