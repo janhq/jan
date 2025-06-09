@@ -105,7 +105,6 @@ async fn start_mcp_server<R: Runtime>(
             cmd = Command::new(bun_x_path);
             cmd.arg("x");
             cmd.env("BUN_INSTALL", cache_dir.to_str().unwrap().to_string());
-            cmd.stderr(std::process::Stdio::inherit());
         }
 
         if command.clone() == "uvx" {
@@ -117,6 +116,23 @@ async fn start_mcp_server<R: Runtime>(
             cmd.arg("run");
             cmd.env("UV_CACHE_DIR", cache_dir.to_str().unwrap().to_string());
         }
+        let app_path_str = app_path.to_str().unwrap().to_string();
+        let log_file_path = format!("{}/logs/app.log", app_path_str);
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_file_path)
+        {
+            Ok(file) => {
+                cmd.stderr(std::process::Stdio::from(file));
+            }
+            Err(err) => {
+                log::error!("Failed to open log file: {}", err);
+            }
+        };
+
+        cmd.kill_on_drop(true);
+
         log::trace!("Command: {cmd:#?}");
 
         args.iter().filter_map(Value::as_str).for_each(|arg| {
