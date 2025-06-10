@@ -181,8 +181,6 @@ export const ThreadContent = memo(
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
 
-    console.log(item.metadata?.tool_calls)
-
     return (
       <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
@@ -321,6 +319,7 @@ export const ThreadContent = memo(
                     name={toolCall.tool?.function?.name ?? ''}
                     key={toolCall.tool?.id}
                     result={JSON.stringify(toolCall.response)}
+                    args={toolCall.tool?.function?.arguments || ''}
                     loading={toolCall.state === 'pending'}
                   />
                 ))}

@@ -52,7 +52,7 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   if (streamingReasoning && streamingReasoning === lastAssistantReasoning) {
     return null
   }
-
+  console.log(streamingTools[0]?.function.arguments)
   // Pass a new object to ThreadContent to avoid reference issues
   // The streaming content is always the last message
   return (

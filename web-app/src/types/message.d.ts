@@ -3,6 +3,7 @@ type ToolCall = {
     id?: number
     function?: {
       name?: string
+      arguments?: object
     }
   }
   response?: unknown

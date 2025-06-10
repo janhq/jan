@@ -13,6 +13,7 @@ import {
 interface Props {
   result: string
   name: string
+  args: string
   id: number
   loading: boolean
 }
@@ -123,9 +124,9 @@ const ContentItemRenderer = ({
   )
 }
 
-const ToolCallBlock = ({ id, name, result, loading }: Props) => {
+const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
   const { collapseState, setCollapseState } = useToolCallBlockStore()
-  const isExpanded = collapseState[id] ?? false
+  const isExpanded = collapseState[id] ?? true
   const [modalImage, setModalImage] = useState<{
     url: string
     alt: string
@@ -148,6 +149,8 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
   const { parsedResult, contentItems, hasStructuredContent } = useMemo(() => {
     return parseMCPResponse(result)
   }, [result])
+
+  console.log('Parsed MCP args:', args)
 
   return (
     <div
@@ -179,6 +182,11 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
           )}
         >
           <div className="mt-2 text-main-view-fg/60">
+            Arguments:
+            <p></p>
+            {args && <RenderMarkdown content={'```json\n' + args + '\n```'} />}
+            <p></p>
+            Output:
             {hasStructuredContent ? (
               /* Render each content item individually based on its type */
               <div className="space-y-2">
