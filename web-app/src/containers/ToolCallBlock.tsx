@@ -2,7 +2,13 @@ import { ChevronDown, ChevronUp, Loader } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface Props {
   result: string
@@ -75,9 +81,11 @@ const parseMCPResponse = (result: string) => {
 const ContentItemRenderer = ({
   item,
   index,
+  onImageClick,
 }: {
   item: MCPContentItem
   index: number
+  onImageClick?: (imageUrl: string, alt: string) => void
 }) => {
   if (item.type === 'image' && item.data && item.mimeType) {
     const imageUrl = createDataUrl(item.data, item.mimeType)
@@ -86,13 +94,12 @@ const ContentItemRenderer = ({
         <img
           src={imageUrl}
           alt={`Result image ${index + 1}`}
-          className="max-w-full max-h-64 object-contain rounded-md border border-main-view-fg/10"
+          className="max-w-full max-h-64 object-contain rounded-md border border-main-view-fg/10 cursor-pointer hover:opacity-80 transition-opacity"
           onError={(e) => {
             // Hide broken images
             e.currentTarget.style.display = 'none'
           }}
-          onClick={() => window.open(imageUrl, '_blank')}
-          style={{ cursor: 'pointer' }}
+          onClick={() => onImageClick?.(imageUrl, `Result image ${index + 1}`)}
         />
       </div>
     )
@@ -119,10 +126,22 @@ const ContentItemRenderer = ({
 const ToolCallBlock = ({ id, name, result, loading }: Props) => {
   const { collapseState, setCollapseState } = useToolCallBlockStore()
   const isExpanded = collapseState[id] ?? false
+  const [modalImage, setModalImage] = useState<{
+    url: string
+    alt: string
+  } | null>(null)
 
   const handleClick = () => {
     const newExpandedState = !isExpanded
     setCollapseState(id, newExpandedState)
+  }
+
+  const handleImageClick = (imageUrl: string, alt: string) => {
+    setModalImage({ url: imageUrl, alt })
+  }
+
+  const closeModal = () => {
+    setModalImage(null)
   }
 
   // Parse the MCP response and extract content items
@@ -134,11 +153,10 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
   return (
     <div
       className="mx-auto w-full cursor-pointer break-words"
-      onClick={handleClick}
       data-tool-call-block={id}
     >
       <div className="rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
-        <div className="flex items-center gap-3 p-2">
+        <div className="flex items-center gap-3 p-2" onClick={handleClick}>
           {loading && (
             <Loader className="size-4 animate-spin text-main-view-fg/60" />
           )}
@@ -166,7 +184,12 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
               /* Render each content item individually based on its type */
               <div className="space-y-2">
                 {contentItems.map((item, index) => (
-                  <ContentItemRenderer key={index} item={item} index={index} />
+                  <ContentItemRenderer
+                    key={index}
+                    item={item}
+                    index={index}
+                    onImageClick={handleImageClick}
+                  />
                 ))}
               </div>
             ) : parseError ? (
@@ -190,6 +213,27 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
           </div>
         </div>
       </div>
+
+      {/* Image Modal */}
+      <Dialog open={!!modalImage} onOpenChange={(open) => !open && closeModal()}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-2">
+            <DialogTitle>{modalImage?.alt || 'Image'}</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center items-center p-6 pt-2">
+            {modalImage && (
+              <img
+                src={modalImage.url}
+                alt={modalImage.alt}
+                className="max-w-full max-h-[70vh] object-contain rounded-md"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
