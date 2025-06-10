@@ -121,13 +121,14 @@ async fn proxy_request(
                 .unwrap());
         }
 
-        // Check if the host (target) is trusted, but bypass for root path
+        // Check if the host (target) is trusted, but bypass for whitelisted paths
         let request_path = req.uri().path();
-        let is_root_path = request_path == "/";
+        let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico"];
+        let is_whitelisted_path = whitelisted_paths.contains(&request_path);
 
-        let is_trusted = if is_root_path {
+        let is_trusted = if is_whitelisted_path {
             log::debug!(
-                "CORS preflight: Bypassing host check for root path: {}",
+                "CORS preflight: Bypassing host check for whitelisted path: {}",
                 request_path
             );
             true
@@ -263,10 +264,11 @@ async fn proxy_request(
     let original_path = req.uri().path();
     let path = get_destination_path(original_path, &config.prefix);
 
-    // Verify Host header (check target), but bypass for root path
-    let is_root_path = path == "/";
-
-    if !is_root_path {
+    // Verify Host header (check target), but bypass for whitelisted paths
+    let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico"];
+    let is_whitelisted_path = whitelisted_paths.contains(&path.as_str());
+    
+    if !is_whitelisted_path {
         if !host_header.is_empty() {
             if !is_valid_host(&host_header, &config.trusted_hosts) {
                 let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
@@ -293,11 +295,11 @@ async fn proxy_request(
                 .unwrap());
         }
     } else {
-        log::debug!("Bypassing host validation for root path: {}", path);
+        log::debug!("Bypassing host validation for whitelisted path: {}", path);
     }
 
-    // Skip authorization check for root path
-    if !is_root_path && !config.api_key.is_empty() {
+    // Skip authorization check for whitelisted paths
+    if !is_whitelisted_path && !config.api_key.is_empty() {
         if let Some(authorization) = req.headers().get(hyper::header::AUTHORIZATION) {
             let auth_str = authorization.to_str().unwrap_or("");
 
@@ -325,8 +327,8 @@ async fn proxy_request(
                 .body(Body::from("Missing authorization header"))
                 .unwrap());
         }
-    } else if is_root_path {
-        log::debug!("Bypassing authorization check for root path: {}", path);
+    } else if is_whitelisted_path {
+        log::debug!("Bypassing authorization check for whitelisted path: {}", path);
     }
 
     // Block access to /configs endpoint
