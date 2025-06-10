@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ExtensionManager } from '@/lib/extension'
 import { normalizeProvider } from '@/lib/models'
+import { hardcodedModel } from '@/utils/models'
 import { EngineManager, ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
@@ -17,22 +19,25 @@ export const fetchModels = async () => {
  * Fetches the sources of the models.
  * @returns A promise that resolves to the model sources.
  */
-export const fetchModelSources = async () => {
+export const fetchModelSources = async (): Promise<any[]> => {
   const extension = ExtensionManager.getInstance().get<ModelExtension>(
     ExtensionTypeEnum.Model
   )
 
-  if (!extension) return []
+  if (!extension) return [hardcodedModel]
 
   try {
     const sources = await extension.getSources()
-    return sources.map((m) => ({
+    const mappedSources = sources.map((m) => ({
       ...m,
       models: m.models.sort((a, b) => a.size - b.size),
     }))
+
+    // Prepend the hardcoded model to the sources
+    return [hardcodedModel, ...mappedSources]
   } catch (error) {
     console.error('Failed to fetch model sources:', error)
-    return []
+    return [hardcodedModel]
   }
 }
 
@@ -40,10 +45,13 @@ export const fetchModelSources = async () => {
  * Fetches the model hub.
  * @returns A promise that resolves to the model hub.
  */
-export const fetchModelHub = async () => {
-  return ExtensionManager.getInstance()
+export const fetchModelHub = async (): Promise<any[]> => {
+  const hubData = await ExtensionManager.getInstance()
     .get<ModelExtension>(ExtensionTypeEnum.Model)
     ?.fetchModelsHub()
+
+  // Prepend the hardcoded model to the hub data
+  return hubData ? [hardcodedModel, ...hubData] : [hardcodedModel]
 }
 
 /**
