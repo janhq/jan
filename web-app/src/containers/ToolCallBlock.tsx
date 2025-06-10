@@ -180,7 +180,7 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
           )}
         >
           <div className="mt-2 text-main-view-fg/60">
-            {Object.keys(args).length > 3 && (
+            {args && Object.keys(args).length > 3 && (
               <>
                 <p className="mb-3">Arguments:</p>
                 <RenderMarkdown content={'```json\n' + args + '\n```'} />
