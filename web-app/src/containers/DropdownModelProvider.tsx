@@ -176,7 +176,7 @@ const DropdownModelProvider = ({
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
     return new Fzf(searchableItems, {
-      selector: (item) => item.model.id,
+      selector: (item) => item.model.id.toLowerCase(),
     })
   }, [searchableItems])
 
@@ -184,7 +184,7 @@ const DropdownModelProvider = ({
   const filteredItems = useMemo(() => {
     if (!searchValue) return searchableItems
 
-    return fzfInstance.find(searchValue).map((result) => {
+    return fzfInstance.find(searchValue.toLowerCase()).map((result) => {
       const item = result.item
       const positions = Array.from(result.positions) || []
       const highlightedId = highlightFzfMatch(
