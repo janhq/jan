@@ -13,7 +13,7 @@ import {
 interface Props {
   result: string
   name: string
-  args: string
+  args: object
   id: number
   loading: boolean
 }
@@ -91,7 +91,7 @@ const ContentItemRenderer = ({
   if (item.type === 'image' && item.data && item.mimeType) {
     const imageUrl = createDataUrl(item.data, item.mimeType)
     return (
-      <div key={index} className="mt-3">
+      <div key={index} className="my-3">
         <img
           src={imageUrl}
           alt={`Result image ${index + 1}`}
@@ -150,8 +150,6 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
     return parseMCPResponse(result)
   }, [result])
 
-  console.log('Parsed MCP args:', args)
-
   return (
     <div
       className="mx-auto w-full cursor-pointer break-words"
@@ -182,30 +180,39 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
           )}
         >
           <div className="mt-2 text-main-view-fg/60">
-            Arguments:
-            <p></p>
-            {args && <RenderMarkdown content={'```json\n' + args + '\n```'} />}
-            <p></p>
-            Output:
-            {hasStructuredContent ? (
-              /* Render each content item individually based on its type */
-              <div className="space-y-2">
-                {contentItems.map((item, index) => (
-                  <ContentItemRenderer
-                    key={index}
-                    item={item}
-                    index={index}
-                    onImageClick={handleImageClick}
+            {Object.keys(args).length > 3 && (
+              <>
+                <p className="mb-3">Arguments:</p>
+                <RenderMarkdown content={'```json\n' + args + '\n```'} />
+              </>
+            )}
+
+            {result && (
+              <>
+                <p>Output:</p>
+                {hasStructuredContent ? (
+                  /* Render each content item individually based on its type */
+                  <div className="space-y-2">
+                    {contentItems.map((item, index) => (
+                      <ContentItemRenderer
+                        key={index}
+                        item={item}
+                        index={index}
+                        onImageClick={handleImageClick}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  /* Fallback: render as JSON for valid JSON but unstructured responses */
+                  <RenderMarkdown
+                    content={
+                      '```json\n' +
+                      JSON.stringify(parsedResult, null, 2) +
+                      '\n```'
+                    }
                   />
-                ))}
-              </div>
-            ) : (
-              /* Fallback: render as JSON for valid JSON but unstructured responses */
-              <RenderMarkdown
-                content={
-                  '```json\n' + JSON.stringify(parsedResult, null, 2) + '\n```'
-                }
-              />
+                )}
+              </>
             )}
           </div>
         </div>
