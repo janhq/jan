@@ -98,13 +98,15 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         'inferenceUrl' in value
           ? (value.inferenceUrl as string).replace('/chat/completions', '')
           : '',
-      settings: (await value.getSettings()).map((setting) => ({
-        key: setting.key,
-        title: setting.title,
-        description: setting.description,
-        controller_type: setting.controllerType as unknown,
-        controller_props: setting.controllerProps as unknown,
-      })) as ProviderSetting[],
+      settings: (await value.getSettings()).map((setting) => {
+        return {
+          key: setting.key,
+          title: setting.title,
+          description: setting.description,
+          controller_type: setting.controllerType as unknown,
+          controller_props: setting.controllerProps as unknown,
+        }
+      }) as ProviderSetting[],
       models: models.map((model) => ({
         id: model.id,
         model: model.id,
@@ -117,9 +119,13 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         provider: providerName,
         settings: Object.values(modelSettings).reduce(
           (acc, setting) => {
-            const value = model[
+            let value = model[
               setting.key as keyof typeof model
             ] as keyof typeof setting.controller_props.value
+            if (setting.key === 'ctx_len') {
+              // @ts-expect-error dynamic type
+              value = 4096 // Default context length for Llama.cpp models
+            }
             acc[setting.key] = {
               ...setting,
               controller_props: {

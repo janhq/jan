@@ -23,8 +23,8 @@
     "description": "Number of prompts that can be processed simultaneously by the model.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "4",
-      "placeholder": "4",
+      "value": "1",
+      "placeholder": "1",
       "type": "number",
       "textAlign": "right"
     }

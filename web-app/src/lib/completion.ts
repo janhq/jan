@@ -304,6 +304,17 @@ export const postMessageProcessing = async (
             arguments: toolCall.function.arguments.length
               ? JSON.parse(toolCall.function.arguments)
               : {},
+          }).catch((e) => {
+            console.error('Tool call failed:', e)
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: `Error calling tool ${toolCall.function.name}: ${e.message}`,
+                },
+              ],
+              error: true,
+            }
           })
         : {
             content: [
