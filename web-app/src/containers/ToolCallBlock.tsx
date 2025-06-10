@@ -105,13 +105,13 @@ const ContentItemRenderer = ({
     )
   }
 
-  if (item.type === 'text' && item.text) {
-    return (
-      <div key={index} className="mt-3">
-        <RenderMarkdown content={item.text} />
-      </div>
-    )
-  }
+  // if (item.type === 'text' && item.text) {
+  //   return (
+  //     <div key={index} className="mt-3">
+  //       <RenderMarkdown content={item.text} />
+  //     </div>
+  //   )
+  // }
 
   // For any other types, render as JSON
   return (
@@ -215,7 +215,10 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
       </div>
 
       {/* Image Modal */}
-      <Dialog open={!!modalImage} onOpenChange={(open) => !open && closeModal()}>
+      <Dialog
+        open={!!modalImage}
+        onOpenChange={(open) => !open && closeModal()}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle>{modalImage?.alt || 'Image'}</DialogTitle>
