@@ -121,8 +121,17 @@ async fn proxy_request(
                 .unwrap());
         }
 
-        // Check if the host (target) is trusted
-        let is_trusted = if !host.is_empty() {
+        // Check if the host (target) is trusted, but bypass for root path
+        let request_path = req.uri().path();
+        let is_root_path = request_path == "/";
+
+        let is_trusted = if is_root_path {
+            log::debug!(
+                "CORS preflight: Bypassing host check for root path: {}",
+                request_path
+            );
+            true
+        } else if !host.is_empty() {
             log::debug!(
                 "CORS preflight: Host is '{}', trusted hosts: [{}]",
                 host,
@@ -135,7 +144,11 @@ async fn proxy_request(
         };
 
         if !is_trusted {
-            log::warn!("CORS preflight: Host '{}' not trusted", host);
+            log::warn!(
+                "CORS preflight: Host '{}' not trusted for path '{}'",
+                host,
+                request_path
+            );
             return Ok(Response::builder()
                 .status(StatusCode::FORBIDDEN)
                 .body(Body::from("Host not allowed"))
@@ -162,7 +175,6 @@ async fn proxy_request(
             "if-modified-since",
             "keep-alive",
             "origin",
-            "user-agent",
             "user-agent",
             "x-api-key",
             "x-csrf-token",
@@ -251,10 +263,25 @@ async fn proxy_request(
     let original_path = req.uri().path();
     let path = get_destination_path(original_path, &config.prefix);
 
-    // Verify Host header (check target)
-    if !host_header.is_empty() {
-        if !is_valid_host(&host_header, &config.trusted_hosts) {
-            let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
+    // Verify Host header (check target), but bypass for root path
+    let is_root_path = path == "/";
+
+    if !is_root_path {
+        if !host_header.is_empty() {
+            if !is_valid_host(&host_header, &config.trusted_hosts) {
+                let mut error_response = Response::builder().status(StatusCode::FORBIDDEN);
+                error_response = add_cors_headers_with_host_and_origin(
+                    error_response,
+                    &host_header,
+                    &origin_header,
+                    &config.trusted_hosts,
+                );
+                return Ok(error_response
+                    .body(Body::from("Invalid host header"))
+                    .unwrap());
+            }
+        } else {
+            let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
             error_response = add_cors_headers_with_host_and_origin(
                 error_response,
                 &host_header,
@@ -262,23 +289,15 @@ async fn proxy_request(
                 &config.trusted_hosts,
             );
             return Ok(error_response
-                .body(Body::from("Invalid host header 1"))
+                .body(Body::from("Missing host header"))
                 .unwrap());
         }
     } else {
-        let mut error_response = Response::builder().status(StatusCode::BAD_REQUEST);
-        error_response = add_cors_headers_with_host_and_origin(
-            error_response,
-            &host_header,
-            &origin_header,
-            &config.trusted_hosts,
-        );
-        return Ok(error_response
-            .body(Body::from("Missing host header 2"))
-            .unwrap());
+        log::debug!("Bypassing host validation for root path: {}", path);
     }
 
-    if !config.api_key.is_empty() {
+    // Skip authorization check for root path
+    if !is_root_path && !config.api_key.is_empty() {
         if let Some(authorization) = req.headers().get(hyper::header::AUTHORIZATION) {
             let auth_str = authorization.to_str().unwrap_or("");
 
@@ -306,6 +325,8 @@ async fn proxy_request(
                 .body(Body::from("Missing authorization header"))
                 .unwrap());
         }
+    } else if is_root_path {
+        log::debug!("Bypassing authorization check for root path: {}", path);
     }
 
     // Block access to /configs endpoint
