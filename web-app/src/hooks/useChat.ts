@@ -194,7 +194,6 @@ export const useChat = () => {
                     })),
                   }
                 )
-                console.log('Tool calls received:', toolCalls)
                 updateStreamingContent(currentContent)
                 await new Promise((resolve) => setTimeout(resolve, 0))
               }

@@ -32,6 +32,11 @@ export const StreamingContent = memo(({ threadId }: Props) => {
     return extractReasoningSegment(text)
   }, [streamingContent])
 
+  const streamingTools = useMemo(() => {
+    const calls = streamingContent?.metadata?.tool_calls
+    return calls
+  }, [streamingContent])
+
   const lastAssistant = useMemo(() => {
     return [...messages].reverse().find((m) => m.role === 'assistant')
   }, [messages])
@@ -53,6 +58,7 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   return (
     <ThreadContent
       {...streamingContent}
+      metadata={{ tool_calls: streamingTools || [] }}
       isLastMessage={true}
       showAssistant={
         messages.length > 0
