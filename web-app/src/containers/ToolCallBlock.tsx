@@ -145,10 +145,9 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
   }
 
   // Parse the MCP response and extract content items
-  const { parsedResult, contentItems, hasStructuredContent, parseError } =
-    useMemo(() => {
-      return parseMCPResponse(result)
-    }, [result])
+  const { parsedResult, contentItems, hasStructuredContent } = useMemo(() => {
+    return parseMCPResponse(result)
+  }, [result])
 
   return (
     <div
@@ -191,16 +190,6 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
                     onImageClick={handleImageClick}
                   />
                 ))}
-              </div>
-            ) : parseError ? (
-              /* Handle JSON parse error - render as plain text */
-              <div className="mt-3 p-3 bg-main-view-fg/5 rounded-md border border-main-view-fg/10">
-                <div className="text-sm font-medium text-main-view-fg/80 mb-2">
-                  Raw Response:
-                </div>
-                <div className="whitespace-pre-wrap font-mono text-sm">
-                  {parsedResult as string}
-                </div>
               </div>
             ) : (
               /* Fallback: render as JSON for valid JSON but unstructured responses */
