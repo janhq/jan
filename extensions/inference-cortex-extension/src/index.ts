@@ -55,7 +55,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   shouldReconnect = true
 
   /** Default Engine model load settings */
-  n_parallel: number = 4
+  n_parallel?: number
   cont_batching: boolean = true
   caching_enabled: boolean = true
   flash_attn: boolean = true
@@ -114,8 +114,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     // Register Settings
     this.registerSettings(SETTINGS)
 
-    this.n_parallel =
-      Number(await this.getSetting<string>(Settings.n_parallel, '4')) ?? 4
+    const numParallel = await this.getSetting<string>(Settings.n_parallel, '')
+    if (numParallel.length > 0 && parseInt(numParallel) > 0) {
+      this.n_parallel = parseInt(numParallel)
+    }
     this.cont_batching = await this.getSetting<boolean>(
       Settings.cont_batching,
       true
@@ -184,7 +186,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
    */
   onSettingUpdate<T>(key: string, value: T): void {
     if (key === Settings.n_parallel && typeof value === 'string') {
-      this.n_parallel = Number(value) ?? 1
+      if (value.length > 0 && parseInt(value) > 0) {
+        this.n_parallel = parseInt(value)
+      }
     } else if (key === Settings.cont_batching && typeof value === 'boolean') {
       this.cont_batching = value as boolean
     } else if (key === Settings.caching_enabled && typeof value === 'boolean') {

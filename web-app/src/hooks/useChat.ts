@@ -61,6 +61,10 @@ export const useChat = () => {
     return getProviderByName(selectedProvider)
   }, [selectedProvider, getProviderByName])
 
+  const currentProviderId = useMemo(() => {
+    return provider?.provider || selectedProvider
+  }, [provider, selectedProvider])
+
   useEffect(() => {
     function setTools() {
       getTools().then((data: MCPTool[]) => {
@@ -109,7 +113,10 @@ export const useChat = () => {
       const activeThread = await getCurrentThread()
 
       resetTokenSpeed()
-      if (!activeThread || !provider) return
+      const activeProvider = currentProviderId
+        ? getProviderByName(currentProviderId)
+        : provider
+      if (!activeThread || !activeProvider) return
       const messages = getMessages(activeThread.id)
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
@@ -120,9 +127,11 @@ export const useChat = () => {
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
-          await startModel(provider, selectedModel.id, abortController).catch(
-            console.error
-          )
+          await startModel(
+            activeProvider,
+            selectedModel.id,
+            abortController
+          ).catch(console.error)
           updateLoadingModel(false)
         }
 
@@ -148,7 +157,7 @@ export const useChat = () => {
         while (!isCompleted && !abortController.signal.aborted) {
           const completion = await sendCompletion(
             activeThread,
-            provider,
+            activeProvider,
             builder.getMessages(),
             abortController,
             availableTools,
@@ -194,7 +203,7 @@ export const useChat = () => {
             accumulatedText.length === 0 &&
             toolCalls.length === 0 &&
             activeThread.model?.id &&
-            provider.provider === 'llama.cpp'
+            activeProvider.provider === 'llama.cpp'
           ) {
             await stopModel(activeThread.model.id, 'cortex')
             throw new Error('No response received from the model')
@@ -235,6 +244,8 @@ export const useChat = () => {
     [
       getCurrentThread,
       resetTokenSpeed,
+      currentProviderId,
+      getProviderByName,
       provider,
       getMessages,
       setAbortController,
@@ -246,11 +257,11 @@ export const useChat = () => {
       currentAssistant,
       tools,
       updateLoadingModel,
-      updateTokenSpeed,
-      approvedTools,
-      showApprovalModal,
       getDisabledToolsForThread,
+      approvedTools,
       allowAllMCPPermissions,
+      showApprovalModal,
+      updateTokenSpeed,
     ]
   )
 
