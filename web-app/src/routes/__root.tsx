@@ -29,6 +29,8 @@ const AppLayout = () => {
 
   return (
     <Fragment>
+      <ThemeProvider />
+      <AppearanceProvider />
       <AnalyticProvider />
       <KeyboardShortcutsProvider />
       <main className="relative h-svh text-sm antialiased select-none bg-app">
@@ -84,8 +86,6 @@ function RootLayout() {
 
   return (
     <Fragment>
-      <ThemeProvider />
-      <AppearanceProvider />
       <ToasterProvider />
       <ExtensionProvider>
         <DataProvider />
