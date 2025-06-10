@@ -35,6 +35,7 @@ import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
+import { stopAllModels } from '@/services/models'
 
 type ChatInputProps = {
   className?: string
@@ -161,6 +162,7 @@ const ChatInput = ({
   const stopStreaming = useCallback(
     (threadId: string) => {
       abortControllers[threadId]?.abort()
+      stopAllModels()
     },
     [abortControllers]
   )
