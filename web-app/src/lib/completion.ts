@@ -143,7 +143,7 @@ export const sendCompletion = async (
         thread.model?.id,
         // This is to inherit the model capabilities from another built-in model
         // Can be anything that support all model capabilities
-        'anthropic.claude-3-sonnet-20240229-v1:0'
+        models.anthropic.models[0]
       )
     } catch (error) {
       console.error(
