@@ -130,13 +130,36 @@ export const sendCompletion = async (
     // TODO: Retrieve from extension settings
     baseURL: provider.base_url,
   })
+  if (
+    thread.model.id &&
+    !(thread.model.id in Object.values(models).flat()) &&
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    !tokenJS.extendedModelExist(providerName as any, thread.model?.id)
+  ) {
+    try {
+      tokenJS.extendModelList(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        providerName as any,
+        thread.model?.id,
+        // This is to inherit the model capabilities from another built-in model
+        // Can be anything that support all model capabilities
+        models.anthropic.models[0]
+      )
+    } catch (error) {
+      console.error(
+        `Failed to extend model list for ${providerName} with model ${thread.model.id}:`,
+        error
+      )
+    }
+  }
 
   // TODO: Add message history
   const completion = stream
     ? await tokenJS.chat.completions.create(
         {
           stream: true,
-          provider: providerName,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          provider: providerName as any,
           model: thread.model?.id,
           messages,
           tools: normalizeTools(tools),
