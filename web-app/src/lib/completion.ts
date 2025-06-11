@@ -63,7 +63,8 @@ export const newUserThreadContent = (
  */
 export const newAssistantThreadContent = (
   threadId: string,
-  content: string
+  content: string,
+  metadata: Record<string, unknown> = {}
 ): ThreadMessage => ({
   type: 'text',
   role: ChatCompletionRole.Assistant,
@@ -82,6 +83,7 @@ export const newAssistantThreadContent = (
   status: MessageStatus.Ready,
   created_at: 0,
   completed_at: 0,
+  metadata,
 })
 
 /**

@@ -77,6 +77,8 @@ export const ThreadContent = memo(
       isLastMessage?: boolean
       index?: number
       showAssistant?: boolean
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      streamTools?: any
     }
   ) => {
     const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
@@ -316,8 +318,17 @@ export const ThreadContent = memo(
                 {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
                   <ToolCallBlock
                     id={toolCall.tool?.id ?? 0}
-                    name={toolCall.tool?.function?.name ?? ''}
                     key={toolCall.tool?.id}
+                    name={
+                      (item.streamTools?.tool_calls?.function?.name ||
+                        toolCall.tool?.function?.name) ??
+                      ''
+                    }
+                    args={
+                      item.streamTools?.tool_calls?.function?.arguments ||
+                      toolCall.tool?.function?.arguments ||
+                      undefined
+                    }
                     result={JSON.stringify(toolCall.response)}
                     loading={toolCall.state === 'pending'}
                   />
@@ -332,7 +343,7 @@ export const ThreadContent = memo(
                     'flex items-center gap-2',
                     item.isLastMessage &&
                       streamingContent &&
-                      'opacity-0 visinility-hidden pointer-events-none'
+                      'opacity-0 visibility-hidden pointer-events-none'
                   )}
                 >
                   <CopyButton text={item.content?.[0]?.text.value || ''} />

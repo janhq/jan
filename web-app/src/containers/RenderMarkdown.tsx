@@ -22,6 +22,7 @@ interface MarkdownProps {
   components?: Components
   enableRawHtml?: boolean
   isUser?: boolean
+  isWrapping?: boolean
 }
 
 function RenderMarkdownComponent({
@@ -30,6 +31,7 @@ function RenderMarkdownComponent({
   className,
   isUser,
   components,
+  isWrapping,
 }: MarkdownProps) {
   const { codeBlockStyle, showLineNumbers } = useCodeblock()
 
@@ -117,9 +119,13 @@ function RenderMarkdownComponent({
               showLineNumbers={showLineNumbers}
               wrapLines={true}
               // Temporary comment we try calculate main area width on __root
-              // lineProps={{
-              //   style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
-              // }}
+              lineProps={
+                isWrapping
+                  ? {
+                      style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' },
+                    }
+                  : {}
+              }
               customStyle={{
                 margin: 0,
                 padding: '8px',

@@ -181,8 +181,21 @@ export const useChat = () => {
           } else {
             for await (const part of completion) {
               const delta = part.choices[0]?.delta?.content || ''
+
               if (part.choices[0]?.delta?.tool_calls) {
-                extractToolCall(part, currentCall, toolCalls)
+                const calls = extractToolCall(part, currentCall, toolCalls)
+                const currentContent = newAssistantThreadContent(
+                  activeThread.id,
+                  accumulatedText,
+                  {
+                    tool_calls: calls.map((e) => ({
+                      ...e,
+                      state: 'pending',
+                    })),
+                  }
+                )
+                updateStreamingContent(currentContent)
+                await new Promise((resolve) => setTimeout(resolve, 0))
               }
               if (delta) {
                 accumulatedText += delta
@@ -190,7 +203,13 @@ export const useChat = () => {
                 // Use a timeout to prevent React from batching updates too quickly
                 const currentContent = newAssistantThreadContent(
                   activeThread.id,
-                  accumulatedText
+                  accumulatedText,
+                  {
+                    tool_calls: toolCalls.map((e) => ({
+                      ...e,
+                      state: 'pending',
+                    })),
+                  }
                 )
                 updateStreamingContent(currentContent)
                 updateTokenSpeed(currentContent)
@@ -225,6 +244,7 @@ export const useChat = () => {
             allowAllMCPPermissions
           )
           addMessage(updatedMessage ?? finalContent)
+          updateStreamingContent(emptyThreadContent)
           updateThreadTimestamp(activeThread.id)
 
           isCompleted = !toolCalls.length

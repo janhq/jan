@@ -9,10 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { twMerge } from 'tailwind-merge'
 
 interface Props {
   result: string
   name: string
+  args: object
   id: number
   loading: boolean
 }
@@ -90,7 +92,7 @@ const ContentItemRenderer = ({
   if (item.type === 'image' && item.data && item.mimeType) {
     const imageUrl = createDataUrl(item.data, item.mimeType)
     return (
-      <div key={index} className="mt-3">
+      <div key={index} className="my-3">
         <img
           src={imageUrl}
           alt={`Result image ${index + 1}`}
@@ -123,9 +125,9 @@ const ContentItemRenderer = ({
   )
 }
 
-const ToolCallBlock = ({ id, name, result, loading }: Props) => {
+const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
   const { collapseState, setCollapseState } = useToolCallBlockStore()
-  const isExpanded = collapseState[id] ?? false
+  const isExpanded = collapseState[id] ?? (loading ? true : false)
   const [modalImage, setModalImage] = useState<{
     url: string
     alt: string
@@ -145,10 +147,9 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
   }
 
   // Parse the MCP response and extract content items
-  const { parsedResult, contentItems, hasStructuredContent, parseError } =
-    useMemo(() => {
-      return parseMCPResponse(result)
-    }, [result])
+  const { parsedResult, contentItems, hasStructuredContent } = useMemo(() => {
+    return parseMCPResponse(result)
+  }, [result])
 
   return (
     <div
@@ -158,17 +159,36 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
       <div className="rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
         <div className="flex items-center gap-3 p-2" onClick={handleClick}>
           {loading && (
-            <Loader className="size-4 animate-spin text-main-view-fg/60" />
+            <div className="w-4 h-4">
+              <Loader className="size-4 animate-spin text-main-view-fg/60" />
+            </div>
           )}
           <button className="flex items-center gap-2 focus:outline-none">
-            {isExpanded ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
+            {!loading && (
+              <>
+                {isExpanded ? (
+                  <>
+                    <div className="ml-1 w-4 h-4">
+                      <ChevronUp className="h-4 w-4" />
+                    </div>
+                  </>
+                ) : (
+                  <div className="ml-1 w-4 h-4">
+                    <ChevronDown className="h-4 w-4" />
+                  </div>
+                )}
+              </>
             )}
             <span className="font-medium text-main-view-fg/80">
-              View result from{' '}
-              <span className="font-medium text-main-view-fg">{name}</span>
+              <span className="font-medium text-main-view-fg mr-2">{name}</span>
+              <span
+                className={twMerge(
+                  'text-xs bg-main-view-fg/4 rounded-sm p-1',
+                  loading ? 'text-main-view-fg/40' : 'text-accent'
+                )}
+              >
+                {loading ? 'Calling tool' : 'Completed'}{' '}
+              </span>
             </span>
           </button>
         </div>
@@ -179,36 +199,43 @@ const ToolCallBlock = ({ id, name, result, loading }: Props) => {
             isExpanded ? '' : 'max-h-0 overflow-hidden'
           )}
         >
-          <div className="mt-2 text-main-view-fg/60">
-            {hasStructuredContent ? (
-              /* Render each content item individually based on its type */
-              <div className="space-y-2">
-                {contentItems.map((item, index) => (
-                  <ContentItemRenderer
-                    key={index}
-                    item={item}
-                    index={index}
-                    onImageClick={handleImageClick}
+          <div className="mt-2 text-main-view-fg/60 max-w-[89%] overflow-hidden">
+            {args && Object.keys(args).length > 3 && (
+              <>
+                <p className="mb-3">Arguments:</p>
+                <RenderMarkdown
+                  isWrapping={true}
+                  content={'```json\n' + args + '\n```'}
+                />
+              </>
+            )}
+
+            {result && (
+              <>
+                <p>Output:</p>
+                {hasStructuredContent ? (
+                  /* Render each content item individually based on its type */
+                  <div className="space-y-2">
+                    {contentItems.map((item, index) => (
+                      <ContentItemRenderer
+                        key={index}
+                        item={item}
+                        index={index}
+                        onImageClick={handleImageClick}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  /* Fallback: render as JSON for valid JSON but unstructured responses */
+                  <RenderMarkdown
+                    content={
+                      '```json\n' +
+                      JSON.stringify(parsedResult, null, 2) +
+                      '\n```'
+                    }
                   />
-                ))}
-              </div>
-            ) : parseError ? (
-              /* Handle JSON parse error - render as plain text */
-              <div className="mt-3 p-3 bg-main-view-fg/5 rounded-md border border-main-view-fg/10">
-                <div className="text-sm font-medium text-main-view-fg/80 mb-2">
-                  Raw Response:
-                </div>
-                <div className="whitespace-pre-wrap font-mono text-sm">
-                  {parsedResult as string}
-                </div>
-              </div>
-            ) : (
-              /* Fallback: render as JSON for valid JSON but unstructured responses */
-              <RenderMarkdown
-                content={
-                  '```json\n' + JSON.stringify(parsedResult, null, 2) + '\n```'
-                }
-              />
+                )}
+              </>
             )}
           </div>
         </div>

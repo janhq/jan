@@ -32,6 +32,12 @@ export const StreamingContent = memo(({ threadId }: Props) => {
     return extractReasoningSegment(text)
   }, [streamingContent])
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const streamingTools: any = useMemo(() => {
+    const calls = streamingContent?.metadata?.tool_calls
+    return calls
+  }, [streamingContent])
+
   const lastAssistant = useMemo(() => {
     return [...messages].reverse().find((m) => m.role === 'assistant')
   }, [messages])
@@ -52,6 +58,14 @@ export const StreamingContent = memo(({ threadId }: Props) => {
   // The streaming content is always the last message
   return (
     <ThreadContent
+      streamTools={{
+        tool_calls: {
+          function: {
+            name: streamingTools?.[0]?.function?.name as string,
+            arguments: streamingTools?.[0]?.function?.arguments as string,
+          },
+        },
+      }}
       {...streamingContent}
       isLastMessage={true}
       showAssistant={

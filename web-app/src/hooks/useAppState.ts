@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { MCPTool } from '@/types/completion'
 import { useAssistant } from './useAssistant'
+import { ChatCompletionMessageToolCall } from 'openai/resources'
 
 type AppState = {
   streamingContent?: ThreadMessage
@@ -10,8 +11,12 @@ type AppState = {
   serverStatus: 'running' | 'stopped' | 'pending'
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
+  currentToolCall?: ChatCompletionMessageToolCall
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
+  updateCurrentToolCall: (
+    toolCall: ChatCompletionMessageToolCall | undefined
+  ) => void
   updateLoadingModel: (loading: boolean) => void
   updateTools: (tools: MCPTool[]) => void
   setAbortController: (threadId: string, controller: AbortController) => void
@@ -26,6 +31,7 @@ export const useAppState = create<AppState>()((set) => ({
   serverStatus: 'stopped',
   abortControllers: {},
   tokenSpeed: undefined,
+  currentToolCall: undefined,
   updateStreamingContent: (content: ThreadMessage | undefined) => {
     set(() => ({
       streamingContent: content
@@ -38,6 +44,11 @@ export const useAppState = create<AppState>()((set) => ({
             },
           }
         : undefined,
+    }))
+  },
+  updateCurrentToolCall: (toolCall) => {
+    set(() => ({
+      currentToolCall: toolCall,
     }))
   },
   updateLoadingModel: (loading) => {
