@@ -244,7 +244,7 @@ export const useChat = () => {
             allowAllMCPPermissions
           )
           addMessage(updatedMessage ?? finalContent)
-          updateStreamingContent(undefined)
+          updateStreamingContent(emptyThreadContent)
           updateThreadTimestamp(activeThread.id)
 
           isCompleted = !toolCalls.length
