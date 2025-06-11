@@ -10,7 +10,7 @@ export const hardcodedModel = {
     },
     'createdAt': '2025-06-11T07:14:33.000Z',
     'description':
-      '---\nlicense: apache-2.0\npipeline_tag: text-generation\n---\n\n## Overview\n\n\n![image/png](https://cdn-uploads.huggingface.co/production/uploads/657a81129ea9d52e5cbd67f7/YQci8jiHjAAFpXWYOadrU.png)\n\nJan Nano is a fine-tuned language model built on top of the Qwen3 architecture. Developed as part of the Jan ecosystem, it balances compact size and extended context length, making it ideal for efficient, high-quality text generation in local or embedded environments.\n\nWith 36 transformer blocks, 4B parameters, and an extended context window of 40,960 tokens, Jan Nano is optimized for dialogue, reasoning, and creative tasks. It is released in the Q4_K_M quantized format, enabling faster inference with reduced memory usage.\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)',
+      '---\nlicense: apache-2.0\npipeline_tag: text-generation\n---\n# Jan Nano\n\n\n\n![image/png](https://cdn-uploads.huggingface.co/production/uploads/657a81129ea9d52e5cbd67f7/YQci8jiHjAAFpXWYOadrU.png)\n\n## Overview\n\nJan Nano is a fine-tuned language model built on top of the Qwen3 architecture. Developed as part of the Jan ecosystem, it balances compact size and extended context length, making it ideal for efficient, high-quality text generation in local or embedded environments.\n\n## Features\n\n- **Tool Use**: Excellent function calling and tool integration\n- **Research**: Enhanced research and information processing capabilities\n- **Small Model**: VRAM efficient for local deployment\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)',
     'disabled': false,
     'downloads': 0,
     'gated': false,
@@ -24,25 +24,29 @@ export const hardcodedModel = {
       total: 4022468096,
     },
     'id': 'Menlo/Jan-nano',
-    'lastModified': '2025-06-11T10:00:23.000Z',
-    'likes': 1,
+    'lastModified': '2025-06-11T10:42:16.000Z',
+    'likes': 2,
     'model-index': null,
     'modelId': 'Menlo/Jan-nano',
     'pipeline_tag': 'text-generation',
     'private': false,
-    'sha': '9966a3efaf6fe36ac4f2d8bd4343ae5791def2b0',
+    'sha': 'f05b9e798d3cb66394a25d2a45cdc77fd1d5a3ba',
     'siblings': [
       {
         rfilename: '.gitattributes',
-        size: 1569,
+        size: 1681,
       },
       {
-        rfilename: 'Jan-nano.gguf',
+        rfilename: 'Jan-nano_q4_k_m.gguf',
         size: 2497280288,
       },
       {
+        rfilename: 'Jan-nano_q8_0.gguf',
+        size: 4280400640,
+      },
+      {
         rfilename: 'README.md',
-        size: 817,
+        size: 776,
       },
     ],
     'spaces': [],
@@ -54,7 +58,7 @@ export const hardcodedModel = {
       'region:us',
       'conversational',
     ],
-    'usedStorage': 7491840896,
+    'usedStorage': 11772241536,
     'widgetData': [
       {
         text: 'Hi, what can you help me with?',
@@ -72,8 +76,12 @@ export const hardcodedModel = {
   },
   models: [
     {
-      id: 'Menlo:Jan-nano:Jan-nano.gguf',
+      id: 'Menlo:Jan-nano:Jan-nano_q4_k_m.gguf',
       size: 2497280288,
+    },
+    {
+      id: 'Menlo:Jan-nano:Jan-nano_q8_0.gguf',
+      size: 4280400640,
     },
   ],
 }
