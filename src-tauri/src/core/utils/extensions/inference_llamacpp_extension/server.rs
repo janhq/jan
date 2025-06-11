@@ -164,35 +164,39 @@ pub async fn unload_llama_model(
     state: State<'_, AppState>,
 ) -> ServerResult<UnloadResult> {
     let mut process_map = state.llama_server_process.lock().await;
-     match process_map.remove(&pid) {
+    match process_map.remove(&pid) {
         Some(mut child) => {
-            log::info!("Attempting to terminate server process with PID: {}", pid);
+            log::info!("Terminating server process with PID: {}", pid);
 
-            match child.start_kill() {
-                Ok(_) => {
-                    log::info!("Server process termination signal sent successfully");
+            // 1. Send the kill signal
+            if let Err(e) = child.kill().await {
+                log::error!("Failed to send kill to server process: {}", e);
+                return Ok(UnloadResult {
+                    success: false,
+                    error: Some(format!("kill failed: {}", e)),
+                });
+            }
 
+            // 2. Await its exit so the OS can reap it
+            match child.wait().await {
+                Ok(exit_status) => {
+                    log::info!("Server exited with: {}", exit_status);
                     Ok(UnloadResult {
                         success: true,
                         error: None,
                     })
                 }
                 Err(e) => {
-                    log::error!("Failed to kill server process: {}", e);
-
+                    log::error!("Error waiting for server process: {}", e);
                     Ok(UnloadResult {
                         success: false,
-                        error: Some(format!("Failed to kill server process: {}", e)),
+                        error: Some(format!("wait failed: {}", e)),
                     })
                 }
             }
         }
         None => {
-            log::warn!(
-                "Attempted to unload server with PID '{}', but no such process exists",
-                pid
-            );
-
+            log::warn!("No server with PID '{}' found to unload", pid);
             Ok(UnloadResult {
                 success: true,
                 error: None,
