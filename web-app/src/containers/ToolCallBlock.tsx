@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { twMerge } from 'tailwind-merge'
 
 interface Props {
   result: string
@@ -126,7 +127,7 @@ const ContentItemRenderer = ({
 
 const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
   const { collapseState, setCollapseState } = useToolCallBlockStore()
-  const isExpanded = collapseState[id] ?? true
+  const isExpanded = collapseState[id] ?? (loading ? true : false)
   const [modalImage, setModalImage] = useState<{
     url: string
     alt: string
@@ -167,8 +168,15 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
               <ChevronDown className="h-4 w-4" />
             )}
             <span className="font-medium text-main-view-fg/80">
-              View result from{' '}
-              <span className="font-medium text-main-view-fg">{name}</span>
+              <span className="font-medium text-main-view-fg mr-2">{name}</span>
+              <span
+                className={twMerge(
+                  'text-xs bg-main-view-fg/4 rounded-sm p-1',
+                  loading ? 'text-main-view-fg' : 'text-green-600'
+                )}
+              >
+                {loading ? 'Calling tool' : 'Completed'}{' '}
+              </span>
             </span>
           </button>
         </div>
@@ -179,11 +187,14 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
             isExpanded ? '' : 'max-h-0 overflow-hidden'
           )}
         >
-          <div className="mt-2 text-main-view-fg/60">
+          <div className="mt-2 text-main-view-fg/60 max-w-[89%] overflow-hidden">
             {args && Object.keys(args).length > 3 && (
               <>
                 <p className="mb-3">Arguments:</p>
-                <RenderMarkdown content={'```json\n' + args + '\n```'} />
+                <RenderMarkdown
+                  isWrapping={true}
+                  content={'```json\n' + args + '\n```'}
+                />
               </>
             )}
 
