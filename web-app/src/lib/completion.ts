@@ -132,7 +132,7 @@ export const sendCompletion = async (
   })
   if (
     thread.model.id &&
-    !Object.values(models).flat().includes(thread.model.id) &&
+    !(thread.model.id in Object.values(models).flat()) &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     !tokenJS.extendedModelExist(providerName as any, thread.model?.id)
   ) {
