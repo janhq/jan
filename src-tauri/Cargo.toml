@@ -55,19 +55,17 @@ ash = "0.38.0"
 nvml-wrapper = "0.10.0"
 tauri-plugin-deep-link = "2"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
+# RAG plugin (replaces direct dependencies)
+jan-plugin-rag = { path = "../jan-plugin-rag" }
+# Keep these core dependencies for other functionality
 docx-rs = "0.4"
 pdf-extract = "0.7"
 base64 = "0.22"
 encoding_rs = "0.8"
-tempfile = "3.8"
 anyhow = "1.0"
 sha2 = "0.10.8"
 hex = "0.4.3"
 chrono = { version = "0.4", features = ["serde"] }
-lancedb = "0.19.1"
-arrow-array = "54.0.0"
-arrow-schema = "54.0.0"
-futures = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 libloading = "0.8.7"

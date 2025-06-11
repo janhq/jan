@@ -1,0 +1,105 @@
+# Default permissions for the RAG plugin
+
+[default]
+description = "Default permissions for RAG functionality"
+permissions = [
+  "allow-initialize-rag",
+  "allow-add-data-source",
+  "allow-list-data-sources", 
+  "allow-remove-data-source",
+  "allow-query-documents",
+  "allow-get-rag-status",
+  "allow-get-embedding-config",
+  "allow-update-embedding-config",
+  "allow-get-chunking-config",
+  "allow-update-chunking-config"
+]
+
+[[permission]]
+identifier = "allow-initialize-rag"
+description = "Allows initializing the RAG system"
+commands.allow = ["initialize_rag"]
+
+[[permission]]
+identifier = "allow-add-data-source"
+description = "Allows adding data sources to the RAG system"
+commands.allow = ["add_data_source"]
+
+[[permission]]
+identifier = "allow-list-data-sources"
+description = "Allows listing all data sources"
+commands.allow = ["list_data_sources"]
+
+[[permission]]
+identifier = "allow-remove-data-source"
+description = "Allows removing data sources"
+commands.allow = ["remove_data_source"]
+
+[[permission]]
+identifier = "allow-query-documents"
+description = "Allows querying documents using vector search"
+commands.allow = ["query_documents"]
+
+[[permission]]
+identifier = "allow-clean-all-data-sources"
+description = "Allows cleaning all data sources"
+commands.allow = ["clean_all_data_sources"]
+
+[[permission]]
+identifier = "allow-reset-database"
+description = "Allows resetting the RAG database"
+commands.allow = ["reset_database"]
+
+[[permission]]
+identifier = "allow-get-rag-status"
+description = "Allows getting RAG system status"
+commands.allow = ["get_rag_status"]
+
+[[permission]]
+identifier = "allow-get-embedding-config"
+description = "Allows getting embedding configuration"
+commands.allow = ["get_embedding_config"]
+
+[[permission]]
+identifier = "allow-update-embedding-config"
+description = "Allows updating embedding configuration"
+commands.allow = ["update_embedding_config"]
+
+[[permission]]
+identifier = "allow-get-chunking-config"
+description = "Allows getting chunking configuration"
+commands.allow = ["get_chunking_config"]
+
+[[permission]]
+identifier = "allow-update-chunking-config"
+description = "Allows updating chunking configuration"
+commands.allow = ["update_chunking_config"]
+
+# Admin permissions set
+[admin]
+description = "Full administrative access to RAG functionality"
+permissions = [
+  "allow-initialize-rag",
+  "allow-add-data-source",
+  "allow-list-data-sources",
+  "allow-remove-data-source", 
+  "allow-query-documents",
+  "allow-clean-all-data-sources",
+  "allow-reset-database",
+  "allow-get-rag-status",
+  "allow-get-embedding-config",
+  "allow-update-embedding-config",
+  "allow-get-chunking-config", 
+  "allow-update-chunking-config"
+]
+
+# Read-only permissions set
+[read-only]
+description = "Read-only access to RAG functionality"
+permissions = [
+  "allow-list-data-sources",
+  "allow-query-documents",
+  "allow-get-rag-status",
+  "allow-get-embedding-config",
+  "allow-get-chunking-config"
+]

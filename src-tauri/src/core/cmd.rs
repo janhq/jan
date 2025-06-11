@@ -8,37 +8,14 @@ use super::{server, setup, state::AppState};
 const CONFIGURATION_FILE_NAME: &str = "settings.json";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct EmbeddingConfig {
-    pub base_url: String,
-    pub api_key: Option<String>,
-    pub model: String,
-    pub dimensions: usize,
-    pub batch_size: usize,
-}
-
-impl Default for EmbeddingConfig {
-    fn default() -> Self {
-        Self {
-            base_url: "http://localhost:6333".to_string(),
-            api_key: None,
-            model: "text-embedding-3-small".to_string(),
-            dimensions: 1536,
-            batch_size: 10,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppConfiguration {
     pub data_folder: String,
-    pub embedding_config: EmbeddingConfig,
     // Add other fields as needed
 }
 impl AppConfiguration {
     pub fn default() -> Self {
         Self {
             data_folder: String::from("./data"), // Set a default value for the data_folder
-            embedding_config: EmbeddingConfig::default(),
             // Add other fields with default values as needed
         }
     }
@@ -56,61 +33,6 @@ fn merge_missing_fields(
                 "data_folder".to_string(),
                 serde_json::Value::String(default_data_folder),
             );
-        }
-
-        // Handle embedding_config
-        merge_embedding_config(obj);
-    }
-}
-
-/// Merge missing fields in embedding_config
-fn merge_embedding_config(obj: &mut serde_json::Map<String, serde_json::Value>) {
-    if !obj.contains_key("embedding_config") {
-        // If embedding_config is completely missing, add the default
-        let default_embedding = EmbeddingConfig::default();
-        obj.insert(
-            "embedding_config".to_string(),
-            serde_json::to_value(default_embedding).unwrap(),
-        );
-    } else if let Some(embedding_obj) = obj.get_mut("embedding_config") {
-        // If embedding_config exists but has missing fields, fill them in
-        if let Some(embedding_map) = embedding_obj.as_object_mut() {
-            let default_embedding = EmbeddingConfig::default();
-            
-            if !embedding_map.contains_key("base_url") {
-                embedding_map.insert(
-                    "base_url".to_string(),
-                    serde_json::Value::String(default_embedding.base_url),
-                );
-            }
-            
-            if !embedding_map.contains_key("api_key") {
-                embedding_map.insert(
-                    "api_key".to_string(),
-                    serde_json::Value::Null,
-                );
-            }
-            
-            if !embedding_map.contains_key("model") {
-                embedding_map.insert(
-                    "model".to_string(),
-                    serde_json::Value::String(default_embedding.model),
-                );
-            }
-            
-            if !embedding_map.contains_key("dimensions") {
-                embedding_map.insert(
-                    "dimensions".to_string(),
-                    serde_json::Value::Number(default_embedding.dimensions.into()),
-                );
-            }
-            
-            if !embedding_map.contains_key("batch_size") {
-                embedding_map.insert(
-                    "batch_size".to_string(),
-                    serde_json::Value::Number(default_embedding.batch_size.into()),
-                );
-            }
         }
     }
 }
@@ -231,13 +153,6 @@ pub async fn update_app_configuration(
     )
     .map_err(|e| e.to_string())?;
 
-    // Update the RAG system's embedding configuration if it's initialized
-    if let Ok(rag_system) = super::rag::get_rag_system_with_app(app_handle).await.try_lock() {
-        log::info!("Updating RAG system embedding configuration");
-        if let Err(e) = rag_system.update_embedding_config(configuration.embedding_config.clone()).await {
-            log::error!("Failed to update RAG embedding config: {}", e);
-        }
-    }
 
     Ok(())
 }
@@ -436,21 +351,6 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<(), io::Error> {
     Ok(())
 }
 
-/// Extract text from file content based on file type
-#[tauri::command]
-pub async fn extract_text_from_file(
-    base64_content: String,
-    file_name: String,
-    file_type: String,
-) -> Result<String, String> {
-    use crate::core::text_extraction;
-    
-    log::info!("Extracting text from file: {} (type: {})", file_name, file_type);
-    
-    text_extraction::extract_text_from_base64(&base64_content, &file_name)
-        .await
-        .map_err(|e| format!("Failed to extract text: {}", e))
-}
 
 
 /// Save base64 content to a file in the rag-docs directory and return the path

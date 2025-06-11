@@ -2,11 +2,12 @@ use rmcp::model::{CallToolRequestParam, CallToolResult, Tool};
 use rmcp::{service::RunningService, transport::TokioChildProcess, RoleClient, ServiceExt};
 use serde_json::{Map, Value};
 use std::fs;
+use std::path::PathBuf;
 use std::{collections::HashMap, env, sync::Arc, time::Duration};
 use tauri::{AppHandle, Emitter, Runtime, State};
-use tokio::{process::Command, sync::Mutex, time::{sleep, timeout, Duration}};
+use tokio::{process::Command, sync::Mutex, time::{sleep, timeout}};
 
-use super::{cmd::get_jan_data_folder_path, state::AppState, rag::RAGMCPModule, mcp_builtin::MCPBuiltIn};
+use super::{cmd::get_jan_data_folder_path, state::AppState};
 
 // TODO: find a way to bundle this into build
 const DEFAULT_MCP_CONFIG: &str = r#"{"mcpServers":{"browsermcp":{"command":"npx","args":["@browsermcp/mcp"],"env":{},"active":false},"fetch":{"command":"uvx","args":["mcp-server-fetch"],"env":{},"active":false},"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path/to/other/allowed/dir"],"env":{},"active":false},"playwright":{"command":"npx","args":["@playwright/mcp","--isolated"],"env":{},"active":false},"sequential-thinking":{"command":"npx","args":["-y","@modelcontextprotocol/server-sequential-thinking"],"env":{},"active":false},"tavily":{"command":"npx","args":["-y","tavily-mcp"],"env":{"TAVILY_API_KEY": "tvly-YOUR_API_KEY-here"},"active":false}}}"#;
@@ -35,14 +36,6 @@ pub async fn run_mcp_commands<R: Runtime>(
         app_path_str.clone() + "/mcp_config.json"
     );
     
-    // Initialize RAG system with proper Jan data folder before starting MCP modules
-    if let Err(e) = crate::core::rag::initialize_rag_system_with_app(app.clone()).await {
-        log::warn!("Failed to initialize RAG system with app handle: {}, falling back to default", e);
-        // Fallback to default initialization
-        if let Err(e2) = crate::core::rag::initialize_rag_system().await {
-            log::error!("Failed to initialize RAG system: {}", e2);
-        }
-    }
     
     // Ensure MCP config exists with default RAG server
     ensure_mcp_config_exists(&app_path).await?;
@@ -471,9 +464,22 @@ pub async fn get_connected_servers(
 /// 5. Combines all tools into a single vector
 /// 6. Returns the combined list of all available tools
 #[tauri::command]
-pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
+pub async fn get_tools<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Result<Vec<Tool>, String> {
     let servers = state.mcp_servers.lock().await;
     let mut all_tools: Vec<Tool> = Vec::new();
+
+    // Add tools from RAG plugin first
+    if jan_plugin_rag::has_rag_mcp(&app) {
+        match jan_plugin_rag::get_rag_tools(&app) {
+            Ok(rag_tools) => {
+                log::info!("Adding {} RAG tools to MCP", rag_tools.len());
+                all_tools.extend(rag_tools);
+            }
+            Err(e) => {
+                log::warn!("Failed to get RAG tools: {}", e);
+            }
+        }
+    }
 
     // Add tools from external MCP servers
     for (_, service) in servers.iter() {
@@ -493,12 +499,6 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> 
         for tool in tools {
             all_tools.push(tool);
         }
-    }
-
-    // Add built-in RAG tools
-    let rag_module = RAGMCPModule::new();
-    if let Ok(rag_tools) = rag_module.get_tools() {
-        all_tools.extend(rag_tools);
     }
 
     Ok(all_tools)
@@ -521,31 +521,39 @@ pub async fn get_tools(state: State<'_, AppState>) -> Result<Vec<Tool>, String> 
 /// 3. When found, calls the tool on that server with the provided arguments and timeout
 /// 4. Returns error if no server has the requested tool
 #[tauri::command]
-pub async fn call_tool(
+pub async fn call_tool<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     tool_name: String,
     arguments: Option<Map<String, Value>>,
 ) -> Result<CallToolResult, String> {
-    // Check if this is a built-in RAG tool
-    let mut rag_module = RAGMCPModule::new();
-    let rag_prefix = format!("{}_", rag_module.module_name());
-    
-    if tool_name.starts_with(&rag_prefix) {
-        let _ = rag_module.initialize().await; // Initialize if needed
-        
-        let args_value = arguments.map(Value::Object).unwrap_or(Value::Object(serde_json::Map::new()));
-        match rag_module.call_tool(&tool_name, args_value).await {
-            Ok(content) => {
-                return Ok(CallToolResult {
-                    content,
-                    is_error: Some(false),
-                });
-            }
-            Err(e) => {
-                return Ok(CallToolResult {
-                    content: vec![rmcp::model::Content::text(format!("Error: {}", e))],
-                    is_error: Some(true),
-                });
+
+    // Check RAG plugin tools first
+    if jan_plugin_rag::has_rag_mcp(&app) {
+        // Get RAG tools to check if this tool belongs to the plugin
+        if let Ok(rag_tools) = jan_plugin_rag::get_rag_tools(&app) {
+            if rag_tools.iter().any(|t| t.name == tool_name) {
+                log::info!("Found RAG tool {} in plugin", tool_name);
+                
+                let args_value = match arguments {
+                    Some(map) => Value::Object(map),
+                    None => Value::Object(serde_json::Map::new()),
+                };
+                
+                match jan_plugin_rag::call_rag_tool(&app, &tool_name, args_value).await {
+                    Ok(content) => {
+                        return Ok(CallToolResult {
+                            content,
+                            is_error: Some(false),
+                        });
+                    }
+                    Err(e) => {
+                        return Ok(CallToolResult {
+                            content: vec![rmcp::model::Content::text(format!("Error: {}", e))],
+                            is_error: Some(true),
+                        });
+                    }
+                }
             }
         }
     }

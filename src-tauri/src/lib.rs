@@ -58,7 +58,6 @@ pub fn run() {
             core::cmd::read_logs,
             core::cmd::change_app_data_folder,
             core::cmd::reset_cortex_restart_count,
-            core::cmd::extract_text_from_file,
             core::cmd::save_file,
             // MCP commands
             core::mcp::get_tools,
@@ -71,19 +70,6 @@ pub fn run() {
             core::mcp::deactivate_mcp_server,
             core::mcp::get_mcp_server_status,
             core::mcp::health_check_mcp_servers,
-            // RAG commands
-            core::rag::commands::initialize_rag_system_cmd,
-            core::rag::commands::rag_add_data_source,
-            core::rag::commands::rag_list_data_sources,
-            core::rag::commands::rag_remove_data_source,
-            core::rag::commands::rag_query_documents,
-            core::rag::commands::rag_clean_all_data_sources,
-            core::rag::commands::rag_reset_database,
-            core::rag::commands::get_rag_status,
-            core::rag::commands::get_rag_embedding_config,
-            core::rag::commands::update_rag_embedding_config,
-            core::rag::commands::get_rag_chunking_config,
-            core::rag::commands::update_rag_chunking_config,
             // Threads
             core::threads::list_threads,
             core::threads::create_thread,
@@ -123,6 +109,7 @@ pub fn run() {
                     ])
                     .build(),
             )?;
+            app.handle().plugin(jan_plugin_rag::init_with_mcp())?;
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
             // Install extensions

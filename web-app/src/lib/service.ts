@@ -33,14 +33,38 @@ export const AppRoutes = [
   'getSystemUsage',
   'saveFile',
   'extractTextFromFile',
-  'getRagEmbeddingConfig',
-  'updateRagEmbeddingConfig',
-  'getRagChunkingConfig',
-  'updateRagChunkingConfig',
 ]
+
+// Plugin routes - Add new plugins here
+const PluginRoutes = [
+  // RAG Plugin
+  'rag$getEmbeddingConfig',
+  'rag$updateEmbeddingConfig',
+  'rag$getChunkingConfig',
+  'rag$updateChunkingConfig',
+  'rag$initializeRag',
+  'rag$addDataSource',
+  'rag$listDataSources',
+  'rag$removeDataSource',
+  'rag$queryDocuments',
+  'rag$cleanAllDataSources',
+  'rag$resetDatabase',
+  'rag$getRagStatus',
+  
+  // Future plugins can be added here:
+  // 'otherPlugin$someCommand',
+  // 'anotherPlugin$anotherCommand',
+]
+
 // Define API routes based on different route types
 export const Routes = [...CoreRoutes, ...APIRoutes, ...AppRoutes].map((r) => ({
   path: `app`,
+  route: r,
+}))
+
+// Define Plugin routes
+export const PluginAPIRoutes = PluginRoutes.map((r) => ({
+  path: `plugin`,
   route: r,
 }))
 
@@ -91,6 +115,34 @@ export const APIs = {
       },
     }
   }, {}),
+  
+  // Plugin routes with generic plugin$ prefix handling
+  ...Object.values(PluginAPIRoutes).reduce((acc, proxy) => {
+    return {
+      ...acc,
+      [proxy.route]: (args?: InvokeArgs) => {
+        // Handle plugin routes with pluginName$ prefix
+        if (proxy.route.includes('$')) {
+          const [pluginName, commandName] = proxy.route.split('$')
+          
+          // Convert camelCase command to snake_case
+          const snakeCaseCommand = commandName
+            .replace(/([A-Z])/g, '_$1')
+            .toLowerCase()
+          
+          // Call plugin command with plugin:pluginName|command format
+          return invoke(`plugin:${pluginName}|${snakeCaseCommand}`, args)
+        }
+        
+        // Fallback to normal pattern (shouldn't happen for plugin routes)
+        return invoke(
+          proxy.route.replace(/([A-Z])/g, '_$1').toLowerCase(),
+          args
+        )
+      },
+    }
+  }, {}),
+  
   openExternalUrl,
   systemInformation,
 }

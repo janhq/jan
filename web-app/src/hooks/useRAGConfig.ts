@@ -61,7 +61,7 @@ export const useRAGConfigStore = create<RAGConfigState>()(
       loadEmbeddingConfig: async () => {
         set({ embeddingLoading: true, error: null })
         try {
-          const result = await window.core?.api?.getRagEmbeddingConfig()
+          const result = await window.core?.api?.rag$getEmbeddingConfig()
           const parsed = typeof result === 'string' ? JSON.parse(result) : result
           const config = parsed.embedding_config
           set({
@@ -84,7 +84,7 @@ export const useRAGConfigStore = create<RAGConfigState>()(
       updateEmbeddingConfig: async (config: EmbeddingConfig) => {
         set({ embeddingLoading: true, error: null })
         try {
-          const result = await window.core?.api?.updateRagEmbeddingConfig({
+          const result = await window.core?.api?.rag$updateEmbeddingConfig({
             embeddingConfig: config
           })
           const parsed = typeof result === 'string' ? JSON.parse(result) : result
@@ -114,7 +114,7 @@ export const useRAGConfigStore = create<RAGConfigState>()(
       loadChunkingConfig: async () => {
         set({ chunkingLoading: true, error: null })
         try {
-          const result = await window.core?.api?.getRagChunkingConfig()
+          const result = await window.core?.api?.rag$getChunkingConfig()
           const parsed = typeof result === 'string' ? JSON.parse(result) : result
           const config = parsed.chunking_config
           set({
@@ -137,7 +137,7 @@ export const useRAGConfigStore = create<RAGConfigState>()(
       updateChunkingConfig: async (config: ChunkingConfig) => {
         set({ chunkingLoading: true, error: null })
         try {
-          const result = await window.core?.api?.updateRagChunkingConfig({
+          const result = await window.core?.api?.rag$updateChunkingConfig({
             chunkingConfig: config
           })
           const parsed = typeof result === 'string' ? JSON.parse(result) : result

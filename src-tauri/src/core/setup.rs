@@ -16,7 +16,6 @@ use tokio::{process::Command, sync::Mutex}; // Using tokio::sync::Mutex
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
-    rag::initialize_rag_system,
     state::AppState,
 };
 
@@ -200,28 +199,7 @@ fn extract_extension_manifest<R: Read>(
 pub fn setup_mcp(app: &App) {
     let state = app.state::<AppState>().inner();
     let servers = state.mcp_servers.clone();
-    let app_handle_for_rag: tauri::AppHandle = app.handle().clone();
     let app_handle_for_mcp: tauri::AppHandle = app.handle().clone();
-    
-    // Initialize built-in RAG system
-    tauri::async_runtime::spawn(async move {
-        log::info!("Initializing built-in RAG system...");
-        
-        // Initialize the RAG system with app handle to use proper configuration
-        match crate::core::rag::initialize_rag_system_with_app(app_handle_for_rag.clone()).await {
-            Ok(_) => {
-                log::info!("Built-in RAG system initialized successfully with app configuration");
-                
-                // Emit RAG ready event
-                if let Err(e) = app_handle_for_rag.emit("rag-ready", "RAG system initialized") {
-                    log::error!("Failed to emit rag-ready event: {}", e);
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to initialize RAG system: {}", e);
-            }
-        }
-    });
     
     // Start MCP servers
     tauri::async_runtime::spawn(async move {
