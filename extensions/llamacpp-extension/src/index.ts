@@ -369,6 +369,24 @@ export default class llamacpp_extension extends AIEngine {
     return port
   }
 
+  private async sleep(ms: number): Promise<void> {
+      return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  private async waitForModelLoad(port: number, timeoutMs = 30_000): Promise<void> {
+      const start = Date.now()
+      while (Date.now() - start < timeoutMs) {
+          try {
+              const res = await fetch(`http://localhost:${port}/health`)
+              if(res.ok) {
+                  return
+              }
+          } catch (e) {}
+          await this.sleep(500) // 500 sec interval during rechecks
+      }
+      throw new Error(`Timed out loading model after ${timeoutMs}`)
+  }
+
   override async load(modelId: string): Promise<SessionInfo> {
     const sInfo = this.findSessionByModel(modelId)
     if (sInfo) {
@@ -463,6 +481,8 @@ export default class llamacpp_extension extends AIEngine {
         libraryPath,
         args
       })
+
+      await this.waitForModelLoad(sInfo.port)
 
       // Store the session info for later use
       this.activeSessions.set(sInfo.pid, sInfo)
@@ -586,7 +606,7 @@ export default class llamacpp_extension extends AIEngine {
     const url = `${baseUrl}/chat/completions`
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${sessionInfo.apiKey}`,
+      'Authorization': `Bearer ${sessionInfo.api_key}`,
     }
 
     const body = JSON.stringify(opts)
