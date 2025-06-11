@@ -1,0 +1,56 @@
+[package]
+name = "jan-plugin-rag"
+version = "2.0.0"
+description = "Jan plugin for RAG (Retrieval-Augmented Generation) functionality with vector database support"
+authors = ["Jan <service@jan.ai>"]
+license = "MIT"
+repository = "https://github.com/menloresearch/jan"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "jan_plugin_rag"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tauri = { version = "2.4.0", features = ["test"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+log = "0.4"
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.7", features = ["v4"] }
+sha2 = "0.10.8"
+hex = "0.4.3"
+dirs = "6.0.0"
+tempfile = "3.8"
+base64 = "0.22"
+encoding_rs = "0.8"
+
+# Vector database dependencies
+lancedb = "0.19.1"
+arrow-array = "54.0.0"
+arrow-schema = "54.0.0"
+
+# HTTP client for embeddings
+reqwest = { version = "0.11", features = ["json", "blocking", "stream"] }
+futures-util = "0.3"
+
+# Document processing
+docx-rs = "0.4"
+pdf-extract = "0.7"
+
+# MCP integration
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", rev = "c1c4c9a0c9afbfbbf9eb42d6f8b00d8546fbdc2c", features = [
+    "client",
+    "transport-sse-client",
+    "transport-child-process",
+    "tower",
+    "reqwest",
+] }
+
+[features]
+default = []

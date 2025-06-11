@@ -1,10 +1,18 @@
-use anyhow::{Result, anyhow};
+// Copyright 2023-2025 Jan Authors
+// SPDX-License-Identifier: MIT
+
+//! Text processing utilities for the RAG system.
+
 use sha2::{Sha256, Digest};
 use hex;
 
-use super::types::{DocumentChunk, ChunkingConfig};
+use crate::{
+    config::ChunkingConfig,
+    error::{Error, Result},
+    models::DocumentChunk,
+};
+
 use super::embeddings::EmbeddingsGenerator;
-use crate::core::text_extraction;
 
 /// Text processing utilities for the RAG system
 pub struct TextProcessor {
@@ -13,29 +21,10 @@ pub struct TextProcessor {
 }
 
 impl TextProcessor {
-    pub fn new(embeddings: EmbeddingsGenerator) -> Self {
-        Self {
-            embeddings,
-            chunking_config: ChunkingConfig::default(),
-        }
-    }
-
-    pub fn with_config(embeddings: EmbeddingsGenerator, chunking_config: ChunkingConfig) -> Self {
+    pub fn new(embeddings: EmbeddingsGenerator, chunking_config: ChunkingConfig) -> Self {
         Self {
             embeddings,
             chunking_config,
-        }
-    }
-
-    /// Extract text content from a file if content is empty
-    pub async fn extract_text_if_needed(&self, content: &str, source_type: &str, path: &str) -> Result<String> {
-        if content.is_empty() && source_type == "file" {
-            log::info!("Extracting text from file: {}", path);
-            let extracted = text_extraction::extract_text_from_file_path(path).await?;
-            log::info!("Extracted {} characters from file", extracted.len());
-            Ok(extracted)
-        } else {
-            Ok(content.to_string())
         }
     }
 
@@ -92,12 +81,17 @@ impl TextProcessor {
     pub async fn generate_query_embedding(&self, text: &str) -> Result<Vec<f32>> {
         let embeddings = self.embeddings.create_embeddings(&[text]).await?;
         embeddings.into_iter().next()
-            .ok_or_else(|| anyhow!("Failed to generate embedding"))
+            .ok_or_else(|| Error::embedding("Failed to generate embedding"))
     }
 
     /// Update the chunking configuration
     pub fn update_chunking_config(&mut self, config: ChunkingConfig) {
         self.chunking_config = config;
+    }
+
+    /// Get the current chunking configuration
+    pub fn get_chunking_config(&self) -> &ChunkingConfig {
+        &self.chunking_config
     }
 
     /// Get the embedding dimension
@@ -237,6 +231,99 @@ impl Clone for TextProcessor {
         Self {
             embeddings: self.embeddings.clone(),
             chunking_config: self.chunking_config.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::EmbeddingConfig;
+
+    #[test]
+    fn test_generate_id() {
+        let embeddings = EmbeddingsGenerator::new();
+        let processor = TextProcessor::new(embeddings, ChunkingConfig::default());
+        
+        let id1 = processor.generate_id("test");
+        let id2 = processor.generate_id("test");
+        let id3 = processor.generate_id("different");
+        
+        assert_eq!(id1, id2); // Same input should generate same ID
+        assert_ne!(id1, id3); // Different input should generate different ID
+        assert_eq!(id1.len(), 64); // SHA256 hex string length
+    }
+
+    #[test]
+    fn test_create_smart_chunks() {
+        let embeddings = EmbeddingsGenerator::new();
+        let processor = TextProcessor::new(embeddings, ChunkingConfig::default());
+        
+        let content = "This is a test. This is another sentence. And this is a third one. Finally, this is the last sentence.";
+        let chunks = processor.create_smart_chunks(content, 50, 10);
+        
+        assert!(!chunks.is_empty());
+        assert!(chunks.len() >= 2); // Should split into multiple chunks
+        
+        for chunk in &chunks {
+            assert!(!chunk.is_empty());
+            assert!(chunk.len() <= 80); // Should respect approximate size limits
+        }
+    }
+
+    #[test]
+    fn test_empty_content() {
+        let embeddings = EmbeddingsGenerator::new();
+        let processor = TextProcessor::new(embeddings, ChunkingConfig::default());
+        
+        let chunks = processor.create_smart_chunks("", 100, 10);
+        assert!(chunks.is_empty());
+    }
+
+    #[test]
+    fn test_short_content() {
+        let embeddings = EmbeddingsGenerator::new();
+        let processor = TextProcessor::new(embeddings, ChunkingConfig::default());
+        
+        let content = "Short text.";
+        let chunks = processor.create_smart_chunks(content, 100, 10);
+        
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], content);
+    }
+
+    #[test]
+    fn test_chunking_config_update() {
+        let embeddings = EmbeddingsGenerator::new();
+        let mut processor = TextProcessor::new(embeddings, ChunkingConfig::default());
+        
+        let new_config = ChunkingConfig {
+            chunk_size: 500,
+            overlap: 50,
+        };
+        
+        processor.update_chunking_config(new_config.clone());
+        assert_eq!(processor.get_chunking_config().chunk_size, 500);
+        assert_eq!(processor.get_chunking_config().overlap, 50);
+    }
+
+    #[test]
+    fn test_smart_boundary_detection() {
+        let embeddings = EmbeddingsGenerator::new();
+        let processor = TextProcessor::new(embeddings, ChunkingConfig {
+            chunk_size: 30,
+            overlap: 5,
+        });
+        
+        let content = "This is a sentence. This is another sentence. And this continues.";
+        let chunks = processor.create_smart_chunks(content, 30, 5);
+        
+        // Should split at sentence boundaries when possible
+        for chunk in &chunks {
+            // Check that chunks don't end in the middle of words
+            if !chunk.ends_with('.') && !chunk.ends_with('!') && !chunk.ends_with('?') {
+                assert!(chunk.ends_with(' ') || chunk.chars().last().unwrap().is_ascii_whitespace());
+            }
         }
     }
 }

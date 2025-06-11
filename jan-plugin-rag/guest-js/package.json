@@ -1,0 +1,31 @@
+{
+  "name": "@janhq/plugin-rag",
+  "version": "2.0.0",
+  "description": "TypeScript bindings for Jan RAG plugin",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "tauri",
+    "plugin",
+    "rag",
+    "vector-database",
+    "embeddings",
+    "semantic-search"
+  ],
+  "author": "Jan <service@jan.ai>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/menloresearch/jan"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  }
+}

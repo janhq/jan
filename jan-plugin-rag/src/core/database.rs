@@ -1,16 +1,24 @@
-use anyhow::{Result, anyhow};
+// Copyright 2023-2025 Jan Authors
+// SPDX-License-Identifier: MIT
+
+//! Database operations for RAG system using LanceDB.
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use serde_json::Value;
 use chrono::{DateTime, Utc};
+
 use lancedb::{Connection, query::{ExecutableQuery, QueryBase}};
 use arrow_array::{RecordBatch, RecordBatchIterator, StringArray, UInt64Array, Int32Array, Array};
 use arrow_schema::{Schema, Field, DataType};
-use futures_util::TryStreamExt;
+use futures_util::stream::TryStreamExt;
 
-use super::types::{SourceInfo, DocumentChunk, QueryResult};
+use crate::{
+    error::{Error, Result},
+    models::{SourceInfo, DocumentChunk, QueryResult},
+};
 
 /// Database operations for RAG system using LanceDB
 pub struct RAGDatabase {
@@ -44,11 +52,13 @@ impl RAGDatabase {
 
         // Create directory if it doesn't exist
         if let Some(parent) = PathBuf::from(&db_uri).parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            tokio::fs::create_dir_all(parent).await
+                .map_err(|e| Error::file_system(format!("Failed to create database directory: {}", e)))?;
         }
 
         // Initialize LanceDB connection
-        let conn = lancedb::connect(&db_uri).execute().await?;
+        let conn = lancedb::connect(&db_uri).execute().await
+            .map_err(|e| Error::database(format!("Failed to connect to LanceDB: {}", e)))?;
         
         // Create tables if they don't exist
         self.create_tables(&conn).await?;
@@ -80,10 +90,10 @@ impl RAGDatabase {
     pub async fn store_source(&self, source: &SourceInfo) -> Result<()> {
         let conn_guard = self.connection.lock().await;
         let conn = conn_guard.as_ref()
-            .ok_or_else(|| anyhow!("Database connection not initialized"))?;
+            .ok_or_else(|| Error::database("Database connection not initialized"))?;
         
         let table = conn.open_table(&self.sources_table_name).execute().await
-            .map_err(|e| anyhow!("Failed to open sources table: {}", e))?;
+            .map_err(|e| Error::database(format!("Failed to open sources table: {}", e)))?;
         
         // Convert source info to arrow arrays
         let batch = self.create_source_record_batch(source, &table.schema().await?)?;
@@ -91,7 +101,7 @@ impl RAGDatabase {
         // Add to table
         let reader = RecordBatchIterator::new(vec![Ok(batch)], table.schema().await?);
         table.add(reader).execute().await
-            .map_err(|e| anyhow!("Failed to add source to table: {}", e))?;
+            .map_err(|e| Error::database(format!("Failed to add source to table: {}", e)))?;
         
         log::info!("Successfully stored source: {}", source.id);
         Ok(())
@@ -106,7 +116,7 @@ impl RAGDatabase {
 
         let conn_guard = self.connection.lock().await;
         let conn = conn_guard.as_ref()
-            .ok_or_else(|| anyhow!("Database connection not initialized"))?;
+            .ok_or_else(|| Error::database("Database connection not initialized"))?;
         
         // Try to open table, create it if it doesn't exist
         let (table, table_was_created) = match conn.open_table(&self.chunks_table_name).execute().await {
@@ -131,7 +141,7 @@ impl RAGDatabase {
             let reader = RecordBatchIterator::new(vec![Ok(batch)], schema);
             
             table.add(reader).execute().await
-                .map_err(|e| anyhow!("Failed to add chunks to table: {}", e))?;
+                .map_err(|e| Error::database(format!("Failed to add chunks to table: {}", e)))?;
             
             // Create vector index if we have enough data
             self.create_vector_index_if_needed(&table).await?;
@@ -145,10 +155,10 @@ impl RAGDatabase {
     pub async fn list_sources(&self) -> Result<Vec<SourceInfo>> {
         let conn_guard = self.connection.lock().await;
         let conn = conn_guard.as_ref()
-            .ok_or_else(|| anyhow!("Database not initialized"))?;
+            .ok_or_else(|| Error::database("Database not initialized"))?;
         
         let table = conn.open_table(&self.sources_table_name).execute().await
-            .map_err(|e| anyhow!("Failed to open sources table: {}", e))?;
+            .map_err(|e| Error::database(format!("Failed to open sources table: {}", e)))?;
         
         let batches = table
             .query()
@@ -171,7 +181,7 @@ impl RAGDatabase {
     pub async fn remove_source(&self, source_id: &str) -> Result<bool> {
         let conn_guard = self.connection.lock().await;
         let conn = conn_guard.as_ref()
-            .ok_or_else(|| anyhow!("Database not initialized"))?;
+            .ok_or_else(|| Error::database("Database not initialized"))?;
         
         let mut removed = false;
         
@@ -200,10 +210,10 @@ impl RAGDatabase {
     ) -> Result<Vec<QueryResult>> {
         let conn_guard = self.connection.lock().await;
         let conn = conn_guard.as_ref()
-            .ok_or_else(|| anyhow!("Database not initialized"))?;
+            .ok_or_else(|| Error::database("Database not initialized"))?;
         
         let table = conn.open_table(&self.chunks_table_name).execute().await
-            .map_err(|_| anyhow!("No chunks table found. Please add documents first."))?;
+            .map_err(|_| Error::not_found("No chunks table found. Please add documents first."))?;
         
         // Check if table has data
         let count = table.count_rows(None).await?;
@@ -242,7 +252,7 @@ impl RAGDatabase {
     pub async fn clean_all(&self) -> Result<()> {
         let conn_guard = self.connection.lock().await;
         let conn = conn_guard.as_ref()
-            .ok_or_else(|| anyhow!("Database not initialized"))?;
+            .ok_or_else(|| Error::database("Database not initialized"))?;
         
         // Drop tables if they exist
         if conn.open_table(&self.sources_table_name).execute().await.is_ok() {
@@ -345,7 +355,7 @@ impl RAGDatabase {
             vec![
                 Arc::new(StringArray::from(vec![source.id.clone()])),
                 Arc::new(StringArray::from(vec![source.source_id.clone()])),
-                Arc::new(StringArray::from(vec![source.r#type.clone()])),
+                Arc::new(StringArray::from(vec![source.source_type.clone()])),
                 Arc::new(StringArray::from(vec![source.name.clone()])),
                 Arc::new(StringArray::from(vec![source.path.clone()])),
                 Arc::new(StringArray::from(vec![source.filename.clone()])),
@@ -367,7 +377,7 @@ impl RAGDatabase {
 
     fn create_chunks_record_batch(&self, chunks: &[DocumentChunk], schema: &Arc<Schema>) -> Result<RecordBatch> {
         if chunks.is_empty() {
-            return Err(anyhow!("No chunks provided"));
+            return Err(Error::invalid_input("No chunks provided"));
         }
 
         let expected_dim = chunks[0].vector.len();
@@ -384,7 +394,7 @@ impl RAGDatabase {
         let mut vector_values = Vec::new();
         for chunk in chunks {
             if chunk.vector.len() != expected_dim {
-                return Err(anyhow!("Vector dimension mismatch"));
+                return Err(Error::invalid_input("Vector dimension mismatch"));
             }
             vector_values.extend_from_slice(&chunk.vector);
         }
@@ -393,7 +403,7 @@ impl RAGDatabase {
         
         // Get the actual vector field from the schema to ensure type compatibility
         let vector_field = schema.field_with_name("vector")
-            .map_err(|e| anyhow!("Vector field not found in schema: {}", e))?;
+            .map_err(|e| Error::database(format!("Vector field not found in schema: {}", e)))?;
         
         let vectors = match vector_field.data_type() {
             DataType::FixedSizeList(inner_field, size) => {
@@ -405,7 +415,7 @@ impl RAGDatabase {
                     None
                 )?
             }
-            _ => return Err(anyhow!("Invalid vector field type in schema")),
+            _ => return Err(Error::database("Invalid vector field type in schema")),
         };
         
         let batch = RecordBatch::try_new(
@@ -430,41 +440,41 @@ impl RAGDatabase {
         // Get all required columns
         let id_array = batch.column_by_name("id")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid id column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid id column"))?;
         let source_id_array = batch.column_by_name("source_id")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid source_id column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid source_id column"))?;
         let type_array = batch.column_by_name("type")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid type column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid type column"))?;
         let name_array = batch.column_by_name("name")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid name column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid name column"))?;
         let path_array = batch.column_by_name("path")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid path column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid path column"))?;
         let filename_array = batch.column_by_name("filename")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid filename column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid filename column"))?;
         let file_type_array = batch.column_by_name("file_type")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid file_type column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid file_type column"))?;
         let status_array = batch.column_by_name("status")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid status column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid status column"))?;
         let created_at_array = batch.column_by_name("created_at")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid created_at column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid created_at column"))?;
         let updated_at_array = batch.column_by_name("updated_at")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid updated_at column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid updated_at column"))?;
         let added_at_array = batch.column_by_name("added_at")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid added_at column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid added_at column"))?;
         
         // Optional columns
         let chunk_count_array = batch.column_by_name("chunk_count")
-            .and_then(|col| col.as_any().downcast_ref::<Int32Array>());
+            .and_then(|col| col.as_any().downcast_ref::<UInt64Array>());
         let file_size_array = batch.column_by_name("file_size")
             .and_then(|col| col.as_any().downcast_ref::<UInt64Array>());
         let metadata_array = batch.column_by_name("metadata")
@@ -478,12 +488,15 @@ impl RAGDatabase {
             let added_at = self.parse_datetime(added_at_array.value(i));
             
             let metadata = metadata_array
-                .and_then(|arr| serde_json::from_str(arr.value(i)).ok());
+                .and_then(|arr| {
+                    let value = arr.value(i);
+                    if value.is_empty() { None } else { serde_json::from_str(value).ok() }
+                });
             
             sources.push(SourceInfo {
                 id: id_array.value(i).to_string(),
                 source_id: source_id_array.value(i).to_string(),
-                r#type: type_array.value(i).to_string(),
+                source_type: type_array.value(i).to_string(),
                 name: name_array.value(i).to_string(),
                 path: path_array.value(i).to_string(),
                 filename: filename_array.value(i).to_string(),
@@ -511,16 +524,16 @@ impl RAGDatabase {
         
         let id_array = batch.column_by_name("id")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid id column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid id column"))?;
         let source_id_array = batch.column_by_name("source_id")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid source_id column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid source_id column"))?;
         let text_chunk_array = batch.column_by_name("text_chunk")
             .and_then(|col| col.as_any().downcast_ref::<StringArray>())
-            .ok_or_else(|| anyhow!("Missing or invalid text_chunk column"))?;
+            .ok_or_else(|| Error::database("Missing or invalid text_chunk column"))?;
         let distance_array = batch.column_by_name("_distance")
             .and_then(|col| col.as_any().downcast_ref::<arrow_array::Float32Array>())
-            .ok_or_else(|| anyhow!("Missing _distance column"))?;
+            .ok_or_else(|| Error::database("Missing _distance column"))?;
         
         for i in 0..batch.num_rows() {
             let distance = distance_array.value(i);
@@ -564,5 +577,33 @@ impl RAGDatabase {
         DateTime::parse_from_rfc3339(datetime_str)
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or_else(|_| Utc::now())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn test_database_creation() {
+        let mut db = RAGDatabase::new();
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test_db");
+        
+        let result = db.initialize(Some(db_path)).await;
+        assert!(result.is_ok());
+        
+        let status = db.get_status().await.unwrap();
+        assert!(status.contains("Database initialized"));
+    }
+
+    #[test]
+    fn test_database_status_uninitialized() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = RAGDatabase::new();
+        
+        let status = rt.block_on(db.get_status()).unwrap();
+        assert_eq!(status, "Database not initialized");
     }
 }

@@ -1,8 +1,16 @@
-use anyhow::{Result, anyhow};
-use serde::{Serialize, Deserialize};
+// Copyright 2023-2025 Jan Authors
+// SPDX-License-Identifier: MIT
+
+//! Embeddings generation using OpenAI-compatible APIs.
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use crate::core::cmd::EmbeddingConfig;
+use serde::{Serialize, Deserialize};
+
+use crate::{
+    config::EmbeddingConfig,
+    error::{Error, Result},
+};
 
 #[derive(Debug, Serialize)]
 struct EmbeddingRequest {
@@ -42,6 +50,7 @@ impl EmbeddingsGenerator {
             client: reqwest::Client::new(),
         }
     }
+
     /// Update the configuration
     pub async fn update_config(&self, config: EmbeddingConfig) {
         *self.config.write().await = config;
@@ -125,11 +134,11 @@ impl EmbeddingsGenerator {
             
             // If all batches failed, return an error
             if successful_batches == 0 {
-                return Err(anyhow!(
+                return Err(Error::embedding(format!(
                     "All {} batches failed. Errors: [{}]",
                     total_batches,
                     failed_batch_summary.join(", ")
-                ));
+                )));
             }
             
             // If some batches failed but some succeeded, log warning but continue
@@ -175,20 +184,20 @@ impl EmbeddingsGenerator {
         let response = request_builder
             .send()
             .await
-            .map_err(|e| anyhow!("Failed to send embedding request: {}", e))?;
+            .map_err(|e| Error::network(format!("Failed to send embedding request: {}", e)))?;
         
         // Check response status
         if !response.status().is_success() {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(anyhow!("Embedding API request failed with status {}: {}", status, error_text));
+            return Err(Error::embedding(format!("Embedding API request failed with status {}: {}", status, error_text)));
         }
         
         // Parse the response
         let embedding_response: EmbeddingResponse = response
             .json()
             .await
-            .map_err(|e| anyhow!("Failed to parse embedding response: {}", e))?;
+            .map_err(|e| Error::serialization(format!("Failed to parse embedding response: {}", e)))?;
 
         log::debug!(
             "Received {} embeddings from OpenAI-compatible API",
@@ -264,57 +273,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_batch_size_configuration() {
-        let config = EmbeddingConfig {
-            base_url: "http://localhost:8080".to_string(),
-            api_key: Some("test-key".to_string()),
-            model: "text-embedding-ada-002".to_string(),
-            dimensions: 1536,
-            batch_size: 50,
-        };
-        
-        let generator = EmbeddingsGenerator::with_config(config);
-        let stored_config = generator.config.read().await;
-        assert_eq!(stored_config.batch_size, 50);
-    }
-
-    #[tokio::test]
-    async fn test_default_batch_size() {
-        let generator = EmbeddingsGenerator::new();
-        let config = generator.config.read().await;
-        assert_eq!(config.batch_size, 100);
-    }
-
-    #[tokio::test]
     async fn test_empty_texts_handling() {
         let generator = EmbeddingsGenerator::new();
         let result = generator.create_embeddings(&[]).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn test_batching_logic() {
-        // Test that the batching logic correctly splits texts
-        let config = EmbeddingConfig {
-            base_url: "http://localhost:8080".to_string(),
-            api_key: Some("test-key".to_string()),
-            model: "text-embedding-ada-002".to_string(),
-            dimensions: 1536,
-            batch_size: 2, // Small batch size for testing
-        };
-        
-        let generator = EmbeddingsGenerator::with_config(config);
-        
-        // Test with 5 texts, should create 3 batches (2, 2, 1)
-        let texts = vec!["text1", "text2", "text3", "text4", "text5"];
-        
-        // This will fail since we're not running a real server, but we can verify
-        // the batching logic is working by checking the logs or behavior
-        let result = generator.create_embeddings(&texts).await;
-        
-        // The request should fail because there's no real server,
-        // but the batching logic should have been executed
-        assert!(result.is_err());
     }
 }

@@ -45,26 +45,50 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-test: lint
+test: lint test-plugin
 	# yarn build:test
 	# yarn test:coverage
 	# Need e2e setup for tauri backend
 	yarn test
+
+# RAG Plugin targets
+build-plugin:
+	cd jan-plugin-rag && cargo build
+
+test-plugin:
+	cd jan-plugin-rag && cargo test
+
+check-plugin:
+	cd jan-plugin-rag && cargo check
+
+clean-plugin:
+	cd jan-plugin-rag && cargo clean
+
+# Build plugin examples
+build-plugin-examples:
+	cd jan-plugin-rag && cargo build --examples
+
+# Run plugin examples
+run-plugin-example-basic:
+	cd jan-plugin-rag && cargo run --example basic_usage
+
+run-plugin-example-full:
+	cd jan-plugin-rag && cargo run --example full_usage
 
 # Builds and publishes the app
 build-and-publish: install-and-build
 	yarn build
 
 # Build
-build: install-and-build
+build: install-and-build build-plugin
 	yarn build
 
 # Deprecated soon
-build-tauri: install-and-build
+build-tauri: install-and-build build-plugin
 	yarn copy:lib
 	yarn build
 
-clean:
+clean: clean-plugin
 ifeq ($(OS),Windows_NT)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"
@@ -73,6 +97,7 @@ ifeq ($(OS),Windows_NT)
 	-powershell -Command "Remove-Item -Recurse -Force ./electron/pre-install/*.tgz"
 	-powershell -Command "Remove-Item -Recurse -Force ./src-tauri/resources"
 	-powershell -Command "Remove-Item -Recurse -Force ./src-tauri/target"
+	-powershell -Command "Remove-Item -Recurse -Force ./jan-plugin-rag/target"
 	-powershell -Command "if (Test-Path \"$($env:USERPROFILE)\jan\extensions\") { Remove-Item -Path \"$($env:USERPROFILE)\jan\extensions\" -Recurse -Force }"
 else ifeq ($(shell uname -s),Linux)
 	find . -name "node_modules" -type d -prune -exec rm -rf '{}' +
@@ -89,6 +114,7 @@ else ifeq ($(shell uname -s),Linux)
 	rm -rf ./electron/pre-install/*.tgz
 	rm -rf ./src-tauri/resources
 	rm -rf ./src-tauri/target
+	rm -rf ./jan-plugin-rag/target
 	rm -rf "~/jan/extensions"
 	rm -rf "~/.cache/jan*"
 else
@@ -105,6 +131,7 @@ else
 	rm -rf ./electron/pre-install/*.tgz
 	rm -rf ./src-tauri/resources
 	rm -rf ./src-tauri/target
+	rm -rf ./jan-plugin-rag/target
 	rm -rf ~/jan/extensions
 	rm -rf ~/Library/Caches/jan*
 endif

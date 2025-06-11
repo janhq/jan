@@ -1,20 +1,45 @@
+// Copyright 2023-2025 Jan Authors
+// SPDX-License-Identifier: MIT
+
+//! RAG MCP module implementation for the plugin.
+
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::borrow::Cow;
+use tauri::{AppHandle, Runtime, Manager};
 
-use crate::core::mcp_builtin::MCPBuiltIn;
 use rmcp::model::{Tool, Content};
-use super::system::get_rag_system;
+
+use crate::core::RAGSystem;
 
 type JsonObject = serde_json::Map<String, Value>;
 
-pub struct RAGMCPModule;
+/// RAG MCP Module for plugin integration
+pub struct RAGMCPModule<R: Runtime> {
+    app_handle: Option<AppHandle<R>>,
+}
 
-impl RAGMCPModule {
+impl<R: Runtime> RAGMCPModule<R> {
     pub fn new() -> Self {
-        Self
+        Self {
+            app_handle: None,
+        }
+    }
+
+    pub fn with_app_handle(app_handle: AppHandle<R>) -> Self {
+        Self {
+            app_handle: Some(app_handle),
+        }
+    }
+
+    /// Get the RAG system from the plugin state
+    fn get_rag_system(&self) -> Option<RAGSystem> {
+        self.app_handle
+            .as_ref()
+            .and_then(|handle| handle.try_state::<RAGSystem>())
+            .map(|state| state.inner().clone())
     }
 
     /// Create a consistent error response
@@ -66,24 +91,9 @@ impl RAGMCPModule {
             }
         })
     }
-}
 
-impl MCPBuiltIn for RAGMCPModule {
-    fn module_name(&self) -> &'static str {
-        "rag"
-    }
-
-    async fn initialize(&mut self) -> Result<()> {
-        // RAG system is already initialized in run_mcp_commands with proper app handle
-        // Just verify it's ready
-        let rag_system = get_rag_system().await;
-        let system = rag_system.lock().await;
-        let status = system.get_status().await?;
-        log::info!("RAG MCP module initialized, system status: {}", status);
-        Ok(())
-    }
-
-    fn get_tools(&self) -> Result<Vec<Tool>> {
+    /// Get all tools provided by this MCP module
+    pub fn get_tools(&self) -> Result<Vec<Tool>> {
         // Helper function to create input schema
         fn create_schema(value: Value) -> Arc<JsonObject> {
             match value {
@@ -206,40 +216,36 @@ impl MCPBuiltIn for RAGMCPModule {
         ])
     }
 
-    async fn call_tool(&self, name: &str, arguments: Value) -> Result<Vec<Content>> {
-        let rag_system_arc = get_rag_system().await;
-        let rag_system_guard = rag_system_arc.lock().await;
+    /// Execute a tool call
+    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<Vec<Content>> {
+        let rag_system = match self.get_rag_system() {
+            Some(system) => system,
+            None => {
+                return Ok(Self::create_error_response("RAG system not initialized"));
+            }
+        };
         
         let args = arguments.as_object().unwrap_or(&serde_json::Map::new()).clone();
 
         match name {
             "rag_initialize" => {
-                drop(rag_system_guard);
-                
-                // The system should already be initialized with app config by setup.rs
-                // Just verify it's working
-                let rag_system_arc = get_rag_system().await;
-                let rag_system_guard = rag_system_arc.lock().await;
-                match rag_system_guard.get_status().await {
-                    Ok(status) => {
-                        Ok(Self::create_success_response(json!({
-                            "message": "RAG system is already initialized and ready",
-                            "status": status
-                        })))
-                    }
-                    Err(e) => {
-                        drop(rag_system_guard);
-                        // Try to initialize if not already done
-                        match crate::core::rag::initialize_rag_system().await {
-                            Ok(_) => {
+                // Initialize the database if not already initialized
+                match rag_system.initialize_database(None).await {
+                    Ok(_) => {
+                        match rag_system.get_status().await {
+                            Ok(status) => {
                                 Ok(Self::create_success_response(json!({
-                                    "message": "RAG system initialized successfully"
+                                    "message": "RAG system initialized and ready",
+                                    "status": status
                                 })))
                             }
                             Err(e) => {
-                                Ok(Self::create_error_response(&format!("Failed to initialize RAG system: {}", e)))
+                                Ok(Self::create_error_response(&format!("RAG system initialized but status check failed: {}", e)))
                             }
                         }
+                    }
+                    Err(e) => {
+                        Ok(Self::create_error_response(&format!("Failed to initialize RAG system: {}", e)))
                     }
                 }
             }
@@ -255,7 +261,7 @@ impl MCPBuiltIn for RAGMCPModule {
                     .unwrap_or("");
                 let metadata = Self::parse_metadata(args.get("metadata"));
 
-                match rag_system_guard.add_data_source(source_type, path_or_url, content, metadata).await {
+                match rag_system.add_data_source(source_type, path_or_url, content, metadata).await {
                     Ok(source_id) => {
                         Ok(Self::create_success_response(json!({
                             "source_id": source_id,
@@ -269,7 +275,7 @@ impl MCPBuiltIn for RAGMCPModule {
                 }
             }
             "rag_list_data_sources" => {
-                match rag_system_guard.list_data_sources().await {
+                match rag_system.list_data_sources().await {
                     Ok(sources) => {
                         Ok(Self::create_success_response(json!({
                             "sources": sources
@@ -289,7 +295,7 @@ impl MCPBuiltIn for RAGMCPModule {
                     return Ok(Self::create_error_response("source_id is required"));
                 }
 
-                match rag_system_guard.remove_data_source(source_id).await {
+                match rag_system.remove_data_source(source_id).await {
                     Ok(removed) => {
                         Ok(Self::create_success_response(json!({
                             "removed": removed,
@@ -318,7 +324,7 @@ impl MCPBuiltIn for RAGMCPModule {
                     return Ok(Self::create_error_response("query_text is required"));
                 }
 
-                match rag_system_guard.query_documents(query_text, top_k, filters).await {
+                match rag_system.query_documents(query_text, top_k, filters).await {
                     Ok(results) => {
                         Ok(Self::create_success_response(json!({
                             "query": query_text,
@@ -341,7 +347,7 @@ impl MCPBuiltIn for RAGMCPModule {
                 }
             }
             "rag_clean_all_data_sources" => {
-                match rag_system_guard.clean_all_data_sources().await {
+                match rag_system.clean_all_data_sources().await {
                     Ok(_) => {
                         Ok(Self::create_success_response(json!({
                             "message": "All data sources cleaned successfully",
@@ -356,7 +362,7 @@ impl MCPBuiltIn for RAGMCPModule {
                 }
             }
             "rag_get_status" => {
-                match rag_system_guard.get_status().await {
+                match rag_system.get_status().await {
                     Ok(status) => {
                         Ok(Self::create_success_response(json!({
                             "rag_status": status
@@ -371,5 +377,16 @@ impl MCPBuiltIn for RAGMCPModule {
                 Ok(Self::create_error_response(&format!("Unknown tool: {}", name)))
             }
         }
+    }
+
+    /// Get the module name
+    pub fn module_name(&self) -> &'static str {
+        "rag"
+    }
+}
+
+impl<R: Runtime> Default for RAGMCPModule<R> {
+    fn default() -> Self {
+        Self::new()
     }
 }
