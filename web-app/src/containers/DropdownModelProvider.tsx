@@ -258,7 +258,7 @@ const DropdownModelProvider = ({
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px]">
+      <div className="bg-main-view-fg/5 hover:bg-main-view-fg/8 px-2 py-1 flex items-center gap-1.5 rounded-sm max-h-[32px] ">
         <PopoverTrigger asChild>
           <button
             title={displayModel}
@@ -280,12 +280,19 @@ const DropdownModelProvider = ({
           </button>
         </PopoverTrigger>
         {currentModel?.settings && provider && (
-          <ModelSetting model={currentModel as Model} provider={provider} />
+          <ModelSetting
+            model={currentModel as Model}
+            provider={provider}
+            smallIcon
+          />
         )}
       </div>
 
       <PopoverContent
-        className={cn('w-60 p-0', searchValue.length === 0 && 'h-[320px]')}
+        className={cn(
+          'w-60 p-0 backdrop-blur-2xl',
+          searchValue.length === 0 && 'h-[320px]'
+        )}
         align="start"
         sideOffset={10}
         alignOffset={-8}
@@ -294,7 +301,7 @@ const DropdownModelProvider = ({
       >
         <div className="flex flex-col w-full h-full">
           {/* Search input */}
-          <div className="relative px-2 py-1.5 border-b border-main-view-fg/10">
+          <div className="relative px-2 py-1.5 border-b border-main-view-fg/10 backdrop-blur-4xl">
             <input
               ref={searchInputRef}
               value={searchValue}
@@ -331,7 +338,7 @@ const DropdownModelProvider = ({
                   return (
                     <div
                       key={providerKey}
-                      className="bg-main-view-fg/4 first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
+                      className="bg-main-view-fg/4 backdrop-blur-2xl first:mt-0 rounded-sm my-1.5 mx-1.5 first:mb-0"
                     >
                       {/* Provider header */}
                       <div className="flex items-center justify-between px-2 py-1">
@@ -342,7 +349,7 @@ const DropdownModelProvider = ({
                           </span>
                         </div>
                         <div
-                          className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                          className="size-6 cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                           onClick={(e) => {
                             e.stopPropagation()
                             navigate({
@@ -377,7 +384,7 @@ const DropdownModelProvider = ({
                               key={searchableModel.value}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
-                                'mx-1 mb-1 px-2 py-1.5 rounded cursor-pointer flex items-center gap-2 transition-all duration-200',
+                                'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
                                 'hover:bg-main-view-fg/10',
                                 isSelected && 'bg-main-view-fg/15'
                               )}
