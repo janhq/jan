@@ -14,10 +14,11 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useAppState } from '@/hooks/useAppState'
 import { windowKey } from '@/constants/windows'
-import { IconLogs } from '@tabler/icons-react'
+import { IconLogs, IconBook } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
 import { ApiKeyInput } from '@/containers/ApiKeyInput'
 import { useState } from 'react'
+import { openUrl } from '@tauri-apps/plugin-opener'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.local_api_server as any)({
@@ -130,6 +131,16 @@ function LocalAPIServer() {
     }
   }
 
+  const handleOpenAPIDocs = async () => {
+    const docsUrl = `http://${serverHost}:${serverPort}`
+    try {
+      console.log('Opening API documentation at:', docsUrl)
+      await openUrl(docsUrl)
+    } catch (error) {
+      console.error('Failed to open API documentation:', error)
+    }
+  }
+
   const isServerRunning = serverStatus === 'running'
 
   return (
@@ -151,13 +162,26 @@ function LocalAPIServer() {
                       Start an OpenAI-compatible local HTTP server.
                     </p>
                   </div>
-                  <Button
-                    onClick={toggleAPIServer}
-                    variant={isServerRunning ? 'destructive' : 'default'}
-                    size="sm"
-                  >
-                    {`${isServerRunning ? 'Stop' : 'Start'}`} Server
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {isServerRunning && (
+                      <Button
+                        onClick={handleOpenAPIDocs}
+                        variant="default"
+                        size="sm"
+                        title="API Documentation"
+                      >
+                        <IconBook size={18} className="text-main-view-fg/50" />
+                        <span>Open Docs</span>
+                      </Button>
+                    )}
+                    <Button
+                      onClick={toggleAPIServer}
+                      variant={isServerRunning ? 'destructive' : 'default'}
+                      size="sm"
+                    >
+                      {`${isServerRunning ? 'Stop' : 'Start'}`} Server
+                    </Button>
+                  </div>
                 </div>
               }
             >

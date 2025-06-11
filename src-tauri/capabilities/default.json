@@ -2,9 +2,13 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "remote": {
-    "urls": ["http://*"]
+    "urls": [
+      "http://*"
+    ]
   },
   "permissions": [
     "core:default",
@@ -21,6 +25,7 @@
     "dialog:default",
     "deep-link:default",
     "core:webview:allow-create-webview-window",
+    "opener:allow-open-url",
     {
       "identifier": "http:default",
       "allow": [
@@ -70,6 +75,24 @@
           ],
           "name": "binaries/cortex-server",
           "sidecar": true
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "description": "opens the default permissions for the core module",
+      "windows": [
+        "*"
+      ],
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://127.0.0.1:*"
+        },
+        {
+          "url": "http://0.0.0.0:*"
         }
       ]
     },
