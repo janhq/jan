@@ -6,7 +6,10 @@ import {
   ExtensionTypeEnum,
   SettingComponentProps,
 } from '@janhq/core'
-import { ModelCapabilities } from '@/types/models'
+import {
+  DefaultToolUseSupportedModels,
+  ModelCapabilities,
+} from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { fetchModels } from './models'
 import { ExtensionManager } from '@/lib/extension'
@@ -115,7 +118,14 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         capabilities:
           'capabilities' in model
             ? (model.capabilities as string[])
-            : [ModelCapabilities.COMPLETION],
+            : [
+                ModelCapabilities.COMPLETION,
+                ...(Object.values(DefaultToolUseSupportedModels).some((v) =>
+                  model.id.toLowerCase().includes(v.toLowerCase())
+                )
+                  ? [ModelCapabilities.TOOLS]
+                  : []),
+              ],
         provider: providerName,
         settings: Object.values(modelSettings).reduce(
           (acc, setting) => {

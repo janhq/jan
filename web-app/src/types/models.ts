@@ -15,6 +15,12 @@ export enum ModelCapabilities {
   AUDIO_TO_TEXT = 'audio_to_text',
 }
 
+// TODO: Remove this enum when we integrate llama.cpp extension
+export enum DefaultToolUseSupportedModels {
+  JanNano = 'jan-nano',
+  Qwen3 = 'qwen3',
+}
+
 export type ActiveModel = {
   engine: string
   id: string

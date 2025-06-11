@@ -23,6 +23,8 @@ import { RenderMarkdown } from '@/containers/RenderMarkdown'
 import { extractModelName, extractDescription } from '@/lib/models'
 import { IconDownload, IconFileCode, IconSearch } from '@tabler/icons-react'
 import { Switch } from '@/components/ui/switch'
+import Joyride, { CallBackProps, STATUS } from 'react-joyride'
+import { CustomTooltipJoyRide } from '@/containers/CustomeTooltipJoyRide'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +40,7 @@ import { Loader } from 'lucide-react'
 type ModelProps = {
   model: {
     id: string
+    metadata?: any
     models: {
       id: string
     }[]
@@ -69,6 +72,8 @@ function Hub() {
   )
   const [isSearching, setIsSearching] = useState(false)
   const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
+  const [joyrideReady, setJoyrideReady] = useState(false)
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
@@ -190,6 +195,10 @@ function Hub() {
 
   const navigate = useNavigate()
 
+  const isRecommendedModel = useCallback((modelId: string) => {
+    return (extractModelName(modelId) === 'Jan-nano') as boolean
+  }, [])
+
   const handleUseModel = useCallback(
     (modelId: string) => {
       navigate({
@@ -215,280 +224,394 @@ function Hub() {
       const isDownloaded = llamaProvider?.models.some(
         (m: { id: string }) => m.id === modelId
       )
+      const isRecommended = isRecommendedModel(model.metadata?.id)
 
       return (
-        <>
-          {isDownloading ? (
-            <div className="flex items-center gap-2 w-20">
-              <Progress value={downloadProgress * 100} />
-              <span className="text-xs text-center text-main-view-fg/70">
-                {Math.round(downloadProgress * 100)}%
-              </span>
-            </div>
-          ) : isDownloaded ? (
+        <div
+          className={cn(
+            'flex items-center',
+            isRecommended && 'hub-download-button-step'
+          )}
+        >
+          <div
+            className={cn(
+              'flex items-center gap-2 w-20 ',
+              !isDownloading && 'opacity-0 visibility-hidden w-0'
+            )}
+          >
+            <Progress value={downloadProgress * 100} />
+            <span className="text-xs text-center text-main-view-fg/70">
+              {Math.round(downloadProgress * 100)}%
+            </span>
+          </div>
+          {isDownloaded ? (
             <Button size="sm" onClick={() => handleUseModel(modelId)}>
               Use
             </Button>
           ) : (
-            <Button size="sm" onClick={() => downloadModel(modelId)}>
+            <Button
+              size="sm"
+              onClick={() => downloadModel(modelId)}
+              className={cn(isDownloading && 'hidden')}
+            >
               Download
             </Button>
           )}
-        </>
+        </div>
       )
     }
-  }, [downloadProcesses, llamaProvider?.models, handleUseModel])
+  }, [
+    downloadProcesses,
+    llamaProvider?.models,
+    handleUseModel,
+    isRecommendedModel,
+  ])
+
+  const { step } = useSearch({ from: Route.id })
+  const isSetup = step === 'setup_local_provider'
+
+  // Wait for DOM to be ready before starting Joyride
+  useEffect(() => {
+    if (!loading && filteredModels.length > 0 && isSetup) {
+      const timer = setTimeout(() => {
+        setJoyrideReady(true)
+      }, 100)
+      return () => clearTimeout(timer)
+    } else {
+      setJoyrideReady(false)
+    }
+  }, [loading, filteredModels.length, isSetup])
+
+  const handleJoyrideCallback = (data: CallBackProps) => {
+    const { status, index } = data
+
+    if (status === STATUS.FINISHED && !isDownloading && isLastStep) {
+      const recommendedModel = filteredModels.find((model) =>
+        isRecommendedModel(model.metadata?.id)
+      )
+      if (recommendedModel && recommendedModel.models[0]?.id) {
+        downloadModel(recommendedModel.models[0].id)
+
+        return
+      }
+    }
+
+    if (status === STATUS.FINISHED) {
+      navigate({
+        to: route.hub,
+      })
+    }
+
+    // Track current step index
+    setCurrentStepIndex(index)
+  }
+
+  // Check if any model is currently downloading
+  const isDownloading = downloadProcesses.length > 0
+
+  const steps = [
+    {
+      target: '.hub-model-card-step',
+      title: 'Recommended Model',
+      disableBeacon: true,
+      content:
+        'These are models available for download from various providers. The featured model from Menlo AI is specifically optimized for tool calling and function execution, making it ideal for building AI agents and interactive applications. Each card shows the model name, size, and download options.',
+    },
+    {
+      target: '.hub-download-button-step',
+      title: isDownloading ? 'Download Progress' : 'Download Model',
+      disableBeacon: true,
+      content: isDownloading
+        ? 'Your model is now downloading. You can track the progress here. Once the download is complete, the model will be available in your local collection and ready to use for AI conversations and tool calling.'
+        : 'Click the Download button to get this recommended model from Menlo AI. This model is optimized for tool calling and function execution, making it perfect for building AI agents.',
+    },
+  ]
+
+  // Check if we're on the last step
+  const isLastStep = currentStepIndex === steps.length - 1
 
   return (
-    <div className="flex h-full w-full">
-      <div className="flex flex-col h-full w-full">
-        <HeaderPage>
-          <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20 ">
-            <div className="flex items-center gap-2 w-full">
-              {isSearching ? (
-                <Loader className="size-4 animate-spin text-main-view-fg/60" />
-              ) : (
-                <IconSearch className="text-main-view-fg/60" size={14} />
-              )}
-              <input
-                placeholder="Search for models on Hugging Face..."
-                value={searchValue}
-                onChange={handleSearchChange}
-                className="w-full focus:outline-none"
-              />
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <DropdownMenu>
-                <DropdownMenuTrigger>
-                  <span
-                    title="Edit Theme"
-                    className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
-                  >
-                    {
-                      sortOptions.find(
-                        (option) => option.value === sortSelected
-                      )?.name
-                    }
-                  </span>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="bottom" align="end">
-                  {sortOptions.map((option) => (
-                    <DropdownMenuItem
-                      className={cn(
-                        'cursor-pointer my-0.5',
-                        sortSelected === option.value && 'bg-main-view-fg/5'
-                      )}
-                      key={option.value}
-                      onClick={() => setSortSelected(option.value)}
-                    >
-                      {option.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={showOnlyDownloaded}
-                  onCheckedChange={setShowOnlyDownloaded}
+    <>
+      <Joyride
+        run={joyrideReady}
+        floaterProps={{
+          hideArrow: true,
+        }}
+        steps={steps}
+        tooltipComponent={CustomTooltipJoyRide}
+        spotlightPadding={0}
+        continuous={true}
+        showSkipButton={!isLastStep}
+        hideCloseButton={true}
+        spotlightClicks={true}
+        disableOverlayClose={true}
+        callback={handleJoyrideCallback}
+        locale={{
+          back: 'Back',
+          close: 'Close',
+          last: !isDownloading ? 'Download' : 'Finish',
+          next: 'Next',
+          skip: 'Skip',
+        }}
+      />
+      <div className="flex h-full w-full">
+        <div className="flex flex-col h-full w-full ">
+          <HeaderPage>
+            <div className="pr-4 py-3  h-10 w-full flex items-center justify-between relative z-20">
+              <div className="flex items-center gap-2 w-full">
+                {isSearching ? (
+                  <Loader className="size-4 animate-spin text-main-view-fg/60" />
+                ) : (
+                  <IconSearch className="text-main-view-fg/60" size={14} />
+                )}
+                <input
+                  placeholder="Search for models on Hugging Face..."
+                  value={searchValue}
+                  onChange={handleSearchChange}
+                  className="w-full focus:outline-none"
                 />
-                <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
-                  Downloaded
-                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <DropdownMenu>
+                  <DropdownMenuTrigger>
+                    <span
+                      title="Edit Theme"
+                      className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
+                    >
+                      {
+                        sortOptions.find(
+                          (option) => option.value === sortSelected
+                        )?.name
+                      }
+                    </span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent side="bottom" align="end">
+                    {sortOptions.map((option) => (
+                      <DropdownMenuItem
+                        className={cn(
+                          'cursor-pointer my-0.5',
+                          sortSelected === option.value && 'bg-main-view-fg/5'
+                        )}
+                        key={option.value}
+                        onClick={() => setSortSelected(option.value)}
+                      >
+                        {option.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={showOnlyDownloaded}
+                    onCheckedChange={setShowOnlyDownloaded}
+                  />
+                  <span className="text-xs text-main-view-fg/70 font-medium whitespace-nowrap">
+                    Downloaded
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </HeaderPage>
-        <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
-          <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
-            {loading ? (
-              <div className="flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  Loading models...
+          </HeaderPage>
+          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto first-step-setup-local-provider">
+            <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
+              {loading ? (
+                <div className="flex items-center justify-center">
+                  <div className="text-center text-muted-foreground">
+                    Loading models...
+                  </div>
                 </div>
-              </div>
-            ) : filteredModels.length === 0 ? (
-              <div className="flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  No models found
+              ) : filteredModels.length === 0 ? (
+                <div className="flex items-center justify-center">
+                  <div className="text-center text-muted-foreground">
+                    No models found
+                  </div>
                 </div>
-              </div>
-            ) : (
-              <div className="flex flex-col pb-2 mb-2 gap-2">
-                {filteredModels.map((model) => (
-                  <div key={model.id}>
-                    <Card
-                      header={
-                        <div className="flex items-center justify-between gap-x-2">
-                          <Link
-                            to={
-                              `https://huggingface.co/${model.metadata?.id}` as string
-                            }
-                            target="_blank"
-                          >
-                            <h1 className="text-main-view-fg font-medium text-base capitalize truncate">
-                              {extractModelName(model.metadata?.id) || ''}
-                            </h1>
-                          </Link>
-                          <div className="shrink-0 space-x-3 flex items-center">
-                            <span className="text-main-view-fg/70 font-medium text-xs">
-                              {toGigabytes(model.models?.[0]?.size)}
-                            </span>
-                            <DownloadButtonPlaceholder model={model} />
-                          </div>
-                        </div>
-                      }
-                    >
-                      <div className="line-clamp-2 mt-3 text-main-view-fg/60">
-                        <RenderMarkdown
-                          enableRawHtml={true}
-                          className="select-none"
-                          components={{
-                            a: ({ ...props }) => (
-                              <a
-                                {...props}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                              />
-                            ),
-                          }}
-                          content={
-                            extractDescription(model.metadata?.description) ||
-                            ''
-                          }
-                        />
-                      </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="capitalize text-main-view-fg/80">
-                          By {model?.author}
-                        </span>
-                        <div className="flex items-center gap-4 ml-2">
-                          <div className="flex items-center gap-1">
-                            <IconDownload
-                              size={18}
-                              className="text-main-view-fg/50"
-                              title="Downloads"
-                            />
-                            <span className="text-main-view-fg/80">
-                              {model.metadata?.downloads || 0}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <IconFileCode
-                              size={20}
-                              className="text-main-view-fg/50"
-                              title="Variants"
-                            />
-                            <span className="text-main-view-fg/80">
-                              {model.models?.length || 0}
-                            </span>
-                          </div>
-                          {model.models.length > 1 && (
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={!!expandedModels[model.id]}
-                                onCheckedChange={() =>
-                                  toggleModelExpansion(model.id)
-                                }
-                              />
-                              <p className="text-main-view-fg/70">
-                                Show variants
-                              </p>
+              ) : (
+                <div className="flex flex-col pb-2 mb-2 gap-2 ">
+                  {filteredModels.map((model) => (
+                    <div key={model.id}>
+                      <Card
+                        header={
+                          <div className="flex items-center justify-between gap-x-2">
+                            <Link
+                              to={
+                                `https://huggingface.co/${model.metadata?.id}` as string
+                              }
+                              target="_blank"
+                            >
+                              <h1
+                                className={cn(
+                                  'text-main-view-fg font-medium text-base capitalize truncate',
+                                  isRecommendedModel(model.metadata?.id)
+                                    ? 'hub-model-card-step'
+                                    : ''
+                                )}
+                              >
+                                {extractModelName(model.metadata?.id) || ''}
+                              </h1>
+                            </Link>
+                            <div className="shrink-0 space-x-3 flex items-center">
+                              <span className="text-main-view-fg/70 font-medium text-xs">
+                                {toGigabytes(model.models?.[0]?.size)}
+                              </span>
+                              <DownloadButtonPlaceholder model={model} />
                             </div>
-                          )}
+                          </div>
+                        }
+                      >
+                        <div className="line-clamp-2 mt-3 text-main-view-fg/60">
+                          <RenderMarkdown
+                            enableRawHtml={true}
+                            className="select-none"
+                            components={{
+                              a: ({ ...props }) => (
+                                <a
+                                  {...props}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                />
+                              ),
+                            }}
+                            content={
+                              extractDescription(model.metadata?.description) ||
+                              ''
+                            }
+                          />
                         </div>
-                      </div>
-                      {expandedModels[model.id] && model.models.length > 0 && (
-                        <div className="mt-5">
-                          {model.models.map((variant) => (
-                            <CardItem
-                              key={variant.id}
-                              title={variant.id}
-                              actions={
-                                <div className="flex items-center gap-2">
-                                  <p className="text-main-view-fg/70 font-medium text-xs">
-                                    {toGigabytes(variant.size)}
-                                  </p>
-                                  {(() => {
-                                    const isDownloading =
-                                      downloadProcesses.some(
-                                        (e) => e.id === variant.id
-                                      )
-                                    const downloadProgress =
-                                      downloadProcesses.find(
-                                        (e) => e.id === variant.id
-                                      )?.progress || 0
-                                    const isDownloaded =
-                                      llamaProvider?.models.some(
-                                        (m: { id: string }) =>
-                                          m.id === variant.id
-                                      )
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="capitalize text-main-view-fg/80">
+                            By {model?.author}
+                          </span>
+                          <div className="flex items-center gap-4 ml-2">
+                            <div className="flex items-center gap-1">
+                              <IconDownload
+                                size={18}
+                                className="text-main-view-fg/50"
+                                title="Downloads"
+                              />
+                              <span className="text-main-view-fg/80">
+                                {model.metadata?.downloads || 0}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <IconFileCode
+                                size={20}
+                                className="text-main-view-fg/50"
+                                title="Variants"
+                              />
+                              <span className="text-main-view-fg/80">
+                                {model.models?.length || 0}
+                              </span>
+                            </div>
+                            {model.models.length > 1 && (
+                              <div className="flex items-center gap-2 hub-show-variants-step">
+                                <Switch
+                                  checked={!!expandedModels[model.id]}
+                                  onCheckedChange={() =>
+                                    toggleModelExpansion(model.id)
+                                  }
+                                />
+                                <p className="text-main-view-fg/70">
+                                  Show variants
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {expandedModels[model.id] &&
+                          model.models.length > 0 && (
+                            <div className="mt-5">
+                              {model.models.map((variant) => (
+                                <CardItem
+                                  key={variant.id}
+                                  title={variant.id}
+                                  actions={
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-main-view-fg/70 font-medium text-xs">
+                                        {toGigabytes(variant.size)}
+                                      </p>
+                                      {(() => {
+                                        const isDownloading =
+                                          downloadProcesses.some(
+                                            (e) => e.id === variant.id
+                                          )
+                                        const downloadProgress =
+                                          downloadProcesses.find(
+                                            (e) => e.id === variant.id
+                                          )?.progress || 0
+                                        const isDownloaded =
+                                          llamaProvider?.models.some(
+                                            (m: { id: string }) =>
+                                              m.id === variant.id
+                                          )
 
-                                    if (isDownloading) {
-                                      return (
-                                        <>
-                                          <div className="flex items-center gap-2 w-20">
-                                            <Progress
-                                              value={downloadProgress * 100}
-                                            />
-                                            <span className="text-xs text-center text-main-view-fg/70">
-                                              {Math.round(
-                                                downloadProgress * 100
-                                              )}
-                                              %
-                                            </span>
-                                          </div>
-                                        </>
-                                      )
-                                    }
+                                        if (isDownloading) {
+                                          return (
+                                            <>
+                                              <div className="flex items-center gap-2 w-20">
+                                                <Progress
+                                                  value={downloadProgress * 100}
+                                                />
+                                                <span className="text-xs text-center text-main-view-fg/70">
+                                                  {Math.round(
+                                                    downloadProgress * 100
+                                                  )}
+                                                  %
+                                                </span>
+                                              </div>
+                                            </>
+                                          )
+                                        }
 
-                                    if (isDownloaded) {
-                                      return (
-                                        <div
-                                          className="flex items-center justify-center rounded bg-main-view-fg/10"
-                                          title="Use this model"
-                                        >
-                                          <Button
-                                            variant="link"
-                                            size="sm"
+                                        if (isDownloaded) {
+                                          return (
+                                            <div
+                                              className="flex items-center justify-center rounded bg-main-view-fg/10"
+                                              title="Use this model"
+                                            >
+                                              <Button
+                                                variant="link"
+                                                size="sm"
+                                                onClick={() =>
+                                                  handleUseModel(variant.id)
+                                                }
+                                              >
+                                                Use
+                                              </Button>
+                                            </div>
+                                          )
+                                        }
+
+                                        return (
+                                          <div
+                                            className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
+                                            title="Download model"
                                             onClick={() =>
-                                              handleUseModel(variant.id)
+                                              downloadModel(variant.id)
                                             }
                                           >
-                                            Use
-                                          </Button>
-                                        </div>
-                                      )
-                                    }
-
-                                    return (
-                                      <div
-                                        className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
-                                        title="Download model"
-                                        onClick={() =>
-                                          downloadModel(variant.id)
-                                        }
-                                      >
-                                        <IconDownload
-                                          size={16}
-                                          className="text-main-view-fg/80"
-                                        />
-                                      </div>
-                                    )
-                                  })()}
-                                </div>
-                              }
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </Card>
-                  </div>
-                ))}
-              </div>
-            )}
+                                            <IconDownload
+                                              size={16}
+                                              className="text-main-view-fg/80"
+                                            />
+                                          </div>
+                                        )
+                                      })()}
+                                    </div>
+                                  }
+                                />
+                              ))}
+                            </div>
+                          )}
+                      </Card>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }
