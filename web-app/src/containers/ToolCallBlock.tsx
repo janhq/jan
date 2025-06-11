@@ -199,7 +199,7 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
             isExpanded ? '' : 'max-h-0 overflow-hidden'
           )}
         >
-          <div className="mt-2 text-main-view-fg/60 max-w-[89%] overflow-hidden">
+          <div className="mt-2 text-main-view-fg/60 overflow-hidden">
             {args && Object.keys(args).length > 3 && (
               <>
                 <p className="mb-3">Arguments:</p>
