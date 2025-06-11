@@ -142,7 +142,7 @@ export default class llamacpp_extension extends AIEngine {
       try {
         await this.unload(sInfo.model_id)
       } catch (error) {
-        console.error(`Failed to unload model ${sInfo.modelId}:`, error)
+        console.error(`Failed to unload model ${sInfo.model_id}:`, error)
       }
     }
 
