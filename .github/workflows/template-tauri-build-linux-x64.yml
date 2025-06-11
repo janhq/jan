@@ -89,6 +89,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
+
       - name: Install jq
         uses: dcarbone/install-jq-action@v2.0.1
 
