@@ -230,9 +230,15 @@ function MCPServers() {
               header={
                 <div className="flex flex-col mb-4">
                   <div className="flex items-center justify-between">
-                    <h1 className="text-main-view-fg font-medium text-base">
-                      MCP Servers
-                    </h1>
+                    <div className="flex items-center gap-2">
+                      <h1 className="text-main-view-fg font-medium text-base">
+                        MCP Servers
+                      </h1>
+                      <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
+                        <span>Experimental</span>
+                      </div>
+                    </div>
+
                     <div className="flex items-center gap-0.5">
                       <div
                         className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
