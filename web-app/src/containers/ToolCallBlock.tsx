@@ -159,20 +159,30 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
       <div className="rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10">
         <div className="flex items-center gap-3 p-2" onClick={handleClick}>
           {loading && (
-            <Loader className="size-4 animate-spin text-main-view-fg/60" />
+            <div className="w-4 h-4">
+              <Loader className="size-4 animate-spin text-main-view-fg/60" />
+            </div>
           )}
           <button className="flex items-center gap-2 focus:outline-none">
             {isExpanded ? (
-              <ChevronUp className="h-4 w-4" />
+              <>
+                {!loading && (
+                  <div className="ml-1 w-4 h-4">
+                    <ChevronUp className="h-4 w-4" />
+                  </div>
+                )}
+              </>
             ) : (
-              <ChevronDown className="h-4 w-4" />
+              <div className="ml-1 w-4 h-4">
+                <ChevronDown className="h-4 w-4" />
+              </div>
             )}
             <span className="font-medium text-main-view-fg/80">
               <span className="font-medium text-main-view-fg mr-2">{name}</span>
               <span
                 className={twMerge(
                   'text-xs bg-main-view-fg/4 rounded-sm p-1',
-                  loading ? 'text-main-view-fg' : 'text-green-600'
+                  loading ? 'text-main-view-fg/40' : 'text-green-600'
                 )}
               >
                 {loading ? 'Calling tool' : 'Completed'}{' '}
