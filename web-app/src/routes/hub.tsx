@@ -315,15 +315,15 @@ function Hub() {
       title: 'Recommended Model',
       disableBeacon: true,
       content:
-        'These are models available for download from various providers. The featured model from Menlo AI is specifically optimized for tool calling and function execution, making it ideal for building AI agents and interactive applications. Each card shows the model name, size, and download options.',
+        "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",
     },
     {
       target: '.hub-download-button-step',
-      title: isDownloading ? 'Download Progress' : 'Download Model',
+      title: isDownloading ? 'Download in Progress' : 'Download Model',
       disableBeacon: true,
       content: isDownloading
-        ? 'Your model is now downloading. You can track the progress here. Once the download is complete, the model will be available in your local collection and ready to use for AI conversations and tool calling.'
-        : 'Click the Download button to get this recommended model from Menlo AI. This model is optimized for tool calling and function execution, making it perfect for building AI agents.',
+        ? 'Your model is now downloading. Track progress here - once finished, it will be ready to use.'
+        : 'Click the Download button to begin downloading the model.',
     },
   ]
 
