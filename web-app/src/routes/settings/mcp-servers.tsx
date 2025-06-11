@@ -234,7 +234,7 @@ function MCPServers() {
                       <h1 className="text-main-view-fg font-medium text-base">
                         MCP Servers
                       </h1>
-                      <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg px-1 rounded-full py-0.5 px-2">
+                      <div className="text-xs bg-main-view-fg/10 border border-main-view-fg/20 text-main-view-fg/70 rounded-full py-0.5 px-2">
                         <span>Experimental</span>
                       </div>
                     </div>
