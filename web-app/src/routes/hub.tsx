@@ -73,6 +73,7 @@ function Hub() {
   const [isSearching, setIsSearching] = useState(false)
   const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
   const [joyrideReady, setJoyrideReady] = useState(false)
+  const [currentStepIndex, setCurrentStepIndex] = useState(0)
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
@@ -195,8 +196,7 @@ function Hub() {
   const navigate = useNavigate()
 
   const isRecommendedModel = useCallback((modelId: string) => {
-    return (extractModelName(modelId) ===
-      'qwen3-4b-v0.3-deepresearch-100-step-gguf') as boolean
+    return (extractModelName(modelId) === 'Jan-nano') as boolean
   }, [])
 
   const handleUseModel = useCallback(
@@ -227,32 +227,37 @@ function Hub() {
       const isRecommended = isRecommendedModel(model.metadata?.id)
 
       return (
-        <>
-          {isDownloading ? (
-            <div className="flex items-center gap-2 w-20">
-              <Progress value={downloadProgress * 100} />
-              <span className="text-xs text-center text-main-view-fg/70">
-                {Math.round(downloadProgress * 100)}%
-              </span>
-            </div>
-          ) : isDownloaded ? (
-            <Button
-              size="sm"
-              onClick={() => handleUseModel(modelId)}
-              className={isRecommended ? 'hub-download-button-step' : ''}
-            >
+        <div
+          className={cn(
+            'flex items-center',
+            isRecommended && 'hub-download-button-step'
+          )}
+        >
+          <div
+            className={cn(
+              'flex items-center gap-2 w-20 ',
+              !isDownloading && 'opacity-0 visibility-hidden w-0'
+            )}
+          >
+            <Progress value={downloadProgress * 100} />
+            <span className="text-xs text-center text-main-view-fg/70">
+              {Math.round(downloadProgress * 100)}%
+            </span>
+          </div>
+          {isDownloaded ? (
+            <Button size="sm" onClick={() => handleUseModel(modelId)}>
               Use
             </Button>
           ) : (
             <Button
               size="sm"
               onClick={() => downloadModel(modelId)}
-              className={isRecommended ? 'hub-download-button-step' : ''}
+              className={cn(isDownloading && 'hidden')}
             >
               Download
             </Button>
           )}
-        </>
+        </div>
       )
     }
   }, [
@@ -278,14 +283,31 @@ function Hub() {
   }, [loading, filteredModels.length, isSetup])
 
   const handleJoyrideCallback = (data: CallBackProps) => {
-    const { status } = data
+    const { status, index } = data
+
+    if (status === STATUS.FINISHED && !isDownloading && isLastStep) {
+      const recommendedModel = filteredModels.find((model) =>
+        isRecommendedModel(model.metadata?.id)
+      )
+      if (recommendedModel && recommendedModel.models[0]?.id) {
+        downloadModel(recommendedModel.models[0].id)
+
+        return
+      }
+    }
 
     if (status === STATUS.FINISHED) {
       navigate({
         to: route.hub,
       })
     }
+
+    // Track current step index
+    setCurrentStepIndex(index)
   }
+
+  // Check if any model is currently downloading
+  const isDownloading = downloadProcesses.length > 0
 
   const steps = [
     {
@@ -297,12 +319,16 @@ function Hub() {
     },
     {
       target: '.hub-download-button-step',
-      title: 'Download Model',
+      title: isDownloading ? 'Download Progress' : 'Download Model',
       disableBeacon: true,
-      content:
-        'Click the Download button to get this recommended model from Menlo AI. This model is optimized for tool calling and function execution, making it perfect for building AI agents.',
+      content: isDownloading
+        ? 'Your model is now downloading. You can track the progress here. Once the download is complete, the model will be available in your local collection and ready to use for AI conversations and tool calling.'
+        : 'Click the Download button to get this recommended model from Menlo AI. This model is optimized for tool calling and function execution, making it perfect for building AI agents.',
     },
   ]
+
+  // Check if we're on the last step
+  const isLastStep = currentStepIndex === steps.length - 1
 
   return (
     <>
@@ -315,7 +341,7 @@ function Hub() {
         tooltipComponent={CustomTooltipJoyRide}
         spotlightPadding={0}
         continuous={true}
-        showSkipButton={true}
+        showSkipButton={!isLastStep}
         hideCloseButton={true}
         spotlightClicks={true}
         disableOverlayClose={true}
@@ -323,7 +349,7 @@ function Hub() {
         locale={{
           back: 'Back',
           close: 'Close',
-          last: 'Finish',
+          last: !isDownloading ? 'Download' : 'Finish',
           next: 'Next',
           skip: 'Skip',
         }}
@@ -498,11 +524,7 @@ function Hub() {
                               {model.models.map((variant) => (
                                 <CardItem
                                   key={variant.id}
-                                  title={
-                                    isRecommendedModel(model.metadata.id)
-                                      ? variant.id.split(':').pop()
-                                      : variant.id
-                                  }
+                                  title={variant.id}
                                   actions={
                                     <div className="flex items-center gap-2">
                                       <p className="text-main-view-fg/70 font-medium text-xs">
