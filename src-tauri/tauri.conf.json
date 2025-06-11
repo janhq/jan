@@ -99,9 +99,6 @@
       },
       "deb": {
         "files": {
-          "usr/bin/bun": "resources/bin/bun",
-          "usr/lib/Jan/binaries": "binaries/deps",
-          "usr/lib/Jan/binaries/engines": "binaries/engines"
         }
       }
     },
