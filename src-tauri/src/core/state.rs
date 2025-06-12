@@ -11,6 +11,7 @@ pub struct AppState {
     pub mcp_servers: Arc<Mutex<HashMap<String, RunningService<RoleClient, ()>>>>,
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
     pub cortex_restart_count: Arc<Mutex<u32>>,
+    pub cortex_killed_intentionally: Arc<Mutex<bool>>,
 }
 pub fn generate_app_token() -> String {
     rand::thread_rng()

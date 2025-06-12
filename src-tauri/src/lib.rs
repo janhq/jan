@@ -91,6 +91,7 @@ pub fn run() {
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
             download_manager: Arc::new(Mutex::new(DownloadManagerState::default())),
             cortex_restart_count: Arc::new(Mutex::new(0)),
+            cortex_killed_intentionally: Arc::new(Mutex::new(false)),
         })
         .setup(|app| {
             app.handle().plugin(

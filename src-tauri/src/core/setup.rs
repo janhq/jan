@@ -220,6 +220,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
 
         let app_state = app_handle_for_spawn.state::<AppState>();
         let cortex_restart_count_state = app_state.cortex_restart_count.clone();
+        let cortex_killed_intentionally_state = app_state.cortex_killed_intentionally.clone();
         let app_data_dir = get_jan_data_folder_path(app_handle_for_spawn.clone());
 
         let sidecar_command_builder = || {
@@ -274,9 +275,11 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
             let child_to_kill_arc = child_process_clone_for_kill.clone();
             tauri::async_runtime::spawn(async move {
                 let app_state = app_handle.state::<AppState>();
-                let mut count = app_state.cortex_restart_count.lock().await;
-                *count = 5;
-                drop(count);
+                // Mark as intentionally killed to prevent restart
+                let mut killed_intentionally = app_state.cortex_killed_intentionally.lock().await;
+                *killed_intentionally = true;
+                drop(killed_intentionally);
+                
                 log::info!("Received kill-sidecar event (processing async).");
                 if let Some(child) = child_to_kill_arc.lock().await.take() {
                     log::info!("Attempting to kill sidecar process...");
@@ -329,6 +332,12 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                             );
                             *count = 0;
                         }
+                        drop(count);
+                        
+                        // Reset the intentionally killed flag when process starts successfully
+                        let mut killed_intentionally = cortex_killed_intentionally_state.lock().await;
+                        *killed_intentionally = false;
+                        drop(killed_intentionally);
                     }
 
                     let mut process_terminated_unexpectedly = false;
@@ -373,7 +382,15 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                         log::info!("Cleared child process lock after termination.");
                     }
 
-                    if process_terminated_unexpectedly {
+                    // Check if the process was killed intentionally
+                    let killed_intentionally = *cortex_killed_intentionally_state.lock().await;
+                    
+                    if killed_intentionally {
+                        log::info!(
+                            "Cortex server was killed intentionally. Not restarting."
+                        );
+                        break;
+                    } else if process_terminated_unexpectedly {
                         log::warn!("Cortex server terminated unexpectedly.");
                         let mut count = cortex_restart_count_state.lock().await;
                         *count += 1;
@@ -388,7 +405,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                         continue;
                     } else {
                         log::info!(
-                            "Cortex server terminated normally or was killed. Not restarting."
+                            "Cortex server terminated normally. Not restarting."
                         );
                         break;
                     }
