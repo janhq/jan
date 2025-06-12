@@ -35,8 +35,6 @@ export function DataProvider() {
     fetchModels().then((models) => {
       models?.forEach((model) => ModelManager.instance().register(model))
       getProviders().then((providers) => {
-        console.log('Providers loaded:', providers)
-
         // Log models under providers that match DefaultToolUseSupportedModels
         providers.forEach((provider) => {
           const supportedModels = provider.models.filter((model) =>
