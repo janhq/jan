@@ -3,7 +3,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { fetchMessages } from '@/services/messages'
-import { fetchModels } from '@/services/models'
+import { fetchModels, updateModel } from '@/services/models'
 import { getProviders } from '@/services/providers'
 import { fetchThreads } from '@/services/threads'
 import { ModelManager } from '@janhq/core'
@@ -19,6 +19,7 @@ import {
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useThreads } from '@/hooks/useThreads'
+import { DefaultToolUseSupportedModels } from '@/types/models'
 
 export function DataProvider() {
   const { setProviders } = useModelProvider()
@@ -33,7 +34,63 @@ export function DataProvider() {
   useEffect(() => {
     fetchModels().then((models) => {
       models?.forEach((model) => ModelManager.instance().register(model))
-      getProviders().then(setProviders)
+      getProviders().then((providers) => {
+        console.log('Providers loaded:', providers)
+
+        // Log models under providers that match DefaultToolUseSupportedModels
+        providers.forEach((provider) => {
+          const supportedModels = provider.models.filter((model) =>
+            Object.values(DefaultToolUseSupportedModels).some(
+              (supportedModel) =>
+                model.id.toLowerCase().includes(supportedModel.toLowerCase())
+            )
+          )
+
+          if (supportedModels.length > 0) {
+            // Update each supported model with tool-specific settings
+            supportedModels.forEach((model) => {
+              // Create updated model settings similar to ModelSetting.tsx
+              const updatedModel = {
+                ...model,
+                settings: {
+                  ...model.settings,
+                  temperature: {
+                    ...(model.settings?.temperature || {}),
+                    controller_props: {
+                      ...(model.settings?.temperature?.controller_props || {}),
+                      value: 0.6, // Default temperature for tool-supported models
+                    },
+                  },
+                },
+              }
+
+              // Extract settings for updateModel call
+              const params = Object.entries(updatedModel.settings || {}).reduce(
+                (acc, [key, value]) => {
+                  const rawVal = value.controller_props?.value
+                  if (typeof rawVal === 'string') {
+                    const num = parseFloat(rawVal)
+                    acc[key] = !isNaN(num) ? num : rawVal
+                  } else {
+                    acc[key] = rawVal
+                  }
+                  return acc
+                },
+                {} as Record<string, unknown>
+              )
+
+              // Update the model with new settings
+              updateModel({
+                id: model.id,
+                settings: params,
+                ...params,
+              })
+            })
+          }
+        })
+
+        setProviders(providers)
+      })
     })
     getMCPConfig().then((data) => setServers(data.mcpServers ?? []))
     getAssistants()

@@ -136,9 +136,9 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
               // @ts-expect-error dynamic type
               value = 4096 // Default context length for Llama.cpp models
             }
-            // Set temperature to 1 for DefaultToolUseSupportedModels
+            // Set temperature to 0.6 for DefaultToolUseSupportedModels
             if (
-              setting.key === 'temp' &&
+              setting.key === 'temperature' &&
               Object.values(DefaultToolUseSupportedModels).some((v) =>
                 model.id.toLowerCase().includes(v.toLowerCase())
               )
