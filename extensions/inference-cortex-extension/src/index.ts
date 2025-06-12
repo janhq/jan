@@ -8,7 +8,6 @@
 
 import {
   Model,
-  executeOnMain,
   EngineEvent,
   LocalOAIEngine,
   extractModelLoadParams,
@@ -128,7 +127,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     )
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
-    this.cache_type = await this.getSetting<string>(Settings.cache_type, 'f16')
+    if (this.caching_enabled)
+      this.cache_type = await this.getSetting<string>(
+        Settings.cache_type,
+        'f16'
+      )
     this.auto_unload_models = await this.getSetting<boolean>(
       Settings.auto_unload_models,
       true
