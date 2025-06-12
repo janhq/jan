@@ -269,9 +269,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                 ? 'llama-cpp'
                 : model.engine,
             ...(this.n_parallel ? { n_parallel: this.n_parallel } : {}),
-            ...(this.use_mmap ? { use_mmap: this.use_mmap } : {}),
+            ...(this.use_mmap ? { use_mmap: true } : {}),
             ...(this.caching_enabled ? { caching_enabled: true } : {}),
-            ...(this.flash_attn ? { flash_attn: this.flash_attn } : {}),
+            ...(this.flash_attn ? { flash_attn: true } : {}),
             ...(this.caching_enabled && this.cache_type
               ? { cache_type: this.cache_type }
               : {}),
