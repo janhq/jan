@@ -280,8 +280,9 @@ mod tests {
     async fn test_rag_system_creation() {
         let system = RAGSystem::new();
         let status = system.get_status().await;
-        // This will fail since database isn't initialized, but tests the structure
-        assert!(status.is_err());
+        // Database not initialized, should return Ok with message
+        assert!(status.is_ok());
+        assert_eq!(status.unwrap(), "Database not initialized");
     }
 
     #[tokio::test]
