@@ -24,15 +24,21 @@ import { Callout, Steps } from 'nextra/components'
 Jan now supports the **Model Context Protocol (MCP)**, an open standard designed to allow language models to
 interact with external tools and data sources.
 
-MCP acts as a common interface, standardizing the way an AI model requests to perform an action and how it
-receives data from a tool. This enables a model to connect to any MCP-compliant tool without requiring custom integration work.
+MCPs act as a common interface, standardizing the way an AI model can interact with external tools and data
+sources. This enables a model to connect to any MCP-compliant tool without requiring custom
+integration work. The way this works is via clients and servers. Clients are connected to an AI model and a host
+where a user will describe the task needed to be done. These applications hosting client will want to connect
+to different data sources to accomplish a task, for example, notion, google sheets, or even custom APIs. These
+applications will be connected to a server with prompts, tools, and data sources which will be used to complete
+the task.
 
-This document outlines the benefits, risks, and implementation of MCP within Jan.
+Jan is an MCP host that allws you to download different clients and servers and use them to accomplish a task.
+
+This document outlines the benefits, risks, and implementation of MCPs within Jan.
 
 ## Core Benefits of MCP
 
 Integrating MCP provides a structured way to extend the capabilities of the models you use in Jan. Here are the three
-
 
 * **Standardization:** MCP aims to solve the "M x N" integration problem, where every model (M) needs a
 unique connector for every tool (N). By adapting to a single standard, any compliant model can interface with any compliant tool.
@@ -64,27 +70,22 @@ affect performance (i.e., the more tools the model and the larger the context of
 you will need to wait for a response). Efficient management of tools and their outputs is important.
 
 
-## Configure and Use MCPs in Jan
+## Configure and Use MCPs within Jan
 
-We have integrated an MCP client into Jan to help users in connecting tools to their workflows.
+To illustrate how MCPs can be used within Jan, we will walk through an example using the [Browser MCP](https://browsermcp.io/).
 
-### 0. Pre Setup
-
-You will need to have `node` and/or `python` installed on your machine. If you don't have them installed, you can
-download them from the official websites:
-- [Node.js](https://nodejs.org/)
-- [Python](https://www.python.org/)
-
-### 1. Initial Setup
-
-Before connecting to a tool, you must first enable Jan's MCP host. Navigate to `Settings` > `MCP Servers` and toggle
-the `Enable MCP Host` switch.
+Before we begin, you will need to enable Jan's MCP functionalitie at `Settings` > `MCP Servers`, and toggle
+the `Allow All MCP Tool Permission` switch ON.
 
 ![Turn on the MCP Host](./_assets/mcp-on.png)
 
-### 2. Adding an MCP Server
+Please note that you will also need to have **NodeJS** and/or **Python** installed on your machine. In case you don't
+have either, you can download them from the official websites at the links below:
+- [Node.js](https://nodejs.org/)
+- [Python](https://www.python.org/)
 
-Once the host is enabled, you can connect Jan to one or more MCP tool servers.
+
+### Browser MCP
 
 - Click on the `+` sign on the upper right-hand corner of the MCP box.
 
@@ -102,44 +103,49 @@ Once the host is enabled, you can connect Jan to one or more MCP tool servers.
 
 ![Server Confirmation](./_assets/mcp-setup-3.png)
 
+- Open your favorite chrome-based browser (e.g., Google Chrome, Brave, Vivaldi, Microsoft Edge, etc...) and navigate to the
+[Browser MCP Extension Page](https://chromewebstore.google.com/detail/browser-mcp-automate-your/bjfgambnhccakkhmkepdoekmckoijdlc).
 
-### 3. Using an MCP Tool in a Chat
+![Browser MCP Extension](./_assets/mcp-setup-6.png)
 
-With a server connected, models that support tool use can now request access to your configured MCP. As of now,
-the best models to use MCP are Claude 4 Sonnet, 4 Opus
+- Make sure to enable the extension to run on private windows. Since Browser Use will have access to all sites you've
+already logged into in your regular browser session, it is best to give it a clean slate to start from.
 
-#### 3.1 Local Models
+![Browser MCP Extension](./_assets/mcp-setup-7.png)
 
-- Start a chat with a model capable of tool use and enable tool calling via the UI.
+- Enable the extension to run on private windows by clicking on it and Connecting to the Browser MCP server.
 
+![Browser MCP Extension](./_assets/mcp-setup-8.png)
 
-#### 3.2 Cloud-based Models
+- Go back to Jan and pick a model with good tool use capabilities, for example, Claude 3.7 and 4 Sonnet, or Claude 4 Opus,
+and make sure to enable tool calling via the UI by going to **Model Providers > Anthropic** and, after you have entered your
+API key, enable tool from the **+** button.
 
-- Go to **Model Providers > Anthropic** and, after you have entered your API key, enable tool
-calling via the UI.
+![Browser MCP Extension](./_assets/mcp-setup-9.png)
 
-![Enable Tool Calling](./_assets/mcp-setup-4.png)
+You can check and see if this was accurate below.
 
-- Open up a new chat with, say, Claude 4 Sonnet, and send a request that requires the model to use the browser.
-
-![Start Chatting](./_assets/mcp-setup-5.png)
+![Browser MCP Extension](./_assets/mcp-setup-10.png)
 
 
 ## Troubleshooting
 
-[This is a place for you to add solutions to common problems. For example:]
-
-* **Problem:** The MCP server appears as "Disconnected."
-    * **Solution:** [Your troubleshooting steps here. e.g., "Verify the server address is correct and that the server is running on your machine. Check for firewall rules that may be blocking the connection..."]
-* **Problem:** A model is not attempting to use any tools.
-    * **Solution:** [Your troubleshooting steps here. e.g., "Ensure the model you are using supports tool-use. Not all models have this capability..."]
-
+- The MCP server won't connect even though I've already added it to my list of MCP Servers?
+  - Make sure you have NodeJS and Python installed
+  - Make sure you typed the commands correctly in the MCP Server form
+  - Make sure the model you are using has tools enabled
+  - Restart Jan
+- The open source model I picked won't use the MCPs I enabled.
+  - Make sure the model you are using has tools enabled
+  - Lots of open source models are not designed to use tools or simply don't work well with them, so you may need to try a different model
+  - The model you have selected might be good at tool calling but it is possible that it does not support images, effectively making it unsuitable for some tools that take screenshots of a website like the Browser MCP
 
 ## Future Potential
 
-This integration is the foundation for creating more capable and context-aware AI assistants within Jan. The long-term
-goal is to enable complex workflows that leverage your local environment securely.
+This integration is the foundation for creating more capable and context-aware AI assistants within Jan. The
+long-term goal is to enable more sophisticated workflows that make use of your local environment securely as
+well as your favorite tools.
 
-For example, an AI could cross-reference information between a local document and a remote API, or use a local script to
-analyze data and then summarize the findings, all orchestrated through Jan's interface. As the MCP ecosystem grows, so
-will the potential applications within Jan.
+For example, an AI could cross-reference information between a local document and a remote API, or use a
+local script toanalyze data and then summarize the findings, all orchestrated through Jan's interface. As
+the MCP ecosystem grows, sowill the potential applications within Jan.
