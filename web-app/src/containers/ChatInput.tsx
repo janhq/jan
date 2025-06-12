@@ -142,6 +142,12 @@ const ChatInput = ({
     }
   }, [])
 
+  useEffect(() => {
+    if (tooltipToolsAvailable && dropdownToolsAvailable) {
+      setTooltipToolsAvailable(false)
+    }
+  }, [dropdownToolsAvailable, tooltipToolsAvailable])
+
   // Focus when thread changes
   useEffect(() => {
     if (textareaRef.current) {
@@ -479,12 +485,12 @@ const ChatInput = ({
                           >
                             <DropdownToolsAvailable
                               initialMessage={initialMessage}
+                              onOpenChange={(isOpen) => {
+                                setDropdownToolsAvailable(isOpen)
+                                setTooltipToolsAvailable(false)
+                              }}
                             >
                               {(isOpen, toolsCount) => {
-                                setDropdownToolsAvailable(isOpen)
-                                if (tooltipToolsAvailable && isOpen) {
-                                  setTooltipToolsAvailable(false)
-                                }
                                 return (
                                   <div
                                     className={cn(
