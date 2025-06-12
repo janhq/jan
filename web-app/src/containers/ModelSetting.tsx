@@ -13,13 +13,19 @@ import { DynamicControllerSetting } from '@/containers/dynamicControllerSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { updateModel, stopModel } from '@/services/models'
 import { ModelSettingParams } from '@janhq/core'
+import { cn } from '@/lib/utils'
 
 type ModelSettingProps = {
   provider: ProviderObject
   model: Model
+  smallIcon?: boolean
 }
 
-export function ModelSetting({ model, provider }: ModelSettingProps) {
+export function ModelSetting({
+  model,
+  provider,
+  smallIcon,
+}: ModelSettingProps) {
   const { updateProvider } = useModelProvider()
 
   // Create a debounced version of stopModel that waits 500ms after the last call
@@ -87,7 +93,12 @@ export function ModelSetting({ model, provider }: ModelSettingProps) {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <div className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out">
+        <div
+          className={cn(
+            'size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out',
+            smallIcon && 'size-5'
+          )}
+        >
           <IconSettings size={18} className="text-main-view-fg/50" />
         </div>
       </SheetTrigger>

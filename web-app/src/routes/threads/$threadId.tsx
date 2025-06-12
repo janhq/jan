@@ -17,6 +17,7 @@ import { fetchMessages } from '@/services/messages'
 import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
+import { useAppearance } from '@/hooks/useAppearance'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -33,6 +34,7 @@ function ThreadDetail() {
   const { setCurrentAssistant, assistants } = useAssistant()
   const { setMessages } = useMessages()
   const { streamingContent } = useAppState()
+  const { appMainViewBgColor } = useAppearance()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -241,7 +243,10 @@ function ThreadDetail() {
         <div className="w-4/6 mx-auto pt-2 pb-3 shrink-0 relative">
           <div
             className={cn(
-              'from-main-view/20 bg-gradient-to-b to-main-view absolute z-0 -top-6 h-8 py-1 flex w-full justify-center backdrop-blur pointer-events-none opacity-0 visibility-hidden',
+              'absolute z-0 -top-6 h-8 py-1 flex w-full justify-center pointer-events-none opacity-0 visibility-hidden',
+              appMainViewBgColor.a === 1
+                ? 'from-main-view/20 bg-gradient-to-b to-main-view backdrop-blur'
+                : 'bg-transparent',
               !isAtBottom && hasScrollbar && 'visibility-visible opacity-100'
             )}
           >
