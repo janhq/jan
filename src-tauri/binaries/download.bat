@@ -1,6 +1,6 @@
 @echo off
 
-set CORTEX_VERSION=1.0.13-rc6
+set CORTEX_VERSION=1.0.14
 set ENGINE_VERSION=b5509
 set ENGINE_DOWNLOAD_URL=https://github.com/menloresearch/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win
 set ENGINE_DOWNLOAD_GGML_URL=https://github.com/ggml-org/llama.cpp/releases/download/%ENGINE_VERSION%/llama-%ENGINE_VERSION%-bin-win

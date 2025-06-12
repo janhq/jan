@@ -14,7 +14,7 @@
     "description": "Allows processing prompts in parallel with text generation, which usually improves performance.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": true
+      "value": ""
     }
   },
   {
@@ -23,7 +23,7 @@
     "description": "Number of prompts that can be processed simultaneously by the model.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "1",
+      "value": "",
       "placeholder": "1",
       "type": "number",
       "textAlign": "right"
@@ -35,8 +35,8 @@
     "description": "Number of CPU cores used for model processing when running without GPU.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "-1",
-      "placeholder": "Number of CPU threads",
+      "value": "",
+      "placeholder": "-1 (auto-detect)",
       "type": "number",
       "textAlign": "right"
     }
@@ -47,7 +47,7 @@
     "description": "Number of threads for batch and prompt processing (default: same as Threads).",
     "controllerType": "input",
     "controllerProps": {
-      "value": -1,
+      "value": "",
       "placeholder": "-1 (same as Threads)",
       "type": "number"
     }
@@ -58,7 +58,7 @@
     "description": "Optimizes memory usage and speeds up model inference using an efficient attention implementation.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": false
+      "value": true
     }
   },
   {
@@ -76,7 +76,7 @@
     "description": "Controls memory usage and precision trade-off.",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "f16",
+      "value": "q8_0",
       "options": [
         {
           "value": "q4_0",

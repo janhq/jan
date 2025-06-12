@@ -129,12 +129,20 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
         provider: providerName,
         settings: Object.values(modelSettings).reduce(
           (acc, setting) => {
-            let value = model[
-              setting.key as keyof typeof model
-            ] as keyof typeof setting.controller_props.value
+            let value = setting.controller_props.value
             if (setting.key === 'ctx_len') {
-              // @ts-expect-error dynamic type
-              value = 4096 // Default context length for Llama.cpp models
+              value = 8192 // Default context length for Llama.cpp models
+            }
+            // Set temperature to 0.6 for DefaultToolUseSupportedModels
+            if (
+              Object.values(DefaultToolUseSupportedModels).some((v) =>
+                model.id.toLowerCase().includes(v.toLowerCase())
+              )
+            ) {
+              if (setting.key === 'temperature') value = 0.7 // Default temperature for tool-supported models
+              if (setting.key === 'top_k') value = 20 // Default top_k for tool-supported models
+              if (setting.key === 'top_p') value = 0.8 // Default top_p for tool-supported models
+              if (setting.key === 'min_p') value = 0 // Default min_p for tool-supported models
             }
             acc[setting.key] = {
               ...setting,
