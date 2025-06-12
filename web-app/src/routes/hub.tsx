@@ -290,8 +290,9 @@ function Hub() {
         isRecommendedModel(model.metadata?.id)
       )
       if (recommendedModel && recommendedModel.models[0]?.id) {
-        downloadModel(recommendedModel.models[0].id)
-
+        setTimeout(() => {
+          downloadModel(recommendedModel.models[0].id)
+        }, 100)
         return
       }
     }
