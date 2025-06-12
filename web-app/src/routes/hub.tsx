@@ -315,7 +315,7 @@ function Hub() {
       title: 'Recommended Model',
       disableBeacon: true,
       content:
-        "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",
+        "Browse and download powerful AI models from various providers, all in one place. We suggest starting with Jan-Nano - a model optimized for function calling, tool integration, and research capabilities. It's ideal for building interactive AI agents.",
     },
     {
       target: '.hub-download-button-step',
