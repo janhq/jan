@@ -164,14 +164,14 @@ jobs:
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir $APP_IMAGE
             echo "Before Signing: "
             echo "-----------------------"
-            ls -la ./src-tauri/target/release/bundle/appimage/Jan.AppDir
+            ls -la ./src-tauri/target/release/bundle/appimage/
             yarn tauri signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$APP_IMAGE"
             echo "After Signing: "
             echo "-----------------------"
-            ls -la ./src-tauri/target/release/bundle/appimage/Jan.AppDir
+            ls -la ./src-tauri/target/release/bundle/appimage/
           else
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
             mkdir -p ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/engines
@@ -184,14 +184,14 @@ jobs:
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $APP_IMAGE
             echo "Before Signing: "
             echo "-----------------------"
-            ls -la ./src-tauri/target/release/bundle/appimage/Jan.AppDir
+            ls -la ./src-tauri/target/release/bundle/appimage/
             yarn tauri signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
             "$APP_IMAGE"
             echo "After Signing: "
             echo "-----------------------"
-            ls -la ./src-tauri/target/release/bundle/appimage/Jan.AppDir
+            ls -la ./src-tauri/target/release/bundle/appimage/
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
