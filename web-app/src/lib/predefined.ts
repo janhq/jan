@@ -24,14 +24,14 @@ export const modelSettings = {
   },
 
   temperature: {
-    key: 'temp',
+    key: 'temperature',
     title: 'Temperature',
     description:
       'Temperature for sampling (higher = more random). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
-      value: 0.8,
-      placeholder: '0.8',
+      value: 0.6,
+      placeholder: '0.6',
       type: 'number',
       min: 0,
       step: 0.01,
