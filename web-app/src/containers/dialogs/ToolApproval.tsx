@@ -31,8 +31,15 @@ export default function ToolApproval() {
     onDeny()
   }
 
+  const handleDialogOpen = (open: boolean) => {
+    setModalOpen(open)
+    if (!open) {
+      onDeny()
+    }
+  }
+
   return (
-    <Dialog open={isModalOpen} onOpenChange={setModalOpen}>
+    <Dialog open={isModalOpen} onOpenChange={handleDialogOpen}>
       <DialogContent showCloseButton={false}>
         <DialogHeader>
           <div className="flex items-start gap-3">
