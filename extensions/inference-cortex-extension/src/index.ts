@@ -117,10 +117,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     if (numParallel.length > 0 && parseInt(numParallel) > 0) {
       this.n_parallel = parseInt(numParallel)
     }
-    this.cont_batching = await this.getSetting<boolean>(
-      Settings.cont_batching,
-      true
-    )
+
     this.caching_enabled = await this.getSetting<boolean>(
       Settings.caching_enabled,
       true
@@ -139,6 +136,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     const threads_number = Number(
       await this.getSetting<string>(Settings.cpu_threads, '')
     )
+    if (this.cpu_threads && this.cpu_threads > 1)
+      this.cont_batching = await this.getSetting<boolean>(
+        Settings.cont_batching,
+        true
+      )
     if (!Number.isNaN(threads_number)) this.cpu_threads = threads_number
 
     const huggingfaceToken = await this.getSetting<string>(
@@ -192,9 +194,18 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       if (value.length > 0 && parseInt(value) > 0) {
         this.n_parallel = parseInt(value)
       }
-    } else if (key === Settings.cont_batching && typeof value === 'boolean') {
+    } else if (
+      key === Settings.cont_batching &&
+      typeof value === 'boolean' &&
+      this.cpu_threads &&
+      this.cpu_threads > 1
+    ) {
       this.cont_batching = value as boolean
-    } else if (key === Settings.caching_enabled && typeof value === 'boolean') {
+    } else if (
+      key === Settings.caching_enabled &&
+      typeof value === 'boolean' &&
+      this.caching_enabled
+    ) {
       this.caching_enabled = value as boolean
     } else if (key === Settings.flash_attn && typeof value === 'boolean') {
       this.flash_attn = value as boolean
@@ -257,13 +268,17 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               model.engine === 'nitro' // Legacy model cache
                 ? 'llama-cpp'
                 : model.engine,
-            cont_batching: this.cont_batching,
             n_parallel: this.n_parallel,
             caching_enabled: this.caching_enabled,
             flash_attn: this.flash_attn,
             cache_type: this.cache_type,
             use_mmap: this.use_mmap,
-            ...(this.cpu_threads ? { cpu_threads: this.cpu_threads } : {}),
+            ...(this.cpu_threads && this.cpu_threads > 1
+              ? { cpu_threads: this.cpu_threads }
+              : {}),
+            ...(this.cont_batching && this.cpu_threads && this.cpu_threads > 1
+              ? { cont_batching: this.cont_batching }
+              : { cont_batching: false }),
           },
           timeout: false,
           signal,
