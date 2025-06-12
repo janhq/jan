@@ -194,18 +194,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       if (value.length > 0 && parseInt(value) > 0) {
         this.n_parallel = parseInt(value)
       }
-    } else if (
-      key === Settings.cont_batching &&
-      typeof value === 'boolean' &&
-      this.cpu_threads &&
-      this.cpu_threads > 1
-    ) {
+    } else if (key === Settings.cont_batching && typeof value === 'boolean') {
       this.cont_batching = value as boolean
-    } else if (
-      key === Settings.caching_enabled &&
-      typeof value === 'boolean' &&
-      value === true
-    ) {
+    } else if (key === Settings.caching_enabled && typeof value === 'boolean') {
       this.caching_enabled = value as boolean
     } else if (key === Settings.flash_attn && typeof value === 'boolean') {
       this.flash_attn = value as boolean
