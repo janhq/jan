@@ -1,7 +1,5 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
-import { createJSONStorage, persist } from 'zustand/middleware'
-import { localStorageKey } from '@/constants/localStorage'
 import {
   createMessage,
   deleteMessage as deleteMessageExt,
@@ -16,59 +14,51 @@ type MessageState = {
   deleteMessage: (threadId: string, messageId: string) => void
 }
 
-export const useMessages = create<MessageState>()(
-  persist(
-    (set, get) => ({
-      messages: {},
-      getMessages: (threadId) => {
-        return get().messages[threadId] || []
+export const useMessages = create<MessageState>()((set, get) => ({
+  messages: {},
+  getMessages: (threadId) => {
+    return get().messages[threadId] || []
+  },
+  setMessages: (threadId, messages) => {
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [threadId]: messages,
       },
-      setMessages: (threadId, messages) => {
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [threadId]: messages,
-          },
-        }))
+    }))
+  },
+  addMessage: (message) => {
+    const currentAssistant = useAssistant.getState().currentAssistant
+    const newMessage = {
+      ...message,
+      created_at: message.created_at || Date.now(),
+      metadata: {
+        ...message.metadata,
+        assistant: currentAssistant,
       },
-      addMessage: (message) => {
-        const currentAssistant = useAssistant.getState().currentAssistant
-        const newMessage = {
-          ...message,
-          created_at: message.created_at || Date.now(),
-          metadata: {
-            ...message.metadata,
-            assistant: currentAssistant,
-          },
-        }
-        createMessage(newMessage).then((createdMessage) => {
-          set((state) => ({
-            messages: {
-              ...state.messages,
-              [message.thread_id]: [
-                ...(state.messages[message.thread_id] || []),
-                createdMessage,
-              ],
-            },
-          }))
-        })
-      },
-      deleteMessage: (threadId, messageId) => {
-        deleteMessageExt(threadId, messageId)
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [threadId]:
-              state.messages[threadId]?.filter(
-                (message) => message.id !== messageId
-              ) || [],
-          },
-        }))
-      },
-    }),
-    {
-      name: localStorageKey.messages,
-      storage: createJSONStorage(() => localStorage),
     }
-  )
-)
+    createMessage(newMessage).then((createdMessage) => {
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [message.thread_id]: [
+            ...(state.messages[message.thread_id] || []),
+            createdMessage,
+          ],
+        },
+      }))
+    })
+  },
+  deleteMessage: (threadId, messageId) => {
+    deleteMessageExt(threadId, messageId)
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [threadId]:
+          state.messages[threadId]?.filter(
+            (message) => message.id !== messageId
+          ) || [],
+      },
+    }))
+  },
+}))
