@@ -91,8 +91,6 @@ const LeftPanel = () => {
     return filteredThreads.filter((t) => !t.isFavorite)
   }, [filteredThreads])
 
-  const [openDropdown, setOpenDropdown] = useState(false)
-
   return (
     <aside
       className={cn(
@@ -211,15 +209,8 @@ const LeftPanel = () => {
                     {t('common.recents')}
                   </span>
                   <div className="relative">
-                    <Dialog
-                      onOpenChange={(open) => {
-                        if (!open) setOpenDropdown(false)
-                      }}
-                    >
-                      <DropdownMenu
-                        open={openDropdown}
-                        onOpenChange={(open) => setOpenDropdown(open)}
-                      >
+                    <Dialog>
+                      <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <button
                             className="size-6 flex cursor-pointer items-center justify-center rounded hover:bg-left-panel-fg/10 transition-all duration-200 ease-in-out data-[state=open]:bg-left-panel-fg/10"
