@@ -50,7 +50,8 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
-
+      - name: Install Protoc
+        uses: arduino/setup-protoc@v3
       - name: Install dependencies
         run: |
           make config-yarn
