@@ -219,7 +219,7 @@ export function DownloadManagement() {
                 <p className="text-left-panel-fg/80 font-medium">Downloads</p>
                 <div className="mt-2 flex items-center justify-between space-x-2">
                   <Progress value={overallProgress * 100} />
-                  <span className="text-xs font-medium text-main-view-fg/80 shrink-0">
+                  <span className="text-xs font-medium text-left-panel-fg/80 shrink-0">
                     {Math.round(overallProgress * 100)}%
                   </span>
                 </div>
@@ -228,7 +228,7 @@ export function DownloadManagement() {
               <div className="fixed bottom-4 left-4 z-50 size-10 bg-main-view border-2 border-main-view-fg/10 rounded-full shadow-md cursor-pointer flex items-center justify-center">
                 <div className="relative">
                   <IconDownload
-                    className="text-main-view-fg/50 -mt-1"
+                    className="text-left-panel-fg/50 -mt-1"
                     size={20}
                   />
                   <div className="bg-primary font-bold size-5 rounded-full absolute -top-4 -right-4 flex items-center justify-center text-primary-fg">

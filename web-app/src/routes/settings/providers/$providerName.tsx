@@ -517,12 +517,12 @@ function ProviderDetail() {
                     })
                   ) : (
                     <div className="-mt-2">
-                      <div className="flex items-center gap-2 text-left-panel-fg/80">
+                      <div className="flex items-center gap-2 text-main-view-fg/80">
                         <h6 className="font-medium text-base">
                           No model found
                         </h6>
                       </div>
-                      <p className="text-left-panel-fg/60 mt-1 text-xs leading-relaxed">
+                      <p className="text-main-view-fg/70 mt-1 text-xs leading-relaxed">
                         Available models will be listed here. If you don't have
                         any models yet, visit the&nbsp;
                         <Link to={route.hub}>Hub</Link>
