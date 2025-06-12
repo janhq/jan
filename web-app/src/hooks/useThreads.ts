@@ -1,6 +1,4 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
-import { localStorageKey } from '@/constants/localStorage'
 import { ulid } from 'ulidx'
 import { createThread, deleteThread, updateThread } from '@/services/threads'
 import { Fzf } from 'fzf'
@@ -30,281 +28,271 @@ type ThreadState = {
   searchIndex: Fzf<Thread[]> | null
 }
 
-export const useThreads = create<ThreadState>()(
-  persist(
-    (set, get) => ({
-      threads: {},
-      searchIndex: null,
-      setThreads: (threads) => {
-        threads.forEach((thread, index) => {
-          thread.order = index + 1
-          updateThread({
-            ...thread,
-            order: index + 1,
-          })
-        })
-        const threadMap = threads.reduce(
-          (acc: Record<string, Thread>, thread) => {
-            acc[thread.id] = thread
-            return acc
-          },
-          {} as Record<string, Thread>
-        )
-        set({
-          threads: threadMap,
-          searchIndex: new Fzf<Thread[]>(Object.values(threadMap), {
-            selector: (item: Thread) => item.title,
-          }),
-        })
+export const useThreads = create<ThreadState>()((set, get) => ({
+  threads: {},
+  searchIndex: null,
+  setThreads: (threads) => {
+    threads.forEach((thread, index) => {
+      thread.order = index + 1
+      updateThread({
+        ...thread,
+        order: index + 1,
+      })
+    })
+    const threadMap = threads.reduce(
+      (acc: Record<string, Thread>, thread) => {
+        acc[thread.id] = thread
+        return acc
       },
-      getFilteredThreads: (searchTerm: string) => {
-        const { threads, searchIndex } = get()
+      {} as Record<string, Thread>
+    )
+    set({
+      threads: threadMap,
+      searchIndex: new Fzf<Thread[]>(Object.values(threadMap), {
+        selector: (item: Thread) => item.title,
+      }),
+    })
+  },
+  getFilteredThreads: (searchTerm: string) => {
+    const { threads, searchIndex } = get()
 
-        // If no search term, return all threads
-        if (!searchTerm) {
-          // return all threads
-          return Object.values(threads)
+    // If no search term, return all threads
+    if (!searchTerm) {
+      // return all threads
+      return Object.values(threads)
+    }
+
+    let currentIndex = searchIndex
+    if (!currentIndex?.find) {
+      currentIndex = new Fzf<Thread[]>(Object.values(threads), {
+        selector: (item: Thread) => item.title,
+      })
+      set({ searchIndex: currentIndex })
+    }
+
+    // Use the index to search and return matching threads
+    const fzfResults = currentIndex.find(searchTerm)
+    return fzfResults.map(
+      (result: { item: Thread; positions: Set<number> }) => {
+        const thread = result.item // Fzf stores the original item here
+        // Ensure result.positions is an array, default to empty if undefined
+        const positions = Array.from(result.positions) || []
+        const highlightedTitle = highlightFzfMatch(thread.title, positions)
+        return {
+          ...thread,
+          title: highlightedTitle, // Override title with highlighted version
         }
-
-        let currentIndex = searchIndex
-        if (!currentIndex?.find) {
-          currentIndex = new Fzf<Thread[]>(Object.values(threads), {
-            selector: (item: Thread) => item.title,
-          })
-          set({ searchIndex: currentIndex })
-        }
-
-        // Use the index to search and return matching threads
-        const fzfResults = currentIndex.find(searchTerm)
-        return fzfResults.map(
-          (result: { item: Thread; positions: Set<number> }) => {
-            const thread = result.item // Fzf stores the original item here
-            // Ensure result.positions is an array, default to empty if undefined
-            const positions = Array.from(result.positions) || []
-            const highlightedTitle = highlightFzfMatch(thread.title, positions)
-            return {
-              ...thread,
-              title: highlightedTitle, // Override title with highlighted version
-            }
-          }
-        )
-      },
-      toggleFavorite: (threadId) => {
-        set((state) => {
-          updateThread({
+      }
+    )
+  },
+  toggleFavorite: (threadId) => {
+    set((state) => {
+      updateThread({
+        ...state.threads[threadId],
+        isFavorite: !state.threads[threadId].isFavorite,
+      })
+      return {
+        threads: {
+          ...state.threads,
+          [threadId]: {
             ...state.threads[threadId],
             isFavorite: !state.threads[threadId].isFavorite,
-          })
-          return {
-            threads: {
-              ...state.threads,
-              [threadId]: {
-                ...state.threads[threadId],
-                isFavorite: !state.threads[threadId].isFavorite,
-              },
-            },
+          },
+        },
+      }
+    })
+  },
+  deleteThread: (threadId) => {
+    set((state) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [threadId]: _, ...remainingThreads } = state.threads
+      deleteThread(threadId)
+      return {
+        threads: remainingThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+  deleteAllThreads: () => {
+    set((state) => {
+      const allThreadIds = Object.keys(state.threads)
+      allThreadIds.forEach((threadId) => {
+        deleteThread(threadId)
+      })
+      return {
+        threads: {},
+        searchIndex: null, // Or new Fzf([], {selector...})
+      }
+    })
+  },
+  unstarAllThreads: () => {
+    set((state) => {
+      const updatedThreads = Object.keys(state.threads).reduce(
+        (acc, threadId) => {
+          acc[threadId] = {
+            ...state.threads[threadId],
+            isFavorite: false,
           }
-        })
-      },
-      deleteThread: (threadId) => {
-        set((state) => {
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const { [threadId]: _, ...remainingThreads } = state.threads
-          deleteThread(threadId)
-          return {
-            threads: remainingThreads,
-            searchIndex: new Fzf<Thread[]>(Object.values(remainingThreads), {
-              selector: (item: Thread) => item.title,
-            }),
-          }
-        })
-      },
-      deleteAllThreads: () => {
-        set((state) => {
-          const allThreadIds = Object.keys(state.threads)
-          allThreadIds.forEach((threadId) => {
-            deleteThread(threadId)
-          })
-          return {
-            threads: {},
-            searchIndex: null, // Or new Fzf([], {selector...})
-          }
-        })
-      },
-      unstarAllThreads: () => {
-        set((state) => {
-          const updatedThreads = Object.keys(state.threads).reduce(
-            (acc, threadId) => {
-              acc[threadId] = {
-                ...state.threads[threadId],
-                isFavorite: false,
-              }
-              return acc
-            },
-            {} as Record<string, Thread>
-          )
-          Object.values(updatedThreads).forEach((thread) => {
-            updateThread({ ...thread, isFavorite: false })
-          })
-          return { threads: updatedThreads }
-        })
-      },
-      getFavoriteThreads: () => {
-        return Object.values(get().threads).filter(
-          (thread) => thread.isFavorite
-        )
-      },
-      getThreadById: (threadId: string) => {
-        return get().threads[threadId]
-      },
-      setCurrentThreadId: (threadId) => {
-        set({ currentThreadId: threadId })
-      },
-      createThread: async (model, title, assistant) => {
-        const newThread: Thread = {
-          id: ulid(),
-          title: title ?? 'New Thread',
-          model,
-          // order: 1, // Will be set properly by setThreads
-          updated: Date.now() / 1000,
-          assistants: assistant ? [assistant] : [],
-        }
-        return await createThread(newThread).then((createdThread) => {
-          set((state) => {
-            // Get all existing threads as an array
-            const existingThreads = Object.values(state.threads)
-
-            // Create new array with the new thread at the beginning
-            const reorderedThreads = [createdThread, ...existingThreads]
-
-            // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
-            get().setThreads(reorderedThreads)
-
-            return {
-              currentThreadId: createdThread.id,
-            }
-          })
-          return createdThread
-        })
-      },
-      updateCurrentThreadAssistant: (assistant) => {
-        set((state) => {
-          if (!state.currentThreadId) return { ...state }
-          const currentThread = state.getCurrentThread()
-          if (currentThread)
-            updateThread({
-              ...currentThread,
-              assistants: [{ ...assistant, model: currentThread.model }],
-            })
-          return {
-            threads: {
-              ...state.threads,
-              [state.currentThreadId as string]: {
-                ...state.threads[state.currentThreadId as string],
-                assistants: [assistant],
-              },
-            },
-          }
-        })
-      },
-      updateCurrentThreadModel: (model) => {
-        set((state) => {
-          if (!state.currentThreadId) return { ...state }
-          const currentThread = state.getCurrentThread()
-          if (currentThread) updateThread({ ...currentThread, model })
-          return {
-            threads: {
-              ...state.threads,
-              [state.currentThreadId as string]: {
-                ...state.threads[state.currentThreadId as string],
-                model,
-              },
-            },
-          }
-        })
-      },
-      renameThread: (threadId, newTitle) => {
-        set((state) => {
-          const thread = state.threads[threadId]
-          if (!thread) return state
-          const updatedThread = {
-            ...thread,
-            title: newTitle,
-          }
-          updateThread(updatedThread) // External call, order is fine
-          const newThreads = { ...state.threads, [threadId]: updatedThread }
-          return {
-            threads: newThreads,
-            searchIndex: new Fzf<Thread[]>(Object.values(newThreads), {
-              selector: (item: Thread) => item.title,
-            }),
-          }
-        })
-      },
-      getCurrentThread: () => {
-        const { currentThreadId, threads } = get()
-        return currentThreadId ? threads[currentThreadId] : undefined
-      },
-      updateThreadTimestamp: (threadId) => {
-        set((state) => {
-          const thread = state.threads[threadId]
-          if (!thread) return state
-          
-          // If the thread is already at order 1, just update the timestamp
-          if (thread.order === 1) {
-            const updatedThread = {
-              ...thread,
-              updated: Date.now() / 1000,
-            }
-            updateThread(updatedThread)
-            
-            return {
-              threads: {
-                ...state.threads,
-                [threadId]: updatedThread,
-              },
-            }
-          }
-          
-          // Update the thread with new timestamp and set it to order 1 (top)
-          const updatedThread = {
-            ...thread,
-            updated: Date.now() / 1000,
-            order: 1,
-          }
-          
-          // Update all other threads to increment their order by 1
-          const updatedThreads = { ...state.threads }
-          Object.keys(updatedThreads).forEach(id => {
-            if (id !== threadId) {
-              const otherThread = updatedThreads[id]
-              updatedThreads[id] = {
-                ...otherThread,
-                order: (otherThread.order || 1) + 1,
-              }
-              // Update the backend for other threads
-              updateThread(updatedThreads[id])
-            }
-          })
-          
-          // Set the updated thread
-          updatedThreads[threadId] = updatedThread
-          
-          // Update the backend for the main thread
-          updateThread(updatedThread)
-          
-          return {
-            threads: updatedThreads,
-            searchIndex: new Fzf<Thread[]>(Object.values(updatedThreads), {
-              selector: (item: Thread) => item.title,
-            }),
-          }
-        })
-      },
-    }),
-    {
-      name: localStorageKey.threads,
-      storage: createJSONStorage(() => localStorage),
+          return acc
+        },
+        {} as Record<string, Thread>
+      )
+      Object.values(updatedThreads).forEach((thread) => {
+        updateThread({ ...thread, isFavorite: false })
+      })
+      return { threads: updatedThreads }
+    })
+  },
+  getFavoriteThreads: () => {
+    return Object.values(get().threads).filter((thread) => thread.isFavorite)
+  },
+  getThreadById: (threadId: string) => {
+    return get().threads[threadId]
+  },
+  setCurrentThreadId: (threadId) => {
+    set({ currentThreadId: threadId })
+  },
+  createThread: async (model, title, assistant) => {
+    const newThread: Thread = {
+      id: ulid(),
+      title: title ?? 'New Thread',
+      model,
+      // order: 1, // Will be set properly by setThreads
+      updated: Date.now() / 1000,
+      assistants: assistant ? [assistant] : [],
     }
-  )
-)
+    return await createThread(newThread).then((createdThread) => {
+      set((state) => {
+        // Get all existing threads as an array
+        const existingThreads = Object.values(state.threads)
+
+        // Create new array with the new thread at the beginning
+        const reorderedThreads = [createdThread, ...existingThreads]
+
+        // Use setThreads to handle proper ordering (this will assign order 1, 2, 3...)
+        get().setThreads(reorderedThreads)
+
+        return {
+          currentThreadId: createdThread.id,
+        }
+      })
+      return createdThread
+    })
+  },
+  updateCurrentThreadAssistant: (assistant) => {
+    set((state) => {
+      if (!state.currentThreadId) return { ...state }
+      const currentThread = state.getCurrentThread()
+      if (currentThread)
+        updateThread({
+          ...currentThread,
+          assistants: [{ ...assistant, model: currentThread.model }],
+        })
+      return {
+        threads: {
+          ...state.threads,
+          [state.currentThreadId as string]: {
+            ...state.threads[state.currentThreadId as string],
+            assistants: [assistant],
+          },
+        },
+      }
+    })
+  },
+  updateCurrentThreadModel: (model) => {
+    set((state) => {
+      if (!state.currentThreadId) return { ...state }
+      const currentThread = state.getCurrentThread()
+      if (currentThread) updateThread({ ...currentThread, model })
+      return {
+        threads: {
+          ...state.threads,
+          [state.currentThreadId as string]: {
+            ...state.threads[state.currentThreadId as string],
+            model,
+          },
+        },
+      }
+    })
+  },
+  renameThread: (threadId, newTitle) => {
+    set((state) => {
+      const thread = state.threads[threadId]
+      if (!thread) return state
+      const updatedThread = {
+        ...thread,
+        title: newTitle,
+      }
+      updateThread(updatedThread) // External call, order is fine
+      const newThreads = { ...state.threads, [threadId]: updatedThread }
+      return {
+        threads: newThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(newThreads), {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+  getCurrentThread: () => {
+    const { currentThreadId, threads } = get()
+    return currentThreadId ? threads[currentThreadId] : undefined
+  },
+  updateThreadTimestamp: (threadId) => {
+    set((state) => {
+      const thread = state.threads[threadId]
+      if (!thread) return state
+
+      // If the thread is already at order 1, just update the timestamp
+      if (thread.order === 1) {
+        const updatedThread = {
+          ...thread,
+          updated: Date.now() / 1000,
+        }
+        updateThread(updatedThread)
+
+        return {
+          threads: {
+            ...state.threads,
+            [threadId]: updatedThread,
+          },
+        }
+      }
+
+      // Update the thread with new timestamp and set it to order 1 (top)
+      const updatedThread = {
+        ...thread,
+        updated: Date.now() / 1000,
+        order: 1,
+      }
+
+      // Update all other threads to increment their order by 1
+      const updatedThreads = { ...state.threads }
+      Object.keys(updatedThreads).forEach((id) => {
+        if (id !== threadId) {
+          const otherThread = updatedThreads[id]
+          updatedThreads[id] = {
+            ...otherThread,
+            order: (otherThread.order || 1) + 1,
+          }
+          // Update the backend for other threads
+          updateThread(updatedThreads[id])
+        }
+      })
+
+      // Set the updated thread
+      updatedThreads[threadId] = updatedThread
+
+      // Update the backend for the main thread
+      updateThread(updatedThread)
+
+      return {
+        threads: updatedThreads,
+        searchIndex: new Fzf<Thread[]>(Object.values(updatedThreads), {
+          selector: (item: Thread) => item.title,
+        }),
+      }
+    })
+  },
+}))
