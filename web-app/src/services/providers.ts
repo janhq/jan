@@ -144,7 +144,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
               )
             ) {
               // @ts-expect-error dynamic type
-              value = 1 // Default temperature for tool-supported models
+              value = 0.6 // Default temperature for tool-supported models
             }
             acc[setting.key] = {
               ...setting,
