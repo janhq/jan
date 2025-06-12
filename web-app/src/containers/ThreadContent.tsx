@@ -311,7 +311,10 @@ export const ThreadContent = memo(
               />
             )}
 
-            <RenderMarkdown content={textSegment} components={linkComponents} />
+            <RenderMarkdown
+              content={textSegment.replace('</think>', '')}
+              components={linkComponents}
+            />
 
             {isToolCalls && item.metadata?.tool_calls ? (
               <>
