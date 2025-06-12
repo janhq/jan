@@ -479,12 +479,14 @@ const ChatInput = ({
                           >
                             <DropdownToolsAvailable
                               initialMessage={initialMessage}
-                            >
-                              {(isOpen, toolsCount) => {
+                              onOpenChange={(isOpen) => {
                                 setDropdownToolsAvailable(isOpen)
                                 if (tooltipToolsAvailable && isOpen) {
                                   setTooltipToolsAvailable(false)
                                 }
+                              }}
+                            >
+                              {(isOpen, toolsCount) => {
                                 return (
                                   <div
                                     className={cn(

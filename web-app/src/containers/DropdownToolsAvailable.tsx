@@ -18,14 +18,21 @@ import { useAppState } from '@/hooks/useAppState'
 interface DropdownToolsAvailableProps {
   children: (isOpen: boolean, toolsCount: number) => React.ReactNode
   initialMessage?: boolean
+  onOpenChange?: (isOpen: boolean) => void
 }
 
 export default function DropdownToolsAvailable({
   children,
   initialMessage = false,
+  onOpenChange,
 }: DropdownToolsAvailableProps) {
   const { tools } = useAppState()
   const [isOpen, setIsOpen] = useState(false)
+
+  const handleOpenChange = (open: boolean) => {
+    setIsOpen(open)
+    onOpenChange?.(open)
+  }
   const { getCurrentThread } = useThreads()
   const {
     isToolDisabled,
@@ -86,7 +93,7 @@ export default function DropdownToolsAvailable({
 
   if (tools.length === 0) {
     return (
-      <DropdownMenu onOpenChange={setIsOpen}>
+      <DropdownMenu onOpenChange={handleOpenChange}>
         <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-w-64">
           <DropdownMenuItem disabled>No tools available</DropdownMenuItem>
@@ -96,7 +103,7 @@ export default function DropdownToolsAvailable({
   }
 
   return (
-    <DropdownMenu onOpenChange={setIsOpen}>
+    <DropdownMenu onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>{renderTrigger()}</DropdownMenuTrigger>
 
       <DropdownMenuContent
