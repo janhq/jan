@@ -204,7 +204,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     } else if (
       key === Settings.caching_enabled &&
       typeof value === 'boolean' &&
-      this.caching_enabled
+      value === true
     ) {
       this.caching_enabled = value as boolean
     } else if (key === Settings.flash_attn && typeof value === 'boolean') {
@@ -270,11 +270,11 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
                 : model.engine,
             ...(this.n_parallel ? { n_parallel: this.n_parallel } : {}),
             ...(this.use_mmap ? { use_mmap: this.use_mmap } : {}),
-            ...(this.cache_type && this.caching_enabled
+            ...(this.caching_enabled ? { caching_enabled: true } : {}),
+            ...(this.flash_attn ? { flash_attn: this.flash_attn } : {}),
+            ...(this.caching_enabled && this.cache_type
               ? { cache_type: this.cache_type }
               : {}),
-            ...(this.flash_attn ? { flash_attn: this.flash_attn } : {}),
-            ...(this.caching_enabled ? { cache_type: this.cache_type } : {}),
             ...(this.cpu_threads && this.cpu_threads > 0
               ? { cpu_threads: this.cpu_threads }
               : {}),
