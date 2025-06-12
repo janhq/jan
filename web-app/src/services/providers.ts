@@ -136,20 +136,15 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
               // @ts-expect-error dynamic type
               value = 4096 // Default context length for Llama.cpp models
             }
-            // One-time migration: Update temperature from 0.8 to 1 for DefaultToolUseSupportedModels
+            // Set temperature to 1 for DefaultToolUseSupportedModels
             if (
               setting.key === 'temp' &&
               Object.values(DefaultToolUseSupportedModels).some((v) =>
                 model.id.toLowerCase().includes(v.toLowerCase())
               )
             ) {
-              const currentValue = model[
-                setting.key as keyof typeof model
-              ] as number
-              if (currentValue === 0.8 || currentValue === undefined) {
-                // @ts-expect-error dynamic type
-                value = 1 // Migrate from 0.8 to 1 for tool-supported models
-              }
+              // @ts-expect-error dynamic type
+              value = 1 // Default temperature for tool-supported models
             }
             acc[setting.key] = {
               ...setting,
