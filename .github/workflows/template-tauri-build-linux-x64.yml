@@ -172,11 +172,16 @@ jobs:
             echo $APP_IMAGE
             rm -f $APP_IMAGE
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $APP_IMAGE
-            tauri 
+            echo "Before Signing: "
+            echo "-----------------------"
+            ls -la ./src-tauri/target/release/bundle/appimage/Jan.AppDir
             yarn tauri signer sign \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
-            "$APP_IMAGE" 
+            "$APP_IMAGE"
+            echo "After Signing: "
+            echo "-----------------------"
+            ls -la ./src-tauri/target/release/bundle/appimage/Jan.AppDir
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
