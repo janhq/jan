@@ -54,6 +54,13 @@ export const useToolApproval = create<ToolApprovalState>()(
 
       showApprovalModal: (toolName: string, threadId: string) => {
         return new Promise<boolean>((resolve) => {
+          // Check if tool is already approved for this thread
+          const state = get()
+          if (state.isToolApproved(threadId, toolName)) {
+            resolve(true)
+            return
+          }
+
           set({
             isModalOpen: true,
             modalProps: {
