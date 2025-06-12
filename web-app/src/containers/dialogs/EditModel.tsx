@@ -139,7 +139,9 @@ export const DialogEditModel = ({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit Model: {selectedModel.id}</DialogTitle>
+          <DialogTitle className="line-clamp-1" title={selectedModel.id}>
+            Edit Model: {selectedModel.id}
+          </DialogTitle>
           <DialogDescription>
             Configure model capabilities by toggling the options below.
           </DialogDescription>
