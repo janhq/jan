@@ -10,9 +10,9 @@ use tauri::{App, Emitter, Listener, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_store::StoreExt;
-use tokio::time::{sleep, Duration};
-use tokio::{sync::Mutex}; // Using tokio::sync::Mutex
-                                            // MCP
+use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration}; // Using tokio::sync::Mutex
+                                    // MCP
 use super::{
     cmd::{get_jan_data_folder_path, get_jan_extensions_path},
     mcp::run_mcp_commands,
@@ -279,7 +279,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 let mut killed_intentionally = app_state.cortex_killed_intentionally.lock().await;
                 *killed_intentionally = true;
                 drop(killed_intentionally);
-                
+
                 log::info!("Received kill-sidecar event (processing async).");
                 if let Some(child) = child_to_kill_arc.lock().await.take() {
                     log::info!("Attempting to kill sidecar process...");
@@ -333,10 +333,17 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                             *count = 0;
                         }
                         drop(count);
-                        
-                        // Reset the intentionally killed flag when process starts successfully
-                        let mut killed_intentionally = cortex_killed_intentionally_state.lock().await;
-                        *killed_intentionally = false;
+
+                        // Only reset the intentionally killed flag if it wasn't set during spawn
+                        // This prevents overriding a concurrent kill event
+                        let mut killed_intentionally =
+                            cortex_killed_intentionally_state.lock().await;
+                        if !*killed_intentionally {
+                            // Flag wasn't set during spawn, safe to reset for future cycles
+                            *killed_intentionally = false;
+                        } else {
+                            log::info!("Kill intent detected during spawn, preserving kill flag");
+                        }
                         drop(killed_intentionally);
                     }
 
@@ -384,11 +391,9 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
 
                     // Check if the process was killed intentionally
                     let killed_intentionally = *cortex_killed_intentionally_state.lock().await;
-                    
+
                     if killed_intentionally {
-                        log::info!(
-                            "Cortex server was killed intentionally. Not restarting."
-                        );
+                        log::info!("Cortex server was killed intentionally. Not restarting.");
                         break;
                     } else if process_terminated_unexpectedly {
                         log::warn!("Cortex server terminated unexpectedly.");
@@ -404,9 +409,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                         sleep(Duration::from_millis(RESTART_DELAY_MS)).await;
                         continue;
                     } else {
-                        log::info!(
-                            "Cortex server terminated normally. Not restarting."
-                        );
+                        log::info!("Cortex server terminated normally. Not restarting.");
                         break;
                     }
                 }
