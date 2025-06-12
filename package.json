@@ -56,6 +56,7 @@
   },
   "packageManager": "yarn@4.5.3",
   "dependencies": {
+    "@tauri-apps/plugin-updater": "~2",
     "download-cli": "^1.1.1"
   }
 }
