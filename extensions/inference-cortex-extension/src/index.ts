@@ -268,17 +268,19 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               model.engine === 'nitro' // Legacy model cache
                 ? 'llama-cpp'
                 : model.engine,
-            n_parallel: this.n_parallel,
-            caching_enabled: this.caching_enabled,
-            flash_attn: this.flash_attn,
-            cache_type: this.cache_type,
-            use_mmap: this.use_mmap,
+            ...(this.n_parallel ? { n_parallel: this.n_parallel } : {}),
+            ...(this.use_mmap ? { use_mmap: this.use_mmap } : {}),
+            ...(this.cache_type && this.caching_enabled
+              ? { cache_type: this.cache_type }
+              : {}),
+            ...(this.flash_attn ? { flash_attn: this.flash_attn } : {}),
+            ...(this.caching_enabled ? { cache_type: this.cache_type } : {}),
             ...(this.cpu_threads && this.cpu_threads > 1
               ? { cpu_threads: this.cpu_threads }
               : {}),
             ...(this.cont_batching && this.cpu_threads && this.cpu_threads > 1
               ? { cont_batching: this.cont_batching }
-              : { cont_batching: false }),
+              : {}),
           },
           timeout: false,
           signal,
