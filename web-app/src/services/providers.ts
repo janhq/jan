@@ -139,7 +139,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
                 model.id.toLowerCase().includes(v.toLowerCase())
               )
             ) {
-              if (setting.key === 'temperature') value = 0.6 // Default temperature for tool-supported models
+              if (setting.key === 'temperature') value = 0.7 // Default temperature for tool-supported models
               if (setting.key === 'top_k') value = 20 // Default top_k for tool-supported models
               if (setting.key === 'top_p') value = 0.8 // Default top_p for tool-supported models
               if (setting.key === 'min_p') value = 0 // Default min_p for tool-supported models
