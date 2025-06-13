@@ -1,11 +1,20 @@
 [
   {
+    "key": "auto_unload_models",
+    "title": "Auto-Unload Old Models",
+    "description": "Automatically unloads models that are not in use to free up memory. Ensure only one model is loaded at a time.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
     "key": "cont_batching",
     "title": "Continuous Batching",
     "description": "Allows processing prompts in parallel with text generation, which usually improves performance.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": true
+      "value": ""
     }
   },
   {
@@ -14,8 +23,8 @@
     "description": "Number of prompts that can be processed simultaneously by the model.",
     "controllerType": "input",
     "controllerProps": {
-      "value": "4",
-      "placeholder": "4",
+      "value": "",
+      "placeholder": "1",
       "type": "number",
       "textAlign": "right"
     }
@@ -27,9 +36,20 @@
     "controllerType": "input",
     "controllerProps": {
       "value": "",
-      "placeholder": "Number of CPU threads",
+      "placeholder": "-1 (auto-detect)",
       "type": "number",
       "textAlign": "right"
+    }
+  },
+  {
+    "key": "threads_batch",
+    "title": "Threads (Batch)",
+    "description": "Number of threads for batch and prompt processing (default: same as Threads).",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "-1 (same as Threads)",
+      "type": "number"
     }
   },
   {
@@ -41,7 +61,6 @@
       "value": true
     }
   },
-
   {
     "key": "caching_enabled",
     "title": "Caching",
@@ -57,7 +76,7 @@
     "description": "Controls memory usage and precision trade-off.",
     "controllerType": "dropdown",
     "controllerProps": {
-      "value": "f16",
+      "value": "q8_0",
       "options": [
         {
           "value": "q4_0",
@@ -81,6 +100,18 @@
     "controllerType": "checkbox",
     "controllerProps": {
       "value": true
+    }
+  },
+  {
+    "key": "hugging-face-access-token",
+    "title": "Hugging Face Access Token",
+    "description": "Access tokens programmatically authenticate your identity to the Hugging Face Hub, allowing applications to perform specific actions specified by the scope of permissions granted.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": "",
+      "placeholder": "hf_**********************************",
+      "type": "password",
+      "inputActions": ["unobscure", "copy"]
     }
   }
 ]

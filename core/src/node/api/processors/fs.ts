@@ -21,18 +21,21 @@ export class FileSystem implements Processor {
       return import(FileSystem.moduleName).then((mdl) =>
         mdl[route](
           ...args.map((arg: any, index: number) => {
-            if(index !== 0) {
+            const arg0 = args[0]
+            if ('args' in arg0) arg = arg0.args
+            if (Array.isArray(arg)) arg = arg[0]
+            if (index !== 0) {
               return arg
             }
             if (index === 0 && typeof arg !== 'string') {
               throw new Error(`Invalid argument ${JSON.stringify(args)}`)
             }
             const path =
-            (arg.startsWith(`file:/`) || arg.startsWith(`file:\\`))
-            ? join(getJanDataFolderPath(), normalizeFilePath(arg))
-            : arg
+              arg.startsWith(`file:/`) || arg.startsWith(`file:\\`)
+                ? join(getJanDataFolderPath(), normalizeFilePath(arg))
+                : arg
 
-            if(path.startsWith(`http://`) || path.startsWith(`https://`)) {
+            if (path.startsWith(`http://`) || path.startsWith(`https://`)) {
               return path
             }
             const absolutePath = resolve(path)
@@ -88,5 +91,4 @@ export class FileSystem implements Processor {
       })
     })
   }
-
 }

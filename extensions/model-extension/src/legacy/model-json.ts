@@ -1,13 +1,5 @@
-import { InferenceEngine, Model, fs, joinPath } from '@janhq/core'
+import { Model, fs, joinPath } from '@janhq/core'
 //// LEGACY MODEL FOLDER ////
-const LocalEngines = [
-  InferenceEngine.cortex,
-  InferenceEngine.cortex_llamacpp,
-  InferenceEngine.cortex_tensorrtllm,
-  InferenceEngine.cortex_onnx,
-  InferenceEngine.nitro_tensorrt_llm,
-  InferenceEngine.nitro,
-]
 /**
  * Scan through models folder and return downloaded models
  * @returns
@@ -68,7 +60,7 @@ export const scanModelsFolder = async (): Promise<
           )
         )
         if (
-          !LocalEngines.includes(model.engine) ||
+          !['cortex', 'llama-cpp', 'nitro'].includes(model.engine) ||
           existFiles.every((exist) => exist)
         )
           return model
@@ -86,9 +78,9 @@ export const scanModelsFolder = async (): Promise<
                   file.toLowerCase().endsWith('.engine') // Tensort-LLM
                 )
               })?.length >=
-                (model.engine === InferenceEngine.nitro_tensorrt_llm
+                (model.engine === 'nitro-tensorrt-llm'
                   ? 1
-                  : (model.sources?.length ?? 1))
+                  : model.sources?.length ?? 1)
             )
           })
 

@@ -1,1 +1,0 @@
-declare const CORTEX_API_URL: string

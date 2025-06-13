@@ -1,5 +1,4 @@
 import {
-  InferenceEngine,
   Engines,
   EngineVariant,
   EngineReleased,
@@ -28,7 +27,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @param name - Inference engine name.
    * @returns A Promise that resolves to an array of installed engine.
    */
-  abstract getInstalledEngines(name: InferenceEngine): Promise<EngineVariant[]>
+  abstract getInstalledEngines(name: string): Promise<EngineVariant[]>
 
   /**
    * @param name - Inference engine name.
@@ -37,7 +36,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to an array of latest released engine by version.
    */
   abstract getReleasedEnginesByVersion(
-    name: InferenceEngine,
+    name: string,
     version: string,
     platform?: string
   ): Promise<EngineReleased[]>
@@ -48,7 +47,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to an array of latest released engine.
    */
   abstract getLatestReleasedEngine(
-    name: InferenceEngine,
+    name: string,
     platform?: string
   ): Promise<EngineReleased[]>
 
@@ -74,7 +73,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to unintall of engine.
    */
   abstract uninstallEngine(
-    name: InferenceEngine,
+    name: string,
     engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
@@ -83,7 +82,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to an object of default engine.
    */
   abstract getDefaultEngineVariant(
-    name: InferenceEngine
+    name: string
   ): Promise<DefaultEngineVariant>
 
   /**
@@ -92,7 +91,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to set default engine.
    */
   abstract setDefaultEngineVariant(
-    name: InferenceEngine,
+    name: string,
     engineConfig: EngineConfig
   ): Promise<{ messages: string }>
 
@@ -100,7 +99,7 @@ export abstract class EngineManagementExtension extends BaseExtension {
    * @returns A Promise that resolves to update engine.
    */
   abstract updateEngine(
-    name: InferenceEngine,
+    name: string,
     engineConfig?: EngineConfig
   ): Promise<{ messages: string }>
 
@@ -112,5 +111,5 @@ export abstract class EngineManagementExtension extends BaseExtension {
   /**
    * @returns A Promise that resolves to an object of remote models list .
    */
-  abstract getRemoteModels(name: InferenceEngine | string): Promise<any>
+  abstract getRemoteModels(name: string): Promise<any>
 }

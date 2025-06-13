@@ -38,10 +38,13 @@ export class ModelManager {
     return this.models.get(id) as T | undefined
   }
 
+  
   /**
-   * The instance of the tool manager.
+   * Shared instance of ExtensionManager.
    */
-  static instance(): ModelManager {
-    return (window.core?.modelManager as ModelManager) ?? new ModelManager()
+  static instance() {
+    if (!window.core.modelManager)
+      window.core.modelManager = new ModelManager()
+    return window.core.modelManager as ModelManager
   }
 }

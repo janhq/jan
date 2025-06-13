@@ -7,6 +7,7 @@ export enum ChatCompletionRole {
   System = 'system',
   Assistant = 'assistant',
   User = 'user',
+  Tool = 'tool',
 }
 
 /**
@@ -18,6 +19,9 @@ export type ChatCompletionMessage = {
   content?: ChatCompletionMessageContent
   /** The role of the author of this message. **/
   role: ChatCompletionRole
+  type?: string
+  output?: string
+  tool_call_id?: string
 }
 
 export type ChatCompletionMessageContent =

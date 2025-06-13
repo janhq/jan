@@ -12,8 +12,9 @@ on:
           - none
           - aws-s3
         default: none
-  pull_request_review:
-    types: [submitted]
+  pull_request:
+    branches:
+      - release/**
 
 jobs:
   set-public-provider:
@@ -47,48 +48,84 @@ jobs:
   get-update-version:
     uses: ./.github/workflows/template-get-update-version.yml
 
-  build-macos:
-    uses: ./.github/workflows/template-build-macos.yml
-    needs: [get-update-version, set-public-provider]
+  build-tauri-macos:
+    uses: ./.github/workflows/template-tauri-build-macos.yml
     secrets: inherit
+    needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
+      channel: nightly
       cortex_api_port: "39261"
 
-  build-windows-x64:
-    uses: ./.github/workflows/template-build-windows-x64.yml
+  build-tauri-windows-x64:
+    uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
+      channel: nightly
       cortex_api_port: "39261"
-  build-linux-x64:
-    uses: ./.github/workflows/template-build-linux-x64.yml
+  
+  build-tauri-linux-x64:
+    uses: ./.github/workflows/template-tauri-build-linux-x64.yml
     secrets: inherit
     needs: [get-update-version, set-public-provider]
     with:
       ref: ${{ needs.set-public-provider.outputs.ref }}
       public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
       new_version: ${{ needs.get-update-version.outputs.new_version }}
-      nightly: true
-      beta: false
+      channel: nightly
       cortex_api_port: "39261"
 
   sync-temp-to-latest:
-    needs: [set-public-provider, build-windows-x64, build-linux-x64, build-macos]
+    needs: [get-update-version, set-public-provider, build-tauri-windows-x64, build-tauri-linux-x64, build-tauri-macos]
     runs-on: ubuntu-latest
     steps:
+      - name: Getting the repo
+        uses: actions/checkout@v3
+      - name: Install jq
+        uses: dcarbone/install-jq-action@v2.0.1
+      - name: create latest.json file
+        run: |
+          VERSION=${{ needs.get-update-version.outputs.new_version }}
+          PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ")
+          LINUX_SIGNATURE="${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_SIG }}"
+          LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
+          WINDOWS_SIGNATURE="${{ needs.build-tauri-windows-x64.outputs.WIN_SIG }}"
+          WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-tauri-windows-x64.outputs.FILE_NAME }}"
+          DARWIN_SIGNATURE="${{ needs.build-tauri-macos.outputs.MAC_UNIVERSAL_SIG }}"
+          DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
+
+          jq --arg version "$VERSION" \
+            --arg pub_date "$PUB_DATE" \
+            --arg linux_signature "$LINUX_SIGNATURE" \
+            --arg linux_url "$LINUX_URL" \
+            --arg windows_signature "$WINDOWS_SIGNATURE" \
+            --arg windows_url "$WINDOWS_URL" \
+            --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_arm_url "$DARWIN_URL" \
+            --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
+            --arg darwin_amd_url "$DARWIN_URL" \
+            '.version = $version
+              | .pub_date = $pub_date
+              | .platforms["linux-x86_64"].signature = $linux_signature
+              | .platforms["linux-x86_64"].url = $linux_url
+              | .platforms["windows-x86_64"].signature = $windows_signature
+              | .platforms["windows-x86_64"].url = $windows_url
+              | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
+              | .platforms["darwin-aarch64"].url = $darwin_arm_url
+              | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
+              | .platforms["darwin-x86_64"].url = $darwin_amd_url' \
+            src-tauri/latest.json.template > latest.json
+            cat latest.json
       - name: Sync temp to latest
         if: ${{ needs.set-public-provider.outputs.public_provider == 'aws-s3' }}
         run: |
+          aws s3 cp ./latest.json s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/latest.json
           aws s3 sync s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-nightly/ s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/nightly/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
@@ -97,7 +134,14 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
 
   noti-discord-nightly-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'schedule'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -108,7 +152,14 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-pre-release-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'push'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -119,7 +170,14 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
   noti-discord-manual-and-update-url-readme:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
+    needs: [
+      build-tauri-macos,
+      build-tauri-windows-x64,
+      build-tauri-linux-x64,
+      get-update-version,
+      set-public-provider,
+      sync-temp-to-latest
+    ]
     secrets: inherit
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.public_provider == 'aws-s3'
     uses: ./.github/workflows/template-noti-discord-and-update-url-readme.yml
@@ -130,21 +188,28 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
 
 
-  comment-pr-build-url:
-    needs: [build-macos, build-windows-x64, build-linux-x64, get-update-version, set-public-provider, sync-temp-to-latest]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_review'
-    steps:
-      - name: Set up GitHub CLI
-        run: |
-          curl -sSL https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.tar.gz | tar xz
-          sudo cp gh_2.33.0_linux_amd64/bin/gh /usr/local/bin/
+  # comment-pr-build-url:
+  #   needs: [
+  #     build-tauri-macos,
+  #     build-tauri-windows-x64,
+  #     build-tauri-linux-x64,
+  #     get-update-version,
+  #     set-public-provider,
+  #     sync-temp-to-latest
+  #   ]
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'pull_request_review'
+  #   steps:
+  #     - name: Set up GitHub CLI
+  #       run: |
+  #         curl -sSL https://github.com/cli/cli/releases/download/v2.33.0/gh_2.33.0_linux_amd64.tar.gz | tar xz
+  #         sudo cp gh_2.33.0_linux_amd64/bin/gh /usr/local/bin/
 
-      - name: Comment build URL on PR
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_URL=${{ github.event.pull_request.html_url }}
-          RUN_ID=${{ github.run_id }}
-          COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
-          gh pr comment $PR_URL --body "$COMMENT"
+  #     - name: Comment build URL on PR
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: |
+  #         PR_URL=${{ github.event.pull_request.html_url }}
+  #         RUN_ID=${{ github.run_id }}
+  #         COMMENT="This is the build for this pull request. You can download it from the Artifacts section here: [Build URL](https://github.com/${{ github.repository }}/actions/runs/${RUN_ID})."
+  #         gh pr comment $PR_URL --body "$COMMENT"

@@ -105,7 +105,7 @@ jobs:
         run: |
           echo "Version: ${{ inputs.new_version }}"
           # Update tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.resources = ["resources/themes/**/*", "resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.resources = ["resources/pre-install/**/*"] | .bundle.externalBin = ["binaries/cortex-server", "resources/bin/uv"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json         
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.bundle.linux.deb.files = {"usr/bin/bun": "resources/bin/bun",
@@ -119,8 +119,8 @@ jobs:
                                            "usr/lib/Jan/binaries/libvulkan.so": "binaries/libvulkan.so"}' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           fi
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
 
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           cat ./src-tauri/Cargo.toml
@@ -162,6 +162,10 @@ jobs:
             echo $APP_IMAGE
             rm -f $APP_IMAGE
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan-${{ inputs.channel }}.AppDir $APP_IMAGE
+            yarn tauri signer sign \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            "$APP_IMAGE"
           else
             cp ./src-tauri/resources/bin/bun ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/bin/bun
             mkdir -p ./src-tauri/target/release/bundle/appimage/Jan.AppDir/usr/lib/Jan/binaries/engines
@@ -172,6 +176,10 @@ jobs:
             echo $APP_IMAGE
             rm -f $APP_IMAGE
             ./appimagetool ./src-tauri/target/release/bundle/appimage/Jan.AppDir $APP_IMAGE
+            yarn tauri signer sign \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            "$APP_IMAGE"
           fi
 
         env:

@@ -3,44 +3,48 @@
   "private": true,
   "workspaces": {
     "packages": [
-      "joi",
       "core",
-      "electron",
-      "web",
-      "server"
+      "web-app"
     ]
   },
   "scripts": {
-    "lint": "yarn workspace jan lint && yarn workspace @janhq/web lint",
-    "test:unit": "jest",
-    "test:coverage": "jest --coverage",
-    "test": "yarn workspace jan test:e2e",
-    "test-local": "yarn lint && yarn build:test && yarn test",
-    "copy:assets": "cpx \"pre-install/*.tgz\" \"electron/pre-install/\" && cpx \"themes/**\" \"electron/themes\"",
-    "dev:electron": "yarn copy:assets && yarn workspace jan dev",
-    "dev:web": "yarn workspace @janhq/web dev",
-    "dev:server": "yarn workspace @janhq/server dev",
-    "dev": "concurrently -n \"NEXT,ELECTRON\" -c \"yellow,blue\" --kill-others \"yarn dev:web\" \"yarn dev:electron\"",
-    "build:server": "cd server && yarn build",
+    "lint": "yarn workspace @janhq/web-app lint",
+    "dev": "yarn dev:tauri",
+    "build": "yarn build:web && yarn build:tauri",
+    "test": "yarn workspace @janhq/web-app test",
+    "test:coverage": "yarn workspace @janhq/web-app test",
+    "dev:web": "yarn workspace @janhq/web-app dev",
+    "dev:tauri": "CLEAN=true yarn build:icon && yarn copy:assets:tauri && tauri dev",
+    "install:cortex:linux:darwin": "cd src-tauri/binaries && ./download.sh",
+    "install:cortex:win32": "cd src-tauri/binaries && download.bat",
+    "install:cortex": "run-script-os",
+    "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\"",
+    "copy:lib": "run-script-os",
+    "copy:lib:linux": "cpx \"./lib/linux/*.so\" \"./src-tauri/resources/lib/\"",
+    "copy:lib:win32": "cpx \"./lib/windows/*.dll\" \"./src-tauri/resources/lib/\"",
+    "copy:lib:darwin": "mkdir -p \"./src-tauri/resources/lib/\"",
+    "download:bin": "node ./scripts/download-bin.mjs",
+    "build:tauri:linux:win32": "yarn download:bin && yarn install:cortex && yarn build:icon && yarn copy:assets:tauri && yarn tauri build",
+    "build:tauri:darwin": "yarn install:cortex && yarn build:icon && yarn copy:assets:tauri && yarn tauri build --target universal-apple-darwin",
+    "build:tauri": "run-script-os",
+    "build:icon": "tauri icon ./src-tauri/icons/icon.png",
     "build:core": "cd core && yarn build && yarn pack",
-    "build:web": "yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\"",
-    "build:electron": "yarn copy:assets && yarn workspace jan build",
-    "build:electron:test": "yarn workspace jan build:test",
+    "build:web": "yarn workspace @janhq/web-app build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && yarn workspaces foreach -Apt run build:publish",
-    "build:test": "yarn copy:assets && yarn workspace @janhq/web build && cpx \"web/out/**\" \"electron/renderer/\" && yarn workspace jan build:test",
-    "build": "yarn build:web && yarn build:electron",
-    "build:publish": "yarn copy:assets && yarn build:web && yarn workspace jan build:publish",
-    "dev:joi": "yarn workspace @janhq/joi install && yarn workspace @janhq/joi dev",
-    "build:joi": "yarn workspace @janhq/joi build",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.2.5",
     "concurrently": "^9.1.0",
     "cpx": "^1.5.0",
+    "cross-env": "^7.0.3",
     "husky": "^9.1.5",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
     "rimraf": "^3.0.2",
+    "run-script-os": "^1.1.6",
+    "tar": "^4.4.19",
+    "unzipper": "^0.12.3",
     "wait-on": "^7.0.1"
   },
   "version": "0.0.0",
@@ -50,5 +54,8 @@
   "resolutions": {
     "yallist": "4.0.0"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "yarn@4.5.3",
+  "dependencies": {
+    "download-cli": "^1.1.1"
+  }
 }

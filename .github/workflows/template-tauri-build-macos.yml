@@ -120,8 +120,8 @@ jobs:
           # Update tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
 
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           cat ./src-tauri/Cargo.toml
@@ -219,7 +219,7 @@ jobs:
           echo "files:" >> latest-mac.yml
           echo "  - url: $FILE_NAME" >> latest-mac.yml
           echo "    sha512: $SH512_CHECKSUM" >> latest-mac.yml
-          echo "    size: $FILE_NAME" >> latest-mac.yml
+          echo "    size: $FILE_SIZE" >> latest-mac.yml
           echo "path: $FILE_NAME" >> latest-mac.yml
           echo "sha512: $SH512_CHECKSUM" >> latest-mac.yml
           echo "releaseDate: $CURRENT_TIME" >> latest-mac.yml
@@ -243,7 +243,7 @@ jobs:
           aws s3 cp ./macos/latest-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/latest-mac.yml
           aws s3 cp ./macos/beta-mac.yml s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/beta-mac.yml
           aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip
-          aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig
+          # aws s3 cp ./macos/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/jan-${{ inputs.channel }}-mac-universal-${{ inputs.new_version }}.zip.sig
 
           # Upload for tauri updater
           aws s3 cp ./dmg/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/Jan-${{ inputs.channel }}_${{ inputs.new_version }}_universal.dmg

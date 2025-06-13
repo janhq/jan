@@ -2,7 +2,7 @@
   "name": "@janhq/conversational-extension",
   "productName": "Conversational",
   "version": "1.0.0",
-  "description": "Enables conversations and state persistence via your filesystem.",
+  "description": "Enables conversations and state persistence via your file system.",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "MIT",
@@ -23,9 +23,7 @@
     "typescript": "^5.7.2"
   },
   "dependencies": {
-    "@janhq/core": "../../core/package.tgz",
-    "ky": "^1.7.2",
-    "p-queue": "^8.0.1"
+    "@janhq/core": "../../core/package.tgz"
   },
   "engines": {
     "node": ">=18.0.0"

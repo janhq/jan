@@ -1,0 +1,31 @@
+{
+  "common": {
+    "general": "Umum",
+    "settings": "Pengaturan",
+    "modelProviders": "Penyedia Model",
+    "appearance": "Tampilan",
+    "privacy": "Privasi",
+    "keyboardShortcuts": "Pintasan",
+    "newChat": "Obrolan Baru",
+    "favorites": "Favorit",
+    "recents": "Terbaru",
+    "hub": "Hub",
+    "helpSupport": "Bantuan & Dukungan",
+    "unstarAll": "Hapus Bintang",
+    "unstar": "Hapus Bintang",
+    "deleteAll": "Hapus Semua",
+    "star": "Bintang",
+    "rename": "Ganti Nama",
+    "delete": "Hapus",
+    "dataFolder": "Folder Data",
+    "others": "Lainnya",
+    "language": "Bahasa",
+    "reset": "Atur Ulang",
+    "search": "Cari",
+    "name": "Nama",
+
+    "placeholder": {
+      "chatInput": "Tanya apa saja..."
+    }
+  }
+}

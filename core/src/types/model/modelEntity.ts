@@ -6,29 +6,7 @@ export type ModelInfo = {
   id: string
   settings?: ModelSettingParams
   parameters?: ModelRuntimeParams
-  engine?: InferenceEngine
-}
-
-/**
- * Represents the inference engine.
- * @stored
- */
-export enum InferenceEngine {
-  anthropic = 'anthropic',
-  mistral = 'mistral',
-  martian = 'martian',
-  openrouter = 'openrouter',
-  nitro = 'nitro',
-  openai = 'openai',
-  groq = 'groq',
-  triton_trtllm = 'triton_trtllm',
-  nitro_tensorrt_llm = 'nitro-tensorrt-llm',
-  cohere = 'cohere',
-  nvidia = 'nvidia',
-  cortex = 'cortex',
-  cortex_llamacpp = 'llama-cpp',
-  cortex_onnx = 'onnxruntime',
-  cortex_tensorrtllm = 'tensorrt-llm',
+  engine?: string
 }
 
 // Represents an artifact of a model, including its filename and URL
@@ -105,7 +83,7 @@ export type Model = {
   /**
    * The model engine.
    */
-  engine: InferenceEngine
+  engine: string
 }
 
 // Represents metadata associated with a model

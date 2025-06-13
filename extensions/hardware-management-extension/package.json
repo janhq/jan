@@ -2,7 +2,7 @@
   "name": "@janhq/hardware-management-extension",
   "productName": "Hardware Management",
   "version": "1.0.0",
-  "description": "Manages Better Hardware settings.",
+  "description": "Manages hardware settings.",
   "main": "dist/index.js",
   "node": "dist/node/index.cjs.js",
   "author": "Jan <service@jan.ai>",

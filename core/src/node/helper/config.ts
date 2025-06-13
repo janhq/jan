@@ -18,9 +18,7 @@ export const getAppConfigurations = (): AppConfiguration => {
 
   if (!fs.existsSync(configurationFile)) {
     // create default app config if we don't have one
-    console.debug(
-      `App config not found, creating default config at ${configurationFile}`
-    )
+    console.debug(`App config not found, creating default config at ${configurationFile}`)
     fs.writeFileSync(configurationFile, JSON.stringify(appDefaultConfiguration))
     return appDefaultConfiguration
   }
@@ -31,28 +29,23 @@ export const getAppConfigurations = (): AppConfiguration => {
     )
     return appConfigurations
   } catch (err) {
-    console.error(
-      `Failed to read app config, return default config instead! Err: ${err}`
-    )
+    console.error(`Failed to read app config, return default config instead! Err: ${err}`)
     return defaultAppConfig()
   }
 }
 
 const getConfigurationFilePath = () =>
   join(
-    global.core?.appPath() ||
-      process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'],
+    global.core?.appPath() || process.env[process.platform == 'win32' ? 'USERPROFILE' : 'HOME'],
     configurationFileName
   )
 
-export const updateAppConfiguration = (
+export const updateAppConfiguration = ({
+  configuration,
+}: {
   configuration: AppConfiguration
-): Promise<void> => {
+}): Promise<void> => {
   const configurationFile = getConfigurationFilePath()
-  console.debug(
-    'updateAppConfiguration, configurationFile: ',
-    configurationFile
-  )
 
   fs.writeFileSync(configurationFile, JSON.stringify(configuration))
   return Promise.resolve()
@@ -87,14 +80,11 @@ export const getJanExtensionsPath = (): string => {
  */
 export const defaultAppConfig = (): AppConfiguration => {
   const { app } = require('electron')
-  const defaultJanDataFolder = join(
-    app?.getPath('userData') ?? os?.homedir() ?? '',
-    'data'
-  )
+  const defaultJanDataFolder = join(app?.getPath('userData') ?? os?.homedir() ?? '', 'data')
   return {
     data_folder:
       process.env.CI === 'e2e'
-        ? (process.env.APP_CONFIG_PATH ?? resolve('./test-data'))
+        ? process.env.APP_CONFIG_PATH ?? resolve('./test-data')
         : defaultJanDataFolder,
     quick_ask: false,
   }

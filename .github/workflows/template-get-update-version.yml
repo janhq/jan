@@ -44,9 +44,12 @@ jobs:
             exit 1
           }
 
-          if ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}; then
+            if ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}; then
             echo "Tag detected, set output follow tag"
-            echo "::set-output name=new_version::${{ steps.tag.outputs.tag }}"
+            sanitized_tag="${{ steps.tag.outputs.tag }}"
+            # Remove the 'v' prefix if it exists
+            sanitized_tag="${sanitized_tag#v}"
+            echo "::set-output name=new_version::$sanitized_tag"
           else
             # Get the latest release tag from GitHub API
             LATEST_TAG=$(get_latest_tag)

@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "general": {
+      "autoDownload": "Automatic download new updates"
+    },
+    "dataFolder": {
+      "appData": "App Data",
+      "appDataDesc": "Default location for messages and other user data",
+      "appLogs": "App Logs",
+      "appLogsDesc": "Default location App Logs"
+    },
+    "others": {
+      "spellCheck": "Spell Check",
+      "spellCheckDesc": "Turn on to enable spell check chat input.",
+      "resetFactory": "Reset To Factory Settings",
+      "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted"
+    }
+  }
+}

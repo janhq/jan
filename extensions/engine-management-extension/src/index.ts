@@ -1,6 +1,5 @@
 import {
   EngineManagementExtension,
-  InferenceEngine,
   DefaultEngineVariant,
   Engines,
   EngineConfig,
@@ -16,7 +15,6 @@ import {
   EngineEvent,
 } from '@janhq/core'
 import ky, { HTTPError, KyInstance } from 'ky'
-import PQueue from 'p-queue'
 import { EngineError } from './error'
 import { getJanDataFolderPath } from '@janhq/core'
 import { engineVariant } from './utils'
@@ -29,21 +27,22 @@ interface ModelList {
  * functionality for managing engines.
  */
 export default class JanEngineManagementExtension extends EngineManagementExtension {
-  queue = new PQueue({ concurrency: 1 })
-
   api?: KyInstance
   /**
    * Get the API instance
    * @returns
    */
   async apiInstance(): Promise<KyInstance> {
-    if(this.api) return this.api
-    const apiKey = (await window.core?.api.appToken()) ?? 'cortex.cpp'
+    if (this.api) return this.api
+    const apiKey = await window.core?.api.appToken()
     this.api = ky.extend({
       prefixUrl: API_URL,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: apiKey
+        ? {
+            Authorization: `Bearer ${apiKey}`,
+          }
+        : {},
+      retry: 10,
     })
     return this.api
   }
@@ -51,15 +50,8 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * Called when the extension is loaded.
    */
   async onLoad() {
-    // Symlink Engines Directory
-    await executeOnMain(NODE, 'symlinkEngines')
-    // Run Healthcheck
-    this.queue.add(() => this.healthz())
     // Update default local engine
     this.updateDefaultEngine()
-
-    // Populate default remote engines
-    this.populateDefaultRemoteEngines()
 
     // Migrate
     this.migrate()
@@ -74,13 +66,11 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @returns A Promise that resolves to an object of list engines.
    */
   async getEngines(): Promise<Engines> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get('v1/engines')
-          .json<Engines>()
-          .then((e) => e)
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .get('v1/engines')
+        .json<Engines>()
+        .then((e) => e)
     ) as Promise<Engines>
   }
 
@@ -103,14 +93,12 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @param name - Inference engine name.
    * @returns A Promise that resolves to an array of installed engine.
    */
-  async getInstalledEngines(name: InferenceEngine): Promise<EngineVariant[]> {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get(`v1/engines/${name}`)
-          .json<EngineVariant[]>()
-          .then((e) => e)
-      )
+  async getInstalledEngines(name: string): Promise<EngineVariant[]> {
+    return this.apiInstance().then((api) =>
+      api
+        .get(`v1/engines/${name}`)
+        .json<EngineVariant[]>()
+        .then((e) => e)
     ) as Promise<EngineVariant[]>
   }
 
@@ -121,19 +109,17 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @returns A Promise that resolves to an array of latest released engine by version.
    */
   async getReleasedEnginesByVersion(
-    name: InferenceEngine,
+    name: string,
     version: string,
     platform?: string
   ) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get(`v1/engines/${name}/releases/${version}`)
-          .json<EngineReleased[]>()
-          .then((e) =>
-            platform ? e.filter((r) => r.name.includes(platform)) : e
-          )
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .get(`v1/engines/${name}/releases/${version}`)
+        .json<EngineReleased[]>()
+        .then((e) =>
+          platform ? e.filter((r) => r.name.includes(platform)) : e
+        )
     ) as Promise<EngineReleased[]>
   }
 
@@ -142,16 +128,14 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @param platform - Optional to sort by operating system. macOS, linux, windows.
    * @returns A Promise that resolves to an array of latest released engine by version.
    */
-  async getLatestReleasedEngine(name: InferenceEngine, platform?: string) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get(`v1/engines/${name}/releases/latest`)
-          .json<EngineReleased[]>()
-          .then((e) =>
-            platform ? e.filter((r) => r.name.includes(platform)) : e
-          )
-      )
+  async getLatestReleasedEngine(name: string, platform?: string) {
+    return this.apiInstance().then((api) =>
+      api
+        .get(`v1/engines/${name}/releases/latest`)
+        .json<EngineReleased[]>()
+        .then((e) =>
+          platform ? e.filter((r) => r.name.includes(platform)) : e
+        )
     ) as Promise<EngineReleased[]>
   }
 
@@ -160,12 +144,10 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @returns A Promise that resolves to intall of engine.
    */
   async installEngine(name: string, engineConfig: EngineConfig) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .post(`v1/engines/${name}/install`, { json: engineConfig })
-          .then((e) => e)
-      )
+    return this.apiInstance().then((api) =>
+      api
+        .post(`v1/engines/${name}/install`, { json: engineConfig })
+        .then((e) => e)
     ) as Promise<{ messages: string }>
   }
 
@@ -195,18 +177,16 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
     if (engineConfig.metadata && !engineConfig.metadata?.header_template)
       engineConfig.metadata.header_template = DEFAULT_REQUEST_HEADERS_TRANSFORM
 
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api.post('v1/engines', { json: engineConfig }).then((e) => {
-          if (persistModels && engineConfig.metadata?.get_models_url) {
-            // Pull /models from remote models endpoint
-            return this.populateRemoteModels(engineConfig)
-              .then(() => e)
-              .catch(() => e)
-          }
-          return e
-        })
-      )
+    return this.apiInstance().then((api) =>
+      api.post('v1/engines', { json: engineConfig }).then((e) => {
+        if (persistModels && engineConfig.metadata?.get_models_url) {
+          // Pull /models from remote models endpoint
+          return this.populateRemoteModels(engineConfig)
+            .then(() => e)
+            .catch(() => e)
+        }
+        return e
+      })
     ) as Promise<{ messages: string }>
   }
 
@@ -214,13 +194,11 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @param name - Inference engine name.
    * @returns A Promise that resolves to unintall of engine.
    */
-  async uninstallEngine(name: InferenceEngine, engineConfig: EngineConfig) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .delete(`v1/engines/${name}/install`, { json: engineConfig })
-          .then((e) => e)
-      )
+  async uninstallEngine(name: string, engineConfig: EngineConfig) {
+    return this.apiInstance().then((api) =>
+      api
+        .delete(`v1/engines/${name}/install`, { json: engineConfig })
+        .then((e) => e)
     ) as Promise<{ messages: string }>
   }
 
@@ -229,25 +207,22 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @param model - Remote model object.
    */
   async addRemoteModel(model: Model) {
-    return this.queue.add(() =>
-      this.apiInstance()
-        .then((api) =>
-          api
-            .post('v1/models/add', {
-              json: {
-                inference_params: {
-                  max_tokens: 4096,
-                  temperature: 0.7,
-                  top_p: 0.95,
-                  stream: true,
-                  frequency_penalty: 0,
-                  presence_penalty: 0,
-                },
-                ...model,
-              },
-            })
-            .then((e) => e)
-        )
+    return this.apiInstance().then((api) =>
+      api
+        .post('v1/models/add', {
+          json: {
+            inference_params: {
+              max_tokens: 4096,
+              temperature: 0.7,
+              top_p: 0.95,
+              stream: true,
+              frequency_penalty: 0,
+              presence_penalty: 0,
+            },
+            ...model,
+          },
+        })
+        .then((e) => e)
         .then(() => {})
     )
   }
@@ -256,14 +231,12 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @param name - Inference engine name.
    * @returns A Promise that resolves to an object of default engine.
    */
-  async getDefaultEngineVariant(name: InferenceEngine) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .get(`v1/engines/${name}/default`)
-          .json<{ messages: string }>()
-          .then((e) => e)
-      )
+  async getDefaultEngineVariant(name: string) {
+    return this.apiInstance().then((api) =>
+      api
+        .get(`v1/engines/${name}/default`)
+        .json<{ messages: string }>()
+        .then((e) => e)
     ) as Promise<DefaultEngineVariant>
   }
 
@@ -272,46 +245,23 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * @body version - string
    * @returns A Promise that resolves to set default engine.
    */
-  async setDefaultEngineVariant(
-    name: InferenceEngine,
-    engineConfig: EngineConfig
-  ) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .post(`v1/engines/${name}/default`, { json: engineConfig })
-          .then((e) => e)
-      )
+  async setDefaultEngineVariant(name: string, engineConfig: EngineConfig) {
+    return this.apiInstance().then((api) =>
+      api
+        .post(`v1/engines/${name}/default`, { json: engineConfig })
+        .then((e) => e)
     ) as Promise<{ messages: string }>
   }
 
   /**
    * @returns A Promise that resolves to update engine.
    */
-  async updateEngine(name: InferenceEngine, engineConfig?: EngineConfig) {
-    return this.queue.add(() =>
-      this.apiInstance().then((api) =>
-        api
-          .post(`v1/engines/${name}/update`, { json: engineConfig })
-          .then((e) => e)
-      )
+  async updateEngine(name: string, engineConfig?: EngineConfig) {
+    return this.apiInstance().then((api) =>
+      api
+        .post(`v1/engines/${name}/update`, { json: engineConfig })
+        .then((e) => e)
     ) as Promise<{ messages: string }>
-  }
-
-  /**
-   * Do health check on cortex.cpp
-   * @returns
-   */
-  async healthz(): Promise<void> {
-    return this.apiInstance()
-      .then((api) =>
-        api.get('healthz', {
-          retry: { limit: 20, delay: () => 500, methods: ['get'] },
-        })
-      )
-      .then(() => {
-        this.queue.concurrency = Infinity
-      })
   }
 
   /**
@@ -319,13 +269,17 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    * This is to use built-in engine variant in case there is no default engine set
    */
   async updateDefaultEngine() {
+    const systemInfo = await systemInformation()
     try {
-      const variant = await this.getDefaultEngineVariant(
-        InferenceEngine.cortex_llamacpp
-      )
-      const installedEngines = await this.getInstalledEngines(
-        InferenceEngine.cortex_llamacpp
-      )
+      const variant = await this.getDefaultEngineVariant('llama-cpp')
+      if (
+        (systemInfo.gpuSetting.vulkan && !variant.variant.includes('vulkan')) ||
+        (systemInfo.gpuSetting.vulkan === false &&
+          variant.variant.includes('vulkan'))
+      ) {
+        throw new EngineError('Switch engine.')
+      }
+      const installedEngines = await this.getInstalledEngines('llama-cpp')
       if (
         !installedEngines.some(
           (e) => e.name === variant.variant && e.version === variant.version
@@ -341,9 +295,9 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
         (error instanceof HTTPError && error.response.status === 400) ||
         error instanceof EngineError
       ) {
-        const systemInfo = await systemInformation()
         const variant = await engineVariant(systemInfo.gpuSetting)
-        await this.setDefaultEngineVariant(InferenceEngine.cortex_llamacpp, {
+        // TODO: Use correct provider name when moving to llama.cpp extension
+        await this.setDefaultEngineVariant('llama-cpp', {
           variant: variant,
           version: `${CORTEX_ENGINE_VERSION}`,
         })
@@ -412,7 +366,7 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
             models.data.map((model) =>
               this.addRemoteModel({
                 ...model,
-                engine: engineConfig.engine as InferenceEngine,
+                engine: engineConfig.engine,
                 model: model.model ?? model.id,
               }).catch(console.info)
             )
@@ -428,8 +382,6 @@ export default class JanEngineManagementExtension extends EngineManagementExtens
    */
   migrate = async () => {
     // Ensure health check is done
-    await this.queue.onEmpty()
-
     const version = await this.getSetting<string>('version', '0.0.0')
     const engines = await this.getEngines()
     if (version < VERSION) {

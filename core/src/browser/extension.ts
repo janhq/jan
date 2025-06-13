@@ -1,7 +1,4 @@
-import { Model, ModelEvent, SettingComponentProps } from '../types'
-import { getJanDataFolderPath, joinPath } from './core'
-import { events } from './events'
-import { fs } from './fs'
+import { Model, SettingComponentProps } from '../types'
 import { ModelManager } from './models'
 
 export enum ExtensionTypeEnum {
@@ -117,22 +114,14 @@ export abstract class BaseExtension implements ExtensionType {
       return
     }
 
-    const extensionSettingFolderPath = await joinPath([
-      await getJanDataFolderPath(),
-      'settings',
-      this.name,
-    ])
     settings.forEach((setting) => {
       setting.extensionName = this.name
     })
     try {
-      if (!(await fs.existsSync(extensionSettingFolderPath)))
-        await fs.mkdir(extensionSettingFolderPath)
-      const settingFilePath = await joinPath([extensionSettingFolderPath, this.settingFileName])
-
+      const oldSettingsJson = localStorage.getItem(this.name)
       // Persists new settings
-      if (await fs.existsSync(settingFilePath)) {
-        const oldSettings = JSON.parse(await fs.readFileSync(settingFilePath, 'utf-8'))
+      if (oldSettingsJson) {
+        const oldSettings = JSON.parse(oldSettingsJson)
         settings.forEach((setting) => {
           // Keep setting value
           if (setting.controllerProps && Array.isArray(oldSettings))
@@ -141,7 +130,7 @@ export abstract class BaseExtension implements ExtensionType {
             )?.controllerProps?.value
         })
       }
-      await fs.writeFileSync(settingFilePath, JSON.stringify(settings, null, 2))
+      localStorage.setItem(this.name, JSON.stringify(settings))
     } catch (err) {
       console.error(err)
     }
@@ -180,17 +169,10 @@ export abstract class BaseExtension implements ExtensionType {
   async getSettings(): Promise<SettingComponentProps[]> {
     if (!this.name) return []
 
-    const settingPath = await joinPath([
-      await getJanDataFolderPath(),
-      this.settingFolderName,
-      this.name,
-      this.settingFileName,
-    ])
-
     try {
-      if (!(await fs.existsSync(settingPath))) return []
-      const content = await fs.readFileSync(settingPath, 'utf-8')
-      const settings: SettingComponentProps[] = JSON.parse(content)
+      const settingsString = localStorage.getItem(this.name)
+      if (!settingsString) return []
+      const settings: SettingComponentProps[] = JSON.parse(settingsString)
       return settings
     } catch (err) {
       console.warn(err)
@@ -220,19 +202,7 @@ export abstract class BaseExtension implements ExtensionType {
 
     if (!updatedSettings.length) updatedSettings = componentProps as SettingComponentProps[]
 
-    const settingFolder = await joinPath([
-      await getJanDataFolderPath(),
-      this.settingFolderName,
-      this.name,
-    ])
-
-    if (!(await fs.existsSync(settingFolder))) {
-      await fs.mkdir(settingFolder)
-    }
-
-    const settingPath = await joinPath([settingFolder, this.settingFileName])
-
-    await fs.writeFileSync(settingPath, JSON.stringify(updatedSettings, null, 2))
+    localStorage.setItem(this.name, JSON.stringify(updatedSettings))
 
     updatedSettings.forEach((setting) => {
       this.onSettingUpdate<typeof setting.controllerProps.value>(

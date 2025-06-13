@@ -97,8 +97,8 @@ jobs:
           # Update tauri.conf.json
           jq --arg version "${{ inputs.new_version }}" '.version = $version | .bundle.createUpdaterArtifacts = true | .bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
           mv /tmp/tauri.conf.json ./src-tauri/tauri.conf.json
-          jq --arg version "${{ inputs.new_version }}" '.version = $version' web/package.json > /tmp/package.json
-          mv /tmp/package.json web/package.json
+          jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
+          mv /tmp/package.json web-app/package.json
 
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           echo "---------Cargo.toml---------"
@@ -171,6 +171,9 @@ jobs:
       - name: Build app
         shell: bash
         run: |
+          curl -L -o ./src-tauri/binaries/vcomp140.dll https://catalog.jan.ai/vcomp140.dll
+          curl -L -o ./src-tauri/binaries/msvcp140_codecvt_ids.dll https://catalog.jan.ai/msvcp140_codecvt_ids.dll
+          ls ./src-tauri/binaries
           make build-tauri
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
@@ -223,7 +226,7 @@ jobs:
           echo "files:" >> latest.yml
           echo "  - url: $FILE_NAME" >> latest.yml
           echo "    sha512: $SH512_CHECKSUM" >> latest.yml
-          echo "    size: $FILE_NAME" >> latest.yml
+          echo "    size: $FILE_SIZE" >> latest.yml
           echo "path: $FILE_NAME" >> latest.yml
           echo "sha512: $SH512_CHECKSUM" >> latest.yml
           echo "releaseDate: $CURRENT_TIME" >> latest.yml
@@ -267,7 +270,7 @@ jobs:
           asset_name: latest.yml
           asset_content_type: text/yaml
 
-      - name: Upload release asset if public provider is github
+      - name: Upload release assert if public provider is github
         if: inputs.channel == 'beta'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

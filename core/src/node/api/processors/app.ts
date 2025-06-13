@@ -8,6 +8,7 @@ import {
   normalizeFilePath,
   getJanDataFolderPath,
 } from '../../helper'
+import { readdirSync, readFileSync } from 'fs'
 
 export class App implements Processor {
   observer?: Function
@@ -25,8 +26,8 @@ export class App implements Processor {
   /**
    * Joins multiple paths together, respect to the current OS.
    */
-  joinPath(args: any[]) {
-    return join(...args)
+  joinPath(args: any) {
+    return join(...('args' in args ? args.args : args))
   }
 
   /**
@@ -69,6 +70,9 @@ export class App implements Processor {
     writeLog(args)
   }
 
+  /**
+   * Get app configurations.
+   */
   getAppConfigurations() {
     return appConfiguration()
   }

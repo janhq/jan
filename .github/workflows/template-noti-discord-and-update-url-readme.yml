@@ -47,10 +47,10 @@ jobs:
         with:
           args: |
             Jan App ${{ inputs.build_reason }} build artifact version {{ VERSION }}:
-            - Windows: https://delta.jan.ai/nightly/jan-nightly-win-x64-{{ VERSION }}.exe
-            - macOS Universal: https://delta.jan.ai/nightly/jan-nightly-mac-universal-{{ VERSION }}.dmg
-            - Linux Deb: https://delta.jan.ai/nightly/jan-nightly-linux-amd64-{{ VERSION }}.deb
-            - Linux AppImage: https://delta.jan.ai/nightly/jan-nightly-linux-x86_64-{{ VERSION }}.AppImage
+            - Windows: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_x64-setup.exe
+            - macOS Universal: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_universal.dmg
+            - Linux Deb: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_amd64.deb
+            - Linux AppImage: https://delta.jan.ai/nightly/Jan-nightly_{{ VERSION }}_amd64.AppImage
             - Github action run: https://github.com/menloresearch/jan/actions/runs/{{ GITHUB_RUN_ID }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}

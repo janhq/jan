@@ -4,7 +4,7 @@ import { FileStat } from '../types'
  * Writes data to a file at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the file is written successfully.
  */
-const writeFileSync = (...args: any[]) => globalThis.core.api?.writeFileSync(...args)
+const writeFileSync = (...args: any[]) => globalThis.core.api?.writeFileSync({ args })
 
 /**
  * Writes blob data to a file at the specified path.
@@ -19,29 +19,29 @@ const writeBlob: (path: string, data: string) => Promise<any> = (path, data) =>
  * Reads the contents of a file at the specified path.
  * @returns {Promise<any>} A Promise that resolves with the contents of the file.
  */
-const readFileSync = (...args: any[]) => globalThis.core.api?.readFileSync(...args)
+const readFileSync = (...args: any[]) => globalThis.core.api?.readFileSync({ args })
 /**
  * Check whether the file exists
  * @param {string} path
  * @returns {boolean} A boolean indicating whether the path is a file.
  */
-const existsSync = (...args: any[]) => globalThis.core.api?.existsSync(...args)
+const existsSync = (...args: any[]) => globalThis.core.api?.existsSync({ args })
 /**
  * List the directory files
  * @returns {Promise<any>} A Promise that resolves with the contents of the directory.
  */
-const readdirSync = (...args: any[]) => globalThis.core.api?.readdirSync(...args)
+const readdirSync = (...args: any[]) => globalThis.core.api?.readdirSync({ args })
 /**
  * Creates a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is created successfully.
  */
-const mkdir = (...args: any[]) => globalThis.core.api?.mkdir(...args)
+const mkdir = (...args: any[]) => globalThis.core.api?.mkdir({ args })
 
 /**
  * Removes a directory at the specified path.
  * @returns {Promise<any>} A Promise that resolves when the directory is removed successfully.
  */
-const rm = (...args: any[]) => globalThis.core.api?.rm(...args, { recursive: true, force: true })
+const rm = (...args: any[]) => globalThis.core.api?.rm({ args })
 
 /**
  * Deletes a file from the local file system.
@@ -80,10 +80,8 @@ const getGgufFiles: (paths: string[]) => Promise<any> = (paths) =>
  * @param outsideJanDataFolder - Whether the file is outside the Jan data folder.
  * @returns {Promise<FileStat>} - A promise that resolves with the file's stats.
  */
-const fileStat: (path: string, outsideJanDataFolder?: boolean) => Promise<FileStat | undefined> = (
-  path,
-  outsideJanDataFolder
-) => globalThis.core.api?.fileStat(path, outsideJanDataFolder)
+const fileStat: (path: string) => Promise<FileStat | undefined> = (path) =>
+  globalThis.core.api?.fileStat({ args: path })
 
 // TODO: Export `dummy` fs functions automatically
 // Currently adding these manually

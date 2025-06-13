@@ -1,0 +1,31 @@
+{
+  "common": {
+    "general": "General",
+    "settings": "Settings",
+    "modelProviders": "Model Providers",
+    "appearance": "Appearance",
+    "privacy": "Privacy",
+    "keyboardShortcuts": "Shortcuts",
+    "newChat": "New Chat",
+    "favorites": "Favorites",
+    "recents": "Recents",
+    "hub": "Hub",
+    "helpSupport": "Help & Support",
+    "unstarAll": "Unstar All",
+    "unstar": "Unstar",
+    "deleteAll": "Delete All",
+    "star": "Star",
+    "rename": "Rename",
+    "delete": "Delete",
+    "dataFolder": "Data Folder",
+    "others": "Other",
+    "language": "Language",
+    "reset": "Reset",
+    "search": "Search",
+    "name": "Name",
+
+    "placeholder": {
+      "chatInput": "Ask me anything..."
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "general": {
+      "autoDownload": "Tự động tải xuống các bản cập nhật mới"
+    },
+    "dataFolder": {
+      "appData": "Dữ liệu ứng dụng",
+      "appDataDesc": "Vị trí mặc định cho tin nhắn và dữ liệu người dùng khác",
+      "appLogs": "Nhật ký ứng dụng",
+      "appLogsDesc": "Vị trí mặc định cho nhật ký ứng dụng"
+    },
+    "others": {
+      "spellCheck": "Kiểm tra chính tả",
+      "spellCheckDesc": "Bật để kích hoạt kiểm tra chính tả trong khung chat.",
+      "resetFactory": "Khôi phục cài đặt gốc",
+      "resetFactoryDesc": "Khôi phục ứng dụng về trạng thái ban đầu, xóa tất cả các mô hình và lịch sử trò chuyện. Hành động này không thể hoàn tác và chỉ nên thực hiện nếu ứng dụng bị hỏng"
+    }
+  }
+}

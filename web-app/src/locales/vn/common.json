@@ -1,0 +1,31 @@
+{
+  "common": {
+    "general": "Chung",
+    "settings": "Cài đặt",
+    "modelProviders": "Nhà cung cấp mô hình",
+    "appearance": "Giao diện",
+    "privacy": "Quyền riêng tư",
+    "keyboardShortcuts": "Phím tắt",
+    "newChat": "Cuộc trò chuyện mới",
+    "favorites": "Yêu thích",
+    "recents": "Gần đây",
+    "hub": "Hub",
+    "helpSupport": "Trợ giúp & Hỗ trợ",
+    "unstarAll": "Bỏ đánh dấu tất cả",
+    "unstar": "Bỏ đánh dấu",
+    "deleteAll": "Xóa tất cả",
+    "star": "Đánh dấu sao",
+    "rename": "Đổi tên",
+    "delete": "Xóa",
+    "dataFolder": "Thư mục dữ liệu",
+    "others": "Khác",
+    "language": "Ngôn ngữ",
+    "reset": "Đặt lại",
+    "search": "Tìm kiếm",
+    "name": "Tên",
+
+    "placeholder": {
+      "chatInput": "Hỏi tôi bất cứ điều gì..."
+    }
+  }
+}

@@ -13,8 +13,11 @@ const executeOnMain: (extension: string, method: string, ...args: any[]) => Prom
   extension,
   method,
   ...args
-) => globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
-
+) => {
+  if ('electronAPI' in window && window.electronAPI)
+    return globalThis.core?.api?.invokeExtensionFunc(extension, method, ...args)
+  return () => {}
+}
 
 /**
  * Gets Jan's data folder path.
@@ -29,15 +32,15 @@ const getJanDataFolderPath = (): Promise<string> => globalThis.core.api?.getJanD
  * @returns {Promise<any>} A promise that resolves when the file explorer is opened.
  */
 const openFileExplorer: (path: string) => Promise<any> = (path) =>
-  globalThis.core.api?.openFileExplorer(path)
+  globalThis.core.api?.openFileExplorer({ path })
 
 /**
  * Joins multiple paths together.
  * @param paths - The paths to join.
  * @returns {Promise<string>} A promise that resolves with the joined path.
  */
-const joinPath: (paths: string[]) => Promise<string> = (paths) =>
-  globalThis.core.api?.joinPath(paths)
+const joinPath: (args: string[]) => Promise<string> = (args) =>
+  globalThis.core.api?.joinPath({ args })
 
 /**
  * Get dirname of a file path.

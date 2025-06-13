@@ -1,0 +1,101 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": [
+    "main"
+  ],
+  "remote": {
+    "urls": [
+      "http://*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "shell:allow-spawn",
+    "shell:allow-open",
+    "core:app:allow-set-app-theme",
+    "core:window:allow-set-focus",
+    "os:default",
+    "opener:default",
+    "log:default",
+    "updater:default",
+    "dialog:default",
+    "deep-link:default",
+    "core:webview:allow-create-webview-window",
+    "opener:allow-open-url",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://*:*"
+        },
+        {
+          "url": "http://*:*"
+        }
+      ],
+      "deny": []
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "args": [
+            "--start-server",
+            {
+              "validator": "\\S+"
+            },
+            "--port",
+            {
+              "validator": "\\S+"
+            },
+            "--config_file_path",
+            {
+              "validator": "\\S+"
+            },
+            "--data_folder_path",
+            {
+              "validator": "\\S+"
+            },
+            "--cors",
+            {
+              "validator": "\\S+"
+            },
+            "--allowed_origins",
+            {
+              "validator": "\\S+"
+            },
+            "config",
+            "--api_keys",
+            {
+              "validator": "\\S+"
+            }
+          ],
+          "name": "binaries/cortex-server",
+          "sidecar": true
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "description": "opens the default permissions for the core module",
+      "windows": [
+        "*"
+      ],
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://127.0.0.1:*"
+        },
+        {
+          "url": "http://0.0.0.0:*"
+        }
+      ]
+    },
+    "store:default"
+  ]
+}
