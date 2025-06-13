@@ -184,7 +184,7 @@ export const ThreadContent = memo(
       | undefined
 
     return (
-      <Fragment key={item.id}>
+      <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
           <div className="w-full">
             <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
