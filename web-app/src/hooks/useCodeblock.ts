@@ -12,7 +12,7 @@ interface CodeBlockState {
   resetCodeBlockStyle: () => void
 }
 
-const defaultCodeBlockStyle: CodeBlockStyle = 'vsc-dark-plus'
+const defaultCodeBlockStyle: CodeBlockStyle = 'github-dark'
 const defaultShowLineNumbers: boolean = true
 
 export const useCodeblock = create<CodeBlockState>()(

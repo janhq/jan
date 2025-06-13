@@ -107,13 +107,13 @@ const ContentItemRenderer = ({
     )
   }
 
-  // if (item.type === 'text' && item.text) {
-  //   return (
-  //     <div key={index} className="mt-3">
-  //       <RenderMarkdown content={item.text} />
-  //     </div>
-  //   )
-  // }
+  if (item.type === 'text' && item.text) {
+    return (
+      <div key={index} className="mt-3">
+        <RenderMarkdown content={item.text} />
+      </div>
+    )
+  }
 
   // For any other types, render as JSON
   return (
