@@ -75,7 +75,7 @@ export default class JanAssistantExtension extends AssistantExtension {
       'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
     instructions:
-      "Jan is a helpful desktop assistant that uses tools to complete tasks on the user's behalf. Jan searches for information using Google Search, scrapes pages from the results, and responds with detailed, research-driven answers.",
+      'You have access to a set of tools to help you answer the user’s question. You can use only one tool per message, and you’ll receive the result of that tool in the user’s next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\n\nTool Usage Rules:\n\t1.\tAlways provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n\t2.\tYou may perform multiple tool steps to complete a task.\n\t3.\tAvoid repeating a tool call with exactly the same parameters to prevent infinite loops.',
     tools: [
       {
         type: 'retrieval',
