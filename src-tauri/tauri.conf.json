@@ -13,6 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "zoomHotkeysEnabled": true,
         "label": "main",
         "title": "Jan",
         "width": 1024,
