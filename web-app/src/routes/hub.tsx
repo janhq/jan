@@ -236,7 +236,8 @@ function Hub() {
           <div
             className={cn(
               'flex items-center gap-2 w-20 ',
-              !isDownloading && 'opacity-0 visibility-hidden w-0'
+              !isDownloading &&
+                'opacity-0 visibility-hidden w-0 pointer-events-none'
             )}
           >
             <Progress value={downloadProgress * 100} />
