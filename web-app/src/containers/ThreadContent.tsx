@@ -1,6 +1,6 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
-import { Fragment, memo, useCallback, useMemo, useState } from 'react'
+import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import {
   IconCopy,
   IconCopyCheck,
@@ -79,6 +79,8 @@ export const ThreadContent = memo(
       showAssistant?: boolean
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       streamTools?: any
+      contextOverflowModal?: React.ReactNode | null
+      showContextOverflowModal?: () => Promise<unknown>
     }
   ) => {
     const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
@@ -129,7 +131,10 @@ export const ThreadContent = memo(
       }
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
+        sendMessage(
+          toSendMessage.content?.[0]?.text?.value || '',
+          item.showContextOverflowModal
+        )
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 
@@ -162,15 +167,25 @@ export const ThreadContent = memo(
     const editMessage = useCallback(
       (messageId: string) => {
         const threadMessages = getMessages(item.thread_id)
+
         const index = threadMessages.findIndex((msg) => msg.id === messageId)
         if (index === -1) return
+
         // Delete all messages after the edited message
         for (let i = threadMessages.length - 1; i >= index; i--) {
           deleteMessage(threadMessages[i].thread_id, threadMessages[i].id)
         }
-        sendMessage(message)
+
+        sendMessage(message, item.showContextOverflowModal)
       },
-      [deleteMessage, getMessages, item.thread_id, message, sendMessage]
+      [
+        deleteMessage,
+        getMessages,
+        item.thread_id,
+        message,
+        sendMessage,
+        item.showContextOverflowModal,
+      ]
     )
 
     const isToolCalls =
@@ -445,6 +460,7 @@ export const ThreadContent = memo(
             {image.detail && <p className="text-sm mt-1">{image.detail}</p>}
           </div>
         )}
+        {item.contextOverflowModal && item.contextOverflowModal}
       </Fragment>
     )
   }

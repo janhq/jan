@@ -134,7 +134,8 @@ export const sendCompletion = async (
     thread.model.id &&
     !(thread.model.id in Object.values(models).flat()) &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    !tokenJS.extendedModelExist(providerName as any, thread.model?.id)
+    !tokenJS.extendedModelExist(providerName as any, thread.model?.id) &&
+    provider.provider !== 'llama.cpp'
   ) {
     try {
       tokenJS.extendModelList(

@@ -12,6 +12,7 @@ type AppState = {
   abortControllers: Record<string, AbortController>
   tokenSpeed?: TokenSpeed
   currentToolCall?: ChatCompletionMessageToolCall
+  showOutOfContextDialog?: boolean
   setServerStatus: (value: 'running' | 'stopped' | 'pending') => void
   updateStreamingContent: (content: ThreadMessage | undefined) => void
   updateCurrentToolCall: (
@@ -22,6 +23,7 @@ type AppState = {
   setAbortController: (threadId: string, controller: AbortController) => void
   updateTokenSpeed: (message: ThreadMessage) => void
   resetTokenSpeed: () => void
+  setOutOfContextDialog: (show: boolean) => void
 }
 
 export const useAppState = create<AppState>()((set) => ({
@@ -99,4 +101,9 @@ export const useAppState = create<AppState>()((set) => ({
     set({
       tokenSpeed: undefined,
     }),
+  setOutOfContextDialog: (show) => {
+    set(() => ({
+      showOutOfContextDialog: show,
+    }))
+  },
 }))
