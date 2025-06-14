@@ -77,6 +77,7 @@ function Hub() {
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
+  const downloadButtonRef = useRef<HTMLButtonElement>(null)
 
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llama.cpp')
@@ -254,6 +255,7 @@ function Hub() {
               size="sm"
               onClick={() => downloadModel(modelId)}
               className={cn(isDownloading && 'hidden')}
+              ref={isRecommended ? downloadButtonRef : undefined}
             >
               Download
             </Button>
@@ -266,6 +268,7 @@ function Hub() {
     llamaProvider?.models,
     handleUseModel,
     isRecommendedModel,
+    downloadButtonRef,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -291,8 +294,9 @@ function Hub() {
         isRecommendedModel(model.metadata?.id)
       )
       if (recommendedModel && recommendedModel.models[0]?.id) {
-        downloadModel(recommendedModel.models[0].id)
-
+        if (downloadButtonRef.current) {
+          downloadButtonRef.current.click()
+        }
         return
       }
     }
