@@ -2,7 +2,7 @@
   "name": "@janhq/download-extension",
   "productName": "Download Manager",
   "version": "1.0.0",
-  "description": "Handle downloads",
+  "description": "Download and manage files and AI models in Jan.",
   "main": "dist/index.js",
   "author": "Jan <service@jan.ai>",
   "license": "AGPL-3.0",

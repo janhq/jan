@@ -9,6 +9,15 @@
     }
   },
   {
+    "key": "context_shift",
+    "title": "Context Shift",
+    "description": "Automatically shifts the context window when the model is unable to process the entire prompt, ensuring that the most relevant information is always included.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
     "key": "cont_batching",
     "title": "Continuous Batching",
     "description": "Allows processing prompts in parallel with text generation, which usually improves performance.",
