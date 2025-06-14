@@ -9,6 +9,7 @@ import { route } from '@/constants/routes'
 import { useModelSources } from '@/hooks/useModelSources'
 import { cn, toGigabytes } from '@/lib/utils'
 import { highlightFzfMatch } from '@/utils/highlight'
+import { extractModelRepo } from '@/lib/models'
 import {
   useState,
   useMemo,
@@ -89,7 +90,7 @@ function Hub() {
   const debouncedSetSearch = useCallback(
     debounce((value: string) => {
       setDebouncedSearchValue(value)
-    }, 1),
+    }, 300),
     []
   )
 
@@ -141,10 +142,18 @@ function Hub() {
   const searchableItems = useMemo(() => {
     return sortedModels.map((source) => {
       const modelName = extractModelName(source.metadata?.id) ?? source.id
+      // Extract repo format for searching with full URLs
+      const repoFormat =
+        extractModelRepo(source.metadata?.id) || source.metadata?.id || ''
+      // Create full HF URL format for searching
+      const fullUrl = source.metadata?.id
+        ? `https://huggingface.co/${source.metadata.id}`
+        : ''
+
       return {
         source,
         modelName,
-        searchStr: `${modelName} ${source.id} ${source.metadata?.id || ''} ${source.models.map((m) => m.id).join(' ')}`,
+        searchStr: `${modelName} ${source.id} ${source.metadata?.id || ''} ${repoFormat} ${fullUrl} ${source.models.map((m) => m.id).join(' ')}`,
       }
     })
   }, [sortedModels])
@@ -175,7 +184,14 @@ function Hub() {
 
     // Apply search filter using fzf (debounced)
     if (debouncedSearchValue.length && fzfInstanceRef.current) {
-      const fzfResults = fzfInstanceRef.current.find(debouncedSearchValue)
+      // Normalize search value - if it's a HuggingFace URL, extract the repo path
+      const normalizedSearchValue = debouncedSearchValue.startsWith(
+        'https://huggingface.co/'
+      )
+        ? extractModelRepo(debouncedSearchValue) || debouncedSearchValue
+        : debouncedSearchValue
+
+      const fzfResults = fzfInstanceRef.current.find(normalizedSearchValue)
       filtered = fzfResults.map((result: any) => {
         // Use FZF's built-in positions for more efficient highlighting
         const modelName = result.item.modelName
@@ -197,7 +213,7 @@ function Hub() {
           highlightedModelName,
         }
       })
-    } 
+    }
 
     // Apply downloaded filter with pre-computed Set for O(1) lookups
     if (showOnlyDownloaded) {
