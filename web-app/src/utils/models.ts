@@ -1,6 +1,6 @@
 export const hardcodedModel = {
-  author: 'Menlo',
-  id: 'Menlo/Jan-nano',
+  author: 'menlo',
+  id: 'menlo/jan-nano',
   metadata: {
     '_id': '68492cd9cada68b1d11ca1bd',
     'author': 'Menlo',
@@ -12,7 +12,7 @@ export const hardcodedModel = {
     'description':
       '---\nlicense: apache-2.0\npipeline_tag: text-generation\n---\n# Jan Nano\n\n\n\n![image/png](https://cdn-uploads.huggingface.co/production/uploads/657a81129ea9d52e5cbd67f7/YQci8jiHjAAFpXWYOadrU.png)\n\n## Overview\n\nJan Nano is a fine-tuned language model built on top of the Qwen3 architecture. Developed as part of the Jan ecosystem, it balances compact size and extended context length, making it ideal for efficient, high-quality text generation in local or embedded environments.\n\n## Features\n\n- **Tool Use**: Excellent function calling and tool integration\n- **Research**: Enhanced research and information processing capabilities\n- **Small Model**: VRAM efficient for local deployment\n\n## Use it with Jan (UI)\n\n1. Install **Jan** using [Quickstart](https://jan.ai/docs/quickstart)',
     'disabled': false,
-    'downloads': 939,
+    'downloads': 1434,
     'gated': false,
     'gguf': {
       architecture: 'qwen3',
@@ -25,17 +25,17 @@ export const hardcodedModel = {
       total: 4022468096,
     },
     'id': 'Menlo/Jan-nano',
-    'lastModified': '2025-06-13T05:53:33.000Z',
-    'likes': 2,
+    'lastModified': '2025-06-13T16:57:55.000Z',
+    'likes': 3,
     'model-index': null,
     'modelId': 'Menlo/Jan-nano',
     'pipeline_tag': 'text-generation',
     'private': false,
-    'sha': '782985633ac4080dfdaa52e62d61dcf637e9ff0d',
+    'sha': 'a04aab0878648d8f284c63a52664a482ead16f06',
     'siblings': [
       {
         rfilename: '.gitattributes',
-        size: 1742,
+        size: 3460,
       },
       {
         rfilename: 'README.md',
@@ -44,6 +44,58 @@ export const hardcodedModel = {
       {
         rfilename: 'jan-nano-0.4-iQ4_XS.gguf',
         size: 2270750400,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q3_K_L.gguf',
+        size: 2239784384,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q3_K_M.gguf',
+        size: 2075616704,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q3_K_S.gguf',
+        size: 1886995904,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q4_0.gguf',
+        size: 2369545664,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q4_1.gguf',
+        size: 2596627904,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q4_K_M.gguf',
+        size: 2497279424,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q4_K_S.gguf',
+        size: 2383308224,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q5_0.gguf',
+        size: 2823710144,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q5_1.gguf',
+        size: 3050792384,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q5_K_M.gguf',
+        size: 2889512384,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q5_K_S.gguf',
+        size: 2823710144,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q6_K.gguf',
+        size: 3306259904,
+      },
+      {
+        rfilename: 'jan-nano-4b-Q8_0.gguf',
+        size: 4280403904,
       },
     ],
     'spaces': [],
@@ -56,7 +108,7 @@ export const hardcodedModel = {
       'imatrix',
       'conversational',
     ],
-    'usedStorage': 20820673088,
+    'usedStorage': 93538518464,
     'widgetData': [
       {
         text: 'Hi, what can you help me with?',
@@ -74,8 +126,60 @@ export const hardcodedModel = {
   },
   models: [
     {
-      id: 'Menlo:Jan-nano:jan-nano-0.4-iQ4_XS.gguf',
+      id: 'menlo:jan-nano:jan-nano-0.4-iQ4_XS.gguf',
       size: 2270750400,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q3_K_L.gguf',
+      size: 2239784384,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q3_K_M.gguf',
+      size: 2075616704,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q3_K_S.gguf',
+      size: 1886995904,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q4_0.gguf',
+      size: 2369545664,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q4_1.gguf',
+      size: 2596627904,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q4_K_M.gguf',
+      size: 2497279424,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q4_K_S.gguf',
+      size: 2383308224,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q5_0.gguf',
+      size: 2823710144,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q5_1.gguf',
+      size: 3050792384,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q5_K_M.gguf',
+      size: 2889512384,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q5_K_S.gguf',
+      size: 2823710144,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q6_K.gguf',
+      size: 3306259904,
+    },
+    {
+      id: 'menlo:jan-nano:jan-nano-4b-Q8_0.gguf',
+      size: 4280403904,
     },
   ],
 }

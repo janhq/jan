@@ -377,7 +377,12 @@ pub async fn call_tool(
                 });
 
                 return match timeout(MCP_TOOL_CALL_TIMEOUT, tool_call).await {
-                    Ok(result) => result.map_err(|e| e.to_string()),
+                    Ok(result) => {
+                        match result {
+                            Ok(ok_result) => Ok(ok_result),
+                            Err(e) => Err(e.to_string()),
+                        }
+                    }
                     Err(_) => Err(format!(
                         "Tool call '{}' timed out after {} seconds",
                         tool_name,

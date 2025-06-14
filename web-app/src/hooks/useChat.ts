@@ -24,10 +24,11 @@ import { getTools } from '@/services/mcp'
 import { MCPTool } from '@/types/completion'
 import { listen } from '@tauri-apps/api/event'
 import { SystemEvent } from '@/types/events'
-import { stopModel, startModel } from '@/services/models'
+import { stopModel, startModel, stopAllModels } from '@/services/models'
 
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 
 export const useChat = () => {
   const { prompt, setPrompt } = usePrompt()
@@ -41,6 +42,7 @@ export const useChat = () => {
     setAbortController,
   } = useAppState()
   const { currentAssistant } = useAssistant()
+  const { updateProvider } = useModelProvider()
 
   const { approvedTools, showApprovalModal, allowAllMCPPermissions } =
     useToolApproval()
@@ -108,8 +110,60 @@ export const useChat = () => {
     currentAssistant,
   ])
 
+  const increaseModelContextSize = useCallback(
+    (model: Model, provider: ProviderObject) => {
+      /**
+       * Should increase the context size of the model by 2x
+       * If the context size is not set or too low, it defaults to 8192.
+       */
+      const ctxSize = Math.max(
+        model.settings?.ctx_len?.controller_props.value
+          ? typeof model.settings.ctx_len.controller_props.value === 'string'
+            ? parseInt(model.settings.ctx_len.controller_props.value as string)
+            : (model.settings.ctx_len.controller_props.value as number)
+          : 8192,
+        8192
+      )
+      const updatedModel = {
+        ...model,
+        settings: {
+          ...model.settings,
+          ctx_len: {
+            ...(model.settings?.ctx_len != null ? model.settings?.ctx_len : {}),
+            controller_props: {
+              ...(model.settings?.ctx_len?.controller_props ?? {}),
+              value: ctxSize * 2,
+            },
+          },
+        },
+      }
+
+      // Find the model index in the provider's models array
+      const modelIndex = provider.models.findIndex((m) => m.id === model.id)
+
+      if (modelIndex !== -1) {
+        // Create a copy of the provider's models array
+        const updatedModels = [...provider.models]
+
+        // Update the specific model in the array
+        updatedModels[modelIndex] = updatedModel as Model
+
+        // Update the provider with the new models array
+        updateProvider(provider.provider, {
+          models: updatedModels,
+        })
+      }
+      stopAllModels()
+    },
+    [updateProvider]
+  )
+
   const sendMessage = useCallback(
-    async (message: string) => {
+    async (
+      message: string,
+      showModal?: () => Promise<unknown>,
+      troubleshooting = true
+    ) => {
       const activeThread = await getCurrentThread()
 
       resetTokenSpeed()
@@ -121,7 +175,9 @@ export const useChat = () => {
       const abortController = new AbortController()
       setAbortController(activeThread.id, abortController)
       updateStreamingContent(emptyThreadContent)
-      addMessage(newUserThreadContent(activeThread.id, message))
+      // Do not add new message on retry
+      if (troubleshooting)
+        addMessage(newUserThreadContent(activeThread.id, message))
       updateThreadTimestamp(activeThread.id)
       setPrompt('')
       try {
@@ -180,6 +236,14 @@ export const useChat = () => {
             }
           } else {
             for await (const part of completion) {
+              // Error message
+              if (!part.choices) {
+                throw new Error(
+                  'message' in part
+                    ? (part.message as string)
+                    : (JSON.stringify(part) ?? '')
+                )
+              }
               const delta = part.choices[0]?.delta?.content || ''
 
               if (part.choices[0]?.delta?.tool_calls) {
@@ -252,9 +316,26 @@ export const useChat = () => {
           if (!followUpWithToolUse) availableTools = []
         }
       } catch (error) {
-        toast.error(
-          `Error sending message: ${error && typeof error === 'object' && 'message' in error ? error.message : error}`
-        )
+        const errorMessage =
+          error && typeof error === 'object' && 'message' in error
+            ? error.message
+            : error
+        if (
+          typeof errorMessage === 'string' &&
+          errorMessage.includes(OUT_OF_CONTEXT_SIZE) &&
+          selectedModel &&
+          troubleshooting
+        ) {
+          showModal?.().then((confirmed) => {
+            if (confirmed) {
+              increaseModelContextSize(selectedModel, activeProvider)
+              setTimeout(() => {
+                sendMessage(message, showModal, false) // Retry sending the message without troubleshooting
+              }, 1000)
+            }
+          })
+        }
+        toast.error(`Error sending message: ${errorMessage}`)
         console.error('Error sending message:', error)
       } finally {
         updateLoadingModel(false)
@@ -282,6 +363,7 @@ export const useChat = () => {
       allowAllMCPPermissions,
       showApprovalModal,
       updateTokenSpeed,
+      increaseModelContextSize,
     ]
   )
 
