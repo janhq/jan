@@ -78,6 +78,7 @@ function Hub() {
     null
   )
   const downloadButtonRef = useRef<HTMLButtonElement>(null)
+  const hasTriggeredDownload = useRef(false)
 
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llama.cpp')
@@ -285,12 +286,18 @@ function Hub() {
   const handleJoyrideCallback = (data: CallBackProps) => {
     const { status, index } = data
 
-    if (status === STATUS.FINISHED && !isDownloading && isLastStep) {
+    if (
+      status === STATUS.FINISHED &&
+      !isDownloading &&
+      isLastStep &&
+      !hasTriggeredDownload.current
+    ) {
       const recommendedModel = filteredModels.find((model) =>
         isRecommendedModel(model.metadata?.id)
       )
       if (recommendedModel && recommendedModel.models[0]?.id) {
         if (downloadButtonRef.current) {
+          hasTriggeredDownload.current = true
           downloadButtonRef.current.click()
         }
         return
