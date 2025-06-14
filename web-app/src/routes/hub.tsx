@@ -234,7 +234,7 @@ function Hub() {
             isRecommended && 'hub-download-button-step'
           )}
         >
-          {isDownloading && (
+          {isDownloading && !isDownloaded && (
             <div className={cn('flex items-center gap-2 w-20')}>
               <Progress value={downloadProgress * 100} />
               <span className="text-xs text-center text-main-view-fg/70">
