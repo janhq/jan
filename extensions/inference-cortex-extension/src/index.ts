@@ -130,6 +130,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       true
     )
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
+    this.context_shift = await this.getSetting<boolean>(
+      Settings.context_shift,
+      true
+    )
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
     if (this.caching_enabled)
       this.cache_type = await this.getSetting<string>(Settings.cache_type, 'q8')
