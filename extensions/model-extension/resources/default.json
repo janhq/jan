@@ -125,7 +125,7 @@
     },
     "models": [
       {
-        "id": "Menlo:Jan-nano:jan-nano-0.4-iQ4_XS.gguf",
+        "id": "Menlo:Jan-nano:jan-nano-4b-iQ4_XS.gguf",
         "size": 2270750400
       },
       {
