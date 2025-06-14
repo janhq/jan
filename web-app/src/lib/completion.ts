@@ -323,7 +323,7 @@ export const postMessageProcessing = async (
           ? await showModal(toolCall.function.name, message.thread_id)
           : true)
 
-      const result = approved
+      let result = approved
         ? await callTool({
             toolName: toolCall.function.name,
             arguments: toolCall.function.arguments.length
@@ -350,7 +350,16 @@ export const postMessageProcessing = async (
             ],
           }
 
-      if ('error' in result && result.error) break
+      if (typeof result === 'string') {
+        result = {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        }
+      }
 
       message.metadata = {
         ...(message.metadata ?? {}),

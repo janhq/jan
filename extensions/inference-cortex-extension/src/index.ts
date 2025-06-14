@@ -62,6 +62,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cache_type: string = 'q8'
   cpu_threads?: number
   auto_unload_models: boolean = true
+  reasoning_budget = -1 // Default reasoning budget in seconds
   /**
    * The URL for making inference requests.
    */
@@ -269,6 +270,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...(this.cont_batching && this.n_parallel && this.n_parallel > 1
               ? { cont_batching: this.cont_batching }
               : {}),
+            ...(model.id.toLowerCase().includes('jan-nano')
+              ? { reasoning_budget: 0 }
+              : { reasoning_budget: this.reasoning_budget }),
+            ...{ 'no-context-shift': true },
           },
           timeout: false,
           signal,
