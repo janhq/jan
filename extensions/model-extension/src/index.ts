@@ -26,6 +26,11 @@ type Data<T> = {
 }
 
 /**
+ * Defaul mode sources
+ */
+const defaultModelSources = ['Menlo/Jan-nano']
+
+/**
  * A extension for models
  */
 export default class JanModelExtension extends ModelExtension {
@@ -396,6 +401,11 @@ export default class JanModelExtension extends ModelExtension {
   fetchModelsHub = async () => {
     const models = await this.fetchModels()
 
+    defaultModelSources.forEach((model) => {
+      this.addSource(model).catch((e) => {
+        console.debug(`Failed to add default model source ${model}:`, e)
+      })
+    })
     return this.apiInstance()
       .then((api) =>
         api
@@ -403,7 +413,7 @@ export default class JanModelExtension extends ModelExtension {
           .json<Data<string>>()
           .then(async (e) => {
             await Promise.all(
-              e.data?.map((model) => {
+              [...(e.data ?? []), ...defaultModelSources].map((model) => {
                 if (
                   !models.some(
                     (e) => 'modelSource' in e && e.modelSource === model
