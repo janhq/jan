@@ -49,6 +49,7 @@ type ModelProps = {
 type SearchParams = {
   repo: string
 }
+const defaultModelQuantizations = ['iq4_xs.gguf', 'q4_k_m.gguf']
 
 export const Route = createFileRoute(route.hub as any)({
   component: Hub,
@@ -219,7 +220,10 @@ function Hub() {
 
   const DownloadButtonPlaceholder = useMemo(() => {
     return ({ model }: ModelProps) => {
-      const modelId = model.models[0]?.id
+      const modelId =
+        model.models.find((e) =>
+          defaultModelQuantizations.some((m) => e.id.toLowerCase().includes(m))
+        )?.id ?? model.models[0]?.id
       const isDownloading = downloadProcesses.some((e) => e.id === modelId)
       const downloadProgress =
         downloadProcesses.find((e) => e.id === modelId)?.progress || 0
@@ -460,7 +464,15 @@ function Hub() {
                             </Link>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-main-view-fg/70 font-medium text-xs">
-                                {toGigabytes(model.models?.[0]?.size)}
+                                {toGigabytes(
+                                  (
+                                    model.models.find((m) =>
+                                      defaultModelQuantizations.some((e) =>
+                                        m.id.toLowerCase().includes(e)
+                                      )
+                                    ) ?? model.models?.[0]
+                                  )?.size
+                                )}
                               </span>
                               <DownloadButtonPlaceholder model={model} />
                             </div>

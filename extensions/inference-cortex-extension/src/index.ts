@@ -37,6 +37,7 @@ enum Settings {
   cpu_threads = 'cpu_threads',
   huggingfaceToken = 'hugging-face-access-token',
   auto_unload_models = 'auto_unload_models',
+  context_shift = 'context_shift',
 }
 
 type LoadedModelResponse = { data: { engine: string; id: string }[] }
@@ -63,6 +64,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cpu_threads?: number
   auto_unload_models: boolean = true
   reasoning_budget = -1 // Default reasoning budget in seconds
+  context_shift = true
   /**
    * The URL for making inference requests.
    */
@@ -209,6 +211,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       this.updateCortexConfig({ huggingface_token: value })
     } else if (key === Settings.auto_unload_models) {
       this.auto_unload_models = value as boolean
+    } else if (key === Settings.context_shift && typeof value === 'boolean') {
+      this.context_shift = value
     }
   }
 
@@ -271,7 +275,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...(model.id.toLowerCase().includes('jan-nano')
               ? { reasoning_budget: 0 }
               : { reasoning_budget: this.reasoning_budget }),
-            ...{ 'no-context-shift': true },
+            ...(this.context_shift === false
+              ? { 'no-context-shift': true }
+              : {}),
           },
           timeout: false,
           signal,
