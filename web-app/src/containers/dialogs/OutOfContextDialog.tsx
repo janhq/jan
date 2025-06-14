@@ -76,6 +76,13 @@ export function useOutOfContextPromiseModal() {
           </DialogDescription>
           <DialogFooter className="flex gap-2">
             <Button
+              variant="default"
+              className="bg-transparent border border-main-view-fg/20 hover:bg-main-view-fg/4"
+              onClick={() => setIsOpen(false)}
+            >
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
               asChild
               onClick={() => {
                 handleConfirm()
@@ -88,13 +95,6 @@ export function useOutOfContextPromiseModal() {
                   'Increase Context Size'
                 )}
               </span>
-            </Button>
-            <Button
-              variant="default"
-              className="bg-transparent border border-main-view-fg/20 hover:bg-main-view-fg/4"
-              onClick={() => setIsOpen(false)}
-            >
-              {t('common.cancel', 'Cancel')}
             </Button>
           </DialogFooter>
         </DialogContent>
