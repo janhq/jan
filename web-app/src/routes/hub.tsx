@@ -234,18 +234,14 @@ function Hub() {
             isRecommended && 'hub-download-button-step'
           )}
         >
-          <div
-            className={cn(
-              'flex items-center gap-2 w-20 ',
-              !isDownloading &&
-                'opacity-0 visibility-hidden w-0 pointer-events-none'
-            )}
-          >
-            <Progress value={downloadProgress * 100} />
-            <span className="text-xs text-center text-main-view-fg/70">
-              {Math.round(downloadProgress * 100)}%
-            </span>
-          </div>
+          {isDownloading && (
+            <div className={cn('flex items-center gap-2 w-20')}>
+              <Progress value={downloadProgress * 100} />
+              <span className="text-xs text-center text-main-view-fg/70">
+                {Math.round(downloadProgress * 100)}%
+              </span>
+            </div>
+          )}
           {isDownloaded ? (
             <Button size="sm" onClick={() => handleUseModel(modelId)}>
               Use
@@ -417,7 +413,7 @@ function Hub() {
               </div>
             </div>
           </HeaderPage>
-          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto first-step-setup-local-provider">
+          <div className="p-4 w-full h-[calc(100%-32px)] !overflow-y-auto first-step-setup-local-provider">
             <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
               {loading ? (
                 <div className="flex items-center justify-center">
