@@ -51,8 +51,7 @@ export function useOutOfContextPromiseModal() {
       <Dialog
         open={isOpen}
         onOpenChange={(open) => {
-          console.log('Dialog open state changed:', open)
-          setIsOpen(!isOpen)
+          setIsOpen(open)
           if (!open) handleCancel()
         }}
       >
