@@ -335,7 +335,7 @@ export const postMessageProcessing = async (
               content: [
                 {
                   type: 'text',
-                  text: `Error calling tool ${toolCall.function.name}: ${e.message}`,
+                  text: `Error calling tool ${toolCall.function.name}: ${e.message ?? e}`,
                 },
               ],
               error: true,
