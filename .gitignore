@@ -45,3 +45,7 @@ src-tauri/icons
 !src-tauri/icons/icon.png
 src-tauri/gen/apple
 src-tauri/resources/bin
+
+# Helper tools
+.opencode
+OpenCode.md
