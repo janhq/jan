@@ -47,7 +47,6 @@ export const useAppState = create<AppState>()((set) => ({
           }
         : undefined,
     }))
-    console.log(useAppState.getState().streamingContent)
   },
   updateCurrentToolCall: (toolCall) => {
     set(() => ({
