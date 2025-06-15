@@ -199,7 +199,8 @@ function Hub() {
   const navigate = useNavigate()
 
   const isRecommendedModel = useCallback((modelId: string) => {
-    return (extractModelName(modelId) === 'Jan-nano') as boolean
+    return (extractModelName(modelId)?.toLowerCase() ===
+      'jan-nano-gguf') as boolean
   }, [])
 
   const handleUseModel = useCallback(

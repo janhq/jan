@@ -1,7 +1,7 @@
 [
   {
     "author": "Menlo",
-    "id": "Menlo/Jan-nano",
+    "id": "Menlo/Jan-nano-gguf",
     "metadata": {
       "_id": "68492cd9cada68b1d11ca1bd",
       "author": "Menlo",
@@ -23,11 +23,11 @@
         "quantize_imatrix_file": "imatrix.dat",
         "total": 4022468096
       },
-      "id": "Menlo/Jan-nano",
+      "id": "Menlo/Jan-nano-gguf",
       "lastModified": "2025-06-13T16:57:55.000Z",
       "likes": 3,
       "model-index": null,
-      "modelId": "Menlo/Jan-nano",
+      "modelId": "Menlo/Jan-nano-gguf",
       "pipeline_tag": "text-generation",
       "private": false,
       "sha": "a04aab0878648d8f284c63a52664a482ead16f06",
