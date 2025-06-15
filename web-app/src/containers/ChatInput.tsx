@@ -21,7 +21,7 @@ import {
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
-  // IconBrandSpeedtest,
+  IconBrandSpeedtest,
   IconX,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
