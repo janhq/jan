@@ -296,7 +296,8 @@ export const startModel = async (
     normalizeProvider(provider.provider)
   )
   const modelObj = provider.models.find((m) => m.id === model)
-  if (providerObj && modelObj)
+
+  if (providerObj && modelObj) {
     return providerObj?.loadModel(
       {
         id: modelObj.id,
@@ -309,6 +310,7 @@ export const startModel = async (
       },
       abortController
     )
+  }
 }
 
 /**
