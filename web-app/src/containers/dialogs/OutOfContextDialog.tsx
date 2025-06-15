@@ -8,26 +8,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-import { ReactNode, useCallback, useRef, useState } from 'react'
+import { ReactNode, useCallback, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
 export function useOutOfContextPromiseModal() {
   const [isOpen, setIsOpen] = useState(false)
-  const methodRef = useRef<'ctx_len' | 'context_shift' | undefined>(undefined)
   const [modalProps, setModalProps] = useState<{
-    method: 'ctx_len' | 'context_shift' | undefined
     resolveRef:
       | ((value: 'ctx_len' | 'context_shift' | undefined) => void)
       | null
   }>({
-    method: undefined,
     resolveRef: null,
   })
   // Function to open the modal and return a Promise
   const showModal = useCallback(() => {
     return new Promise((resolve) => {
       setModalProps({
-        method: methodRef.current,
         resolveRef: resolve,
       })
       setIsOpen(true)
