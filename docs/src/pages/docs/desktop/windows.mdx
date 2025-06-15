@@ -26,10 +26,13 @@ import { Settings } from 'lucide-react'
 
 
 # Windows Installation
+
 ## Compatibility
-System requirements:
+
+**System requirements:**
 - **Operating System**: Windows 10 or higher.
 - **CPU**
+
 <Tabs items={['Intel', 'AMD']}>
 <Tabs.Tab>
 - Intel: Haswell (Q2 2013) or newer
@@ -45,25 +48,25 @@ Processor must support **AVX2 or newer**. See [full list of supported processors
 Performance is significantly degraded on AVX-only processors.
 </Callout>
 
-- **Memory (RAM)**
-  - 8GB → up to 3B parameter models (int4)
-  - 16GB → up to 7B parameter models (int4)
-  - 32GB → up to 13B parameter models (int4)
+**Memory (RAM)**
+- 8GB → up to 3B parameter models (int4)
+- 16GB → up to 7B parameter models (int4)
+- 32GB → up to 13B parameter models (int4)
 
 <Callout type="info">
 Newer RAM generations provide better performance.
 </Callout>
 
-- **GPU**:
-  - 6GB → up to 3B parameter models
-  - 8GB → up to 7B parameter models
-  - 12GB → up to 13B parameter models
+**GPU**:
+- 6GB → up to 3B parameter models
+- 8GB → up to 7B parameter models
+- 12GB → up to 13B parameter models
 
 <Callout type="info">
 Minimum 6GB VRAM recommended for NVIDIA, AMD, or Intel Arc GPUs.
 </Callout>
 
-- **Storage:** 10GB free space minimum for app and models
+**Storage:** 10GB free space minimum for app and models
 
 
 ## Install Jan
@@ -151,8 +154,9 @@ nvidia-smi
 nvcc --version
 ```
 ### Step 2: Enable GPU Acceleration
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
-2. Select appropriate backend in **llama-cpp Backend**. See [our guide](/docs/local-engines/llama-cpp).
+
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+and toggle the **ON** switch if not enabled.
 
 </Steps>
 
@@ -161,16 +165,15 @@ nvcc --version
 <Tabs.Tab>
 AMD GPUs require **Vulkan** support.
 
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
-2. Select appropriate backend in **llama-cpp Backend**. See [our guide](/docs/local-engines/llama-cpp).
-
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+and toggle the **ON** switch if not enabled.
 </Tabs.Tab>
 
 <Tabs.Tab>
 Intel Arc GPUs require **Vulkan** support.
 
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
-2. Select appropriate backend in **llama-cpp Backend**. See [our guide](/docs/local-engines/llama-cpp).
+Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
+and toggle the **ON** switch if not enabled.
 </Tabs.Tab>
 </Tabs>
 
@@ -197,6 +200,7 @@ Remove app data:
 2. Delete Jan folder
 
 or via **Terminal**:
+
 ```sh
 cd C:\Users\%USERNAME%\AppData\Roaming
 rmdir /S Jan
@@ -206,25 +210,3 @@ rmdir /S Jan
 <Callout type="warning">
 Deleted data folders cannot be recovered. Backup important data first.
 </Callout>
-
-{/* ## FAQs
-
-<FAQBox title="What are Nightly Releases, and how can I access them?">
-Nightly Releases allow you to test new features and previews of upcoming stable releases. You can download
-them from Jan's GitHub repository. However, remember that these builds might contain bugs and crash frequently.
-</FAQBox>
-<FAQBox title="Can I move the Jan data folder to a different location?">
-Yes, you can move the Jan data folder.
-</FAQBox>
-<FAQBox title="How do I enable GPU acceleration for better performance?">
-Depending on your GPU type (NVIDIA, AMD, or Intel), follow the respective instructions provided in the
-[GPU Acceleration](https://www.notion.so/docs/desktop/windows#gpu-acceleration) section above.
-</FAQBox>
-<FAQBox title="Can I recover the deleted Jan data folder after uninstallation?">
-No, it cannot be restored once you delete the Jan data folder during uninstallation.
-</FAQBox>
-
-<Callout type="warning">
-If you have any trouble during installation, please see our [Troubleshooting](https://www.notion.so/docs/troubleshooting)
-guide to resolve your problem.
-</Callout> */}

@@ -80,7 +80,7 @@ const Hero = () => {
           </div>
 
           <p className="text-xl -mt-1 leading-relaxed text-black/60 dark:text-white/60">
-            Jan is an open source ChatGPT-alternative that runs 100% offline.
+            Jan is an open source AI Assistant that runs 100% offline.
           </p>
         </div>
         <div className="mb-4 mt-8">

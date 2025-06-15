@@ -11,16 +11,6 @@
     "type": "page",
     "title": "Documentation"
   },
-  "cortex": {
-    "type": "page",
-    "title": "Cortex",
-    "display": "hidden"
-  },
-  "integrations": {
-    "type": "page",
-    "title": "Integrations",
-    "display": "hidden"
-  },
   "changelog": {
     "type": "page",
     "title": "Changelog",

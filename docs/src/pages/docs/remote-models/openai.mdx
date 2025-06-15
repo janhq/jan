@@ -19,15 +19,18 @@ keywords:
 import { Callout, Steps } from 'nextra/components'
 import { Settings, Plus } from 'lucide-react'
 
-# OpenAI 
+# OpenAI
 
-Jan supports [OpenAI](https://openai.com/) and OpenAI-compatible APIs, allowing you to use all models from OpenAI (GPT-4, GPT o1 and more) through Jan's interface.
+Jan supports most [OpenAI](https://openai.com/) as well as the many OpenAI-compatible APIs out there,
+allowing you to use all models from OpenAI (GPT-4o, o3 and even those from Together AI, DeepSeek, Fireworks
+and more) through Jan's interface.
 
 ## Integrate OpenAI API with Jan
 
 <Steps>
-### Step 1: Get Your API Key 
-1. Visit [OpenAI Platform](https://platform.openai.com/api-keys) and sign in 
+
+### Step 1: Get Your API Key
+1. Visit the [OpenAI Platform](https://platform.openai.com/api-keys) and sign in
 2. Create & copy a new API key or copy your existing one
 
 <Callout type='info'>
@@ -35,18 +38,10 @@ Ensure your API key has sufficient credits
 </Callout>
 
 ### Step 2: Configure Jan
-There are two ways to add your OpenAI API keys in Jan:
 
-Through Threads:
-1. In Threads, click Model tab in the right sidebar or model selector in input field
-2. Once the selector is poped up, choose the Cloud tab
-3. Click Add (<Plus width={16} height={16} style={{display:"inline"}}/>) icon next to OpenAI
-4. Once you are directed to OpenAI settings, insert your API Key  
-
-Through Settings:
-1. Navigate to Settings (<Settings width={16} height={16} style={{display:"inline"}}/>)
+1. Navigate to the Settings page (<Settings width={16} height={16} style={{display:"inline"}}/>)
 2. Under Remote Engines, select OpenAI
-3. Insert your API Key  
+3. Insert your API Key
 
 <br/>
 ![OpenAI](../_assets/openai.png)
@@ -56,15 +51,18 @@ Through Settings:
 
 In any existing Threads or create a new one
 Select an OpenAI model from model selector
-Start chatting 
+Start chatting
 
 </Steps>
 
 ## Available OpenAI Models
 
-Jan automatically includes popular OpenAI models. In case you want to use a specific OpenAI model that you cannot find in Jan, follow instructions in [Add Cloud Models](/docs/models/manage-models#add-models-1):
-  - See list of available models in [OpenAI Platform](https://platform.openai.com/docs/models/overview).
-  - The id property must match the model name in the list. For example, if you want to use the [GPT-4 Turbo](https://platform.openai.com/docs/models/gpt-4-and-gpt-4-turbo), you must set the id property to gpt-4-1106-preview.
+Jan automatically includes popular OpenAI models. In case you want to use a specific model that you
+cannot find in Jan, follow instructions in [Add Cloud Models](/docs/manage-models#add-models-1):
+- See list of available models in [OpenAI Platform](https://platform.openai.com/docs/models/overview).
+- The id property must match the model name in the list. For example, if you want to use the
+[GPT-4.5](https://platform.openai.com/docs/models/), you must set the id property
+to respective one.
 
 ## Troubleshooting
 
@@ -85,4 +83,5 @@ Common issues and solutions:
 - Check if you're using the correct model ID
 - Verify your OpenAI account has the necessary permissions
 
-Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the [OpenAI documentation](https://platform.openai.com/docs).
+Need more help? Join our [Discord community](https://discord.gg/FTk2MvZwJH) or check the
+[OpenAI documentation](https://platform.openai.com/docs).

@@ -1,17 +1,29 @@
 {
-  "-- Switcher": {
-    "type": "separator",
-    "title": "Switcher"
-  },
-  "get-started": {
-    "title": "GET STARTED",
+  "index": "Overview",
+  "how-to-separator": {
+    "title": "HOW TO",
     "type": "separator"
   },
-  "index": "Overview",
-  "quickstart": {
-    "title": "Quickstart"
+  "desktop": "Install 👋 Jan",
+  "threads": "Start Chatting",
+  "manage-models": "Manage Models",
+  "assistants": "Create Assistants",
+
+  "tutorials-separators": {
+    "title": "TUTORIALS",
+    "type": "separator"
   },
-  "desktop": "Installation",
+  "quickstart": "Quickstart",
+  "remote-models": "Connect to Remote Models",
+  "server-examples": "Provide AI to Tools",
+  "mcp": "Model Context Protocol",
+
+  "explanation-separator": {
+    "title": "EXPLANATION",
+    "type": "separator"
+  },
+  "llama-cpp": "Local AI Engine",
+  "api-server": "Server Overview",
   "data-folder": "Jan Data Folder",
   "privacy": "Privacy",
   "privacy-policy": {
@@ -19,39 +31,12 @@
     "display": "hidden",
     "title": "Privacy Policy"
   },
-  "user-guides": {
-    "title": "BASIC USAGE",
+
+  "reference-separator": {
+    "title": "REFERENCE",
     "type": "separator"
   },
-  "models": "Models",
-  "tools": "Tools",
-  "assistants": "Assistants",
-  "threads": "Threads",
   "settings": "Settings",
-  "api-server": "Local API Server",
-  "inference-engines": {
-    "title": "ENGINES",
-    "type": "separator"
-  },
-  "local-engines": "Local Engines",
-  "remote-models": "Remote Engines",
-  "install-engines": "Install Engines",
-  "extensions-separator": {
-    "title": "EXTENSIONS",
-    "type": "separator"
-  },
-  "extensions": "Overview",
-  "extensions-settings": "Extension Settings",
-  "configure-extensions": "Configure Extensions",
-  "install-extensions": "Install Extensions",
-  "troubleshooting-separator": {
-    "title": "TROUBLESHOOTING",
-    "type": "separator"
-  },
   "troubleshooting": "Troubleshooting",
-  "error-codes": {
-    "type": "page",
-    "display": "hidden",
-    "title": "Error Codes"
-  }
+  "model-parameters": "Model Parameters"
 }

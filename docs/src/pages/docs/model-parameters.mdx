@@ -1,0 +1,77 @@
+---
+title: Model Parameters
+description: Manage your interaction with AI locally.
+keywords:
+  [
+    Jan,
+    Customizable Intelligence, LLM,
+    local AI,
+    privacy focus,
+    free and open source,
+    private and offline,
+    conversational AI,
+    no-subscription fee,
+    large language models,
+    threads,
+    chat history,
+    thread history,
+  ]
+---
+import { Callout, Steps } from 'nextra/components'
+
+# Model Parameters
+To customize model settings for a conversation or a model:
+- In **Threads**, click the **Gear icon** next to selected model
+- Or, in **Settings > Model Providers > Llama.cpp**, click the **gear icon** next to a model for advanced settings
+- Click the **edit button** next to a model to configure capabilities
+
+## Inference & Engine Parameters (Gear Icon)
+These settings are available in the model settings modal:
+| Parameter           | Description |
+|---------------------|-------------|
+| **Context Size**    | Maximum prompt context length (how much text the model can consider at once). |
+| **GPU Layers**      | Number of model layers to offload to GPU. More layers = faster, but uses more VRAM. |
+| **Temperature**     | Controls response randomness. Lower = more focused, higher = more creative. |
+| **Top K**           | Top-K sampling. Limits next token selection to the K most likely. |
+| **Top P**           | Top-P (nucleus) sampling. Limits next token selection to a cumulative probability. |
+| **Min P**           | Minimum probability for token selection. |
+| **Repeat Last N**   | Number of tokens to consider for repeat penalty. |
+| **Repeat Penalty**  | Penalize repeating token sequences. |
+| **Presence Penalty**| Penalize alpha presence (encourages new topics). |
+| **Max Tokens**      | Maximum length of the model's response. |
+| **Stop Sequences**  | Tokens or phrases that will end the model's response. |
+| **Frequency Penalty** | Reduces word repetition. |
+
+<br/>
+![Model Parameters](./_assets/model-parameters.png)
+<br/>
+
+## Model Capabilities (Edit Button)
+These toggles are available when you click the edit button next to a model:
+- **Vision**: Enable image input/output
+- **Tools**: Enable advanced tools (web search, file ops, code)
+- **Embeddings**: Enable embedding generation
+- **Web Search**: Allow model to search the web
+- **Reasoning**: Enable advanced reasoning features
+
+<br/>
+![Model Capabilities Edit 01](./_assets/model-capabilities-edit-01.png)
+![Model Capabilities Edit 02](./_assets/model-capabilities-edit-02.png)
+<br/>
+
+### Model Parameters
+This setting defines and configures the model's behavior.
+| Parameter           | Description                                                                                                                                                                  |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Prompt Template**     | A structured format that guides how the model should respond. Contains **placeholders** and **instructions** that help shape the model's output in a consistent way.|
+
+### Engine Parameters
+These settings parameters control how the model runs on your hardware.
+| Parameter           | Description                                                                                                                                                                  |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Number of GPU Layers (ngl)** | - Controls how many layers of the model run on your GPU.<br></br>- More layers on GPU generally means faster processing, but requires more GPU memory.|
+| **Context Length**  | - Controls how much text the model can consider at once.<br></br>- Longer context allows the model to handle more input but uses more memory and runs slower.<br></br>- The maximum context length varies with the model used.<br></br>|
+
+<Callout type="info">
+By default, Jan defaults to the minimum between **8192** and the model's maximum context length, you can adjust this based on your needs.
+</Callout>

@@ -36,32 +36,36 @@ System requirements:
 <Tabs items={['OS', 'CPU', 'RAM', 'GPU', 'Disk']}>
 
 <Tabs.Tab>
+
 #### Debian-based (Supports `.deb` and `AppImage`)
+
 - Debian
 - Ubuntu and derivatives:
   - Ubuntu Desktop LTS (official)/Ubuntu Server LTS (only for server)
-  - Edubuntu (Mainly desktop)
-  - Kubuntu (Desktop only)
-  - Lubuntu (Both desktop and server, though mainly desktop)
-  - Ubuntu Budgie (Mainly desktop)
-  - Ubuntu Cinnamon (Desktop only)
-  - Ubuntu Kylin (Both desktop and server)
-  - Ubuntu MATE (Desktop only)
+  - Edubuntu
+  - Kubuntu
+  - Lubuntu
+  - Ubuntu Budgie
+  - Ubuntu Cinnamon
+  - Ubuntu Kylin
+  - Ubuntu MATE
+  - Linux Mint
+  - Pop!_OS
 
 #### RHEL-based (Supports `.rpm` and `AppImage`)
+
 - RHEL-based (Server only)
 - Fedora
 
 #### Arch-based
-- Arch Linux (Mainly desktop)
-- SteamOS (Desktop only)
+
+- Arch Linux
+- SteamOS
 
 #### Independent
-- openSUSE (Both desktop and server)
 
-<Callout type="info">
-Desktop or server support varies by distribution.
-</Callout>
+- openSUSE
+
 </Tabs.Tab>
 
 <Tabs.Tab>
@@ -95,7 +99,7 @@ DDR3 or newer recommended.
 </Tabs.Tab>
 
 <Tabs.Tab>
-Minimum 10GB free disk space required.
+Minimum 10GB of free disk space required.
 </Tabs.Tab>
 
 </Tabs>
@@ -145,22 +149,30 @@ Installation commands:
 
 <Tabs items={['Ubuntu', 'Others']}>
 <Tabs.Tab>
+
 ##### dpkg
+
 ```bash
 sudo dpkg -i jan-linux-amd64-{version}.deb
 ```
 
 ##### apt-get
+
 ```bash
 sudo apt-get install ./jan-linux-amd64-{version}.deb
 ```
+
 </Tabs.Tab>
 
 <Tabs.Tab>
+
+From the terminal, run the following commands:
+
 ```bash
 chmod +x jan-linux-x86_64-{version}.AppImage
 ./jan-linux-x86_64-{version}.AppImage
 ```
+
 </Tabs.Tab>
 </Tabs>
 
@@ -175,7 +187,7 @@ Default locations:
 # Custom installation directory
 $XDG_CONFIG_HOME = /home/username/custom_config
 
-or
+# or
 
 # Default installation directory
 ~/.config/Jan/data
@@ -204,7 +216,7 @@ lspci | grep -i nvidia
 
 **NVIDIA Driver:**
 
-1. Install [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/) (version **470.63.01+**)
+1. Install the [NVIDIA Driver](https://www.nvidia.com/en-us/drivers/), ideally via your package manager.
 2. Verify:
 
 ```sh
@@ -213,7 +225,7 @@ nvidia-smi
 
 **CUDA Toolkit:**
 
-1. Install [CUDA toolkit](https://developer.nvidia.com/cuda-downloads) (**11.7+**)
+1. Install the [CUDA toolkit](https://developer.nvidia.com/cuda-downloads), ideally from your package manager (**11.7+**)
 2. Verify:
 
 ```sh
@@ -245,7 +257,7 @@ CUDA offers better performance than Vulkan.
 <Tabs.Tab>
 Requires Vulkan support.
 
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
 2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/local-engines/llama-cpp).
 
 </Tabs.Tab>
@@ -253,7 +265,7 @@ Requires Vulkan support.
 <Tabs.Tab>
 Requires Vulkan support.
 
-1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Local Engine** > **Llama.cpp**
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>) > **Hardware** > **GPUs**
 2. Select appropriate backend in **llama-cpp Backend**. Details in our [guide](/docs/local-engines/llama-cpp).
 </Tabs.Tab>
 
@@ -275,9 +287,8 @@ rm -rf ~/.config/Jan/cache
 <Tabs.Tab>
 
 ```bash
-sudo dnf remove jan
-rm -rf ~/.config/Jan/data
-rm -rf ~/.config/Jan/cache
+rm jan-linux-x86_64-{version}.AppImage
+rm -rf ~/.config/Jan
 ```
 </Tabs.Tab>
 </Tabs>
