@@ -450,7 +450,6 @@ export const ThreadContent = memo(
                   )}
 
                   <TokenSpeedIndicator
-                    messageId={item.id}
                     metadata={item.metadata}
                   />
                 </div>
