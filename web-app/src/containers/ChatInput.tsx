@@ -48,7 +48,7 @@ type ChatInputProps = {
 const ChatInput = ({
   model,
   className,
-  showSpeedToken = false,
+  showSpeedToken = true,
   initialMessage,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
