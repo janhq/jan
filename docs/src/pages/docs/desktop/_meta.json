@@ -1,18 +1,18 @@
 {
   "mac": {
     "title": "Mac",
-    "href": "/docs/installation/mac"
+    "href": "/docs/desktop/mac"
   },
   "windows": {
     "title": "Windows",
-    "href": "/docs/installation/windows"
+    "href": "/docs/desktop/windows"
   },
   "linux": {
     "title": "Linux",
-    "href": "/docs/installation/linux"
+    "href": "/docs/desktop/linux"
   },
   "beta": {
     "title": "BETA apps",
-    "href": "/docs/installation/beta"
+    "href": "/docs/desktop/beta"
   }
 }
