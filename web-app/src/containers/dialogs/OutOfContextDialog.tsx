@@ -8,20 +8,26 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-import { ReactNode, useCallback, useState } from 'react'
+import { ReactNode, useCallback, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
 export function useOutOfContextPromiseModal() {
   const [isOpen, setIsOpen] = useState(false)
+  const methodRef = useRef<'ctx_len' | 'context_shift' | undefined>(undefined)
   const [modalProps, setModalProps] = useState<{
-    resolveRef: ((value: unknown) => void) | null
+    method: 'ctx_len' | 'context_shift' | undefined
+    resolveRef:
+      | ((value: 'ctx_len' | 'context_shift' | undefined) => void)
+      | null
   }>({
+    method: undefined,
     resolveRef: null,
   })
   // Function to open the modal and return a Promise
   const showModal = useCallback(() => {
     return new Promise((resolve) => {
       setModalProps({
+        method: methodRef.current,
         resolveRef: resolve,
       })
       setIsOpen(true)
@@ -33,17 +39,23 @@ export function useOutOfContextPromiseModal() {
       return null
     }
 
-    const handleConfirm = () => {
+    const handleContextLength = () => {
       setIsOpen(false)
       if (modalProps.resolveRef) {
-        modalProps.resolveRef(true)
+        modalProps.resolveRef('ctx_len')
       }
     }
 
+    const handleContextShift = () => {
+      setIsOpen(false)
+      if (modalProps.resolveRef) {
+        modalProps.resolveRef('context_shift')
+      }
+    }
     const handleCancel = () => {
       setIsOpen(false)
       if (modalProps.resolveRef) {
-        modalProps.resolveRef(false)
+        modalProps.resolveRef(undefined)
       }
     }
 
@@ -64,7 +76,7 @@ export function useOutOfContextPromiseModal() {
           <DialogDescription>
             {t(
               'outOfContextError.description',
-              'This chat is reaching the AI’s memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer’s memory.'
+              'This chat is reaching the AI’s memory limit, like a whiteboard filling up. We can expand the memory window (called context size) so it remembers more, but it may use more of your computer’s memory. We can also truncate the input, which means it will forget some of the chat history to make room for new messages.'
             )}
             <br />
             <br />
@@ -77,14 +89,17 @@ export function useOutOfContextPromiseModal() {
             <Button
               variant="default"
               className="bg-transparent border border-main-view-fg/20 hover:bg-main-view-fg/4"
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                handleContextShift()
+                setIsOpen(false)
+              }}
             >
-              {t('common.cancel', 'Cancel')}
+              {t('outOfContextError.truncateInput', 'Truncate Input')}
             </Button>
             <Button
               asChild
               onClick={() => {
-                handleConfirm()
+                handleContextLength()
                 setIsOpen(false)
               }}
             >
