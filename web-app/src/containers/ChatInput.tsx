@@ -21,7 +21,7 @@ import {
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
-  IconBrandSpeedtest,
+  // IconBrandSpeedtest,
   IconX,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
@@ -48,7 +48,7 @@ type ChatInputProps = {
 const ChatInput = ({
   model,
   className,
-  showSpeedToken = true,
+  showSpeedToken = false,
   initialMessage,
 }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
