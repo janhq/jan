@@ -401,8 +401,12 @@ export const useChat = () => {
           // Create a final content object for adding to the thread
           const finalContent = newAssistantThreadContent(
             activeThread.id,
-            accumulatedText
+            accumulatedText,
+            {
+              tokenSpeed: useAppState.getState().tokenSpeed,
+            }
           )
+
           builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
           const updatedMessage = await postMessageProcessing(
             toolCalls,

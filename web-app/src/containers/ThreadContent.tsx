@@ -34,6 +34,9 @@ import {
 } from '@/components/ui/tooltip'
 import { formatDate } from '@/utils/formatDate'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+
+import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
+
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
 
@@ -360,8 +363,8 @@ export const ThreadContent = memo(
                   className={cn(
                     'flex items-center gap-2',
                     item.isLastMessage &&
-                      streamingContent &&
-                      'opacity-0 visibility-hidden pointer-events-none'
+                    streamingContent &&
+                    'opacity-0 visibility-hidden pointer-events-none'
                   )}
                 >
                   <CopyButton text={item.content?.[0]?.text.value || ''} />
@@ -445,6 +448,10 @@ export const ThreadContent = memo(
                       </TooltipContent>
                     </Tooltip>
                   )}
+
+                  <TokenSpeedIndicator
+                    metadata={item.metadata}
+                  />
                 </div>
               </div>
             )}
