@@ -22,6 +22,13 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
 
+// Function to mask sensitive values
+const maskSensitiveValue = (value: string) => {
+  if (!value) return value
+  if (value.length <= 8) return '*'.repeat(value.length)
+  return value.slice(0, 4) + '*'.repeat(value.length - 8) + value.slice(-4)
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.mcp_servers as any)({
   component: MCPServers,
@@ -322,7 +329,10 @@ function MCPServers() {
                           <div className="break-all">
                             Env:{' '}
                             {Object.entries(config.env)
-                              .map(([key, value]) => `${key}=${value}`)
+                              .map(
+                                ([key, value]) =>
+                                  `${key}=${maskSensitiveValue(value)}`
+                              )
                               .join(', ')}
                           </div>
                         )}
