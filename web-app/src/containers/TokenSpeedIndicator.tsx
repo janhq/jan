@@ -14,9 +14,6 @@ export const TokenSpeedIndicator = ({
   const persistedTokenSpeed = (metadata?.tokenSpeed as { tokenSpeed: number })
     ?.tokenSpeed
 
-  console.log(streaming, 'streaming')
-  console.log(tokenSpeed, 'tokenSpeed')
-
   return (
     <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
       <Gauge size={16} />

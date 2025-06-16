@@ -8,7 +8,7 @@ export function ChatWidthSwitcher() {
 
   return (
     <div className="flex gap-4">
-      <div
+      <button
         className={cn(
           'w-full overflow-hidden border border-main-view-fg/10 rounded-md my-2 pb-2 cursor-pointer',
           chatWidth === 'compact' && 'border-accent'
@@ -31,8 +31,8 @@ export function ChatWidthSwitcher() {
             </div>
           </div>
         </div>
-      </div>
-      <div
+      </button>
+      <button
         className={cn(
           'w-full overflow-hidden border border-main-view-fg/10 rounded-md my-2 pb-2 cursor-pointer',
           chatWidth === 'full' && 'border-accent'
@@ -55,7 +55,7 @@ export function ChatWidthSwitcher() {
             </div>
           </div>
         </div>
-      </div>
+      </button>
     </div>
   )
 }
