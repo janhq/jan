@@ -154,6 +154,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install tauri-driver dependencies
+        run: |
+          cargo install tauri-driver --locked
+
       # Clean cache, continue on error
       - name: 'Cleanup cache'
         shell: powershell
@@ -192,10 +196,24 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/cache@v4 # v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/yarn.lock') }}
+
       - name: Installing node
         uses: actions/setup-node@v3
         with:
           node-version: 20
+
+      - name: Install tauri-driver dependencies
+        run: |
+          cargo install tauri-driver --locked
 
       # Clean cache, continue on error
       - name: 'Cleanup cache'
@@ -221,6 +239,20 @@ jobs:
       #   run: |
       #     make update-playwright-config REPORT_PORTAL_URL=${{ secrets.REPORT_PORTAL_URL }} REPORT_PORTAL_API_KEY=${{ secrets.REPORT_PORTAL_API_KEY }} REPORT_PORTAL_PROJECT_NAME=${{ secrets.REPORT_PORTAL_PROJECT_NAME }} REPORT_PORTAL_LAUNCH_NAME="Jan App Windows" REPORT_PORTAL_DESCRIPTION="${{env.REPORT_PORTAL_DESCRIPTION}}"
 
+      - name: Install Prerequisites
+        shell: 'powershell'
+        # https://github.com/actions/runner-images/issues/9538
+        # https://github.com/microsoft/playwright/pull/30009/files
+        # https://github.com/tauri-apps/wry/issues/1268
+        # Evergreen Bootstrapper
+        # The Bootstrapper is a tiny installer that downloads
+        # the Evergreen Runtime matching device architecture
+        # and installs it locally.
+        # https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/?form=MA13LH
+        run: |
+          Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile 'setup.exe'
+          Start-Process -FilePath setup.exe -Verb RunAs -Wait
+
       - name: Linter and test
         shell: powershell
         run: |
@@ -239,6 +271,10 @@ jobs:
         uses: actions/setup-node@v1
         with:
           node-version: 20
+
+      - name: Install tauri-driver dependencies
+        run: |
+          cargo install tauri-driver --locked
 
       # Clean cache, continue on error
       - name: 'Cleanup cache'
@@ -271,6 +307,15 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
+
+      - name: Install tauri-driver dependencies
+        run: |
+          cargo install tauri-driver --locked
 
       - name: 'Cleanup cache'
         continue-on-error: true
@@ -367,6 +412,15 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 20
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev libfuse2 webkit2gtk-driver
+
+      - name: Install tauri-driver dependencies
+        run: |
+          cargo install tauri-driver --locked
 
       - name: 'Cleanup cache'
         continue-on-error: true

@@ -33,23 +33,14 @@ dev: install-and-build
 	yarn copy:lib
 	yarn dev
 
-# Deprecated soon
-dev-tauri: install-and-build
-	yarn install:cortex
-	yarn download:bin
-	yarn copy:lib
-	yarn dev:tauri
-
 # Linting
 lint: install-and-build
 	yarn lint
 
 # Testing
 test: lint
-	# yarn build:test
-	# yarn test:coverage
-	# Need e2e setup for tauri backend
 	yarn test
+	yarn test:e2e
 
 # Builds and publishes the app
 build-and-publish: install-and-build
