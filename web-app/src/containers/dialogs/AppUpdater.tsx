@@ -27,7 +27,7 @@ const DialogAppUpdater = () => {
 
   useEffect(() => {
     if (!isDev()) {
-      fetchLatestRelease(isBeta ? true : false)
+      fetchLatestRelease(isBeta)
     }
   }, [fetchLatestRelease])
 
