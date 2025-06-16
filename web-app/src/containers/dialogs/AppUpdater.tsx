@@ -22,8 +22,8 @@ const DialogAppUpdater = () => {
     setRemindMeLater(true)
   }
 
-  const beta = VERSION.includes('beta')
   const nightly = VERSION.includes('-')
+  const beta = VERSION.includes('beta')
 
   const { release, fetchLatestRelease } = useReleaseNotes()
 
