@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ExtensionManager } from '@/lib/extension'
 import { normalizeProvider } from '@/lib/models'
-import { hardcodedModel } from '@/utils/models'
 import { EngineManager, ExtensionTypeEnum, ModelExtension } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 
@@ -24,7 +23,7 @@ export const fetchModelSources = async (): Promise<any[]> => {
     ExtensionTypeEnum.Model
   )
 
-  if (!extension) return [hardcodedModel]
+  if (!extension) return []
 
   try {
     const sources = await extension.getSources()
@@ -34,10 +33,10 @@ export const fetchModelSources = async (): Promise<any[]> => {
     }))
 
     // Prepend the hardcoded model to the sources
-    return [hardcodedModel, ...mappedSources]
+    return [...mappedSources]
   } catch (error) {
     console.error('Failed to fetch model sources:', error)
-    return [hardcodedModel]
+    return []
   }
 }
 
@@ -51,7 +50,7 @@ export const fetchModelHub = async (): Promise<any[]> => {
     ?.fetchModelsHub()
 
   // Prepend the hardcoded model to the hub data
-  return hubData ? [hardcodedModel, ...hubData] : [hardcodedModel]
+  return hubData ? [...hubData] : []
 }
 
 /**
@@ -297,7 +296,8 @@ export const startModel = async (
     normalizeProvider(provider.provider)
   )
   const modelObj = provider.models.find((m) => m.id === model)
-  if (providerObj && modelObj)
+
+  if (providerObj && modelObj) {
     return providerObj?.loadModel(
       {
         id: modelObj.id,
@@ -310,6 +310,7 @@ export const startModel = async (
       },
       abortController
     )
+  }
 }
 
 /**

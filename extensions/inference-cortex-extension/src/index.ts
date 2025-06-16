@@ -37,6 +37,7 @@ enum Settings {
   cpu_threads = 'cpu_threads',
   huggingfaceToken = 'hugging-face-access-token',
   auto_unload_models = 'auto_unload_models',
+  context_shift = 'context_shift',
 }
 
 type LoadedModelResponse = { data: { engine: string; id: string }[] }
@@ -62,6 +63,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cache_type: string = 'q8'
   cpu_threads?: number
   auto_unload_models: boolean = true
+  reasoning_budget = -1 // Default reasoning budget in seconds
+  context_shift = true
   /**
    * The URL for making inference requests.
    */
@@ -127,6 +130,10 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       true
     )
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
+    this.context_shift = await this.getSetting<boolean>(
+      Settings.context_shift,
+      true
+    )
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
     if (this.caching_enabled)
       this.cache_type = await this.getSetting<string>(Settings.cache_type, 'q8')
@@ -208,6 +215,8 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
       this.updateCortexConfig({ huggingface_token: value })
     } else if (key === Settings.auto_unload_models) {
       this.auto_unload_models = value as boolean
+    } else if (key === Settings.context_shift && typeof value === 'boolean') {
+      this.context_shift = value
     }
   }
 
@@ -229,8 +238,6 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.abortControllers.set(model.id, controller)
 
     const loadedModels = await this.activeModels()
-
-    console.log('Loaded models:', loadedModels)
 
     // This is to avoid loading the same model multiple times
     if (loadedModels.some((e: { id: string }) => e.id === model.id)) {
@@ -268,6 +275,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
               : {}),
             ...(this.cont_batching && this.n_parallel && this.n_parallel > 1
               ? { cont_batching: this.cont_batching }
+              : {}),
+            ...(model.id.toLowerCase().includes('jan-nano')
+              ? { reasoning_budget: 0 }
+              : { reasoning_budget: this.reasoning_budget }),
+            ...(this.context_shift === false
+              ? { 'no-context-shift': true }
               : {}),
           },
           timeout: false,

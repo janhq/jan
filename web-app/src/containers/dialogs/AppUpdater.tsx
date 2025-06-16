@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { useReleaseNotes } from '@/hooks/useReleaseNotes'
 import { RenderMarkdown } from '../RenderMarkdown'
 import { cn, isDev } from '@/lib/utils'
+import { isNightly, isBeta } from '@/lib/version'
 
 const DialogAppUpdater = () => {
   const {
@@ -22,16 +23,13 @@ const DialogAppUpdater = () => {
     setRemindMeLater(true)
   }
 
-  const beta = VERSION.includes('beta')
-  const nightly = VERSION.includes('-')
-
   const { release, fetchLatestRelease } = useReleaseNotes()
 
   useEffect(() => {
     if (!isDev()) {
-      fetchLatestRelease(beta ? true : false)
+      fetchLatestRelease(isBeta)
     }
-  }, [beta, fetchLatestRelease])
+  }, [fetchLatestRelease])
 
   // Check for updates when component mounts
   useEffect(() => {
@@ -71,7 +69,7 @@ const DialogAppUpdater = () => {
                   <div className="text-base font-medium">
                     New Version: Jan {updateState.updateInfo?.version}
                   </div>
-                  <div className="mt-1 text-main-view-fg/70 font-normal">
+                  <div className="mt-1 text-main-view-fg/70 font-normal mb-2">
                     There's a new app update available to download.
                   </div>
                 </div>
@@ -79,9 +77,9 @@ const DialogAppUpdater = () => {
             </div>
 
             {showReleaseNotes && (
-              <div className="max-h-[500px] py-2 overflow-y-scroll px-4 text-sm font-normal leading-relaxed">
-                {nightly ? (
-                  <p className="mt-2 text-sm font-normal">
+              <div className="max-h-[500px] p-4 w-[400px] overflow-y-scroll  text-sm font-normal leading-relaxed">
+                {isNightly && !isBeta ? (
+                  <p className="text-sm font-normal">
                     You are using a nightly build. This version is built from
                     the latest development branch and may not have release
                     notes.

@@ -97,7 +97,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title="Driver Version"
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information.driver_version}
+              {gpu.additional_information?.driver_version}
             </span>
           }
         />
@@ -105,7 +105,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           title="Compute Capability"
           actions={
             <span className="text-main-view-fg/80">
-              {gpu.additional_information.compute_cap}
+              {gpu.additional_information?.compute_cap}
             </span>
           }
         />

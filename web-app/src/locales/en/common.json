@@ -23,6 +23,7 @@
     "reset": "Reset",
     "search": "Search",
     "name": "Name",
+    "cancel": "Cancel",
 
     "placeholder": {
       "chatInput": "Ask me anything..."

@@ -47,6 +47,28 @@ function Shortcuts() {
                   </div>
                 }
               />
+              <CardItem
+                title="Zoom In"
+                description="Increase the zoom level"
+                actions={
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">
+                      <PlatformMetaKey /> +
+                    </span>
+                  </div>
+                }
+              />
+              <CardItem
+                title="Zoom Out"
+                description="Decrease the zoom level"
+                actions={
+                  <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
+                    <span className="font-medium">
+                      <PlatformMetaKey /> -
+                    </span>
+                  </div>
+                }
+              />
             </Card>
 
             {/* Chat */}

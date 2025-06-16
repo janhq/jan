@@ -134,7 +134,8 @@ export const sendCompletion = async (
     thread.model.id &&
     !(thread.model.id in Object.values(models).flat()) &&
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    !tokenJS.extendedModelExist(providerName as any, thread.model?.id)
+    !tokenJS.extendedModelExist(providerName as any, thread.model?.id) &&
+    provider.provider !== 'llama.cpp'
   ) {
     try {
       tokenJS.extendModelList(
@@ -323,7 +324,7 @@ export const postMessageProcessing = async (
           ? await showModal(toolCall.function.name, message.thread_id)
           : true)
 
-      const result = approved
+      let result = approved
         ? await callTool({
             toolName: toolCall.function.name,
             arguments: toolCall.function.arguments.length
@@ -335,7 +336,7 @@ export const postMessageProcessing = async (
               content: [
                 {
                   type: 'text',
-                  text: `Error calling tool ${toolCall.function.name}: ${e.message}`,
+                  text: `Error calling tool ${toolCall.function.name}: ${e.message ?? e}`,
                 },
               ],
               error: true,
@@ -350,7 +351,16 @@ export const postMessageProcessing = async (
             ],
           }
 
-      if ('error' in result && result.error) break
+      if (typeof result === 'string') {
+        result = {
+          content: [
+            {
+              type: 'text',
+              text: result,
+            },
+          ],
+        }
+      }
 
       message.metadata = {
         ...(message.metadata ?? {}),

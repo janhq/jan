@@ -21,7 +21,7 @@ export const defaultAssistant: Assistant = {
   description:
     'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
   instructions:
-    'Jan is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf. Respond naturally and concisely, take actions when needed, and guide the user toward their goals.',
+    'You have access to a set of tools to help you answer the user’s question. You can use only one tool per message, and you’ll receive the result of that tool in the user’s next response. To complete a task, use tools step by step—each step should be guided by the outcome of the previous one.\nTool Usage Rules:\n1. Always provide the correct values as arguments when using tools. Do not pass variable names—use actual values instead.\n2. You may perform multiple tool steps to complete a task.\n3. Avoid repeating a tool call with exactly the same parameters to prevent infinite loops.',
 }
 
 export const useAssistant = create<AssistantState>()((set, get) => ({

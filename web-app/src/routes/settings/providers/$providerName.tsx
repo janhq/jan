@@ -9,6 +9,7 @@ import {
   getActiveModels,
   importModel,
   startModel,
+  stopAllModels,
   stopModel,
 } from '@/services/models'
 import {
@@ -299,6 +300,8 @@ function ProviderDetail() {
                                 ...provider,
                                 ...updateObj,
                               })
+
+                              stopAllModels()
                             }
                           }}
                         />

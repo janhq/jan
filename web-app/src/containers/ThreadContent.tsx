@@ -1,6 +1,6 @@
 import { ThreadMessage } from '@janhq/core'
 import { RenderMarkdown } from './RenderMarkdown'
-import { Fragment, memo, useCallback, useMemo, useState } from 'react'
+import React, { Fragment, memo, useCallback, useMemo, useState } from 'react'
 import {
   IconCopy,
   IconCopyCheck,
@@ -34,6 +34,9 @@ import {
 } from '@/components/ui/tooltip'
 import { formatDate } from '@/utils/formatDate'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+
+import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
+
 import CodeEditor from '@uiw/react-textarea-code-editor'
 import '@uiw/react-textarea-code-editor/dist.css'
 
@@ -79,6 +82,8 @@ export const ThreadContent = memo(
       showAssistant?: boolean
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       streamTools?: any
+      contextOverflowModal?: React.ReactNode | null
+      showContextOverflowModal?: () => Promise<unknown>
     }
   ) => {
     const [message, setMessage] = useState(item.content?.[0]?.text?.value || '')
@@ -129,7 +134,10 @@ export const ThreadContent = memo(
       }
       if (toSendMessage) {
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
-        sendMessage(toSendMessage.content?.[0]?.text?.value || '')
+        sendMessage(
+          toSendMessage.content?.[0]?.text?.value || '',
+          item.showContextOverflowModal
+        )
       }
     }, [deleteMessage, getMessages, item, sendMessage])
 
@@ -162,15 +170,25 @@ export const ThreadContent = memo(
     const editMessage = useCallback(
       (messageId: string) => {
         const threadMessages = getMessages(item.thread_id)
+
         const index = threadMessages.findIndex((msg) => msg.id === messageId)
         if (index === -1) return
+
         // Delete all messages after the edited message
         for (let i = threadMessages.length - 1; i >= index; i--) {
           deleteMessage(threadMessages[i].thread_id, threadMessages[i].id)
         }
-        sendMessage(message)
+
+        sendMessage(message, item.showContextOverflowModal)
       },
-      [deleteMessage, getMessages, item.thread_id, message, sendMessage]
+      [
+        deleteMessage,
+        getMessages,
+        item.thread_id,
+        message,
+        sendMessage,
+        item.showContextOverflowModal,
+      ]
     )
 
     const isToolCalls =
@@ -184,7 +202,7 @@ export const ThreadContent = memo(
       | undefined
 
     return (
-      <Fragment key={item.id}>
+      <Fragment>
         {item.content?.[0]?.text && item.role === 'user' && (
           <div className="w-full">
             <div className="flex justify-end w-full h-full text-start break-words whitespace-normal">
@@ -341,95 +359,100 @@ export const ThreadContent = memo(
 
             {!isToolCalls && (
               <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
-                <div
-                  className={cn(
-                    'flex items-center gap-2',
-                    item.isLastMessage &&
-                      streamingContent &&
-                      'opacity-0 visibility-hidden pointer-events-none'
-                  )}
-                >
-                  <CopyButton text={item.content?.[0]?.text.value || ''} />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                        onClick={() => {
-                          removeMessage()
-                        }}
-                      >
-                        <IconTrash size={16} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Delete</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Dialog>
-                    <DialogTrigger>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
-                            <IconInfoCircle size={16} />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Metadata</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Message Metadata</DialogTitle>
-                        <div className="space-y-2">
-                          <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
-                            <CodeEditor
-                              value={JSON.stringify(
-                                item.metadata || {},
-                                null,
-                                2
-                              )}
-                              language="json"
-                              readOnly
-                              style={{
-                                fontFamily: 'ui-monospace',
-                                backgroundColor: 'transparent',
-                                height: '100%',
-                              }}
-                              className="w-full h-full !text-sm"
-                            />
-                          </div>
-                        </div>
-                        <DialogFooter className="mt-2 flex items-center">
-                          <DialogClose asChild>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="hover:no-underline"
-                            >
-                              Close
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogHeader>
-                    </DialogContent>
-                  </Dialog>
-
-                  {item.isLastMessage && (
+                <div className={cn('flex items-center gap-2')}>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2',
+                      item.isLastMessage && streamingContent && 'hidden'
+                    )}
+                  >
+                    <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                          onClick={regenerate}
+                          onClick={() => {
+                            removeMessage()
+                          }}
                         >
-                          <IconRefresh size={16} />
+                          <IconTrash size={16} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Regenerate</p>
+                        <p>Delete</p>
                       </TooltipContent>
                     </Tooltip>
-                  )}
+                    <Dialog>
+                      <DialogTrigger>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+                              <IconInfoCircle size={16} />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Metadata</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Message Metadata</DialogTitle>
+                          <div className="space-y-2">
+                            <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
+                              <CodeEditor
+                                value={JSON.stringify(
+                                  item.metadata || {},
+                                  null,
+                                  2
+                                )}
+                                language="json"
+                                readOnly
+                                style={{
+                                  fontFamily: 'ui-monospace',
+                                  backgroundColor: 'transparent',
+                                  height: '100%',
+                                }}
+                                className="w-full h-full !text-sm"
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter className="mt-2 flex items-center">
+                            <DialogClose asChild>
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="hover:no-underline"
+                              >
+                                Close
+                              </Button>
+                            </DialogClose>
+                          </DialogFooter>
+                        </DialogHeader>
+                      </DialogContent>
+                    </Dialog>
+
+                    {item.isLastMessage && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                            onClick={regenerate}
+                          >
+                            <IconRefresh size={16} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Regenerate</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+
+                  <TokenSpeedIndicator
+                    streaming={Boolean(item.isLastMessage && streamingContent)}
+                    metadata={item.metadata}
+                  />
                 </div>
               </div>
             )}
@@ -445,6 +468,7 @@ export const ThreadContent = memo(
             {image.detail && <p className="text-sm mt-1">{image.detail}</p>}
           </div>
         )}
+        {item.contextOverflowModal && item.contextOverflowModal}
       </Fragment>
     )
   }

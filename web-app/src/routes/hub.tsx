@@ -49,6 +49,7 @@ type ModelProps = {
 type SearchParams = {
   repo: string
 }
+const defaultModelQuantizations = ['iq4_xs.gguf', 'q4_k_m.gguf']
 
 export const Route = createFileRoute(route.hub as any)({
   component: Hub,
@@ -77,6 +78,8 @@ function Hub() {
   const addModelSourceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
+  const downloadButtonRef = useRef<HTMLButtonElement>(null)
+  const hasTriggeredDownload = useRef(false)
 
   const { getProviderByName } = useModelProvider()
   const llamaProvider = getProviderByName('llama.cpp')
@@ -196,7 +199,8 @@ function Hub() {
   const navigate = useNavigate()
 
   const isRecommendedModel = useCallback((modelId: string) => {
-    return (extractModelName(modelId) === 'Jan-nano') as boolean
+    return (extractModelName(modelId)?.toLowerCase() ===
+      'jan-nano-gguf') as boolean
   }, [])
 
   const handleUseModel = useCallback(
@@ -217,7 +221,10 @@ function Hub() {
 
   const DownloadButtonPlaceholder = useMemo(() => {
     return ({ model }: ModelProps) => {
-      const modelId = model.models[0]?.id
+      const modelId =
+        model.models.find((e) =>
+          defaultModelQuantizations.some((m) => e.id.toLowerCase().includes(m))
+        )?.id ?? model.models[0]?.id
       const isDownloading = downloadProcesses.some((e) => e.id === modelId)
       const downloadProgress =
         downloadProcesses.find((e) => e.id === modelId)?.progress || 0
@@ -233,17 +240,14 @@ function Hub() {
             isRecommended && 'hub-download-button-step'
           )}
         >
-          <div
-            className={cn(
-              'flex items-center gap-2 w-20 ',
-              !isDownloading && 'opacity-0 visibility-hidden w-0'
-            )}
-          >
-            <Progress value={downloadProgress * 100} />
-            <span className="text-xs text-center text-main-view-fg/70">
-              {Math.round(downloadProgress * 100)}%
-            </span>
-          </div>
+          {isDownloading && !isDownloaded && (
+            <div className={cn('flex items-center gap-2 w-20')}>
+              <Progress value={downloadProgress * 100} />
+              <span className="text-xs text-center text-main-view-fg/70">
+                {Math.round(downloadProgress * 100)}%
+              </span>
+            </div>
+          )}
           {isDownloaded ? (
             <Button size="sm" onClick={() => handleUseModel(modelId)}>
               Use
@@ -253,6 +257,7 @@ function Hub() {
               size="sm"
               onClick={() => downloadModel(modelId)}
               className={cn(isDownloading && 'hidden')}
+              ref={isRecommended ? downloadButtonRef : undefined}
             >
               Download
             </Button>
@@ -265,6 +270,7 @@ function Hub() {
     llamaProvider?.models,
     handleUseModel,
     isRecommendedModel,
+    downloadButtonRef,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -285,13 +291,20 @@ function Hub() {
   const handleJoyrideCallback = (data: CallBackProps) => {
     const { status, index } = data
 
-    if (status === STATUS.FINISHED && !isDownloading && isLastStep) {
+    if (
+      status === STATUS.FINISHED &&
+      !isDownloading &&
+      isLastStep &&
+      !hasTriggeredDownload.current
+    ) {
       const recommendedModel = filteredModels.find((model) =>
         isRecommendedModel(model.metadata?.id)
       )
       if (recommendedModel && recommendedModel.models[0]?.id) {
-        downloadModel(recommendedModel.models[0].id)
-
+        if (downloadButtonRef.current) {
+          hasTriggeredDownload.current = true
+          downloadButtonRef.current.click()
+        }
         return
       }
     }
@@ -412,7 +425,7 @@ function Hub() {
               </div>
             </div>
           </HeaderPage>
-          <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto first-step-setup-local-provider">
+          <div className="p-4 w-full h-[calc(100%-32px)] !overflow-y-auto first-step-setup-local-provider">
             <div className="flex flex-col h-full justify-between gap-4 gap-y-3 w-4/5 mx-auto">
               {loading ? (
                 <div className="flex items-center justify-center">
@@ -452,7 +465,15 @@ function Hub() {
                             </Link>
                             <div className="shrink-0 space-x-3 flex items-center">
                               <span className="text-main-view-fg/70 font-medium text-xs">
-                                {toGigabytes(model.models?.[0]?.size)}
+                                {toGigabytes(
+                                  (
+                                    model.models.find((m) =>
+                                      defaultModelQuantizations.some((e) =>
+                                        m.id.toLowerCase().includes(e)
+                                      )
+                                    ) ?? model.models?.[0]
+                                  )?.size
+                                )}
                               </span>
                               <DownloadButtonPlaceholder model={model} />
                             </div>

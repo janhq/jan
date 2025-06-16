@@ -21,7 +21,6 @@ import {
   IconTool,
   IconCodeCircle2,
   IconPlayerStopFilled,
-  IconBrandSpeedtest,
   IconX,
 } from '@tabler/icons-react'
 import { useTranslation } from 'react-i18next'
@@ -36,6 +35,7 @@ import { ModelLoader } from '@/containers/loaders/ModelLoader'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
 import { getConnectedServers } from '@/services/mcp'
 import { stopAllModels } from '@/services/models'
+import { useOutOfContextPromiseModal } from './dialogs/OutOfContextDialog'
 
 type ChatInputProps = {
   className?: string
@@ -44,12 +44,7 @@ type ChatInputProps = {
   initialMessage?: boolean
 }
 
-const ChatInput = ({
-  model,
-  className,
-  showSpeedToken = true,
-  initialMessage,
-}: ChatInputProps) => {
+const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
@@ -59,7 +54,9 @@ const ChatInput = ({
   const { currentThreadId } = useThreads()
   const { t } = useTranslation()
   const { spellCheckChatInput } = useGeneralSetting()
-  const { tokenSpeed } = useAppState()
+
+  const { showModal, PromiseModal: OutOfContextModal } =
+    useOutOfContextPromiseModal()
   const maxRows = 10
 
   const { selectedModel } = useModelProvider()
@@ -110,7 +107,7 @@ const ChatInput = ({
       return
     }
     setMessage('')
-    sendMessage(prompt)
+    sendMessage(prompt, showModal)
   }
 
   useEffect(() => {
@@ -556,15 +553,6 @@ const ChatInput = ({
                   </TooltipProvider>
                 )}
               </div>
-
-              {showSpeedToken && (
-                <div className="flex items-center gap-1 text-main-view-fg/60 text-xs">
-                  <IconBrandSpeedtest size={18} />
-                  <span>
-                    {Math.round(tokenSpeed?.tokenSpeed ?? 0)} tokens/sec
-                  </span>
-                </div>
-              )}
             </div>
 
             {streamingContent ? (
@@ -611,6 +599,7 @@ const ChatInput = ({
           </div>
         </div>
       )}
+      <OutOfContextModal />
     </div>
   )
 }

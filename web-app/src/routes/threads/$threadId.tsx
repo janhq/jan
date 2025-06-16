@@ -18,6 +18,7 @@ import { useAppState } from '@/hooks/useAppState'
 import DropdownAssistant from '@/containers/DropdownAssistant'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useAppearance } from '@/hooks/useAppearance'
+import { useOutOfContextPromiseModal } from '@/containers/dialogs/OutOfContextDialog'
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
@@ -34,7 +35,7 @@ function ThreadDetail() {
   const { setCurrentAssistant, assistants } = useAssistant()
   const { setMessages } = useMessages()
   const { streamingContent } = useAppState()
-  const { appMainViewBgColor } = useAppearance()
+  const { appMainViewBgColor, chatWidth } = useAppearance()
 
   const { messages } = useMessages(
     useShallow((state) => ({
@@ -47,6 +48,8 @@ function ThreadDetail() {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isFirstRender = useRef(true)
   const messagesCount = useMemo(() => messages?.length ?? 0, [messages])
+  const { showModal, PromiseModal: OutOfContextModal } =
+    useOutOfContextPromiseModal()
 
   // Function to check scroll position and scrollbar presence
   const checkScrollState = () => {
@@ -193,6 +196,8 @@ function ThreadDetail() {
 
   if (!messages || !threadModel) return null
 
+  const contextOverflowModalComponent = <OutOfContextModal />
+
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
@@ -208,7 +213,12 @@ function ThreadDetail() {
             'flex flex-col h-full w-full overflow-auto px-4 pt-4 pb-3'
           )}
         >
-          <div className="w-4/6 mx-auto flex max-w-full flex-col grow">
+          <div
+            className={cn(
+              'w-4/6 mx-auto flex max-w-full flex-col grow',
+              chatWidth === 'compact' ? 'w-4/6' : 'w-full'
+            )}
+          >
             {messages &&
               messages.map((item, index) => {
                 // Only pass isLastMessage to the last message in the array
@@ -233,6 +243,8 @@ function ThreadDetail() {
                           ))
                       }
                       index={index}
+                      showContextOverflowModal={showModal}
+                      contextOverflowModal={contextOverflowModalComponent}
                     />
                   </div>
                 )
@@ -240,7 +252,12 @@ function ThreadDetail() {
             <StreamingContent threadId={threadId} />
           </div>
         </div>
-        <div className="w-4/6 mx-auto pt-2 pb-3 shrink-0 relative">
+        <div
+          className={cn(
+            ' mx-auto pt-2 pb-3 shrink-0 relative',
+            chatWidth === 'compact' ? 'w-4/6' : 'w-full px-3'
+          )}
+        >
           <div
             className={cn(
               'absolute z-0 -top-6 h-8 py-1 flex w-full justify-center pointer-events-none opacity-0 visibility-hidden',
