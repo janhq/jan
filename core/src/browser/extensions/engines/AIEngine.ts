@@ -158,7 +158,7 @@ export interface chatOptions {
 // 7. /import
 export interface ImportOptions {
   modelPath: string
-  mmprojPath: string
+  mmprojPath?: string
 }
 
 export interface importResult {
@@ -193,7 +193,7 @@ export abstract class AIEngine extends BaseExtension {
   /**
    * Lists available models
    */
-  abstract list(): Promise<listResult>
+  abstract list(): Promise<modelInfo[]>
 
   /**
    * Loads a model into memory
