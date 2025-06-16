@@ -359,97 +359,98 @@ export const ThreadContent = memo(
 
             {!isToolCalls && (
               <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
-                <div
-                  className={cn(
-                    'flex items-center gap-2',
-                    item.isLastMessage &&
-                    streamingContent &&
-                    'opacity-0 visibility-hidden pointer-events-none'
-                  )}
-                >
-                  <CopyButton text={item.content?.[0]?.text.value || ''} />
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                        onClick={() => {
-                          removeMessage()
-                        }}
-                      >
-                        <IconTrash size={16} />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Delete</p>
-                    </TooltipContent>
-                  </Tooltip>
-                  <Dialog>
-                    <DialogTrigger>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
-                            <IconInfoCircle size={16} />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          <p>Metadata</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </DialogTrigger>
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Message Metadata</DialogTitle>
-                        <div className="space-y-2">
-                          <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
-                            <CodeEditor
-                              value={JSON.stringify(
-                                item.metadata || {},
-                                null,
-                                2
-                              )}
-                              language="json"
-                              readOnly
-                              style={{
-                                fontFamily: 'ui-monospace',
-                                backgroundColor: 'transparent',
-                                height: '100%',
-                              }}
-                              className="w-full h-full !text-sm"
-                            />
-                          </div>
-                        </div>
-                        <DialogFooter className="mt-2 flex items-center">
-                          <DialogClose asChild>
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="hover:no-underline"
-                            >
-                              Close
-                            </Button>
-                          </DialogClose>
-                        </DialogFooter>
-                      </DialogHeader>
-                    </DialogContent>
-                  </Dialog>
-
-                  {item.isLastMessage && (
+                <div className={cn('flex items-center gap-2')}>
+                  <div
+                    className={cn(
+                      'flex items-center gap-2',
+                      item.isLastMessage && streamingContent && 'hidden'
+                    )}
+                  >
+                    <CopyButton text={item.content?.[0]?.text.value || ''} />
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
-                          onClick={regenerate}
+                          onClick={() => {
+                            removeMessage()
+                          }}
                         >
-                          <IconRefresh size={16} />
+                          <IconTrash size={16} />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Regenerate</p>
+                        <p>Delete</p>
                       </TooltipContent>
                     </Tooltip>
-                  )}
+                    <Dialog>
+                      <DialogTrigger>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div className="outline-0 focus:outline-0 flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative">
+                              <IconInfoCircle size={16} />
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Metadata</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Message Metadata</DialogTitle>
+                          <div className="space-y-2">
+                            <div className="border border-main-view-fg/10 rounded-md overflow-hidden">
+                              <CodeEditor
+                                value={JSON.stringify(
+                                  item.metadata || {},
+                                  null,
+                                  2
+                                )}
+                                language="json"
+                                readOnly
+                                style={{
+                                  fontFamily: 'ui-monospace',
+                                  backgroundColor: 'transparent',
+                                  height: '100%',
+                                }}
+                                className="w-full h-full !text-sm"
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter className="mt-2 flex items-center">
+                            <DialogClose asChild>
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="hover:no-underline"
+                              >
+                                Close
+                              </Button>
+                            </DialogClose>
+                          </DialogFooter>
+                        </DialogHeader>
+                      </DialogContent>
+                    </Dialog>
+
+                    {item.isLastMessage && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            className="flex items-center gap-1 hover:text-accent transition-colors cursor-pointer group relative"
+                            onClick={regenerate}
+                          >
+                            <IconRefresh size={16} />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Regenerate</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
 
                   <TokenSpeedIndicator
+                    streaming={Boolean(item.isLastMessage && streamingContent)}
                     metadata={item.metadata}
                   />
                 </div>

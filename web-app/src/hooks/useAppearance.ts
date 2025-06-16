@@ -6,8 +6,10 @@ import { rgb, oklch, formatCss } from 'culori'
 import { useTheme } from './useTheme'
 
 export type FontSize = '14px' | '15px' | '16px' | '18px'
+export type ChatWidth = 'full' | 'compact'
 
 interface AppearanceState {
+  chatWidth: ChatWidth
   fontSize: FontSize
   appBgColor: RgbaColor
   appMainViewBgColor: RgbaColor
@@ -19,6 +21,7 @@ interface AppearanceState {
   appAccentTextColor: string
   appDestructiveTextColor: string
   appLeftPanelTextColor: string
+  setChatWidth: (size: ChatWidth) => void
   setFontSize: (size: FontSize) => void
   setAppBgColor: (color: RgbaColor) => void
   setAppMainViewBgColor: (color: RgbaColor) => void
@@ -129,6 +132,7 @@ export const useAppearance = create<AppearanceState>()(
   persist(
     (set) => {
       return {
+        chatWidth: 'compact',
         fontSize: defaultFontSize,
         appBgColor: defaultAppBgColor,
         appMainViewBgColor: defaultAppMainViewBgColor,
@@ -268,6 +272,10 @@ export const useAppearance = create<AppearanceState>()(
             appDestructiveBgColor: defaultDestructive,
             appDestructiveTextColor: '#FFF',
           })
+        },
+
+        setChatWidth: (value: ChatWidth) => {
+          set({ chatWidth: value })
         },
 
         setFontSize: (size: FontSize) => {
