@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react'
 import { useReleaseNotes } from '@/hooks/useReleaseNotes'
 import { RenderMarkdown } from '../RenderMarkdown'
 import { cn, isDev } from '@/lib/utils'
+import { isNightly, isBeta } from '@/lib/version'
 
 const DialogAppUpdater = () => {
   const {
@@ -22,16 +23,13 @@ const DialogAppUpdater = () => {
     setRemindMeLater(true)
   }
 
-  const nightly = VERSION.includes('-')
-  const beta = VERSION.includes('beta')
-
   const { release, fetchLatestRelease } = useReleaseNotes()
 
   useEffect(() => {
     if (!isDev()) {
-      fetchLatestRelease(beta ? true : false)
+      fetchLatestRelease(isBeta ? true : false)
     }
-  }, [beta, fetchLatestRelease])
+  }, [fetchLatestRelease])
 
   // Check for updates when component mounts
   useEffect(() => {
@@ -79,8 +77,8 @@ const DialogAppUpdater = () => {
             </div>
 
             {showReleaseNotes && (
-              <div className="max-h-[500px] p-4 w-[400px] overflow-y-scroll px-4 text-sm font-normal leading-relaxed">
-                {nightly && !beta ? (
+              <div className="max-h-[500px] p-4 w-[400px] overflow-y-scroll  text-sm font-normal leading-relaxed">
+                {isNightly && !isBeta ? (
                   <p className="text-sm font-normal">
                     You are using a nightly build. This version is built from
                     the latest development branch and may not have release
