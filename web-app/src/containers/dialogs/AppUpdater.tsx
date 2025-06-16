@@ -71,7 +71,7 @@ const DialogAppUpdater = () => {
                   <div className="text-base font-medium">
                     New Version: Jan {updateState.updateInfo?.version}
                   </div>
-                  <div className="mt-1 text-main-view-fg/70 font-normal">
+                  <div className="mt-1 text-main-view-fg/70 font-normal mb-2">
                     There's a new app update available to download.
                   </div>
                 </div>
@@ -79,9 +79,9 @@ const DialogAppUpdater = () => {
             </div>
 
             {showReleaseNotes && (
-              <div className="max-h-[500px] py-2 overflow-y-scroll px-4 text-sm font-normal leading-relaxed">
-                {nightly ? (
-                  <p className="mt-2 text-sm font-normal">
+              <div className="max-h-[500px] p-4 w-[400px] overflow-y-scroll px-4 text-sm font-normal leading-relaxed">
+                {nightly && !beta ? (
+                  <p className="text-sm font-normal">
                     You are using a nightly build. This version is built from
                     the latest development branch and may not have release
                     notes.
