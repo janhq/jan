@@ -417,17 +417,6 @@ export const ThreadContent = memo(
                               />
                             </div>
                           </div>
-                          <DialogFooter className="mt-2 flex items-center">
-                            <DialogClose asChild>
-                              <Button
-                                variant="link"
-                                size="sm"
-                                className="hover:no-underline"
-                              >
-                                Close
-                              </Button>
-                            </DialogClose>
-                          </DialogFooter>
                         </DialogHeader>
                       </DialogContent>
                     </Dialog>
