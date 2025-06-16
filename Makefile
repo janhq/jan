@@ -29,13 +29,13 @@ endif
 
 dev: install-and-build
 	yarn download:bin
-	yarn copy:lib
+	yarn download:lib
 	yarn dev
 
 # Deprecated soon
 dev-tauri: install-and-build
 	yarn download:bin
-	yarn copy:lib
+	yarn download:lib
 	yarn dev:tauri
 
 # Linting
@@ -55,11 +55,12 @@ build-and-publish: install-and-build
 
 # Build
 build: install-and-build
+	yarn download:lib
 	yarn build
 
 # Deprecated soon
 build-tauri: install-and-build
-	yarn copy:lib
+	yarn download:lib
 	yarn build
 
 clean:
