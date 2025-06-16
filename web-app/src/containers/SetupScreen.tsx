@@ -3,6 +3,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { Link } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from './HeaderPage'
+import { isProd } from '@/lib/version'
 
 function SetupScreen() {
   const { providers } = useModelProvider()
@@ -19,7 +20,7 @@ function SetupScreen() {
               Welcome to Jan
             </h1>
             <p className="text-main-view-fg/70 text-lg mt-2">
-              To get started, you’ll need to either download a local AI model or
+              To get started, you'll need to either download a local AI model or
               connect to a cloud model using an API key
             </p>
           </div>
@@ -29,7 +30,7 @@ function SetupScreen() {
                 <Link
                   to={route.hub}
                   search={{
-                    step: 'setup_local_provider',
+                    ...(!isProd ? { step: 'setup_local_provider' } : {}),
                   }}
                 >
                   <div>
