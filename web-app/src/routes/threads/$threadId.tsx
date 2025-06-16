@@ -228,7 +228,7 @@ function ThreadDetail() {
                 return (
                   <div
                     key={item.id}
-                    data-test-id={`message-${item.id}`}
+                    data-test-id={`message-${item.role}-${item.id}`}
                     data-message-author-role={item.role}
                     className="mb-4"
                   >
@@ -251,7 +251,10 @@ function ThreadDetail() {
                   </div>
                 )
               })}
-            <StreamingContent threadId={threadId} />
+            <StreamingContent
+              threadId={threadId}
+              data-test-id="thread-content-text"
+            />
           </div>
         </div>
         <div

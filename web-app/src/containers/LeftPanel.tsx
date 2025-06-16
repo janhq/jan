@@ -324,6 +324,7 @@ const LeftPanel = () => {
                 <Link
                   key={menu.title}
                   to={menu.route}
+                  data-test-id={`menu-${menu.title}`}
                   className={cn(
                     'flex items-center gap-1.5 cursor-pointer hover:bg-left-panel-fg/10 py-1 px-1 rounded',
                     isActive

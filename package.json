@@ -4,7 +4,8 @@
   "workspaces": {
     "packages": [
       "core",
-      "web-app"
+      "web-app",
+      "webdriver/webdriverio"
     ]
   },
   "scripts": {
@@ -13,6 +14,10 @@
     "build": "yarn build:web && yarn build:tauri",
     "test": "yarn workspace @janhq/web-app test",
     "test:coverage": "yarn workspace @janhq/web-app test",
+    "test:e2e:linux": "yarn build:icon && yarn copy:assets:tauri && xvfb-run yarn workspace webdriverio test",
+    "test:e2e:win32": "yarn build:icon && yarn copy:assets:tauri && yarn workspace webdriverio test",
+    "test:e2e:darwin": "echo 'E2E tests are not supported on macOS yet due to WebDriver limitations'",
+    "test:e2e": "run-script-os",
     "dev:web": "yarn workspace @janhq/web-app dev",
     "dev:tauri": "CLEAN=true yarn build:icon && yarn copy:assets:tauri && tauri dev",
     "install:cortex:linux:darwin": "cd src-tauri/binaries && ./download.sh",

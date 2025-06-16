@@ -368,6 +368,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
               rows={1}
               maxRows={10}
               value={prompt}
+              data-test-id={'chat-input'}
               onChange={(e) => {
                 setPrompt(e.target.value)
                 // Count the number of newlines to estimate rows
@@ -570,6 +571,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                 variant={!prompt.trim() ? null : 'default'}
                 size="icon"
                 disabled={!prompt.trim()}
+                data-test-id="send-message-button"
                 onClick={() => handleSendMesage(prompt)}
               >
                 {streamingContent ? (
