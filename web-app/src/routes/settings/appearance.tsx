@@ -18,6 +18,7 @@ import CodeBlockStyleSwitcher from '@/containers/CodeBlockStyleSwitcher'
 import { LineNumbersSwitcher } from '@/containers/LineNumbersSwitcher'
 import { CodeBlockExample } from '@/containers/CodeBlockExample'
 import { toast } from 'sonner'
+import { ChatWidthSwitcher } from '@/containers/ChatWidthSwitcher'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.appearance as any)({
@@ -96,6 +97,15 @@ function Appareances() {
                   </Button>
                 }
               />
+            </Card>
+
+            {/* Chat Message */}
+            <Card>
+              <CardItem
+                title="Chat Width"
+                description="Choose the width of the chat area to customize your conversation view."
+              />
+              <ChatWidthSwitcher />
             </Card>
 
             {/* Codeblock */}
