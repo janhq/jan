@@ -26,12 +26,8 @@ function SetupScreen() {
           <div className="flex gap-4 flex-col">
             <Card
               header={
-                <Link
-                  to={route.hub}
-                  search={{
-                    step: 'setup_local_provider',
-                  }}
-                >
+                // Add search query step setup_local_provider to the onboarding local model later
+                <Link to={route.hub}>
                   <div>
                     <h1 className="text-main-view-fg font-medium text-base">
                       Set up local model
