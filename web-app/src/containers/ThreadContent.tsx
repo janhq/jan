@@ -358,7 +358,7 @@ export const ThreadContent = memo(
             ) : null}
 
             {!isToolCalls && (
-              <div className="flex items-center gap-2 mt-2 text-main-view-fg/60 text-xs">
+              <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
                 <div className={cn('flex items-center gap-2')}>
                   <div
                     className={cn(
