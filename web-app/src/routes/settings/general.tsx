@@ -45,6 +45,7 @@ import { isDev } from '@/lib/utils'
 import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
+import { isProd } from '@/lib/version'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -234,10 +235,12 @@ function General() {
                   </Button>
                 }
               />
-              <CardItem
-                title={t('common.language')}
-                actions={<LanguageSwitcher />}
-              />
+              {!isProd && (
+                <CardItem
+                  title={t('common.language')}
+                  actions={<LanguageSwitcher />}
+                />
+              )}
             </Card>
 
             {/* Data folder */}
