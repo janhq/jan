@@ -129,7 +129,7 @@ function HTTPSProxy() {
                 className="block"
                 description={
                   <div className="space-y-2">
-                    <p>URL and port of your proxy server.</p>
+                    <p>The URL and port of your proxy server.</p>
                     <Input
                       className="w-full"
                       placeholder="http://<user>:<password>@<domain or IP>:<port>"
@@ -144,7 +144,7 @@ function HTTPSProxy() {
                 className="block"
                 description={
                   <div className="space-y-2">
-                    <p>Credentials for your proxy server (if required).</p>
+                    <p>Credentials for the proxy server, if required.</p>
                     <div className="flex gap-2">
                       <Input
                         placeholder="Username"
@@ -181,7 +181,7 @@ function HTTPSProxy() {
                 className="block"
                 description={
                   <div className="space-y-2">
-                    <p>List of hosts that should bypass the proxy.</p>
+                    <p>A comma-separated list of hosts to bypass the proxy.</p>
                     <Input
                       placeholder="localhost, 127.0.0.1"
                       value={noProxy}
@@ -196,7 +196,7 @@ function HTTPSProxy() {
             <Card title="SSL Verification">
               <CardItem
                 title="Ignore SSL Certificates"
-                description="Allow self-signed or unverified certificates (may be required for certain proxies). Enable this reduces security. Only use this if you trust your proxy server."
+                description="Allow self-signed or unverified certificates. This may be required for some proxies but reduces security. Only enable if you trust your proxy."
                 actions={
                   <Switch
                     checked={proxyIgnoreSSL}
@@ -206,7 +206,7 @@ function HTTPSProxy() {
               />
               <CardItem
                 title="Proxy SSL"
-                description="Validate SSL certificate when connecting to the proxy server."
+                description="Validate the SSL certificate when connecting to the proxy."
                 actions={
                   <Switch
                     checked={verifyProxySSL}
@@ -216,7 +216,7 @@ function HTTPSProxy() {
               />
               <CardItem
                 title="Proxy Host SSL"
-                description="Validate SSL certificate of the proxy server host."
+                description="Validate the SSL certificate of the proxy's host."
                 actions={
                   <Switch
                     checked={verifyProxyHostSSL}
@@ -228,7 +228,7 @@ function HTTPSProxy() {
               />
               <CardItem
                 title="Peer SSL"
-                description="Validate SSL certificate of the peer connections."
+                description="Validate the SSL certificates of peer connections."
                 actions={
                   <Switch
                     checked={verifyPeerSSL}
@@ -238,7 +238,7 @@ function HTTPSProxy() {
               />
               <CardItem
                 title="Host SSL"
-                description="Validate SSL certificate of destination hosts."
+                description="Validate the SSL certificates of destination hosts."
                 actions={
                   <Switch
                     checked={verifyHostSSL}

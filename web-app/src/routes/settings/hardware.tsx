@@ -352,7 +352,7 @@ function Hardware() {
               <Card title="Vulkan">
                 <CardItem
                   title="Enable Vulkan"
-                  description="Enable Vulkan API for GPU acceleration"
+                  description="Use Vulkan API for GPU acceleration."
                   actions={
                     <div className="flex items-center gap-4">
                       <Switch
