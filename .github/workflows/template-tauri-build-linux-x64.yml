@@ -122,6 +122,10 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
+          # Temporarily enable devtool on prod build
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          cat ./src-tauri/Cargo.toml
+
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           cat ./src-tauri/Cargo.toml
 
