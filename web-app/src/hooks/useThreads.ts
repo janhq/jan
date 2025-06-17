@@ -32,11 +32,9 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   searchIndex: null,
   setThreads: (threads) => {
-    threads.forEach((thread, index) => {
-      thread.order = index + 1
+    threads.forEach((thread) => {
       updateThread({
         ...thread,
-        order: index + 1,
       })
     })
     const threadMap = threads.reduce(
@@ -159,7 +157,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       id: ulid(),
       title: title ?? 'New Thread',
       model,
-      // order: 1, // Will be set properly by setThreads
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
     }
@@ -244,44 +241,14 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       const thread = state.threads[threadId]
       if (!thread) return state
 
-      // If the thread is already at order 1, just update the timestamp
-      if (thread.order === 1) {
-        const updatedThread = {
-          ...thread,
-          updated: Date.now() / 1000,
-        }
-        updateThread(updatedThread)
-
-        return {
-          threads: {
-            ...state.threads,
-            [threadId]: updatedThread,
-          },
-        }
-      }
-
       // Update the thread with new timestamp and set it to order 1 (top)
       const updatedThread = {
         ...thread,
         updated: Date.now() / 1000,
-        order: 1,
       }
 
       // Update all other threads to increment their order by 1
       const updatedThreads = { ...state.threads }
-      Object.keys(updatedThreads).forEach((id) => {
-        if (id !== threadId) {
-          const otherThread = updatedThreads[id]
-          updatedThreads[id] = {
-            ...otherThread,
-            order: (otherThread.order || 1) + 1,
-          }
-          // Update the backend for other threads
-          updateThread(updatedThreads[id])
-        }
-      })
-
-      // Set the updated thread
       updatedThreads[threadId] = updatedThread
 
       // Update the backend for the main thread
