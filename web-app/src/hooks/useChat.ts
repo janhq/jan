@@ -180,10 +180,6 @@ export const useChat = () => {
       if (updatedProvider)
         await restartModel(updatedProvider, model.id, controller)
 
-      console.log(
-        updatedProvider?.models.find((e) => e.id === model.id)?.settings
-          ?.ctx_len?.controller_props.value
-      )
       return updatedProvider
     },
     [getProviderByName, restartModel, updateProvider]

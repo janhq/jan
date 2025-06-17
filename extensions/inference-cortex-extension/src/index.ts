@@ -64,7 +64,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
   cpu_threads?: number
   auto_unload_models: boolean = true
   reasoning_budget = -1 // Default reasoning budget in seconds
-  context_shift = true
+  context_shift = false
   /**
    * The URL for making inference requests.
    */
@@ -132,7 +132,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
     this.flash_attn = await this.getSetting<boolean>(Settings.flash_attn, true)
     this.context_shift = await this.getSetting<boolean>(
       Settings.context_shift,
-      true
+      false
     )
     this.use_mmap = await this.getSetting<boolean>(Settings.use_mmap, true)
     if (this.caching_enabled)
