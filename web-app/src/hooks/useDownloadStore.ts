@@ -11,6 +11,7 @@ export interface DownloadProgressProps {
 // Zustand store for thinking block state
 export type DownloadState = {
   downloads: { [id: string]: DownloadProgressProps }
+  localDownloadingModels: Set<string>
   removeDownload: (id: string) => void
   updateProgress: (
     id: string,
@@ -19,6 +20,8 @@ export type DownloadState = {
     current?: number,
     total?: number
   ) => void
+  addLocalDownloadingModel: (modelId: string) => void
+  removeLocalDownloadingModel: (modelId: string) => void
 }
 
 /**
@@ -26,6 +29,7 @@ export type DownloadState = {
  */
 export const useDownloadStore = create<DownloadState>((set) => ({
   downloads: {},
+  localDownloadingModels: new Set(),
   removeDownload: (id: string) =>
     set((state) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -46,4 +50,18 @@ export const useDownloadStore = create<DownloadState>((set) => ({
         },
       },
     })),
+
+  addLocalDownloadingModel: (modelId: string) =>
+    set((state) => ({
+      localDownloadingModels: new Set(state.localDownloadingModels).add(
+        modelId
+      ),
+    })),
+
+  removeLocalDownloadingModel: (modelId: string) =>
+    set((state) => {
+      const newSet = new Set(state.localDownloadingModels)
+      newSet.delete(modelId)
+      return { localDownloadingModels: newSet }
+    }),
 }))

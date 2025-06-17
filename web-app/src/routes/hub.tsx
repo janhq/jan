@@ -182,7 +182,8 @@ function Hub() {
     }
   }
 
-  const { downloads } = useDownloadStore()
+  const { downloads, localDownloadingModels, addLocalDownloadingModel } =
+    useDownloadStore()
 
   const downloadProcesses = useMemo(
     () =>
@@ -225,13 +226,21 @@ function Hub() {
         model.models.find((e) =>
           defaultModelQuantizations.some((m) => e.id.toLowerCase().includes(m))
         )?.id ?? model.models[0]?.id
-      const isDownloading = downloadProcesses.some((e) => e.id === modelId)
+      const isDownloading =
+        localDownloadingModels.has(modelId) ||
+        downloadProcesses.some((e) => e.id === modelId)
       const downloadProgress =
         downloadProcesses.find((e) => e.id === modelId)?.progress || 0
       const isDownloaded = llamaProvider?.models.some(
         (m: { id: string }) => m.id === modelId
       )
       const isRecommended = isRecommendedModel(model.metadata?.id)
+
+      const handleDownload = () => {
+        // Immediately set local downloading state
+        addLocalDownloadingModel(modelId)
+        downloadModel(modelId)
+      }
 
       return (
         <div
@@ -255,7 +264,7 @@ function Hub() {
           ) : (
             <Button
               size="sm"
-              onClick={() => downloadModel(modelId)}
+              onClick={handleDownload}
               className={cn(isDownloading && 'hidden')}
               ref={isRecommended ? downloadButtonRef : undefined}
             >
@@ -271,6 +280,8 @@ function Hub() {
     handleUseModel,
     isRecommendedModel,
     downloadButtonRef,
+    localDownloadingModels,
+    addLocalDownloadingModel,
   ])
 
   const { step } = useSearch({ from: Route.id })
@@ -320,7 +331,8 @@ function Hub() {
   }
 
   // Check if any model is currently downloading
-  const isDownloading = downloadProcesses.length > 0
+  const isDownloading =
+    localDownloadingModels.size > 0 || downloadProcesses.length > 0
 
   const steps = [
     {
@@ -553,6 +565,9 @@ function Hub() {
                                       </p>
                                       {(() => {
                                         const isDownloading =
+                                          localDownloadingModels.has(
+                                            variant.id
+                                          ) ||
                                           downloadProcesses.some(
                                             (e) => e.id === variant.id
                                           )
@@ -607,9 +622,12 @@ function Hub() {
                                           <div
                                             className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                                             title="Download model"
-                                            onClick={() =>
+                                            onClick={() => {
+                                              addLocalDownloadingModel(
+                                                variant.id
+                                              )
                                               downloadModel(variant.id)
-                                            }
+                                            }}
                                           >
                                             <IconDownload
                                               size={16}

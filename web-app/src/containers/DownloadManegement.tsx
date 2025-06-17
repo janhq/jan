@@ -19,7 +19,13 @@ export function DownloadManagement() {
   const { setProviders } = useModelProvider()
   const { open: isLeftPanelOpen } = useLeftPanel()
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)
-  const { downloads, updateProgress, removeDownload } = useDownloadStore()
+  const {
+    downloads,
+    updateProgress,
+    localDownloadingModels,
+    removeDownload,
+    removeLocalDownloadingModel,
+  } = useDownloadStore()
   const { updateState } = useAppUpdater()
 
   const [appUpdateState, setAppUpdateState] = useState({
@@ -76,23 +82,36 @@ export function DownloadManagement() {
     })
   }, [])
 
+  const downloadProcesses = useMemo(() => {
+    // Get downloads with progress data
+    const downloadsWithProgress = Object.values(downloads).map((download) => ({
+      id: download.name,
+      name: download.name,
+      progress: download.progress,
+      current: download.current,
+      total: download.total,
+    }))
+
+    // Add local downloading models that don't have progress data yet
+    const localDownloadsWithoutProgress = Array.from(localDownloadingModels)
+      .filter((modelId) => !downloads[modelId]) // Only include models not in downloads
+      .map((modelId) => ({
+        id: modelId,
+        name: modelId,
+        progress: 0,
+        current: 0,
+        total: 0,
+      }))
+
+    return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
+  }, [downloads, localDownloadingModels])
+
   const downloadCount = useMemo(() => {
-    const modelDownloads = Object.keys(downloads).length
+    const modelDownloads = downloadProcesses.length
     const appUpdateDownload = appUpdateState.isDownloading ? 1 : 0
     const total = modelDownloads + appUpdateDownload
     return total
-  }, [downloads, appUpdateState.isDownloading])
-  const downloadProcesses = useMemo(
-    () =>
-      Object.values(downloads).map((download) => ({
-        id: download.name,
-        name: download.name,
-        progress: download.progress,
-        current: download.current,
-        total: download.total,
-      })),
-    [downloads]
-  )
+  }, [downloadProcesses, appUpdateState.isDownloading])
 
   const overallProgress = useMemo(() => {
     const modelTotal = downloadProcesses.reduce((acc, download) => {
@@ -139,29 +158,32 @@ export function DownloadManagement() {
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
       removeDownload(state.modelId)
+      removeLocalDownloadingModel(state.modelId)
     },
-    [removeDownload]
+    [removeDownload, removeLocalDownloadingModel]
   )
 
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
       removeDownload(state.modelId)
+      removeLocalDownloadingModel(state.modelId)
     },
-    [removeDownload]
+    [removeDownload, removeLocalDownloadingModel]
   )
 
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
       removeDownload(state.modelId)
+      removeLocalDownloadingModel(state.modelId)
       getProviders().then(setProviders)
       toast.success('Download Complete', {
         id: 'download-complete',
         description: `The model ${state.modelId} has been downloaded`,
       })
     },
-    [removeDownload, setProviders]
+    [removeDownload, removeLocalDownloadingModel, setProviders]
   )
 
   useEffect(() => {
@@ -264,12 +286,16 @@ export function DownloadManagement() {
                     />
                     <p className="text-main-view-fg/60 text-xs">
                       {`${renderGB(appUpdateState.downloadedBytes)} / ${renderGB(appUpdateState.totalBytes)}`}{' '}
-                      GB ({Math.round(appUpdateState.downloadProgress * 100)}%)
+                      GB ({Math.round(appUpdateState.downloadProgress * 100)}
+                      %)
                     </p>
                   </div>
                 )}
                 {downloadProcesses.map((download) => (
-                  <div className="bg-main-view-fg/4 rounded-md p-2">
+                  <div
+                    key={download.id}
+                    className="bg-main-view-fg/4 rounded-md p-2"
+                  >
                     <div className="flex items-center justify-between">
                       <p className="truncate text-main-view-fg/80">
                         {download.name}
@@ -299,8 +325,9 @@ export function DownloadManagement() {
                       className="my-2"
                     />
                     <p className="text-main-view-fg/60 text-xs">
-                      {`${renderGB(download.current)} / ${renderGB(download.total)}`}{' '}
-                      GB ({Math.round(download.progress * 100)}%)
+                      {download.total > 0
+                        ? `${renderGB(download.current)} / ${renderGB(download.total)} GB (${Math.round(download.progress * 100)}%)`
+                        : 'Initializing download...'}
                     </p>
                   </div>
                 ))}
