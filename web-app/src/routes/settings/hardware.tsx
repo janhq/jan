@@ -371,30 +371,34 @@ function Hardware() {
             )}
 
             {/* GPU Information */}
-            <Card title="GPUs">
-              {hardwareData.gpus.length > 0 ? (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={hardwareData.gpus.map((gpu) => gpu.id)}
-                    strategy={verticalListSortingStrategy}
+            {!IS_MACOS ? (
+              <Card title="GPUs">
+                {hardwareData.gpus.length > 0 ? (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
                   >
-                    {hardwareData.gpus.map((gpu, index) => (
-                      <SortableGPUItem
-                        key={gpu.id || index}
-                        gpu={gpu}
-                        index={index}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-              ) : (
-                <CardItem title="No GPUs detected" actions={<></>} />
-              )}
-            </Card>
+                    <SortableContext
+                      items={hardwareData.gpus.map((gpu) => gpu.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {hardwareData.gpus.map((gpu, index) => (
+                        <SortableGPUItem
+                          key={gpu.id || index}
+                          gpu={gpu}
+                          index={index}
+                        />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
+                ) : (
+                  <CardItem title="No GPUs detected" actions={<></>} />
+                )}
+              </Card>
+            ) : (
+              <></>
+            )}
           </div>
         </div>
       </div>
