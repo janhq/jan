@@ -45,7 +45,7 @@
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data: https://cdn.jsdelivr.net",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
-        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost"
+        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
       },
       "assetProtocol": {
         "enable": true,
