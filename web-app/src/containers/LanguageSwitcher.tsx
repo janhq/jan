@@ -12,6 +12,8 @@ const LANGUAGES = [
   { value: 'en', label: 'English' },
   { value: 'id', label: 'Bahasa' },
   { value: 'vn', label: 'Tiếng Việt' },
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'zh-TW', label: '繁體中文' },
 ]
 
 export default function LanguageSwitcher() {

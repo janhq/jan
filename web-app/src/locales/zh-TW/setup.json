@@ -1,0 +1,6 @@
+{
+  "welcome": "歡迎來到 Jan",
+  "description": "選擇您希望如何開始使用 Jan",
+  "localModel": "下載本機模型",
+  "remoteProvider": "連線至遠端提供者"
+}
