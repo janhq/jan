@@ -1,4 +1,5 @@
 import { useAppState } from '@/hooks/useAppState'
+import { toNumber } from '@/utils/number'
 import { Gauge } from 'lucide-react'
 
 interface TokenSpeedIndicatorProps {
@@ -29,7 +30,7 @@ export const TokenSpeedIndicator = ({
       <Gauge size={16} />
       <span>
         {Math.round(
-          streaming ? Number(tokenSpeed?.tokenSpeed) : persistedTokenSpeed
+          streaming ? toNumber(tokenSpeed?.tokenSpeed) : persistedTokenSpeed
         )}
         &nbsp;tokens/sec
       </span>
