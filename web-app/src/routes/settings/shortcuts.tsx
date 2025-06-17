@@ -27,7 +27,7 @@ function Shortcuts() {
             <Card title="Application">
               <CardItem
                 title="New Chat"
-                description="Create a new chat conversation"
+                description="Create a new chat."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -38,7 +38,7 @@ function Shortcuts() {
               />
               <CardItem
                 title="Toggle Sidebar"
-                description="Show or hide the sidebar"
+                description="Show or hide the sidebar."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -49,7 +49,7 @@ function Shortcuts() {
               />
               <CardItem
                 title="Zoom In"
-                description="Increase the zoom level"
+                description="Increase the zoom level."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -60,7 +60,7 @@ function Shortcuts() {
               />
               <CardItem
                 title="Zoom Out"
-                description="Decrease the zoom level"
+                description="Decrease the zoom level."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
@@ -75,7 +75,7 @@ function Shortcuts() {
             <Card title="Chat">
               <CardItem
                 title="Send Message"
-                description="Send the current message"
+                description="Send the current message."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">Enter</span>
@@ -84,7 +84,7 @@ function Shortcuts() {
               />
               <CardItem
                 title="New Line"
-                description="Insert a new line in the message"
+                description="Insert a new line."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">Shift + Enter</span>
@@ -97,7 +97,7 @@ function Shortcuts() {
             <Card title="Navigation">
               <CardItem
                 title="Go to Settings"
-                description="Open the settings page"
+                description="Open settings."
                 actions={
                   <div className="flex items-center justify-center px-3 py-1 bg-main-view-fg/5 rounded-md">
                     <span className="font-medium">
