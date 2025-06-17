@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "general": {
+      "autoDownload": "自動で最新アップデートをダウンロード"
+    },
+    "dataFolder": {
+      "appData": "アプリデータ",
+      "appDataDesc": "メッセージやその他のユーザーデータのデフォルト保存場所",
+      "appLogs": "アプリログ",
+      "appLogsDesc": "アプリのログ保存場所（デフォルト）"
+    },
+    "others": {
+      "spellCheck": "スペルチェック",
+      "spellCheckDesc": "オンにするとチャット入力時にスペルチェックが有効になります。",
+      "resetFactory": "工場出荷時の設定にリセット",
+      "resetFactoryDesc": "アプリケーションを初期状態に戻します。すべてのモデルとチャット履歴が消去されます。この操作は元に戻せません。アプリに問題がある場合のみ推奨されます。"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "common": {
+    "general": "一般",
+    "settings": "設定",
+    "modelProviders": "モデルプロバイダー",
+    "appearance": "外観",
+    "privacy": "プライバシー",
+    "keyboardShortcuts": "ショートカット",
+    "newChat": "新しいチャット",
+    "favorites": "お気に入り",
+    "recents": "最近使用したもの",
+    "hub": "ハブ",
+    "helpSupport": "ヘルプとサポート",
+    "unstarAll": "すべてのスターを外す",
+    "unstar": "スターを外す",
+    "deleteAll": "すべて削除",
+    "star": "スターを付ける",
+    "rename": "名前を変更",
+    "delete": "削除",
+    "dataFolder": "データフォルダ",
+    "others": "その他",
+    "language": "言語",
+    "reset": "リセット",
+    "search": "検索",
+    "name": "名前",
+    "cancel": "キャンセル",
+
+    "placeholder": {
+      "chatInput": "なんでも聞いてください..."
+    }
+  }
+}
