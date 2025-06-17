@@ -253,11 +253,12 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
         }
       }
     }
+    const modelSettings = extractModelLoadParams(model.settings)
     return await this.apiInstance().then((api) =>
       api
         .post('v1/models/start', {
           json: {
-            ...extractModelLoadParams(model.settings),
+            ...modelSettings,
             model: model.id,
             engine:
               model.engine === 'nitro' // Legacy model cache
@@ -282,7 +283,7 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...(this.context_shift === false
               ? { 'no-context-shift': true }
               : {}),
-            ...(model.settings?.ngl === -1 || model.settings?.ngl === undefined
+            ...(modelSettings.ngl === -1 || modelSettings.ngl === undefined
               ? { ngl: 100 }
               : {}),
           },
