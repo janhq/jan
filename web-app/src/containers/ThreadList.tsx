@@ -9,7 +9,6 @@ import {
 import {
   SortableContext,
   verticalListSortingStrategy,
-  arrayMove,
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -54,7 +53,7 @@ const SortableItem = memo(({ thread }: { thread: Thread }) => {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: thread.id })
+  } = useSortable({ id: thread.id, disabled: true })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -263,18 +262,8 @@ type ThreadListProps = {
 }
 
 function ThreadList({ threads }: ThreadListProps) {
-  const { setThreads } = useThreads()
-
   const sortedThreads = useMemo(() => {
     return threads.sort((a, b) => {
-      // If both have order, sort by order (ascending, so lower order comes first)
-      if (a.order != null && b.order != null) {
-        return a.order - b.order
-      }
-      // If only one has order, prioritize the one with order (order comes first)
-      if (a.order != null) return -1
-      if (b.order != null) return 1
-      // If neither has order, sort by updated time (newer threads first)
       return (b.updated || 0) - (a.updated || 0)
     })
   }, [threads])
@@ -290,36 +279,7 @@ function ThreadList({ threads }: ThreadListProps) {
   )
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={(event) => {
-        const { active, over } = event
-        if (active.id !== over?.id && over) {
-          // Access Global State
-          const allThreadsMap = useThreads.getState().threads
-          const allThreadsArray = Object.values(allThreadsMap)
-
-          // Calculate Global Indices
-          const oldIndexInGlobal = allThreadsArray.findIndex(
-            (t) => t.id === active.id
-          )
-          const newIndexInGlobal = allThreadsArray.findIndex(
-            (t) => t.id === over.id
-          )
-
-          // Reorder Globally and Update State
-          if (oldIndexInGlobal !== -1 && newIndexInGlobal !== -1) {
-            const reorderedGlobalThreads = arrayMove(
-              allThreadsArray,
-              oldIndexInGlobal,
-              newIndexInGlobal
-            )
-            setThreads(reorderedGlobalThreads)
-          }
-        }
-      }}
-    >
+    <DndContext sensors={sensors} collisionDetection={closestCenter}>
       <SortableContext
         items={sortedThreads.map((t) => t.id)}
         strategy={verticalListSortingStrategy}
