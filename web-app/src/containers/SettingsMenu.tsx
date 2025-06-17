@@ -1,49 +1,49 @@
 import { Link, useMatches } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { isProd } from '@/lib/version'
 
 const menuSettings = [
   {
-    title: 'common.general',
+    title: 'common:general',
     route: route.settings.general,
   },
   {
-    title: 'common.appearance',
+    title: 'common:appearance',
     route: route.settings.appearance,
   },
   {
-    title: 'common.privacy',
+    title: 'common:privacy',
     route: route.settings.privacy,
   },
   {
-    title: 'common.keyboardShortcuts',
+    title: 'common:keyboardShortcuts',
     route: route.settings.shortcuts,
   },
   {
-    title: 'Hardware',
+    title: 'common:hardware',
     route: route.settings.hardware,
   },
   // Only show MCP Servers in non-production environment
   ...(!isProd
     ? [
         {
-          title: 'MCP Servers',
+          title: 'common:mcp-servers',
           route: route.settings.mcp_servers,
         },
       ]
     : []),
   {
-    title: 'Local API Server',
+    title: 'common:local_api_server',
     route: route.settings.local_api_server,
   },
   {
-    title: 'HTTPS Proxy',
+    title: 'common:https_proxy',
     route: route.settings.https_proxy,
   },
   {
-    title: 'Extensions',
+    title: 'common:extensions',
     route: route.settings.extensions,
   },
 ]
@@ -83,7 +83,7 @@ const SettingsMenu = () => {
                 {/* Model Providers Link with default parameter */}
                 {isActive ? (
                   <div className="block px-2 mt-1 gap-1.5 py-1 w-full rounded bg-main-view-fg/5 cursor-pointer">
-                    <span>{t('common.modelProviders')}</span>
+                    <span>{t('common:modelProviders')}</span>
                   </div>
                 ) : (
                   <Link
@@ -93,7 +93,7 @@ const SettingsMenu = () => {
                     className="block px-2 gap-1.5 cursor-pointer hover:bg-main-view-fg/5 py-1 w-full rounded"
                   >
                     <span className="text-main-view-fg/80">
-                      {t('common.modelProviders')}
+                      {t('common:modelProviders')}
                     </span>
                   </Link>
                 )}

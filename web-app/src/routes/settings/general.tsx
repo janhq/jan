@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
@@ -45,25 +45,24 @@ import { isDev } from '@/lib/utils'
 import { emit } from '@tauri-apps/api/event'
 import { stopAllModels } from '@/services/models'
 import { SystemEvent } from '@/types/events'
-import { isProd } from '@/lib/version'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
   component: General,
 })
 
-const openFileTitle = (): string => {
-  if (IS_MACOS) {
-    return 'Show in Finder'
-  } else if (IS_WINDOWS) {
-    return 'Show in File Explorer'
-  } else {
-    return 'Open Containing Folder'
-  }
-}
-
 function General() {
   const { t } = useTranslation()
+
+  const openFileTitle = (): string => {
+    if (IS_MACOS) {
+      return t('settings:general.showInFinder')
+    } else if (IS_WINDOWS) {
+      return t('settings:general.showInFileExplorer')
+    } else {
+      return t('settings:general.openContainingFolder')
+    }
+  }
   const { spellCheckChatInput, setSpellCheckChatInput } = useGeneralSetting()
   const { checkForUpdate } = useAppUpdater()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
@@ -164,7 +163,7 @@ function General() {
             toast.error(
               error instanceof Error
                 ? error.message
-                : 'Failed to relocate Jan data folder'
+                : t('settings:general.failedToRelocateDataFolder')
             )
           }
         }, 1000)
@@ -174,9 +173,7 @@ function General() {
         const originalPath = await getJanDataFolder()
         setJanDataFolder(originalPath)
 
-        toast.error(
-          'Failed to relocate data folder. Please try again or choose a different location.'
-        )
+        toast.error(t('settings:general.failedToRelocateDataFolderDesc'))
       }
     }
   }
@@ -184,34 +181,33 @@ function General() {
   const handleCheckForUpdate = useCallback(async () => {
     setIsCheckingUpdate(true)
     try {
-      if (isDev())
-        return toast.info('You are running a development version of Jan!')
+      if (isDev()) return toast.info(t('settings:general.devVersion'))
       const update = await checkForUpdate(true)
       if (!update) {
-        toast.info('You are using the latest version of Jan!')
+        toast.info(t('settings:general.noUpdateAvailable'))
       }
       // If update is available, the AppUpdater dialog will automatically show
     } catch (error) {
       console.error('Failed to check for updates:', error)
-      toast.error('Failed to check for updates. Please try again later.')
+      toast.error(t('settings:general.updateError'))
     } finally {
       setIsCheckingUpdate(false)
     }
-  }, [setIsCheckingUpdate, checkForUpdate])
+  }, [t, checkForUpdate])
 
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
-            <Card title={t('common.general')}>
+            <Card title={t('common:general')}>
               <CardItem
-                title="App Version"
+                title={t('settings:general.appVersion')}
                 actions={
                   <span className="text-main-view-fg/80 font-medium">
                     v{VERSION}
@@ -219,8 +215,8 @@ function General() {
                 }
               />
               <CardItem
-                title="Check for Updates"
-                description="Check if a newer version of Jan is available."
+                title={t('settings:general.checkForUpdates')}
+                description={t('settings:general.checkForUpdatesDesc')}
                 actions={
                   <Button
                     variant="link"
@@ -230,30 +226,30 @@ function General() {
                     disabled={isCheckingUpdate}
                   >
                     <div className="cursor-pointer rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
-                      {isCheckingUpdate ? 'Checking...' : 'Check for Updates'}
+                      {isCheckingUpdate
+                        ? t('settings:general.checkingForUpdates')
+                        : t('settings:general.checkForUpdates')}
                     </div>
                   </Button>
                 }
               />
-              {!isProd && (
-                <CardItem
-                  title={t('common.language')}
-                  actions={<LanguageSwitcher />}
-                />
-              )}
+              <CardItem
+                title={t('common:language')}
+                actions={<LanguageSwitcher />}
+              />
             </Card>
 
             {/* Data folder */}
-            <Card title={t('common.dataFolder')}>
+            <Card title={t('common:dataFolder')}>
               <CardItem
-                title={t('settings.dataFolder.appData', {
+                title={t('settings:dataFolder.appData', {
                   ns: 'settings',
                 })}
                 align="start"
                 description={
                   <>
                     <span>
-                      {t('settings.dataFolder.appDataDesc', {
+                      {t('settings:dataFolder.appDataDesc', {
                         ns: 'settings',
                       })}
                       &nbsp;
@@ -270,12 +266,18 @@ function General() {
                           janDataFolder && copyToClipboard(janDataFolder)
                         }
                         className="cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out p-1"
-                        title={isCopied ? 'Copied!' : 'Copy path'}
+                        title={
+                          isCopied
+                            ? t('settings:general.copied')
+                            : t('settings:general.copyPath')
+                        }
                       >
                         {isCopied ? (
                           <div className="flex items-center gap-1">
                             <IconCopyCheck size={12} className="text-accent" />
-                            <span className="text-xs leading-0">Copied</span>
+                            <span className="text-xs leading-0">
+                              {t('settings:general.copied')}
+                            </span>
                           </div>
                         ) : (
                           <IconCopy
@@ -293,7 +295,7 @@ function General() {
                       variant="link"
                       size="sm"
                       className="p-0"
-                      title="App Data Folder"
+                      title={t('settings:dataFolder.appData')}
                       onClick={handleDataFolderChange}
                     >
                       <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
@@ -301,7 +303,7 @@ function General() {
                           size={12}
                           className="text-main-view-fg/50"
                         />
-                        <span>Change Location</span>
+                        <span>{t('settings:general.changeLocation')}</span>
                       </div>
                     </Button>
                     {selectedNewPath && (
@@ -324,10 +326,10 @@ function General() {
                 }
               />
               <CardItem
-                title={t('settings.dataFolder.appLogs', {
+                title={t('settings:dataFolder.appLogs', {
                   ns: 'settings',
                 })}
-                description="View detailed logs of the App."
+                description={t('settings:dataFolder.appLogsDesc')}
                 actions={
                   <div className="flex items-center gap-2">
                     <Button
@@ -335,11 +337,11 @@ function General() {
                       size="sm"
                       className="p-0"
                       onClick={handleOpenLogs}
-                      title="App Logs"
+                      title={t('settings:dataFolder.appLogs')}
                     >
                       <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                         <IconLogs size={12} className="text-main-view-fg/50" />
-                        <span>Open Logs</span>
+                        <span>{t('settings:general.openLogs')}</span>
                       </div>
                     </Button>
                     <Button
@@ -359,7 +361,7 @@ function General() {
                           }
                         }
                       }}
-                      title="Reveal logs folder in file explorer"
+                      title={t('settings:general.revealLogs')}
                     >
                       <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                         <IconFolder
@@ -375,12 +377,12 @@ function General() {
             </Card>
 
             {/* Other */}
-            <Card title={t('common.others')}>
+            <Card title={t('common:others')}>
               <CardItem
-                title={t('settings.others.spellCheck', {
+                title={t('settings:others.spellCheck', {
                   ns: 'settings',
                 })}
-                description={t('settings.others.spellCheckDesc', {
+                description={t('settings:others.spellCheckDesc', {
                   ns: 'settings',
                 })}
                 actions={
@@ -391,26 +393,26 @@ function General() {
                 }
               />
               <CardItem
-                title={t('settings.others.resetFactory', {
+                title={t('settings:others.resetFactory', {
                   ns: 'settings',
                 })}
-                description={t('settings.others.resetFactoryDesc', {
+                description={t('settings:others.resetFactoryDesc', {
                   ns: 'settings',
                 })}
                 actions={
                   <Dialog>
                     <DialogTrigger asChild>
                       <Button variant="destructive" size="sm">
-                        {t('common.reset')}
+                        {t('common:reset')}
                       </Button>
                     </DialogTrigger>
                     <DialogContent>
                       <DialogHeader>
-                        <DialogTitle>Factory Reset</DialogTitle>
+                        <DialogTitle>
+                          {t('settings:general.factoryResetTitle')}
+                        </DialogTitle>
                         <DialogDescription>
-                          This will reset all app settings to their defaults.
-                          This can't be undone. We only recommend this if the
-                          app is corrupted.
+                          {t('settings:general.factoryResetDesc')}
                         </DialogDescription>
                         <DialogFooter className="mt-2 flex items-center">
                           <DialogClose asChild>
@@ -419,7 +421,7 @@ function General() {
                               size="sm"
                               className="hover:no-underline"
                             >
-                              Cancel
+                              {t('settings:general.cancel')}
                             </Button>
                           </DialogClose>
                           <DialogClose asChild>
@@ -427,7 +429,7 @@ function General() {
                               variant="destructive"
                               onClick={() => resetApp()}
                             >
-                              Reset
+                              {t('settings:general.reset')}
                             </Button>
                           </DialogClose>
                         </DialogFooter>
@@ -439,10 +441,10 @@ function General() {
             </Card>
 
             {/* Resources */}
-            <Card title="Resources">
+            <Card title={t('settings:general.resources')}>
               <CardItem
-                title="Documentation"
-                description="Learn how to use Jan and explore its features."
+                title={t('settings:general.documentation')}
+                description={t('settings:general.documentationDesc')}
                 actions={
                   <a
                     href="https://jan.ai/docs"
@@ -450,15 +452,15 @@ function General() {
                     rel="noopener noreferrer"
                   >
                     <div className="flex items-center gap-1">
-                      <span>View Docs</span>
+                      <span>{t('settings:general.viewDocs')}</span>
                       <IconExternalLink size={14} />
                     </div>
                   </a>
                 }
               />
               <CardItem
-                title="Release Notes"
-                description="See what's new in the latest version of Jan."
+                title={t('settings:general.releaseNotes')}
+                description={t('settings:general.releaseNotesDesc')}
                 actions={
                   <a
                     href="https://github.com/menloresearch/jan/releases"
@@ -466,7 +468,7 @@ function General() {
                     rel="noopener noreferrer"
                   >
                     <div className="flex items-center gap-1">
-                      <span>View Releases</span>
+                      <span>{t('settings:general.viewReleases')}</span>
                       <IconExternalLink size={14} />
                     </div>
                   </a>
@@ -475,10 +477,10 @@ function General() {
             </Card>
 
             {/* Community */}
-            <Card title="Community">
+            <Card title={t('settings:general.community')}>
               <CardItem
-                title="GitHub"
-                description="Contribute to Jan's development."
+                title={t('settings:general.github')}
+                description={t('settings:general.githubDesc')}
                 actions={
                   <a
                     href="https://github.com/menloresearch/jan"
@@ -495,8 +497,8 @@ function General() {
                 }
               />
               <CardItem
-                title="Discord"
-                description="Join our community for support and discussions."
+                title={t('settings:general.discord')}
+                description={t('settings:general.discordDesc')}
                 actions={
                   <a
                     href="https://discord.com/invite/FTk2MvZwJH"
@@ -515,17 +517,17 @@ function General() {
             </Card>
 
             {/* Support */}
-            <Card title="Support">
+            <Card title={t('settings:general.support')}>
               <CardItem
-                title="Report an Issue"
-                description="Found a bug? Help us out by filing an issue on GitHub."
+                title={t('settings:general.reportAnIssue')}
+                description={t('settings:general.reportAnIssueDesc')}
                 actions={
                   <a
                     href="https://github.com/menloresearch/jan/issues/new"
                     target="_blank"
                   >
                     <div className="flex items-center gap-1">
-                      <span>Report Issue</span>
+                      <span>{t('settings:general.reportIssue')}</span>
                       <IconExternalLink size={14} />
                     </div>
                   </a>
@@ -534,21 +536,13 @@ function General() {
             </Card>
 
             {/* Credits */}
-            <Card title="Credits">
+            <Card title={t('settings:general.credits')}>
               <CardItem
                 align="start"
                 description={
                   <div className="text-main-view-fg/70 -mt-2">
-                    <p>
-                      Jan is built with ❤️ by the{' '}
-                      <a href="https://menlo.ai" target="_blank">
-                        Menlo Team.
-                      </a>
-                    </p>
-                    <p className="mt-2">
-                      Special thanks to our open-source dependencies—especially
-                      llama.cpp and Tauri—and to our amazing AI community.
-                    </p>
+                    <p>{t('settings:general.creditsDesc1')}</p>
+                    <p className="mt-2">{t('settings:general.creditsDesc2')}</p>
                   </div>
                 }
               />

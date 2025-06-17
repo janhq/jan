@@ -5,7 +5,7 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
 import { Progress } from '@/components/ui/progress'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useHardware } from '@/hooks/useHardware'
 import { useVulkan } from '@/hooks/useVulkan'
 import type { GPU, HardwareData } from '@/hooks/useHardware'
@@ -39,7 +39,13 @@ export const Route = createFileRoute(route.settings.hardware as any)({
   component: Hardware,
 })
 
-function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
+function SortableGPUItem({
+  gpu,
+  index,
+}: {
+  gpu: GPU
+  index: number
+}) {
   const {
     attributes,
     listeners,
@@ -48,6 +54,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
     transition,
     isDragging,
   } = useSortable({ id: gpu.id || index })
+  const { t } = useTranslation()
 
   const { toggleGPUActivation, gpuLoading } = useHardware()
 
@@ -86,16 +93,16 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
       />
       <div className="ml-8 mt-3">
         <CardItem
-          title="VRAM"
+          title={t('settings:hardware.vram')}
           actions={
             <span className="text-main-view-fg/80">
-              {formatMegaBytes(gpu.free_vram)} free of{' '}
+              {formatMegaBytes(gpu.free_vram)} {t('settings:hardware.freeOf')}{' '}
               {formatMegaBytes(gpu.total_vram)}
             </span>
           }
         />
         <CardItem
-          title="Driver Version"
+          title={t('settings:hardware.driverVersion')}
           actions={
             <span className="text-main-view-fg/80">
               {gpu.additional_information?.driver_version}
@@ -103,7 +110,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           }
         />
         <CardItem
-          title="Compute Capability"
+          title={t('settings:hardware.computeCapability')}
           actions={
             <span className="text-main-view-fg/80">
               {gpu.additional_information?.compute_cap}
@@ -209,13 +216,13 @@ function Hardware() {
     <div className="flex flex-col h-full">
       <HeaderPage>
         <div className="flex items-center gap-2 justify-between w-full pr-3">
-          <h1 className="font-medium">{t('common.settings')}</h1>
+          <h1 className="font-medium">{t('common:settings')}</h1>
           <div
             className="flex items-center gap-1 hover:bg-main-view-fg/8 px-1.5 py-0.5 rounded relative z-10 cursor-pointer"
             onClick={handleClickSystemMonitor}
           >
             <IconDeviceDesktopAnalytics className="text-main-view-fg/50 size-5" />
-            <p>System monitor</p>
+            <p>{t('settings:hardware.systemMonitor')}</p>
           </div>
         </div>
       </HeaderPage>
@@ -224,9 +231,9 @@ function Hardware() {
         <div className="p-4 w-full h-[calc(100%-32px)] overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* OS Information */}
-            <Card title="Operating System">
+            <Card title={t('settings:hardware.os')}>
               <CardItem
-                title="Name"
+                title={t('settings:hardware.name')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {hardwareData.os?.name}
@@ -234,7 +241,7 @@ function Hardware() {
                 }
               />
               <CardItem
-                title="Version"
+                title={t('settings:hardware.version')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {hardwareData.os?.version}
@@ -244,9 +251,9 @@ function Hardware() {
             </Card>
 
             {/* CPU Information */}
-            <Card title="CPU">
+            <Card title={t('settings:hardware.cpu')}>
               <CardItem
-                title="Model"
+                title={t('settings:hardware.model')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {hardwareData.cpu?.model}
@@ -254,7 +261,7 @@ function Hardware() {
                 }
               />
               <CardItem
-                title="Architecture"
+                title={t('settings:hardware.architecture')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {hardwareData.cpu?.arch}
@@ -262,7 +269,7 @@ function Hardware() {
                 }
               />
               <CardItem
-                title="Cores"
+                title={t('settings:hardware.cores')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {hardwareData.cpu?.cores}
@@ -271,7 +278,7 @@ function Hardware() {
               />
               {hardwareData.cpu?.instructions.join(', ').length > 0 && (
                 <CardItem
-                  title="Instructions"
+                  title={t('settings:hardware.instructions')}
                   column={hardwareData.cpu?.instructions.length > 6}
                   actions={
                     <span className="text-main-view-fg/80 break-words">
@@ -281,7 +288,7 @@ function Hardware() {
                 />
               )}
               <CardItem
-                title="Usage"
+                title={t('settings:hardware.usage')}
                 actions={
                   <div className="flex items-center gap-2">
                     {hardwareData.cpu?.usage > 0 && (
@@ -301,9 +308,9 @@ function Hardware() {
             </Card>
 
             {/* RAM Information */}
-            <Card title="Memory">
+            <Card title={t('settings:hardware.memory')}>
               <CardItem
-                title="Total RAM"
+                title={t('settings:hardware.totalRam')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {formatMegaBytes(hardwareData.ram.total)}
@@ -311,7 +318,7 @@ function Hardware() {
                 }
               />
               <CardItem
-                title="Available RAM"
+                title={t('settings:hardware.availableRam')}
                 actions={
                   <span className="text-main-view-fg/80">
                     {formatMegaBytes(hardwareData.ram?.available)}
@@ -319,7 +326,7 @@ function Hardware() {
                 }
               />
               <CardItem
-                title="Usage"
+                title={t('settings:hardware.usage')}
                 actions={
                   <div className="flex items-center gap-2">
                     {hardwareData.ram?.total > 0 && (
@@ -351,10 +358,10 @@ function Hardware() {
 
             {/* Vulkan Settings */}
             {hardwareData.gpus.length > 0 && (
-              <Card title="Vulkan">
+              <Card title={t('settings:hardware.vulkan')}>
                 <CardItem
-                  title="Enable Vulkan"
-                  description="Use Vulkan API for GPU acceleration. Do not enable Vulkan if you have an NVIDIA GPU as it may cause compatibility issues."
+                  title={t('settings:hardware.enableVulkan')}
+                  description={t('settings:hardware.enableVulkanDesc')}
                   actions={
                     <div className="flex items-center gap-4">
                       <Switch
@@ -373,34 +380,33 @@ function Hardware() {
             )}
 
             {/* GPU Information */}
-            {!IS_MACOS ? (
-              <Card title="GPUs">
-                {hardwareData.gpus.length > 0 ? (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
+            <Card title={t('settings:hardware.gpus')}>
+              {hardwareData.gpus.length > 0 ? (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={hardwareData.gpus.map((gpu) => gpu.id)}
+                    strategy={verticalListSortingStrategy}
                   >
-                    <SortableContext
-                      items={hardwareData.gpus.map((gpu) => gpu.id)}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      {hardwareData.gpus.map((gpu, index) => (
-                        <SortableGPUItem
-                          key={gpu.id || index}
-                          gpu={gpu}
-                          index={index}
-                        />
-                      ))}
-                    </SortableContext>
-                  </DndContext>
-                ) : (
-                  <CardItem title="No GPUs detected" actions={<></>} />
-                )}
-              </Card>
-            ) : (
-              <></>
-            )}
+                    {hardwareData.gpus.map((gpu, index) => (
+                      <SortableGPUItem
+                        key={gpu.id || index}
+                        gpu={gpu}
+                        index={index}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              ) : (
+                <CardItem
+                  title={t('settings:hardware.noGpus')}
+                  actions={<></>}
+                />
+              )}
+            </Card>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useTranslation } from 'react-i18next'
+import { useAppTranslation } from '@/i18n'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +15,7 @@ const LANGUAGES = [
 ]
 
 export default function LanguageSwitcher() {
-  const { i18n } = useTranslation()
+  const { i18n, t } = useAppTranslation()
   const { setCurrentLanguage, currentLanguage } = useGeneralSetting()
 
   const changeLanguage = (lng: string) => {
@@ -27,13 +27,13 @@ export default function LanguageSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <span
-          title="Change Language"
+          title={t('common:changeLanguage')}
           className="flex cursor-pointer items-center gap-1 px-2 py-1 rounded-sm bg-main-view-fg/15 text-sm outline-none text-main-view-fg font-medium"
         >
           {LANGUAGES.find(
             (lang: { value: string; label: string }) =>
               lang.value === currentLanguage
-          )?.label || 'English'}
+          )?.label || t('common:english')}
         </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-24">

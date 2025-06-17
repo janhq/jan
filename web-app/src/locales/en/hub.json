@@ -1,0 +1,31 @@
+{
+  "sortNewest": "Newest",
+  "sortMostDownloaded": "Most Downloaded",
+  "use": "Use",
+  "download": "Download",
+  "downloaded": "Downloaded",
+  "loadingModels": "Loading models...",
+  "noModels": "No models found",
+  "by": "by",
+  "downloads": "Downloads",
+  "variants": "Variants",
+  "showVariants": "Show Variants",
+  "useModel": "Use Model",
+  "downloadModel": "Download Model",
+  "searchPlaceholder": "Search models...",
+  "editTheme": "Edit Theme",
+  "joyride": {
+    "recommendedModelTitle": "Recommended Model",
+    "recommendedModelContent": "This is a recommended model for getting started.",
+    "downloadInProgressTitle": "Download in Progress",
+    "downloadInProgressContent": "Your model is currently downloading.",
+    "downloadModelTitle": "Download Model",
+    "downloadModelContent": "Click here to download the model.",
+    "back": "Back",
+    "close": "Close",
+    "lastWithDownload": "Start Download",
+    "last": "Finish",
+    "next": "Next",
+    "skip": "Skip"
+  }
+}

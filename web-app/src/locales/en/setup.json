@@ -1,0 +1,6 @@
+{
+  "welcome": "Welcome to Jan",
+  "description": "Choose how you want to get started with Jan",
+  "localModel": "Download a local model",
+  "remoteProvider": "Connect to a remote provider"
+}

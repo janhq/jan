@@ -9,8 +9,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 export default function ToolApproval() {
+  const { t } = useTranslation()
   const { isModalOpen, modalProps, setModalOpen } = useToolApproval()
 
   if (!modalProps) {
@@ -47,9 +49,13 @@ export default function ToolApproval() {
               <AlertTriangle className="size-4" />
             </div>
             <div>
-              <DialogTitle>Tool Call Request</DialogTitle>
+              <DialogTitle>{t('tools:toolApproval.title')}</DialogTitle>
               <DialogDescription className="mt-1 text-main-view-fg/70">
-                The assistant wants to use the tool: <strong>{toolName}</strong>
+                <span
+                  dangerouslySetInnerHTML={{
+                    __html: t('tools:toolApproval.description', { toolName }),
+                  }}
+                />
               </DialogDescription>
             </div>
           </div>
@@ -57,25 +63,27 @@ export default function ToolApproval() {
 
         <div className="bg-main-view-fg/8 p-2 border border-main-view-fg/5 rounded-lg">
           <p className="text-sm text-main-view-fg/70 leading-relaxed">
-            <strong>Security Notice:</strong> Malicious tools or conversation
-            content could potentially trick the assistant into attempting
-            harmful actions. Review each tool call carefully before approving.
+            <span
+              dangerouslySetInnerHTML={{
+                __html: t('tools:toolApproval.securityNotice'),
+              }}
+            />
           </p>
         </div>
 
         <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <Button variant="link" onClick={handleDeny} className="w-full">
-            Deny
+            {t('tools:toolApproval.deny')}
           </Button>
           <Button
             variant="link"
             onClick={handleAllowOnce}
             className="border border-main-view-fg/20"
           >
-            Allow Once
+            {t('tools:toolApproval.allowOnce')}
           </Button>
           <Button variant="default" onClick={handleAllow}>
-            Always Allow
+            {t('tools:toolApproval.alwaysAllow')}
           </Button>
         </DialogFooter>
       </DialogContent>

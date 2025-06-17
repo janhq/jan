@@ -1,0 +1,6 @@
+{
+  "welcome": "Chào mừng đến với Jan",
+  "description": "Chọn cách bạn muốn bắt đầu với Jan",
+  "localModel": "Tải xuống một mô hình cục bộ",
+  "remoteProvider": "Kết nối với một nhà cung cấp từ xa"
+}

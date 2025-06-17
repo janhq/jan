@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IconPlus, IconTrash, IconGripVertical } from '@tabler/icons-react'
 import { MCPServerConfig } from '@/hooks/useMCPServers'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   DndContext,
   closestCenter,
@@ -107,6 +108,7 @@ export default function AddEditMCPServer({
   initialData,
   onSave,
 }: AddEditMCPServerProps) {
+  const { t } = useTranslation()
   const [serverName, setServerName] = useState('')
   const [command, setCommand] = useState('')
   const [args, setArgs] = useState<string[]>([''])
@@ -230,32 +232,38 @@ export default function AddEditMCPServer({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editingKey ? 'Edit MCP Server' : 'Add MCP Server'}
+            {editingKey
+              ? t('mcp-servers:editServer')
+              : t('mcp-servers:addServer')}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm mb-2 inline-block">Server Name</label>
+            <label className="text-sm mb-2 inline-block">
+              {t('mcp-servers:serverName')}
+            </label>
             <Input
               value={serverName}
               onChange={(e) => setServerName(e.target.value)}
-              placeholder="Enter server name"
+              placeholder={t('mcp-servers:enterServerName')}
               autoFocus
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm mb-2 inline-block">Command</label>
+            <label className="text-sm mb-2 inline-block">
+              {t('mcp-servers:command')}
+            </label>
             <Input
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              placeholder="Enter command (uvx or npx)"
+              placeholder={t('mcp-servers:enterCommand')}
             />
           </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm">Arguments</label>
+              <label className="text-sm">{t('mcp-servers:arguments')}</label>
               <div
                 className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                 onClick={handleAddArg}
@@ -288,7 +296,9 @@ export default function AddEditMCPServer({
                     onChange={(value) => handleArgChange(index, value)}
                     onRemove={() => handleRemoveArg(index)}
                     canRemove={args.length > 1}
-                    placeholder={`Argument ${index + 1}`}
+                    placeholder={t('mcp-servers:argument', {
+                      index: index + 1,
+                    })}
                   />
                 ))}
               </SortableContext>
@@ -297,7 +307,7 @@ export default function AddEditMCPServer({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm">Environment Variables</label>
+              <label className="text-sm">{t('mcp-servers:envVars')}</label>
               <div
                 className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                 onClick={handleAddEnv}
@@ -311,13 +321,13 @@ export default function AddEditMCPServer({
                 <Input
                   value={key}
                   onChange={(e) => handleEnvKeyChange(index, e.target.value)}
-                  placeholder="Key"
+                  placeholder={t('mcp-servers:key')}
                   className="flex-1"
                 />
                 <Input
                   value={envValues[index] || ''}
                   onChange={(e) => handleEnvValueChange(index, e.target.value)}
-                  placeholder="Value"
+                  placeholder={t('mcp-servers:value')}
                   className="flex-1"
                 />
                 {envKeys.length > 1 && (
@@ -334,7 +344,7 @@ export default function AddEditMCPServer({
         </div>
 
         <DialogFooter>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave}>{t('mcp-servers:save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

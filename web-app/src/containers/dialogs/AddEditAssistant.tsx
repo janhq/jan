@@ -28,7 +28,7 @@ import {
 import { useTheme } from '@/hooks/useTheme'
 import { teamEmoji } from '@/utils/teamEmoji'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, isDev } from '@/lib/utils'
 
 interface AddEditAssistantProps {
@@ -222,13 +222,17 @@ export default function AddEditAssistant({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editingKey ? 'Edit Assistant' : 'Add Assistant'}
+            {editingKey
+              ? t('assistants:editAssistant')
+              : t('assistants:addAssistant')}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <div className="relative">
-              <label className="text-sm mb-2 inline-block">Emoji</label>
+              <label className="text-sm mb-2 inline-block">
+                {t('assistants:emoji')}
+              </label>
               <div
                 className="border rounded-sm p-1 w-9 h-9 flex items-center justify-center border-main-view-fg/10 cursor-pointer"
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
@@ -267,12 +271,12 @@ export default function AddEditAssistant({
 
             <div className="space-y-2 w-full">
               <label className="text-sm mb-2 inline-block">
-                {t(`common.name`)}
+                {t(`common:name`)}
               </label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Enter name"
+                placeholder={t('assistants:enterName')}
                 autoFocus
               />
             </div>
@@ -280,22 +284,24 @@ export default function AddEditAssistant({
 
           <div className="space-y-2">
             <label className="text-sm mb-2 inline-block">
-              Description (optional)
+              {t('assistants:description')}
             </label>
             <Textarea
               value={description || ''}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Enter description"
+              placeholder={t('assistants:enterDescription')}
               className="resize-none"
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm mb-2 inline-block">Instructions</label>
+            <label className="text-sm mb-2 inline-block">
+              {t('assistants:instructions')}
+            </label>
             <Textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Enter instructions"
+              placeholder={t('assistants:enterInstructions')}
               className="resize-none"
               rows={4}
             />
@@ -303,7 +309,9 @@ export default function AddEditAssistant({
 
           <div className="space-y-2 my-4">
             <div className="flex items-center justify-between">
-              <label className="text-sm">Predefined Parameters</label>
+              <label className="text-sm">
+                {t('assistants:predefinedParameters')}
+              </label>
             </div>
             <div className="flex flex-wrap gap-2">
               {Object.entries(paramsSettings).map(([key, setting]) => (
@@ -360,7 +368,7 @@ export default function AddEditAssistant({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm">Parameters</label>
+              <label className="text-sm">{t('assistants:parameters')}</label>
               <div
                 className="size-6 cursor-pointer flex items-center justify-center rounded hover:bg-main-view-fg/10 transition-all duration-200 ease-in-out"
                 onClick={handleAddParameter}
@@ -376,7 +384,7 @@ export default function AddEditAssistant({
                   onChange={(e) =>
                     handleParameterChange(index, e.target.value, 'key')
                   }
-                  placeholder="Key"
+                  placeholder={t('assistants:key')}
                   className="w-24"
                 />
 
@@ -402,28 +410,28 @@ export default function AddEditAssistant({
                         handleParameterChange(index, 'string', 'type')
                       }
                     >
-                      String
+                      {t('assistants:stringValue')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() =>
                         handleParameterChange(index, 'number', 'type')
                       }
                     >
-                      Number
+                      {t('assistants:numberValue')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() =>
                         handleParameterChange(index, 'boolean', 'type')
                       }
                     >
-                      Boolean
+                      {t('assistants:booleanValue')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onClick={() =>
                         handleParameterChange(index, 'json', 'type')
                       }
                     >
-                      JSON
+                      {t('assistants:jsonValue')}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -433,7 +441,11 @@ export default function AddEditAssistant({
                     <DropdownMenuTrigger asChild>
                       <div className="relative flex-1">
                         <Input
-                          value={paramsValues[index] ? 'True' : 'False'}
+                          value={
+                            paramsValues[index]
+                              ? t('assistants:trueValue')
+                              : t('assistants:falseValue')
+                          }
                           readOnly
                         />
                         <IconChevronDown
@@ -448,14 +460,14 @@ export default function AddEditAssistant({
                           handleParameterChange(index, true, 'value')
                         }
                       >
-                        True
+                        {t('assistants:trueValue')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={() =>
                           handleParameterChange(index, false, 'value')
                         }
                       >
-                        False
+                        {t('assistants:falseValue')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -469,7 +481,7 @@ export default function AddEditAssistant({
                     onChange={(e) =>
                       handleParameterChange(index, e.target.value, 'value')
                     }
-                    placeholder="JSON Value"
+                    placeholder={t('assistants:jsonValuePlaceholder')}
                     className="flex-1"
                   />
                 ) : (
@@ -479,7 +491,7 @@ export default function AddEditAssistant({
                       handleParameterChange(index, e.target.value, 'value')
                     }
                     type={paramsTypes[index] === 'number' ? 'number' : 'text'}
-                    placeholder="Value"
+                    placeholder={t('assistants:value')}
                     className="flex-1"
                   />
                 )}
@@ -496,7 +508,7 @@ export default function AddEditAssistant({
         </div>
 
         <DialogFooter>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave}>{t('assistants:save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

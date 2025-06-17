@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { twMerge } from 'tailwind-merge'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface Props {
   result: string
@@ -127,6 +128,7 @@ const ContentItemRenderer = ({
 
 const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
   const { collapseState, setCollapseState } = useToolCallBlockStore()
+  const { t } = useTranslation()
   const isExpanded = collapseState[id] ?? (loading ? true : false)
   const [modalImage, setModalImage] = useState<{
     url: string
@@ -187,7 +189,7 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
                   loading ? 'text-main-view-fg/40' : 'text-accent'
                 )}
               >
-                {loading ? 'Calling tool' : 'Completed'}{' '}
+                {loading ? t('common:callingTool') : t('common:completed')}{' '}
               </span>
             </span>
           </button>
@@ -248,7 +250,7 @@ const ToolCallBlock = ({ id, name, result, loading, args }: Props) => {
       >
         <DialogContent className="max-w-4xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-2">
-            <DialogTitle>{modalImage?.alt || 'Image'}</DialogTitle>
+            <DialogTitle>{modalImage?.alt || t('common:image')}</DialogTitle>
           </DialogHeader>
           <div className="flex justify-center items-center p-6 pt-2">
             {modalImage && (

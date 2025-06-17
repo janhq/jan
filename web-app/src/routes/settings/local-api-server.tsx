@@ -5,7 +5,7 @@ import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ServerHostSwitcher } from '@/containers/ServerHostSwitcher'
 import { PortInput } from '@/containers/PortInput'
 import { ApiPrefixInput } from '@/containers/ApiPrefixInput'
@@ -147,7 +147,7 @@ function LocalAPIServer() {
   return (
     <div className="flex flex-col h-full">
       <HeaderPage>
-        <h1 className="font-medium">{t('common.settings')}</h1>
+        <h1 className="font-medium">{t('common:settings')}</h1>
       </HeaderPage>
       <div className="flex h-full w-full">
         <SettingsMenu />
@@ -158,9 +158,11 @@ function LocalAPIServer() {
               header={
                 <div className="mb-3 flex w-full items-center border-b border-main-view-fg/4 pb-2">
                   <div className="w-full space-y-2">
-                    <h1 className="text-base font-medium">Local API Server</h1>
+                    <h1 className="text-base font-medium">
+                      {t('settings:localApiServer.title')}
+                    </h1>
                     <p className="text-main-view-fg/70 mb-2">
-                      Run an OpenAI-compatible server locally.
+                      {t('settings:localApiServer.description')}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -169,26 +171,28 @@ function LocalAPIServer() {
                       variant={isServerRunning ? 'destructive' : 'default'}
                       size="sm"
                     >
-                      {`${isServerRunning ? 'Stop' : 'Start'}`} Server
+                      {isServerRunning
+                        ? t('settings:localApiServer.stopServer')
+                        : t('settings:localApiServer.startServer')}
                     </Button>
                   </div>
                 </div>
               }
             >
               <CardItem
-                title="Server Logs"
-                description="View detailed logs of the local API server."
+                title={t('settings:localApiServer.serverLogs')}
+                description={t('settings:localApiServer.serverLogsDesc')}
                 actions={
                   <Button
                     variant="link"
                     size="sm"
                     className="p-0"
                     onClick={handleOpenLogs}
-                    title="Server Logs"
+                    title={t('settings:localApiServer.serverLogs')}
                   >
                     <div className="cursor-pointer flex items-center justify-center rounded-sm hover:bg-main-view-fg/15 bg-main-view-fg/10 transition-all duration-200 ease-in-out px-2 py-1 gap-1">
                       <IconLogs size={18} className="text-main-view-fg/50" />
-                      <span>Open Logs</span>
+                      <span>{t('settings:localApiServer.openLogs')}</span>
                     </div>
                   </Button>
                 }
@@ -196,34 +200,34 @@ function LocalAPIServer() {
             </Card>
 
             {/* Server Configuration */}
-            <Card title="Server Configuration">
+            <Card title={t('settings:localApiServer.serverConfiguration')}>
               <CardItem
-                title="Server Host"
-                description="Network address for the server."
+                title={t('settings:localApiServer.serverHost')}
+                description={t('settings:localApiServer.serverHostDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 actions={<ServerHostSwitcher />}
               />
               <CardItem
-                title="Server Port"
-                description="Port number for the API server."
+                title={t('settings:localApiServer.serverPort')}
+                description={t('settings:localApiServer.serverPortDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 actions={<PortInput />}
               />
               <CardItem
-                title="API Prefix"
-                description="Path prefix for API endpoints."
+                title={t('settings:localApiServer.apiPrefix')}
+                description={t('settings:localApiServer.apiPrefixDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
                 actions={<ApiPrefixInput />}
               />
               <CardItem
-                title="API Key"
-                description="Authenticate requests with an API key."
+                title={t('settings:localApiServer.apiKey')}
+                description={t('settings:localApiServer.apiKeyDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none',
                   isApiKeyEmpty && showApiKeyError && 'pb-6'
@@ -236,8 +240,8 @@ function LocalAPIServer() {
                 }
               />
               <CardItem
-                title="Trusted Hosts"
-                description="Hosts allowed to access the server, separated by commas."
+                title={t('settings:localApiServer.trustedHosts')}
+                description={t('settings:localApiServer.trustedHostsDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -246,10 +250,10 @@ function LocalAPIServer() {
             </Card>
 
             {/* Advanced Settings */}
-            <Card title="Advanced Settings">
+            <Card title={t('settings:localApiServer.advancedSettings')}>
               <CardItem
-                title="Cross-Origin Resource Sharing (CORS)"
-                description="Allow cross-origin requests to the API server."
+                title={t('settings:localApiServer.cors')}
+                description={t('settings:localApiServer.corsDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -261,8 +265,8 @@ function LocalAPIServer() {
                 }
               />
               <CardItem
-                title="Verbose Server Logs"
-                description="Enable detailed server logs for debugging."
+                title={t('settings:localApiServer.verboseLogs')}
+                description={t('settings:localApiServer.verboseLogsDesc')}
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}

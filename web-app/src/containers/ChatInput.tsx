@@ -23,7 +23,7 @@ import {
   IconPlayerStopFilled,
   IconX,
 } from '@tabler/icons-react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
@@ -382,7 +382,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                   // When Shift+Enter is pressed, a new line is added (default behavior)
                 }
               }}
-              placeholder={t('common.placeholder.chatInput')}
+              placeholder={t('common:placeholder.chatInput')}
               autoFocus
               spellCheck={spellCheckChatInput}
               data-gramm={spellCheckChatInput}
@@ -440,7 +440,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Vision</p>
+                        <p>{t('vision')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -457,7 +457,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Embeddings</p>
+                        <p>{t('embeddings')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -513,7 +513,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
-                          <p>Tools</p>
+                          <p>{t('tools')}</p>
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
@@ -547,7 +547,7 @@ const ChatInput = ({ model, className, initialMessage }: ChatInputProps) => {
                         </div>
                       </TooltipTrigger>
                       <TooltipContent>
-                        <p>Reasoning</p>
+                        <p>{t('reasoning')}</p>
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>

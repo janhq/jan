@@ -1,32 +1,254 @@
 {
-  "common": {
-    "general": "General",
-    "settings": "Settings",
-    "modelProviders": "Model Providers",
-    "appearance": "Appearance",
-    "privacy": "Privacy",
-    "keyboardShortcuts": "Shortcuts",
-    "newChat": "New Chat",
-    "favorites": "Favorites",
-    "recents": "Recents",
-    "hub": "Hub",
-    "helpSupport": "Help & Support",
-    "unstarAll": "Unstar All",
-    "unstar": "Unstar",
-    "deleteAll": "Delete All",
-    "star": "Star",
-    "rename": "Rename",
-    "delete": "Delete",
-    "dataFolder": "Data Folder",
-    "others": "Other",
-    "language": "Language",
-    "reset": "Reset",
-    "search": "Search",
-    "name": "Name",
+  "assistants": "Assistants",
+  "hardware": "Hardware",
+  "mcp-servers": "Mcp Servers",
+  "local_api_server": "Local API Server",
+  "https_proxy": "HTTPS Proxy",
+  "extensions": "Extensions",
+  "general": "General",
+  "settings": "Settings",
+  "modelProviders": "Model Providers",
+  "appearance": "Appearance",
+  "privacy": "Privacy",
+  "keyboardShortcuts": "Shortcuts",
+  "newChat": "New Chat",
+  "favorites": "Favorites",
+  "recents": "Recents",
+  "hub": "Hub",
+  "helpSupport": "Help & Support",
+  "helpUsImproveJan": "Help Us Improve Jan",
+  "unstarAll": "Unstar All",
+  "unstar": "Unstar",
+  "deleteAll": "Delete All",
+  "star": "Star",
+  "rename": "Rename",
+  "delete": "Delete",
+  "copied": "Copied!",
+  "dataFolder": "Data Folder",
+  "others": "Other",
+  "language": "Language",
+  "reset": "Reset",
+  "search": "Search",
+  "name": "Name",
+  "cancel": "Cancel",
+  "create": "Create",
+  "save": "Save",
+  "edit": "Edit",
+  "copy": "Copy",
+  "back": "Back",
+  "close": "Close",
+  "next": "Next",
+  "finish": "Finish",
+  "skip": "Skip",
+  "allow": "Allow",
+  "deny": "Deny",
+  "start": "Start",
+  "stop": "Stop",
+  "preview": "Preview",
+  "compactWidth": "Compact Width",
+  "fullWidth": "Full Width",
+  "dark": "Dark",
+  "light": "Light",
+  "system": "System",
+  "auto": "Auto",
+  "english": "English",
+  "medium": "Medium",
+  "newThread": "New Thread",
+  "noResultsFound": "No results found",
+  "noThreadsYet": "No threads yet",
+  "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
+  "downloads": "Downloads",
+  "downloading": "Downloading",
+  "cancelDownload": "Cancel download",
+  "downloadCancelled": "Download Cancelled",
+  "downloadComplete": "Download Complete",
+  "thinking": "Thinking...",
+  "thought": "Thought",
+  "callingTool": "Calling tool",
+  "completed": "Completed",
+  "image": "Image",
+  "vision": "Vision",
+  "embeddings": "Embeddings",
+  "tools": "Tools",
+  "webSearch": "Web Search",
+  "reasoning": "Reasoning",
+  "selectAModel": "Select a model",
+  "noToolsAvailable": "No tools available",
+  "noModelsFoundFor": "No models found for \"{{searchValue}}\"",
+  "customAvatar": "Custom avatar",
+  "editAssistant": "Edit Assistant",
+  "jan": "Jan",
+  "metadata": "Metadata",
+  "regenerate": "Regenerate",
+  "threadImage": "Thread image",
+  "editMessage": "Edit Message",
+  "deleteMessage": "Delete Message",
+  "deleteThread": "Delete Thread",
+  "renameThread": "Rename Thread",
+  "threadTitle": "Thread Title",
+  "deleteAllThreads": "Delete All Threads",
+  "allThreadsUnfavorited": "All Threads Unfavorited",
+  "deleteAllThreadsConfirm": "Are you sure you want to delete all threads? This action cannot be undone.",
+  "addProvider": "Add Provider",
+  "addOpenAIProvider": "Add OpenAI Provider",
+  "enterNameForProvider": "Enter a name for your provider",
+  "providerAlreadyExists": "Provider with name \"{{name}}\" already exists. Please choose a different name.",
+  "adjustFontSize": "Adjust Font Size",
+  "changeLanguage": "Change Language",
+  "editTheme": "Edit Theme",
+  "editCodeBlockStyle": "Edit Code Block Style",
+  "editServerHost": "Edit Server Host",
+  "pickColorWindowBackground": "Pick Color Window Background",
+  "pickColorAppMainView": "Pick Color App Main View",
+  "pickColorAppPrimary": "Pick Color App Primary",
+  "pickColorAppAccent": "Pick Color App Accent",
+  "pickColorAppDestructive": "Pick Color App Destructive",
+  "apiKeyRequired": "API Key is required",
+  "enterTrustedHosts": "Enter trusted hosts",
+  "placeholder": {
+    "chatInput": "Ask me anything..."
+  },
+  "confirm": "Confirm",
+  "loading": "Loading...",
+  "error": "Error",
+  "success": "Success",
+  "warning": "Warning",
+  "noResultsFoundDesc": "We couldn't find any chats matching your search. Try a different keyword.",
+  "searchModels": "Search models...",
+  "searchStyles": "Search styles...",
+  "createAssistant": "Create Assistant",
+  "enterApiKey": "Enter API Key",
+  "scrollToBottom": "Scroll to bottom",
+  "addModel": {
+    "title": "Add Model",
+    "modelId": "Model ID",
+    "enterModelId": "Enter Model ID",
+    "addModel": "Add Model",
+    "description": "Add a new model to the provider",
+    "exploreModels": "See model list from provider"
+  },
+  "mcpServers": {
+    "editServer": "Edit Server",
+    "addServer": "Add Server",
+    "serverName": "Server Name",
+    "enterServerName": "Enter server name",
+    "command": "Command",
+    "enterCommand": "Enter command",
+    "arguments": "Arguments",
+    "argument": "Argument {{index}}",
+    "envVars": "Environment Variables",
+    "key": "Key",
+    "value": "Value",
+    "save": "Save"
+  },
+  "deleteServer": {
+    "title": "Delete Server",
+    "delete": "Delete"
+  },
+  "editJson": {
+    "errorParse": "Failed to parse JSON",
+    "errorPaste": "Failed to paste JSON",
+    "errorFormat": "Invalid JSON format",
+    "titleAll": "Edit All Servers Configuration",
+    "placeholder": "Enter JSON configuration...",
+    "save": "Save"
+  },
+  "editModel": {
+    "title": "Edit Model: {{modelId}}",
+    "description": "Configure model capabilities by toggling the options below.",
+    "capabilities": "Capabilities",
+    "tools": "Tools",
+    "vision": "Vision",
+    "embeddings": "Embeddings",
+    "notAvailable": "Not available yet"
+  },
+  "outOfContextError": {
+    "truncateInput": "Truncate Input"
+  },
+  "toolApproval": {
+    "title": "Tool Permission Request",
+    "description": "The assistant wants to use <strong>{{toolName}}</strong>",
+    "securityNotice": "Only allow tools you trust. Tools can access your system and data.",
+    "deny": "Deny",
+    "allowOnce": "Allow Once",
+    "alwaysAllow": "Always Allow"
+  },
+  "deleteModel": {
+    "title": "Delete Model: {{modelId}}",
+    "description": "Are you sure you want to delete this model? This action cannot be undone.",
+    "success": "Model {{modelId}} has been permanently deleted.",
     "cancel": "Cancel",
-
-    "placeholder": {
-      "chatInput": "Ask me anything..."
+    "delete": "Delete"
+  },
+  "deleteProvider": {
+    "title": "Delete Provider",
+    "description": "Delete this provider and all its models. This action cannot be undone.",
+    "success": "Provider {{provider}} has been permanently deleted.",
+    "confirmTitle": "Delete Provider: {{provider}}",
+    "confirmDescription": "Are you sure you want to delete this provider? This action cannot be undone.",
+    "cancel": "Cancel",
+    "delete": "Delete"
+  },
+  "modelSettings": {
+    "title": "Model Settings - {{modelId}}",
+    "description": "Configure model settings to optimize performance and behavior."
+  },
+  "dialogs": {
+    "changeDataFolder": {
+      "title": "Change Data Folder Location",
+      "description": "Are you sure you want to change the data folder location? This will move all your data to the new location and restart the application.",
+      "currentLocation": "Current Location:",
+      "newLocation": "New Location:",
+      "cancel": "Cancel",
+      "changeLocation": "Change Location"
+    },
+    "deleteAllThreads": {
+      "title": "Delete All Threads",
+      "description": "All threads will be deleted. This action cannot be undone."
+    },
+    "editMessage": {
+      "title": "Edit Message"
+    },
+    "messageMetadata": {
+      "title": "Message Metadata"
+    }
+  },
+  "toast": {
+    "allThreadsUnfavorited": {
+      "title": "All Threads Unfavorited",
+      "description": "All threads have been removed from your favorites."
+    },
+    "deleteAllThreads": {
+      "title": "Delete All Threads",
+      "description": "All threads have been permanently deleted."
+    },
+    "renameThread": {
+      "title": "Rename Thread",
+      "description": "Thread title has been renamed to '{{title}}'"
+    },
+    "deleteThread": {
+      "title": "Delete Thread",
+      "description": "This thread has been permanently deleted."
+    },
+    "editMessage": {
+      "title": "Edit Message",
+      "description": "Message edited successfully. Please wait for the model to respond."
+    },
+    "appUpdateDownloaded": {
+      "title": "App Update Downloaded",
+      "description": "The app update has been downloaded successfully."
+    },
+    "appUpdateDownloadFailed": {
+      "title": "App Update Download Failed",
+      "description": "Failed to download the app update. Please try again."
+    },
+    "downloadComplete": {
+      "title": "Download Complete",
+      "description": "The model {{modelId}} has been downloaded"
+    },
+    "downloadCancelled": {
+      "title": "Download Cancelled",
+      "description": "The download process was cancelled"
     }
   }
 }

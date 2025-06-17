@@ -1,0 +1,9 @@
+{
+  "toolApproval": {
+    "title": "Yêu cầu phê duyệt công cụ",
+    "securityNotice": "Công cụ này muốn thực hiện một hành động. Vui lòng xem xét và phê duyệt.",
+    "deny": "Từ chối",
+    "allowOnce": "Cho phép một lần",
+    "alwaysAllow": "Luôn cho phép"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "sortNewest": "Terbaru",
+  "sortMostDownloaded": "Paling Banyak Diunduh",
+  "use": "Gunakan",
+  "download": "Unduh",
+  "downloaded": "Telah Diunduh",
+  "loadingModels": "Memuat model...",
+  "noModels": "Tidak ada model yang ditemukan",
+  "by": "oleh",
+  "downloads": "Unduhan",
+  "variants": "Varian",
+  "showVariants": "Tampilkan Varian",
+  "useModel": "Gunakan Model",
+  "downloadModel": "Unduh Model",
+  "searchPlaceholder": "Cari model...",
+  "editTheme": "Edit Tema",
+  "joyride": {
+    "recommendedModelTitle": "Model yang Direkomendasikan",
+    "recommendedModelContent": "Ini adalah model yang direkomendasikan untuk memulai.",
+    "downloadInProgressTitle": "Unduhan Sedang Berlangsung",
+    "downloadInProgressContent": "Model Anda sedang diunduh.",
+    "downloadModelTitle": "Unduh Model",
+    "downloadModelContent": "Klik di sini untuk mengunduh model.",
+    "back": "Kembali",
+    "close": "Tutup",
+    "lastWithDownload": "Mulai Unduh",
+    "last": "Selesai",
+    "next": "Berikutnya",
+    "skip": "Lewati"
+  }
+}

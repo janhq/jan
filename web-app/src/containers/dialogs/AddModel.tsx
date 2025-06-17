@@ -13,6 +13,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { IconPlus } from '@tabler/icons-react'
 import { useState } from 'react'
 import { getProviderTitle } from '@/lib/utils'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type DialogAddModelProps = {
   provider: ModelProvider
@@ -20,6 +21,7 @@ type DialogAddModelProps = {
 }
 
 export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
+  const { t } = useTranslation()
   const { updateProvider } = useModelProvider()
   const [modelId, setModelId] = useState<string>('')
   const [open, setOpen] = useState(false)
@@ -62,10 +64,11 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add New Model</DialogTitle>
+          <DialogTitle>{t('providers:addModel.title')}</DialogTitle>
           <DialogDescription>
-            Add a new model to the {getProviderTitle(provider.provider)}
-            &nbsp;provider.
+            {t('providers:addModel.description', {
+              provider: getProviderTitle(provider.provider),
+            })}
           </DialogDescription>
         </DialogHeader>
 
@@ -75,13 +78,14 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             htmlFor="model-id"
             className="text-sm font-medium inline-block"
           >
-            Model ID <span className="text-destructive">*</span>
+            {t('providers:addModel.modelId')}{' '}
+            <span className="text-destructive">*</span>
           </label>
           <Input
             id="model-id"
             value={modelId}
             onChange={(e) => setModelId(e.target.value)}
-            placeholder="Enter model ID"
+            placeholder={t('providers:addModel.enterModelId')}
             required
           />
         </div>
@@ -96,7 +100,9 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
               className="flex items-center gap-1 hover:underline text-primary"
             >
               <span>
-                See model list from {getProviderTitle(provider.provider)}
+                {t('providers:addModel.exploreModels', {
+                  provider: getProviderTitle(provider.provider),
+                })}
               </span>
             </a>
           </div>
@@ -108,7 +114,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
             onClick={handleSubmit}
             disabled={!modelId.trim()}
           >
-            Add Model
+            {t('providers:addModel.addModel')}
           </Button>
         </DialogFooter>
       </DialogContent>

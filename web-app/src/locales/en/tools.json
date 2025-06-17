@@ -1,0 +1,9 @@
+{
+  "toolApproval": {
+    "title": "Tool Approval Required",
+    "securityNotice": "This tool wants to perform an action. Please review and approve.",
+    "deny": "Deny",
+    "allowOnce": "Allow Once",
+    "alwaysAllow": "Always Allow"
+  }
+}

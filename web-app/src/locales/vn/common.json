@@ -1,31 +1,254 @@
 {
-  "common": {
+    "assistants": "Trợ lý",
+    "hardware": "Phần cứng",
+    "mcp-servers": "Máy chủ Mcp",
+    "local_api_server": "Máy chủ API cục bộ",
+    "https_proxy": "Proxy HTTPS",
+    "extensions": "Tiện ích mở rộng",
     "general": "Chung",
     "settings": "Cài đặt",
-    "modelProviders": "Nhà cung cấp mô hình",
+    "modelProviders": "Nhà cung cấp Mô hình",
     "appearance": "Giao diện",
     "privacy": "Quyền riêng tư",
     "keyboardShortcuts": "Phím tắt",
-    "newChat": "Cuộc trò chuyện mới",
+    "newChat": "Trò chuyện Mới",
     "favorites": "Yêu thích",
     "recents": "Gần đây",
     "hub": "Hub",
     "helpSupport": "Trợ giúp & Hỗ trợ",
-    "unstarAll": "Bỏ đánh dấu tất cả",
-    "unstar": "Bỏ đánh dấu",
+    "helpUsImproveJan": "Giúp chúng tôi cải thiện Jan",
+    "unstarAll": "Bỏ gắn dấu sao tất cả",
+    "unstar": "Bỏ gắn dấu sao",
     "deleteAll": "Xóa tất cả",
-    "star": "Đánh dấu sao",
+    "star": "Gắn dấu sao",
     "rename": "Đổi tên",
     "delete": "Xóa",
-    "dataFolder": "Thư mục dữ liệu",
+    "copied": "Đã sao chép!",
+    "dataFolder": "Thư mục Dữ liệu",
     "others": "Khác",
     "language": "Ngôn ngữ",
     "reset": "Đặt lại",
     "search": "Tìm kiếm",
     "name": "Tên",
-
+    "cancel": "Hủy",
+    "create": "Tạo",
+    "save": "Lưu",
+    "edit": "Chỉnh sửa",
+    "copy": "Sao chép",
+    "back": "Quay lại",
+    "close": "Đóng",
+    "next": "Tiếp theo",
+    "finish": "Hoàn thành",
+    "skip": "Bỏ qua",
+    "allow": "Cho phép",
+    "deny": "Từ chối",
+    "start": "Bắt đầu",
+    "stop": "Dừng",
+    "preview": "Xem trước",
+    "compactWidth": "Chiều rộng nhỏ gọn",
+    "fullWidth": "Chiều rộng đầy đủ",
+    "dark": "Tối",
+    "light": "Sáng",
+    "system": "Hệ thống",
+    "auto": "Tự động",
+    "english": "Tiếng Anh",
+    "medium": "Trung bình",
+    "newThread": "Chủ đề mới",
+    "noResultsFound": "Không tìm thấy kết quả nào",
+    "noThreadsYet": "Chưa có chủ đề nào",
+    "noThreadsYetDesc": "Bắt đầu một cuộc trò chuyện mới để xem lịch sử chủ đề của bạn ở đây.",
+    "downloads": "Tải xuống",
+    "downloading": "Đang tải xuống",
+    "cancelDownload": "Hủy tải xuống",
+    "downloadCancelled": "Đã hủy tải xuống",
+    "downloadComplete": "Tải xuống hoàn tất",
+    "thinking": "Đang suy nghĩ...",
+    "thought": "Suy nghĩ",
+    "callingTool": "Đang gọi công cụ",
+    "completed": "Đã hoàn thành",
+    "image": "Hình ảnh",
+    "vision": "Thị giác",
+    "embeddings": "Nhúng",
+    "tools": "Công cụ",
+    "webSearch": "Tìm kiếm trên web",
+    "reasoning": "Lý luận",
+    "selectAModel": "Chọn một mô hình",
+    "noToolsAvailable": "Không có công cụ nào",
+    "noModelsFoundFor": "Không tìm thấy mô hình nào cho \"{{searchValue}}\"",
+    "customAvatar": "Ảnh đại diện tùy chỉnh",
+    "editAssistant": "Chỉnh sửa Trợ lý",
+    "jan": "Jan",
+    "metadata": "Siêu dữ liệu",
+    "regenerate": "Tái tạo",
+    "threadImage": "Hình ảnh chủ đề",
+    "editMessage": "Chỉnh sửa tin nhắn",
+    "deleteMessage": "Xóa tin nhắn",
+    "deleteThread": "Xóa chủ đề",
+    "renameThread": "Đổi tên chủ đề",
+    "threadTitle": "Tiêu đề chủ đề",
+    "deleteAllThreads": "Xóa tất cả các chủ đề",
+    "allThreadsUnfavorited": "Tất cả các chủ đề đã được bỏ yêu thích",
+    "deleteAllThreadsConfirm": "Bạn có chắc chắn muốn xóa tất cả các chủ đề không? Hành động này không thể hoàn tác.",
+    "addProvider": "Thêm nhà cung cấp",
+    "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
+    "enterNameForProvider": "Nhập tên cho nhà cung cấp của bạn",
+    "providerAlreadyExists": "Nhà cung cấp có tên \"{{name}}\" đã tồn tại. Vui lòng chọn một tên khác.",
+    "adjustFontSize": "Điều chỉnh kích thước phông chữ",
+    "changeLanguage": "Thay đổi ngôn ngữ",
+    "editTheme": "Chỉnh sửa chủ đề",
+    "editCodeBlockStyle": "Chỉnh sửa kiểu khối mã",
+    "editServerHost": "Chỉnh sửa máy chủ lưu trữ",
+    "pickColorWindowBackground": "Chọn màu nền cửa sổ",
+    "pickColorAppMainView": "Chọn màu chế độ xem chính của ứng dụng",
+    "pickColorAppPrimary": "Chọn màu chính của ứng dụng",
+    "pickColorAppAccent": "Chọn màu nhấn của ứng dụng",
+    "pickColorAppDestructive": "Chọn màu hủy của ứng dụng",
+    "apiKeyRequired": "Yêu cầu khóa API",
+    "enterTrustedHosts": "Nhập máy chủ đáng tin cậy",
     "placeholder": {
-      "chatInput": "Hỏi tôi bất cứ điều gì..."
+        "chatInput": "Hỏi tôi bất cứ điều gì..."
+    },
+    "confirm": "Xác nhận",
+    "loading": "Đang tải...",
+    "error": "Lỗi",
+    "success": "Thành công",
+    "warning": "Cảnh báo",
+    "noResultsFoundDesc": "Chúng tôi không thể tìm thấy bất kỳ cuộc trò chuyện nào phù hợp với tìm kiếm của bạn. Hãy thử một từ khóa khác.",
+    "searchModels": "Tìm kiếm mô hình...",
+    "searchStyles": "Tìm kiếm kiểu...",
+    "createAssistant": "Tạo trợ lý",
+    "enterApiKey": "Nhập khóa API",
+    "scrollToBottom": "Cuộn xuống dưới cùng",
+    "addModel": {
+        "title": "Thêm mô hình",
+        "modelId": "ID mô hình",
+        "enterModelId": "Nhập ID mô hình",
+        "addModel": "Thêm mô hình",
+        "description": "Thêm một mô hình mới vào nhà cung cấp",
+        "exploreModels": "Xem danh sách mô hình từ nhà cung cấp"
+    },
+    "mcpServers": {
+        "editServer": "Chỉnh sửa máy chủ",
+        "addServer": "Thêm máy chủ",
+        "serverName": "Tên máy chủ",
+        "enterServerName": "Nhập tên máy chủ",
+        "command": "Lệnh",
+        "enterCommand": "Nhập lệnh",
+        "arguments": "Đối số",
+        "argument": "Đối số {{index}}",
+        "envVars": "Biến môi trường",
+        "key": "Khóa",
+        "value": "Giá trị",
+        "save": "Lưu"
+    },
+    "deleteServer": {
+        "title": "Xóa máy chủ",
+        "delete": "Xóa"
+    },
+    "editJson": {
+        "errorParse": "Không thể phân tích cú pháp JSON",
+        "errorPaste": "Không thể dán JSON",
+        "errorFormat": "Định dạng JSON không hợp lệ",
+        "titleAll": "Chỉnh sửa tất cả cấu hình máy chủ",
+        "placeholder": "Nhập cấu hình JSON...",
+        "save": "Lưu"
+    },
+    "editModel": {
+        "title": "Chỉnh sửa mô hình: {{modelId}}",
+        "description": "Định cấu hình khả năng của mô hình bằng cách chuyển đổi các tùy chọn bên dưới.",
+        "capabilities": "Khả năng",
+        "tools": "Công cụ",
+        "vision": "Thị giác",
+        "embeddings": "Nhúng",
+        "notAvailable": "Chưa có"
+    },
+    "outOfContextError": {
+        "truncateInput": "Cắt ngắn đầu vào"
+    },
+    "toolApproval": {
+        "title": "Yêu cầu quyền truy cập công cụ",
+        "description": "Trợ lý muốn sử dụng <strong>{{toolName}}</strong>",
+        "securityNotice": "Chỉ cho phép các công cụ bạn tin tưởng. Các công cụ có thể truy cập hệ thống và dữ liệu của bạn.",
+        "deny": "Từ chối",
+        "allowOnce": "Cho phép một lần",
+        "alwaysAllow": "Luôn cho phép"
+    },
+    "deleteModel": {
+        "title": "Xóa mô hình: {{modelId}}",
+        "description": "Bạn có chắc chắn muốn xóa mô hình này không? Hành động này không thể hoàn tác.",
+        "success": "Mô hình {{modelId}} đã bị xóa vĩnh viễn.",
+        "cancel": "Hủy",
+        "delete": "Xóa"
+    },
+    "deleteProvider": {
+        "title": "Xóa nhà cung cấp",
+        "description": "Xóa nhà cung cấp này và tất cả các mô hình của nó. Hành động này không thể hoàn tác.",
+        "success": "Nhà cung cấp {{provider}} đã bị xóa vĩnh viễn.",
+        "confirmTitle": "Xóa nhà cung cấp: {{provider}}",
+        "confirmDescription": "Bạn có chắc chắn muốn xóa nhà cung cấp này không? Hành động này không thể hoàn tác.",
+        "cancel": "Hủy",
+        "delete": "Xóa"
+    },
+    "modelSettings": {
+        "title": "Cài đặt mô hình - {{modelId}}",
+        "description": "Định cấu hình cài đặt mô hình để tối ưu hóa hiệu suất và hành vi."
+    },
+    "dialogs": {
+        "changeDataFolder": {
+            "title": "Thay đổi vị trí thư mục dữ liệu",
+            "description": "Bạn có chắc chắn muốn thay đổi vị trí thư mục dữ liệu không? Thao tác này sẽ di chuyển tất cả dữ liệu của bạn đến vị trí mới và khởi động lại ứng dụng.",
+            "currentLocation": "Vị trí hiện tại:",
+            "newLocation": "Vị trí mới:",
+            "cancel": "Hủy",
+            "changeLocation": "Thay đổi vị trí"
+        },
+        "deleteAllThreads": {
+            "title": "Xóa tất cả các chủ đề",
+            "description": "Tất cả các chủ đề sẽ bị xóa. Hành động này không thể hoàn tác."
+        },
+        "editMessage": {
+            "title": "Chỉnh sửa tin nhắn"
+        },
+        "messageMetadata": {
+            "title": "Siêu dữ liệu tin nhắn"
+        }
+    },
+    "toast": {
+        "allThreadsUnfavorited": {
+            "title": "Tất cả các chủ đề đã được bỏ yêu thích",
+            "description": "Tất cả các chủ đề đã được xóa khỏi danh sách yêu thích của bạn."
+        },
+        "deleteAllThreads": {
+            "title": "Xóa tất cả các chủ đề",
+            "description": "Tất cả các chủ đề đã bị xóa vĩnh viễn."
+        },
+        "renameThread": {
+            "title": "Đổi tên chủ đề",
+            "description": "Tiêu đề chủ đề đã được đổi thành '{{title}}'"
+        },
+        "deleteThread": {
+            "title": "Xóa chủ đề",
+            "description": "Chủ đề này đã bị xóa vĩnh viễn."
+        },
+        "editMessage": {
+            "title": "Chỉnh sửa tin nhắn",
+            "description": "Tin nhắn đã được chỉnh sửa thành công. Vui lòng đợi mô hình phản hồi."
+        },
+        "appUpdateDownloaded": {
+            "title": "Đã tải xuống bản cập nhật ứng dụng",
+            "description": "Bản cập nhật ứng dụng đã được tải xuống thành công."
+        },
+        "appUpdateDownloadFailed": {
+            "title": "Tải xuống bản cập nhật ứng dụng thất bại",
+            "description": "Không thể tải xuống bản cập nhật ứng dụng. Vui lòng thử lại."
+        },
+        "downloadComplete": {
+            "title": "Tải xuống hoàn tất",
+            "description": "Mô hình {{modelId}} đã được tải xuống"
+        },
+        "downloadCancelled": {
+            "title": "Đã hủy tải xuống",
+            "description": "Quá trình tải xuống đã bị hủy"
+        }
     }
-  }
 }

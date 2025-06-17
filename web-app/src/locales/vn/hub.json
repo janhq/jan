@@ -1,0 +1,31 @@
+{
+  "sortNewest": "Mới nhất",
+  "sortMostDownloaded": "Tải nhiều nhất",
+  "use": "Sử dụng",
+  "download": "Tải xuống",
+  "downloaded": "Đã tải xuống",
+  "loadingModels": "Đang tải mô hình...",
+  "noModels": "Không tìm thấy mô hình nào",
+  "by": "bởi",
+  "downloads": "Lượt tải xuống",
+  "variants": "Biến thể",
+  "showVariants": "Hiển thị biến thể",
+  "useModel": "Sử dụng mô hình",
+  "downloadModel": "Tải xuống mô hình",
+  "searchPlaceholder": "Tìm kiếm mô hình...",
+  "editTheme": "Chỉnh sửa chủ đề",
+  "joyride": {
+    "recommendedModelTitle": "Mô hình được đề xuất",
+    "recommendedModelContent": "Đây là một mô hình được đề xuất để bắt đầu.",
+    "downloadInProgressTitle": "Đang tải xuống",
+    "downloadInProgressContent": "Mô hình của bạn hiện đang được tải xuống.",
+    "downloadModelTitle": "Tải xuống mô hình",
+    "downloadModelContent": "Nhấp vào đây để tải xuống mô hình.",
+    "back": "Quay lại",
+    "close": "Đóng",
+    "lastWithDownload": "Bắt đầu tải xuống",
+    "last": "Hoàn thành",
+    "next": "Tiếp theo",
+    "skip": "Bỏ qua"
+  }
+}

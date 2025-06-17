@@ -1,7 +1,8 @@
 import { Input } from '@/components/ui/input'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 interface ApiKeyInputProps {
   showError?: boolean
@@ -16,23 +17,24 @@ export function ApiKeyInput({
   const [inputValue, setInputValue] = useState(apiKey.toString())
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const { t } = useTranslation()
 
-  const validateApiKey = (value: string) => {
+  const validateApiKey = useCallback((value: string) => {
     if (!value || value.trim().length === 0) {
-      setError('API Key is required')
+      setError(t('common:apiKeyRequired'))
       onValidationChange?.(false)
       return false
     }
     setError('')
     onValidationChange?.(true)
     return true
-  }
+  }, [onValidationChange, t])
 
   useEffect(() => {
     if (showError) {
       validateApiKey(inputValue)
     }
-  }, [showError, inputValue])
+  }, [showError, inputValue, validateApiKey])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -67,7 +69,7 @@ export function ApiKeyInput({
             ? 'border-1 border-destructive focus:border-destructive focus:ring-destructive'
             : ''
         }`}
-        placeholder="Enter API Key"
+        placeholder={t('common:enterApiKey')}
       />
       <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
         <button
