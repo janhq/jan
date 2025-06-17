@@ -39,7 +39,7 @@ i18n.use(initReactI18next).init({
     },
     zh_tw:{
       chat: zhTwChat,
-      common: zhTwChat,
+      common: zhTwCommon,
       settings: zhTwSettings
     }
   },

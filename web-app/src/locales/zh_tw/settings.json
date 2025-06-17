@@ -7,7 +7,7 @@
       "appData": "應用程式資料",
       "appDataDesc": "訊息及其他使用者資料的預設儲存位置",
       "appLogs": "應用程式紀錄",
-      "appLogsDesc": "應用程式記錄的預設儲存位置"
+      "appLogsDesc": "應用程式紀錄的預設儲存位置"
     },
     "others": {
       "spellCheck": "拼字檢查",
