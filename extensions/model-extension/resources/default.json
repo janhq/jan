@@ -125,59 +125,59 @@
     },
     "models": [
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-iQ4_XS.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-iQ4_XS.gguf",
         "size": 2270750400
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q3_K_L.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q3_K_L.gguf",
         "size": 2239784384
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q3_K_M.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q3_K_M.gguf",
         "size": 2075616704
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q3_K_S.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q3_K_S.gguf",
         "size": 1886995904
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q4_0.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q4_0.gguf",
         "size": 2369545664
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q4_1.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q4_1.gguf",
         "size": 2596627904
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q4_K_M.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q4_K_M.gguf",
         "size": 2497279424
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q4_K_S.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q4_K_S.gguf",
         "size": 2383308224
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q5_0.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q5_0.gguf",
         "size": 2823710144
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q5_1.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q5_1.gguf",
         "size": 3050792384
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q5_K_M.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q5_K_M.gguf",
         "size": 2889512384
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q5_K_S.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q5_K_S.gguf",
         "size": 2823710144
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q6_K.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q6_K.gguf",
         "size": 3306259904
       },
       {
-        "id": "Menlo:Jan-nano:jan-nano-4b-Q8_0.gguf",
+        "id": "Menlo:Jan-nano-gguf:jan-nano-4b-Q8_0.gguf",
         "size": 4280403904
       }
     ]
