@@ -126,6 +126,10 @@ jobs:
           ctoml ./src-tauri/Cargo.toml package.version "${{ inputs.new_version }}"
           cat ./src-tauri/Cargo.toml
 
+          # Temporarily enable devtool on prod build
+          ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
+          cat ./src-tauri/Cargo.toml
+
           # Change app name for beta and nightly builds
           if [ "${{ inputs.channel }}" != "stable" ]; then
             jq '.plugins.updater.endpoints = ["https://delta.jan.ai/${{ inputs.channel }}/latest.json"]' ./src-tauri/tauri.conf.json > /tmp/tauri.conf.json
