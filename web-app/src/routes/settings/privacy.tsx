@@ -52,9 +52,9 @@ function Privacy() {
                 title="Help us improve"
                 description={
                   <p>
-                    By opting in, you help us make Jan better by sharing
-                    anonymous data, like feature usage and user counts. Your
-                    chats and personal information are never collected.
+                    To help us improve Jan, you can share anonymous data like
+                    feature usage and user counts. We never collect your chats
+                    or personal information.
                   </p>
                 }
                 align="start"
@@ -63,17 +63,15 @@ function Privacy() {
                 description={
                   <div className="text-main-view-fg/90">
                     <p>
-                      We prioritize your control over your data. Learn more
-                      about our Privacy Policy.
+                      You have full control over your data. Learn more in our
+                      Privacy Policy.
                     </p>
                     <p className="my-1">
-                      To make Jan better, we need to understand how it’s used -
-                      but only if you choose to help. You can change your Jan
-                      Analytics settings anytime.
+                      To improve Jan, we need to understand how it’s used—but
+                      only with your help. You can change this setting anytime.
                     </p>
                     <p>
-                      Your choice to opt-in or out doesn't change our core
-                      privacy promises:
+                      Your choice here won’t change our core privacy promises:
                     </p>
                     <ul className="list-disc pl-4 space-y-1 mt-4">
                       <li className="font-medium">Your chats are never read</li>

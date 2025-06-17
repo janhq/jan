@@ -5,15 +5,15 @@
     },
     "dataFolder": {
       "appData": "App Data",
-      "appDataDesc": "Default location for messages and other user data",
+      "appDataDesc": "Default location for messages and other user data.",
       "appLogs": "App Logs",
-      "appLogsDesc": "Default location App Logs"
+      "appLogsDesc": "Default location App Logs."
     },
     "others": {
       "spellCheck": "Spell Check",
-      "spellCheckDesc": "Turn on to enable spell check chat input.",
+      "spellCheckDesc": "Enable spell check for your threads.",
       "resetFactory": "Reset To Factory Settings",
-      "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted"
+      "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted."
     }
   }
 }
