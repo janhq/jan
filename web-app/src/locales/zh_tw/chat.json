@@ -1,0 +1,9 @@
+{
+  "chat": {
+    "welcome": "你好嗎？",
+    "description": "我今天可以如何幫助你？",
+    "status": {
+      "empty": "找不到聊天室"
+    }
+  }
+}

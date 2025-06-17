@@ -1,0 +1,19 @@
+{
+  "settings": {
+    "general": {
+      "autoDownload": "自動下載更新"
+    },
+    "dataFolder": {
+      "appData": "應用程式資料",
+      "appDataDesc": "訊息及其他使用者資料的預設儲存位置",
+      "appLogs": "應用程式紀錄",
+      "appLogsDesc": "應用程式記錄的預設儲存位置"
+    },
+    "others": {
+      "spellCheck": "拼字檢查",
+      "spellCheckDesc": "開啟以啟用聊天輸入的拼字檢查。",
+      "resetFactory": "重設為出廠設定",
+      "resetFactoryDesc": "將應用程式還原至初始狀態，將清除所有模型與聊天記錄。此操作無法還原，僅建議在應用程式損壞時執行。"
+    }
+  }
+}

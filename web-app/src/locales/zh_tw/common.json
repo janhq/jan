@@ -1,0 +1,32 @@
+{
+  "common": {
+    "general": "一般",
+    "settings": "設定",
+    "modelProviders": "模型提供",
+    "appearance": "外觀",
+    "privacy": "隱私",
+    "keyboardShortcuts": "捷徑",
+    "newChat": "新增聊天室",
+    "favorites": "最愛",
+    "recents": "最近使用",
+    "hub": "中心",
+    "helpSupport": "幫助 & 支援",
+    "unstarAll": "取消全部星標",
+    "unstar": "取消星標",
+    "deleteAll": "刪除所有",
+    "star": "星標",
+    "rename": "重新命名",
+    "delete": "刪除",
+    "dataFolder": "資料夾",
+    "others": "其他",
+    "language": "語言",
+    "reset": "重設",
+    "search": "搜尋",
+    "name": "名字",
+    "cancel": "取消",
+
+    "placeholder": {
+      "chatInput": "問我任何事……"
+    }
+  }
+}
