@@ -282,7 +282,9 @@ export default class JanInferenceCortexExtension extends LocalOAIEngine {
             ...(this.context_shift === false
               ? { 'no-context-shift': true }
               : {}),
-            ...(model.settings?.ngl === -1 ? { ngl: 100 } : {}),
+            ...(model.settings?.ngl === -1 || model.settings?.ngl === undefined
+              ? { ngl: 100 }
+              : {}),
           },
           timeout: false,
           signal,
