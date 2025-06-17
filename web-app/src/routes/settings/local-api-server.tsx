@@ -148,7 +148,7 @@ function LocalAPIServer() {
                   <div className="w-full space-y-2">
                     <h1 className="text-base font-medium">Local API Server</h1>
                     <p className="text-main-view-fg/70 mb-2">
-                      Start an OpenAI-compatible local HTTP server.
+                      Run an OpenAI-compatible server locally.
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -165,7 +165,7 @@ function LocalAPIServer() {
             >
               <CardItem
                 title="Server Logs"
-                description="View detailed logs of the local API server"
+                description="View detailed logs of the local API server."
                 actions={
                   <Button
                     variant="link"
@@ -187,7 +187,7 @@ function LocalAPIServer() {
             <Card title="Server Configuration">
               <CardItem
                 title="Server Host"
-                description="Choose between 127.0.0.1 or 0.0.0.0"
+                description="Network address for the server."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -195,7 +195,7 @@ function LocalAPIServer() {
               />
               <CardItem
                 title="Server Port"
-                description="Set the port number for the API server"
+                description="Port number for the API server."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -203,7 +203,7 @@ function LocalAPIServer() {
               />
               <CardItem
                 title="API Prefix"
-                description="Set the API endpoint prefix"
+                description="Path prefix for API endpoints."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -211,7 +211,7 @@ function LocalAPIServer() {
               />
               <CardItem
                 title="API Key"
-                description="Authenticate requests with an API key"
+                description="Authenticate requests with an API key."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none',
                   isApiKeyEmpty && showApiKeyError && 'pb-6'
@@ -225,7 +225,7 @@ function LocalAPIServer() {
               />
               <CardItem
                 title="Trusted Hosts"
-                description="Add trusted hosts that can access the API server"
+                description="Hosts allowed to access the server, separated by commas."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -237,7 +237,7 @@ function LocalAPIServer() {
             <Card title="Advanced Settings">
               <CardItem
                 title="Cross-Origin Resource Sharing (CORS)"
-                description="Allow requests from different origins to access the API"
+                description="Allow cross-origin requests to the API server."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}
@@ -250,7 +250,7 @@ function LocalAPIServer() {
               />
               <CardItem
                 title="Verbose Server Logs"
-                description="Enable detailed logging for debugging purposes"
+                description="Enable detailed server logs for debugging."
                 className={cn(
                   isServerRunning && 'opacity-50 pointer-events-none'
                 )}

@@ -43,43 +43,43 @@ function Appareances() {
             <Card title="Appearance">
               <CardItem
                 title="Theme"
-                description="Native appearance for consistent theming across OS UI elements"
+                description="Match the OS theme."
                 actions={<ThemeSwitcher />}
               />
               <CardItem
                 title="Font Size"
-                description="Adjust the size of text across the app"
+                description="Adjust the app's font size."
                 actions={<FontSizeSwitcher />}
               />
 
               <CardItem
                 title="Window Background"
-                description="Choose the App window color"
+                description="Set the app window's background color."
                 actions={<ColorPickerAppBgColor />}
               />
               <CardItem
                 title="App Main View"
-                description="Sets the background color for the main content area"
+                description="Set the main content area's background color."
                 actions={<ColorPickerAppMainView />}
               />
               <CardItem
                 title="Primary"
-                description="Controls the primary color used for components"
+                description="Set the primary color for UI components."
                 actions={<ColorPickerAppPrimaryColor />}
               />
               <CardItem
                 title="Accent"
-                description="Controls the accent color used for highlights"
+                description="Set the accent color for UI highlights."
                 actions={<ColorPickerAppAccentColor />}
               />
               <CardItem
                 title="Destructive"
-                description="Controls the color used for destructive actions"
+                description="Set the color for destructive actions."
                 actions={<ColorPickerAppDestructiveColor />}
               />
               <CardItem
                 title="Reset to Default"
-                description="Reset all colors to their default values"
+                description="Reset all appearance settings to default."
                 actions={
                   <Button
                     variant="destructive"
@@ -103,7 +103,7 @@ function Appareances() {
             <Card>
               <CardItem
                 title="Chat Width"
-                description="Choose the width of the chat area to customize your conversation view."
+                description="Customize the width of the chat view."
               />
               <ChatWidthSwitcher />
             </Card>
@@ -112,18 +112,18 @@ function Appareances() {
             <Card>
               <CardItem
                 title="Code Block"
-                description="Choose the style for code block syntax highlighting"
+                description="Choose a syntax highlighting style."
                 actions={<CodeBlockStyleSwitcher />}
               />
               <CodeBlockExample />
               <CardItem
                 title="Show Line Numbers"
-                description="Toggle line numbers in code blocks"
+                description="Display line numbers in code blocks."
                 actions={<LineNumbersSwitcher />}
               />
               <CardItem
                 title="Reset Code Block Style"
-                description="Reset code block style to default"
+                description="Reset code block style to default."
                 actions={
                   <Button
                     variant="destructive"

@@ -219,7 +219,7 @@ function General() {
               />
               <CardItem
                 title="Check for Updates"
-                description="Check if a newer version of Jan is available"
+                description="Check if a newer version of Jan is available."
                 actions={
                   <Button
                     variant="link"
@@ -324,7 +324,7 @@ function General() {
                 title={t('settings.dataFolder.appLogs', {
                   ns: 'settings',
                 })}
-                description="View detailed logs of the App"
+                description="View detailed logs of the App."
                 actions={
                   <div className="flex items-center gap-2">
                     <Button
@@ -405,9 +405,9 @@ function General() {
                       <DialogHeader>
                         <DialogTitle>Factory Reset</DialogTitle>
                         <DialogDescription>
-                          Are you sure you want to reset the app to factory
-                          settings? This action is irreversible and recommended
-                          only if the application is corrupted.
+                          This will reset all app settings to their defaults.
+                          This can't be undone. We only recommend this if the
+                          app is corrupted.
                         </DialogDescription>
                         <DialogFooter className="mt-2 flex items-center">
                           <DialogClose asChild>
@@ -439,7 +439,7 @@ function General() {
             <Card title="Resources">
               <CardItem
                 title="Documentation"
-                description="Learn how to use Jan and explore its features"
+                description="Learn how to use Jan and explore its features."
                 actions={
                   <a
                     href="https://jan.ai/docs"
@@ -455,7 +455,7 @@ function General() {
               />
               <CardItem
                 title="Release Notes"
-                description="See what's new in the latest version"
+                description="See what's new in the latest version of Jan."
                 actions={
                   <a
                     href="https://github.com/menloresearch/jan/releases"
@@ -475,7 +475,7 @@ function General() {
             <Card title="Community">
               <CardItem
                 title="GitHub"
-                description="Contribute to Jan's development"
+                description="Contribute to Jan's development."
                 actions={
                   <a
                     href="https://github.com/menloresearch/jan"
@@ -493,7 +493,7 @@ function General() {
               />
               <CardItem
                 title="Discord"
-                description="Join our community for support and discussions"
+                description="Join our community for support and discussions."
                 actions={
                   <a
                     href="https://discord.com/invite/FTk2MvZwJH"
@@ -515,7 +515,7 @@ function General() {
             <Card title="Support">
               <CardItem
                 title="Report an Issue"
-                description="Found a bug? Let us know on GitHub"
+                description="Found a bug? Help us out by filing an issue on GitHub."
                 actions={
                   <a
                     href="https://github.com/menloresearch/jan/issues/new"
@@ -537,12 +537,14 @@ function General() {
                 description={
                   <div className="text-main-view-fg/70 -mt-2">
                     <p>
-                      Jan is built with ❤️ by the Jan team and contributors from
-                      around the world.
+                      Jan is built with ❤️ by the{' '}
+                      <a href="https://menlo.ai" target="_blank">
+                        Menlo Team.
+                      </a>
                     </p>
                     <p className="mt-2">
-                      Special thanks to all our open-source dependencies and the
-                      amazing AI community.
+                      Special thanks to our open-source dependencies—especially
+                      llama.cpp and Tauri—and to our amazing AI community.
                     </p>
                   </div>
                 }
