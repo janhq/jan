@@ -291,6 +291,7 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 } else {
                     log::warn!("Kill event received, but no active sidecar process found to kill.");
                 }
+                clean_up()
             });
         });
 
