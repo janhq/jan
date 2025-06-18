@@ -39,6 +39,7 @@ export const useMessages = create<MessageState>()((set, get) => ({
           name: currentAssistant?.name || '',
           avatar: currentAssistant?.avatar || '',
           instructions: currentAssistant?.instructions || '',
+          parameters: currentAssistant?.parameters || '',
         },
       },
     }
