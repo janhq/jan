@@ -495,7 +495,7 @@ function Hub() {
                         <div className="line-clamp-2 mt-3 text-main-view-fg/60">
                           <RenderMarkdown
                             enableRawHtml={true}
-                            className="select-none"
+                            className="select-none reset-heading"
                             components={{
                               a: ({ ...props }) => (
                                 <a
