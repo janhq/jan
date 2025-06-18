@@ -13,6 +13,7 @@ import {
 import { modelSettings } from '@/lib/predefined'
 import { fetchModels } from './models'
 import { ExtensionManager } from '@/lib/extension'
+import { isProd } from '@/lib/version'
 
 export const getProviders = async (): Promise<ModelProvider[]> => {
   const engines = !localStorage.getItem('migration_completed')
@@ -65,7 +66,7 @@ export const getProviders = async (): Promise<ModelProvider[]> => {
           ].filter(Boolean) as string[]
           return {
             ...(modelManifest ?? { id: model, name: model }),
-            capabilities,
+            ...(!isProd ? { capabilities } : {}),
           } as Model
         })
     }
