@@ -247,7 +247,10 @@ pub fn setup_sidecar(app: &App) -> Result<(), String> {
                 ]);
             #[cfg(target_os = "windows")]
             {
-                cmd = cmd.current_dir(app_handle_for_spawn.path().resource_dir().unwrap());
+                let resource_dir = app_handle_for_spawn.path().resource_dir().unwrap();
+                let normalized_path = resource_dir.to_string_lossy().replace(r"\\?\", "");
+                let normalized_pathbuf = PathBuf::from(normalized_path);
+                cmd = cmd.current_dir(normalized_pathbuf);
             }
 
             #[cfg(not(target_os = "windows"))]
