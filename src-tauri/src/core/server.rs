@@ -1,21 +1,16 @@
+use flate2::read::GzDecoder;
+use futures_util::StreamExt;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
 use reqwest::Client;
 use serde_json::Value;
 use std::convert::Infallible;
-use std::net::SocketAddr;
-use std::sync::LazyLock;
-use tokio::sync::Mutex;
-use tokio::task::JoinHandle;
-use futures_util::StreamExt;
-use flate2::read::GzDecoder;
 use std::io::Read;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-/// Server handle type for managing the proxy server lifecycle
-type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
-
-/// Global singleton for the current server instance
-static SERVER_HANDLE: LazyLock<Mutex<Option<ServerHandle>>> = LazyLock::new(|| Mutex::new(None));
+use crate::core::state::ServerHandle;
 
 /// Configuration for the proxy server
 #[derive(Clone)]
@@ -272,7 +267,7 @@ async fn proxy_request(
     // Verify Host header (check target), but bypass for whitelisted paths
     let whitelisted_paths = ["/", "/openapi.json", "/favicon.ico"];
     let is_whitelisted_path = whitelisted_paths.contains(&path.as_str());
-    
+
     if !is_whitelisted_path {
         if !host_header.is_empty() {
             if !is_valid_host(&host_header, &config.trusted_hosts) {
@@ -333,7 +328,10 @@ async fn proxy_request(
                 .unwrap());
         }
     } else if is_whitelisted_path {
-        log::debug!("Bypassing authorization check for whitelisted path: {}", path);
+        log::debug!(
+            "Bypassing authorization check for whitelisted path: {}",
+            path
+        );
     }
 
     // Block access to /configs endpoint
@@ -394,13 +392,14 @@ async fn proxy_request(
             if path.contains("/models") && method == hyper::Method::GET {
                 // For /models endpoint, we need to buffer and filter the response
                 match response.bytes().await {
-                    Ok(bytes) => {
-                        match filter_models_response(&bytes) {
-                            Ok(filtered_bytes) => Ok(builder.body(Body::from(filtered_bytes)).unwrap()),
-                            Err(e) => {
-                                log::warn!("Failed to filter models response: {}, returning original", e);
-                                Ok(builder.body(Body::from(bytes)).unwrap())
-                            }
+                    Ok(bytes) => match filter_models_response(&bytes) {
+                        Ok(filtered_bytes) => Ok(builder.body(Body::from(filtered_bytes)).unwrap()),
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to filter models response: {}, returning original",
+                                e
+                            );
+                            Ok(builder.body(Body::from(bytes)).unwrap())
                         }
                     },
                     Err(e) => {
@@ -422,7 +421,7 @@ async fn proxy_request(
                 // For streaming endpoints (like chat completions), we need to collect and forward the stream
                 let mut stream = response.bytes_stream();
                 let (mut sender, body) = hyper::Body::channel();
-                
+
                 // Spawn a task to forward the stream
                 tokio::spawn(async move {
                     while let Some(chunk_result) = stream.next().await {
@@ -440,7 +439,7 @@ async fn proxy_request(
                         }
                     }
                 });
-                
+
                 Ok(builder.body(body).unwrap())
             }
         }
@@ -478,7 +477,7 @@ fn compress_gzip(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Se
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use std::io::Write;
-    
+
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(bytes)?;
     let compressed = encoder.finish()?;
@@ -486,7 +485,9 @@ fn compress_gzip(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Se
 }
 
 /// Filters models response to keep only models with status "downloaded"
-fn filter_models_response(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+fn filter_models_response(
+    bytes: &[u8],
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Try to decompress if it's gzip-encoded
     let decompressed_bytes = if is_gzip_encoded(bytes) {
         log::debug!("Response is gzip-encoded, decompressing...");
@@ -494,10 +495,10 @@ fn filter_models_response(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::E
     } else {
         bytes.to_vec()
     };
-    
+
     let response_text = std::str::from_utf8(&decompressed_bytes)?;
     let mut response_json: Value = serde_json::from_str(response_text)?;
-    
+
     // Check if this is a ListModelsResponseDto format with data array
     if let Some(data_array) = response_json.get_mut("data") {
         if let Some(models) = data_array.as_array_mut() {
@@ -513,7 +514,10 @@ fn filter_models_response(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::E
                     false // Remove models without status field
                 }
             });
-            log::debug!("Filtered models response: {} downloaded models remaining", models.len());
+            log::debug!(
+                "Filtered models response: {} downloaded models remaining",
+                models.len()
+            );
         }
     } else if response_json.is_array() {
         // Handle direct array format
@@ -529,12 +533,15 @@ fn filter_models_response(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::E
                     false // Remove models without status field
                 }
             });
-            log::debug!("Filtered models response: {} downloaded models remaining", models.len());
+            log::debug!(
+                "Filtered models response: {} downloaded models remaining",
+                models.len()
+            );
         }
     }
-    
+
     let filtered_json = serde_json::to_vec(&response_json)?;
-    
+
     // If original was gzip-encoded, re-compress the filtered response
     if is_gzip_encoded(bytes) {
         log::debug!("Re-compressing filtered response with gzip");
@@ -634,8 +641,19 @@ fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
     })
 }
 
+pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) -> bool {
+    let handle_guard = server_handle.lock().await;
+
+    if handle_guard.is_some() {
+        true
+    } else {
+        false
+    }
+}
+
 /// Starts the proxy server
 pub async fn start_server(
+    server_handle: Arc<Mutex<Option<ServerHandle>>>,
     host: String,
     port: u16,
     prefix: String,
@@ -644,7 +662,7 @@ pub async fn start_server(
     trusted_hosts: Vec<String>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // Check if server is already running
-    let mut handle_guard = SERVER_HANDLE.lock().await;
+    let mut handle_guard = server_handle.lock().await;
     if handle_guard.is_some() {
         return Err("Server is already running".into());
     }
@@ -687,7 +705,7 @@ pub async fn start_server(
     log::info!("Proxy server started on http://{}", addr);
 
     // Spawn server task
-    let server_handle = tokio::spawn(async move {
+    let server_task = tokio::spawn(async move {
         if let Err(e) = server.await {
             log::error!("Server error: {}", e);
             return Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>);
@@ -695,16 +713,20 @@ pub async fn start_server(
         Ok(())
     });
 
-    *handle_guard = Some(server_handle);
+    *handle_guard = Some(server_task);
     Ok(true)
 }
 
 /// Stops the currently running proxy server
-pub async fn stop_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut handle_guard = SERVER_HANDLE.lock().await;
+pub async fn stop_server(
+    server_handle: Arc<Mutex<Option<ServerHandle>>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut handle_guard = server_handle.lock().await;
 
     if let Some(handle) = handle_guard.take() {
         handle.abort();
+        // remove the handle to prevent future use
+        *handle_guard = None;
         log::info!("Proxy server stopped");
     } else {
         log::debug!("No server was running");
@@ -746,10 +768,10 @@ mod tests {
 
         let data = filtered_response["data"].as_array().unwrap();
         assert_eq!(data.len(), 1); // Should have 1 model (only model1 with "downloaded" status)
-        
+
         // Verify only model1 (with "downloaded" status) is kept
         assert!(data.iter().any(|model| model["id"] == "model1"));
-        
+
         // Verify model2 and model3 are filtered out
         assert!(!data.iter().any(|model| model["id"] == "model2"));
         assert!(!data.iter().any(|model| model["id"] == "model3"));
@@ -838,11 +860,11 @@ mod tests {
 
         let data = filtered_response["data"].as_array().unwrap();
         assert_eq!(data.len(), 2); // Should have 2 models (model1 and model3 with "downloaded" status)
-        
+
         // Verify only models with "downloaded" status are kept
         assert!(data.iter().any(|model| model["id"] == "model1"));
         assert!(data.iter().any(|model| model["id"] == "model3"));
-        
+
         // Verify other models are filtered out
         assert!(!data.iter().any(|model| model["id"] == "model2"));
         assert!(!data.iter().any(|model| model["id"] == "model4"));

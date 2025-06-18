@@ -4,6 +4,10 @@ use crate::core::utils::download::DownloadManagerState;
 use rand::{distributions::Alphanumeric, Rng};
 use rmcp::{service::RunningService, RoleClient};
 use tokio::sync::Mutex;
+use tokio::task::JoinHandle;
+
+/// Server handle type for managing the proxy server lifecycle
+pub type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
 
 #[derive(Default)]
 pub struct AppState {
@@ -12,6 +16,7 @@ pub struct AppState {
     pub download_manager: Arc<Mutex<DownloadManagerState>>,
     pub cortex_restart_count: Arc<Mutex<u32>>,
     pub cortex_killed_intentionally: Arc<Mutex<bool>>,
+    pub server_handle: Arc<Mutex<Option<ServerHandle>>>,
 }
 pub fn generate_app_token() -> String {
     rand::thread_rng()
