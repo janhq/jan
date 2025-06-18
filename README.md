@@ -19,7 +19,7 @@
   - <a href="https://discord.gg/AsJ8krTT3N">Discord</a>
 </p>
 
-Jan is your AI Assistant that runs entirely offline on your desktop. Because in a world where everything is shared, sometimes you just want to keep your conversations between you and your computer—call us old-fashioned.
+Jan is a ChatGPT-alternative that runs 100% offline on your device. Our goal is to make it easy for a layperson to download and run LLMs and use AI with **full control** and **privacy**.
 
 **⚠️ Jan is in active development.**
 
@@ -135,7 +135,7 @@ make clean
 - **Windows**: 10+ with GPU support for NVIDIA/AMD/Intel Arc
 - **Linux**: Most distributions work, GPU acceleration available
 
-For detailed compatibility, check our [installation guides](https://jan.ai/docs/installation).
+For detailed compatibility, check our [installation guides](https://jan.ai/docs/desktop/mac).
 
 ## Troubleshooting
 
