@@ -642,9 +642,9 @@ fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
 }
 
 pub async fn is_server_running(server_handle: Arc<Mutex<Option<ServerHandle>>>) -> bool {
-    let mut handle_guard = server_handle.lock().await;
+    let handle_guard = server_handle.lock().await;
 
-    if handle_guard.take().is_some() {
+    if handle_guard.is_some() {
         true
     } else {
         false
