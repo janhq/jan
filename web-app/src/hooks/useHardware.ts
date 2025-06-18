@@ -87,8 +87,17 @@ interface HardwareStore {
   // Update RAM available
   updateRAMAvailable: (available: number) => void
 
-  // Toggle GPU activation
-  toggleGPUActivation: (index: number) => void
+  // Toggle GPU activation (async, with loading)
+  toggleGPUActivation: (index: number) => Promise<void>
+
+  // GPU loading state
+  gpuLoading: { [index: number]: boolean }
+  setGpuLoading: (index: number, loading: boolean) => void
+
+  // Polling control
+  pollingPaused: boolean
+  pausePolling: () => void
+  resumePolling: () => void
 
   // Reorder GPUs
   reorderGPUs: (oldIndex: number, newIndex: number) => void
@@ -96,8 +105,16 @@ interface HardwareStore {
 
 export const useHardware = create<HardwareStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       hardwareData: defaultHardwareData,
+      gpuLoading: {},
+      pollingPaused: false,
+      setGpuLoading: (index, loading) =>
+        set((state) => ({
+          gpuLoading: { ...state.gpuLoading, [state.hardwareData.gpus[index].uuid]: loading },
+        })),
+      pausePolling: () => set({ pollingPaused: true }),
+      resumePolling: () => set({ pollingPaused: false }),
 
       setCPU: (cpu) =>
         set((state) => ({
@@ -172,25 +189,34 @@ export const useHardware = create<HardwareStore>()(
           },
         })),
 
-      toggleGPUActivation: (index) => {
-        set((state) => {
-          const newGPUs = [...state.hardwareData.gpus]
-          if (index >= 0 && index < newGPUs.length) {
-            newGPUs[index] = {
-              ...newGPUs[index],
-              activated: !newGPUs[index].activated,
+      toggleGPUActivation: async (index) => {
+        const { pausePolling, setGpuLoading, resumePolling } = get();
+        pausePolling();
+        setGpuLoading(index, true);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 200)); // Simulate async, replace with real API if needed
+          set((state) => {
+            const newGPUs = [...state.hardwareData.gpus];
+            if (index >= 0 && index < newGPUs.length) {
+              newGPUs[index] = {
+                ...newGPUs[index],
+                activated: !newGPUs[index].activated,
+              };
             }
-          }
-          setActiveGpus({
-            gpus: newGPUs.filter((e) => e.activated).map((e) => parseInt(e.id)),
-          })
-          return {
-            hardwareData: {
-              ...state.hardwareData,
-              gpus: newGPUs,
-            },
-          }
-        })
+            setActiveGpus({
+              gpus: newGPUs.filter((e) => e.activated).map((e) => parseInt(e.id)),
+            });
+            return {
+              hardwareData: {
+                ...state.hardwareData,
+                gpus: newGPUs,
+              },
+            };
+          });
+        } finally {
+          setGpuLoading(index, false);
+          setTimeout(resumePolling, 1000); // Resume polling after 1s
+        }
       },
 
       reorderGPUs: (oldIndex, newIndex) =>

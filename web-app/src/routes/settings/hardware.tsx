@@ -49,7 +49,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
     isDragging,
   } = useSortable({ id: gpu.id || index })
 
-  const { toggleGPUActivation } = useHardware()
+  const { toggleGPUActivation, gpuLoading } = useHardware()
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -78,6 +78,7 @@ function SortableGPUItem({ gpu, index }: { gpu: GPU; index: number }) {
           <div className="flex items-center gap-4">
             <Switch
               checked={gpu.activated}
+              disabled={!!gpuLoading[index]}
               onCheckedChange={() => toggleGPUActivation(index)}
             />
           </div>
@@ -122,6 +123,7 @@ function Hardware() {
     updateCPUUsage,
     updateRAMAvailable,
     reorderGPUs,
+    pollingPaused,
   } = useHardware()
   const { vulkanEnabled, setVulkanEnabled } = useVulkan()
 
@@ -155,16 +157,16 @@ function Hardware() {
   }
 
   useEffect(() => {
+    if (pollingPaused) return;
     const intervalId = setInterval(() => {
       getHardwareInfo().then((data) => {
-        setHardwareData(data as unknown as HardwareData)
         updateCPUUsage(data.cpu.usage)
         updateRAMAvailable(data.ram.available)
       })
     }, 5000)
 
     return () => clearInterval(intervalId)
-  }, [setHardwareData, updateCPUUsage, updateRAMAvailable])
+  }, [setHardwareData, updateCPUUsage, updateRAMAvailable, pollingPaused])
 
   const handleClickSystemMonitor = async () => {
     try {
