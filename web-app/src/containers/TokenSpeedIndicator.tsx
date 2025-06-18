@@ -12,8 +12,8 @@ export const TokenSpeedIndicator = ({
   streaming,
 }: TokenSpeedIndicatorProps) => {
   const { tokenSpeed } = useAppState()
-  const persistedTokenSpeed = (metadata?.tokenSpeed as { tokenSpeed: number })
-    ?.tokenSpeed
+  const persistedTokenSpeed =
+    (metadata?.tokenSpeed as { tokenSpeed: number })?.tokenSpeed || 0
 
   const nonStreamingAssistantParam =
     typeof metadata?.assistant === 'object' &&
@@ -30,7 +30,9 @@ export const TokenSpeedIndicator = ({
       <Gauge size={16} />
       <span>
         {Math.round(
-          streaming ? toNumber(tokenSpeed?.tokenSpeed) : persistedTokenSpeed
+          streaming
+            ? toNumber(tokenSpeed?.tokenSpeed)
+            : toNumber(persistedTokenSpeed)
         )}
         &nbsp;tokens/sec
       </span>
