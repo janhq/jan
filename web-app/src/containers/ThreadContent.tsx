@@ -363,7 +363,10 @@ export const ThreadContent = memo(
                   <div
                     className={cn(
                       'flex items-center gap-2',
-                      item.isLastMessage && streamingContent && 'hidden'
+                      item.isLastMessage &&
+                        streamingContent &&
+                        streamingContent.thread_id === item.thread_id &&
+                        'hidden'
                     )}
                   >
                     <CopyButton text={item.content?.[0]?.text.value || ''} />
@@ -439,7 +442,11 @@ export const ThreadContent = memo(
                   </div>
 
                   <TokenSpeedIndicator
-                    streaming={Boolean(item.isLastMessage && streamingContent)}
+                    streaming={Boolean(
+                      item.isLastMessage &&
+                        streamingContent &&
+                        streamingContent.thread_id === item.thread_id
+                    )}
                     metadata={item.metadata}
                   />
                 </div>
@@ -447,6 +454,7 @@ export const ThreadContent = memo(
             )}
           </>
         )}
+
         {item.type === 'image_url' && image && (
           <div>
             <img
