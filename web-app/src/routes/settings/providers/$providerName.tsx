@@ -455,7 +455,9 @@ function ProviderDetail() {
                           title={
                             <div className="flex items-center gap-2">
                               <h1 className="font-medium">{model.id}</h1>
-                              <Capabilities capabilities={capabilities} />
+                              {!isProd && (
+                                <Capabilities capabilities={capabilities} />
+                              )}
                             </div>
                           }
                           actions={
