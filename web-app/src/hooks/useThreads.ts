@@ -32,11 +32,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
   threads: {},
   searchIndex: null,
   setThreads: (threads) => {
-    threads.forEach((thread) => {
-      updateThread({
-        ...thread,
-      })
-    })
     const threadMap = threads.reduce(
       (acc: Record<string, Thread>, thread) => {
         acc[thread.id] = thread
