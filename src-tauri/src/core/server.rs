@@ -7,6 +7,8 @@ use std::net::SocketAddr;
 use std::sync::LazyLock;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use flate2::read::GzDecoder;
+use std::io::Read;
 
 /// Server handle type for managing the proxy server lifecycle
 type ServerHandle = JoinHandle<Result<(), Box<dyn std::error::Error + Send + Sync>>>;
@@ -435,9 +437,42 @@ async fn proxy_request(
     }
 }
 
+/// Checks if the byte array starts with gzip magic number
+fn is_gzip_encoded(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
+}
+
+/// Decompresses gzip-encoded bytes
+fn decompress_gzip(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut decoder = GzDecoder::new(bytes);
+    let mut decompressed = Vec::new();
+    decoder.read_to_end(&mut decompressed)?;
+    Ok(decompressed)
+}
+
+/// Compresses bytes using gzip
+fn compress_gzip(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(bytes)?;
+    let compressed = encoder.finish()?;
+    Ok(compressed)
+}
+
 /// Filters models response to keep only models with status "downloaded"
 fn filter_models_response(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    let response_text = std::str::from_utf8(bytes)?;
+    // Try to decompress if it's gzip-encoded
+    let decompressed_bytes = if is_gzip_encoded(bytes) {
+        log::debug!("Response is gzip-encoded, decompressing...");
+        decompress_gzip(bytes)?
+    } else {
+        bytes.to_vec()
+    };
+    
+    let response_text = std::str::from_utf8(&decompressed_bytes)?;
     let mut response_json: Value = serde_json::from_str(response_text)?;
     
     // Check if this is a ListModelsResponseDto format with data array
@@ -475,8 +510,15 @@ fn filter_models_response(bytes: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::E
         }
     }
     
-    let filtered_response = serde_json::to_vec(&response_json)?;
-    Ok(filtered_response)
+    let filtered_json = serde_json::to_vec(&response_json)?;
+    
+    // If original was gzip-encoded, re-compress the filtered response
+    if is_gzip_encoded(bytes) {
+        log::debug!("Re-compressing filtered response with gzip");
+        compress_gzip(&filtered_json)
+    } else {
+        Ok(filtered_json)
+    }
 }
 
 /// Checks if a header is a CORS-related header that should be filtered out from upstream responses
