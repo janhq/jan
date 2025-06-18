@@ -111,7 +111,7 @@ export const useHardware = create<HardwareStore>()(
       pollingPaused: false,
       setGpuLoading: (index, loading) =>
         set((state) => ({
-          gpuLoading: { ...state.gpuLoading, [index]: loading },
+          gpuLoading: { ...state.gpuLoading, [state.hardwareData.gpus[index].uuid]: loading },
         })),
       pausePolling: () => set({ pollingPaused: true }),
       resumePolling: () => set({ pollingPaused: false }),
