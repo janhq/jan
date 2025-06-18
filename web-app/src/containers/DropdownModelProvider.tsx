@@ -16,6 +16,7 @@ import { ModelSetting } from '@/containers/ModelSetting'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { Fzf } from 'fzf'
 import { localStorageKey } from '@/constants/localStorage'
+import { isProd } from '@/lib/version'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -400,7 +401,7 @@ const DropdownModelProvider = ({
                                 />
 
                                 <div className="flex-1"></div>
-                                {capabilities.length > 0 && (
+                                {!isProd && capabilities.length > 0 && (
                                   <div className="flex-shrink-0 -mr-1.5">
                                     <Capabilities capabilities={capabilities} />
                                   </div>
