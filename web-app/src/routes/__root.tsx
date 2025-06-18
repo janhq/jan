@@ -18,7 +18,6 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { cn } from '@/lib/utils'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
-import { useEffect } from 'react'
 
 export const Route = createRootRoute({
   component: RootLayout,
@@ -82,17 +81,6 @@ function RootLayout() {
     router.location.pathname === route.localApiServerlogs ||
     router.location.pathname === route.systemMonitor ||
     router.location.pathname === route.appLogs
-
-  useEffect(() => {
-    window.onbeforeunload = function () {
-      // This is to attempt to stop the local API server when the app is closed or reloaded.
-      window.core?.api?.stopServer()
-      return true
-    }
-    return () => {
-      window.onbeforeunload = null
-    }
-  }, [])
 
   return (
     <Fragment>

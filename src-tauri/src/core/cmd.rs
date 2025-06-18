@@ -366,6 +366,11 @@ pub async fn stop_server() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn get_server_status() -> Result<bool, String> {
+    Ok(server::is_server_running().await)
+}
+
+#[tauri::command]
 pub async fn read_logs(app: AppHandle) -> Result<String, String> {
     let log_path = get_jan_data_folder_path(app).join("logs").join("app.log");
     if log_path.exists() {

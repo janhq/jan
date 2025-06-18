@@ -634,6 +634,16 @@ fn is_valid_host(host: &str, trusted_hosts: &[String]) -> bool {
     })
 }
 
+pub async fn is_server_running() -> bool {
+    let mut handle_guard = SERVER_HANDLE.lock().await;
+
+    if handle_guard.take().is_some() {
+        true
+    } else {
+        false
+    }
+}
+
 /// Starts the proxy server
 pub async fn start_server(
     host: String,
